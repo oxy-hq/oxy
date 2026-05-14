@@ -30,7 +30,7 @@ function currentUserId(): string | null {
   }
 }
 
-export function getLastWorkspaceId(orgId: string): string | null {
+function getLastWorkspaceId(orgId: string): string | null {
   if (!orgId) return null;
   const userId = currentUserId();
   if (!userId) return null;

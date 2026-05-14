@@ -2,7 +2,7 @@ export { useConnectGitHubAccount } from "./useConnectGitHubAccount";
 export { useCreateInstallationNamespace } from "./useCreateInstallationNamespace";
 export { useCreatePATNamespace } from "./useCreatePATNamespace";
 export { useDeleteGitNamespace } from "./useDeleteGitNamespace";
-export { useDisconnectGitHubAccount } from "./useDisconnectGitHubAccount";
+
 export { useGitHubAccount } from "./useGitHubAccount";
 export { useGitHubBranchesWithApp } from "./useGitHubBranchesWithApp";
 export { useGitHubNamespaces } from "./useGitHubNamespaces";

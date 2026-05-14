@@ -4,13 +4,13 @@ import { WorkflowService } from "@/services/api";
 import type { Workflow } from "@/types/workflow";
 import queryKeys from "../queryKey";
 
-export interface CreateWorkflowFromQueryRequest {
+interface CreateWorkflowFromQueryRequest {
   query: string;
   prompt: string;
   database: string;
 }
 
-export interface WorkflowResponse {
+interface WorkflowResponse {
   workflow: Workflow;
 }
 

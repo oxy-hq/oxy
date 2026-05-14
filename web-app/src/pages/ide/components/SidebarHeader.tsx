@@ -32,5 +32,3 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({ title, onCollapse,
     </SidebarGroupLabel>
   );
 };
-
-export default SidebarHeader;

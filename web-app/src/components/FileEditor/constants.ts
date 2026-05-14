@@ -1,4 +1,4 @@
-export const LANGUAGE_MAP: Record<string, string> = {
+const LANGUAGE_MAP: Record<string, string> = {
   js: "javascript",
   jsx: "javascript",
   ts: "typescript",

@@ -75,7 +75,3 @@ const makeResponseErrorHandler = () => {
 };
 
 apiClient.interceptors.response.use((response) => response, makeResponseErrorHandler());
-
-export const vibeCodingClient = axios.create({
-  baseURL: "http://localhost:8000"
-});

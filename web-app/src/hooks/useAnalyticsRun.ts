@@ -20,7 +20,7 @@ export type AnalyticsDisplayBlock = {
  * (not a human input question). Delegation prompts start with "Executing step:"
  * which the workflow orchestrator uses for step delegation.
  */
-export function isDelegationSuspension(questions: HumanInputQuestion[]): boolean {
+function isDelegationSuspension(questions: HumanInputQuestion[]): boolean {
   if (questions.length === 0) return false;
   const prompt = questions[0].prompt;
   return (
@@ -33,51 +33,6 @@ export function isDelegationSuspension(questions: HumanInputQuestion[]): boolean
 
 // ── SSE event types ───────────────────────────────────────────────────────────
 
-export const ANALYTICS_SSE_TYPES = [
-  "step_start",
-  "step_end",
-  "step_summary_update",
-  "text_delta",
-  "thinking_start",
-  "thinking_token",
-  "thinking_end",
-  "tool_call",
-  "tool_result",
-  "awaiting_input",
-  "input_resolved",
-  "done",
-  "error",
-  "cancelled",
-  "fan_out_start",
-  "sub_spec_start",
-  "sub_spec_end",
-  "fan_out_end",
-  // Domain events
-  "schema_resolved",
-  "triage_completed",
-  "intent_clarified",
-  "spec_resolved",
-  "query_generated",
-  "query_executed",
-  "analytics_validation_failed",
-  "chart_rendered",
-  // Procedure lifecycle (emitted by OxyProcedureRunner)
-  "procedure_started",
-  "procedure_completed",
-  // Procedure step progress (emitted by WorkflowEventBridge)
-  "procedure_step_started",
-  "procedure_step_completed",
-  // LLM usage metrics
-  "llm_usage",
-  // Recovery marker (transparent — same attempt, continued stream)
-  "recovery_resumed",
-  // Delegation lifecycle (emitted by coordinator for agent/workflow delegation)
-  "delegation_started",
-  "delegation_completed"
-] as const;
-
-export type AnalyticsSseType = (typeof ANALYTICS_SSE_TYPES)[number];
-
 /** Derive a typed SSE event from a UiBlock by mapping event_type → type and payload → data. */
 type BlockToSseEvent<B> = B extends { event_type: infer T; payload: infer D }
   ? { id: string; type: T; data: D }
@@ -89,7 +44,7 @@ export type SseEvent = BlockToSseEvent<UiBlock>;
 
 // ── Stream segment ────────────────────────────────────────────────────────────
 
-export interface StreamSegment {
+interface StreamSegment {
   id: string;
   kind: "thinking" | "output" | "tool";
   text: string;
@@ -100,7 +55,7 @@ export interface StreamSegment {
   toolDurationMs?: number;
 }
 
-export function buildStreamSegments(events: SseEvent[]): StreamSegment[] {
+function buildStreamSegments(events: SseEvent[]): StreamSegment[] {
   const segments: StreamSegment[] = [];
   let counter = 0;
   const nextId = () => `seg-${counter++}`;
@@ -207,7 +162,7 @@ export function extractDisplayBlockForSeq(
 
 // ── Run state machine ─────────────────────────────────────────────────────────
 
-export type AnalyticsRunState =
+type AnalyticsRunState =
   | { tag: "idle" }
   | { tag: "running"; runId: string; events: SseEvent[] }
   | {

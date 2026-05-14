@@ -13,7 +13,7 @@ const AVATAR_COLORS = [
   "#DB2777"
 ] as const;
 
-export function avatarColor(seed: string): string {
+function avatarColor(seed: string): string {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
     hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
@@ -21,7 +21,7 @@ export function avatarColor(seed: string): string {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
-export function getAvatarInitials(nameOrEmail: string): string {
+function getAvatarInitials(nameOrEmail: string): string {
   return nameOrEmail
     .split(/[\s@.]+/)
     .filter(Boolean)

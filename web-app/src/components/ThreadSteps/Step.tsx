@@ -18,7 +18,7 @@ export default function Step({ title, isCompleted }: Props) {
   );
 }
 
-export const SuccessIndicator = () => {
+const SuccessIndicator = () => {
   return (
     <div className='relative h-[20px] w-[20px]'>
       <Player

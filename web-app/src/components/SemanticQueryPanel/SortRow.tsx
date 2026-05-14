@@ -15,7 +15,7 @@ export interface SortField {
   fullName: string;
 }
 
-export interface SortOrder {
+interface SortOrder {
   field: string;
   direction: "asc" | "desc";
 }

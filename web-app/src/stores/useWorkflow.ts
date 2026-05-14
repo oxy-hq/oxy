@@ -37,26 +37,26 @@ export enum NoneTaskNodeType {
 
 export type NodeType = TaskType | NoneTaskNodeType;
 
-export type BaseTaskConfig = {
+type BaseTaskConfig = {
   name: string;
   type: TaskType;
   export?: ExportConfig;
 };
 
-export type ExportFormat = "csv" | "json" | "sql" | "docx";
+type ExportFormat = "csv" | "json" | "sql" | "docx";
 
-export type ExportConfig = {
+type ExportConfig = {
   format: ExportFormat;
   path: string;
 };
 
 // Specific task configurations
-export type FormatterTaskConfig = BaseTaskConfig & {
+type FormatterTaskConfig = BaseTaskConfig & {
   type: TaskType.FORMATTER;
   template: string;
 };
 
-export type AgentTaskConfig = BaseTaskConfig & {
+type AgentTaskConfig = BaseTaskConfig & {
   type: TaskType.AGENT;
   prompt: string;
   agent_ref: string;
@@ -74,12 +74,12 @@ export type LoopSequentialTaskConfig = BaseTaskConfig & {
   values: string | string[];
 };
 
-export type ConditionConfigWithId = {
+type ConditionConfigWithId = {
   if: string;
   tasks: TaskConfigWithId[];
 };
 
-export type ConditionConfig = {
+type ConditionConfig = {
   if: string;
   tasks: TaskConfig[];
 };
@@ -90,13 +90,13 @@ export type ConditionalTaskConfigWithId = BaseTaskConfig & {
   else?: TaskConfigWithId[];
 };
 
-export type ConditionalTaskConfig = BaseTaskConfig & {
+type ConditionalTaskConfig = BaseTaskConfig & {
   type: TaskType.CONDITIONAL;
   conditions: ConditionConfig[];
   else?: TaskConfig[];
 };
 
-export type LoopSequentialTaskConfigWithId = BaseTaskConfig & {
+type LoopSequentialTaskConfigWithId = BaseTaskConfig & {
   type: TaskType.LOOP_SEQUENTIAL;
   tasks: TaskConfigWithId[];
   values: string | string[];
@@ -108,14 +108,14 @@ export type WorkflowTaskConfigWithId = BaseTaskConfig & {
   tasks?: TaskConfigWithId[];
 };
 
-export type ExecuteSqlTaskConfig = BaseTaskConfig & {
+type ExecuteSqlTaskConfig = BaseTaskConfig & {
   type: TaskType.EXECUTE_SQL;
   sql_query?: string;
   sql_file?: string;
   database: string;
 };
 
-export type SemanticQueryTaskConfig = BaseTaskConfig & {
+type SemanticQueryTaskConfig = BaseTaskConfig & {
   type: TaskType.SEMANTIC_QUERY;
   database: string;
   topic: string;
@@ -134,7 +134,7 @@ export type SemanticQueryTaskConfig = BaseTaskConfig & {
   offset?: number;
 };
 
-export type OmniQueryTaskConfig = BaseTaskConfig & {
+type OmniQueryTaskConfig = BaseTaskConfig & {
   type: TaskType.OMNI_QUERY;
   integration: string;
   topic: string;
@@ -143,7 +143,7 @@ export type OmniQueryTaskConfig = BaseTaskConfig & {
   sorts?: Record<string, string>;
 };
 
-export type LookerQueryTaskConfig = BaseTaskConfig & {
+type LookerQueryTaskConfig = BaseTaskConfig & {
   type: TaskType.LOOKER_QUERY;
   integration: string;
   model: string;
@@ -161,7 +161,7 @@ export type LookerQueryTaskConfig = BaseTaskConfig & {
   limit?: number;
 };
 
-export type VisualizeTaskConfig = BaseTaskConfig & {
+type VisualizeTaskConfig = BaseTaskConfig & {
   type: TaskType.VISUALIZE;
   prompt?: string;
 };
@@ -207,7 +207,7 @@ export type WorkflowConfig = {
 
 export type TaskNode = Node<NodeData, NodeType>;
 
-export type WorkflowState = {
+type WorkflowState = {
   baseNodes: TaskNode[];
   nodes: TaskNode[];
   edges: Edge[];

@@ -107,11 +107,6 @@ export interface QueueHealthResponse {
   dead_tasks: QueueTaskEntry[];
 }
 
-export interface LiveStatusEntry {
-  run_id: string;
-  status: string;
-}
-
 export class CoordinatorService {
   static async getActiveRuns(projectId: string): Promise<ActiveRunsResponse> {
     const response = await apiClient.get(`/${projectId}/analytics/coordinator/active-runs`);

@@ -1,12 +1,12 @@
-export type ChartType = "line" | "bar" | "pie";
+type ChartType = "line" | "bar" | "pie";
 
-export interface AxisConfig {
+interface AxisConfig {
   type: string;
   name?: string;
   data?: (string | number | Date)[];
 }
 
-export interface SeriesConfig {
+interface SeriesConfig {
   name?: string;
   type: ChartType;
   data?: (number | { name: string; value: number })[];

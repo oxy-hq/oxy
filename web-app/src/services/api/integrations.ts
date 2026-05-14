@@ -1,6 +1,6 @@
 import { apiClient } from "./axios";
 
-export interface LookerExplore {
+interface LookerExplore {
   model: string;
   name: string;
   description: string | null;

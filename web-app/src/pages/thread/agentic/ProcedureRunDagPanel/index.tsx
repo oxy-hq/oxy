@@ -97,7 +97,7 @@ const NODE_BORDER: Record<ProcedureStepStatus, string> = {
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
-export interface ProcedureRunDagPanelProps {
+interface ProcedureRunDagPanelProps {
   /** Procedure name shown in the panel header (file stem). */
   procedureName: string;
   /** Ordered list of top-level task descriptors from the `procedure_started` event. */

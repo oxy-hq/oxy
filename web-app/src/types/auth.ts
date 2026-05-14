@@ -61,7 +61,7 @@ export interface MessageResponse {
   message: string;
 }
 
-export type ServeMode = "local" | "cloud";
+type ServeMode = "local" | "cloud";
 
 export interface AuthConfigResponse {
   auth_enabled: boolean;

@@ -1,7 +1,6 @@
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import type { Page } from "@playwright/test";
 
 const database_path = "~/.local/share/oxy";
 // (Global setup handles API seeding; no base URL or project ID needed here)
@@ -14,22 +13,6 @@ const database_path = "~/.local/share/oxy";
 export function resetProject() {
   // eslint-disable-next-line sonarjs/os-command
   execSync(`rm -rf ${database_path}`);
-}
-
-export function startServer() {
-  console.log("Starting server...");
-  // eslint-disable-next-line sonarjs/no-os-command-from-path
-  const serverProcess = spawn("cargo", ["run", "serve"], {
-    stdio: "inherit",
-    shell: true
-  });
-
-  serverProcess.on("error", (err) => {
-    console.error(`Failed to start server: ${err.message}`);
-  });
-
-  console.log("Server started successfully.");
-  return serverProcess;
 }
 
 // Reset the dedicated test file to its original content
@@ -136,22 +119,3 @@ export async function cleanupTestFiles() {
 // (Removed seedThreadsDataViaAPI to centralize seeding in global setup only)
 
 // Create test threads via UI - slower but more realistic
-export async function seedThreadsData(page: Page, count: number = 10) {
-  for (let i = 0; i < count; i++) {
-    await page.goto("/");
-
-    // Fill and submit in one flow without waiting for animations
-    const questionInput = page.getByRole("textbox", { name: "Ask anything" });
-    await questionInput.fill(`Test thread ${i + 1}`);
-
-    // Click agent selector and select duckdb
-    await page.getByTestId("agent-selector-button").click();
-    await page.getByRole("menuitemcheckbox", { name: "duckdb" }).click();
-
-    // Submit and immediately move to next (don't wait for response)
-    await page.getByTestId("chat-panel-submit-button").click();
-
-    // Just wait for URL change, don't wait for loading/animations
-    await page.waitForURL(/\/threads\/.+/, { timeout: 5000 });
-  }
-}

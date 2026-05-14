@@ -20,13 +20,13 @@ export interface CreateAnalyticsRunResponse {
 // ── UiBlock discriminated union ───────────────────────────────────────────────
 // Mirrors the Rust UiBlock<AnalyticsEvent> enum from agentic-core/src/ui_stream.rs
 
-export type StepStartBlock = {
+type StepStartBlock = {
   seq: number;
   event_type: "step_start";
   payload: { label: string; summary?: string | null; sub_spec_index?: number | null };
 };
 
-export type StepEndBlock = {
+type StepEndBlock = {
   seq: number;
   event_type: "step_end";
   payload: {
@@ -38,37 +38,37 @@ export type StepEndBlock = {
   };
 };
 
-export type StepSummaryUpdateBlock = {
+type StepSummaryUpdateBlock = {
   seq: number;
   event_type: "step_summary_update";
   payload: { summary: string };
 };
 
-export type TextDeltaBlock = {
+type TextDeltaBlock = {
   seq: number;
   event_type: "text_delta";
   payload: { token: string; sub_spec_index?: number | null };
 };
 
-export type ThinkingStartBlock = {
+type ThinkingStartBlock = {
   seq: number;
   event_type: "thinking_start";
   payload: { sub_spec_index?: number | null };
 };
 
-export type ThinkingTokenBlock = {
+type ThinkingTokenBlock = {
   seq: number;
   event_type: "thinking_token";
   payload: { token: string; sub_spec_index?: number | null };
 };
 
-export type ThinkingEndBlock = {
+type ThinkingEndBlock = {
   seq: number;
   event_type: "thinking_end";
   payload: { sub_spec_index?: number | null };
 };
 
-export type ToolCallBlock = {
+type ToolCallBlock = {
   seq: number;
   event_type: "tool_call";
   payload: {
@@ -79,7 +79,7 @@ export type ToolCallBlock = {
   };
 };
 
-export type ToolResultBlock = {
+type ToolResultBlock = {
   seq: number;
   event_type: "tool_result";
   payload: { name: string; output: unknown; duration_ms: number; sub_spec_index?: number | null };
@@ -90,49 +90,49 @@ export type HumanInputQuestion = {
   suggestions: string[];
 };
 
-export type AwaitingInputBlock = {
+type AwaitingInputBlock = {
   seq: number;
   event_type: "awaiting_input";
   payload: { questions: HumanInputQuestion[] };
 };
 
-export type InputResolvedBlock = {
+type InputResolvedBlock = {
   seq: number;
   event_type: "input_resolved";
   payload: { answer?: string; trace_id?: string };
 };
 
-export type DoneBlock = {
+type DoneBlock = {
   seq: number;
   event_type: "done";
   payload: { duration_ms?: number };
 };
 
-export type ErrorBlock = {
+type ErrorBlock = {
   seq: number;
   event_type: "error";
   payload: { message: string };
 };
 
-export type FanOutStartBlock = {
+type FanOutStartBlock = {
   seq: number;
   event_type: "fan_out_start";
   payload: { total: number };
 };
 
-export type SubSpecStartBlock = {
+type SubSpecStartBlock = {
   seq: number;
   event_type: "sub_spec_start";
   payload: { index: number; total: number; label: string };
 };
 
-export type SubSpecEndBlock = {
+type SubSpecEndBlock = {
   seq: number;
   event_type: "sub_spec_end";
   payload: { index: number; success: boolean };
 };
 
-export type FanOutEndBlock = {
+type FanOutEndBlock = {
   seq: number;
   event_type: "fan_out_end";
   payload: { success: boolean };
@@ -140,13 +140,13 @@ export type FanOutEndBlock = {
 
 // ── Domain events ─────────────────────────────────────────────────────────────
 
-export type SchemaResolvedBlock = {
+type SchemaResolvedBlock = {
   seq: number;
   event_type: "schema_resolved";
   payload: { tables: string[]; duration_ms: number };
 };
 
-export type TriageCompletedBlock = {
+type TriageCompletedBlock = {
   seq: number;
   event_type: "triage_completed";
   payload: {
@@ -158,7 +158,7 @@ export type TriageCompletedBlock = {
   };
 };
 
-export type IntentClarifiedBlock = {
+type IntentClarifiedBlock = {
   seq: number;
   event_type: "intent_clarified";
   payload: {
@@ -170,7 +170,7 @@ export type IntentClarifiedBlock = {
   };
 };
 
-export type SpecResolvedBlock = {
+type SpecResolvedBlock = {
   seq: number;
   event_type: "spec_resolved";
   payload: {
@@ -183,7 +183,7 @@ export type SpecResolvedBlock = {
   };
 };
 
-export type QueryGeneratedBlock = {
+type QueryGeneratedBlock = {
   seq: number;
   event_type: "query_generated";
   payload: { sql: string; sub_spec_index?: number | null };
@@ -203,7 +203,7 @@ export type SemanticQueryPayload = {
   assumptions?: string[];
 };
 
-export type QueryExecutedBlock = {
+type QueryExecutedBlock = {
   seq: number;
   event_type: "query_executed";
   payload: {
@@ -220,7 +220,7 @@ export type QueryExecutedBlock = {
   };
 };
 
-export type AnalyticsValidationFailedBlock = {
+type AnalyticsValidationFailedBlock = {
   seq: number;
   event_type: "analytics_validation_failed";
   payload: { state: string; reason: string; model_response: string };
@@ -238,7 +238,7 @@ export type ChartConfig = {
   y_axis_label?: string;
 };
 
-export type SemanticShortcutAttemptedBlock = {
+type SemanticShortcutAttemptedBlock = {
   seq: number;
   event_type: "semantic_shortcut_attempted";
   payload: {
@@ -249,13 +249,13 @@ export type SemanticShortcutAttemptedBlock = {
   };
 };
 
-export type SemanticShortcutResolvedBlock = {
+type SemanticShortcutResolvedBlock = {
   seq: number;
   event_type: "semantic_shortcut_resolved";
   payload: { sql: string };
 };
 
-export type ChartRenderedBlock = {
+type ChartRenderedBlock = {
   seq: number;
   event_type: "chart_rendered";
   payload: {
@@ -265,7 +265,7 @@ export type ChartRenderedBlock = {
   };
 };
 
-export type ProcedureStartedBlock = {
+type ProcedureStartedBlock = {
   seq: number;
   event_type: "procedure_started";
   payload: {
@@ -276,7 +276,7 @@ export type ProcedureStartedBlock = {
   };
 };
 
-export type ProcedureCompletedBlock = {
+type ProcedureCompletedBlock = {
   seq: number;
   event_type: "procedure_completed";
   payload: {
@@ -289,7 +289,7 @@ export type ProcedureCompletedBlock = {
   };
 };
 
-export type ProcedureStepStartedBlock = {
+type ProcedureStepStartedBlock = {
   seq: number;
   event_type: "procedure_step_started";
   payload: {
@@ -298,7 +298,7 @@ export type ProcedureStepStartedBlock = {
   };
 };
 
-export type ProcedureStepCompletedBlock = {
+type ProcedureStepCompletedBlock = {
   seq: number;
   event_type: "procedure_step_completed";
   payload: {
@@ -311,7 +311,7 @@ export type ProcedureStepCompletedBlock = {
 
 // ── Builder copilot events ────────────────────────────────────────────────────
 
-export type ToolUsedBlock = {
+type ToolUsedBlock = {
   seq: number;
   event_type: "tool_used";
   payload: { tool_name: string; summary: string };
@@ -343,19 +343,19 @@ export type FileChangedBlock = {
 
 // ── App-builder domain events ────────────────────────────────────────────────
 
-export type TaskPlanReadyBlock = {
+type TaskPlanReadyBlock = {
   seq: number;
   event_type: "task_plan_ready";
   payload: { task_count: number; control_count: number; spec?: unknown };
 };
 
-export type TaskSqlResolvedBlock = {
+type TaskSqlResolvedBlock = {
   seq: number;
   event_type: "task_sql_resolved";
   payload: { task_name: string; sql: string };
 };
 
-export type TaskExecutedBlock = {
+type TaskExecutedBlock = {
   seq: number;
   event_type: "task_executed";
   payload: {
@@ -367,13 +367,13 @@ export type TaskExecutedBlock = {
   };
 };
 
-export type AppYamlReadyBlock = {
+type AppYamlReadyBlock = {
   seq: number;
   event_type: "app_yaml_ready";
   payload: { char_count: number };
 };
 
-export type LlmUsageBlock = {
+type LlmUsageBlock = {
   seq: number;
   event_type: "llm_usage";
   payload: {
@@ -385,13 +385,13 @@ export type LlmUsageBlock = {
   };
 };
 
-export type RecoveryResumedBlock = {
+type RecoveryResumedBlock = {
   seq: number;
   event_type: "recovery_resumed";
   payload: Record<string, unknown>;
 };
 
-export type DelegationStartedBlock = {
+type DelegationStartedBlock = {
   seq: number;
   event_type: "delegation_started";
   payload: {
@@ -401,7 +401,7 @@ export type DelegationStartedBlock = {
   };
 };
 
-export type DelegationCompletedBlock = {
+type DelegationCompletedBlock = {
   seq: number;
   event_type: "delegation_completed";
   payload: {

@@ -9,13 +9,6 @@ import {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function _makeArrowResult(columnName: string, values: unknown[]) {
-  return {
-    getChildAt: () => ({ toArray: () => values }),
-    schema: { fields: [{ name: columnName }] }
-  };
-}
-
 function makeConnection(queryResult: object = {}, prepareResult: object = {}) {
   const stmtQuery = vi.fn().mockResolvedValue(prepareResult);
   const prepare = vi.fn().mockResolvedValue({ query: stmtQuery });

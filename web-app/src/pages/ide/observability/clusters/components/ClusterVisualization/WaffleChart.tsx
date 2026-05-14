@@ -14,7 +14,7 @@ interface ClusterGroup {
   points: ClusterMapPoint[];
 }
 
-export function WaffleChart({ points, clusters, onPointClick, selectedPoint }: WaffleChartProps) {
+function WaffleChart({ points, clusters, onPointClick, selectedPoint }: WaffleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const clusterGroups = useMemo(() => {

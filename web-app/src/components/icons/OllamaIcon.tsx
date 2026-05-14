@@ -4,7 +4,7 @@ interface OllamaIconProps {
   height?: number;
 }
 
-export const OllamaIcon = ({ className, width = 32, height = 32 }: OllamaIconProps) => {
+const OllamaIcon = ({ className, width = 32, height = 32 }: OllamaIconProps) => {
   return (
     <svg
       width={width}

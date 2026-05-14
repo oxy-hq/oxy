@@ -9,15 +9,6 @@ export function timeAgo(dateString: string): string {
   return dayjs(dateString).fromNow();
 }
 
-/**
- * Checks if a given string is a valid date.
- * @param dateStr - The string to be checked.
- * @returns boolean - True if the string is a valid date, false otherwise.
- */
-export function isDate(date: string) {
-  return new Date(date).toString() !== "Invalid Date" && !Number.isNaN(Date.parse(date));
-}
-
 export function formatDate(date: string) {
   return new Date(date).toLocaleDateString("en-US", {
     year: "numeric",
@@ -26,17 +17,6 @@ export function formatDate(date: string) {
     hour: "2-digit",
     minute: "2-digit"
   });
-}
-
-export function formatDateToHumanReadable(dateString: string): string {
-  const currentDate = dayjs();
-  const parsedDate = dayjs(dateString);
-
-  // Calculate the difference in milliseconds between the current date and the provided date
-  const diffInMilliseconds = currentDate.diff(parsedDate);
-
-  // Format the date difference to a human-readable string
-  return dayjs.duration(diffInMilliseconds).humanize();
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -49,24 +29,4 @@ export function formatRelativeDate(dateStr: string | null | undefined): string |
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays} days ago`;
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-export function formatStartingDate(date?: Date) {
-  if (!date) {
-    return "";
-  }
-
-  const today = dayjs().format("DD/MM/YYYY");
-  if (today === dayjs(date).format("DD/MM/YYYY")) {
-    return "Today";
-  }
-
-  const currentYear = dayjs().year();
-  const yearOfDate = dayjs(date).year();
-
-  if (currentYear !== yearOfDate) {
-    return dayjs(date).format("MMMM D, YYYY");
-  }
-
-  return dayjs(date).format("dddd, MMMM D");
 }

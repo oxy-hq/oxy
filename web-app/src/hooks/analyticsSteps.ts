@@ -112,7 +112,7 @@ export type AnalyticsStep = {
 };
 
 /** One card within a fan-out group, containing its own pipeline steps. */
-export type FanOutCard = {
+type FanOutCard = {
   id: string;
   index: number;
   label: string;

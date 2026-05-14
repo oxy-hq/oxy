@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { LogItem } from "@/services/types";
 
-export interface WorkflowThread {
+interface WorkflowThread {
   logs: LogItem[];
   isLoading: boolean;
 }

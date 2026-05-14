@@ -1,29 +1,22 @@
 import type { WorkflowConfig } from "@/stores/useWorkflow";
 
-export type WorkflowContent = {
-  type: "workflow";
-  workflow_id: string;
-  run_id: string;
-  workflow_config: WorkflowConfig;
-};
-
-export type TaskSubWorkflowMetadata = {
+type TaskSubWorkflowMetadata = {
   type: "sub_workflow";
   workflow_id: string;
   run_id: number;
 };
 
-export type TaskLoopMetadata = {
+type TaskLoopMetadata = {
   type: "loop";
   values: unknown[];
 };
 
-export type TaskLoopItemMetadata = {
+type TaskLoopItemMetadata = {
   type: "loop_item";
   index: number;
 };
 
-export type TaskMetadata = TaskSubWorkflowMetadata | TaskLoopMetadata | TaskLoopItemMetadata;
+type TaskMetadata = TaskSubWorkflowMetadata | TaskLoopMetadata | TaskLoopItemMetadata;
 
 export type TaskContent = {
   type: "task";
@@ -43,14 +36,14 @@ export type TextContent = {
   content: string;
 };
 
-export type SemanticQueryContent = {
+type SemanticQueryContent = {
   type: "semantic_query";
   semantic_query: string;
   sql_query?: string;
   results?: string[][];
 };
 
-export type LookerQueryContent = {
+type LookerQueryContent = {
   type: "looker_query";
   integration: string;
   model: string;
@@ -66,7 +59,7 @@ export type LookerQueryContent = {
   is_result_truncated: boolean;
 };
 
-export type SqlContent = {
+type SqlContent = {
   type: "sql";
   database: string;
   sql_query: string;
@@ -74,49 +67,39 @@ export type SqlContent = {
   is_result_truncated: boolean;
 };
 
-export type VizContent = {
+type VizContent = {
   type: "viz";
   name: string;
   title: string;
   config: unknown;
 };
 
-export type GroupContent = {
+type GroupContent = {
   type: "group";
   group_id: string;
 };
 
-export type DataAppContent = {
+type DataAppContent = {
   type: "data_app";
   file_path: string;
 };
 
-export type ArtifactWorkflowMetadata = {
+type ArtifactWorkflowMetadata = {
   type: "workflow";
   workflow_id: string;
 };
 
-export type ArtifactAgentMetadata = {
+type ArtifactAgentMetadata = {
   type: "agent";
   agent_id: string;
 };
 
-export type ArtifactSqlMetadata = {
+type ArtifactSqlMetadata = {
   type: "execute_sql";
   database: string;
 };
 
-export type ArtifactMetadata =
-  | ArtifactAgentMetadata
-  | ArtifactWorkflowMetadata
-  | ArtifactSqlMetadata;
-
-export type ArtifactContent = {
-  type: "artifact";
-  artifact_name: string;
-  is_verified: boolean;
-  artifact_metadata: ArtifactMetadata;
-};
+type ArtifactMetadata = ArtifactAgentMetadata | ArtifactWorkflowMetadata | ArtifactSqlMetadata;
 
 export type BlockContent =
   | TaskContent
@@ -165,7 +148,7 @@ export type Group = {
   is_streaming?: boolean;
 } & (GroupWorkflowType | GroupArtifactType | GroupAgenticType);
 
-export type WorkflowStartedEvent = {
+type WorkflowStartedEvent = {
   type: "workflow_started";
   workflow_id: string;
   run_id: string;
@@ -173,50 +156,50 @@ export type WorkflowStartedEvent = {
   variables?: Record<string, unknown>;
 };
 
-export type WorkflowFinishedEvent = {
+type WorkflowFinishedEvent = {
   type: "workflow_finished";
   workflow_id: string;
   run_id: string;
   error?: string;
 };
 
-export type WorkflowEvent = WorkflowStartedEvent | WorkflowFinishedEvent;
+type WorkflowEvent = WorkflowStartedEvent | WorkflowFinishedEvent;
 
-export type TaskStartedEvent = {
+type TaskStartedEvent = {
   type: "task_started";
   task_id: string;
   task_name: string;
   task_metadata?: TaskMetadata;
 };
-export type TaskFinishedEvent = {
+type TaskFinishedEvent = {
   type: "task_finished";
   task_id: string;
   error?: string;
 };
-export type TaskMetadataEvent = {
+type TaskMetadataEvent = {
   type: "task_metadata";
   task_id: string;
   metadata: TaskMetadata;
 };
 
-export type TaskEvent = TaskStartedEvent | TaskFinishedEvent | TaskMetadataEvent;
+type TaskEvent = TaskStartedEvent | TaskFinishedEvent | TaskMetadataEvent;
 
-export type AgenticEvent = AgenticStartedEvent | AgenticFinishedEvent;
+type AgenticEvent = AgenticStartedEvent | AgenticFinishedEvent;
 
-export type AgenticStartedEvent = {
+type AgenticStartedEvent = {
   type: "agentic_started";
   agent_id: string;
   run_id: string;
 };
 
-export type AgenticFinishedEvent = {
+type AgenticFinishedEvent = {
   type: "agentic_finished";
   agent_id: string;
   run_id: string;
   error?: string;
 };
 
-export type StepEvent = StepStartedEvent | StepFinishedEvent;
+type StepEvent = StepStartedEvent | StepFinishedEvent;
 
 export type StepType =
   | "idle"
@@ -232,26 +215,26 @@ export type StepType =
   | "build_app"
   | "save_automation";
 
-export type StepStartedEvent = {
+type StepStartedEvent = {
   type: "step_started";
   id: string;
   step_type: StepType;
   objective?: string;
 };
 
-export type StepFinishedEvent = {
+type StepFinishedEvent = {
   type: "step_finished";
   step_id: string;
   error?: string;
 };
 
-export type ContentEvent = {
+type ContentEvent = {
   type: "content_added" | "content_done";
   content_id: string;
   item: TextContent | SqlContent | SemanticQueryContent | LookerQueryContent;
 };
 
-export type ArtifactStartedEvent = {
+type ArtifactStartedEvent = {
   type: "artifact_started";
   artifact_id: string;
   artifact_name: string;
@@ -259,13 +242,13 @@ export type ArtifactStartedEvent = {
   artifact_metadata: ArtifactMetadata; // e.g., "execute_sql", "agent", "workflow"
 };
 
-export type ArtifactFinishedEvent = {
+type ArtifactFinishedEvent = {
   type: "artifact_finished";
   artifact_id: string;
   error?: string;
 };
 
-export type ArtifactEvent = ArtifactStartedEvent | ArtifactFinishedEvent;
+type ArtifactEvent = ArtifactStartedEvent | ArtifactFinishedEvent;
 
 export type BlockEvent =
   | WorkflowEvent

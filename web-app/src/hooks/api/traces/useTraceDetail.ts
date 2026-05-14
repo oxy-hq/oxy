@@ -9,7 +9,7 @@ import {
 } from "@/services/api/traces";
 import queryKeys from "../queryKey";
 
-export interface ProcessedTrace {
+interface ProcessedTrace {
   traceId: string;
   spans: TimelineSpan[];
   totalDurationMs: number;

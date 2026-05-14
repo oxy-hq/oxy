@@ -9,7 +9,7 @@ export const HANDLE_STYLE = { opacity: 0, pointerEvents: "none" as const };
 
 // ── Edge helpers ──────────────────────────────────────────────────────────────
 
-export function statusEdgeColor(status?: FieldDiffStatus | "dashed"): string {
+function statusEdgeColor(status?: FieldDiffStatus | "dashed"): string {
   if (status === "modified") return "rgb(245 158 11 / 0.7)";
   if (status === "removed") return "rgb(239 68 68 / 0.7)";
   if (status === "added") return "rgb(16 185 129 / 0.7)";
@@ -47,7 +47,7 @@ export function makeEdge(
 
 // ── ELK edge routing ──────────────────────────────────────────────────────────
 
-export interface ElkPoint {
+interface ElkPoint {
   x: number;
   y: number;
 }

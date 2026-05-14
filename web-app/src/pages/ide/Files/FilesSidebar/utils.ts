@@ -15,7 +15,7 @@ import { detectFileType, FileType } from "@/utils/fileTypes";
 import { NAME_COLLATOR, OBJECT_FILE_TYPES } from "./constants";
 
 // Helper to check if a file is an object type
-export const isObjectFile = (file: FileTreeModel): boolean => {
+const isObjectFile = (file: FileTreeModel): boolean => {
   if (file.is_dir) return false;
   const fileType = detectFileType(file.path);
   return OBJECT_FILE_TYPES.includes(fileType);

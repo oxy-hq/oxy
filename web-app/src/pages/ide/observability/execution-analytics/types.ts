@@ -16,7 +16,7 @@ export type ExecutionType =
   | "workflow"
   | "agent_tool";
 
-export type ExecutionCategory = "verified" | "generated";
+type ExecutionCategory = "verified" | "generated";
 
 export interface ExecutionTypeInfo {
   type: ExecutionType;
@@ -127,7 +127,7 @@ export interface AgentExecutionStats {
   successRate: number;
 }
 
-export type SourceType = "agent" | "workflow";
+type SourceType = "agent" | "workflow";
 
 export interface ExecutionDetail {
   traceId: string;

@@ -3,7 +3,7 @@ import type { AppItem } from "@/types/app";
 /** Humanize a filename-derived app name for display (e.g. `raw_orders` →
  *  `Raw Orders`, `LINEITEM` → `Lineitem`). Used as a fallback when the app
  *  does not declare a `title:` field. */
-export function humanizeAppName(name: string): string {
+function humanizeAppName(name: string): string {
   return name
     .split(/[_\s]+/)
     .filter(Boolean)

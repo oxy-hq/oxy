@@ -81,7 +81,7 @@ export async function captureFileTree(page: Page): Promise<void> {
  * - Recreates deleted files/folders
  * - Deletes newly created files/folders
  */
-export async function restoreFileTree(page: Page): Promise<void> {
+async function restoreFileTree(page: Page): Promise<void> {
   try {
     console.log("🔄 Restoring file tree from snapshot...");
 
@@ -418,12 +418,8 @@ async function restoreDeletedFiles(page: Page): Promise<void> {
 /**
  * Clear all snapshots (use in afterAll)
  */
-export async function clearAllSnapshots(): Promise<void> {
-  fileSnapshots.clear();
-  console.log("🧹 All snapshots cleared");
-}
 
-export async function discardUnsavedChanges(page: Page): Promise<void> {
+async function discardUnsavedChanges(page: Page): Promise<void> {
   try {
     // Click discard button if visible (for unsaved changes)
     const discardButton = page.getByRole("button", { name: /discard|revert/i });
@@ -450,31 +446,7 @@ export async function discardUnsavedChanges(page: Page): Promise<void> {
   }
 }
 
-export async function reloadFileFromDisk(page: Page): Promise<void> {
-  try {
-    // Click reload/refresh button to get original content from disk
-    const reloadButton = page.getByRole("button", { name: /reload|refresh/i });
-    if (await reloadButton.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await reloadButton.click();
-      await page.waitForTimeout(1000);
-      return;
-    }
-
-    // Alternative: Close and reopen file (discards both saved and unsaved changes)
-    const closeButton = page.locator('[aria-label*="close"], button[title*="Close"]').first();
-    if (await closeButton.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await closeButton.click();
-      await page.waitForTimeout(500);
-
-      // Handle unsaved changes dialog
-      await discardUnsavedChanges(page);
-    }
-  } catch {
-    // Silently fail
-  }
-}
-
-export async function closeAllFiles(page: Page): Promise<void> {
+async function closeAllFiles(page: Page): Promise<void> {
   try {
     // Close all tabs
     const closeTabs = page.locator('[aria-label*="close"], button[title*="Close"]');
@@ -489,22 +461,6 @@ export async function closeAllFiles(page: Page): Promise<void> {
         await discardUnsavedChanges(page);
       }
     }
-  } catch {
-    // Silently fail
-  }
-}
-
-export async function revertFileChanges(page: Page): Promise<void> {
-  try {
-    // Navigate to Files tab
-    const filesTab = page.getByRole("tab", { name: "Files" });
-    if (await filesTab.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await filesTab.click();
-      await page.waitForTimeout(300);
-    }
-
-    // Discard any unsaved changes
-    await discardUnsavedChanges(page);
   } catch {
     // Silently fail
   }

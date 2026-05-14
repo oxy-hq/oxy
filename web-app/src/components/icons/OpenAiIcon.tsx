@@ -4,7 +4,7 @@ interface OpenAiIconProps {
   height?: number;
 }
 
-export const OpenAiIcon = ({ className, width = 32, height = 32 }: OpenAiIconProps) => {
+const OpenAiIcon = ({ className, width = 32, height = 32 }: OpenAiIconProps) => {
   return (
     <svg
       width={width}

@@ -28,12 +28,12 @@ export interface NodeSummary {
   schema: string | null;
 }
 
-export interface CompileErrorEntry {
+interface CompileErrorEntry {
   node_id: string;
   message: string;
 }
 
-export interface CompiledNodeInfo {
+interface CompiledNodeInfo {
   unique_id: string;
   name: string;
   compiled_sql: string;
@@ -60,7 +60,7 @@ export interface RunOutput {
   duration_ms: number;
 }
 
-export interface TestResultEntry {
+interface TestResultEntry {
   test_name: string;
   model_name: string;
   column_name: string;
@@ -77,24 +77,24 @@ export interface TestOutput {
   results: TestResultEntry[];
 }
 
-export interface DiagnosticEntry {
+interface DiagnosticEntry {
   kind: string;
   message: string;
 }
 
-export interface ContractViolationEntry {
+interface ContractViolationEntry {
   model: string;
   kind: string;
   message: string;
 }
 
-export interface ColumnInfo {
+interface ColumnInfo {
   name: string;
   data_type: string;
   nullable: boolean;
 }
 
-export interface SchemaEntry {
+interface SchemaEntry {
   name: string;
   columns: ColumnInfo[];
 }
@@ -125,7 +125,7 @@ export interface LineageOutput {
   edges: LineageEdge[];
 }
 
-export interface ColumnLineageEntry {
+interface ColumnLineageEntry {
   source_node: string;
   source_column: string;
   target_node: string;

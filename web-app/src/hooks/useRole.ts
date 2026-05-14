@@ -39,5 +39,3 @@ function roleState(org: OrgRole | null, workspace: WorkspaceRole | undefined) {
     }
   };
 }
-
-export type UseRoleResult = ReturnType<typeof useRole>;

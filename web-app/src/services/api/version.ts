@@ -1,6 +1,6 @@
 import { apiClient } from "./axios";
 
-export interface BuildInfo {
+interface BuildInfo {
   git_commit: string;
   git_commit_short: string;
   build_timestamp: string;

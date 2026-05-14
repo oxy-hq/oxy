@@ -18,11 +18,7 @@ import EditorHeader from "../EditorHeader";
 const MIN_PANE_SIZE_PERCENT = 10;
 const NARROW_VIEWPORT_BREAKPOINT = 800;
 
-export interface EditorPageWrapperRef {
-  setContent: (newContent: string) => void;
-}
-
-export interface EditorPageWrapperProps {
+interface EditorPageWrapperProps {
   pathb64: string;
   headerActions?: JSX.Element;
   headerPrefixAction?: JSX.Element;

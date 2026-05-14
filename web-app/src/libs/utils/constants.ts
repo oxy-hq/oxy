@@ -16,4 +16,3 @@ export const LOCAL_WORKSPACE_ID = "00000000-0000-0000-0000-000000000000";
  * frontend. The backend will reject it with 403 if no matching org exists,
  * which is the correct user-facing signal.
  */
-export const LOCAL_ORG_ID = "00000000-0000-0000-0000-000000000000";

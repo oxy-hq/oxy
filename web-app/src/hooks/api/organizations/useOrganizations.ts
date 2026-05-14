@@ -9,14 +9,6 @@ export const useOrgs = () => {
   });
 };
 
-export const useOrg = (orgId: string, enabled = true) => {
-  return useQuery({
-    queryKey: queryKeys.org.item(orgId),
-    queryFn: () => OrganizationService.getOrg(orgId),
-    enabled: enabled && !!orgId
-  });
-};
-
 export const useCreateOrg = () => {
   const queryClient = useQueryClient();
   return useMutation({

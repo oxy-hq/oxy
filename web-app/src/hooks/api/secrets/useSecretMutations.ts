@@ -3,8 +3,6 @@ import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { SecretService } from "@/services/secretService";
 import type {
-  BulkCreateSecretsRequest,
-  BulkCreateSecretsResponse,
   CreateSecretRequest,
   CreateSecretResponse,
   Secret,
@@ -29,32 +27,6 @@ export const useCreateSecret = () => {
     onError: (error) => {
       console.error("Failed to create secret:", error);
       toast.error("Failed to create secret");
-    }
-  });
-};
-
-export const useBulkCreateSecrets = (projectId: string) => {
-  const queryClient = useQueryClient();
-
-  return useMutation<BulkCreateSecretsResponse, Error, BulkCreateSecretsRequest>({
-    mutationFn: (request) => SecretService.bulkCreateSecrets(projectId, request),
-    onSuccess: (data) => {
-      // Invalidate and refetch secrets list
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.secret.list(projectId)
-      });
-
-      if (data.failed_secrets.length === 0) {
-        toast.success(`All ${data.created_secrets.length} secrets created successfully`);
-      } else {
-        toast.warning(
-          `${data.created_secrets.length} secrets created, ${data.failed_secrets.length} failed`
-        );
-      }
-    },
-    onError: (error) => {
-      console.error("Failed to create secrets in bulk:", error);
-      toast.error("Failed to create secrets");
     }
   });
 };

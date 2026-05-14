@@ -11,7 +11,7 @@ interface TracesListProps {
   onTraceClick: (traceId: string) => void;
 }
 
-export function TracesList({ isLoading, traces, searchQuery, onTraceClick }: TracesListProps) {
+function TracesList({ isLoading, traces, searchQuery, onTraceClick }: TracesListProps) {
   if (isLoading) {
     return (
       <div className='flex h-64 items-center justify-center'>

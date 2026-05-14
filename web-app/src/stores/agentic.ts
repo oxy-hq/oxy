@@ -74,7 +74,7 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
   return result;
 };
 
-export const useThreadMessages = (projectId: string, threadId: string) => {
+const useThreadMessages = (projectId: string, threadId: string) => {
   return useQuery({
     queryKey: queryKeys.thread.messages(projectId, threadId),
     queryFn: () => ThreadService.getThreadMessages(projectId, threadId)
@@ -299,38 +299,6 @@ export const useSelectedMessageReasoning = () => {
   };
 };
 
-export const useThreadDataApp = (threadId: string) => {
-  const { groupBlocks } = useBlockStore();
-  const { getTaskThread } = useTaskThreadStore();
-  const { messages } = getTaskThread(threadId);
-  const apps = messages.flatMap((message) => {
-    if (message.run_info) {
-      return filterMapBlock(
-        message.run_info,
-        groupBlocks,
-        (block) => block.type === "data_app",
-        (block) => block.type === "data_app" && block.file_path
-      );
-    }
-    return [];
-  });
-  return apps[apps.length - 1];
-};
-
-export const useThreadArtifacts = (threadId: string) => {
-  const { groupBlocks } = useBlockStore();
-  const { getTaskThread } = useTaskThreadStore();
-  const taskThread = getTaskThread(threadId);
-  const { messages } = taskThread;
-  const artifacts = messages.flatMap((message) => {
-    if (message.run_info) {
-      return filterMapBlock(message.run_info, groupBlocks, isArtifactBlock);
-    }
-    return [];
-  });
-  return artifacts;
-};
-
 export const useMessageContent = (runInfo?: RunInfo) => {
   const { groupBlocks } = useBlockStore();
 
@@ -367,11 +335,6 @@ export const useLastStreamingMessage = (threadId: string) => {
   const messages = useMessages(threadId, useOnGoingPred());
   const lastRunInfo = messages[messages.length - 1]?.run_info;
   return useMessageContent(lastRunInfo); // Ensure content is loaded
-};
-
-export const useLastRunInfoGroupId = (threadId: string) => {
-  const messages = useMessages(threadId, useAllPred());
-  return getGroupId(messages[messages.length - 1]?.run_info);
 };
 
 export const useStopAgenticRun = (threadId: string) => {
@@ -420,12 +383,6 @@ const useOnGoingPred = () => {
     },
     [processingGroups]
   );
-};
-
-const useAllPred = () => {
-  return useCallback((message: Message) => {
-    return !!message.run_info;
-  }, []);
 };
 
 const PENDING_STATUSES = ["pending", "running"];
@@ -504,29 +461,6 @@ const getGroupId = (runInfo?: RunInfo) => {
   if (!runInfo) return "";
   return `${runInfo.source_id}::${runInfo.run_index}`;
 };
-
-function filterMapBlock<T = Block>(
-  runInfo: RunInfo,
-  groupBlocks: Record<string, { blocks: Record<string, Block>; root: string[] }>,
-  predicate: (block: Block) => boolean,
-  map: (block: Block) => T = (b) => b as unknown as T
-): T[] {
-  const groupId = getGroupId(runInfo);
-  const group = groupBlocks[groupId];
-  if (!group) {
-    return [];
-  }
-
-  let result: T[] = [];
-  for (const childId of group.root) {
-    const childBlock = group.blocks[childId];
-    if (childBlock) {
-      result = [...result, ...blockTraverse(childBlock, group.blocks, predicate, map)];
-    }
-  }
-
-  return result;
-}
 
 function blockTraverse<T = Block>(
   block: Block,

@@ -1,28 +1,18 @@
-import AgentIcon from "./AgentIcon";
 import { AirhouseLogo } from "./AirhouseLogo";
-import AnthropicIcon from "./AnthropicIcon";
 import BigQueryIcon from "./BigQueryIcon";
 import ClickHouseIcon from "./ClickHouseIcon";
 import DuckDBIcon from "./DuckDBIcon";
-import GoogleIcon from "./GoogleIcon";
 import MysqlIcon from "./MysqlIcon";
-import OllamaIcon from "./OllamaIcon";
-import OpenAiIcon from "./OpenAiIcon";
 import PostgresIcon from "./PostgresIcon";
 import RedshiftIcon from "./RedshiftIcon";
 import SnowflakeIcon from "./SnowflakeIcon";
 
 export {
-  AgentIcon,
   AirhouseLogo,
-  AnthropicIcon,
   BigQueryIcon,
   ClickHouseIcon,
   DuckDBIcon,
-  GoogleIcon,
   MysqlIcon,
-  OllamaIcon,
-  OpenAiIcon,
   PostgresIcon,
   RedshiftIcon,
   SnowflakeIcon

@@ -4,7 +4,7 @@ import queryKeys from "../../api/queryKey";
 import { MessageFactory } from "./messageFactory";
 import type { MessageHandlers, MessageSender, SendMessageOptions, ThreadStore } from "./types";
 
-export const ERROR_MESSAGES = {
+const ERROR_MESSAGES = {
   PROCESSING_ERROR: "Error occurred while processing your request."
 } as const;
 

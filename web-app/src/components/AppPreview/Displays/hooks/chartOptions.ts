@@ -40,8 +40,6 @@ export const createSingleSeriesPalette = (): string[] => [resolveColor("--chart-
 
 export const createCategoricalPalette = categoricalPalette;
 
-export const createSequentialPalette = sequentialPalette;
-
 export const createXYAxisOptions = (
   xData: (string | number)[],
   isDarkMode = false,

@@ -14,7 +14,7 @@ import {
 } from "@/services/api/executionAnalytics";
 
 // Query keys for execution analytics
-export const executionAnalyticsKeys = {
+const executionAnalyticsKeys = {
   all: ["executionAnalytics"] as const,
   summary: (projectId: string, params?: SummaryQuery) =>
     [...executionAnalyticsKeys.all, "summary", projectId, params] as const,

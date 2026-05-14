@@ -6,7 +6,7 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import useTheme from "@/stores/useTheme";
 
-export interface BaseMonacoEditorOptions {
+interface BaseMonacoEditorOptions {
   minimap?: { enabled: boolean };
   scrollBeyondLastLine?: boolean;
   formatOnPaste?: boolean;

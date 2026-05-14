@@ -11,7 +11,7 @@ export interface TestStreamMessage {
   event: EvalEvent | null;
 }
 
-export type EvalEvent =
+type EvalEvent =
   | { type: EvalEventState.Started }
   | {
       type: EvalEventState.Progress;
@@ -69,7 +69,7 @@ export type RecallMetric = {
   records: RecallRecord[];
 };
 
-export type CorrectnessMetric = {
+type CorrectnessMetric = {
   type: MetricKind.Correctness;
   score: number;
   records: Record[];
@@ -77,7 +77,7 @@ export type CorrectnessMetric = {
 
 export type MetricValue = SimilarityMetric | RecallMetric | CorrectnessMetric;
 
-export type Metric = {
+type Metric = {
   errors: string[];
   metrics: MetricValue[];
   stats: RunStats;

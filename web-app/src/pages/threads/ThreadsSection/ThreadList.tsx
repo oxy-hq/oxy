@@ -16,8 +16,6 @@ interface ThreadListProps {
   isSelectionMode: boolean;
 }
 
-export type { ThreadListProps };
-
 interface ThreadListItemProps {
   thread: ThreadItem;
   isSelected: boolean;

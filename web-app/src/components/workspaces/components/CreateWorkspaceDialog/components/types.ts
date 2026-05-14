@@ -36,14 +36,14 @@ export type OnboardingStep =
 export type OnboardingMode = "new" | "github" | "demo";
 
 /** Description of a single LLM API key the repo's config.yml references. */
-export interface GithubSetupKeyVar {
+interface GithubSetupKeyVar {
   var_name: string;
   vendor: string;
   sample_model_name?: string;
 }
 
 /** A `*_var` secret on a warehouse that hasn't been provided yet. */
-export interface GithubSetupMissingVar {
+interface GithubSetupMissingVar {
   field: string;
   var_name: string;
   /** True when there's no inline plaintext in config.yml — user must fill in. */
@@ -92,7 +92,7 @@ export interface SchemaInfo {
   loadError?: string;
 }
 
-export interface TableInfo {
+interface TableInfo {
   name: string;
   /** Per-column metadata, hydrated only after a filtered re-sync. */
   columns: ColumnInfo[];
@@ -101,7 +101,7 @@ export interface TableInfo {
   rowCount?: number;
 }
 
-export interface ColumnInfo {
+interface ColumnInfo {
   name: string;
   type: string;
 }
@@ -306,7 +306,7 @@ export interface Milestone {
   children?: Milestone[];
 }
 
-export interface ConnectedService {
+interface ConnectedService {
   type: "llm" | "warehouse";
   name: string;
   status: "connected" | "pending";
@@ -327,7 +327,7 @@ export interface GeneratedArtifact {
  * rail match it against any non-overview `.app.yml` artifact rather than
  * a literal filename. See `CreatedFilesSection` for the matching logic.
  */
-export type ExpectedFileType = GeneratedArtifact["type"] | "app2";
+type ExpectedFileType = GeneratedArtifact["type"] | "app2";
 
 export interface ExpectedFile {
   name: string;
@@ -353,7 +353,7 @@ export interface OnboardingRailState {
 export type SubPhaseKey = "semantic" | "agent" | "app" | "app2";
 
 /** Wall-clock start/end timestamps for a sub-phase. */
-export interface PhaseTiming {
+interface PhaseTiming {
   start: number;
   end?: number;
 }

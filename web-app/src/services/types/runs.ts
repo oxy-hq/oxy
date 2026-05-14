@@ -1,13 +1,13 @@
 import type { Block, GroupAgenticType, GroupArtifactType, GroupWorkflowType } from "./blocks";
 
-export interface Retry {
+interface Retry {
   type: "retry";
   run_index: number;
   // Formatted as "{parent_task_id}[.{child_task_id}][-{loop_index}]" or "" empty for all tasks
   replay_id?: string;
 }
 
-export interface RetryWithVariables {
+interface RetryWithVariables {
   type: "retry_with_variables";
   run_index: number;
   // Formatted as "{parent_task_id}[.{child_task_id}][-{loop_index}]" or "" empty for all tasks
@@ -15,7 +15,7 @@ export interface RetryWithVariables {
   variables?: Record<string, unknown>;
 }
 
-export interface NoRetry {
+interface NoRetry {
   type: "no_retry";
   variables?: Record<string, unknown>;
 }
@@ -48,7 +48,7 @@ export type StreamEventsPayload = {
   runIndex: number;
 };
 
-export type RunStatus = "pending" | "running" | "cancelled" | "completed" | "failed";
+type RunStatus = "pending" | "running" | "cancelled" | "completed" | "failed";
 
 export type RunInfo = {
   source_id: string;
@@ -61,7 +61,7 @@ export type RunInfo = {
   metadata?: GroupKind;
 };
 
-export type Pagination = {
+type Pagination = {
   size: number;
   page: number;
   num_pages: number;

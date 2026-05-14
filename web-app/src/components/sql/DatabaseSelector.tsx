@@ -10,7 +10,7 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import type { DatabaseInfo } from "@/types/database";
 
-export interface DatabaseSelectorProps {
+interface DatabaseSelectorProps {
   onSelect: (database: string) => void;
   database: string | null;
   placeholder?: string;

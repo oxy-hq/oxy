@@ -1,4 +1,4 @@
-export { useCreateOrg, useDeleteOrg, useOrg, useOrgs, useUpdateOrg } from "./useOrganizations";
+export { useCreateOrg, useDeleteOrg, useOrgs, useUpdateOrg } from "./useOrganizations";
 export {
   useAcceptInvitation,
   useCreateBulkInvitations,

@@ -5,7 +5,7 @@ import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import DatabaseRow from "./DatabaseRow";
 
-export const DatabaseTable: React.FC = () => {
+const DatabaseTable: React.FC = () => {
   const { data: databases = [], isLoading, error, refetch } = useDatabases();
 
   return (

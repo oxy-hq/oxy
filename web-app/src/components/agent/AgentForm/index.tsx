@@ -46,20 +46,20 @@ export interface AgentFormData {
   synthesize_results?: boolean;
 }
 
-export interface ContextFormData {
+interface ContextFormData {
   name?: string;
   type?: string;
   src?: string | string[];
 }
 
-export interface ToolFormData {
+interface ToolFormData {
   type?: string;
   name?: string;
   description?: string;
   [key: string]: unknown;
 }
 
-export interface TestFormData {
+interface TestFormData {
   type?: string;
   concurrency?: number;
   task_ref?: string;
@@ -67,12 +67,12 @@ export interface TestFormData {
   [key: string]: unknown;
 }
 
-export interface RetrievalConfigData {
+interface RetrievalConfigData {
   include?: string[];
   exclude?: string[];
 }
 
-export interface ReasoningConfigData {
+interface ReasoningConfigData {
   effort?: "low" | "medium" | "high";
 }
 

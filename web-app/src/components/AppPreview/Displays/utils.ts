@@ -373,7 +373,7 @@ const isFilePath = (key: string) => {
   return key.endsWith(".parquet") || key.endsWith(".csv") || key.endsWith(".json");
 };
 
-export const registerAuthenticatedFile = async (
+const registerAuthenticatedFile = async (
   filePath: string,
   projectId: string,
   branchName: string

@@ -13,7 +13,7 @@ export interface FieldItem {
   dataType?: string;
 }
 
-export interface BaseFieldProps {
+interface BaseFieldProps {
   taskPath: string;
   control: Control<WorkflowFormData>;
   topicValue: string | undefined;

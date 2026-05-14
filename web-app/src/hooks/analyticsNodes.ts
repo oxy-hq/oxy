@@ -6,8 +6,8 @@
 
 import type { SseEvent } from "./useAnalyticsRun";
 
-export type AnalyticsNodeStatus = "running" | "done" | "failed";
-export type AnalyticsNodeKind = "step" | "domain";
+type AnalyticsNodeStatus = "running" | "done" | "failed";
+type AnalyticsNodeKind = "step" | "domain";
 
 export interface AnalyticsNode {
   /** Deterministic index-based id, unique within the event sequence. */

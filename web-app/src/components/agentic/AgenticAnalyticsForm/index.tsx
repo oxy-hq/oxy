@@ -10,12 +10,12 @@ import { StateOverridesForm } from "./StateOverridesForm";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface LlmExtendedThinkingData {
+interface LlmExtendedThinkingData {
   model?: string;
   thinking?: string;
 }
 
-export interface LlmConfigData {
+interface LlmConfigData {
   ref?: string;
   vendor?: string;
   api_key?: string;
@@ -26,14 +26,14 @@ export interface LlmConfigData {
   extended_thinking?: LlmExtendedThinkingData;
 }
 
-export interface StateConfigData {
+interface StateConfigData {
   instructions?: string;
   model?: string;
   max_retries?: number;
   thinking?: string;
 }
 
-export interface ValidationRuleData {
+interface ValidationRuleData {
   name?: string;
   enabled?: boolean;
   // sql_syntax params
@@ -43,7 +43,7 @@ export interface ValidationRuleData {
   min_rows?: number;
 }
 
-export interface ValidationConfigData {
+interface ValidationConfigData {
   rules?: {
     specified?: ValidationRuleData[];
     solvable?: ValidationRuleData[];
@@ -51,7 +51,7 @@ export interface ValidationConfigData {
   };
 }
 
-export interface SemanticEngineData {
+interface SemanticEngineData {
   vendor?: string;
   base_url?: string;
   api_token?: string;
@@ -101,7 +101,7 @@ export const yamlToForm = (yaml: AgenticYamlData): AgenticFormData => ({
 });
 
 /** Convert form data → YAML data (unwrap string arrays, strip empties). */
-export const formToYaml = (form: AgenticFormData): AgenticYamlData => {
+const formToYaml = (form: AgenticFormData): AgenticYamlData => {
   const raw: AgenticYamlData = {
     ...form,
     databases: form.databases?.map((d) => d.value).filter(Boolean),

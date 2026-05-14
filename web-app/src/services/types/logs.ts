@@ -1,4 +1,4 @@
-export type LogType = "info" | "error" | "warning" | "success";
+type LogType = "info" | "error" | "warning" | "success";
 
 export type LogItem = {
   timestamp: string;

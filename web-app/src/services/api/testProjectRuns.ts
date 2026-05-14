@@ -1,6 +1,6 @@
 import { apiClient } from "./axios";
 
-export interface FileScore {
+interface FileScore {
   source_id: string;
   run_index: number;
   score: number | null;

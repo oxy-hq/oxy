@@ -13,7 +13,7 @@ export interface AppFormData {
   display?: DisplayFormData[];
 }
 
-export interface TaskFormData {
+interface TaskFormData {
   name?: string;
   type?: string;
   cache?: {
@@ -27,7 +27,7 @@ export interface TaskFormData {
   [key: string]: unknown;
 }
 
-export interface DisplayFormData {
+interface DisplayFormData {
   type?: string;
   [key: string]: unknown;
 }

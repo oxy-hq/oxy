@@ -38,21 +38,8 @@ export function getPrompt(trace: Trace): string | undefined {
   return undefined;
 }
 
-export function getModel(trace: Trace): string | undefined {
-  const attrs = tupleArrayToRecord(trace.spanAttributes);
-  return attrs["llm.model"];
-}
-
 export function getTokensTotal(trace: Trace): number | undefined {
   return trace.totalTokens;
-}
-
-export function getPromptTokens(trace: Trace): number | undefined {
-  return trace.promptTokens;
-}
-
-export function getCompletionTokens(trace: Trace): number | undefined {
-  return trace.completionTokens;
 }
 
 export function getDurationMs(trace: Trace): number {
@@ -63,11 +50,7 @@ export function getSpanAttributesAsRecord(trace: Trace): Record<string, string> 
   return tupleArrayToRecord(trace.spanAttributes);
 }
 
-export function getEventsAttributesAsRecords(trace: Trace): Array<Record<string, string>> {
-  return trace.eventsAttributes.map(tupleArrayToRecord);
-}
-
-export interface Span {
+interface Span {
   spanId: string;
   parentSpanId: string;
   spanName: string;
@@ -85,7 +68,7 @@ export interface TraceDetail {
   end_time: string;
 }
 
-export interface SpanAttributes {
+interface SpanAttributes {
   agentRef?: string;
   agentPrompt?: string;
   agentMemoryLength?: number;
@@ -103,7 +86,7 @@ export interface SpanAttributes {
   raw?: string;
 }
 
-export interface WaterfallSpan {
+interface WaterfallSpan {
   spanId: string;
   parentSpanId: string;
   spanName: string;
@@ -118,7 +101,7 @@ export interface WaterfallSpan {
   children: string[];
 }
 
-export interface TraceSummary {
+interface TraceSummary {
   spanCount: number;
   errorCount: number;
   llmCallCount: number;

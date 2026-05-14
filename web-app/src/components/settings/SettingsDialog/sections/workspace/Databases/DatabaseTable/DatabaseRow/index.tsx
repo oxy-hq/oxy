@@ -11,7 +11,7 @@ interface DatabaseTableRowProps {
   database: Database;
 }
 
-export const DatabaseRow: React.FC<DatabaseTableRowProps> = ({ database }) => {
+const DatabaseRow: React.FC<DatabaseTableRowProps> = ({ database }) => {
   const syncMutation = useDatabaseSync();
   const handleSync = useCallback(
     (datasets?: string[]) => {

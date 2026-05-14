@@ -61,5 +61,3 @@ export function ActiveSection({
     </>
   );
 }
-
-export default ActiveSection;

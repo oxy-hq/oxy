@@ -11,35 +11,35 @@ export interface DataAppContent {
   content: string;
 }
 
-export interface WorkflowArtifactKind {
+interface WorkflowArtifactKind {
   type: "workflow";
   value: {
     ref: string;
   };
 }
 
-export interface AgentArtifactKind {
+interface AgentArtifactKind {
   type: "agent";
   value: {
     ref: string;
   };
 }
 
-export interface ExecuteSQLArtifactKind {
+interface ExecuteSQLArtifactKind {
   type: "execute_sql";
   value: {
     database: string;
   };
 }
 
-export interface SemanticQueryArtifactKind {
+interface SemanticQueryArtifactKind {
   type: "semantic_query";
   value: {
     database: string;
   };
 }
 
-export interface OmniQueryArtifactKind {
+interface OmniQueryArtifactKind {
   type: "omni_query";
   value: {
     topic: string;
@@ -47,7 +47,7 @@ export interface OmniQueryArtifactKind {
   };
 }
 
-export interface LookerQueryArtifactKind {
+interface LookerQueryArtifactKind {
   type: "looker_query";
   value: {
     model: string;
@@ -56,7 +56,7 @@ export interface LookerQueryArtifactKind {
   };
 }
 
-export interface SandboxAppArtifactKind {
+interface SandboxAppArtifactKind {
   type: "sandbox_app";
   value: {
     type: "v0";
@@ -66,7 +66,7 @@ export interface SandboxAppArtifactKind {
   };
 }
 
-export type ArtifactKind =
+type ArtifactKind =
   | WorkflowArtifactKind
   | AgentArtifactKind
   | ExecuteSQLArtifactKind
@@ -82,17 +82,17 @@ export interface ArtifactStartedContent {
   kind: ArtifactKind;
 }
 
-export interface WorkflowArtifactValue {
+interface WorkflowArtifactValue {
   type: "log_item";
   value: LogItem;
 }
 
-export interface AgentArtifactValue {
+interface AgentArtifactValue {
   type: "content";
   value: string;
 }
 
-export interface ExecuteSQLArtifactValue {
+interface ExecuteSQLArtifactValue {
   type: "execute_sql";
   value: {
     database: string;
@@ -103,7 +103,7 @@ export interface ExecuteSQLArtifactValue {
   };
 }
 
-export interface SemanticQueryArtifactValue {
+interface SemanticQueryArtifactValue {
   type: "semantic_query";
   value: {
     database: string;
@@ -128,7 +128,7 @@ export interface SemanticQueryArtifactValue {
   };
 }
 
-export interface LookerQueryArtifactValue {
+interface LookerQueryArtifactValue {
   type: "looker_query";
   value: {
     model: string;
@@ -144,14 +144,14 @@ export interface LookerQueryArtifactValue {
   };
 }
 
-export interface SandboxAppArtifactValue {
+interface SandboxAppArtifactValue {
   type: "sandbox_info";
   value: {
     preview_url: string;
   };
 }
 
-export type ArtifactValue =
+type ArtifactValue =
   | WorkflowArtifactValue
   | AgentArtifactValue
   | ExecuteSQLArtifactValue
@@ -170,7 +170,7 @@ export interface ArtifactDoneContent {
   id: string;
 }
 
-export interface ErrorContent {
+interface ErrorContent {
   type: "error";
   message: string;
 }
@@ -198,7 +198,7 @@ export interface ReasoningChunkContent {
   delta: string;
 }
 
-export interface ReasoningDoneContent {
+interface ReasoningDoneContent {
   type: "reasoning_done";
   id: string;
 }
@@ -214,7 +214,7 @@ export interface ChartContent {
   chart_src: string;
 }
 
-export type AnswerContent =
+type AnswerContent =
   | TextContent
   | ArtifactStartedContent
   | ArtifactValueContent
@@ -234,8 +234,6 @@ export type Answer = {
   is_error: boolean;
 };
 
-export type ToolCallMetadata = SqlQueryReference | { type: ReferenceType };
-
 export type Reference = (SqlQueryReference | DataAppReference) & {
   type: ReferenceType;
 };
@@ -254,7 +252,7 @@ export type SqlQueryReference = {
   is_result_truncated: boolean;
 };
 
-export type DataAppReference = {
+type DataAppReference = {
   type: ReferenceType.DataApp;
   file_path: string;
 };
@@ -293,7 +291,7 @@ export type ThreadsResponse = {
   pagination: PaginationInfo;
 };
 
-export type Usage = {
+type Usage = {
   inputTokens: number;
   outputTokens: number;
 };

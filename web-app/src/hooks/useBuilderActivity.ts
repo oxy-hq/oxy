@@ -3,7 +3,7 @@ import type { UiBlock } from "@/services/api/analytics";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type BuilderToolActivity = {
+type BuilderToolActivity = {
   kind: "tool_used";
   id: string;
   toolName: string;
@@ -123,10 +123,6 @@ export function extractFileChangedMetadata(
     }
   }
   return { oldContent: "", isDeletion: false };
-}
-
-export function extractOldContent(events: UiBlock[], afterSeq: number): string {
-  return extractFileChangedMetadata(events, afterSeq).oldContent;
 }
 
 /**

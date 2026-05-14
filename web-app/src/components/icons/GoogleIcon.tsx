@@ -4,7 +4,7 @@ interface GoogleIconProps {
   height?: number;
 }
 
-export const GoogleIcon = ({ className, width = 32, height = 32 }: GoogleIconProps) => {
+const GoogleIcon = ({ className, width = 32, height = 32 }: GoogleIconProps) => {
   return (
     <svg
       width={width}

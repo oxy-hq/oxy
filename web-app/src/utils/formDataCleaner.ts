@@ -2,7 +2,7 @@
  * Utility functions for cleaning form data by removing empty/meaningless values
  */
 
-export const isMeaningfulValue = (value: unknown): boolean => {
+const isMeaningfulValue = (value: unknown): boolean => {
   if (value === undefined || value === null || value === "") {
     return false;
   }

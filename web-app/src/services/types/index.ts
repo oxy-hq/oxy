@@ -1,3 +1,3 @@
 export type * from "./blocks";
-export type { LogItem, LogType } from "./logs";
+export type { LogItem } from "./logs";
 export type * from "./runs";

@@ -28,7 +28,7 @@ export function parseFileChange(prompt: string): FileChangePayload | null {
   return null;
 }
 
-export function languageFromPath(filePath: string): string {
+function languageFromPath(filePath: string): string {
   const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
     rs: "rust",

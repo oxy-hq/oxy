@@ -17,7 +17,7 @@ import {
 } from "./types";
 import { WorkflowGraph } from "./WorkflowGraph";
 
-export interface ChangeVisualizationProps {
+interface ChangeVisualizationProps {
   change: BuilderFileChange;
 }
 

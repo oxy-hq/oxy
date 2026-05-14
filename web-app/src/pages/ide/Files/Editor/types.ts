@@ -1,13 +1,13 @@
 import type { SemanticQueryFilter } from "@/services/api/semantic";
 
-export interface Dimension {
+interface Dimension {
   name: string;
   type: string;
   description?: string;
   expr: string;
 }
 
-export interface Measure {
+interface Measure {
   name: string;
   type: string;
   description?: string;

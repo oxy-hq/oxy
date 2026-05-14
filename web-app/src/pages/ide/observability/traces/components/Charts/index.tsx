@@ -69,9 +69,4 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
 }
 
 // Re-export types for external use
-export type {
-  DurationBucket,
-  TimeBucket,
-  TraceChartsProps,
-  TraceStats
-} from "./types";
+export type { TraceChartsProps } from "./types";

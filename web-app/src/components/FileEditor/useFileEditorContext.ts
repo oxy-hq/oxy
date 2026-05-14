@@ -1,14 +1,14 @@
 import React, { useContext } from "react";
 import type { FileState } from ".";
 
-export interface EditorContextActions {
+interface EditorContextActions {
   setContent: (content: string) => void;
   setShowDiff: (show: boolean) => void;
   markSaved: () => void;
   save: (onSuccess?: () => void) => Promise<void>;
 }
 
-export interface EditorContextState {
+interface EditorContextState {
   content: string;
   originalContent?: string;
   fileState: FileState;

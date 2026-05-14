@@ -5,7 +5,7 @@ export interface QueryItem {
   database?: string;
 }
 
-export interface LogData {
+interface LogData {
   queries?: QueryItem[];
   [key: string]: unknown;
 }

@@ -22,7 +22,7 @@ interface FileUploadState {
 }
 
 /** Result returned by the parent's upload callback. */
-export interface FileUploadResult {
+interface FileUploadResult {
   subdir: string;
   files: string[];
 }

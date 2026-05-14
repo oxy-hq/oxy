@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Message } from "@/types/chat";
 
-export interface TaskThread {
+interface TaskThread {
   messages: Message[];
   isLoading: boolean;
   filePath: string | undefined;

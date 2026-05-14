@@ -1,28 +1,5 @@
 // Cluster Analytics Types
 
-export interface ClusterStats {
-  totalClusters: number;
-  totalQuestions: number;
-  outlierCount: number;
-  avgQuestionsPerCluster: number;
-  answeredRate: number;
-  failedRate: number;
-  topClusterName: string;
-  topClusterCount: number;
-}
-
-export interface ClusterBreakdown {
-  clusterId: number;
-  intentName: string;
-  description: string;
-  count: number;
-  answeredCount: number;
-  failedCount: number;
-  successRate: number;
-  color: string;
-  sampleQuestions: string[];
-}
-
 export type TimeRange = "7d" | "30d" | "90d";
 
 export const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [

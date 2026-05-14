@@ -13,7 +13,7 @@ import ChangeVisualization from "./ChangeVisualization";
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
-export interface BuilderActivityPanelProps {
+interface BuilderActivityPanelProps {
   items: BuilderActivityItem[];
   isRunning: boolean;
   isSuspended: boolean;

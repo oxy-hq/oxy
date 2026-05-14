@@ -1,9 +1,9 @@
 import type { RunInfo } from "@/services/types";
 import type { Message } from "@/types/chat";
 
-export const STREAMING_MESSAGE_PREFIX = "temp-";
+const STREAMING_MESSAGE_PREFIX = "temp-";
 
-export const DEFAULT_USAGE = {
+const DEFAULT_USAGE = {
   inputTokens: 0,
   outputTokens: 0
 } as const;

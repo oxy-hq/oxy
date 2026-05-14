@@ -8,12 +8,6 @@ import { useFileEditorContext } from "./useFileEditorContext";
 
 export type FileState = "saved" | "modified" | "saving";
 
-export interface FileEditorRef {
-  save: () => void;
-  toggleDiffView: () => void;
-  setContent: (newContent: string) => void;
-}
-
 interface Props {
   readOnly?: boolean;
   className?: string;

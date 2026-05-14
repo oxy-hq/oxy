@@ -18,7 +18,7 @@ export type SemanticView = {
   measures?: ViewField[];
 };
 
-export type AppTask = {
+type AppTask = {
   name: string;
   type?: string;
   database?: string;
@@ -26,7 +26,7 @@ export type AppTask = {
   sql_file?: string;
 };
 
-export type AppDisplayItem = {
+type AppDisplayItem = {
   type: string;
   // control
   name?: string;
@@ -52,7 +52,7 @@ export type DataApp = {
   display?: AppDisplayItem[];
 };
 
-export type WorkflowTask = {
+type WorkflowTask = {
   name: string;
   type: string;
   database?: string;
@@ -67,13 +67,13 @@ export type WorkflowConfig = {
   tasks?: WorkflowTask[];
 };
 
-export type AgentTool = {
+type AgentTool = {
   type: string;
   name?: string;
   database?: string;
 };
 
-export type AgentContext = {
+type AgentContext = {
   name: string;
   type: string;
 };
@@ -93,7 +93,7 @@ export type TopicConfig = {
   views?: string[];
 };
 
-export type AwTransition = {
+type AwTransition = {
   type: string;
   database?: string;
 };
@@ -105,7 +105,7 @@ export type AwConfig = {
   transitions?: AwTransition[];
 };
 
-export type TestCase = {
+type TestCase = {
   name?: string;
   prompt: string;
   expected: string;
@@ -113,7 +113,7 @@ export type TestCase = {
   tool?: string;
 };
 
-export type TestSettings = {
+type TestSettings = {
   concurrency?: number;
   runs?: number;
   judge_model?: string;
@@ -139,14 +139,7 @@ export type FieldDiff = {
   changes?: string[];
 };
 
-export type AppItemKind =
-  | "task"
-  | "display"
-  | "tool"
-  | "context"
-  | "view"
-  | "transition"
-  | "test_case";
+type AppItemKind = "task" | "display" | "tool" | "context" | "view" | "transition" | "test_case";
 
 export type AppItemDiff = {
   key: string;
@@ -387,7 +380,7 @@ function diffDisplayItems(oldItems: AppDisplayItem[], newItems: AppDisplayItem[]
   return result;
 }
 
-export function diffAppItems(oldApp: DataApp | null, newApp: DataApp): AppItemDiff[] {
+function diffAppItems(oldApp: DataApp | null, newApp: DataApp): AppItemDiff[] {
   const result: AppItemDiff[] = [];
 
   const oldTasks = oldApp?.tasks ?? [];

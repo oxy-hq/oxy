@@ -36,25 +36,25 @@ export interface OnboardingResetResponse {
   warnings: string[];
 }
 
-export interface GithubSetupKeyVar {
+interface GithubSetupKeyVar {
   var_name: string;
   vendor: string;
   sample_model_name?: string;
 }
 
-export interface GithubSetupMissingVar {
+interface GithubSetupMissingVar {
   field: string;
   var_name: string;
   required: boolean;
 }
 
-export interface GithubSetupWarehouse {
+interface GithubSetupWarehouse {
   name: string;
   dialect: string;
   missing_vars: GithubSetupMissingVar[];
 }
 
-export interface GithubSetupModel {
+interface GithubSetupModel {
   name: string;
   /** Null for keyless vendors (e.g. Ollama). */
   key_var: string | null;

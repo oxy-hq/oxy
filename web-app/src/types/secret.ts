@@ -60,7 +60,7 @@ export interface SecretEditFormData {
 }
 
 /** Where a secret's value is currently set */
-export type SecretSource = "dot_env" | "environment" | "not_set";
+type SecretSource = "dot_env" | "environment" | "not_set";
 
 /** A secret environment variable known to Oxy */
 export interface EnvSecret {

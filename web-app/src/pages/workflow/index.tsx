@@ -5,7 +5,7 @@ import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 import { decodeBase64 } from "@/libs/encoding";
 import WorkflowPageHeader from "./Header";
 
-export const Workflow: React.FC<{
+const Workflow: React.FC<{
   pathb64: string;
   runId?: string;
   projectIdOverride?: string;

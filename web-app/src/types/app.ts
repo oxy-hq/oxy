@@ -51,13 +51,13 @@ export type MarkdownDisplay = {
   content: string;
 };
 
-export type ErrorDisplay = {
+type ErrorDisplay = {
   type: "error";
   title: string;
   error: string;
 };
 
-export type RowDisplay = {
+type RowDisplay = {
   type: "row";
   /** Number of equal-width columns; defaults to the number of children */
   columns?: number;
@@ -78,21 +78,21 @@ export type TableData = {
   json?: string;
 };
 
-export type Data = string | number | boolean | null | TableData;
+type Data = string | number | boolean | null | TableData;
 
 export type DataContainer = Data | DataList | DataMap;
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface DataList extends Array<DataContainer> {}
+interface DataList extends Array<DataContainer> {}
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface DataMap extends Record<string, DataContainer> {}
+interface DataMap extends Record<string, DataContainer> {}
 
 export type AppData = {
   data: DataContainer;
   error: string;
 };
 
-export type ControlType = "select" | "toggle" | "date";
+type ControlType = "select" | "toggle" | "date";
 
 export type ControlConfig = {
   name: string;
@@ -106,9 +106,9 @@ export type ControlConfig = {
   default?: unknown;
 };
 
-export type AppTaskMode = "client" | "server";
+type AppTaskMode = "client" | "server";
 
-export type TaskClientInfo = {
+type TaskClientInfo = {
   /** Raw SQL template, may contain Jinja syntax like {{ controls.x }} */
   sql: string;
   /** client = run in DuckDB WASM (default); server = backend round-trip */
@@ -131,13 +131,4 @@ export type AppItem = {
   path: string;
   /** Human-friendly title from the app's `title:` field, when present. */
   title?: string;
-};
-
-export type Chunk = {
-  content: string;
-  file_path: string;
-  is_error: boolean;
-  step: string;
-  input_tokens: number;
-  output_tokens: number;
 };

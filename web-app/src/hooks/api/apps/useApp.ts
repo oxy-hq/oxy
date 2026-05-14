@@ -20,23 +20,6 @@ export default function useAppData(
   });
 }
 
-export function useData(
-  filePath: string,
-  enabled = true,
-  refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false
-) {
-  const { project, branchName } = useCurrentProjectBranch();
-
-  return useQuery({
-    queryKey: queryKeys.app.getData(project.id, branchName, filePath),
-    queryFn: () => AppService.getData(project.id, branchName, filePath),
-    enabled,
-    refetchOnWindowFocus: refetchOnWindowFocus,
-    refetchOnMount
-  });
-}
-
 export function useAppDisplays(
   filePath: string,
   enabled = true,

@@ -12,7 +12,7 @@ interface ScatterPlotProps {
   selectedPoint: ClusterMapPoint | null;
 }
 
-export function ScatterPlot({
+function ScatterPlot({
   points,
   getPointColor,
   clusters,

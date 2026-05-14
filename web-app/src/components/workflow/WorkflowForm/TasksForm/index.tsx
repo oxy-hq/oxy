@@ -10,7 +10,7 @@ export interface WorkflowFormData {
   retrieval?: RetrievalConfigData | null;
 }
 
-export interface TaskFormData {
+interface TaskFormData {
   name?: string;
   type?: string;
   cache?: {
@@ -25,7 +25,7 @@ export interface TaskFormData {
   [key: string]: unknown;
 }
 
-export interface TestFormData {
+interface TestFormData {
   type?: string;
   concurrency?: number;
   task_ref?: string;
@@ -33,7 +33,7 @@ export interface TestFormData {
   [key: string]: unknown;
 }
 
-export interface RetrievalConfigData {
+interface RetrievalConfigData {
   include?: string[];
   exclude?: string[];
 }

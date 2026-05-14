@@ -1,6 +1,6 @@
 import { apiClient } from "./axios";
 
-export type BillingCycle = "monthly" | "annual";
+type BillingCycle = "monthly" | "annual";
 export type BillingStatusId = "incomplete" | "active" | "past_due" | "unpaid" | "canceled";
 
 export interface OrgBilling {

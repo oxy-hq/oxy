@@ -1,6 +1,6 @@
 import type { WorkspaceRole } from "@/types/organization";
 
-export type GitMode = "none" | "local" | "connected";
+type GitMode = "none" | "local" | "connected";
 
 export interface GitCapabilities {
   can_commit: boolean;
@@ -40,20 +40,7 @@ export interface Workspace {
   current_user_role?: WorkspaceRole;
 }
 
-export interface WorkspacesResponse {
-  projects: Workspace[];
-  total: number;
-}
-
-export interface CreateWorkspaceResponse {
-  branch_id: string;
-  local_path: string;
-  message: string;
-  project_id: string;
-  success: boolean;
-}
-
-export type BranchOrigin = "local_only" | "remote_only" | "both";
+type BranchOrigin = "local_only" | "remote_only" | "both";
 
 export interface WorkspaceBranch {
   name: string;

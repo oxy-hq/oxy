@@ -3,7 +3,7 @@ import { encodeBase64 } from "@/libs/encoding";
 import { useTopicDetails } from "./useSemanticQuery";
 import useTopicFiles from "./useTopicFiles";
 
-export interface FieldOption {
+interface FieldOption {
   value: string; // "view_name.field_name"
   label: string; // "view_name.field_name"
   searchText: string; // For filtering

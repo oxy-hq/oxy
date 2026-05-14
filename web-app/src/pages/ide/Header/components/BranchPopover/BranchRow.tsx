@@ -4,7 +4,7 @@ import { CommandItem } from "@/components/ui/shadcn/command";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 
-export type BranchOrigin = "local_only" | "remote_only" | "both";
+type BranchOrigin = "local_only" | "remote_only" | "both";
 
 export interface BranchRowData {
   name: string;

@@ -16,7 +16,7 @@ const metricsQueryKeys = {
     [...metricsQueryKeys.all, "detail", projectId, metricName, { days }] as const
 };
 
-export function useMetricsAnalytics(days: number = 30, enabled: boolean = true) {
+function useMetricsAnalytics(days: number = 30, enabled: boolean = true) {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 

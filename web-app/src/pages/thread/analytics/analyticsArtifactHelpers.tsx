@@ -25,7 +25,7 @@ export function parseToolJson<T = unknown>(raw: string | undefined): T | null {
 
 // ── Chart display helpers ─────────────────────────────────────────────────────
 
-export const AGENTIC_DATA_KEY = "__agentic_result__";
+const AGENTIC_DATA_KEY = "__agentic_result__";
 
 export function toDisplayProps(
   block: AnalyticsDisplayBlock,

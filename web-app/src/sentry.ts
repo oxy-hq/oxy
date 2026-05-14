@@ -64,4 +64,3 @@ export function initSentry() {
 
 // Re-export ErrorBoundary for convenience
 export const ErrorBoundary = Sentry.ErrorBoundary;
-export default Sentry;

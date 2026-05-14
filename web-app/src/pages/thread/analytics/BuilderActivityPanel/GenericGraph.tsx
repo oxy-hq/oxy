@@ -24,7 +24,7 @@ const elk = new ELK();
 
 // ── Shared badge used inside row nodes ────────────────────────────────────────
 
-export const AppItemBadge = ({ diff }: { diff: AppItemDiff }) => {
+const AppItemBadge = ({ diff }: { diff: AppItemDiff }) => {
   const isAdded = diff.status === "added";
   const isModified = diff.status === "modified";
   const prefix = isAdded ? "+ " : diff.status === "removed" ? "- " : "";

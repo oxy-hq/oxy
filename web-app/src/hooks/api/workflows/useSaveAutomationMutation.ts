@@ -6,14 +6,14 @@ import { type TaskConfig, TaskType } from "@/stores/useWorkflow";
 import type { Workflow } from "@/types/workflow";
 import queryKeys from "../queryKey";
 
-export interface SaveAutomationRequest {
+interface SaveAutomationRequest {
   name: string;
   description: string;
   tasks: TaskConfig[];
   retrieval?: { include: string[]; exclude: string[] };
 }
 
-export interface SaveAutomationResponse {
+interface SaveAutomationResponse {
   automation: Workflow;
   path: string;
 }

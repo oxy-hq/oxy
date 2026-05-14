@@ -4,7 +4,7 @@ interface AnthropicIconProps {
   height?: number;
 }
 
-export const AnthropicIcon = ({ className, width = 32, height = 32 }: AnthropicIconProps) => {
+const AnthropicIcon = ({ className, width = 32, height = 32 }: AnthropicIconProps) => {
   return (
     <svg
       width={width}

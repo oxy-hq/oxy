@@ -59,5 +59,3 @@ export function ThemeToggle({ className, align = "end", side = "top" }: ThemeTog
     </DropdownMenu>
   );
 }
-
-export default ThemeToggle;

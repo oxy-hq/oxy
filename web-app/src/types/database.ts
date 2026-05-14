@@ -1,10 +1,10 @@
-export interface SemanticEntity {
+interface SemanticEntity {
   name: string;
   description: string;
   sample: string[];
 }
 
-export interface SemanticDimension {
+interface SemanticDimension {
   name: string;
   description?: string;
   synonyms?: string[];
@@ -13,7 +13,7 @@ export interface SemanticDimension {
   is_partition_key?: boolean;
 }
 
-export interface SemanticMeasure {
+interface SemanticMeasure {
   name: string;
   sql: string;
 }
@@ -38,7 +38,7 @@ export interface DatabaseInfo {
   synced: boolean;
 }
 
-export interface ColumnInfo {
+interface ColumnInfo {
   name: string;
   data_type: string;
 }
@@ -58,21 +58,8 @@ export interface DatabaseSyncResponse {
   sync_time_secs?: number;
 }
 
-export interface DatabaseOperationState {
-  operation: "sync" | "build" | null;
-  database: string | null;
-  datasets?: string[];
-}
-
-export interface SyncDatabaseParams {
-  database?: string;
-  datasets?: string[];
-}
-
-export type BuildEmbeddingsParams = Record<string, never>;
-
 // Database Configuration Types
-export interface PostgresConfig {
+interface PostgresConfig {
   host?: string;
   port?: string;
   user?: string;
@@ -81,7 +68,7 @@ export interface PostgresConfig {
   database?: string;
 }
 
-export interface RedshiftConfig {
+interface RedshiftConfig {
   host?: string;
   port?: string;
   user?: string;
@@ -90,7 +77,7 @@ export interface RedshiftConfig {
   database?: string;
 }
 
-export interface MysqlConfig {
+interface MysqlConfig {
   host?: string;
   port?: string;
   user?: string;
@@ -99,7 +86,7 @@ export interface MysqlConfig {
   database?: string;
 }
 
-export interface ClickHouseConfig {
+interface ClickHouseConfig {
   host?: string;
   user?: string;
   password?: string;
@@ -107,17 +94,17 @@ export interface ClickHouseConfig {
   database?: string;
 }
 
-export interface BigQueryConfig {
+interface BigQueryConfig {
   key?: string;
   dataset?: string;
   dry_run_limit?: number;
 }
 
-export interface DuckDBConfig {
+interface DuckDBConfig {
   file_search_path?: string;
 }
 
-export interface SnowflakeConfig {
+interface SnowflakeConfig {
   account?: string;
   username?: string;
   password?: string;
@@ -139,7 +126,7 @@ export type DatabaseConfigType =
   | "duckdb"
   | "snowflake";
 
-export type DatabaseConfigValue =
+type DatabaseConfigValue =
   | PostgresConfig
   | RedshiftConfig
   | MysqlConfig
@@ -195,17 +182,17 @@ export type ConnectionTestEvent =
 // Schema Inspection Types (lightweight discovery used during onboarding —
 // returns just schema/table names + column counts so the user can pick tables
 // before the heavyweight column sync runs).
-export interface DiscoveredTable {
+interface DiscoveredTable {
   name: string;
   column_count: number;
 }
 
-export interface DiscoveredSchema {
+interface DiscoveredSchema {
   schema: string;
   tables: DiscoveredTable[];
 }
 
-export interface InspectionResult {
+interface InspectionResult {
   schemas: DiscoveredSchema[];
   schema_count: number;
   table_count: number;
@@ -220,7 +207,7 @@ export type InspectEvent =
 // Schema-first discovery: the onboarding picker first asks for schemas + total
 // table counts (one cheap query per warehouse), then lazily fetches tables for
 // each schema when the user expands it.
-export interface SchemaSummary {
+interface SchemaSummary {
   schema: string;
   table_count: number;
 }

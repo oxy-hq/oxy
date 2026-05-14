@@ -14,7 +14,7 @@ import type {
   OnboardingStep
 } from "@/components/workspaces/components/CreateWorkspaceDialog/components/types";
 
-export const STORAGE_KEY_PREFIX = "oxy_onboarding_state:";
+const STORAGE_KEY_PREFIX = "oxy_onboarding_state:";
 export const LEGACY_GLOBAL_KEY = "oxy_onboarding_state";
 
 export function storageKey(workspaceId: string): string {

@@ -5,7 +5,7 @@ export const getThreadIdFromPath = (projectId: string, branchName: string, pathb
   return `${projectId}_${branchName}_${pathb64}`;
 };
 
-export interface AgentThread {
+interface AgentThread {
   messages: Message[];
   isLoading: boolean;
 }

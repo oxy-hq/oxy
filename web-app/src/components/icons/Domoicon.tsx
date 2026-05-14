@@ -4,7 +4,7 @@ interface DomoIconProps {
   height?: number;
 }
 
-export const DomoIcon = ({ className, width = 32, height = 32 }: DomoIconProps) => {
+const DomoIcon = ({ className, width = 32, height = 32 }: DomoIconProps) => {
   return (
     <svg
       width={width}

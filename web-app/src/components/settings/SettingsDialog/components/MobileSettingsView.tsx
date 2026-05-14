@@ -165,5 +165,3 @@ function MobileHeader({
     </header>
   );
 }
-
-export default MobileSettingsView;

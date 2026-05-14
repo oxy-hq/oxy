@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export interface DatabaseConnection {
+interface DatabaseConnection {
   id: string;
   name: string;
   type: string;
@@ -14,23 +14,23 @@ export interface DatabaseConnection {
   synced?: boolean;
 }
 
-export interface DatabaseSchema {
+interface DatabaseSchema {
   name: string;
   tables: DatabaseTable[];
   views?: DatabaseView[];
 }
 
-export interface DatabaseTable {
+interface DatabaseTable {
   name: string;
   columns?: TableColumn[];
 }
 
-export interface DatabaseView {
+interface DatabaseView {
   name: string;
   columns?: TableColumn[];
 }
 
-export interface TableColumn {
+interface TableColumn {
   name: string;
   type: string;
   nullable?: boolean;
@@ -73,7 +73,7 @@ export interface QueryTab {
   errorDetails?: SqlExecutionError;
 }
 
-export interface QueryResult {
+interface QueryResult {
   result: string[][];
   resultFile: string | undefined;
   executionTime?: number;

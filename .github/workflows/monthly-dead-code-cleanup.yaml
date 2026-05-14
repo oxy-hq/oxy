@@ -1,0 +1,149 @@
+name: Monthly Dead Code Cleanup
+
+on:
+  schedule:
+    - cron: "0 2 1 * *" # 1st of every month at 02:00 UTC (09:00 Vietnam time)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  cleanup:
+    if: ${{ github.repository == 'oxy-hq/oxygen-internal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/create-github-app-token@v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm store cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # knip: remove unused files, strip unused exports, remove unused npm deps
+      - name: Run knip --fix
+        working-directory: web-app
+        run: pnpm dlx knip@6.13.1 --fix
+        continue-on-error: true # knip exits 1 when issues are found, even after fixing
+
+      # Sync lockfile after knip removed packages from package.json
+      - name: Update lockfile
+        run: pnpm install --no-frozen-lockfile
+
+      # biome --write (imports only): remove unused imports that knip left behind.
+      # We do NOT run biome --unsafe here because it renames dead locals to _Foo
+      # instead of deleting them, which still triggers TypeScript noUnusedLocals.
+      # Claude handles full deletion in the next step.
+      - name: Run biome --write (unused imports + format)
+        working-directory: web-app
+        run: pnpm exec biome check --write .
+
+      # Claude deletes dead local declarations (const/function/type/interface) that
+      # knip left behind after stripping their export keywords, then verifies the
+      # full production build passes.
+      - name: Claude — delete dead locals and verify build
+        uses: anthropics/claude-code-action@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          show_full_output: false
+          prompt: |
+            The monthly dead-code cleanup ran `knip --fix` on web-app/. knip stripped
+            `export` keywords from unused symbols, turning them into dead local
+            declarations. TypeScript's noUnusedLocals now flags them.
+
+            Your job: **delete** every dead declaration — do not rename or comment out.
+
+            Rules:
+            - Delete the entire declaration (const, function, type, interface, enum, class)
+              for each TS6133 / TS6196 error. Never prefix with `_`.
+            - After deleting a declaration, also remove any imports that are now unused.
+            - Do NOT touch code that is actually used anywhere.
+            - Watch for multi-line generic signatures: a function like
+              `function foo<T>(a: Record<string, T>)` has `{}` inside the generic that
+              can confuse naive brace-tracking. Read the full declaration before deleting
+              so you capture the complete function including its body.
+
+            Steps:
+            1. Run `pnpm run compile 2>&1 | grep "error TS"` in web-app/ to find dead locals
+            2. For each error, open the file, read the full declaration, delete it entirely
+            3. Run `pnpm exec biome check --write --unsafe .` in web-app/ to remove any
+               unused imports that the deletions exposed (biome correctly removes imports)
+            4. Repeat compile until zero TS errors
+            5. Run `pnpm run build` in web-app/ — this is the final gate.
+               If build fails, fix errors and re-run until it exits 0.
+            6. Run `pnpm exec biome check --write .` in web-app/ for final formatting
+
+          claude_args: |
+            --allowedTools "Read,Edit,Glob,Grep,Bash(pnpm run compile:*),Bash(pnpm run build:*),Bash(pnpm exec biome:*),Bash(grep:*)"
+
+      # Hard gate: if Claude couldn't fix everything, fail before opening a PR
+      # with a broken TypeScript compile.
+      - name: Verify TypeScript compiles
+        working-directory: web-app
+        run: pnpm run compile
+
+      - name: Get run date
+        id: date
+        run: echo "value=$(date -u +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: autofix/dead-code-${{ github.run_id }}
+          commit-message: "chore(${{ steps.date.outputs.value }}): monthly dead code and unused dependency cleanup"
+          title: "chore: monthly dead code cleanup ${{ steps.date.outputs.value }}"
+          body: |
+            Automated monthly dead code and dependency cleanup.
+
+            **Tools used (in order):**
+            1. [`knip --fix`](https://knip.dev) — deletes unused source files, removes unused npm packages from `package.json`, strips `export` keywords from unused symbols
+            2. `pnpm install` — syncs `pnpm-lock.yaml` after package removals
+            3. `biome check --write --unsafe` — removes unused local variables and imports left over after `knip` de-exported them
+            4. `biome check --write` — enforces consistent formatting
+            5. Claude Code Action (if needed) — resolves any remaining TypeScript errors that automated tools can't fix (e.g. hook-rule violations from biome's `_Foo` renaming)
+
+            **Checklist before merging:**
+            - [ ] TypeScript compiles: `pnpm run compile` in `web-app/`
+            - [ ] No biome errors: `pnpm exec biome check .` in `web-app/`
+            - [ ] Dev server starts: `pnpm dev` in `web-app/`
+            - [ ] Spot-check Home, Thread, IDE, Workflows, Apps pages
+
+          delete-branch: true
+          labels: "automated,chore"

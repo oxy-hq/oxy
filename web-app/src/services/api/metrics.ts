@@ -9,14 +9,14 @@ export interface MetricAnalytics {
   trend: string | null;
 }
 
-export interface SourceTypeBreakdown {
+interface SourceTypeBreakdown {
   agent: number;
   workflow: number;
   task: number;
   analytics?: number;
 }
 
-export interface ContextTypeBreakdown {
+interface ContextTypeBreakdown {
   sql: number;
   semantic_query: number;
   question: number;
@@ -41,12 +41,12 @@ export interface MetricsListResponse {
   offset: number;
 }
 
-export interface UsageTrendPoint {
+interface UsageTrendPoint {
   date: string;
   count: number;
 }
 
-export interface RelatedMetric {
+interface RelatedMetric {
   name: string;
   co_occurrence_count: number;
 }

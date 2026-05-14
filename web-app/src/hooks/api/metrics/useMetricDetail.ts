@@ -3,7 +3,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { type MetricDetailResponse, MetricsService } from "@/services/api/metrics";
 import { metricsQueryKeys } from "./useMetricsAnalytics";
 
-export function useMetricDetail(metricName: string, days: number = 30, enabled: boolean = true) {
+function useMetricDetail(metricName: string, days: number = 30, enabled: boolean = true) {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 

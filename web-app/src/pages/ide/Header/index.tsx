@@ -19,13 +19,11 @@ import { RepoSwitcher } from "./components/RepoSwitcher";
 import { IdeGitProvider } from "./context/IdeGitContext";
 import { useGithubUrls } from "./hooks/useGithubUrls";
 
-export const OPEN_BRANCH_SETTINGS = "ide:open-branch-settings";
-
 // Stable reference so memoised consumers don't invalidate every render
 // before the workspace loads.
 const EMPTY_PROTECTED_BRANCHES: string[] = [];
 
-export const Header = () => {
+const Header = () => {
   const { workspace: project } = useCurrentWorkspace();
   const { selectedRepo } = useSelectedRepo();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";

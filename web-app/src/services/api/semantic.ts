@@ -7,15 +7,6 @@ interface BaseFilter {
   field: string;
 }
 
-export type DateRangePreset =
-  | "today"
-  | "yesterday"
-  | "last 1 week"
-  | "last 1 month"
-  | "last 3 months"
-  | "last 1 year"
-  | "last 12 months";
-
 export type DateRangeValue = string | Date;
 
 export type SemanticQueryFilter =
@@ -39,7 +30,7 @@ export interface SemanticQueryOrder {
   direction: "asc" | "desc";
 }
 
-export type TimeDimension = {
+type TimeDimension = {
   dimension: string;
   granularity?:
     | "year"
@@ -53,7 +44,7 @@ export type TimeDimension = {
     | string;
 };
 
-export interface SemanticQueryParams {
+interface SemanticQueryParams {
   topic?: string;
   measures?: string[];
   dimensions?: string[];
@@ -75,14 +66,14 @@ export interface SemanticQueryCompileResponse {
   sql: string;
 }
 
-export interface Dimension {
+interface Dimension {
   name: string;
   type: string;
   description?: string;
   expr: string;
 }
 
-export interface Measure {
+interface Measure {
   name: string;
   type: string;
   description?: string;
@@ -99,7 +90,7 @@ export interface ViewResponse {
   measures: Measure[];
 }
 
-export interface TopicResponse {
+interface TopicResponse {
   name: string;
   description?: string;
   views: string[];
