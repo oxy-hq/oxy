@@ -34,7 +34,7 @@ export const configureMonaco = (monaco: Monaco) => {
     hover: false,
     completion: true,
     validate: true,
-    format: true,
+    format: { enable: true },
     schemas: [
       {
         fileMatch: ["**/*.app.yml", "**/*.app.yaml"],

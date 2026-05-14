@@ -47,7 +47,7 @@ export function DatePicker({
           selected={date}
           onSelect={onSelect}
           disabled={(date) => (minDate ? date < minDate : false)}
-          initialFocus
+          autoFocus
         />
       </PopoverContent>
     </Popover>
