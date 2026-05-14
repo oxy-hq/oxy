@@ -25,14 +25,11 @@ on:
         description: "Tag/version for stable release (required for stable)"
         required: false
         default: ""
-      build_targets:
-        description: "Docker targets to build"
+      build_docker:
+        description: "Build and publish Docker image"
         required: false
-        default: "runtime"
-        type: choice
-        options:
-          - runtime
-          - none
+        default: true
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -70,19 +67,17 @@ jobs:
       should_build: ${{ steps.config.outputs.should_build }}
       should_build_docker: ${{ steps.config.outputs.should_build_docker }}
       release_repo: ${{ steps.config.outputs.release_repo }}
-      docker_tag_prefix: ${{ steps.config.outputs.docker_tag_prefix }}
       needs_changesets: ${{ steps.config.outputs.needs_changesets }}
       is_stable: ${{ steps.config.outputs.is_stable }}
       short_sha: ${{ steps.config.outputs.short_sha }}
       current_date: ${{ steps.config.outputs.current_date }}
-      compat_tag: ${{ steps.config.outputs.compat_tag }}
     steps:
       - name: Determine configuration
         id: config
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
           CURRENT_DATE=$(date -u +'%Y%m%d')
-          BUILD_TARGETS="${{ inputs.build_targets || 'runtime' }}"
+          BUILD_DOCKER="${{ inputs.build_docker == false && 'false' || 'true' }}"
 
           echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "current_date=${CURRENT_DATE}" >> $GITHUB_OUTPUT
@@ -95,10 +90,8 @@ jobs:
             DISPLAY_NAME="Release ${VERSION}"
             SHOULD_BUILD="true"
             RELEASE_REPO="oxy-hq/oxygen"
-            DOCKER_TAG_PREFIX=""
             NEEDS_CHANGESETS="false"
             IS_STABLE="true"
-            COMPAT_TAG=""
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.release_type }}" == "stable" ]]; then
             # Manual stable release
             CHANNEL="stable"
@@ -110,141 +103,153 @@ jobs:
             DISPLAY_NAME="Release ${VERSION}"
             SHOULD_BUILD="true"
             RELEASE_REPO="oxy-hq/oxygen"
-            DOCKER_TAG_PREFIX=""
             NEEDS_CHANGESETS="false"
             IS_STABLE="true"
-            COMPAT_TAG=""
           else
-            # Push to main or manual edge
+            # Push to main or manual edge — defer to changesets
             CHANNEL="edge"
             VERSION="edge-${SHORT_SHA}"
             DISPLAY_NAME="Edge Build ${SHORT_SHA}"
-            SHOULD_BUILD="defer"  # Will be determined by changesets
+            SHOULD_BUILD="defer"
             NEEDS_CHANGESETS="true"
             RELEASE_REPO="oxy-hq/oxygen-nightly"
-            DOCKER_TAG_PREFIX="edge-"
             IS_STABLE="false"
-            COMPAT_TAG="edge-main-${SHORT_SHA}"
-          fi
-
-          # Determine if Docker should be built
-          if [ "$BUILD_TARGETS" = "none" ]; then
-            SHOULD_BUILD_DOCKER="false"
-          else
-            SHOULD_BUILD_DOCKER="true"
           fi
 
           echo "channel=${CHANNEL}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "display_name=${DISPLAY_NAME}" >> $GITHUB_OUTPUT
           echo "should_build=${SHOULD_BUILD}" >> $GITHUB_OUTPUT
-          echo "should_build_docker=${SHOULD_BUILD_DOCKER}" >> $GITHUB_OUTPUT
+          echo "should_build_docker=${BUILD_DOCKER}" >> $GITHUB_OUTPUT
           echo "release_repo=${RELEASE_REPO}" >> $GITHUB_OUTPUT
-          echo "docker_tag_prefix=${DOCKER_TAG_PREFIX}" >> $GITHUB_OUTPUT
           echo "needs_changesets=${NEEDS_CHANGESETS}" >> $GITHUB_OUTPUT
           echo "is_stable=${IS_STABLE}" >> $GITHUB_OUTPUT
-          echo "compat_tag=${COMPAT_TAG}" >> $GITHUB_OUTPUT
 
-          echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Channel | ${CHANNEL} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | ${VERSION} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Release Repo | ${RELEASE_REPO} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Docker Targets | ${BUILD_TARGETS} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Needs Changesets | ${NEEDS_CHANGESETS} |" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "### Build Configuration"
+            echo "| Setting | Value |"
+            echo "|---------|-------|"
+            echo "| Channel | ${CHANNEL} |"
+            echo "| Version | ${VERSION} |"
+            echo "| Release Repo | ${RELEASE_REPO} |"
+            echo "| Build Docker | ${BUILD_DOCKER} |"
+            echo "| Needs Changesets | ${NEEDS_CHANGESETS} |"
+          } >> $GITHUB_STEP_SUMMARY
 
   # ============================================================================
   # Job 2: Changesets (for edge builds only)
   # ============================================================================
   changesets:
     name: Changesets
-    needs: [determine-build-type]
+    needs: [ determine-build-type ]
     if: needs.determine-build-type.outputs.needs_changesets == 'true'
     uses: ./.github/workflows/changesets.yaml
 
   # ============================================================================
-  # Job 3a: Download Latest Edge Binary (for Dockerfile-only changes)
-  #
-  # Optimization: When only Dockerfile changes (no code/web-app changes), skip
-  # the expensive build-cli job and instead download the latest edge release.
-  # This job only runs for:
-  # - Edge builds (not stable)
-  # - When docker changeset is true
-  # - But oxy and web-app changesets are false
-  # - Only downloads Linux binaries (needed for Docker images)
+  # Shared condition: should we run the build pipeline?
+  # Stable/manual releases: always.
+  # Edge: only if a relevant changeset is detected.
   # ============================================================================
-  download-edge-binary:
-    name: Download latest edge binary for ${{ matrix.job.target }}
-    needs: [determine-build-type, changesets]
-    if: |
-      always() &&
-      needs.determine-build-type.result == 'success' &&
-      needs.determine-build-type.outputs.channel == 'edge' &&
-      needs.changesets.result == 'success' &&
-      needs.changesets.outputs.docker == 'true' &&
-      needs.changesets.outputs.oxy == 'false' &&
-      needs.changesets.outputs.web-app == 'false'
-    runs-on: ${{ matrix.job.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        job:
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Create artifacts folder
-        run: mkdir -p artifacts
-
-      - name: Download latest edge binary
-        env:
-          OXY_VERSION: latest
-        run: |
-          # Download using the install script
-          bash install_oxy_nightly.sh
-
-          # Find where it was installed
-          if [ "$(id -u)" -eq 0 ]; then
-            INSTALL_DIR="/usr/local/bin"
-          else
-            INSTALL_DIR="$HOME/.local/bin"
-          fi
-
-          # Copy to artifacts
-          cp "$INSTALL_DIR/oxy" artifacts/oxy-${{ matrix.job.target }}
-          chmod +x artifacts/oxy-${{ matrix.job.target }}
-
-      - name: Create binary checksum
-        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee
-          SHA256SUM-oxy-${{ matrix.job.target }}.txt
-        working-directory: artifacts
-
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: cli-${{ matrix.job.target }}
-          path: artifacts/**/*
-          if-no-files-found: error
-          retention-days: 1
 
   # ============================================================================
-  # Job 3b: Build CLI (4 targets)
+  # Job 3: Build web-app once (shared across all CLI targets)
   # ============================================================================
-  build-cli:
-    name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for ${{
-      matrix.job.target }}
-    needs: [determine-build-type, changesets]
+  build-web-app:
+    name: Build web-app
+    needs: [ determine-build-type, changesets ]
     if: |
       always() &&
       needs.determine-build-type.result == 'success' &&
       (needs.determine-build-type.outputs.should_build == 'true' ||
        (needs.changesets.result == 'success' &&
-        (needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true')))
+        (needs.changesets.outputs.oxy == 'true' ||
+         needs.changesets.outputs.web-app == 'true' ||
+         needs.changesets.outputs.docker == 'true')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
+            needs.determine-build-type.outputs.version || github.sha }}
+
+      - uses: pnpm/action-setup@v5
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+
+      - name: Get pnpm store directory
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm store cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Cache TypeScript build info
+        uses: actions/cache@v5
+        with:
+          path: |
+            web-app/tsconfig.app.tsbuildinfo
+            web-app/tsconfig.node.tsbuildinfo
+          key: typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json',
+            'web-app/src/**/*.ts', 'web-app/src/**/*.tsx') }}
+          restore-keys: |
+            typescript-${{ runner.os }}-
+
+      - name: Cache Vite
+        uses: actions/cache@v5
+        with:
+          path: web-app/node_modules/.vite
+          key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml',
+            'web-app/vite.config.*') }}
+          restore-keys: |
+            vite-${{ runner.os }}-
+
+      - name: Cache Turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('web-app/**',
+            '**/pnpm-lock.yaml') }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Install dependencies & Build web-app
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm build
+
+      - name: Upload web-app dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-app-dist
+          path: web-app/dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  # ============================================================================
+  # Job 4: Build CLI (3 targets — Linux x86/arm64 + Apple Silicon)
+  # ============================================================================
+  build-cli:
+    name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for ${{
+      matrix.job.target }}
+    needs: [ determine-build-type, build-web-app ]
+    if: |
+      always() &&
+      needs.determine-build-type.result == 'success' &&
+      needs.build-web-app.result == 'success'
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
@@ -252,35 +257,26 @@ jobs:
         job:
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
-      - uses: actions/create-github-app-token@v3
-        name: Create GitHub App Token
-        id: app-token
-        with:
-          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
-          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: |
-            oxygen
-            oxygen-internal
-            oxygen-nightly
-
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
             needs.determine-build-type.outputs.version || github.sha }}
-          token: ${{ steps.app-token.outputs.token }}
 
       - name: Create artifacts folder
         run: mkdir -p artifacts
+
+      - name: Download web-app dist
+        uses: actions/download-artifact@v8
+        with:
+          name: web-app-dist
+          path: web-app/dist/
 
       - uses: rui314/setup-mold@v1
         if: runner.os == 'Linux'
@@ -314,77 +310,14 @@ jobs:
           fi
           protoc --version
 
-      - uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - name: Install Node.js
-        uses: actions/setup-node@v6
-        id: setup-node
-        with:
-          node-version: 24.x
-          cache: "pnpm"
-
-      # Cache pnpm store for faster dependency installation
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm store cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
-
-      # Cache TypeScript build info for incremental compilation
-      - name: Cache TypeScript build info
-        uses: actions/cache@v5
-        with:
-          path: |
-            web-app/tsconfig.app.tsbuildinfo
-            web-app/tsconfig.node.tsbuildinfo
-          key:
-            typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json',
-            'web-app/src/**/*.ts', 'web-app/src/**/*.tsx') }}
-          restore-keys: |
-            typescript-${{ runner.os }}-
-
-      # Cache Vite optimized deps
-      - name: Cache Vite
-        uses: actions/cache@v5
-        with:
-          path: web-app/node_modules/.vite
-          key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{
-            hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
-          restore-keys: |
-            vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
-            vite-${{ runner.os }}-
-
-      # Cache Turbo for monorepo builds
-      - name: Cache Turbo
-        uses: actions/cache@v5
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
-
-      - name: Install dependencies & Build web-app
-        env:
-          NODE_OPTIONS: "--max-old-space-size=8192"
-        run: |
-          pnpm install --frozen-lockfile --prefer-offline
-          pnpm build
-
       - name: Build oxy CLI
         run: |
           cargo build --release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
+      # Schema generation runs on the fastest target so it doesn't block macOS.
       - name: Generate config schema (once)
-        if: matrix.job.target == 'aarch64-apple-darwin'
+        if: matrix.job.target == 'x86_64-unknown-linux-gnu'
         run: |
           cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
           cp -a json-schemas/. artifacts/
@@ -404,12 +337,12 @@ jobs:
           retention-days: 1
 
   # ============================================================================
-  # Job 4: Release CLI
+  # Job 5: Release CLI
   # ============================================================================
   release-cli:
     name: Release ${{ needs.determine-build-type.outputs.channel }} CLI
     runs-on: ubuntu-latest
-    needs: [determine-build-type, build-cli]
+    needs: [ determine-build-type, build-cli ]
     # Concurrency: Lock releases per channel and version/ref; queue (don't cancel)
     # so commits release in push order.
     concurrency:
@@ -437,30 +370,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          # Stable releases need full history for git-cliff release notes.
+          # Edge releases only need HEAD.
+          fetch-depth: ${{ needs.determine-build-type.outputs.is_stable == 'true' && 0 || 1 }}
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Download release assets from artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
+          pattern: cli-*
           merge-multiple: true
 
-      - name: List all artifacts
-        run: ls -R ./artifacts
-
-      - name: Combine checksums
-        run: cat artifacts/SHA256SUM-oxy-*.txt | tee artifacts/SHA256SUMS.txt
-
-      - name: Ensure binaries are executable
-        run: chmod +x artifacts/oxy-*
-
-      # Edge only: Create transitional compatibility tag
-      - name: Create transitional compatibility tag (edge only)
-        if: needs.determine-build-type.outputs.compat_tag != ''
+      - name: Combine checksums and ensure executables
         run: |
-          git tag ${{ needs.determine-build-type.outputs.compat_tag }} || true
-          git push origin ${{ needs.determine-build-type.outputs.compat_tag }} || true
+          cat artifacts/SHA256SUM-oxy-*.txt | tee artifacts/SHA256SUMS.txt
+          chmod +x artifacts/oxy-*
 
       - name: Get commit message
         id: commit-msg
@@ -472,7 +397,6 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
-      # Stable release
       - name: Install git-cliff (stable only)
         if: needs.determine-build-type.outputs.is_stable == 'true'
         uses: taiki-e/install-action@v2
@@ -481,8 +405,7 @@ jobs:
 
       - name: Generate release notes (stable only)
         if: needs.determine-build-type.outputs.is_stable == 'true'
-        run:
-          git cliff --tag ${{ needs.determine-build-type.outputs.version }} --latest
+        run: git cliff --tag ${{ needs.determine-build-type.outputs.version }} --latest
           -o /tmp/release-notes.md
 
       - name: Create stable release
@@ -501,7 +424,6 @@ jobs:
             artifacts/*.whl
           fail_on_unmatched_files: false
 
-      # Edge release
       - name: Create edge release
         if: needs.determine-build-type.outputs.is_stable == 'false'
         uses: softprops/action-gh-release@v3
@@ -523,38 +445,31 @@ jobs:
             Date: ${{ needs.determine-build-type.outputs.current_date }}
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             Message: ${{ steps.commit-msg.outputs.message }}
-            Primary Tag: ${{ needs.determine-build-type.outputs.version }}
-            Transitional Tag: ${{ needs.determine-build-type.outputs.compat_tag || 'n/a' }}
+            Tag: ${{ needs.determine-build-type.outputs.version }}
             To install latest:
             `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
             To install this exact build:
             `OXY_VERSION=${{ needs.determine-build-type.outputs.version }} bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
 
   # ============================================================================
-  # Job 5: Build and Publish Docker Images
+  # Job 6: Build and Publish Docker Images (linux/amd64 + linux/arm64)
   # ============================================================================
   build-docker-images:
-    name: Build ${{ matrix.target.name }} ${{
-      needs.determine-build-type.outputs.channel }} Docker for ${{ matrix.arch
-      }}
-    needs: [determine-build-type, build-cli, download-edge-binary]
+    name: Build ${{ needs.determine-build-type.outputs.channel }} Docker for ${{
+      matrix.arch }}
+    needs: [ determine-build-type, build-cli ]
     if: |
       always() &&
-      (needs.build-cli.result == 'success' || needs.download-edge-binary.result == 'success') &&
+      needs.build-cli.result == 'success' &&
       needs.determine-build-type.outputs.should_build_docker == 'true'
     concurrency:
       group: docker-${{ needs.determine-build-type.outputs.channel }}-${{
-        matrix.target.name }}-${{ matrix.arch }}
+        matrix.arch }}
       cancel-in-progress: false
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
-        arch: [linux/amd64, linux/arm64]
-        target:
-          - name: runtime
-            image: oxygen
-            target: runtime
         include:
           - arch: linux/amd64
             runner: ubuntu-latest
@@ -565,23 +480,10 @@ jobs:
             rust_target: aarch64-unknown-linux-gnu
             arch_tag: arm64
     steps:
-      - name: Check if should build ${{ matrix.target.name }}
-        id: should_build
-        run: |
-          BUILD_TARGETS="${{ inputs.build_targets || 'runtime' }}"
-          TARGET="${{ matrix.target.name }}"
-
-          if [ "$BUILD_TARGETS" = "runtime" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          else
-            echo "should_build=false" >> $GITHUB_OUTPUT
-            echo "Skipping $TARGET"
-          fi
-
       - name: Checkout Dockerfile
-        if: steps.should_build.outputs.should_build == 'true'
         uses: actions/checkout@v6
         with:
+          fetch-depth: 1
           ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
             needs.determine-build-type.outputs.version || github.sha }}
           sparse-checkout: |
@@ -590,24 +492,20 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Download pre-built binary
-        if: steps.should_build.outputs.should_build == 'true'
         uses: actions/download-artifact@v8
         with:
           name: cli-${{ matrix.rust_target }}
           path: artifacts
 
       - name: Prepare binary for Docker build
-        if: steps.should_build.outputs.should_build == 'true'
         run: |
           cp artifacts/oxy-${{ matrix.rust_target }} oxy
           chmod +x oxy
 
       - name: Set up Docker Buildx
-        if: steps.should_build.outputs.should_build == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        if: steps.should_build.outputs.should_build == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -615,48 +513,42 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine tags
-        if: steps.should_build.outputs.should_build == 'true'
         id: meta
         run: |
           VERSION="${{ needs.determine-build-type.outputs.version }}"
           CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
           DATE="${{ needs.determine-build-type.outputs.current_date }}"
           SHORT_SHA="${{ needs.determine-build-type.outputs.short_sha }}"
-          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ matrix.target.image }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/oxygen"
           ARCH="${{ matrix.arch_tag }}"
 
           if [ "$CHANNEL" = "stable" ]; then
-            TAGS="${IMAGE}:${VERSION}-${ARCH}"
-            TAGS="${TAGS},${IMAGE}:latest-${ARCH}"
+            TAGS="${IMAGE}:${VERSION}-${ARCH},${IMAGE}:latest-${ARCH}"
           else
-            # Edge
             TAGS="${IMAGE}:edge-${DATE}-${ARCH}"
             TAGS="${TAGS},${IMAGE}:edge-${SHORT_SHA}-${ARCH}"
             TAGS="${TAGS},${IMAGE}:edge-latest-${ARCH}"
-            # Transitional compatibility tag
-            TAGS="${TAGS},${IMAGE}:edge-main-${SHORT_SHA}-${ARCH}"
           fi
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
-      - name: Build and push ${{ matrix.target.name }} image
-        if: steps.should_build.outputs.should_build == 'true'
+      - name: Build and push image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.prebuilt
-          target: ${{ matrix.target.target }}
+          target: runtime
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           build-args: BINARY_PATH=oxy
           provenance: false
 
   # ============================================================================
-  # Job 6: Trivy Docker Image Security Scan
+  # Job 7: Trivy Docker Image Security Scan
   # ============================================================================
   trivy-image-scan:
     name: Trivy Docker Image Scan
-    needs: [determine-build-type, build-docker-images]
+    needs: [ determine-build-type, build-docker-images ]
     if: |
       always() &&
       needs.build-docker-images.result == 'success'
@@ -713,42 +605,20 @@ jobs:
           fi
 
   # ============================================================================
-  # Job 7: Create and Push Multi-Arch Manifests
+  # Job 8: Create and Push Multi-Arch Manifests
   # ============================================================================
   create-manifests:
-    name: Create ${{ matrix.target.name }} ${{
-      needs.determine-build-type.outputs.channel }} manifest
-    needs: [determine-build-type, build-docker-images]
-    # Concurrency: Lock manifest creation per target and channel
+    name: Create ${{ needs.determine-build-type.outputs.channel }} manifest
+    needs: [ determine-build-type, build-docker-images ]
     concurrency:
-      group: manifest-${{ needs.determine-build-type.outputs.channel }}-${{
-        matrix.target.name }}
+      group: manifest-${{ needs.determine-build-type.outputs.channel }}
       cancel-in-progress: false
     if: |
       always() &&
       needs.build-docker-images.result == 'success'
     runs-on: ubuntu-24.04-arm
-    strategy:
-      matrix:
-        target:
-          - name: runtime
-            image: oxygen
     steps:
-      - name: Check if should publish ${{ matrix.target.name }}
-        id: should_publish
-        run: |
-          BUILD_TARGETS="${{ inputs.build_targets || 'runtime' }}"
-          TARGET="${{ matrix.target.name }}"
-
-          if [ "$BUILD_TARGETS" = "runtime" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-          else
-            echo "should_publish=false" >> $GITHUB_OUTPUT
-            echo "Skipping manifest for $TARGET"
-          fi
-
       - name: Log in to GitHub Container Registry
-        if: steps.should_publish.outputs.should_publish == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -756,62 +626,35 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push multi-arch manifests
-        if: steps.should_publish.outputs.should_publish == 'true'
         run: |
           VERSION="${{ needs.determine-build-type.outputs.version }}"
           CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
           DATE="${{ needs.determine-build-type.outputs.current_date }}"
-          SHORT_SHA="${{ needs.determine-build-type.outputs.short_sha }}"
-          COMPAT_TAG="${{ needs.determine-build-type.outputs.compat_tag }}"
-          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ matrix.target.image }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/oxygen"
 
-          echo "Creating $CHANNEL manifests for ${{ matrix.target.image }}..."
+          push_manifest() {
+            local tag="$1"
+            docker manifest create "${IMAGE}:${tag}" \
+              "${IMAGE}:${tag}-amd64" \
+              "${IMAGE}:${tag}-arm64"
+            docker manifest push "${IMAGE}:${tag}"
+            echo "✅ Published ${IMAGE}:${tag}"
+          }
 
           if [ "$CHANNEL" = "stable" ]; then
-            # Version manifest
-            docker manifest create ${IMAGE}:${VERSION} \
-              ${IMAGE}:${VERSION}-amd64 \
-              ${IMAGE}:${VERSION}-arm64
-            docker manifest push ${IMAGE}:${VERSION}
-
-            # Latest manifest
-            docker manifest create ${IMAGE}:latest \
-              ${IMAGE}:latest-amd64 \
-              ${IMAGE}:latest-arm64
-            docker manifest push ${IMAGE}:latest
-
-            echo "✅ Published ${IMAGE}:${VERSION} and ${IMAGE}:latest"
+            push_manifest "${VERSION}"
+            push_manifest "latest"
           else
-            # Edge: Date manifest
-            docker manifest create ${IMAGE}:edge-${DATE} \
-              ${IMAGE}:edge-${DATE}-amd64 \
-              ${IMAGE}:edge-${DATE}-arm64
-            docker manifest push ${IMAGE}:edge-${DATE}
-
-            # Edge: Latest manifest
-            docker manifest create ${IMAGE}:edge-latest \
-              ${IMAGE}:edge-latest-amd64 \
-              ${IMAGE}:edge-latest-arm64
-            docker manifest push ${IMAGE}:edge-latest
-
-            # Edge: Transitional compatibility manifest
-            if [ -n "$COMPAT_TAG" ]; then
-              docker manifest create ${IMAGE}:${COMPAT_TAG} \
-                ${IMAGE}:${COMPAT_TAG}-amd64 \
-                ${IMAGE}:${COMPAT_TAG}-arm64
-              docker manifest push ${IMAGE}:${COMPAT_TAG}
-              echo "✅ Published compatibility manifest: ${COMPAT_TAG}"
-            fi
-
-            echo "✅ Published edge manifests for ${{ matrix.target.image }}"
+            push_manifest "edge-${DATE}"
+            push_manifest "edge-latest"
           fi
 
   # ============================================================================
-  # Job 8: Create Deployment Summary
+  # Job 9: Create Deployment Summary
   # ============================================================================
   deployment-summary:
     name: Create Deployment Summary
-    needs: [determine-build-type, create-manifests]
+    needs: [ determine-build-type, create-manifests ]
     if: |
       always() &&
       needs.create-manifests.result == 'success'
@@ -821,23 +664,16 @@ jobs:
         run: |
           VERSION="${{ needs.determine-build-type.outputs.version }}"
           CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
-          BUILD_TARGETS="${{ inputs.build_targets || 'runtime' }}"
 
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          if [ "$CHANNEL" = "stable" ]; then
+            TAG="${VERSION}"
+          else
+            TAG="edge-latest"
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
           # Docker Images Published
 
-          ## Published Images
-
-          EOF
-
-          if [ "$BUILD_TARGETS" = "runtime" ]; then
-            if [ "$CHANNEL" = "stable" ]; then
-              TAG="${VERSION}"
-            else
-              TAG="edge-latest"
-            fi
-
-            cat >> $GITHUB_STEP_SUMMARY << EOF
           ### Oxygen Runtime
           - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxygen:${TAG}\`
           - **Architectures:** linux/amd64, linux/arm64
@@ -845,11 +681,6 @@ jobs:
             \`\`\`bash
             docker pull ghcr.io/${{ github.repository_owner }}/oxygen:${TAG}
             \`\`\`
-
-          EOF
-          fi
-
-          cat >> $GITHUB_STEP_SUMMARY << EOF
 
           ---
           **Channel:** \`${CHANNEL}\`
