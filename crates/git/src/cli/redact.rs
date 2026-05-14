@@ -40,7 +40,7 @@ pub(crate) fn redact_secrets(input: &str) -> Cow<'_, str> {
         let after_marker = idx + marker.len();
         let value_region = &rest[after_marker..];
         let consumed = value_region
-            .find(|c: char| matches!(c, '\n' | '\r' | '\'' | '"'))
+            .find(['\n', '\r', '\'', '"'])
             .unwrap_or(value_region.len());
         rest = &value_region[consumed..];
     }
