@@ -12,8 +12,6 @@ rust-version.workspace = true
 [dependencies]
 async-std = { workspace = true, features = ["attributes", "tokio1"] }
 sea-orm-migration = { workspace = true }
-entity = { workspace = true }
-anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

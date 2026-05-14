@@ -200,7 +200,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0"
 dependencies = [
  "cfg-if",
- "cipher 0.4.4",
+ "cipher",
  "cpufeatures 0.2.17",
 ]
 
@@ -212,7 +212,7 @@ checksum = "831010a0f742e1209b3bcea8fab6a8e149051ba6099432c8cb2cc117dec3ead1"
 dependencies = [
  "aead",
  "aes",
- "cipher 0.4.4",
+ "cipher",
  "ctr",
  "ghash",
  "subtle",
@@ -311,13 +311,10 @@ dependencies = [
  "async-stream",
  "async-trait",
  "futures-core",
- "reqwest 0.12.28",
  "serde",
  "serde_json",
- "serde_yaml",
  "tempfile",
  "tokio",
- "tokio-stream",
  "tokio-util",
  "tracing",
 ]
@@ -765,57 +762,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
-name = "apalis"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "504d52557a16b7b202941660f339c9182910d498cac40f93d15f6b31e6bef290"
-dependencies = [
- "apalis-core",
- "futures",
- "pin-project-lite",
- "serde",
- "thiserror 2.0.18",
- "tower 0.5.3",
- "tracing",
- "tracing-futures",
-]
-
-[[package]]
-name = "apalis-core"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3948d2051795c769e6a44a46549879af39d5e8e4fb113e0011cf99f7cd21b657"
-dependencies = [
- "futures",
- "futures-timer",
- "pin-project-lite",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tower 0.5.3",
- "ulid",
-]
-
-[[package]]
-name = "apalis-sql"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d96124556e2190523c1a52acf3b3e02af564343b4fa888f0b712775ac80ee04"
-dependencies = [
- "apalis-core",
- "async-stream",
- "chrono",
- "futures",
- "futures-lite",
- "log",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
 name = "approx"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -858,18 +804,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
 dependencies = [
  "rustversion",
-]
-
-[[package]]
-name = "argon2"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c3610892ee6e0cbce8ae2700349fcf8f98adb0dbfbee85aec3c9179d29cc072"
-dependencies = [
- "base64ct",
- "blake2",
- "cpufeatures 0.2.17",
- "password-hash",
 ]
 
 [[package]]
@@ -2575,19 +2509,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
-name = "bcrypt"
-version = "0.19.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24ae5479c93d3720e4c1dbd6b945b97457c50cb672781104768190371df1a905"
-dependencies = [
- "base64 0.22.1",
- "blowfish",
- "getrandom 0.4.2",
- "subtle",
- "zeroize",
-]
-
-[[package]]
 name = "bigdecimal"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2740,16 +2661,6 @@ dependencies = [
  "futures-io",
  "futures-lite",
  "piper",
-]
-
-[[package]]
-name = "blowfish"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62ce3946557b35e71d1bbe07ec385073ce9eda05043f95de134eb578fcf1a298"
-dependencies = [
- "byteorder",
- "cipher 0.5.1",
 ]
 
 [[package]]
@@ -3190,17 +3101,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
  "crypto-common 0.1.7",
- "inout 0.1.4",
-]
-
-[[package]]
-name = "cipher"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e34d8227fe1ba289043aeb13792056ff80fd6de1a9f49137a5f499de8e8c78ea"
-dependencies = [
- "crypto-common 0.2.1",
- "inout 0.2.2",
+ "inout",
 ]
 
 [[package]]
@@ -3814,7 +3715,7 @@ version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0369ee1ad671834580515889b80f2ea915f23b8be8d0daa4bbaf2ac5c7590835"
 dependencies = [
- "cipher 0.4.4",
+ "cipher",
 ]
 
 [[package]]
@@ -5640,16 +5541,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "email-encoding"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9298e6504d9b9e780ed3f7dfd43a61be8cd0e09eb07f7706a945b0072b6670b6"
-dependencies = [
- "base64 0.22.1",
- "memchr",
-]
-
-[[package]]
 name = "email_address"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6352,15 +6243,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "getopts"
-version = "0.2.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfe4fbac503b8d1f88e6676011885f34b7174f46e59956bba534ba83abded4df"
-dependencies = [
- "unicode-width",
-]
-
-[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6416,21 +6298,6 @@ name = "gimli"
 version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
-
-[[package]]
-name = "git2"
-version = "0.20.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b88256088d75a56f8ecfa070513a775dd9107f6530ef14919dac831af9cfe2b"
-dependencies = [
- "bitflags 2.11.1",
- "libc",
- "libgit2-sys",
- "log",
- "openssl-probe 0.1.6",
- "openssl-sys",
- "url",
-]
 
 [[package]]
 name = "glob"
@@ -7277,15 +7144,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
  "generic-array",
-]
-
-[[package]]
-name = "inout"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4250ce6452e92010fdf7268ccc5d14faa80bb12fc741938534c58f16804e03c7"
-dependencies = [
- "hybrid-array",
 ]
 
 [[package]]
@@ -8196,30 +8054,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
-name = "lettre"
-version = "0.11.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dabda5859ee7c06b995b9d1165aa52c39110e079ef609db97178d86aeb051fa7"
-dependencies = [
- "base64 0.22.1",
- "email-encoding",
- "email_address",
- "fastrand",
- "futures-util",
- "hostname",
- "httpdate",
- "idna",
- "mime",
- "native-tls",
- "nom 8.0.0",
- "percent-encoding",
- "quoted_printable",
- "socket2 0.6.3",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "levenshtein_automata"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8312,20 +8146,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libgit2-sys"
-version = "0.18.3+1.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9b3acc4b91781bb0b3386669d325163746af5f6e4f73e6d2d630e09a35f3487"
-dependencies = [
- "cc",
- "libc",
- "libssh2-sys",
- "libz-sys",
- "openssl-sys",
- "pkg-config",
-]
-
-[[package]]
 name = "libloading"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8385,27 +8205,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "libssh2-sys"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "220e4f05ad4a218192533b300327f5150e809b54c4ec83b5a1d91833601811b9"
-dependencies = [
- "cc",
- "libc",
- "libz-sys",
- "openssl-sys",
- "pkg-config",
- "vcpkg",
-]
-
-[[package]]
 name = "libz-sys"
 version = "1.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc3a226e576f50782b3305c5ccf458698f92798987f551c6a02efe8276721e22"
 dependencies = [
  "cc",
- "libc",
  "pkg-config",
  "vcpkg",
 ]
@@ -8750,10 +8555,8 @@ dependencies = [
 name = "migration"
 version = "0.5.55"
 dependencies = [
- "anyhow",
  "async-std",
  "clap",
- "entity",
  "sea-orm",
  "sea-orm-migration",
  "tokio",
@@ -9050,7 +8853,7 @@ dependencies = [
  "libc",
  "log",
  "openssl",
- "openssl-probe 0.2.1",
+ "openssl-probe",
  "openssl-sys",
  "schannel",
  "security-framework",
@@ -9694,12 +9497,6 @@ dependencies = [
 
 [[package]]
 name = "openssl-probe"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
-
-[[package]]
-name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
@@ -9833,15 +9630,10 @@ dependencies = [
 name = "oxy"
 version = "0.5.55"
 dependencies = [
- "a2a",
  "aes-gcm",
  "aho-corasick",
  "airhouse",
  "anyhow",
- "apalis",
- "apalis-core",
- "apalis-sql",
- "argon2",
  "arrow 57.3.0",
  "arrow 58.3.0",
  "assert_cmd",
@@ -9852,10 +9644,8 @@ dependencies = [
  "aws-credential-types",
  "aws-sigv4",
  "axum",
- "axum-server",
  "backoff",
  "base64 0.22.1",
- "bcrypt",
  "bollard",
  "chrono",
  "chrono-english",
@@ -9863,39 +9653,29 @@ dependencies = [
  "clickhouse",
  "colored",
  "connectorx",
- "constant_time_eq 0.5.0",
  "csv",
- "deser-incomplete",
  "df-interchange",
  "dirs 6.0.0",
- "dotenv",
  "duckdb",
- "email_address",
  "entity",
  "enum_dispatch",
  "fehler",
  "futures",
- "fxhash",
  "garde",
  "gcp-bigquery-client",
  "glob",
  "hex",
  "hmac 0.13.0",
  "home",
- "human-panic",
  "humantime",
- "include_dir",
  "indexmap 2.14.0",
  "indoc",
  "itertools 0.14.0",
- "jsonschema",
  "jsonwebtoken 10.4.0",
  "lancedb",
  "lazy_static",
- "lettre",
  "libc",
  "log",
- "migration",
  "minijinja",
  "ndarray",
  "omni",
@@ -9915,20 +9695,16 @@ dependencies = [
  "oxy-test-utils",
  "parquet",
  "predicates",
- "pulldown-cmark 0.13.3",
  "rand 0.10.1",
- "rapidfuzz",
  "regex",
  "reqwest 0.12.28",
  "rkyv",
  "rmcp",
- "rustc_version_runtime",
  "rustls 0.23.40",
  "schemars 0.8.22",
  "scopeguard",
  "sea-orm",
  "secrecy",
- "self_update",
  "semver",
  "sentry",
  "serde",
@@ -9942,11 +9718,9 @@ dependencies = [
  "short-uuid",
  "slugify",
  "snowflake-api 0.13.2",
- "sqlformat",
  "sqlparser 0.37.0",
  "sqlparser 0.61.0",
  "sqlx",
- "strip-ansi-escapes",
  "syntect",
  "tabled",
  "tempfile",
@@ -9958,19 +9732,14 @@ dependencies = [
  "tokio-util",
  "tower 0.5.3",
  "tower-http",
- "tower-serve-static",
  "tqdm",
  "tracing",
- "tracing-appender",
  "tracing-log",
  "tracing-subscriber",
  "url",
  "urlencoding",
  "utoipa",
- "utoipa-axum",
- "utoipa-swagger-ui",
  "uuid",
- "wildcard",
  "xxhash-rust",
 ]
 
@@ -10070,9 +9839,6 @@ dependencies = [
  "airhouse",
  "airlayer",
  "anyhow",
- "apalis",
- "apalis-core",
- "apalis-sql",
  "arrow 58.3.0",
  "assert_cmd",
  "async-openai",
@@ -10135,10 +9901,8 @@ dependencies = [
  "oxy-semantic",
  "oxy-shared",
  "oxy-test-utils",
- "oxy-thread",
  "oxy-workflow",
  "parquet",
- "pulldown-cmark 0.13.3",
  "rand 0.10.1",
  "rapidfuzz",
  "regex",
@@ -10188,7 +9952,6 @@ dependencies = [
  "utoipa-axum",
  "utoipa-swagger-ui",
  "uuid",
- "wildcard",
  "wiremock",
  "xxhash-rust",
 ]
@@ -10220,7 +9983,6 @@ dependencies = [
 name = "oxy-billing"
 version = "0.5.55"
 dependencies = [
- "axum",
  "chrono",
  "entity",
  "hex",
@@ -10282,7 +10044,6 @@ dependencies = [
 name = "oxy-looker"
 version = "0.5.55"
 dependencies = [
- "garde",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -10370,7 +10131,6 @@ dependencies = [
  "chrono",
  "dirs 6.0.0",
  "entity",
- "git2",
  "glob",
  "include_dir",
  "log",
@@ -10416,8 +10176,6 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
- "entity",
- "enum_dispatch",
  "futures",
  "indexmap 2.14.0",
  "itertools 0.14.0",
@@ -10426,7 +10184,6 @@ dependencies = [
  "oxy-semantic",
  "reqwest 0.12.28",
  "schemars 0.8.22",
- "sea-orm",
  "secrecy",
  "sentry",
  "serde",
@@ -10436,44 +10193,25 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
  "uuid",
- "wiremock",
 ]
 
 [[package]]
 name = "oxy-test-utils"
 version = "0.5.55"
 dependencies = [
- "async-trait",
  "serde",
  "serde_json",
  "serde_yaml",
  "serial_test",
  "tempfile",
  "tokio",
- "uuid",
  "wiremock",
 ]
 
 [[package]]
 name = "oxy-thread"
 version = "0.5.55"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "entity",
- "log",
- "oxy",
- "oxy-shared",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
 
 [[package]]
 name = "oxy-web"
@@ -10661,17 +10399,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f2a05b18d44e2957b88f96ba460715e295bc1d7510468a2f3d3b44535d26c24"
 dependencies = [
  "regex",
-]
-
-[[package]]
-name = "password-hash"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
-dependencies = [
- "base64ct",
- "rand_core 0.6.4",
- "subtle",
 ]
 
 [[package]]
@@ -11307,7 +11034,7 @@ dependencies = [
  "prettyplease",
  "prost 0.13.5",
  "prost-types 0.13.5",
- "pulldown-cmark 0.12.2",
+ "pulldown-cmark",
  "pulldown-cmark-to-cmark",
  "regex",
  "syn 2.0.117",
@@ -11419,31 +11146,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "pulldown-cmark"
-version = "0.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c3a14896dfa883796f1cb410461aef38810ea05f2b2c33c5aded3649095fdad"
-dependencies = [
- "bitflags 2.11.1",
- "getopts",
- "memchr",
- "pulldown-cmark-escape",
- "unicase",
-]
-
-[[package]]
-name = "pulldown-cmark-escape"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
-
-[[package]]
 name = "pulldown-cmark-to-cmark"
 version = "20.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c0f333311d2d8fda65bcf76af35054e9f38e253332a0289746156a59656988b"
 dependencies = [
- "pulldown-cmark 0.12.2",
+ "pulldown-cmark",
 ]
 
 [[package]]
@@ -11544,12 +11252,6 @@ checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
 ]
-
-[[package]]
-name = "quoted_printable"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "478e0585659a122aa407eb7e3c0e1fa51b1d8a870038bd29f0cf4a8551eea972"
 
 [[package]]
 name = "r-efi"
@@ -12402,7 +12104,7 @@ version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "612460d5f7bea540c490b2b6395d8e34a953e52b491accd6c86c8164c5932a63"
 dependencies = [
- "openssl-probe 0.2.1",
+ "openssl-probe",
  "rustls-pki-types",
  "schannel",
  "security-framework",
@@ -15047,15 +14749,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-futures"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
-dependencies = [
- "tracing",
-]
-
-[[package]]
 name = "tracing-log"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15171,16 +14864,6 @@ name = "ucd-trie"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
-
-[[package]]
-name = "ulid"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "470dbf6591da1b39d43c14523b2b469c86879a53e8b758c8e090a470fe7b1fbe"
-dependencies = [
- "rand 0.9.4",
- "web-time",
-]
 
 [[package]]
 name = "uname"
@@ -15805,15 +15488,6 @@ checksum = "0ce5da8ecb62bcd8ec8b7ea19f69a51275e91299be594ea5cc6ef7819e16cd03"
 dependencies = [
  "bytemuck",
  "safe_arch",
-]
-
-[[package]]
-name = "wildcard"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9b0540e91e49de3817c314da0dd3bc518093ceacc6ea5327cb0e1eb073e5189"
-dependencies = [
- "thiserror 2.0.18",
 ]
 
 [[package]]

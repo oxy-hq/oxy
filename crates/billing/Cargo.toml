@@ -9,7 +9,6 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-axum.workspace = true
 chrono.workspace = true
 entity.workspace = true
 hex.workspace = true

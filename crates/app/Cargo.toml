@@ -49,7 +49,6 @@ oxy-agent = { workspace = true }
 oxy-auth = { workspace = true }
 oxy-billing = { workspace = true }
 oxy-project = { workspace = true }
-oxy-thread = { workspace = true }
 oxy-workflow = { workspace = true }
 oxy-semantic = { workspace = true }
 a2a = { workspace = true }
@@ -134,7 +133,6 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 minijinja = { workspace = true, features = ["loader"] }
 once_cell = { workspace = true }
-pulldown-cmark = { workspace = true }
 scopeguard = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
@@ -155,7 +153,6 @@ regex = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 glob = { workspace = true }
-wildcard = { workspace = true }
 home = { workspace = true }
 human-panic = { workspace = true }
 humantime = { workspace = true }
@@ -178,9 +175,6 @@ urlencoding = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs"] }
 tracing-appender = { workspace = true }
 tracing-log = { workspace = true }
-apalis = { workspace = true }
-apalis-core = { workspace = true }
-apalis-sql = { workspace = true, features = ["postgres", "tokio"] }
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
 semver = { workspace = true }
 backoff = { workspace = true, features = ["tokio"] }

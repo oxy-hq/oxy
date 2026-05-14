@@ -37,7 +37,6 @@ exclude = [
 [dependencies]
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
-argon2 = { workspace = true }
 arrow = { workspace = true, features = [
   "json",
   "ipc",
@@ -60,10 +59,8 @@ async-openai = { workspace = true, features = [
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true, features = ["macros", "http2"] }
-axum-server = { workspace = true }
 base64 = { workspace = true }
 bollard = { workspace = true }
-bcrypt = { workspace = true }
 chrono = { workspace = true }
 chrono-english = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
@@ -77,9 +74,7 @@ connectorx = { workspace = true, features = [
 ] }
 csv = { workspace = true }
 dirs = { workspace = true }
-dotenv = { workspace = true }
 duckdb = { workspace = true }
-email_address = { workspace = true }
 entity = { workspace = true }
 omni = { workspace = true }
 oxy-looker = { workspace = true }
@@ -101,31 +96,24 @@ oxy-platform = { workspace = true }
 # Cannot add oxy-agent, oxy-workflow, etc. here due to circular dependency
 # They depend on oxy, so oxy cannot depend on them
 # Use them via CLI crate instead
-a2a = { workspace = true }
 oxy-auth = { workspace = true }
 airhouse = { workspace = true, features = ["admin"] }
 enum_dispatch = { workspace = true }
 futures = { workspace = true }
 garde = { workspace = true, features = ["full"] }
 glob = { workspace = true }
-wildcard = { workspace = true }
 home = { workspace = true }
-human-panic = { workspace = true }
 humantime = { workspace = true }
-include_dir = { workspace = true }
 indoc = { workspace = true }
 itertools = { workspace = true }
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 lancedb = { workspace = true }
 lazy_static = { workspace = true }
 libc = { workspace = true }
-lettre = { workspace = true }
 log = { workspace = true }
-migration = { workspace = true }
 minijinja = { workspace = true, features = ["loader"] }
 once_cell = { workspace = true }
 predicates = { workspace = true }
-pulldown-cmark = { workspace = true }
 rand = { workspace = true }
 schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 scopeguard = { workspace = true }
@@ -134,9 +122,7 @@ serde = { workspace = true }
 serde_arrow = { workspace = true, features = ["arrow-58"] }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
-self_update = { workspace = true }
 slugify = { workspace = true }
-sqlformat = { workspace = true }
 syntect = { workspace = true }
 tabled = { workspace = true }
 terminal-light = { workspace = true }
@@ -153,13 +139,10 @@ tower-http = { workspace = true, features = [
   "timeout",
   "compression-gzip",
 ] }
-tower-serve-static = { workspace = true }
 tqdm = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 reqwest = { workspace = true }
 secrecy = { workspace = true }
-fxhash = { workspace = true }
-deser-incomplete = { workspace = true }
 snowflake-api = { workspace = true }
 rmcp = { workspace = true, features = [
   "server",
@@ -170,9 +153,6 @@ serde_with = { workspace = true }
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367
 utoipa = { workspace = true, features = ["uuid", "chrono", "axum_extras"] }
-utoipa-axum = { workspace = true }
-utoipa-swagger-ui = { workspace = true, features = ["axum"] }
-strip-ansi-escapes = { workspace = true }
 regex = { workspace = true }
 url = { workspace = true }
 gcp-bigquery-client = { workspace = true }
@@ -180,16 +160,11 @@ fehler = { workspace = true }
 sqlparser = { workspace = true }
 sqlparser_connectorx = { package = "sqlparser", version = "0.37" }
 backoff = { workspace = true, features = ["tokio"] }
-rustc_version_runtime = { workspace = true }
-apalis = { workspace = true }
-apalis-core = { workspace = true }
-apalis-sql = { workspace = true, features = ["postgres", "tokio"] }
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
 semver = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs"] }
 parquet = { workspace = true } # needs to be the same with arrow version
 short-uuid = { workspace = true }
-rapidfuzz = { workspace = true }
 indexmap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = [
@@ -197,9 +172,7 @@ tracing-subscriber = { workspace = true, features = [
   "fmt",
   "json",
 ] }
-tracing-appender = { workspace = true }
 tracing-log = { workspace = true }
-jsonschema = { workspace = true }
 ndarray = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
@@ -207,7 +180,6 @@ hex = { workspace = true }
 serde_yaml = { workspace = true }
 urlencoding = { workspace = true }
 tempfile = { workspace = true }
-constant_time_eq = { workspace = true }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 aho-corasick = { workspace = true }
 rkyv = { workspace = true, features = ["validation"] }

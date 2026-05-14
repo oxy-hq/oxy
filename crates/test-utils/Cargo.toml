@@ -13,7 +13,6 @@ tokio = { workspace = true, features = [
     "macros",
     "rt-multi-thread",
 ] }
-async-trait = { workspace = true }
 
 # HTTP mocking
 wiremock = { workspace = true }
@@ -26,6 +25,3 @@ serde_yaml = { workspace = true }
 
 # Serial test execution (re-exported for convenience)
 serial_test = { workspace = true }
-
-# For creating test fixtures
-uuid = { workspace = true }

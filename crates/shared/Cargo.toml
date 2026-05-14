@@ -13,10 +13,6 @@ rust-version.workspace = true
 tokio = { workspace = true }
 async-trait = { workspace = true }
 
-# Database
-sea-orm = { workspace = true }
-entity = { workspace = true }
-
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -34,13 +30,11 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
-enum_dispatch = { workspace = true }
 schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 
 # HTTP/API
 axum = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
-utoipa = { workspace = true, features = ["uuid", "chrono", "axum_extras"] }
 
 # AI/LLM
 async-openai = { workspace = true, features = ["byot", "_api"] }
@@ -63,4 +57,3 @@ sentry = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-wiremock = { workspace = true }

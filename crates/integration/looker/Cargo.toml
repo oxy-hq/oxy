@@ -19,7 +19,6 @@ serde_yaml = { workspace = true }
 
 # Error handling and validation
 thiserror = { workspace = true }
-garde = { workspace = true, features = ["full"] }
 
 # Logging and tracing
 tracing = { workspace = true }

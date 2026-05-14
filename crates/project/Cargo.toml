@@ -26,9 +26,6 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 log = { workspace = true }
 
-# Git operations
-git2 = { workspace = true }
-
 # File system
 glob = { workspace = true }
 dirs = { workspace = true }
