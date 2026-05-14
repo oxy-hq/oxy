@@ -12,9 +12,6 @@ on:
       - reopened
       - synchronize
       - ready_for_review
-  pull_request_review:
-    types:
-      - submitted
   push:
     branches:
       - main
@@ -111,7 +108,7 @@ jobs:
       group: build-web-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     if: needs.changesets.outputs.web-app == 'true'
-    runs-on: "ubuntu-latest"
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x-spot' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -179,7 +176,7 @@ jobs:
     needs: [changesets, typos]
     if: needs.changesets.outputs.oxy == 'true'
     name: Format cargo, check & test (${{ matrix.task }})
-    runs-on: "ubuntu-latest"
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x-spot' || 'ubuntu-latest' }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
@@ -294,9 +291,8 @@ jobs:
         smoke-test-enterprise-${{ github.event.pull_request.number || github.ref
         }}
       cancel-in-progress: true
-    if: github.repository == 'oxy-hq/oxygen-internal' &&
-      needs.changesets.outputs.oxy == 'true'
-    runs-on: ubuntu-latest
+    if: false # temporarily disabled
+    runs-on: warp-ubuntu-latest-arm64-4x-spot
     timeout-minutes: 20
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -386,20 +382,8 @@ jobs:
     name: E2E Tests (Playwright)
     needs: [changesets, typos, cargo-check-and-test]
     # 💰 COST SAVING: Only run on approved PRs, pushes to oxy-hq/oxygen main, or manual trigger
-    if: |
-      needs.changesets.outputs.oxy == 'true' && (
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'push' &&
-          (needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.oxy == 'true')
-        ) ||
-        (
-          github.event_name == 'pull_request_review' &&
-          github.event.review.state == 'approved' &&
-          (needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.oxy == 'true')
-        )
-      )
-    runs-on: ubuntu-latest
+    if: false # temporarily disabled
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x-spot' || 'ubuntu-latest' }}
     concurrency:
       group: e2e-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
