@@ -4,13 +4,22 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use oxy::{
-    checkpoint::types::RetryStrategy,
     execute::types::{Output, ReferenceKind, TargetOutput},
     theme::StyledText,
 };
 use oxy_agent::types::AgentInput;
 use oxy_shared::errors::OxyError;
-use oxy_workflow::builders::WorkflowInput;
+
+/// Inputs for an eval target that points at a workflow file.
+///
+/// Workflow execution flows through
+/// `agentic_pipeline::workflow_run::start_workflow_run`; this struct is
+/// the eval-system-specific shape of those inputs.
+#[derive(Clone, Debug)]
+pub struct EvalWorkflowInput {
+    pub workflow_ref: String,
+    pub variables: Option<IndexMap<String, serde_json::Value>>,
+}
 
 pub struct EvalInput {
     pub index: Option<usize>,
@@ -26,7 +35,7 @@ pub(super) struct AgenticInput {
 
 #[derive(Clone, Debug)]
 pub(super) enum EvalTarget {
-    Workflow(WorkflowInput),
+    Workflow(EvalWorkflowInput),
     Agent(AgentInput),
     Agentic(AgenticInput),
 }
@@ -69,14 +78,12 @@ impl EvalRecord {
         workflow_variable_name: &Option<String>,
     ) -> EvalTarget {
         match target {
-            EvalTarget::Workflow(workflow_input) => EvalTarget::Workflow(WorkflowInput {
-                retry: RetryStrategy::NoRetry {
-                    variables: Some(IndexMap::from_iter([(
-                        workflow_variable_name.clone().unwrap_or_default(),
-                        serde_json::to_value(&self.query).unwrap(),
-                    )])),
-                },
+            EvalTarget::Workflow(workflow_input) => EvalTarget::Workflow(EvalWorkflowInput {
                 workflow_ref: workflow_input.workflow_ref.clone(),
+                variables: Some(IndexMap::from_iter([(
+                    workflow_variable_name.clone().unwrap_or_default(),
+                    serde_json::to_value(&self.query).unwrap(),
+                )])),
             }),
             EvalTarget::Agent(agent_input) => EvalTarget::Agent(AgentInput {
                 agent_ref: agent_input.agent_ref.clone(),

@@ -78,7 +78,7 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
             "clarifying" => {
                 if name == "search_procedures" {
                     let query = params["query"].as_str().unwrap_or("");
-                    let refs = match self.procedure_runner.as_ref() {
+                    let refs = match self.subrun_runner.as_ref() {
                         Some(runner) => runner.search(query).await,
                         None => vec![],
                     };

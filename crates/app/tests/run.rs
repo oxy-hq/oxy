@@ -78,7 +78,9 @@ fn run_example_workflow_ok() {
         .assert()
         .success();
     let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-    assert!(output.contains("Workflow executed successfully"));
+    // The inline CLI runner prints `✓ {filename}` then per-task results;
+    // the legacy "Workflow executed successfully" banner is gone.
+    assert!(output.contains("✓ table_values.automation.yml"));
     assert!(output.contains("weekly"));
 }
 
@@ -96,7 +98,7 @@ fn run_workflow_with_anonymization_ok() {
         .assert()
         .success();
     let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-    assert!(output.contains("Workflow executed successfully"));
+    assert!(output.contains("✓ anonymize.procedure.yml"));
 }
 
 #[test]
@@ -113,7 +115,7 @@ fn run_workflow_with_loop_ok() {
         .assert()
         .success();
     let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-    assert!(output.contains("Workflow executed successfully"));
+    assert!(output.contains("✓ survey_responses.procedure.yml"));
 }
 
 #[test]

@@ -18,8 +18,8 @@ tasks:
           Schedule by Interval: {{schedules.value}}
           ---
         export:
-          path: output/loop_sequential_formatter.docx
-          format: docx
+          path: output/loop_sequential_formatter.txt
+          format: txt
 
   - name: formatter
     type: formatter
@@ -35,10 +35,5 @@ tasks:
       {% endfor %}
 
     export:
-      path: output/formatter.docx
-      format: docx
-
-tests:
-  - name: consistency
-    type: consistency
-    task_description: "Display different table format"
+      path: output/formatter.txt
+      format: txt

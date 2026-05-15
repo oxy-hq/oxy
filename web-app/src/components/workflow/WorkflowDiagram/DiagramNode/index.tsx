@@ -2,10 +2,36 @@ import { Handle, type NodeProps, NodeToolbar, Position } from "@xyflow/react";
 import { RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { type NodeStatus, NodeStatusIndicator } from "@/components/ui/shadcn/node-status-indicator";
+import {
+  type StepStatus,
+  useReplayStep,
+  useStepStatus
+} from "@/pages/workflow/components/RunStatusContext";
 import type { NodeData, NodeType } from "@/stores/useWorkflow";
-import { useIsProcessing, useStreamEvents, useTaskRun, useWorkflowRun } from "../../useWorkflowRun";
 import { NodeContent } from "./NodeContent";
 import { StepContainer } from "./nodes/StepContainer";
+
+// Map the new event-stream step status onto the diagram's existing
+// 4-state border styling. `cached` reuses `success` because the
+// "reused from prior run" cue lives in the StepList beside the
+// diagram — keeping the border visual consistent avoids a third
+// border colour the user has to learn. `skipped` reuses `initial`:
+// downstream-of-failure steps never ran, so the neutral default
+// border (no extra colour) reads accurately as "didn't get its turn".
+const stepStatusToNodeStatus = (s: StepStatus): NodeStatus => {
+  switch (s) {
+    case "running":
+      return "loading";
+    case "success":
+    case "cached":
+      return "success";
+    case "failed":
+      return "error";
+    case "pending":
+    case "skipped":
+      return "initial";
+  }
+};
 
 type Node = {
   id: string;
@@ -37,56 +63,31 @@ export function DiagramNode({
 }: Props) {
   const task = data.task;
 
-  const { taskRun, taskRunId, runId, loopRuns } = useTaskRun(task);
-  const isProcessing = useIsProcessing(task.workflowId, task.runId || "");
-  const runWorkflow = useWorkflowRun();
-  const { stream } = useStreamEvents();
-
-  let nodeStatus: NodeStatus = "initial";
-  if (taskRun) {
-    if (taskRun.error) {
-      nodeStatus = "error";
-    } else if (taskRun.isStreaming) {
-      nodeStatus = "loading";
-    } else {
-      nodeStatus = "success";
-    }
-  }
+  // Status + replay both come from the workflow run page's
+  // `RunStatusProvider`. The legacy `useWorkflowRun` / `useTaskRun`
+  // fallbacks were only reachable from `WorkflowPreview`, which is
+  // gone; the new `Workflow` component always mounts the provider.
+  const liveStatus = useStepStatus(task.name);
+  const replayStep = useReplayStep();
+  const nodeStatus: NodeStatus = liveStatus ? stepStatusToNodeStatus(liveStatus.status) : "initial";
+  const isRunning = liveStatus?.status === "running";
+  const toolbarVisible =
+    !!selected && !isRunning && (nodeStatus === "error" || nodeStatus === "success");
 
   return (
     <NodeStatusIndicator status={nodeStatus} variant='border' key={id}>
-      <NodeToolbar
-        className='flex items-center justify-between'
-        isVisible={
-          (nodeStatus === "error" || nodeStatus === "success") && !!selected && !isProcessing
-        }
-      >
+      <NodeToolbar className='flex items-center justify-between' isVisible={toolbarVisible}>
         <Button
           variant='ghost'
           tooltip={"Replay this step"}
           size='icon'
+          disabled={!replayStep}
           onClick={async () => {
-            if (!runId) {
-              return;
-            }
+            if (!replayStep) return;
             try {
-              await runWorkflow.mutateAsync({
-                workflowId: task.workflowId,
-                retryType: {
-                  type: "retry",
-                  run_index: +runId,
-                  replay_id: taskRunId
-                }
-              });
-              // Manually trigger streaming after the replay starts.
-              // This is necessary because the run_index might be the same,
-              // so the URL won't change and the auto-stream useEffect won't re-trigger.
-              await stream.mutateAsync({
-                sourceId: task.workflowId,
-                runIndex: +runId
-              });
+              await replayStep(task.name);
             } catch (error) {
-              console.error("Failed to replay from step:", error);
+              console.error("Failed to replay step:", error);
             }
           }}
         >
@@ -104,8 +105,6 @@ export function DiagramNode({
           id={id}
           parentId={parentId}
           task={data.task}
-          taskRun={taskRun}
-          loopRuns={loopRuns}
           data={data}
           type={type}
           width={width}

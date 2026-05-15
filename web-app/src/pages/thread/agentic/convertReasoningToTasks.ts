@@ -268,7 +268,7 @@ export function generateAutomationName(steps: Step[], userQuestion?: string): st
     const slug = slugify(firstMeaningful.objective);
     if (slug) return slug;
   }
-  return `procedure_${Date.now()}`;
+  return `subrun_${Date.now()}`;
 }
 
 export function generateAutomationDescription(steps: Step[]): string {

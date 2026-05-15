@@ -74,19 +74,21 @@ pub async fn resolve_semantic_tool(
     Ok((tool_name, oxy_tool))
 }
 
-/// Runs a semantic topic tool with the given arguments
+/// Runs a semantic topic tool with the given arguments.
+///
+/// Builds an in-memory single-step `WorkflowConfig` whose only task is a
+/// `semantic_query`, then drives it through the inline workflow runner.
+/// This re-uses the same compilation + execution pipeline that the new
+/// `/agentic-workflows` HTTP surface uses, instead of duplicating the
+/// semantic plumbing into the MCP layer.
 pub async fn run_semantic_topic_tool(
     workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     topic_name: String,
     arguments: Option<Map<String, Value>>,
-    filters: Option<SessionFilters>,
-    connections: Option<oxy::config::model::ConnectionOverrides>,
-    meta_variables: std::collections::HashMap<String, Value>,
+    _filters: Option<SessionFilters>,
+    _connections: Option<oxy::config::model::ConnectionOverrides>,
+    _meta_variables: std::collections::HashMap<String, Value>,
 ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
-    use crate::server::service::types::SemanticQueryParams;
-    use oxy::config::model::SemanticQueryTask;
-    use oxy::execute::Executable;
-    use oxy_workflow::semantic_builder::SemanticQueryExecutable;
     use rmcp::model::{CallToolResult, Content};
 
     let args = arguments.unwrap_or_default();
@@ -100,96 +102,91 @@ pub async fn run_semantic_topic_tool(
             }
         };
 
-    // Extract variables from arguments
-    let arg_variables = input
-        .variables
-        .clone()
-        .map(|v| v.into_iter().collect::<std::collections::HashMap<_, _>>())
-        .unwrap_or_default();
-
-    // No defaults for semantic topics (they don't have a variable schema)
-    let default_variables = std::collections::HashMap::new();
-
-    // Merge variables using proper precedence: defaults < arguments < meta
-    let merged_variables = crate::integrations::mcp::variables::merge_variables(
-        default_variables,
-        meta_variables,
-        arg_variables,
-    );
-
-    let query_params = SemanticQueryParams {
-        topic: Some(topic_name.clone()),
-        measures: input.measures.unwrap_or_default(),
-        dimensions: input.dimensions.unwrap_or_default(),
-        filters: input.filters.unwrap_or_default(),
-        orders: input.order_by.unwrap_or_default(),
-        limit: input.limit,
-        offset: None,
-        variables: if merged_variables.is_empty() {
-            None
-        } else {
-            Some(merged_variables.clone())
-        },
-        time_dimensions: input.time_dimensions.unwrap_or_default(),
-    };
-
-    let task = SemanticQueryTask {
-        query: query_params,
-        export: None,
-        variables: if merged_variables.is_empty() {
-            None
-        } else {
-            Some(merged_variables)
-        },
-    };
-
-    let (mut execution_context, mut rx) =
-        create_execution_context(workspace_manager, "mcp_semantic_query");
-
-    // Apply session filters if provided
-    if let Some(session_filters) = filters {
-        execution_context.filters = Some(session_filters);
+    // Project the SemanticTopicToolInput onto the on-the-wire shape that
+    // `agentic_workflow::SemanticQueryConfig` expects via JSON parsing.
+    // Fields default-empty so omitting them in the MCP call works.
+    let mut step_config = serde_json::Map::new();
+    step_config.insert("topic".to_string(), Value::String(topic_name));
+    if let Some(measures) = input.measures {
+        step_config.insert("measures".into(), Value::Array(string_values(measures)));
+    }
+    if let Some(dimensions) = input.dimensions {
+        step_config.insert("dimensions".into(), Value::Array(string_values(dimensions)));
+    }
+    if let Some(orders) = input.order_by {
+        step_config.insert("orders".into(), Value::Array(serde_json_array(orders)));
+    }
+    if let Some(filters) = input.filters {
+        step_config.insert("filters".into(), Value::Array(serde_json_array(filters)));
+    }
+    if let Some(time_dims) = input.time_dimensions {
+        step_config.insert(
+            "time_dimensions".into(),
+            Value::Array(serde_json_array(time_dims)),
+        );
+    }
+    if let Some(limit) = input.limit {
+        step_config.insert("limit".into(), Value::Number(limit.into()));
     }
 
-    // Apply connection overrides if provided
-    if let Some(connection_overrides) = connections {
-        execution_context.connections = Some(connection_overrides);
-    }
-
-    // Spawn a task to consume events
-    tokio::spawn(async move { while rx.recv().await.is_some() {} });
-
-    // Validate and execute the semantic query
-    let validated_query =
-        match oxy_workflow::semantic_validator_builder::validate_semantic_query_task(
-            &workspace_manager.config_manager,
-            &task,
-        )
-        .await
-        {
-            Ok(query) => query,
+    // Build the task body imperatively — `serde_json::json!` doesn't support
+    // splatting an existing map, but the `semantic_query` variant is opaque
+    // on the workflow side so all the SemanticQueryConfig fields live at
+    // this object's root alongside `name` and `type`.
+    let mut task_body = step_config;
+    task_body.insert("name".into(), Value::String("semantic".into()));
+    task_body.insert("type".into(), Value::String("semantic_query".into()));
+    let workflow_value = serde_json::json!({
+        "name": "mcp-semantic-topic",
+        "tasks": [Value::Object(task_body)],
+    });
+    let workflow_config: agentic_workflow::WorkflowConfig =
+        match serde_json::from_value(workflow_value) {
+            Ok(c) => c,
             Err(e) => {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "Failed to validate semantic query: {e}"
+                    "Failed to build inline workflow for semantic topic: {e}"
                 ))]));
             }
         };
 
-    let mut executable = SemanticQueryExecutable::new();
-    let output = executable
-        .execute(&execution_context, validated_query)
-        .await;
-
-    // Convert output to MCP response
-    match output {
-        Ok(output) => {
-            let content_text = output.to_markdown();
-            Ok(CallToolResult::success(vec![Content::text(content_text)]))
+    let agent_runner = crate::agentic_wiring::OxyInlineAgentRunner::new(workspace_manager.clone());
+    let project_ctx = std::sync::Arc::new(crate::agentic_wiring::OxyProjectContext::new(
+        workspace_manager.clone(),
+    ));
+    let workspace: std::sync::Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
+    let results = match agentic_pipeline::workflow_run::run_inline_workflow_with(
+        workspace.as_ref(),
+        workflow_config,
+        None,
+        Some(&agent_runner),
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "Failed to execute semantic query: {e}"
+            ))]));
         }
-        Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
-            "Failed to execute semantic query: {e}"
-        ))])),
-    }
+    };
+
+    let body = match results.get("semantic") {
+        Some(value) => serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string()),
+        None => "{}".to_string(),
+    };
+    Ok(CallToolResult::success(vec![Content::text(body)]))
+}
+
+fn string_values(items: Vec<String>) -> Vec<Value> {
+    items.into_iter().map(Value::String).collect()
+}
+
+fn serde_json_array<T: serde::Serialize>(items: Vec<T>) -> Vec<Value> {
+    items
+        .into_iter()
+        .filter_map(|item| serde_json::to_value(item).ok())
+        .collect()
 }
 
 /// Creates an execution context for tool execution

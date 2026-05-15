@@ -61,6 +61,7 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
         agentic_state.builder_test_runner.clone();
     let builder_app_runner: Option<Arc<dyn BuilderAppRunnerTrait>> =
         agentic_state.builder_app_runner.clone();
+    let router = agentic_state.router.clone();
 
     tokio::spawn(async move {
         let recovered = run_recovery(
@@ -69,6 +70,7 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
             schema_cache,
             builder_test_runner,
             builder_app_runner,
+            router,
             mode,
         )
         .await;
@@ -97,6 +99,7 @@ pub(super) async fn run_recovery(
     >,
     builder_test_runner: Option<Arc<dyn BuilderTestRunnerTrait>>,
     builder_app_runner: Option<Arc<dyn BuilderAppRunnerTrait>>,
+    router: Arc<dyn agentic_runtime::router::TaskRouter>,
     mode: ServeMode,
 ) -> usize {
     match mode {
@@ -107,6 +110,7 @@ pub(super) async fn run_recovery(
                 schema_cache,
                 builder_test_runner,
                 builder_app_runner,
+                router,
             )
             .await
         }
@@ -117,6 +121,7 @@ pub(super) async fn run_recovery(
                 schema_cache,
                 builder_test_runner,
                 builder_app_runner,
+                router,
             )
             .await
         }
@@ -135,6 +140,7 @@ async fn recover_local(
     >,
     builder_test_runner: Option<Arc<dyn BuilderTestRunnerTrait>>,
     builder_app_runner: Option<Arc<dyn BuilderAppRunnerTrait>>,
+    router: Arc<dyn agentic_runtime::router::TaskRouter>,
 ) -> usize {
     let cwd = match std::env::current_dir() {
         Ok(p) => p,
@@ -183,6 +189,7 @@ async fn recover_local(
         schema_cache,
         builder_test_runner,
         builder_app_runner,
+        router,
     )
     .await
 }
@@ -199,6 +206,7 @@ async fn recover_all_workspaces(
     >,
     builder_test_runner: Option<Arc<dyn BuilderTestRunnerTrait>>,
     builder_app_runner: Option<Arc<dyn BuilderAppRunnerTrait>>,
+    router: Arc<dyn agentic_runtime::router::TaskRouter>,
 ) -> usize {
     let workspaces = match entity::workspaces::Entity::find().all(db).await {
         Ok(ws) => ws,
@@ -258,6 +266,7 @@ async fn recover_all_workspaces(
             schema_cache.clone(),
             builder_test_runner.clone(),
             builder_app_runner.clone(),
+            router.clone(),
         )
         .await;
 

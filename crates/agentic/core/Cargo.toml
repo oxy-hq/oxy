@@ -17,6 +17,9 @@ async-trait = { workspace = true }
 futures-core = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+# Needed by `subrun::parse_oxy_comment_block` — main's cleanup PR
+# removed this when our subrun module didn't exist there yet.
+serde_yaml = { workspace = true }
 tokio = { workspace = true, features = ["sync", "fs", "io-util"] }
 tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true }

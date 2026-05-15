@@ -8,7 +8,7 @@ import {
   WorkflowForm,
   type WorkflowFormData
 } from "@/components/workflow/WorkflowForm";
-import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
+import { Workflow } from "@/pages/workflow";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
 import EditorPageWrapper from "../components/EditorPageWrapper";
@@ -38,11 +38,12 @@ const WorkflowEditor = () => {
       customEditor={viewMode === WorkflowViewMode.Form ? <WorkflowFormWrapper /> : undefined}
       git={gitEnabled}
       preview={
-        <WorkflowPreview
+        <Workflow
           key={previewKey + runId}
           pathb64={pathb64}
           runId={runId}
           direction='vertical'
+          hideHeader
         />
       }
       previewOnly={viewMode === WorkflowViewMode.Output}

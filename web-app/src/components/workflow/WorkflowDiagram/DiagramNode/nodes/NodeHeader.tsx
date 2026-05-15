@@ -14,13 +14,12 @@ import {
   Split
 } from "lucide-react";
 import type { ReactElement } from "react";
-import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import TruncatedText from "@/components/TruncatedText";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
-import type { TaskRun } from "@/services/types";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import {
   type NodeType,
@@ -65,21 +64,12 @@ type Props = {
   name: string;
   type: NodeType;
   task?: TaskConfigWithId;
-  taskRun?: TaskRun;
   expandable?: boolean;
   expanded?: boolean;
   onExpandClick?: () => void;
 };
 
-export const NodeHeader = ({
-  type,
-  name,
-  task,
-  taskRun,
-  expandable,
-  expanded,
-  onExpandClick
-}: Props) => {
+export const NodeHeader = ({ type, name, task, expandable, expanded, onExpandClick }: Props) => {
   const taskName = nodeNameMap[type];
   const taskIcon = nodeIconMap[type];
   return (
@@ -110,7 +100,7 @@ export const NodeHeader = ({
             </Button>
           )}
           {type === TaskType.WORKFLOW && (
-            <SubWorkflowNavigateButton task={task as WorkflowTaskConfig} taskRun={taskRun} />
+            <SubWorkflowNavigateButton task={task as WorkflowTaskConfig} />
           )}
         </div>
       </div>
@@ -120,33 +110,27 @@ export const NodeHeader = ({
 
 type SubWorkflowNavigateButtonProps = {
   task: WorkflowTaskConfig;
-  taskRun?: TaskRun;
 };
 
-const SubWorkflowNavigateButton = ({ task, taskRun }: SubWorkflowNavigateButtonProps) => {
+const SubWorkflowNavigateButton = ({ task }: SubWorkflowNavigateButtonProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
+  // The legacy per-task `subWorkflowRunId` lookup is gone; child
+  // sub-workflows start fresh on click. Run selection happens on the
+  // destination page itself via the run-history dropdown.
   const handleClick = () => {
     if (!projectId) return;
-
     const pathb64 = encodeBase64(task.src);
-
     let workflowPath = ROUTES.ORG(orgSlug).WORKSPACE(projectId).WORKFLOW(pathb64).ROOT;
-
     const ideRoute = ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.ROOT;
     if (location.pathname.startsWith(ideRoute)) {
       workflowPath = ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.FILES.FILE(pathb64);
     }
-    navigate({
-      pathname: workflowPath,
-      search: createSearchParams({
-        run: taskRun?.subWorkflowRunId?.toString() || ""
-      }).toString()
-    });
+    navigate(workflowPath);
   };
 
   return (

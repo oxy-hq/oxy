@@ -1,19 +1,8 @@
 //! Domain-specific events for the analytics pipeline.
 
 use agentic_core::events::DomainEvents;
+use agentic_core::subrun::SubrunStep;
 use serde::{Deserialize, Serialize};
-
-/// Describes a single top-level task in a procedure definition.
-///
-/// Included in [`AnalyticsEvent::ProcedureStarted`] so the frontend can render
-/// the full DAG — including task type badges — before any step events arrive.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProcedureStepInfo {
-    /// Human-readable task name from the procedure YAML.
-    pub name: String,
-    /// Task type string (e.g. `"execute_sql"`, `"loop_sequential"`).
-    pub task_type: String,
-}
 
 /// Which code path produced the SQL executed by a [`AnalyticsEvent::QueryExecuted`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,57 +184,52 @@ pub enum AnalyticsEvent {
         will_retry: bool,
     },
 
-    /// A procedure started execution.
+    /// A subrun started execution.
     ///
-    /// Emitted by [`OxyProcedureRunner`] before launching the workflow so the
-    /// frontend can render the full step DAG with all steps in idle state
-    /// immediately, then update each step as it begins and finishes.
-    ///
-    /// [`OxyProcedureRunner`]: agentic_workflow::OxyProcedureRunner
-    ProcedureStarted {
-        /// Human-readable procedure name (file stem without `.procedure` suffix).
-        procedure_name: String,
-        /// Ordered list of top-level task descriptors from the procedure definition.
-        steps: Vec<ProcedureStepInfo>,
+    /// Emitted by the workflow step orchestrator before launching the
+    /// subrun so the frontend can render the full step DAG with all
+    /// steps in idle state immediately, then update each step as it
+    /// begins and finishes.
+    SubrunStarted {
+        /// Human-readable subrun name (typically the file stem).
+        subrun_name: String,
+        /// Ordered list of top-level step descriptors from the subrun definition.
+        steps: Vec<SubrunStep>,
     },
 
-    /// A procedure completed execution (success or failure).
+    /// A subrun completed execution (success or failure).
     ///
-    /// Emitted by [`OxyProcedureRunner`] after the workflow finishes.
-    /// Paired with the preceding [`ProcedureStarted`] event.
-    ///
-    /// [`OxyProcedureRunner`]: agentic_workflow::OxyProcedureRunner
-    ProcedureCompleted {
-        /// Human-readable procedure name, matching the paired `ProcedureStarted`.
-        procedure_name: String,
-        /// `true` when the procedure completed without error.
+    /// Emitted by the workflow step orchestrator after the subrun
+    /// finishes. Paired with the preceding [`AnalyticsEvent::SubrunStarted`] event.
+    SubrunCompleted {
+        /// Human-readable subrun name, matching the paired `SubrunStarted`.
+        subrun_name: String,
+        /// `true` when the subrun completed without error.
         success: bool,
         /// Error message when `success == false`; absent on success.
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
 
-    /// A task step within a procedure started execution.
+    /// A step within a subrun started execution.
     ///
-    /// Emitted by [`WorkflowEventBridge`] when the analytics pipeline delegates
-    /// execution to `OxyProcedureRunner` and an individual task begins.  Lets
-    /// the frontend show per-step progress during multi-step procedure runs.
-    ///
-    /// [`WorkflowEventBridge`]: agentic_workflow::WorkflowEventBridge
-    ProcedureStepStarted {
-        /// Human-readable step name taken from the procedure task definition.
+    /// Emitted by the workflow step orchestrator when the analytics
+    /// pipeline delegates execution to a subrun and an individual step
+    /// begins. Lets the frontend show per-step progress during
+    /// multi-step subrun runs.
+    SubrunStepStarted {
+        /// Human-readable step name taken from the subrun step definition.
         step: String,
     },
 
-    /// A task step within a procedure completed (successfully or not).
+    /// A step within a subrun completed (successfully or not).
     ///
-    /// Emitted by [`WorkflowEventBridge`] when the corresponding task finishes.
-    /// Paired with the preceding [`ProcedureStepStarted`] event by matching
-    /// the `step` field.
-    ///
-    /// [`WorkflowEventBridge`]: agentic_workflow::WorkflowEventBridge
-    ProcedureStepCompleted {
-        /// Human-readable step name, matching the paired `ProcedureStepStarted`.
+    /// Emitted by the workflow step orchestrator when the corresponding
+    /// step finishes. Paired with the preceding
+    /// [`AnalyticsEvent::SubrunStepStarted`] event by matching the
+    /// `step` field.
+    SubrunStepCompleted {
+        /// Human-readable step name, matching the paired `SubrunStepStarted`.
         step: String,
         /// `true` when the step succeeded without error.
         success: bool,

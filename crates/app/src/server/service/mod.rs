@@ -15,4 +15,3 @@ pub mod project;
 pub mod test;
 pub mod test_runs;
 pub mod thread;
-pub mod workflow;

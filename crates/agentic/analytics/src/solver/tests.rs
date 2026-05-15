@@ -1946,3 +1946,162 @@ async fn execute_solution_vendor_api_error_maps_to_vendor_error() {
         "expected VendorError, got: {err:?}"
     );
 }
+
+// ── SQL-generation mode (output: mode: sql) ──────────────────────────────────
+
+/// Stub connector that succeeds on `execute_query` — used to confirm
+/// the LIMIT-0 smoke check passes for syntactically valid SQL.
+struct OkConnector;
+
+#[async_trait]
+impl agentic_connector::DatabaseConnector for OkConnector {
+    fn dialect(&self) -> SqlDialect {
+        SqlDialect::DuckDb
+    }
+
+    async fn execute_query(
+        &self,
+        _sql: &str,
+        _limit: u64,
+    ) -> Result<ExecutionResult, ConnectorError> {
+        Ok(ExecutionResult {
+            result: agentic_core::QueryResult {
+                columns: vec![],
+                rows: vec![],
+                total_row_count: 0,
+                truncated: false,
+            },
+            summary: agentic_connector::ResultSummary {
+                row_count: 0,
+                columns: vec![],
+            },
+        })
+    }
+}
+
+fn sql_mode_solver_with_ok_connector() -> AnalyticsSolver {
+    AnalyticsSolver::new(
+        LlmClient::new("dummy"),
+        SemanticCatalog::empty(),
+        Box::new(OkConnector),
+    )
+    .with_sql_generation_mode(true)
+}
+
+fn make_sql_solution(source: SolutionSource, sql: &str) -> AnalyticsSolution {
+    AnalyticsSolution {
+        payload: SolutionPayload::Sql(sql.to_string()),
+        solution_source: source,
+        connector_name: "default".to_string(),
+        semantic_query: None,
+    }
+}
+
+/// SQL-gen mode disabled — the helper short-circuits to `Disabled` so
+/// the executing handler falls through to the normal execute path.
+#[tokio::test]
+async fn sql_gen_mode_disabled_is_passthrough() {
+    let solver = make_solver();
+    let solution = make_sql_solution(SolutionSource::SemanticLayer, "SELECT 1");
+    let outcome = solver.terminate_with_sql_if_enabled(&solution).await;
+    assert!(matches!(outcome, super::executing::SqlGenOutcome::Disabled));
+}
+
+/// Semantic-layer solutions are pre-validated — SQL-gen mode terminates
+/// without running execute or the LIMIT-0 smoke check.
+#[tokio::test]
+async fn sql_gen_mode_semantic_layer_terminates_directly() {
+    let solver = sql_mode_solver_with_ok_connector();
+    let solution = make_sql_solution(
+        SolutionSource::SemanticLayer,
+        "SELECT region, SUM(revenue) FROM orders GROUP BY region",
+    );
+    let outcome = solver.terminate_with_sql_if_enabled(&solution).await;
+    let super::executing::SqlGenOutcome::Terminate(ans) = outcome else {
+        panic!("expected Terminate");
+    };
+    assert!(ans.text.contains("SUM(revenue)"));
+    assert!(ans.display_blocks.is_empty());
+}
+
+/// Verified `.sql` file matches are pre-validated — terminate without
+/// smoke-checking.
+#[tokio::test]
+async fn sql_gen_mode_sql_file_terminates_directly() {
+    let solver = sql_mode_solver_with_ok_connector();
+    let solution = make_sql_solution(
+        SolutionSource::SqlFile {
+            file_path: std::path::PathBuf::from("queries/revenue.sql"),
+        },
+        "SELECT 1",
+    );
+    let outcome = solver.terminate_with_sql_if_enabled(&solution).await;
+    assert!(matches!(
+        outcome,
+        super::executing::SqlGenOutcome::Terminate(_)
+    ));
+}
+
+/// LLM-generated SQL goes through the LIMIT-0 smoke check. With an
+/// always-ok connector, the smoke passes and the mode terminates.
+#[tokio::test]
+async fn sql_gen_mode_llm_path_runs_smoke_check_and_terminates() {
+    let solver = sql_mode_solver_with_ok_connector();
+    let solution = make_sql_solution(SolutionSource::LlmWithSemanticContext, "SELECT 1");
+    let outcome = solver.terminate_with_sql_if_enabled(&solution).await;
+    assert!(matches!(
+        outcome,
+        super::executing::SqlGenOutcome::Terminate(_)
+    ));
+}
+
+/// LLM-generated SQL whose smoke check fails (stub connector errors)
+/// surfaces `SmokeCheckFailed` so the handler can route to Diagnosing.
+#[tokio::test]
+async fn sql_gen_mode_llm_path_failed_smoke_returns_failure_variant() {
+    let solver = make_solver().with_sql_generation_mode(true);
+    let solution = make_sql_solution(SolutionSource::LlmWithSemanticContext, "SELECT bogus");
+    let outcome = solver.terminate_with_sql_if_enabled(&solution).await;
+    let super::executing::SqlGenOutcome::SmokeCheckFailed { message, .. } = outcome else {
+        panic!("expected SmokeCheckFailed");
+    };
+    assert!(!message.is_empty());
+}
+
+/// Vendor engine paths produce an opaque JSON payload — no portable SQL
+/// to write to a cache file. SQL-gen mode rejects them.
+#[tokio::test]
+async fn sql_gen_mode_vendor_path_is_rejected() {
+    let solver = sql_mode_solver_with_ok_connector();
+    let solution = AnalyticsSolution {
+        payload: SolutionPayload::Sql("ignored".to_string()),
+        solution_source: SolutionSource::VendorEngine("omni".to_string()),
+        connector_name: "default".to_string(),
+        semantic_query: None,
+    };
+    let outcome = solver.terminate_with_sql_if_enabled(&solution).await;
+    let super::executing::SqlGenOutcome::IncompatiblePath { reason } = outcome else {
+        panic!("expected IncompatiblePath");
+    };
+    assert!(reason.contains("vendor"));
+}
+
+/// Procedure delegation produces no SQL until the child workflow runs.
+/// SQL-gen mode rejects this combination at the executing entry.
+#[tokio::test]
+async fn sql_gen_mode_procedure_path_is_rejected() {
+    let solver = sql_mode_solver_with_ok_connector();
+    let solution = AnalyticsSolution {
+        payload: SolutionPayload::Sql(String::new()),
+        solution_source: SolutionSource::Procedure {
+            file_path: std::path::PathBuf::from("procedures/foo.procedure.yml"),
+        },
+        connector_name: "default".to_string(),
+        semantic_query: None,
+    };
+    let outcome = solver.terminate_with_sql_if_enabled(&solution).await;
+    let super::executing::SqlGenOutcome::IncompatiblePath { reason } = outcome else {
+        panic!("expected IncompatiblePath");
+    };
+    assert!(reason.contains("procedure"));
+}

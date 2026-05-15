@@ -331,13 +331,108 @@ impl WorkspaceContext for OxyProjectContext {
     }
 
     async fn resolve_workflow_yaml(&self, workflow_ref: &str) -> Result<String, String> {
-        let path = self
-            .workspace_manager
-            .config_manager
-            .workspace_path()
-            .join(workflow_ref);
-        std::fs::read_to_string(&path)
-            .map_err(|e| format!("failed to read workflow {}: {e}", path.display()))
+        // Authenticated callers can supply an arbitrary `workflow_ref` via
+        // the `path_b64` route param (and the queued workflow spec), so we
+        // must contain it to the workspace root before reading. A raw
+        // `workspace_path().join(workflow_ref)` would happily resolve
+        // `../../etc/passwd` or replace the prefix entirely with an
+        // absolute path — `ConfigManager::resolve_file` runs
+        // `validate_path_within_project` which canonicalises and rejects
+        // anything outside the workspace.
+        let resolved = resolve_workspace_relative(&self.workspace_manager, workflow_ref).await?;
+        std::fs::read_to_string(&resolved)
+            .map_err(|e| format!("failed to read workflow {workflow_ref:?}: {e}"))
+    }
+}
+
+/// Validate that `workflow_ref` is a single relative path that stays under
+/// the workspace root, then return the absolute path to read from.
+///
+/// Rejects: absolute paths, parent-dir traversal, empty refs. Errors do
+/// **not** quote the resolved absolute path — only the caller-supplied
+/// `workflow_ref` — so a failed traversal attempt cannot be used to probe
+/// workspace layout.
+async fn resolve_workspace_relative(
+    workspace_manager: &WorkspaceManager,
+    workflow_ref: &str,
+) -> Result<PathBuf, String> {
+    validate_workflow_ref_syntax(workflow_ref)?;
+    let resolved = workspace_manager
+        .config_manager
+        .resolve_file(workflow_ref)
+        .await
+        .map_err(|e| format!("invalid workflow_ref {workflow_ref:?}: {e}"))?;
+    Ok(PathBuf::from(resolved))
+}
+
+/// Cheap syntactic reject for obviously-unsafe `workflow_ref`s. The
+/// canonicalisation-based check in `validate_path_within_project` would
+/// catch absolute paths and `..` traversal too, but its error messages
+/// vary by OS and by whether the path happens to exist; failing here
+/// keeps the diagnostics stable and avoids touching the filesystem at all
+/// for the easy cases.
+fn validate_workflow_ref_syntax(workflow_ref: &str) -> Result<(), String> {
+    if workflow_ref.is_empty() {
+        return Err("workflow_ref is empty".to_string());
+    }
+    let candidate = Path::new(workflow_ref);
+    if candidate.is_absolute() {
+        return Err(format!(
+            "workflow_ref {workflow_ref:?} must be relative to the workspace"
+        ));
+    }
+    if candidate
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!(
+            "workflow_ref {workflow_ref:?} must not contain `..` segments"
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_workflow_ref_syntax;
+
+    #[test]
+    fn rejects_empty_ref() {
+        assert!(validate_workflow_ref_syntax("").is_err());
+    }
+
+    #[test]
+    fn rejects_parent_dir_traversal() {
+        for ref_str in [
+            "../etc/passwd",
+            "workflows/../../../etc/passwd",
+            "..",
+            "a/../b",
+        ] {
+            assert!(
+                validate_workflow_ref_syntax(ref_str).is_err(),
+                "should reject {ref_str:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_absolute_paths() {
+        assert!(validate_workflow_ref_syntax("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn accepts_relative_ref() {
+        for ref_str in [
+            "foo.workflow.yml",
+            "workflows/foo.workflow.yml",
+            "./foo.workflow.yml",
+        ] {
+            assert!(
+                validate_workflow_ref_syntax(ref_str).is_ok(),
+                "should accept {ref_str:?}"
+            );
+        }
     }
 }
 

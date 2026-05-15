@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use agentic_pipeline::platform::ThreadOwnerLookup;
 use agentic_pipeline::{AnalyticsSchemaCatalog, BuilderAppRunnerTrait, BuilderTestRunnerTrait};
 use agentic_runtime::event_registry::EventRegistry;
+use agentic_runtime::router::{NoopTaskRouter, TaskRouter};
 use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
@@ -26,6 +27,13 @@ pub struct AgenticState {
     pub shutdown_token: CancellationToken,
     pub db: DatabaseConnection,
     pub thread_owner: Arc<dyn ThreadOwnerLookup>,
+    /// Cross-process wake source for worker claim loops. In production
+    /// this is a [`agentic_runtime::router::PostgresTaskRouter`] sharing
+    /// one LISTEN connection across all runs on this instance; in tests
+    /// or when the listener can't be wired (e.g. IAM auth mode without
+    /// credential refresh), this falls back to [`NoopTaskRouter`] and
+    /// workers rely solely on the 10s backstop poll.
+    pub router: Arc<dyn TaskRouter>,
 }
 
 impl AgenticState {
@@ -43,6 +51,7 @@ impl AgenticState {
             shutdown_token,
             db,
             thread_owner,
+            router: Arc::new(NoopTaskRouter),
         }
     }
 
@@ -53,6 +62,14 @@ impl AgenticState {
 
     pub fn with_builder_app_runner(mut self, runner: Arc<dyn BuilderAppRunnerTrait>) -> Self {
         self.builder_app_runner = Some(runner);
+        self
+    }
+
+    /// Replace the default no-op router with a real (typically Postgres)
+    /// router. Production app boot calls this after constructing the
+    /// router from env config.
+    pub fn with_router(mut self, router: Arc<dyn TaskRouter>) -> Self {
+        self.router = router;
         self
     }
 }

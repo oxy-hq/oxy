@@ -46,7 +46,11 @@ impl TaskExecutor for PipelineTaskExecutor {
         // through to skip the duplicate insert.
         let is_child = assignment.parent_task_id.is_some();
         match &assignment.spec {
-            TaskSpec::Agent { agent_id, question } => {
+            TaskSpec::Agent {
+                agent_id,
+                question,
+                extra,
+            } => {
                 self.execute_agent(
                     agent_id,
                     question,
@@ -55,6 +59,7 @@ impl TaskExecutor for PipelineTaskExecutor {
                     } else {
                         None
                     },
+                    extra.as_ref(),
                 )
                 .await
             }
@@ -62,9 +67,21 @@ impl TaskExecutor for PipelineTaskExecutor {
             TaskSpec::Workflow {
                 workflow_ref,
                 variables,
+                retry_from_run_id,
+                cache_enabled,
+                body,
+                initial_render_context,
             } => {
-                self.execute_workflow(&assignment.run_id, workflow_ref, variables.clone())
-                    .await
+                self.execute_workflow(
+                    &assignment.run_id,
+                    workflow_ref,
+                    variables.clone(),
+                    retry_from_run_id.clone(),
+                    *cache_enabled,
+                    body.clone(),
+                    initial_render_context.clone(),
+                )
+                .await
             }
 
             TaskSpec::Resume {
@@ -136,7 +153,9 @@ impl TaskExecutor for PipelineTaskExecutor {
         {
             // This was a workflow child — try to re-run the workflow.
             if let Some(workflow_ref) = spec.get("workflow_ref").and_then(|v| v.as_str()) {
-                return self.execute_workflow(&run.id, workflow_ref, None).await;
+                return self
+                    .execute_workflow(&run.id, workflow_ref, None, None, false, None, None)
+                    .await;
             }
         }
 
@@ -185,6 +204,7 @@ impl PipelineTaskExecutor {
         agent_id: &str,
         question: &str,
         existing_run_id: Option<String>,
+        extra: Option<&serde_json::Value>,
     ) -> Result<ExecutingTask, String> {
         let mut pb = PipelineBuilder::new(self.platform.clone());
         if let Some(bridges) = self.builder_bridges.clone() {
@@ -198,18 +218,46 @@ impl PipelineTaskExecutor {
         .question(question)
         .thinking_mode(ThinkingMode::Auto);
 
+        // `extra` is an envelope packed by `agentic-workflow` carrying
+        // domain-opaque per-agent knobs. Today it carries the
+        // analytics SQL-gen mode flag (`output_mode == "sql"`); the
+        // builder path ignores it.
+        if !is_builder_agent(agent_id)
+            && let Some(extra_value) = extra
+            && let Some(mode) = extra_value.get("output_mode").and_then(|v| v.as_str())
+            && mode == "sql"
+        {
+            builder = builder.analytics_sql_mode();
+        }
+
         // For delegation children, use the coordinator-assigned run_id
         // and skip the duplicate DB insert.
         if let Some(run_id) = existing_run_id.clone() {
             builder = builder.existing_run(run_id);
         }
 
-        // Auto-accept file_change when builder runs as a delegation child
-        // (existing_run_id is set → the coordinator created this task).
-        if is_builder_agent(agent_id) && existing_run_id.is_some() {
-            builder = builder.human_input(std::sync::Arc::new(
-                agentic_core::human_input::AutoAcceptInputProvider,
-            ));
+        // Gate HITL when an agent runs as a delegation child
+        // (existing_run_id is set → the coordinator created this
+        // task). The parent workflow's SSE stream doesn't yet
+        // surface child-run events, so a nested suspension leaves
+        // the workflow UI looking hung. The provider differs by
+        // agent type because the expected answer shape differs:
+        //
+        //   - Builder: `Accept` clears file-change confirmations.
+        //   - Analytics: a directive string ("proceed with best
+        //     interpretation") is more useful than a literal
+        //     `Accept` as the answer to an `ask_user` call.
+        //
+        // Lift this gate once the workflow run page streams nested
+        // analytics events (see the streaming-children audit).
+        if existing_run_id.is_some() {
+            let provider: agentic_core::human_input::HumanInputHandle =
+                if is_builder_agent(agent_id) {
+                    std::sync::Arc::new(agentic_core::human_input::AutoAcceptInputProvider)
+                } else {
+                    std::sync::Arc::new(agentic_core::human_input::NoClarificationProvider)
+                };
+            builder = builder.human_input(provider);
         }
 
         if let Some(cache) = &self.schema_cache {
@@ -244,12 +292,29 @@ impl PipelineTaskExecutor {
             .ok_or_else(|| format!("run {run_id} not found"))?;
 
         let source_type = run.source_type.as_deref().unwrap_or("analytics");
+        // Resolve agent_id with a fallback. Top-level runs land it on
+        // `metadata.agent_id` (via `start_analytics`'s insert path).
+        // Delegation children are inserted by `insert_child_run` with
+        // `metadata = None`, but their `task_metadata.original_spec`
+        // carries the full `TaskSpec::Agent` — including `agent_id`.
+        // Without this fallback, resuming a workflow → analytics
+        // chain would feed `""` into `start_analytics`, which then
+        // calls `base_dir.join("")` (returns the workspace root, a
+        // directory) and fails with `IO error: Is a directory`.
         let agent_id = run
             .metadata
             .as_ref()
             .and_then(|m| m.get("agent_id"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
+            .or_else(|| {
+                run.task_metadata
+                    .as_ref()
+                    .and_then(|m| m.get("original_spec"))
+                    .and_then(|s| s.get("agent_id"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
             .unwrap_or_default();
         let model = run
             .metadata

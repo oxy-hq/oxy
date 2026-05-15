@@ -181,6 +181,7 @@ pub async fn create_run(
     let schema_cache = Some(state.schema_cache.clone());
     let builder_test_runner = state.builder_test_runner.clone();
     let builder_app_runner = state.builder_app_runner.clone();
+    let router = state.router.clone();
     tokio::spawn(async move {
         agentic_pipeline::drive_with_coordinator(
             started,
@@ -193,6 +194,7 @@ pub async fn create_run(
             schema_cache,
             builder_test_runner,
             builder_app_runner,
+            router,
         )
         .await;
     });
@@ -269,7 +271,7 @@ pub async fn stream_events(
                         .data(ui_payload.to_string());
                     yield Ok::<_, std::convert::Infallible>(event);
 
-                    if sse::is_terminal(&ui_event_type) {
+                    if sse::is_terminal(&ui_event_type, &source_type) {
                         terminal = true;
                     }
                 }
@@ -564,6 +566,7 @@ pub async fn answer_run(
     let schema_cache = Some(state.schema_cache.clone());
     let builder_test_runner = state.builder_test_runner.clone();
     let builder_app_runner = state.builder_app_runner.clone();
+    let router = state.router.clone();
     tokio::spawn(async move {
         agentic_pipeline::drive_with_coordinator(
             started,
@@ -576,6 +579,7 @@ pub async fn answer_run(
             schema_cache,
             builder_test_runner,
             builder_app_runner,
+            router,
         )
         .await;
     });
@@ -590,8 +594,26 @@ pub async fn cancel_run(
     Extension(state): Extension<Arc<AgenticState>>,
 ) -> Response {
     if state.cancel(&run_id) {
-        Json(serde_json::json!({ "ok": true })).into_response()
-    } else {
+        return Json(serde_json::json!({ "ok": true })).into_response();
+    }
+    // Defensive path — see the equivalent comment in
+    // `routes/workflow.rs::cancel_workflow_run`. The narrow race we
+    // guard against: a `done` run whose coordinator just finished
+    // and `deregister`'d its cancel channel must NOT be rewritten
+    // to `failed("cancelled by user")` here, or a successful run
+    // would show as failed after page reload.
+    let already_terminal = match agentic_runtime::crud::get_run(&state.db, &run_id).await {
+        Ok(Some(run)) => matches!(
+            run.task_status.as_deref(),
+            Some("done") | Some("failed") | Some("cancelled") | Some("timed_out")
+        ),
+        Ok(None) => true,
+        Err(e) => {
+            tracing::warn!(%run_id, error = %e, "cancel: status lookup failed, skipping defensive write");
+            true
+        }
+    };
+    if !already_terminal {
         db::update_run_failed(&state.db, &run_id, "cancelled by user")
             .await
             .ok();
@@ -599,8 +621,8 @@ pub async fn cancel_run(
             run_id.clone(),
             RunStatus::Failed("cancelled by user".into()),
         );
-        Json(serde_json::json!({ "ok": true })).into_response()
     }
+    Json(serde_json::json!({ "ok": true })).into_response()
 }
 
 // ── PATCH /runs/:id/thinking_mode ────────────────────────────────────────────

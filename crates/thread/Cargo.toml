@@ -7,3 +7,32 @@ documentation.workspace = true
 publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+async-stream = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+log = { workspace = true }
+
+# Database
+sea-orm = { workspace = true }
+entity = { workspace = true }
+
+# Shared infrastructure
+oxy-shared = { workspace = true }
+oxy = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

@@ -3,14 +3,13 @@ import { ReferenceItem } from "./ReferenceItem";
 
 type ThreadReferencesProps = {
   references: Reference[];
-  prompt?: string;
 };
 
-const ThreadReferences = ({ references, prompt }: ThreadReferencesProps) => {
+const ThreadReferences = ({ references }: ThreadReferencesProps) => {
   return (
     <div className='flex flex-wrap gap-2 font-sans'>
       {references.map((reference, index) => (
-        <ReferenceItem key={index} reference={reference} prompt={prompt} />
+        <ReferenceItem key={index} reference={reference} />
       ))}
     </div>
   );

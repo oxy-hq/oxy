@@ -439,7 +439,7 @@ function createScope() {
         step.isStreaming = false;
         // Only mark non-procedure steps as interrupted. Procedure steps
         // keep their current state so the new attempt's events can
-        // continue updating them (e.g., more procedure_step_completed).
+        // continue updating them (e.g., more subrun_step_completed).
         const hasProcedure = step.items.some((it) => it.kind === "procedure");
         if (!hasProcedure) {
           step.error = "Interrupted by server restart";
@@ -662,7 +662,7 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         break;
       case "step_end":
         // When the step suspended for a delegation, keep it open so
-        // procedure_started / procedure_step_* events can attach to it.
+        // subrun_started / subrun_step_* events can attach to it.
         if (ev.payload.outcome === "suspended" && lastAwaitingIsDelegation) {
           lastAwaitingIsDelegation = false;
           delegationStepOpen = true;
@@ -811,18 +811,18 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         break;
 
       // ── Procedure lifecycle ────────────────────────────────────────────────
-      case "procedure_started": {
-        // On recovery, a procedure_started event fires again for the same
+      case "subrun_started": {
+        // On recovery, a subrun_started event fires again for the same
         // procedure. Find the existing item in flushed results and re-open
         // it instead of creating a duplicate.
-        const existingProc = scope.findExistingProcedure(ev.payload.procedure_name);
+        const existingProc = scope.findExistingProcedure(ev.payload.subrun_name);
         if (existingProc) {
           existingProc.isStreaming = true;
         } else {
           scope.pushItem({
             kind: "procedure",
             id: scope.nextId("proc-run"),
-            procedureName: ev.payload.procedure_name,
+            procedureName: ev.payload.subrun_name,
             steps: ev.payload.steps,
             stepsDone: 0,
             isStreaming: true
@@ -831,21 +831,21 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         break;
       }
 
-      case "procedure_completed": {
+      case "subrun_completed": {
         // Check current steps first, then flushed results (recovery case).
         const p = scope.findLastStreaming<ProcedureItem>("procedure");
         if (p) {
           p.isStreaming = false;
         } else {
           // On recovery the procedure item lives in flushed results.
-          const existing = scope.findExistingProcedure(ev.payload.procedure_name ?? "");
+          const existing = scope.findExistingProcedure(ev.payload.subrun_name ?? "");
           if (existing) existing.isStreaming = false;
         }
         break;
       }
 
       // ── Procedure execution progress ───────────────────────────────────────
-      case "procedure_step_started":
+      case "subrun_step_started":
         scope.pushItem({
           kind: "artifact",
           id: scope.nextId("proc-step"),
@@ -855,7 +855,7 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         });
         break;
 
-      case "procedure_step_completed": {
+      case "subrun_step_completed": {
         // Update the paired streaming artifact by step name
         const artifact = scope.findLastStreamingArtifactByName(ev.payload.step);
         if (artifact) {

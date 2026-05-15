@@ -71,9 +71,14 @@ pub struct RunSummary {
 
 pub mod run;
 pub mod thread;
+pub mod workflow;
 
 pub use run::{
     UpdateThinkingModeRequest, answer_run, cancel_run, create_run, stream_events,
     update_thinking_mode,
 };
 pub use thread::{get_run_by_thread, list_runs_by_thread};
+pub use workflow::{
+    cancel_workflow_run, create_workflow_run, get_workflow_file, get_workflow_run,
+    latest_run_for_thread, list_runs_for_workflow, list_workflow_files,
+};

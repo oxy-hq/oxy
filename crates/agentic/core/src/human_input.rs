@@ -73,6 +73,31 @@ impl HumanInputProvider for AutoAcceptInputProvider {
     }
 }
 
+// ── NoClarificationProvider ──────────────────────────────────────────────────
+
+/// Returns a "no human available" string for every prompt.
+///
+/// Used when an agent runs as a child of a parent run whose UI can't
+/// yet surface nested suspensions (today: workflow → analytics). The
+/// agent's `ask_user` call returns immediately with a directive
+/// rather than suspending; the LLM proceeds with its best
+/// interpretation of the original question.
+///
+/// Distinct from [`AutoAcceptInputProvider`] (which says `"Accept"`)
+/// because an `ask_user` clarification expects an *answer*, not a
+/// yes/no acknowledgement.
+pub struct NoClarificationProvider;
+
+impl HumanInputProvider for NoClarificationProvider {
+    fn request_sync(&self, _prompt: &str, _suggestions: &[String]) -> Result<String, ()> {
+        Ok(
+            "No further clarification is available. Proceed with your best \
+             interpretation of the original question."
+                .to_string(),
+        )
+    }
+}
+
 /// Minimal payload persisted when a pipeline suspends on an `ask_user` call.
 ///
 /// Contains only the information needed to re-enter the correct pipeline state

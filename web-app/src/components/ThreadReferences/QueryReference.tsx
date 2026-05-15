@@ -1,36 +1,30 @@
-import { Code, Download, Save, X } from "lucide-react";
+/**
+ * SQL query reference card — displays an agent-executed query and its
+ * result inline in chat, with a click-to-expand dialog for the full SQL
+ * + result table.
+ *
+ * The "Save to Workflow" path that this component used to expose was
+ * dropped along with the legacy `/workflows/from-query` endpoint. Use
+ * the workflow editor in the IDE to author new workflows.
+ */
+
+import { Code, Download, X } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+
 import CodeBlock from "@/components/Markdown/components/CodeBlock";
 import { Button } from "@/components/ui/shadcn/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/shadcn/dialog";
-import { Spinner } from "@/components/ui/shadcn/spinner";
-import useCreateWorkflowFromQueryMutation from "@/hooks/api/workflows/useCreateWorkflowFromQueryMutation";
 import type { SqlQueryReference } from "@/types/chat";
 import { QueryResultTable } from "./QueryResultTable";
 import { ReferenceItemContainer } from "./ReferenceItemContainer";
 
 export type QueryReferenceProps = {
   reference: SqlQueryReference;
-  prompt?: string;
 };
 
-export const QueryReference = ({ reference, prompt }: QueryReferenceProps) => {
+export const QueryReference = ({ reference }: QueryReferenceProps) => {
   const metadata = reference;
   const [isOpen, setIsOpen] = useState(false);
-  const { mutate: createWorkflowFromQuery, isPending } = useCreateWorkflowFromQueryMutation(() => {
-    toast.success(`Workflow created successfully`);
-  });
-
-  const handleSaveToWorkflow = () => {
-    if (prompt) {
-      createWorkflowFromQuery({
-        prompt: prompt,
-        query: metadata.sql_query,
-        database: metadata.database
-      });
-    }
-  };
 
   const handleDownloadSql = () => {
     const blob = new Blob([metadata.sql_query], { type: "text/plain" });
@@ -68,21 +62,9 @@ export const QueryReference = ({ reference, prompt }: QueryReferenceProps) => {
               </div>
               <span className='truncate'>Query</span>
             </div>
-            <div className='flex gap-2'>
-              {prompt && (
-                <Button
-                  disabled={isPending}
-                  variant='secondary'
-                  onClick={handleSaveToWorkflow}
-                  title='Save to Workflow'
-                >
-                  {isPending ? <Spinner /> : <Save />}
-                </Button>
-              )}
-              <Button variant='ghost' onClick={() => setIsOpen(false)}>
-                <X />
-              </Button>
-            </div>
+            <Button variant='ghost' onClick={() => setIsOpen(false)}>
+              <X />
+            </Button>
           </div>
           <div className='flex flex-col gap-4 p-4 pt-0'>
             <div className='relative max-h-80 overflow-auto'>

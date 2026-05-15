@@ -40,7 +40,7 @@ pub(crate) const AGENTIC_BUILDER_REFERENCE: &str =
 /// Verbatim template for an `.agentic.yml` file.
 pub(crate) const AGENTIC_TEMPLATE: &str = include_str!("../knowledge/agentic-template.yml");
 
-/// One of the four authored reference cards.  Used both as a typed
+/// One of the authored reference cards.  Used both as a typed
 /// parameter for the per-onboarding-phase pre-population path and as
 /// the closed enum the runtime `lookup_reference` tool accepts.
 ///
@@ -426,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn card_index_lists_all_four_cards() {
+    fn card_index_lists_all_user_facing_cards() {
         for card in KnowledgeCard::all() {
             assert!(
                 CARD_INDEX.contains(card.slug()),

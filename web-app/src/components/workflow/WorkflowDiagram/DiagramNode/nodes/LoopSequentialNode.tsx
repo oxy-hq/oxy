@@ -1,9 +1,5 @@
 import { useMemo } from "react";
-import { Combobox, type ComboboxStyles } from "@/components/ui/shadcn/combobox";
-import { NodeAppendix } from "@/components/ui/shadcn/node-appendix";
-import { useSelectedLoopIndex } from "@/components/workflow/useWorkflowRun";
-import type { TaskRun } from "@/services/types";
-import { useBlockStore } from "@/stores/block";
+import { useSelectLoop, useStepStatus } from "@/pages/workflow/components/RunStatusContext";
 import useWorkflow, {
   type LoopSequentialTaskConfig,
   type TaskConfigWithId
@@ -11,66 +7,83 @@ import useWorkflow, {
 import {
   distanceBetweenHeaderAndContent,
   headerHeight,
+  loopProgressBarHeight,
   nodeBorderHeight,
   paddingHeight
 } from "../../layout/constants";
+import { LoopProgressBar } from "./LoopProgressBar";
 import { NodeHeader } from "./NodeHeader";
 
 type Props = {
   parentId?: string;
   task: TaskConfigWithId;
-  taskRun?: TaskRun;
-  loopRuns?: TaskRun[];
   expanded?: boolean;
 };
 
-export function LoopSequentialNode({ parentId, task, taskRun, loopRuns, expanded }: Props) {
+/**
+ * Loop-iteration node header + spacer + live progress bar.
+ *
+ * The legacy "loop value" combobox (per-iteration picker driven by
+ * the old block-store data) was removed when the workflow runtime
+ * moved to agentic-workflows. The bar shown here is its replacement:
+ * always-visible during execution, no click required, no dropdown.
+ * Per-iteration drill-down lives in the Retry popover's
+ * `IterationGrid` (post-completion) for now; "open live grid in
+ * sidebar" is the natural click-target follow-up.
+ *
+ * `parentId` is still accepted because the diagram's layout code
+ * passes it; it's unused by this view.
+ */
+export function LoopSequentialNode({ task, expanded }: Props) {
   const nodes = useWorkflow((state) => state.nodes);
   const setNodeExpanded = useWorkflow((state) => state.setNodeExpanded);
-  const tasks = (task as LoopSequentialTaskConfig).tasks;
+  const loop = task as LoopSequentialTaskConfig;
+  const tasks = loop.tasks;
   const expandable = useMemo(() => tasks.length > 0, [tasks]);
-  const setSelectedLoopIndex = useBlockStore((state) => state.setSelectedLoopIndex);
-  const selectedLoopIndex = useSelectedLoopIndex(task);
-  const parentNode = nodes.find((n) => n.id === parentId);
-  const appendixPosition = parentNode?.data.task.type === "loop_sequential" ? "left" : "right";
+
+  // Live iteration state — `useStepStatus` returns undefined when no
+  // run-status provider is mounted (e.g., the legacy preview path)
+  // or when the loop hasn't fanned out yet. Both cases collapse to
+  // the bar rendering nothing, which is what we want.
+  const live = useStepStatus(task.name);
+  const iterations = live?.iterations ?? [];
+
+  // Page-level click handler — `null` on legacy paths where no
+  // sidebar Iterations tab is mounted. When null, LoopProgressBar
+  // skips the click affordance entirely (cursor stays default).
+  const selectLoop = useSelectLoop();
+  const onBarClick = selectLoop ? () => selectLoop(task.name) : undefined;
+
+  // Static total when the YAML lists values inline (`values: [a, b, c]`).
+  // For Jinja-expression `values:` strings, we can't know the total
+  // until the decider resolves it at runtime, so we fall back to
+  // whatever's been observed in the event stream so far.
+  const staticTotal = useMemo(
+    () => (Array.isArray(loop.values) ? loop.values.length : undefined),
+    [loop.values]
+  );
 
   const node = nodes.find((n) => n.id === task.id);
   const onExpandClick = () => {
     setNodeExpanded(task.id, !expanded);
   };
   if (!node?.height) return null;
+  // `usedHeight` must mirror the parent-height accounting in
+  // `nodeSize.ts::computeVerticalContainerSize` + the ELK top
+  // padding in `elkLayout.ts::calculateNodePadding`. The two
+  // `distanceBetweenHeaderAndContent` terms are the StepContainer
+  // `gap-2`s: one between header and bar slot, one between bar
+  // slot and the children-row.
   const usedHeight =
-    headerHeight + distanceBetweenHeaderAndContent + paddingHeight + nodeBorderHeight;
+    headerHeight +
+    distanceBetweenHeaderAndContent +
+    loopProgressBarHeight +
+    distanceBetweenHeaderAndContent +
+    paddingHeight +
+    nodeBorderHeight;
   const childSpace = node.height - usedHeight;
   return (
     <>
-      {taskRun?.loopValue?.length && expanded ? (
-        <NodeAppendix position={appendixPosition}>
-          <p className='pb-2 text-muted-foreground text-sm'>Loop value</p>
-          <Combobox
-            value={selectedLoopIndex?.toString()}
-            onValueChange={(value) => setSelectedLoopIndex(task, +value)}
-            items={taskRun.loopValue.map((value, index) => ({
-              label: `${JSON.parse(JSON.stringify(value))}`,
-              value: `${index}`,
-              style: loopRuns
-                ?.filter((run) => run.id.endsWith(`-${index}`))
-                .reduce(
-                  (_acc, run) => {
-                    if (run.error) {
-                      return "error";
-                    }
-                    if (run.isStreaming) {
-                      return "loading";
-                    }
-                    return "success";
-                  },
-                  undefined as ComboboxStyles | undefined
-                )
-            }))}
-          />
-        </NodeAppendix>
-      ) : null}
       <NodeHeader
         name={task.name}
         type={task.type}
@@ -78,7 +91,17 @@ export function LoopSequentialNode({ parentId, task, taskRun, loopRuns, expanded
         expanded={expanded}
         onExpandClick={onExpandClick}
       />
-      {expandable && expanded && <div style={{ height: `${childSpace}px` }}></div>}
+      {/* Bar always occupies its reserved slot so the parent node's
+          height stays stable across "loop hasn't fanned out yet"
+          and "loop is running" — the slot is included in
+          calculateContainerDimensions / calculateNodePadding for
+          LOOP_SEQUENTIAL nodes regardless of runtime state.
+          When there's no data + no static total, the bar component
+          returns null but the slot's reserved space stays. */}
+      <div style={{ height: `${loopProgressBarHeight}px` }} className='flex items-center'>
+        <LoopProgressBar iterations={iterations} total={staticTotal} onClick={onBarClick} />
+      </div>
+      {expandable && expanded && <div style={{ height: `${childSpace}px` }} />}
     </>
   );
 }

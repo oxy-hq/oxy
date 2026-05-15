@@ -88,3 +88,32 @@ where
         .route("/coordinator/live", get(coordinator::live_stream))
         .layer(axum::Extension(state))
 }
+
+/// Build the workflow sub-router. Mount with `.nest("/agentic-workflows", workflow_router(state))`.
+///
+/// Reuses the same [`AgenticState`] as the analytics router so cancellation
+/// and the SSE event registry are shared. Workflow runs flow through the
+/// runtime coordinator + worker queue exactly like analytics runs — the only
+/// thing this router does is seed the queue and surface state for the UI.
+pub fn workflow_router<S>(state: Arc<AgenticState>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new()
+        .route(
+            "/runs",
+            post(routes::create_workflow_run).get(routes::list_runs_for_workflow),
+        )
+        .route("/runs/{id}", get(routes::get_workflow_run))
+        // Reuse the existing SSE handler — events are domain-routed by the
+        // run's `source_type`, which is `"workflow"` for runs created here.
+        .route("/runs/{id}/events", get(routes::stream_events))
+        .route("/runs/{id}/cancel", post(routes::cancel_workflow_run))
+        .route(
+            "/threads/{thread_id}/run",
+            get(routes::latest_run_for_thread),
+        )
+        .route("/files", get(routes::list_workflow_files))
+        .route("/files/{path_b64}", get(routes::get_workflow_file))
+        .layer(axum::Extension(state))
+}

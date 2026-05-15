@@ -204,7 +204,7 @@ Workflows now use a **Temporal-inspired stateless decision pattern**. Instead of
        ├─ Loads YAML via WorkspaceContext.resolve_workflow_yaml()
        ├─ Parses into WorkflowConfig (local types, no oxy dependency)
        ├─ Seeds WorkflowRunState in agentic_workflow_state table
-       ├─ Emits procedure_started event
+       ├─ Emits subrun_started event
        └─ Returns TaskOutcome::Done (workflow task itself is done)
               │
 6. Coordinator detects workflow run_id in metadata:
@@ -282,7 +282,7 @@ The `WorkflowStepOrchestrator` (long-lived actor with in-memory answer channels)
 ### Event Flow Through Task Tree
 
 ```
-Grandchild (uuid.1.1) emits procedure_step_started
+Grandchild (uuid.1.1) emits subrun_step_started
   │
   ├─ Persisted on grandchild's run (uuid.1.1)
   │
@@ -291,7 +291,7 @@ Grandchild (uuid.1.1) emits procedure_step_started
        └─ → Analytics root (uuid) as delegation_event
               │
               SSE stream reads from root → analytics handler unwraps
-              delegation_event → procedure_step_started → Frontend
+              delegation_event → subrun_step_started → Frontend
 ```
 
 ## Task Tree Example

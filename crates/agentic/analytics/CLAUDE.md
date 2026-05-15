@@ -47,7 +47,13 @@ Migrator: `AnalyticsMigrator` with tracking table `seaql_migrations_analytics`.
 
 ## Rules
 
-- Must NOT import `agentic-builder`, `agentic-http`, or `agentic-pipeline`.
+- Must NOT import any other domain crate (`agentic-builder`, `agentic-workflow`)
+  or upward crates (`agentic-http`, `agentic-pipeline`).
 - May import `agentic-core`, `agentic-runtime`, `agentic-connector`, `agentic-llm`.
+- Cross-domain subrun delegation goes through `agentic_core::subrun::SubrunRunner`.
+  `agentic-pipeline` injects a concrete impl (workflow's `OxyProcedureRunner`)
+  via `AnalyticsSolver::with_subrun_runner`. Subrun lifecycle events
+  (`SubrunStarted`, `SubrunCompleted`, `SubrunStepStarted`, `SubrunStepCompleted`)
+  arrive on the analytics event stream when delegation runs.
 - Domain events implement `DomainEvents` trait from core.
 - `is_accumulated()` on `AnalyticsEvent` controls which events appear in `StepEnd` metadata.

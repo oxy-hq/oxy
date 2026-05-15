@@ -37,6 +37,84 @@ pub struct TaskConfig {
     pub name: String,
     #[serde(flatten)]
     pub task_type: TaskType,
+    /// Optional file export wrapper. When present, the task's result is
+    /// written to disk after the inner step completes successfully. Mirrors
+    /// the old `oxy-workflow::TaskExport` shape so existing `.workflow.yml`
+    /// files keep working unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export: Option<TaskExport>,
+    /// Optional **file-presence cache** distinct from the step-hash
+    /// cache (which keys on YAML + render_context).
+    ///
+    /// Semantics — matches the legacy `oxy-workflow::TaskCache`:
+    ///   - First run with `cache.enabled = true`: the step executes
+    ///     normally, then its answer is written to `cache.path` (jinja-
+    ///     rendered against the step's render_context).
+    ///   - Any subsequent run: if the file at `cache.path` already
+    ///     exists, **the step is skipped** and the file's contents are
+    ///     used as the step's result.
+    ///
+    /// The whole point is to let a user manually edit the cached file
+    /// (e.g. tweak an LLM-generated SQL query) and have those edits
+    /// survive every subsequent run. Deleting the file is the
+    /// invalidation; `cache.enabled = false` disables the mechanism
+    /// without removing the field.
+    ///
+    /// Independent of `export:` — if both are set, the cache write
+    /// fires on success in addition to whatever `export:` does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache: Option<CacheConfig>,
+}
+
+/// File export wrapper applied to a single task.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskExport {
+    /// Destination path, relative to the workspace root. May contain Jinja
+    /// expressions (e.g. `"out/{{ today }}.csv"`) — they're rendered against
+    /// the same render context the step itself sees.
+    pub path: String,
+    pub format: ExportFormat,
+}
+
+/// File-presence cache config. See [`TaskConfig::cache`] for semantics.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CacheConfig {
+    /// Off by default — a user adds this block *only* when they want
+    /// the file-presence behavior, so unset means no caching even when
+    /// the path field is present.
+    #[serde(default = "default_cache_enabled")]
+    pub enabled: bool,
+    /// Destination path, relative to the workspace root. May contain
+    /// Jinja expressions (e.g. `"out/{{ groupings.value }}.sql"`).
+    pub path: String,
+}
+
+fn default_cache_enabled() -> bool {
+    true
+}
+
+/// Supported export formats — kept aligned with the legacy
+/// `oxy::config::model::ExportFormat` so existing YAML still parses.
+///
+/// `Csv` / `Json` / `Sql` cover tabular outputs (`execute_sql`,
+/// `semantic_query`, `omni_query`, `looker_query`). `Txt` and `Docx`
+/// cover agent text outputs in the legacy schema; the parse path
+/// preserves them so existing `.workflow.yml` files round-trip, but
+/// the agent-task export wiring isn't ported yet — see
+/// [`crate::export`] for which formats execute today.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+// `docx` was a documented variant in the legacy `oxy-workflow` schema
+// but never had a real writer — `export_formatter` just wrote raw
+// bytes to a `.docx`-suffixed file that Word refused to open. Dropping
+// the variant turns any leftover `format: docx` into a clear
+// "unknown variant `docx`, expected one of `csv`, `json`, `sql`, `txt`"
+// parse error instead of a runtime "not supported" message.
+#[serde(rename_all = "lowercase")]
+pub enum ExportFormat {
+    Csv,
+    Json,
+    Sql,
+    Txt,
 }
 
 /// Workflow task types. Variants the orchestrator inspects have typed configs;
@@ -65,11 +143,34 @@ pub enum TaskType {
     OmniQuery(Value),
     #[serde(rename = "looker_query")]
     LookerQuery(Value),
-    #[serde(rename = "visualize")]
-    Visualize(Value),
 
+    // `type: visualize` was a legacy workflow task that ran an LLM to
+    // render a chart from the previous step's data. The chat agent's
+    // `visualize` *tool* (different surface) covers the same need now,
+    // so the task variant is retired. `#[serde(other)]` catches any
+    // leftover usage as `Unknown`, which the executor surfaces with a
+    // clear "unknown task type" error.
     #[serde(other)]
     Unknown,
+}
+
+impl TaskType {
+    /// Canonical kebab-case identifier matching the YAML `type:` discriminator
+    /// — also what the frontend keys off of when rendering per-task content.
+    pub fn name(&self) -> &'static str {
+        match self {
+            TaskType::Agent(_) => "agent",
+            TaskType::Formatter(_) => "formatter",
+            TaskType::Conditional(_) => "conditional",
+            TaskType::LoopSequential(_) => "loop_sequential",
+            TaskType::SubWorkflow(_) => "workflow",
+            TaskType::ExecuteSql(_) => "execute_sql",
+            TaskType::SemanticQuery(_) => "semantic_query",
+            TaskType::OmniQuery(_) => "omni_query",
+            TaskType::LookerQuery(_) => "looker_query",
+            TaskType::Unknown => "unknown",
+        }
+    }
 }
 
 // ── Inner task configs ──────────────────────────────────────────────────────
@@ -86,6 +187,46 @@ pub struct AgentTaskConfig {
     pub consistency_prompt: Option<String>,
     /// Model reference for the consistency evaluator (overrides workflow-level).
     pub consistency_model: Option<String>,
+    /// Output-shaping switch for the agent. Default is
+    /// `AgentOutputMode::Answer` — the analytics agent runs the
+    /// full pipeline and produces a natural-language answer.
+    /// `AgentOutputMode::Sql` terminates after the agent generates
+    /// SQL: pre-validated paths (semantic-layer, verified `.sql`
+    /// files, vendor engines) skip execution entirely; LLM-generated
+    /// SQL runs a `LIMIT 0` smoke check before terminating. The
+    /// terminal answer is the SQL text, ready to be written to disk
+    /// via the sibling `cache:` block and consumed by a downstream
+    /// `execute_sql` task. Applies to **analytics agents**
+    /// (`.agentic.yml`); ignored for the built-in builder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<AgentOutputConfig>,
+}
+
+/// Output shaping for an agent task.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentOutputConfig {
+    #[serde(default)]
+    pub mode: AgentOutputMode,
+}
+
+/// Output mode for an analytics agent task.
+///
+/// `Answer` (the default) runs the full analytics FSM
+/// (clarifying -> specifying -> solving -> executing -> interpreting)
+/// and emits a natural-language answer.
+///
+/// `Sql` shortcuts the FSM after the SQL is produced: pre-validated
+/// paths (semantic-layer compile, verified `.sql` file match, vendor
+/// engine) skip the executing state entirely; LLM-generated SQL runs
+/// a `LIMIT 0` smoke check. Procedure delegation is incoherent with
+/// SQL-gen mode (the SQL is only known after the procedure runs) and
+/// is rejected at runtime when this mode is in effect.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentOutputMode {
+    #[default]
+    Answer,
+    Sql,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +238,16 @@ pub struct FormatterConfig {
 pub struct SubWorkflowConfig {
     pub src: PathBuf,
     pub variables: Option<HashMap<String, Value>>,
+    /// Child workflow's tasks, pre-resolved at workflow load time.
+    ///
+    /// Populated by [`crate::resolve::resolve_subworkflows`] before the
+    /// run starts so the decider can emit the full nested task DAG in
+    /// `subrun_started` without doing async file IO at decide-time.
+    /// Persisted as part of `WorkflowRunState.workflow` so resumes see
+    /// the same tree without re-resolving. Empty when the child file
+    /// is missing, fails to parse, or appears in a sub-workflow cycle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_tasks: Vec<TaskConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -330,5 +481,89 @@ tasks:
 "#;
         let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(matches!(config.tasks[0].task_type, TaskType::Unknown));
+    }
+
+    /// Legacy `cache: { enabled, path }` block round-trips through
+    /// the new schema unchanged — existing customer YAML keeps
+    /// parsing without modification.
+    #[test]
+    fn test_parse_legacy_cache_block() {
+        let yaml = r#"
+name: test
+tasks:
+  - name: sql
+    type: agent
+    agent_ref: agents/sql.agent.yml
+    prompt: "generate SQL"
+    cache:
+      enabled: true
+      path: "out/cache/{{ groupings.value }}.sql"
+"#;
+        let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+        let cache = config.tasks[0].cache.as_ref().expect("cache block parsed");
+        assert!(cache.enabled);
+        assert_eq!(cache.path, "out/cache/{{ groupings.value }}.sql");
+    }
+
+    /// `output: { mode: sql }` round-trips through the agent task
+    /// config so the analytics pipeline can shortcut the FSM after
+    /// SQL is produced.
+    #[test]
+    fn test_parse_agent_output_sql_mode() {
+        let yaml = r#"
+name: test
+tasks:
+  - name: gen_sql
+    type: agent
+    agent_ref: agents/sales.agentic.yml
+    prompt: "{{ question }}"
+    output:
+      mode: sql
+    cache:
+      path: "out/{{ question | slugify }}.sql"
+"#;
+        let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+        let TaskType::Agent(agent) = &config.tasks[0].task_type else {
+            panic!("expected agent task");
+        };
+        let output = agent.output.as_ref().expect("output parsed");
+        assert_eq!(output.mode, AgentOutputMode::Sql);
+    }
+
+    /// Default output mode is `Answer` — existing workflows without an
+    /// `output:` block keep their natural-language interpretation.
+    #[test]
+    fn test_agent_output_mode_defaults_to_answer() {
+        let yaml = r#"
+name: test
+tasks:
+  - name: ask
+    type: agent
+    agent_ref: a.yml
+    prompt: "x"
+"#;
+        let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+        let TaskType::Agent(agent) = &config.tasks[0].task_type else {
+            panic!("expected agent task");
+        };
+        assert!(agent.output.is_none());
+    }
+
+    /// `enabled` defaults to true when only the path is given. Matches
+    /// the legacy `default_cache_enabled` behavior.
+    #[test]
+    fn test_cache_enabled_defaults_to_true() {
+        let yaml = r#"
+name: test
+tasks:
+  - name: sql
+    type: agent
+    agent_ref: a.yml
+    prompt: "x"
+    cache:
+      path: "out/x.sql"
+"#;
+        let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.tasks[0].cache.as_ref().unwrap().enabled);
     }
 }

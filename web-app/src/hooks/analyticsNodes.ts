@@ -170,7 +170,7 @@ export function buildAnalyticsNodes(events: SseEvent[]): AnalyticsNode[] {
         );
         break;
 
-      case "procedure_step_started":
+      case "subrun_step_started":
         nodes.push(
           domainNode(counter++, `Procedure: ${ev.data.step}`, "running", {
             step: ev.data.step
@@ -178,7 +178,7 @@ export function buildAnalyticsNodes(events: SseEvent[]): AnalyticsNode[] {
         );
         break;
 
-      case "procedure_step_completed": {
+      case "subrun_step_completed": {
         // Find the most recent running procedure node for this step and finalize it.
         const stepLabel = `Procedure: ${ev.data.step}`;
         let found = false;

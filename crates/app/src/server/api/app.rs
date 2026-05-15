@@ -752,14 +752,17 @@ fn data_container_to_output(data: &DataContainer) -> Option<TaskOutput> {
         DataContainer::Single(Data::Bool(b)) => Some(TaskOutput::Bool(*b)),
         DataContainer::Single(Data::Text(s)) => Some(TaskOutput::Text(s.clone())),
         DataContainer::Single(Data::Table(table_data)) => {
-            if let Some(json_str) = table_data.json.as_deref() {
-                match serde_json::from_str(json_str) {
-                    Ok(value) => Some(TaskOutput::Table(value)),
-                    Err(_) => serde_json::to_value(table_data).ok().map(TaskOutput::Table),
-                }
-            } else {
-                serde_json::to_value(table_data).ok().map(TaskOutput::Table)
-            }
+            // Always preserve the `{ file_path, json? }` shape — the FE
+            // (`registerFromTableData` in
+            // `web-app/src/components/AppPreview/Displays/utils.ts`)
+            // reads `tableData.json` when present and falls back to a
+            // network download of `tableData.file_path` when it's not.
+            // Previously the `json.is_some()` branch parsed the JSON
+            // string server-side and returned the bare records array,
+            // dropping `file_path` — the FE then base64-encoded
+            // `undefined` and hit the apps/file endpoint with a
+            // missing path (404).
+            serde_json::to_value(table_data).ok().map(TaskOutput::Table)
         }
         DataContainer::Single(Data::None) | DataContainer::None => None,
         DataContainer::List(items) => {

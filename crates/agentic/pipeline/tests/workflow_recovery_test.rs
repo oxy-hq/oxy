@@ -133,6 +133,13 @@ async fn test_workflow_decision_executor_arm_returns_done() {
         render_context: json!({}),
         pending_children: HashMap::new(),
         decision_version: 0,
+        step_hashes: HashMap::new(),
+        retry_from_run_id: None,
+        cache_enabled: false,
+        prior_step_hashes: HashMap::new(),
+        prior_results: HashMap::new(),
+        initial_render_context: serde_json::json!({}),
+        invalidate_iterations: HashMap::new(),
     };
     agentic_workflow::extension::insert_workflow_state(&db, &initial_state)
         .await
@@ -215,6 +222,8 @@ async fn test_decision_version_advances_after_decide() {
         tasks: vec![agentic_workflow::config::TaskConfig {
             name: "step0".to_string(),
             task_type: agentic_workflow::config::TaskType::Unknown,
+            export: None,
+            cache: None,
         }],
         description: String::new(),
         variables: None,
@@ -233,6 +242,13 @@ async fn test_decision_version_advances_after_decide() {
         render_context: json!({}),
         pending_children: HashMap::new(),
         decision_version: 0,
+        step_hashes: HashMap::new(),
+        retry_from_run_id: None,
+        cache_enabled: false,
+        prior_step_hashes: HashMap::new(),
+        prior_results: HashMap::new(),
+        initial_render_context: serde_json::json!({}),
+        invalidate_iterations: HashMap::new(),
     };
     agentic_workflow::extension::insert_workflow_state(&db, &initial_state)
         .await
@@ -240,7 +256,7 @@ async fn test_decision_version_advances_after_decide() {
 
     // Run the decider — should return DelegateStep for step0.
     let decider = agentic_workflow::WorkflowDecider::new(None);
-    let (new_state, decision) = decider.decide(initial_state, None).await;
+    let (new_state, decision) = decider.decide(initial_state, None, None, None).await;
 
     // decide() does NOT modify decision_version — the persistence layer owns it.
     assert_eq!(
@@ -282,7 +298,7 @@ async fn test_decision_version_advances_after_decide() {
         status: "done".to_string(),
         answer: r#"{"text":"result"}"#.to_string(),
     };
-    let (new_state2, decision2) = decider.decide(loaded, Some(child_answer)).await;
+    let (new_state2, decision2) = decider.decide(loaded, Some(child_answer), None, None).await;
     // decision_version is still 1 (from the DB load after first update).
     // decide() does not touch it.
     assert_eq!(
@@ -382,6 +398,8 @@ async fn seed_crashed_workflow(db: &DatabaseConnection) -> (String, String) {
         tasks: vec![agentic_workflow::config::TaskConfig {
             name: "step0".to_string(),
             task_type: agentic_workflow::config::TaskType::Unknown,
+            export: None,
+            cache: None,
         }],
         description: String::new(),
         variables: None,
@@ -447,6 +465,13 @@ async fn seed_crashed_workflow(db: &DatabaseConnection) -> (String, String) {
             m
         },
         decision_version: 0,
+        step_hashes: HashMap::new(),
+        retry_from_run_id: None,
+        cache_enabled: false,
+        prior_step_hashes: HashMap::new(),
+        prior_results: HashMap::new(),
+        initial_render_context: serde_json::json!({}),
+        invalidate_iterations: HashMap::new(),
     };
     agentic_workflow::extension::insert_workflow_state(db, &state)
         .await
@@ -797,6 +822,8 @@ async fn seed_agent_delegates_to_workflow(db: &DatabaseConnection) -> (String, S
         tasks: vec![agentic_workflow::config::TaskConfig {
             name: "step0".to_string(),
             task_type: agentic_workflow::config::TaskType::Unknown,
+            export: None,
+            cache: None,
         }],
         description: String::new(),
         variables: None,
@@ -846,6 +873,13 @@ async fn seed_agent_delegates_to_workflow(db: &DatabaseConnection) -> (String, S
         render_context: json!({}),
         pending_children: HashMap::new(),
         decision_version: 0,
+        step_hashes: HashMap::new(),
+        retry_from_run_id: None,
+        cache_enabled: false,
+        prior_step_hashes: HashMap::new(),
+        prior_results: HashMap::new(),
+        initial_render_context: serde_json::json!({}),
+        invalidate_iterations: HashMap::new(),
     };
     agentic_workflow::extension::insert_workflow_state(db, &wf_state)
         .await
@@ -912,7 +946,14 @@ async fn test_happy_path_analytics_workflow_step_done() {
         db.clone(),
         state.clone(),
         transport.clone() as Arc<dyn CoordinatorTransport>,
-    );
+    )
+    // Same wiring as production: the workflow domain owns both
+    // the `workflow_continue` chain semantic and the
+    // delegation-target → TaskSpec routing. Without these, the
+    // coordinator's defaults would terminate the workflow root
+    // after the seed step and (separately) misroute loop bodies.
+    .with_completion_policy(Arc::new(agentic_workflow::WorkflowCompletionPolicy))
+    .with_delegation_resolver(Arc::new(agentic_workflow::WorkflowDelegationResolver));
     coordinator.register_answer_channel(root_id.clone(), answer_rx);
 
     // Submit the root task: an analytics agent that immediately suspends
@@ -923,6 +964,7 @@ async fn test_happy_path_analytics_workflow_step_done() {
             TaskSpec::Agent {
                 agent_id: "test_agent".to_string(),
                 question: "test Q".to_string(),
+                extra: None,
             },
         )
         .await
@@ -987,20 +1029,20 @@ async fn test_happy_path_analytics_workflow_step_done() {
     let wf_events = crud::get_all_events(&db, &workflow_child.id).await.unwrap();
     let event_types: Vec<&str> = wf_events.iter().map(|e| e.event_type.as_str()).collect();
     assert!(
-        event_types.contains(&"procedure_started"),
-        "should have procedure_started event, got: {event_types:?}"
+        event_types.contains(&"subrun_started"),
+        "should have subrun_started event, got: {event_types:?}"
     );
     assert!(
-        event_types.contains(&"procedure_step_started"),
-        "should have procedure_step_started event, got: {event_types:?}"
+        event_types.contains(&"subrun_step_started"),
+        "should have subrun_step_started event, got: {event_types:?}"
     );
     assert!(
-        event_types.contains(&"procedure_step_completed"),
-        "should have procedure_step_completed event, got: {event_types:?}"
+        event_types.contains(&"subrun_step_completed"),
+        "should have subrun_step_completed event, got: {event_types:?}"
     );
     assert!(
-        event_types.contains(&"procedure_completed"),
-        "should have procedure_completed event, got: {event_types:?}"
+        event_types.contains(&"subrun_completed"),
+        "should have subrun_completed event, got: {event_types:?}"
     );
 }
 
@@ -1069,6 +1111,8 @@ impl TaskExecutor for HappyPathExecutor {
                     tasks: vec![agentic_workflow::config::TaskConfig {
                         name: "step0".to_string(),
                         task_type: agentic_workflow::config::TaskType::Unknown,
+                        export: None,
+                        cache: None,
                     }],
                     description: String::new(),
                     variables: None,
@@ -1087,6 +1131,13 @@ impl TaskExecutor for HappyPathExecutor {
                     render_context: json!({}),
                     pending_children: HashMap::new(),
                     decision_version: 0,
+                    step_hashes: HashMap::new(),
+                    retry_from_run_id: None,
+                    cache_enabled: false,
+                    prior_step_hashes: HashMap::new(),
+                    prior_results: HashMap::new(),
+                    initial_render_context: serde_json::json!({}),
+                    invalidate_iterations: HashMap::new(),
                 };
                 agentic_workflow::extension::insert_workflow_state(&db, &initial_state)
                     .await
@@ -1121,7 +1172,9 @@ impl TaskExecutor for HappyPathExecutor {
                     .ok_or("no workflow state")?;
 
                 let decider = agentic_workflow::WorkflowDecider::new(None);
-                let (new_state, decision) = decider.decide(state, pending_child_answer).await;
+                let (new_state, decision) = decider
+                    .decide(state, pending_child_answer, None, None)
+                    .await;
                 agentic_workflow::extension::update_workflow_state(&db, &new_state)
                     .await
                     .map_err(|e| format!("update state: {e}"))?;
@@ -1250,6 +1303,7 @@ async fn test_recovery_processes_stuck_needs_resume_analytics_run() {
         None,
         None,
         None,
+        Arc::new(agentic_runtime::router::NoopTaskRouter),
     )
     .await;
 

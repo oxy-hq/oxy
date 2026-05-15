@@ -10,6 +10,7 @@ import {
   distanceBetweenHeaderAndContent,
   distanceBetweenNodes,
   headerHeight,
+  loopProgressBarHeight,
   minNodeWidth,
   nodeBorder,
   nodeBorderHeight,
@@ -81,7 +82,17 @@ const computeVerticalContainerSize = (
     child.width = maxWidth;
   });
 
-  return calculateContainerDimensions(maxWidth, totalHeight, children.length);
+  // Loop nodes reserve the bar's own height + the flex `gap-2`
+  // that sits between `NodeHeader` and the bar inside StepContainer.
+  // Without the gap, the status-indicator border (which tracks
+  // `node.height`) ends up 8px short of the visible card because
+  // gap-2 is 8px and StepContainer renders header+bar with one gap
+  // between them — invisible to the layout engine otherwise.
+  const extraTopHeight =
+    node.type === TaskType.LOOP_SEQUENTIAL
+      ? loopProgressBarHeight + distanceBetweenHeaderAndContent
+      : 0;
+  return calculateContainerDimensions(maxWidth, totalHeight, children.length, extraTopHeight);
 };
 
 const computeHorizontalContainerSize = (
@@ -109,12 +120,13 @@ const getVisibleChildren = (node: Node, allNodes: Node[]): Node[] => {
 const calculateContainerDimensions = (
   baseWidth: number,
   baseHeight: number,
-  childCount: number
+  childCount: number,
+  extraTopHeight = 0
 ): { width: number; height: number } => {
   let width = baseWidth;
   let height = baseHeight;
 
-  height += headerHeight + paddingHeight + nodeBorderHeight;
+  height += headerHeight + paddingHeight + nodeBorderHeight + extraTopHeight;
 
   if (childCount > 0) {
     width += 2 * (contentPadding + nodePadding + nodeBorder);

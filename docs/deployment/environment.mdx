@@ -145,6 +145,60 @@ See [GitHub App Setup](/deployment/github-app) for a full walkthrough.
 | `OXY_SERVICE_NAME` | No | Service name for spans (default: `oxy`) |
 | `OXY_OBSERVABILITY_LOG_LEVEL` | No | Log level for observability layer (default: `debug`) |
 
+### Tuning
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OXY_WORKER_MAX_INFLIGHT` | No | `16` | Max concurrent tasks executed by a single worker process. Caps wide fan-outs (loops, parallel delegations, consistency runs) so a 1000-iteration loop can't stampede the database/LLM providers. Per-worker by design — the global ceiling scales with the number of worker processes. |
+
+### Task dispatch (matcher)
+
+Workflow workers learn about new tasks via Postgres `LISTEN`/`NOTIFY`
+— Oxy does not deploy a separate dispatch service. Each app instance
+opens **one dedicated Postgres connection** for its listener (in
+addition to the main connection pool); plan accordingly when sizing
+your DB `max_connections`. Most deployments need no extra tuning.
+
+Both authentication modes are supported:
+- **Password auth** (`OXY_DATABASE_URL`): the listener parses the URL
+  once at startup and reuses the parsed `Config` on every reconnect.
+- **IAM auth** (RDS, `OXY_DATABASE_AUTH_MODE=iam`): the listener mints
+  a fresh SigV4 token on every (re)connect via the same
+  `rds-db:connect` IAM permission already required for the connection
+  pool. No additional IAM policy beyond what the pool needs. There is
+  no background token-refresh loop — the listener holds one
+  connection at a time, and Postgres doesn't re-auth mid-stream, so a
+  token only matters at connect time.
+
+Failure modes degrade gracefully: if the listener connection drops,
+the reconnect loop re-establishes within seconds (200 ms → 5 s
+exponential backoff). A **5-minute keepalive ping** (`SELECT 1`)
+keeps NAT / ELB / PgBouncer / RDS-side idle-timeout policies from
+silently dropping the connection during quiet periods. Workers also
+run a **backstop poll every 10 seconds** so a missed notification
+turns into bounded latency, not lost work.
+
+For monitoring, a **60-second self-NOTIFY health probe** fires on
+the `oxy_health_probe` channel from every app instance and is heard
+by every listener (own instance + peers). Each receipt emits a
+`router.health_probe_received` tracing event and updates an
+in-memory `last_probe_received_at` timestamp. The intended alert
+shape is *absence of the event* over a 3-minute window — that
+catches the failure mode where the connection looks healthy
+(keepalive succeeds) but the NOTIFY delivery path is silently
+stuck. The `router.notification.delivered` trace event from the
+task channel gives the same signal under load; the probe is what
+covers naturally-quiet deployments. Repeated `router.reconnect`
+warnings within a minute are an independent real signal.
+
+A second background loop runs the **stale-claim reaper** every 30 s
+to free tasks held by workers that died without cleanup (OOM,
+panic, network partition). Combined with the default 60 s
+`visibility_timeout_secs` on claims, a dead worker's tasks reappear
+in the queue within ~90 s. There is no env knob for these intervals
+yet; they are tuned for healthy steady-state behaviour and rarely
+need adjustment.
+
 ---
 
 ## Using AWS SSM Parameter Store

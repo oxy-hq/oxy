@@ -8,11 +8,10 @@ import MessageHeader from "./MessageHeader";
 interface AgentMessageProps {
   message: Message;
   showAvatar?: boolean;
-  prompt?: string;
   onArtifactClick?: (id: string) => void;
 }
 
-const AgentMessage = ({ message, showAvatar, prompt, onArtifactClick }: AgentMessageProps) => {
+const AgentMessage = ({ message, showAvatar, onArtifactClick }: AgentMessageProps) => {
   const { content, references, steps, isStreaming } = message;
   const showAnswer = content || steps?.length > 0 || !isStreaming;
   const showAgentThinking = isStreaming && !showAnswer;
@@ -52,7 +51,7 @@ const AgentMessage = ({ message, showAvatar, prompt, onArtifactClick }: AgentMes
             </div>
             {references?.length > 0 && (
               <div className='mt-2'>
-                <ThreadReferences references={references} prompt={prompt} />
+                <ThreadReferences references={references} />
               </div>
             )}
           </div>

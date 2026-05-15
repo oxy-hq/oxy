@@ -12,9 +12,11 @@ use oxy::{
 };
 use oxy_agent::types::AgentInput;
 use oxy_shared::errors::OxyError;
-use oxy_workflow::builders::WorkflowInput;
 
-use super::{target::TargetExecutable, types::EvalTarget};
+use super::{
+    target::TargetExecutable,
+    types::{EvalTarget, EvalWorkflowInput},
+};
 
 #[derive(Clone, Debug)]
 pub(super) struct GeneratorExecutable {
@@ -162,11 +164,9 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                                 sandbox_info: None,
                             }),
                             EvalTarget::Workflow(workflow_input) => {
-                                EvalTarget::Workflow(WorkflowInput {
+                                EvalTarget::Workflow(EvalWorkflowInput {
                                     workflow_ref: workflow_input.workflow_ref.clone(),
-                                    retry: oxy::checkpoint::types::RetryStrategy::NoRetry {
-                                        variables: None,
-                                    },
+                                    variables: None,
                                 })
                             }
                             EvalTarget::Agentic(agentic_input) => {

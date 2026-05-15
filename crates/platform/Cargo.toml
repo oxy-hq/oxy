@@ -16,6 +16,13 @@ entity = { workspace = true }
 # Database
 sea-orm = { workspace = true }
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
+# agentic-runtime contributes the ListenerConfigFactory type used by the
+# task-router's dedicated LISTEN connection. The platform crate owns the
+# factory implementations (password + IAM) because it already owns the
+# IAM token mint + the env-var contract — keeping these here avoids
+# inverting the dependency direction.
+agentic-runtime = { workspace = true }
+tokio-postgres = { workspace = true }
 
 # Encryption
 aes-gcm = { workspace = true }

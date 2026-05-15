@@ -8,7 +8,7 @@ use tower::ServiceBuilder;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
-use crate::api::{agent, api_keys, app, database, healthcheck, run, thread, workflow, workspaces};
+use crate::api::{agent, api_keys, app, database, healthcheck, run, thread, workspaces};
 
 use super::{AppState, build_cors_layer};
 
@@ -53,18 +53,8 @@ pub async fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(thread::stop_thread))
         .routes(routes!(thread::bulk_delete_threads))
         .routes(routes!(thread::get_logs))
-        // Workflow routes
-        .routes(routes!(workflow::list))
-        .routes(routes!(workflow::get))
-        .routes(routes!(workflow::get_logs))
-        .routes(routes!(workflow::run_workflow))
-        .routes(routes!(workflow::run_workflow_sync))
-        .routes(routes!(workflow::run_workflow_thread))
-        .routes(routes!(workflow::run_workflow_thread_sync))
-        .routes(routes!(workflow::create_from_query))
-        .routes(routes!(workflow::get_workflow_run))
-        // Automation routes
-        .routes(routes!(workflow::save_automation))
+        // Workflow + automation routes have been retired; the new workflow
+        // surface lives under `/agentic-workflows` (see agentic-http).
         // Database routes
         .routes(routes!(database::create_database_config))
         .routes(routes!(database::test_database_connection))

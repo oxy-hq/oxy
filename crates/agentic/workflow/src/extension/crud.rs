@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::entity;
 
 /// Insert the initial workflow state row.
+#[allow(clippy::too_many_arguments)]
 pub async fn insert_state(
     db: &DatabaseConnection,
     run_id: &str,
@@ -17,6 +18,12 @@ pub async fn insert_state(
     workflow_context: Value,
     variables: Option<Value>,
     trace_id: &str,
+    retry_from_run_id: Option<&str>,
+    cache_enabled: bool,
+    prior_step_hashes: Value,
+    prior_results: Value,
+    initial_render_context: Value,
+    invalidate_iterations: Value,
 ) -> Result<(), DbErr> {
     let now = chrono::Utc::now();
     let model = entity::ActiveModel {
@@ -32,6 +39,13 @@ pub async fn insert_state(
         pending_children: Set(serde_json::json!({})),
         decision_version: Set(0),
         updated_at: Set(now),
+        step_hashes: Set(serde_json::json!({})),
+        retry_from_run_id: Set(retry_from_run_id.map(str::to_string)),
+        cache_enabled: Set(cache_enabled),
+        prior_step_hashes: Set(prior_step_hashes),
+        prior_results: Set(prior_results),
+        initial_render_context: Set(initial_render_context),
+        invalidate_iterations: Set(invalidate_iterations),
     };
     entity::Entity::insert(model)
         .on_conflict(
@@ -48,6 +62,13 @@ pub async fn insert_state(
                     entity::Column::PendingChildren,
                     entity::Column::DecisionVersion,
                     entity::Column::UpdatedAt,
+                    entity::Column::StepHashes,
+                    entity::Column::RetryFromRunId,
+                    entity::Column::CacheEnabled,
+                    entity::Column::PriorStepHashes,
+                    entity::Column::PriorResults,
+                    entity::Column::InitialRenderContext,
+                    entity::Column::InvalidateIterations,
                 ])
                 .to_owned(),
         )
@@ -149,6 +170,10 @@ pub async fn update_state_in_txn(
 ///   produced this decision, or
 /// - An empty object `{}` when no result changed (delegation/wait decisions).
 ///
+/// `step_hash_delta` follows the same shape and is merged into `step_hashes`
+/// in the same UPDATE — keeping per-step hashes in lockstep with results so
+/// no failure window can leave a hash without its result (or vice versa).
+///
 /// `render_context` is always written as `'{}'` — it is derived from `results`
 /// at load time, so there is no need to persist it separately.
 pub async fn apply_result_delta_in_txn(
@@ -157,6 +182,7 @@ pub async fn apply_result_delta_in_txn(
     expected_version: i64,
     current_step: i32,
     result_delta: Value,
+    step_hash_delta: Value,
     pending_children: Value,
 ) -> Result<bool, DbErr> {
     use sea_orm::{ConnectionTrait, Statement};
@@ -169,6 +195,11 @@ pub async fn apply_result_delta_in_txn(
             "result_delta must be a JSON object, got: {result_delta:?}"
         )));
     }
+    if !step_hash_delta.is_object() {
+        return Err(DbErr::Custom(format!(
+            "step_hash_delta must be a JSON object, got: {step_hash_delta:?}"
+        )));
+    }
 
     let new_version = expected_version + 1;
     let now = chrono::Utc::now();
@@ -179,16 +210,18 @@ pub async fn apply_result_delta_in_txn(
         UPDATE agentic_workflow_state
         SET current_step     = $1,
             results          = results || $2::jsonb,
+            step_hashes      = step_hashes || $3::jsonb,
             render_context   = '{}'::jsonb,
-            pending_children = $3,
-            decision_version = $4,
-            updated_at       = $5
-        WHERE run_id         = $6
-          AND decision_version = $7
+            pending_children = $4,
+            decision_version = $5,
+            updated_at       = $6
+        WHERE run_id         = $7
+          AND decision_version = $8
         "#,
         [
             current_step.into(),
             result_delta.into(),
+            step_hash_delta.into(),
             pending_children.into(),
             new_version.into(),
             now.into(),

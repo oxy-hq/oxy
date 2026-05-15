@@ -22,6 +22,7 @@ impl MigratorTrait for RuntimeMigrator {
             Box::new(AddEventAttemptColumn),
             Box::new(CreateTaskQueueTable),
             Box::new(RationalizeStatusModel),
+            Box::new(AddTaskQueueNotifyTrigger),
         ]
     }
 
@@ -945,6 +946,86 @@ impl MigrationTrait for RationalizeStatusModel {
         )
         .await?;
 
+        Ok(())
+    }
+}
+
+// ── Migration 11: Task-queue NOTIFY trigger ─────────────────────────────────
+//
+// Fires `pg_notify('oxy_task_enqueued', '')` on every row that lands in
+// `queue_status = 'queued'` — both fresh INSERT rows (enqueue_task) and
+// UPDATE statements that transition into queued (requeue_task, reap_stale_tasks).
+//
+// Putting the NOTIFY in a trigger instead of every Rust call site means:
+//   - Impossible to forget when adding a new enqueue path.
+//   - Atomic with the row write — listeners always observe the row
+//     because Postgres defers NOTIFY delivery until the issuing txn
+//     commits.
+//   - No extra round-trip per enqueue.
+//
+// Pairs with `agentic_runtime::router::PostgresTaskRouter`, which is
+// what actually `LISTEN`s on `oxy_task_enqueued`.
+
+struct AddTaskQueueNotifyTrigger;
+
+impl MigrationName for AddTaskQueueNotifyTrigger {
+    fn name(&self) -> &str {
+        "m20260512_000001_add_task_queue_notify_trigger"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddTaskQueueNotifyTrigger {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let db = manager.get_connection();
+
+        // The trigger fires AFTER INSERT OR UPDATE. We could narrow it
+        // with a WHEN clause on `OLD.queue_status IS DISTINCT FROM
+        // NEW.queue_status` to skip the per-row PL/pgSQL invocation on
+        // pure metadata updates (heartbeat, claim_count), but PG WHEN
+        // clauses don't have OLD on INSERT so we'd need two triggers.
+        // Per-row PL/pgSQL overhead is ~microseconds; not worth the
+        // added schema complexity for now.
+        db.execute_unprepared(
+            "CREATE OR REPLACE FUNCTION agentic_task_queue_notify_fn() \
+             RETURNS TRIGGER AS $$ \
+             BEGIN \
+                 IF NEW.queue_status = 'queued' \
+                    AND (TG_OP = 'INSERT' OR OLD.queue_status IS DISTINCT FROM 'queued') \
+                 THEN \
+                     PERFORM pg_notify('oxy_task_enqueued', ''); \
+                 END IF; \
+                 RETURN NEW; \
+             END; \
+             $$ LANGUAGE plpgsql;",
+        )
+        .await?;
+
+        db.execute_unprepared(
+            "DROP TRIGGER IF EXISTS agentic_task_queue_notify_trigger \
+             ON agentic_task_queue;",
+        )
+        .await?;
+        db.execute_unprepared(
+            "CREATE TRIGGER agentic_task_queue_notify_trigger \
+             AFTER INSERT OR UPDATE ON agentic_task_queue \
+             FOR EACH ROW \
+             EXECUTE FUNCTION agentic_task_queue_notify_fn();",
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let db = manager.get_connection();
+        db.execute_unprepared(
+            "DROP TRIGGER IF EXISTS agentic_task_queue_notify_trigger \
+             ON agentic_task_queue;",
+        )
+        .await?;
+        db.execute_unprepared("DROP FUNCTION IF EXISTS agentic_task_queue_notify_fn();")
+            .await?;
         Ok(())
     }
 }

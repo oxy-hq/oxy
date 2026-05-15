@@ -20,6 +20,20 @@ uuid = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+# tokio-postgres is used by `router::postgres` for its dedicated
+# `LISTEN oxy_task_enqueued` connection. SeaORM doesn't expose the
+# notification stream — we need the raw `tokio_postgres::Client` to
+# call `notifications()` on the connection. Production code path only;
+# tests that use `NoopTaskRouter` don't depend on this client at all.
+tokio-postgres = { workspace = true }
+# rustls-backed TLS connector for the LISTEN connection. RDS requires TLS;
+# the same provider sqlx uses elsewhere keeps the trust-store story
+# uniform. `webpki-roots` supplies Mozilla CA bundle so we don't depend
+# on the OS trust store.
+tokio-postgres-rustls = { workspace = true }
+rustls = "0.23"
+webpki-roots = { workspace = true }
+futures = { workspace = true }
 dashmap = "5"
 
 [dev-dependencies]

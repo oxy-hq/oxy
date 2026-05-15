@@ -124,8 +124,7 @@ Mounted in both modes. Cloud uses the real workspace UUID; local always uses
 ├── /runs/{source_id}/{run_index}          (cancel)
 ├── /builder-availability · /onboarding-readiness
 ├── /sql/{pathb64} · /sql/query
-├── /semantic · /semantic/compile
-├── /semantic/topic/{file_path_b64} · /semantic/view/{file_path_b64}
+├── /semantic · /semantic/compile · /semantic/topic/{file_path_b64} · /semantic/view/{file_path_b64}   (compile + execute go through airlayer + agentic-connector)
 └── /results/files/{file_id}               (get, delete)
 ```
 

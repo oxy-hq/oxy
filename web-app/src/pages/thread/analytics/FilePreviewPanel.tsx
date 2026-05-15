@@ -9,7 +9,6 @@ import { useFileEditorContext } from "@/components/FileEditor/useFileEditorConte
 import Markdown from "@/components/Markdown";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/shadcn/button";
-import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
@@ -18,6 +17,7 @@ import AgentPreview from "@/pages/ide/Files/Editor/Agent/Preview";
 import { EditorContext } from "@/pages/ide/Files/Editor/contexts/EditorContextTypes";
 import TopicEditor from "@/pages/ide/Files/Editor/Topic";
 import ViewEditor from "@/pages/ide/Files/Editor/View";
+import { Workflow } from "@/pages/workflow";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import { decodeFilePath, detectFileType, FileType } from "@/utils/fileTypes";
 
@@ -74,7 +74,7 @@ const FileTypePreview = ({ filePath }: { filePath: string }) => {
     case FileType.WORKFLOW:
     case FileType.AUTOMATION:
     case FileType.AGENTIC_WORKFLOW:
-      return <WorkflowPreview pathb64={pathb64} direction='vertical' />;
+      return <Workflow pathb64={pathb64} direction='vertical' hideHeader />;
     case FileType.APP:
       return <AppPreview key={pathb64} appPath64={pathb64} runButton={false} />;
     case FileType.VIEW:

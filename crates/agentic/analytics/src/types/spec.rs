@@ -151,7 +151,7 @@ pub enum SolutionSource {
     ///
     /// `file_path` points to the generated file on disk.  The Solving stage
     /// is skipped entirely; the Executing stage delegates to the external
-    /// [`ProcedureRunner`](crate::procedure::ProcedureRunner).
+    /// [`SubrunRunner`](agentic_core::subrun::SubrunRunner).
     Procedure { file_path: PathBuf },
     /// A `.sql` file from the agent context was matched by the user's question.
     ///

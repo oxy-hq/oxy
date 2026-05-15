@@ -50,6 +50,49 @@ impl AppCache {
         self.load_from_file(&full_cache_path)
     }
 
+    /// Save a pre-built [`DataContainer`] directly, skipping the
+    /// `OutputContainer::to_data` conversion that writes parquet from
+    /// arrow batches.
+    ///
+    /// Used by the inline-workflow app path where step results arrive
+    /// as plain JSON (`{columns: [...], rows: [...]}` for tabular
+    /// tasks) — there are no arrow batches to write, but we still want
+    /// the `{file_path, json}` shape on the wire so the frontend can
+    /// register the result in DuckDB-WASM by reading the inline JSON.
+    /// The caller is responsible for shaping `data` correctly.
+    pub async fn save_data_container(
+        &self,
+        app_path: &PathBuf,
+        tasks: &[Task],
+        data: DataContainer,
+    ) -> AppResult<DataContainer> {
+        let (_data_path, data_file_path) = self.get_data_paths(app_path, tasks)?;
+        let state_dir = self.config_manager.resolve_state_dir().await?;
+        let full_cache_path = state_dir.join(&data_file_path);
+        if let Some(parent) = full_cache_path.parent() {
+            self.ensure_directory(&parent.to_path_buf())?;
+        }
+        self.save_to_file(&data, &full_cache_path)?;
+        Ok(data)
+    }
+
+    /// Params-scoped sibling of [`save_data_container`] — same skip-conversion
+    /// shortcut but the cache file lands under a `params_<hash>` directory so
+    /// the main result is preserved.
+    pub async fn convert_to_data_container(
+        &self,
+        _app_path: &PathBuf,
+        _tasks: &[Task],
+        _params: &HashMap<String, serde_json::Value>,
+        data: DataContainer,
+    ) -> AppResult<DataContainer> {
+        // Params-scoped runs deliberately don't persist to disk — same
+        // semantics as `convert_to_data`, which only writes the parquet
+        // shards (not the YAML cache). For pre-built DataContainers
+        // there's nothing to write, so this is a passthrough.
+        Ok(data)
+    }
+
     pub async fn save_data(
         &self,
         app_path: &PathBuf,

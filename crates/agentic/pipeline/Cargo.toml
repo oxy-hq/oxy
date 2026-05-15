@@ -23,11 +23,13 @@ agentic-llm = { workspace = true }
 agentic-runtime = { workspace = true }
 agentic-workflow = { workspace = true }
 async-trait = { workspace = true }
+chrono = { workspace = true }
 serde_yaml = { workspace = true }
 
 sea-orm = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }

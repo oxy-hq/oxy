@@ -137,10 +137,50 @@ async fn new_agentic_state(
     }
     let thread_owner: Arc<dyn agentic_pipeline::platform::ThreadOwnerLookup> =
         Arc::new(crate::agentic_wiring::OxyThreadOwnerLookup::new(db.clone()));
+
+    // Cross-process wake source. The factory abstracts over both
+    // password and IAM auth modes — same OXY_DATABASE_AUTH_MODE env
+    // var that selects the connection pool's auth path. IAM mode
+    // mints a fresh SigV4 token on every (re)connect via the
+    // factory closure; no separate refresh loop needed (the listener
+    // holds one connection at a time and Postgres doesn't re-auth
+    // mid-stream).
+    let factory = oxy::database::client::listener_factory_from_env()
+        .map_err(|e| OxyError::RuntimeError(format!("listener factory: {e}")))?;
+    let (router_handle, router_cancel) =
+        agentic_runtime::router::PostgresTaskRouter::start(db.clone(), factory);
+    let router: Arc<dyn agentic_runtime::router::TaskRouter> = router_handle;
+    // Tie the listener's lifetime to the same shutdown token as the
+    // rest of the agentic state. Dropped CancellationToken would
+    // auto-cancel only on the last clone going away; explicit
+    // cancel-on-shutdown is clearer.
+    let shutdown_for_router = shutdown_token.clone();
+    tokio::spawn(async move {
+        shutdown_for_router.cancelled().await;
+        router_cancel.cancel();
+    });
+    tracing::info!(
+        target: "agentic",
+        keepalive_secs = agentic_runtime::router::DEFAULT_LISTENER_KEEPALIVE_INTERVAL.as_secs(),
+        "task router: PostgresTaskRouter (LISTEN/NOTIFY)"
+    );
+
+    // Process-level background jobs (reaper today; matcher health
+    // probe later). Tied to the same shutdown token as the rest of
+    // the agentic state so the loop exits on Ctrl-C / SIGTERM with
+    // everything else.
+    let bg_cancel = agentic_runtime::background::start(db.clone(), router.clone());
+    let shutdown_for_bg = shutdown_token.clone();
+    tokio::spawn(async move {
+        shutdown_for_bg.cancelled().await;
+        bg_cancel.cancel();
+    });
+
     Ok(Arc::new(
         AgenticState::new(shutdown_token, db, thread_owner)
             .with_builder_test_runner(Arc::new(OxyTestRunner))
-            .with_builder_app_runner(Arc::new(OxyBuilderAppRunner)),
+            .with_builder_app_runner(Arc::new(OxyBuilderAppRunner))
+            .with_router(router),
     ))
 }
 

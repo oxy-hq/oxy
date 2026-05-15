@@ -237,7 +237,7 @@ HTTP handler (`GET /runs/:id/events`):
 Child task events propagate up to every ancestor as `delegation_event`, so the SSE stream on the root sees everything. See [COORDINATOR.md § Event Flow Through Task Tree](COORDINATOR.md#event-flow-through-task-tree) for the task-tree perspective.
 
 ```
-Grandchild (uuid.1.1) emits procedure_step_started
+Grandchild (uuid.1.1) emits subrun_step_started
     │
     ├─ Persisted on grandchild's run (uuid.1.1, seq_N)
     │
@@ -247,7 +247,7 @@ Grandchild (uuid.1.1) emits procedure_step_started
          └─ → uuid    (analytics root)
                 │
                 SSE stream for uuid sees delegation_event →
-                processor unwraps inner → renders procedure_step_started UI block
+                processor unwraps inner → renders subrun_step_started UI block
 ```
 
 The SSE handler on the root run transparently unwraps `delegation_event` payloads via the domain processor — frontend renders grandchild events as if they came directly from root.

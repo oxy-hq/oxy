@@ -83,7 +83,7 @@ mod tests {
                 card.slug()
             );
         }
-        assert_eq!(slugs.len(), 4, "schema enum should list exactly 4 cards");
+        assert_eq!(slugs.len(), KnowledgeCard::all().len());
     }
 
     #[test]

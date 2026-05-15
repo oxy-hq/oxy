@@ -34,6 +34,5 @@ pub mod thread;
 pub mod traces;
 pub mod typed_stream;
 pub mod user;
-pub mod workflow;
 pub mod workspace_members;
 pub mod workspaces;

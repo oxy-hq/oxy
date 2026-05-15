@@ -81,7 +81,7 @@ impl AnalyticsSolver {
         let mut tools = crate::tools::triage_tools();
         tools.push(ask_user_tool_def());
 
-        let procedure_runner = self.procedure_runner.clone();
+        let subrun_runner = self.subrun_runner.clone();
         let catalog = Arc::clone(&self.catalog);
         let human_input = Arc::clone(&self.human_input);
 
@@ -129,7 +129,7 @@ impl AnalyticsSolver {
                 initial,
                 &tools,
                 |name: String, params| {
-                    let procedure_runner = procedure_runner.clone();
+                    let subrun_runner = subrun_runner.clone();
                     let catalog = Arc::clone(&catalog);
                     let human_input = Arc::clone(&human_input);
                     let proposed_query = Arc::clone(&proposed_query);
@@ -139,7 +139,7 @@ impl AnalyticsSolver {
                                 .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "search_procedures" {
                             let query = params["query"].as_str().unwrap_or("").to_string();
-                            let refs = match procedure_runner.as_ref() {
+                            let refs = match subrun_runner.as_ref() {
                                 Some(runner) => runner.search(&query).await,
                                 None => vec![],
                             };

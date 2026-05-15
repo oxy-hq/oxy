@@ -33,6 +33,17 @@ const traceKeys = {
   item: (projectId: string, traceId: string) => [...traceKeys.all, projectId, { traceId }] as const
 };
 
+const agenticWorkflowKeys = {
+  all: ["agentic-workflows"] as const,
+  files: (projectId: string) => [...agenticWorkflowKeys.all, "files", projectId] as const,
+  file: (projectId: string, pathB64: string) =>
+    [...agenticWorkflowKeys.all, "file", projectId, pathB64] as const,
+  run: (projectId: string, runId: string) =>
+    [...agenticWorkflowKeys.all, "run", projectId, runId] as const,
+  runsForWorkflow: (projectId: string, workflowRef: string) =>
+    [...agenticWorkflowKeys.all, "runs-for-workflow", projectId, workflowRef] as const
+};
+
 const workflowKeys = {
   all: ["workflow"] as const,
   run: (projectId: string, branchName: string) =>
@@ -309,6 +320,7 @@ const queryKeys = {
   user: userKeys,
   workspaces: workspaceKeys,
   workflow: workflowKeys,
+  agenticWorkflow: agenticWorkflowKeys,
   chart: chartKeys,
   file: fileKeys,
   database: databaseKeys,

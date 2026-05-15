@@ -58,8 +58,8 @@ tasks:
           -- End of Metric: {{metric.value}} --
           {% endfor %}
         export:
-          format: docx
-          path: output/formatter_{{schedules.value}}.docx
+          format: txt
+          path: output/formatter_{{schedules.value}}.txt
 
   - name: formatter
     type: formatter
@@ -77,5 +77,5 @@ tasks:
       -- End of Schedule: {{schedule.value}} --
       {% endfor %}
     export:
-      format: docx
-      path: output/formatter_report.docx
+      format: txt
+      path: output/formatter_report.txt

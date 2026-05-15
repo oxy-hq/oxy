@@ -6,6 +6,6 @@
 
 /// Placeholder — the event bridge is no longer needed.
 ///
-/// Step events (`procedure_step_started`, `procedure_step_completed`) are now
+/// Step events (`subrun_step_started`, `subrun_step_completed`) are now
 /// emitted directly by the `WorkflowStepOrchestrator`.
 pub struct WorkflowEventBridge;

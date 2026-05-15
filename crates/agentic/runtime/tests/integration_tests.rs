@@ -718,6 +718,7 @@ mod coordinator_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -810,6 +811,7 @@ mod coordinator_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -876,6 +878,7 @@ mod coordinator_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -1043,6 +1046,7 @@ mod coordinator_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -1119,6 +1123,7 @@ mod coordinator_tests {
                         TaskSpec::Agent {
                             ref agent_id,
                             ref question,
+                            ..
                         } if agent_id == "__builder__" => {
                             // Child builder agent — complete immediately.
                             drop(event_tx);
@@ -1201,6 +1206,7 @@ mod coordinator_tests {
                 TaskSpec::Agent {
                     agent_id: "analytics".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -1346,6 +1352,7 @@ mod coordinator_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -1512,6 +1519,7 @@ mod coordinator_tests {
                 TaskSpec::Agent {
                     agent_id: "analytics".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -1906,6 +1914,7 @@ mod task_tree_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -2146,6 +2155,7 @@ mod fanout_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -2230,6 +2240,7 @@ mod fanout_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -2298,6 +2309,7 @@ mod fanout_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -2462,6 +2474,7 @@ mod retry_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -2598,6 +2611,7 @@ mod retry_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -2744,6 +2758,7 @@ mod retry_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -3335,6 +3350,7 @@ mod crash_recovery_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -3463,6 +3479,7 @@ mod crash_recovery_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -3715,6 +3732,7 @@ mod answer_channel_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -3812,6 +3830,7 @@ mod answer_channel_tests {
                 TaskSpec::Agent {
                     agent_id: "test".into(),
                     question: "test Q".into(),
+                    extra: None,
                 },
             )
             .await
@@ -4261,6 +4280,7 @@ async fn enqueue_test_task(db: &DatabaseConnection) -> (String, String) {
     let spec = TaskSpec::Agent {
         agent_id: "test_agent".into(),
         question: "test question".into(),
+        extra: None,
     };
 
     crud::enqueue_task(db, &task_id, &run_id, None, &spec, None)
@@ -4458,6 +4478,7 @@ fn test_assignment(task_id: &str, run_id: &str) -> TaskAssignment {
         spec: TaskSpec::Agent {
             agent_id: "test_agent".into(),
             question: "test question".into(),
+            extra: None,
         },
         policy: None,
     }
@@ -4720,6 +4741,7 @@ async fn test_requeue_task_upserts_existing_entry() {
     let new_spec = TaskSpec::Agent {
         agent_id: "__builder__".into(),
         question: "rebuild semantic layer".into(),
+        extra: None,
     };
     crud::requeue_task(&db, &task_id, &new_spec)
         .await

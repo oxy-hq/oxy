@@ -1,0 +1,25 @@
+//! Orchestrator-side CRUD: the durable task queue, per-child outcomes,
+//! and startup recovery enumeration.
+//!
+//! Outcomes/recovery touch the `agentic_runs` row (lifecycle-owned)
+//! transactionally with the orchestrator's tables; they pull `now()`
+//! and `transition_run` from `lifecycle::crud` rather than duplicating
+//! them.
+
+pub mod outcomes;
+pub mod queue;
+pub mod recovery;
+
+pub use outcomes::{
+    complete_child_done_txn, complete_child_failed_txn, get_outcomes_for_parent, get_run_answer,
+    insert_child_run, insert_task_outcome, suspend_with_data_txn,
+};
+pub use queue::{
+    QueueStats, QueueTaskRow, cancel_queued_task, claim_task, claim_task_under_root,
+    complete_queue_task, enqueue_task, fail_queue_task, get_queue_entry, get_queue_stats,
+    reap_stale_tasks, requeue_task, update_queue_heartbeat,
+};
+pub use recovery::{
+    StuckRun, cleanup_stale_runs, find_stuck_workflow_runs, get_active_root_runs,
+    get_max_child_counter, get_resumable_root_runs, increment_attempt, mark_recovery_failed,
+};

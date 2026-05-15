@@ -15,7 +15,6 @@ pub mod extension;
 mod llm;
 pub mod metric_sink;
 pub mod pipeline;
-pub mod procedure;
 mod schemas;
 mod semantic;
 mod solver;
@@ -43,7 +42,8 @@ pub use semantic::SemanticCatalog;
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
-pub use events::{AnalyticsEvent, ProcedureStepInfo};
+pub use agentic_core::subrun::SubrunStep;
+pub use events::AnalyticsEvent;
 
 // LLM types used only by internal code and tests.
 #[doc(hidden)]
@@ -53,9 +53,9 @@ pub use llm::LlmClient;
 
 pub use config::{AgentConfig, BuildContext, ConfigError, ResolvedModelInfo};
 
-// ── Procedure ───────────────────────────────────────────────────────────────
+// ── Subrun ──────────────────────────────────────────────────────────────────
 
-pub use procedure::{ProcedureError, ProcedureOutput, ProcedureRef, ProcedureRunner};
+pub use agentic_core::subrun::{SubrunError, SubrunOutput, SubrunRef, SubrunRunner};
 
 // ── Pipeline facade ─────────────────────────────────────────────────────────
 

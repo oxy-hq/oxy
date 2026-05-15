@@ -17,37 +17,47 @@ Three-layer design — each layer has strict dependency rules:
 | Layer | Crates | May depend on | Must NOT depend on |
 | ------- | -------- | --------------- | ------------------- |
 | **Core** | `agentic-core` | External only (serde, tokio) | Any `agentic-*` crate |
-| **Runtime** | `agentic-runtime` | `core` | analytics, builder, connector, llm, pipeline, http |
-| **Infrastructure** | `agentic-connector`, `agentic-llm` | `core` | analytics, builder, runtime, pipeline, http |
-| **Domains** | `agentic-analytics`, `agentic-builder` | `core`, `runtime`, `connector`, `llm` | Each other, pipeline, http |
+| **Runtime** | `agentic-runtime` | `core` | analytics, builder, workflow, connector, llm, pipeline, http |
+| **Infrastructure** | `agentic-connector`, `agentic-llm` | `core` | analytics, builder, workflow, runtime, pipeline, http |
+| **Domains** | `agentic-analytics`, `agentic-builder`, `agentic-workflow` | `core`, `runtime`, `connector`, `llm` | Each other, pipeline, http |
 | **Pipeline** | `agentic-pipeline` | All agentic crates, `oxy` | `http` |
-| **HTTP** | `agentic-http` | `pipeline`, `runtime`, `oxy`, `oxy-auth` | analytics, builder, connector, llm, core, entity |
+| **HTTP** | `agentic-http` | `pipeline`, `runtime`, `oxy`, `oxy-auth` | analytics, builder, workflow, connector, llm, core, entity |
+
+`agentic-workflow` is a sibling domain alongside analytics/builder — no
+domain imports another. The cross-domain "subrun" contract
+(`SubrunRunner`, `SubrunStep`, `OxyCommentBlock`,
+`parse_oxy_comment_block`) lives in `agentic-core::subrun` so any
+delegating domain can discover and invoke any executor without taking
+a dep on it. `agentic-pipeline` is the only place that wires a
+concrete `dyn SubrunRunner` (workflow's `OxyProcedureRunner`) into
+the analytics solver.
 
 ## Crate Responsibilities
 
 | Crate | What it owns | Key types |
 | ------- | ------------- | ----------- |
-| `core` | FSM framework | `Domain`, `DomainSolver`, `Orchestrator`, `ProblemState`, `CoreEvent`, `UiBlock` |
-| `runtime` | Run lifecycle, persistence, event streaming | `RuntimeState`, `PipelineHandle`, `EventRegistry`, `StreamProcessor`, entity models |
+| `core` | FSM framework + cross-domain subrun contract | `Domain`, `DomainSolver`, `Orchestrator`, `ProblemState`, `CoreEvent`, `UiBlock`, `SubrunRunner`, `SubrunStep`, `OxyCommentBlock` |
+| `runtime` | Two sub-layers: [`lifecycle`] (run row, events, suspensions, SSE plumbing — `RuntimeState`, `PipelineHandle`, `EventRegistry`) and [`orchestrator`] (durable task queue, coordinator, worker pool, transports). Top-level re-exports keep legacy flat paths working. | `lifecycle::state::RuntimeState`, `lifecycle::handle::PipelineHandle`, `lifecycle::event_registry::EventRegistry`, `orchestrator::coordinator::Coordinator`, `orchestrator::worker::Worker` |
 | `pipeline` | Pipeline setup, config resolution, type erasure | `PipelineBuilder`, `StartedPipeline`, `ThinkingMode` |
 | `analytics` | Analytics solver, semantic layer, extension table | `AnalyticsSolver`, `AnalyticsEvent`, `SchemaCatalog`, `AnalyticsMigrator` |
 | `builder` | Builder solver, file tools (write/edit/delete), HITL suspensions | `BuilderSolver`, `BuilderEvent`, `BuilderTestRunner`, `BuilderAppRunner` |
 | `connector` | Database backends | `DatabaseConnector`, `ConnectorConfig`, `SchemaInfo` |
 | `llm` | LLM provider abstraction | `LlmClient`, `LlmProvider`, `ThinkingConfig` |
 | `http` | Axum route handlers | `AgenticState`, `router()`, route handlers |
-| `workflow` | Procedure runner | `OxyProcedureRunner`, `WorkflowEventBridge` |
+| `workflow` | Sibling domain: stateless workflow runner + procedure execution + extension table. Implements `agentic_core::subrun::SubrunRunner` via `OxyProcedureRunner`. | `WorkflowDecider`, `WorkflowRunState`, `commit_decision`, `WorkflowMigrator`, `OxyProcedureRunner`, `WorkflowEventBridge` |
 
 ## Migration Strategy
 
-Three independent SeaORM migrators with separate tracking tables:
+Four independent SeaORM migrators with separate tracking tables:
 
 | Migrator | Tracking table | Location | Owns |
 | ---------- | --------------- | ---------- | ------ |
 | Central | `seaql_migrations` | `crates/migration/` | Platform + conversation tables |
 | Runtime | `seaql_migrations_orchestrator` | `agentic-runtime` | `agentic_runs`, `agentic_run_events`, `agentic_run_suspensions` |
+| Workflow | `seaql_migrations_workflow` | `agentic-workflow` | `agentic_workflow_state` (incl. prior-cache snapshot columns) |
 | Analytics | `seaql_migrations_analytics` | `agentic-analytics` | `analytics_run_extensions` |
 
-Startup order: Central -> Runtime -> Analytics.
+Startup order: Central -> Runtime -> Workflow -> Analytics.
 
 ## Domain Extension Pattern
 
@@ -68,12 +78,20 @@ New domains add their own extension table with their own migrator. The runtime t
 
 ## Adding a New Domain
 
+For a quick FSM-style domain that fits the analytics/builder shape:
+
 1. Create `crates/agentic/<domain>/` implementing `DomainSolver` from `core`
-2. Add `start_pipeline()` returning `runtime::PipelineHandle`
+2. Add `start_pipeline()` returning `runtime::lifecycle::handle::PipelineHandle`
 3. Register event handler via `event_handler()` returning `DomainHandler`
 4. (Optional) Add extension table with own migrator
 5. Wire into `agentic-pipeline`: add to `PipelineBuilder` + `ErasedHandle` + `build_event_registry()`
 6. **No changes needed** to `runtime`, `core`, or `http`
+
+For a heavier integration (queue-driven, multi-step, like `agentic-workflow` —
+the pattern airway/airform will follow), see the full integration reference
+in [`internal-docs/agentic-runtime-integration.md`](../../internal-docs/agentic-runtime-integration.md).
+That doc covers both patterns (pipeline-style vs queue-driven), the
+lifecycle/orchestrator API surface, and a step-by-step checklist.
 
 ## Key Rules
 

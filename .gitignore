@@ -90,7 +90,9 @@ oxy/**/poetry.lock
 
 **/node_modules
 .turbo/*
-examples/bigquery-sample.key
+# Credential files — never commit. Includes the demo_project /
+# examples cloud-warehouse sample keys customers may drop in locally.
+*.key
 examples/output
 examples/.checkpoint/
 examples/.lancedb/

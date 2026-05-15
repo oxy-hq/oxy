@@ -7,15 +7,77 @@
 //! This crate is **domain-agnostic** — it never imports analytics, builder, or
 //! any domain-specific types. Domain behavior is injected via callbacks and
 //! the `EventRegistry` pattern.
+//!
+//! # Layout
+//!
+//! The crate is split into two sub-layers — Stage 1 of the airway/airform
+//! extraction. Pick the layer your code actually needs; the layered model
+//! also makes it clearer which parts a future ELT or transformation
+//! runtime would reuse.
+//!
+//! - [`lifecycle`] — run row + event log + suspensions + SSE plumbing.
+//!   The "what a run *is*" layer. Zero orchestrator dependencies.
+//! - [`orchestrator`] — durable task queue + coordinator + worker pool
+//!   + transports. The "how a run *executes*" layer. Depends on
+//!   `lifecycle` for storage primitives.
+//!
+//! Cross-cutting:
+//! - [`migration`] — single SeaORM migrator covering both layers'
+//!   tables (`seaql_migrations_orchestrator` tracking table).
+//!
+//! For backward compatibility with the pre-Stage-1 flat layout the
+//! legacy top-level paths (`agentic_runtime::coordinator`,
+//! `agentic_runtime::state`, `agentic_runtime::crud`, etc.) are
+//! re-exported below so existing callers keep working without
+//! touching every import.
 
-pub mod bridge;
-pub mod circuit_breaker;
-pub mod coordinator;
-pub mod crud;
-pub mod entity;
-pub mod event_registry;
-pub mod handle;
+pub mod lifecycle;
 pub mod migration;
-pub mod state;
-pub mod transport;
-pub mod worker;
+pub mod orchestrator;
+
+// ── Back-compat top-level paths ────────────────────────────────────────────
+//
+// These flatten the new two-layer structure back into the pre-Stage-1
+// surface so the ~180 external `agentic_runtime::<flat>::…` imports
+// across analytics/builder/workflow/pipeline/http keep compiling.
+// New code should prefer the explicit `lifecycle::…` / `orchestrator::…`
+// paths so the layering shows up in `use` statements.
+
+pub use lifecycle::{bridge, event_registry, handle, state};
+pub use orchestrator::{background, circuit_breaker, coordinator, router, transport, worker};
+
+/// Union of lifecycle + orchestrator entities under the legacy
+/// `agentic_runtime::entity::*` path.
+pub mod entity {
+    pub use crate::lifecycle::entity::{run, run_event, run_suspension};
+    pub use crate::orchestrator::entity::{task_outcome, task_queue};
+}
+
+/// Union of lifecycle + orchestrator CRUD modules under the legacy
+/// `agentic_runtime::crud::*` path. Submodule paths and re-exported
+/// free functions both stay reachable so callers don't have to choose
+/// between `agentic_runtime::crud::insert_event` and
+/// `agentic_runtime::crud::events::insert_event`.
+pub mod crud {
+    pub use crate::lifecycle::crud::{
+        EventRow, ThreadHistoryTurn, ToolExchangeRow, batch_insert_events, delete_events_from_seq,
+        get_all_events, get_effective_run_state, get_events_after, get_max_seq, get_run,
+        get_run_by_thread, get_runs_by_thread, get_suspension, get_thread_history,
+        get_thread_history_with_events, insert_event, insert_run, insert_run_with_parent,
+        list_active_runs, list_recent_runs, list_runs_filtered, load_task_tree, update_run_done,
+        update_run_failed, update_run_running, update_run_suspended,
+        update_run_terminal_from_events, update_task_status, upsert_suspension,
+    };
+    pub use crate::lifecycle::crud::{events, queries, runs, suspension};
+    pub use crate::lifecycle::crud::{now, transition_run, user_facing_status};
+    pub use crate::orchestrator::crud::{
+        QueueStats, QueueTaskRow, StuckRun, cancel_queued_task, claim_task, claim_task_under_root,
+        cleanup_stale_runs, complete_child_done_txn, complete_child_failed_txn,
+        complete_queue_task, enqueue_task, fail_queue_task, find_stuck_workflow_runs,
+        get_active_root_runs, get_max_child_counter, get_outcomes_for_parent, get_queue_entry,
+        get_queue_stats, get_resumable_root_runs, get_run_answer, increment_attempt,
+        insert_child_run, insert_task_outcome, mark_recovery_failed, reap_stale_tasks,
+        requeue_task, suspend_with_data_txn, update_queue_heartbeat,
+    };
+    pub use crate::orchestrator::crud::{outcomes, queue, recovery};
+}

@@ -9,7 +9,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::config::{TaskType, WorkflowConfig};
-use agentic_analytics::ProcedureStepInfo;
+use crate::resolve::build_subrun_steps;
+use crate::step_decider::build_agent_extra;
 use agentic_core::delegation::{
     DelegationItem, DelegationTarget, FanoutFailurePolicy, SuspendReason, TaskOutcome, TaskSpec,
 };
@@ -30,6 +31,10 @@ enum StepKind {
         prompt: String,
         consistency_run: usize,
         consistency_prompt: Option<String>,
+        /// Pre-built `extra` envelope (`output_mode` for analytics
+        /// SQL-gen). Flows through to `TaskSpec::Agent.extra` opaque
+        /// to this layer — the executor reads the field per agent path.
+        extra: Option<Value>,
     },
     /// Delegate to coordinator as a `TaskSpec::Workflow` (sub-workflow).
     SubWorkflow {
@@ -98,24 +103,18 @@ impl WorkflowStepOrchestrator {
         outcome_tx: mpsc::Sender<TaskOutcome>,
         mut answer_rx: mpsc::Receiver<String>,
     ) -> Result<(), String> {
-        let procedure_name = self.workflow.name.clone();
+        let subrun_name = self.workflow.name.clone();
 
-        // Emit ProcedureStarted with the full step list.
-        let steps: Vec<ProcedureStepInfo> = self
-            .workflow
-            .tasks
-            .iter()
-            .map(|t| ProcedureStepInfo {
-                name: t.name.clone(),
-                task_type: format!("{:?}", t.task_type).to_lowercase(),
-            })
-            .collect();
+        // Emit SubrunStarted with the full nested step DAG. The FE uses
+        // `inner_tasks` recursively to render loop iterations and
+        // sub-workflow expansions with per-task-type renderers.
+        let steps = build_subrun_steps(&self.workflow.tasks);
         self.emit_event(
             &event_tx,
-            "procedure_started",
+            "subrun_started",
             json!({
-                "procedure_name": &procedure_name,
-                "steps": steps.iter().map(|s| json!({"name": &s.name, "task_type": &s.task_type})).collect::<Vec<_>>(),
+                "subrun_name": &subrun_name,
+                "steps": steps,
             }),
         )
         .await;
@@ -129,7 +128,7 @@ impl WorkflowStepOrchestrator {
             // Emit step started.
             self.emit_event(
                 &event_tx,
-                "procedure_step_started",
+                "subrun_step_started",
                 json!({ "step": &step_name }),
             )
             .await;
@@ -163,6 +162,7 @@ impl WorkflowStepOrchestrator {
                     prompt,
                     consistency_run,
                     consistency_prompt,
+                    extra,
                 } => {
                     // Render the prompt with current context.
                     // NOTE: Full minijinja rendering happens on the step worker side.
@@ -186,6 +186,7 @@ impl WorkflowStepOrchestrator {
                             TaskSpec::Agent {
                                 agent_id: agent_ref,
                                 question: prompt,
+                                extra,
                             },
                         )
                         .await
@@ -200,6 +201,13 @@ impl WorkflowStepOrchestrator {
                         TaskSpec::Workflow {
                             workflow_ref: src,
                             variables,
+                            // Child sub-workflows always run fresh — cache
+                            // linkage at child-run granularity is a v2
+                            // feature.
+                            retry_from_run_id: None,
+                            cache_enabled: false,
+                            body: None,
+                            initial_render_context: None,
                         },
                     )
                     .await
@@ -239,7 +247,7 @@ impl WorkflowStepOrchestrator {
 
                     self.emit_event(
                         &event_tx,
-                        "procedure_step_completed",
+                        "subrun_step_completed",
                         json!({ "step": &step_name, "success": true }),
                     )
                     .await;
@@ -247,16 +255,16 @@ impl WorkflowStepOrchestrator {
                 Err(e) => {
                     self.emit_event(
                         &event_tx,
-                        "procedure_step_completed",
+                        "subrun_step_completed",
                         json!({ "step": &step_name, "success": false, "error": &e }),
                     )
                     .await;
 
                     self.emit_event(
                         &event_tx,
-                        "procedure_completed",
+                        "subrun_completed",
                         json!({
-                            "procedure_name": &procedure_name,
+                            "subrun_name": &subrun_name,
                             "success": false,
                             "error": &e,
                         }),
@@ -273,9 +281,9 @@ impl WorkflowStepOrchestrator {
         // All steps done.
         self.emit_event(
             &event_tx,
-            "procedure_completed",
+            "subrun_completed",
             json!({
-                "procedure_name": &procedure_name,
+                "subrun_name": &subrun_name,
                 "success": true,
             }),
         )
@@ -307,15 +315,22 @@ impl WorkflowStepOrchestrator {
         match task_type {
             TaskType::Formatter(_) | TaskType::Conditional(_) => StepKind::Inline,
 
-            TaskType::Agent(agent_task) => StepKind::Agent {
-                agent_ref: agent_task.agent_ref.clone(),
-                prompt: agent_task.prompt.clone(),
-                consistency_run: agent_task.consistency_run,
-                consistency_prompt: agent_task
-                    .consistency_prompt
-                    .clone()
-                    .or_else(|| self.workflow.consistency_prompt.clone()),
-            },
+            TaskType::Agent(agent_task) => {
+                let output_mode = agent_task.output.as_ref().map(|o| match o.mode {
+                    crate::config::AgentOutputMode::Answer => "answer",
+                    crate::config::AgentOutputMode::Sql => "sql",
+                });
+                StepKind::Agent {
+                    agent_ref: agent_task.agent_ref.clone(),
+                    prompt: agent_task.prompt.clone(),
+                    consistency_run: agent_task.consistency_run,
+                    consistency_prompt: agent_task
+                        .consistency_prompt
+                        .clone()
+                        .or_else(|| self.workflow.consistency_prompt.clone()),
+                    extra: build_agent_extra(output_mode),
+                }
+            }
 
             TaskType::SubWorkflow(wf_task) => StepKind::SubWorkflow {
                 src: wf_task.src.to_string_lossy().to_string(),
@@ -336,7 +351,6 @@ impl WorkflowStepOrchestrator {
             | TaskType::SemanticQuery(_)
             | TaskType::OmniQuery(_)
             | TaskType::LookerQuery(_)
-            | TaskType::Visualize(_)
             | TaskType::Unknown => StepKind::Delegated,
         }
     }
@@ -353,8 +367,7 @@ impl WorkflowStepOrchestrator {
 
     /// Render a Jinja2 template with the accumulated render context.
     fn execute_formatter(&self, template: &str) -> Result<Value, String> {
-        let mut env = minijinja::Environment::new();
-        env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
+        let env = crate::render::workflow_env();
 
         let tmpl = env
             .template_from_str(template)
@@ -386,8 +399,7 @@ impl WorkflowStepOrchestrator {
         &self,
         cond: &crate::config::ConditionalConfig,
     ) -> Result<Value, String> {
-        let mut env = minijinja::Environment::new();
-        env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
+        let env = crate::render::workflow_env();
         let ctx = build_minijinja_context(&self.render_context);
 
         for branch in &cond.conditions {
@@ -442,16 +454,24 @@ impl WorkflowStepOrchestrator {
 
         // Determine delegation target from spec.
         let (target, request, context) = match &spec {
-            TaskSpec::Agent { agent_id, question } => (
+            TaskSpec::Agent {
+                agent_id,
+                question,
+                extra,
+            } => (
                 DelegationTarget::Agent {
                     agent_id: agent_id.clone(),
                 },
                 question.clone(),
-                json!({}),
+                extra
+                    .as_ref()
+                    .map(|v| json!({ "extra": v }))
+                    .unwrap_or_else(|| json!({})),
             ),
             TaskSpec::Workflow {
                 workflow_ref,
                 variables,
+                ..
             } => (
                 DelegationTarget::Workflow {
                     workflow_ref: workflow_ref.clone(),

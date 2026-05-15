@@ -7,6 +7,7 @@
 pub mod executor;
 pub mod platform;
 pub mod recovery;
+pub mod workflow_run;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -40,7 +41,10 @@ pub use agentic_core::human_input::{
 };
 pub use agentic_llm::LlmClient;
 pub use agentic_llm::{AnthropicProvider, OpenAiProvider};
-pub use agentic_workflow::WorkflowMigrator;
+pub use agentic_workflow::{
+    SOURCE_TYPE as WORKFLOW_SOURCE_TYPE, WorkflowMigrator,
+    WorkspaceContext as WorkflowWorkspaceContext,
+};
 
 // ── ThinkingMode ────────────────────────────────────────────────────────────
 
@@ -112,6 +116,12 @@ pub struct PipelineBuilder {
     /// Restrict the builder solver's tool list to the named tools.
     /// Set per onboarding phase to drop irrelevant tools (dbt, etc.).
     builder_tool_allowlist: Option<Vec<String>>,
+    /// Analytics SQL-generation mode. When `true`, the analytics FSM
+    /// terminates after producing SQL (skip executing + interpreting
+    /// for pre-validated paths; LIMIT-0 smoke check + terminate for
+    /// LLM-generated SQL). Used by the workflow `type: agent` step
+    /// when `AgentTaskConfig.output.mode == Sql`.
+    analytics_sql_mode: bool,
 }
 
 enum Domain {
@@ -174,6 +184,7 @@ impl PipelineBuilder {
             builder_knowledge_cards: Vec::new(),
             builder_skip_interpreting: false,
             builder_tool_allowlist: None,
+            analytics_sql_mode: false,
         }
     }
 
@@ -234,6 +245,18 @@ impl PipelineBuilder {
     /// `OnboardingContext::tool_allowlist()`.
     pub fn tool_allowlist(mut self, names: Vec<String>) -> Self {
         self.builder_tool_allowlist = Some(names);
+        self
+    }
+
+    /// Run an analytics agent in SQL-generation mode. The analytics
+    /// FSM terminates after SQL is produced — pre-validated paths
+    /// (semantic layer, verified `.sql`, vendor engine) skip
+    /// executing entirely; LLM-generated SQL runs a `LIMIT 0` smoke
+    /// check before terminating. Used by the workflow `type: agent`
+    /// step when `AgentTaskConfig.output.mode == Sql`. No-op for the
+    /// builder agent.
+    pub fn analytics_sql_mode(mut self) -> Self {
+        self.analytics_sql_mode = true;
         self
     }
 
@@ -430,7 +453,7 @@ impl PipelineBuilder {
         connectors.extend(resolved.pre_built);
 
         // Procedure runner.
-        let procedure_runner: Option<Arc<dyn agentic_analytics::ProcedureRunner>> = {
+        let subrun_runner: Option<Arc<dyn agentic_core::subrun::SubrunRunner>> = {
             let procedure_files = config
                 .resolve_context(base_dir)
                 .map(|ctx| ctx.procedure_files)
@@ -471,8 +494,10 @@ impl PipelineBuilder {
             schema_cache: self.schema_cache,
             project_model,
             use_extended_thinking: self.thinking_mode.is_extended(),
-            procedure_runner,
+            subrun_runner,
             metric_sink: self.platform.metric_sink(),
+            human_input: self.human_input.clone(),
+            sql_generation_mode: self.analytics_sql_mode,
         };
 
         // Start pipeline.
@@ -496,6 +521,19 @@ impl PipelineBuilder {
         resume_data: agentic_core::human_input::SuspendedRunData,
         answer: String,
     ) -> Result<StartedPipeline, PipelineError> {
+        // Defense: an empty `agent_id` would resolve `base_dir.join("")`
+        // to the workspace root (a directory), and `from_file` would
+        // then fail with the cryptic `IO error: Is a directory`.
+        // The executor already falls back to `task_metadata.original_spec`
+        // to recover the id; if it still can't find it, surface a
+        // clear error instead of letting it propagate as a path error.
+        if agent_id.is_empty() {
+            return Err(PipelineError::Config(
+                "resume: agent_id is empty (no metadata.agent_id and no \
+                 task_metadata.original_spec.agent_id on the run row)"
+                    .to_string(),
+            ));
+        }
         // Load config (same resolution as start_analytics).
         let config_path = base_dir.join(agent_id);
         let config_path = if config_path.exists() {
@@ -531,7 +569,7 @@ impl PipelineBuilder {
         connectors.extend(resolved.pre_built);
 
         // Procedure runner.
-        let procedure_runner: Option<Arc<dyn agentic_analytics::ProcedureRunner>> = {
+        let subrun_runner: Option<Arc<dyn agentic_core::subrun::SubrunRunner>> = {
             let procedure_files = config
                 .resolve_context(base_dir)
                 .map(|ctx| ctx.procedure_files)
@@ -571,8 +609,10 @@ impl PipelineBuilder {
             schema_cache: self.schema_cache,
             project_model,
             use_extended_thinking: self.thinking_mode.is_extended(),
-            procedure_runner,
+            subrun_runner,
             metric_sink: self.platform.metric_sink(),
+            human_input: self.human_input.clone(),
+            sql_generation_mode: self.analytics_sql_mode,
         };
 
         let handle = agentic_analytics::resume_pipeline(params, resume_data, answer)
@@ -970,6 +1010,7 @@ pub async fn drive_with_coordinator(
     schema_cache: Option<Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>>,
     builder_test_runner: Option<Arc<dyn agentic_builder::BuilderTestRunner>>,
     builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
+    router: Arc<dyn agentic_runtime::router::TaskRouter>,
 ) {
     use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
     use agentic_runtime::coordinator::Coordinator;
@@ -982,8 +1023,23 @@ pub async fn drive_with_coordinator(
     // Convert the already-started pipeline into an ExecutingTask.
     let (executing_task, bridge_handle) = started.into_executing_task();
 
-    // Create the durable transport backed by the task queue table.
-    let transport = DurableTransport::new(db.clone());
+    // Create the durable transport backed by the task queue table,
+    // scoped to this run's task tree. Without scoping, this worker
+    // will happily claim a queued root task that belongs to a
+    // sibling run (e.g., a workflow just queued by
+    // `start_workflow_run`) — the LISTEN/NOTIFY matcher widened a
+    // pre-existing race window from ~1s to <10ms, making the
+    // poaching almost certain. When that happens, the poached
+    // task's events flow to *this* coordinator which doesn't know
+    // about it (`event for unknown task` warn), the Done outcome's
+    // policy-driven WorkflowDecision chain never fires, and the
+    // sibling run sits with a seeded `agentic_workflow_state` row
+    // but no in-flight queue task driving it.
+    //
+    // The `with_router` scope filter is `task_id = $root OR
+    // task_id LIKE '$root.%'`, which still reaches every child /
+    // grandchild this coordinator legitimately owns.
+    let transport = DurableTransport::with_router(db.clone(), router, Some(run_id.clone()));
 
     // Create the task executor for child tasks (delegation).
     let executor = Arc::new(executor::PipelineTaskExecutor {
@@ -1006,12 +1062,20 @@ pub async fn drive_with_coordinator(
         .unwrap_or(-1)
         + 1;
 
-    // Coordinator: manages the task tree.
+    // Coordinator: manages the task tree. Wire in the
+    // workflow-aware completion policy + delegation resolver —
+    // analytics / builder runs can delegate to a workflow as a
+    // child task, so every coordinator could see a
+    // `workflow_continue` outcome from a chained `Workflow` spec
+    // *and* needs the resolver to route loop bodies / single
+    // steps / on-disk workflows to the right TaskSpec variant.
     let mut coordinator = Coordinator::new(
         db,
         state.clone(),
         transport.clone() as Arc<dyn CoordinatorTransport>,
-    );
+    )
+    .with_completion_policy(Arc::new(agentic_workflow::WorkflowCompletionPolicy))
+    .with_delegation_resolver(Arc::new(agentic_workflow::WorkflowDelegationResolver));
     coordinator.register_answer_channel(run_id.clone(), answer_rx);
 
     // For the root task, we already have an ExecutingTask from the started
@@ -1223,6 +1287,10 @@ pub fn build_event_registry() -> EventRegistry {
     let mut registry = EventRegistry::new();
     registry.register("analytics", agentic_analytics::event_handler());
     registry.register("builder", agentic_builder::event_handler());
+    registry.register(
+        agentic_workflow::SOURCE_TYPE,
+        agentic_workflow::event_handler(),
+    );
     registry
 }
 
@@ -1435,7 +1503,7 @@ pub async fn run_agentic_eval(
         let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = platform.clone();
         let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
             .with_procedure_files(procedure_files);
-        solver.with_procedure_runner(std::sync::Arc::new(runner))
+        solver.with_subrun_runner(std::sync::Arc::new(runner))
     };
 
     let mut orchestrator = Orchestrator::new(solver).with_handlers(build_analytics_handlers());

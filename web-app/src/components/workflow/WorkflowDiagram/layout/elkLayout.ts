@@ -1,11 +1,12 @@
 import type { Edge } from "@xyflow/react";
 import ELK, { type ElkExtendedEdge, type ElkNode } from "elkjs";
-import type { TaskNode as Node } from "@/stores/useWorkflow";
+import { type TaskNode as Node, TaskType } from "@/stores/useWorkflow";
 import {
   contentPadding,
   distanceBetweenHeaderAndContent,
   distanceBetweenNodes,
   headerHeight,
+  loopProgressBarHeight,
   nodeBorder,
   nodePadding
 } from "./constants";
@@ -44,7 +45,7 @@ const buildElkNodes = (
   return {
     children: nodes.map((node) => {
       const childNodes = node.data.expanded ? allNodes.filter((n) => n.parentId === node.id) : [];
-      const padding = calculateNodePadding(childNodes.length);
+      const padding = calculateNodePadding(childNodes.length, node.type);
       return {
         id: node.id,
         width: node.width,
@@ -89,11 +90,22 @@ const extractLayoutedNodes = (layout: ElkNode, flatNodes: Node[]): Node[] => {
   return layoutedNodes;
 };
 
-const calculateNodePadding = (childCount: number) => {
+const calculateNodePadding = (childCount: number, nodeType?: Node["type"]) => {
+  // Loop nodes reserve `bar + header→bar gap` between the header and
+  // the children-row for the live progress bar. The gap matches
+  // StepContainer's `gap-2` (== distanceBetweenHeaderAndContent) so
+  // ELK's offset and the rendered card height stay in lockstep —
+  // see `nodeSize.ts::computeVerticalContainerSize` for the matching
+  // height reservation.
+  const extraTopHeight =
+    nodeType === TaskType.LOOP_SEQUENTIAL
+      ? loopProgressBarHeight + distanceBetweenHeaderAndContent
+      : 0;
   const topPadding =
     headerHeight +
     nodePadding +
     nodeBorder +
+    extraTopHeight +
     (childCount > 0 ? distanceBetweenHeaderAndContent + contentPadding : 0);
   const sidePadding = contentPadding + nodePadding + nodeBorder;
 

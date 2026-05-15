@@ -141,6 +141,7 @@ async fn find_stuck_runs_ignores_run_with_in_flight_child() {
         &TaskSpec::Agent {
             agent_id: "a".into(),
             question: "q".into(),
+            extra: None,
         },
         None,
     )

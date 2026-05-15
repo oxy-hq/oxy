@@ -9,19 +9,16 @@ use uuid::Uuid;
 use ::oxy::adapters::runs::RunsManager;
 use ::oxy::adapters::secrets::SecretsManager;
 use ::oxy::adapters::workspace::builder::WorkspaceBuilder;
-use ::oxy::checkpoint::types::RetryStrategy;
 use ::oxy::config::{ConfigBuilder, ConfigManager, resolve_local_workspace_path};
 use ::oxy::connector::Connector;
 use ::oxy::execute::types::utils::record_batches_to_table;
 use ::oxy::sentry_config;
 use ::oxy::utils::print_colored_sql;
 use oxy_shared::errors::OxyError;
-use oxy_workflow::loggers::cli::WorkflowCLILogger;
 
 use crate::server::service::agent::{
     AgentCLIHandler, ExecutionSource, run_agent, run_agentic_workflow,
 };
-use crate::server::service::workflow::run_workflow;
 
 type Variable = (String, String);
 
@@ -190,110 +187,66 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
 
 async fn handle_workflow_file(
     workflow_path: &PathBuf,
-    retry: bool,
-    retry_from: Option<String>,
+    _retry: bool,
+    _retry_from: Option<String>,
 ) -> Result<(), OxyError> {
+    use std::sync::Arc;
+
+    use crate::agentic_wiring::OxyProjectContext;
+    use ::oxy::theme::StyledText;
+
     let workspace_path = resolve_local_workspace_path()?;
-    // `oxy run` intentionally uses noop storage for normal (non-retry) runs: the CLI
-    // is a lightweight execution path that does not require a database. Run history
-    // persistence for API-triggered runs is handled by the server. Using noop here
-    // means `oxy run` works out-of-the-box without OXY_DATABASE_URL, and runs are
-    // not written to the DB even when a DB is configured.
-    //
-    // For retry/retry-from, a real database is required to look up the previous run;
-    // we switch to RunsManager::default() so users get a clear "connection required"
-    // error if OXY_DATABASE_URL is not set.
-    let runs_manager = if retry || retry_from.is_some() {
-        RunsManager::default(Uuid::nil(), Uuid::nil()).await?
-    } else {
-        RunsManager::noop()
-    };
-    let project = WorkspaceBuilder::new(Uuid::nil())
-        .with_workspace_path(&workspace_path)
-        .await?
-        .with_runs_manager(runs_manager)
-        .build()
-        .await
-        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
-    // Add Sentry context for workflow execution
     let workflow_name_str = workflow_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown");
     sentry_config::add_workflow_context(workflow_name_str, None);
 
-    if let Some(retry_from) = retry_from {
-        tracing::debug!(retry_from = %retry_from, "Running workflow from last run with retry from step");
-        sentry_config::add_workflow_context(workflow_name_str, Some("retry_from"));
+    // CLI runs are stateless: nil ids and a noop runs manager so the user
+    // doesn't need OXY_DATABASE_URL set just to execute a procedure.
+    let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
+        .await?
+        .with_runs_manager(RunsManager::noop())
+        .build()
+        .await
+        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
 
-        // Extract the run_id and replay_id from the retry_from string
-        let (run_id, replay_id) = if retry_from.contains("::") {
-            let parts: Vec<&str> = retry_from.split("::").collect();
-            if parts.len() == 2 {
-                (
-                    parts[0].to_string().parse::<u32>().map_err(|err| {
-                        OxyError::ArgumentError(format!(
-                            "Invalid replay_id format: {err}. Expected a number."
-                        ))
-                    })?,
-                    parts[1].to_string(),
-                )
-            } else {
-                return Err(OxyError::ArgumentError(
-                    "Invalid retry_from format. Expected 'run_id::replay_id'".to_string(),
-                ));
+    // Read + parse the workflow YAML directly from disk. We bypass
+    // `WorkspaceContext::resolve_workflow_yaml` (which expects relative
+    // paths) because the user gave us an absolute filesystem path.
+    let yaml = tokio::fs::read_to_string(workflow_path)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("read {}: {e}", workflow_path.display())))?;
+    let workflow: agentic_workflow::WorkflowConfig = serde_yaml::from_str(&yaml)
+        .map_err(|e| OxyError::RuntimeError(format!("parse workflow YAML: {e}")))?;
+
+    let agent_runner = crate::agentic_wiring::OxyInlineAgentRunner::new(workspace_manager.clone());
+    let project_ctx = Arc::new(OxyProjectContext::new(workspace_manager));
+    let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
+
+    let results = agentic_pipeline::workflow_run::run_inline_workflow_with(
+        workspace.as_ref(),
+        workflow,
+        None,
+        Some(&agent_runner),
+    )
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("inline workflow: {e}")))?;
+
+    // Render results in workflow-task order — the HashMap key set is
+    // the same, but the iteration order isn't deterministic.
+    let workflow_again: agentic_workflow::WorkflowConfig =
+        serde_yaml::from_str(&yaml).expect("re-parse workflow YAML (already validated above)");
+    println!("{}", format!("✓ {}", workflow_name_str).success());
+    for task in &workflow_again.tasks {
+        if let Some(value) = results.get(&task.name) {
+            println!("{}", format!("  {}", task.name).primary());
+            let pretty = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
+            for line in pretty.lines() {
+                println!("    {line}");
             }
-        } else {
-            return Err(OxyError::ArgumentError(
-                "Invalid retry_from format. Expected 'run_id::replay_id'".to_string(),
-            ));
-        };
-
-        run_workflow(
-            workflow_path,
-            WorkflowCLILogger,
-            RetryStrategy::Retry {
-                replay_id: Some(replay_id),
-                run_index: run_id,
-            },
-            project,
-            None,
-            None,
-            Some(ExecutionSource::Cli),
-            None, // No authenticated user in CLI context
-            None, // CLI: no per-user role; airhouse_managed defaults to Reader
-        )
-        .await?;
-    } else if retry {
-        tracing::debug!("Running workflow from last failed run");
-        sentry_config::add_workflow_context(workflow_name_str, Some("retry"));
-        run_workflow(
-            workflow_path,
-            WorkflowCLILogger,
-            RetryStrategy::LastFailure,
-            project,
-            None,
-            None,
-            Some(ExecutionSource::Cli),
-            None, // No authenticated user in CLI context
-            None, // CLI: no per-user role; airhouse_managed defaults to Reader
-        )
-        .await?;
-    } else {
-        tracing::debug!("Running workflow without retry");
-        sentry_config::add_workflow_context(workflow_name_str, Some("normal"));
-        run_workflow(
-            workflow_path,
-            WorkflowCLILogger,
-            RetryStrategy::NoRetry { variables: None },
-            project,
-            None,
-            None,
-            Some(ExecutionSource::Cli),
-            None, // No authenticated user in CLI context
-            None, // CLI: no per-user role; airhouse_managed defaults to Reader
-        )
-        .await?;
+        }
     }
     Ok(())
 }

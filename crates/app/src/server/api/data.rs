@@ -2,10 +2,27 @@ use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::middlewares::workspace_context::{
     EffectiveWorkspaceRole, WorkspaceManagerExtractor, WorkspacePath,
 };
-use crate::server::api::semantic::{ResultFormat, SemanticQueryResponse};
 use crate::server::api::typed_stream::{
     EMPTY_RESULT_SENTINEL, typed_stream_to_json_array, typed_stream_to_parquet,
 };
+
+// `ResultFormat` and `SemanticQueryResponse` previously lived in the
+// retired `crate::server::api::semantic` module. They're inlined here
+// because data.rs is now their only consumer.
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ResultFormat {
+    Parquet,
+    #[default]
+    Json,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(untagged)]
+pub enum SemanticQueryResponse {
+    Json(Vec<Vec<String>>),
+    Parquet { file_name: String },
+}
 use crate::server::service::retrieval::{ReindexInput, reindex};
 use agentic_connector::{ConnectorError, QueryFailedDetails};
 use agentic_pipeline::platform::ProjectContext;
@@ -69,8 +86,10 @@ pub struct SqlErrorResponse {
 }
 
 /// Internal error type that preserves connector-level structure on the way
-/// from `run_via_agentic_connector` to `agentic_error_response`.
-enum SqlExecuteError {
+/// from `run_via_agentic_connector` to `agentic_error_response`. Exposed
+/// crate-wide so the `semantic` module can compose compile → execute
+/// without re-implementing the connector error mapping.
+pub(crate) enum SqlExecuteError {
     Connector(ConnectorError),
     Other(OxyError),
 }
@@ -93,7 +112,7 @@ impl SqlExecuteError {
 /// Shape an `SqlExecuteError` into a (status, body) pair. Structured fields
 /// from `ConnectorError::QueryFailed(details)` propagate; everything else
 /// degrades to a single-line `message`.
-fn agentic_error_response(
+pub(crate) fn agentic_error_response(
     payload: &SQLParams,
     err: SqlExecuteError,
 ) -> (StatusCode, extract::Json<SqlErrorResponse>) {
@@ -175,7 +194,7 @@ fn agentic_error_response(
 /// according to the requested `result_format`. Every `DatabaseType` in
 /// `oxy::config::model` has a landing spot in `OxyProjectContext`, so this
 /// is now the single path for every Dev Portal query.
-async fn run_via_agentic_connector(
+pub(crate) async fn run_via_agentic_connector(
     workspace_manager: &WorkspaceManager,
     user_id: Uuid,
     role: WorkspaceRole,

@@ -1,8 +1,10 @@
 import { Workflow } from "lucide-react";
-import { useEffect } from "react";
+import { useMemo } from "react";
 import PageHeader from "@/components/PageHeader";
 import { Separator } from "@/components/ui/shadcn/separator";
 import OutputLogs from "@/components/workflow/output/Logs";
+import { useResumeWorkflowThread } from "@/hooks/workflow/useResumeWorkflowThread";
+import { decodeBase64 } from "@/libs/encoding";
 import useWorkflowThreadStore from "@/stores/useWorkflowThread";
 import type { ThreadItem } from "@/types/chat";
 import ProcessingWarning from "../ProcessingWarning";
@@ -14,18 +16,33 @@ const WorkflowThread = ({
   thread: ThreadItem;
   refetchThread: () => void;
 }) => {
-  const { setLogs, workflowThread } = useWorkflowThreadStore();
+  const { workflowThread } = useWorkflowThreadStore();
 
   const { logs, isLoading } = workflowThread.get(thread.id) || {
     logs: [],
     isLoading: false
   };
 
-  useEffect(() => {
-    if (thread.output && !isLoading) {
-      setLogs(thread.id, () => JSON.parse(thread.output));
+  // Recover from `agentic_runs.thread_id` after a page reload: the
+  // zustand store is in-memory, so the live runner's logs are gone after
+  // a refresh. The resume hook fetches the latest workflow run for this
+  // thread and replays its persisted events into the store. No-ops when
+  // the store already has logs (active run in progress).
+  useResumeWorkflowThread(thread.id);
+
+  // `thread.source` is stored as URL-safe base64 of the workflow file
+  // path (matches the workflow run page's URL param). Decode for the
+  // header so the user sees the readable path; fall back to the raw
+  // value if decoding fails so we never render an empty header.
+  const sourcePath = useMemo(() => {
+    const source = thread?.source;
+    if (!source) return "";
+    try {
+      return decodeBase64(source);
+    } catch {
+      return source;
     }
-  }, [thread, isLoading, setLogs]);
+  }, [thread?.source]);
 
   return (
     <div className='flex h-full flex-col'>
@@ -33,7 +50,7 @@ const WorkflowThread = ({
         <div className='flex h-full flex-1 items-center justify-center p-2'>
           <div className='flex items-center gap-1 text-muted-foreground'>
             <Workflow className='h-4 min-h-4 w-4 min-w-4' />
-            <p className='break-all text-sm'>{thread?.source}</p>
+            <p className='break-all text-sm'>{sourcePath}</p>
           </div>
           <div className='flex h-full items-stretch px-4'>
             <Separator orientation='vertical' />

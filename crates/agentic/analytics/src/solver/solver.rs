@@ -12,10 +12,10 @@ use crate::engine::SemanticEngine;
 use crate::events::AnalyticsEvent;
 use crate::llm::{LlmClient, ThinkingConfig};
 use crate::metric_sink::SharedMetricSink;
-use crate::procedure::ProcedureRunner;
 use crate::semantic::SemanticCatalog;
 use crate::tools::{SchemaCache, new_schema_cache};
 use crate::validation::Validator;
+use agentic_core::subrun::SubrunRunner;
 
 use super::prompts::QUESTION_TYPE_DEFS;
 
@@ -67,7 +67,7 @@ pub struct AnalyticsSolver {
     ///
     /// When set, the executing stage delegates `SolutionSource::Procedure`
     /// solutions to this runner instead of the SQL connector.
-    pub(crate) procedure_runner: Option<Arc<dyn ProcedureRunner>>,
+    pub(crate) subrun_runner: Option<Arc<dyn SubrunRunner>>,
     /// Configured validator for all three pipeline stages.
     pub(crate) validator: Validator,
     /// Initial max output tokens per LLM call, sourced from `llm.max_tokens` in config.
@@ -95,6 +95,14 @@ pub struct AnalyticsSolver {
     /// dimensions) to whatever backend the host has wired up. `None`
     /// disables metric recording — the pipeline still runs normally.
     pub(crate) metric_sink: Option<SharedMetricSink>,
+    /// SQL-generation mode flag. When `true`, the executing stage
+    /// terminates the pipeline with the candidate SQL as the answer
+    /// instead of materialising rows or running interpreting.
+    /// Pre-validated solution paths (semantic-layer, verified `.sql`,
+    /// vendor engine) skip execution entirely; LLM-generated SQL
+    /// runs a `LIMIT 0` smoke check first. Procedure delegation is
+    /// rejected with an explicit error in this mode.
+    pub(crate) sql_generation_mode: bool,
 }
 
 impl AnalyticsSolver {
@@ -122,7 +130,7 @@ impl AnalyticsSolver {
             human_input: Arc::new(DeferredInputProvider),
             suspension_data: None,
             resume_data: None,
-            procedure_runner: None,
+            subrun_runner: None,
             validator: Validator::default_validator(),
             max_tokens: None,
             engine: None,
@@ -130,6 +138,7 @@ impl AnalyticsSolver {
             agent_id: String::new(),
             question: String::new(),
             metric_sink: None,
+            sql_generation_mode: false,
         }
     }
 
@@ -156,7 +165,7 @@ impl AnalyticsSolver {
             human_input: Arc::new(DeferredInputProvider),
             suspension_data: None,
             resume_data: None,
-            procedure_runner: None,
+            subrun_runner: None,
             validator: Validator::default_validator(),
             max_tokens: None,
             engine: None,
@@ -164,6 +173,7 @@ impl AnalyticsSolver {
             agent_id: String::new(),
             question: String::new(),
             metric_sink: None,
+            sql_generation_mode: false,
         }
     }
 
@@ -189,6 +199,13 @@ impl AnalyticsSolver {
     ) -> Self {
         self.agent_id = agent_id.into();
         self.question = question.into();
+        self
+    }
+
+    /// Enable SQL-generation mode. See the field doc on
+    /// [`AnalyticsSolver::sql_generation_mode`] for semantics.
+    pub fn with_sql_generation_mode(mut self, enabled: bool) -> Self {
+        self.sql_generation_mode = enabled;
         self
     }
 
@@ -255,8 +272,9 @@ impl AnalyticsSolver {
     }
 
     /// Attach an external procedure runner for `SolutionSource::Procedure` solutions.
-    pub fn with_procedure_runner(mut self, runner: Arc<dyn ProcedureRunner>) -> Self {
-        self.procedure_runner = Some(runner);
+    /// Attach an external subrun runner for `SolutionSource::Procedure` solutions.
+    pub fn with_subrun_runner(mut self, runner: Arc<dyn SubrunRunner>) -> Self {
+        self.subrun_runner = Some(runner);
         self
     }
 

@@ -259,10 +259,10 @@ describe("buildAnalyticsSteps — fan-out (streaming / flush)", () => {
 // ── procedure steps ───────────────────────────────────────────────────────────
 
 describe("buildAnalyticsSteps — procedure steps", () => {
-  it("procedure_step_started creates a streaming artifact with toolInput 'Running…'", () => {
+  it("subrun_step_started creates a streaming artifact with toolInput 'Running…'", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
-      ev("procedure_step_started", { step: "Run monthly report" })
+      ev("subrun_step_started", { step: "Run monthly report" })
     ]);
     const step = items[0] as {
       items: { kind: string; toolName: string; toolInput: string; isStreaming: boolean }[];
@@ -276,21 +276,21 @@ describe("buildAnalyticsSteps — procedure steps", () => {
     });
   });
 
-  it("procedure_step_completed (success) closes the item with 'Completed'", () => {
+  it("subrun_step_completed (success) closes the item with 'Completed'", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
-      ev("procedure_step_started", { step: "Run monthly report" }),
-      ev("procedure_step_completed", { step: "Run monthly report", success: true })
+      ev("subrun_step_started", { step: "Run monthly report" }),
+      ev("subrun_step_completed", { step: "Run monthly report", success: true })
     ]);
     const step = items[0] as { items: { toolOutput: string; isStreaming: boolean }[] };
     expect(step.items[0]).toMatchObject({ toolOutput: "Completed", isStreaming: false });
   });
 
-  it("procedure_step_completed (failure) sets error string as toolOutput", () => {
+  it("subrun_step_completed (failure) sets error string as toolOutput", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
-      ev("procedure_step_started", { step: "Run monthly report" }),
-      ev("procedure_step_completed", {
+      ev("subrun_step_started", { step: "Run monthly report" }),
+      ev("subrun_step_completed", {
         step: "Run monthly report",
         success: false,
         error: "Connection refused"
@@ -300,11 +300,11 @@ describe("buildAnalyticsSteps — procedure steps", () => {
     expect(step.items[0]).toMatchObject({ toolOutput: "Connection refused", isStreaming: false });
   });
 
-  it("procedure_step_completed with no error message falls back to 'Failed'", () => {
+  it("subrun_step_completed with no error message falls back to 'Failed'", () => {
     const items = buildAnalyticsSteps([
       stepStart("S"),
-      ev("procedure_step_started", { step: "Step A" }),
-      ev("procedure_step_completed", { step: "Step A", success: false })
+      ev("subrun_step_started", { step: "Step A" }),
+      ev("subrun_step_completed", { step: "Step A", success: false })
     ]);
     const step = items[0] as { items: { toolOutput: string }[] };
     expect(step.items[0]).toMatchObject({ toolOutput: "Failed" });
@@ -313,10 +313,10 @@ describe("buildAnalyticsSteps — procedure steps", () => {
   it("multiple concurrent steps are independently paired by name", () => {
     const items = buildAnalyticsSteps([
       stepStart("S"),
-      ev("procedure_step_started", { step: "Step A" }),
-      ev("procedure_step_started", { step: "Step B" }),
-      ev("procedure_step_completed", { step: "Step A", success: true }),
-      ev("procedure_step_completed", { step: "Step B", success: false, error: "oops" })
+      ev("subrun_step_started", { step: "Step A" }),
+      ev("subrun_step_started", { step: "Step B" }),
+      ev("subrun_step_completed", { step: "Step A", success: true }),
+      ev("subrun_step_completed", { step: "Step B", success: false, error: "oops" })
     ]);
     const step = items[0] as {
       items: { toolName: string; toolOutput: string; isStreaming: boolean }[];
@@ -334,10 +334,10 @@ describe("buildAnalyticsSteps — procedure steps", () => {
     });
   });
 
-  it("unmatched procedure_step_completed (no prior start) is a no-op", () => {
+  it("unmatched subrun_step_completed (no prior start) is a no-op", () => {
     const items = buildAnalyticsSteps([
       stepStart("S"),
-      ev("procedure_step_completed", { step: "Ghost step", success: true })
+      ev("subrun_step_completed", { step: "Ghost step", success: true })
     ]);
     const step = items[0] as { items: unknown[] };
     expect(step.items).toHaveLength(0);
@@ -346,7 +346,7 @@ describe("buildAnalyticsSteps — procedure steps", () => {
   it("still-streaming step (no completed yet) stays streaming with no toolOutput", () => {
     const items = buildAnalyticsSteps([
       stepStart("S"),
-      ev("procedure_step_started", { step: "Long running step" })
+      ev("subrun_step_started", { step: "Long running step" })
     ]);
     const step = items[0] as { items: { toolOutput: unknown; isStreaming: boolean }[] };
     expect(step.items[0]).toMatchObject({ isStreaming: true });
@@ -371,15 +371,15 @@ const MAIN_STEPS = [
 ];
 
 const procedureStarted = (name = "my_proc", steps = MAIN_STEPS) =>
-  ev("procedure_started", { procedure_name: name, steps });
+  ev("subrun_started", { subrun_name: name, steps });
 
-const procStepStarted = (step: string) => ev("procedure_step_started", { step });
+const procStepStarted = (step: string) => ev("subrun_step_started", { step });
 
 const procStepCompleted = (step: string, success = true, error?: string) =>
-  ev("procedure_step_completed", { step, success, ...(error ? { error } : {}) });
+  ev("subrun_step_completed", { step, success, ...(error ? { error } : {}) });
 
 const procCompleted = (name = "my_proc", success = true) =>
-  ev("procedure_completed", { procedure_name: name, success });
+  ev("subrun_completed", { subrun_name: name, success });
 
 const getProcItem = (items: ReturnType<typeof buildAnalyticsSteps>): ProcedureItemShape => {
   for (const node of items) {
@@ -476,7 +476,7 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
     expect(proc.isStreaming).toBe(false);
   });
 
-  it("stepsDone is stable after procedure_completed (no further increments)", () => {
+  it("stepsDone is stable after subrun_completed (no further increments)", () => {
     const items = buildAnalyticsSteps([
       stepStart("Running"),
       procedureStarted(),
@@ -824,7 +824,7 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
       procStepStarted("process_data"),
       // crash mid-step
       recoveryResumed(1),
-      // new attempt re-emits procedure_started + continues
+      // new attempt re-emits subrun_started + continues
       procedureStarted(),
       procStepStarted("process_data"),
       procStepCompleted("process_data"),
@@ -853,7 +853,7 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
       procStepCompleted("fetch_data"), // +1
       // crash
       recoveryResumed(1),
-      // recovery re-emits procedure_started, resumes from fetch_data
+      // recovery re-emits subrun_started, resumes from fetch_data
       procedureStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"), // already counted — but stepsDone increments again
@@ -869,10 +869,10 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
     expect(proc.stepsDone).toBe(3);
   });
 
-  it("procedure steps after recovery (no new procedure_started) still update progress", () => {
-    // Real payload: procedure_started at attempt 0, some steps complete,
-    // then recovery_resumed(1), recovery_resumed(2), then more procedure_step_*
-    // events WITHOUT a new procedure_started event.
+  it("procedure steps after recovery (no new subrun_started) still update progress", () => {
+    // Real payload: subrun_started at attempt 0, some steps complete,
+    // then recovery_resumed(1), recovery_resumed(2), then more subrun_step_*
+    // events WITHOUT a new subrun_started event.
     const steps = [
       { name: "temperature_correlation", task_type: "execute_sql" },
       { name: "fuel_price_impact", task_type: "execute_sql" },
@@ -893,7 +893,7 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
       // crash mid fuel_price_impact
       recoveryResumed(1),
       recoveryResumed(2),
-      // recovery continues without new procedure_started
+      // recovery continues without new subrun_started
       procStepStarted("fuel_price_impact"),
       procStepCompleted("fuel_price_impact"),
       procStepStarted("unemployment_impact"),

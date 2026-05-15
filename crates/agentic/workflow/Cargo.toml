@@ -10,7 +10,7 @@ authors.workspace = true
 
 [dependencies]
 agentic-core = { workspace = true }
-agentic-analytics = { workspace = true }
+agentic-runtime = { workspace = true }
 agentic-connector = { workspace = true, features = [
     "duckdb",
     "postgres",
@@ -29,8 +29,10 @@ minijinja = { workspace = true }
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_jcs = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+sha2 = { workspace = true }
 strsim = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

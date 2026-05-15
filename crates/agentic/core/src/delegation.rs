@@ -12,6 +12,11 @@ use serde_json::Value;
 use crate::events::HumanInputQuestion;
 use crate::human_input::SuspendedRunData;
 
+#[inline]
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 // ── SuspendReason ────────────────────────────────────────────────────────────
 
 /// Why a pipeline suspended.
@@ -145,12 +150,48 @@ pub enum DelegationTarget {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TaskSpec {
     /// Start a fresh agent run.
-    Agent { agent_id: String, question: String },
+    Agent {
+        agent_id: String,
+        question: String,
+        /// Opaque domain-specific extra params. The runtime carries
+        /// this through to the executor without inspection; the
+        /// executor deserializes into whatever shape it expects.
+        ///
+        /// Used by `agentic-workflow` to pass the analytics agent's
+        /// `output_mode` ("answer" | "sql") into the analytics
+        /// pipeline. Kept as `serde_json::Value` so `agentic-core`
+        /// doesn't need to know about domain types.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extra: Option<Value>,
+    },
     /// Execute a workflow/procedure.
     Workflow {
         workflow_ref: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         variables: Option<Value>,
+        /// Prior run id whose step results may be reused on a "resume only
+        /// unchanged steps" retry. Present only when the caller explicitly
+        /// requested a retry; absent for fresh runs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_from_run_id: Option<String>,
+        /// Caller opt-in for hash-based step skipping. The decider only
+        /// consults `retry_from_run_id` when this is `true`.
+        #[serde(default, skip_serializing_if = "is_false")]
+        cache_enabled: bool,
+        /// Inline `WorkflowConfig` body. When `Some`, the executor uses
+        /// this instead of resolving `workflow_ref` off disk. Set by the
+        /// coordinator when a `loop_sequential` iteration is fanned out
+        /// — each iteration's `{name, tasks}` body becomes a synthetic
+        /// sub-workflow run so multi-task iteration bodies (including
+        /// ones with agent steps) can dispatch through the normal queue.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        body: Option<Value>,
+        /// Initial render context to seed onto the sub-workflow's state.
+        /// Used in tandem with `body` so a loop iteration's parent results
+        /// + the iteration variable (`{step_name}.value` / `.index`) are
+        /// visible to inner template references like `{{ schedules.value }}`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        initial_render_context: Option<Value>,
     },
     /// Resume a suspended run with an answer.
     Resume {

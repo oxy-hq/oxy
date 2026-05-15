@@ -15,6 +15,7 @@
 //!   [`agentic_pipeline::platform::ThreadOwnerLookup`].
 
 pub mod builder_bridges;
+pub mod inline_agent_runner;
 pub mod metric_sink;
 pub mod project_ctx;
 pub mod thread_owner;
@@ -23,6 +24,7 @@ use std::sync::Arc;
 
 use agentic_pipeline::platform::BuilderBridges;
 
+pub use inline_agent_runner::OxyInlineAgentRunner;
 pub use metric_sink::OxyAnalyticsMetricSink;
 pub use project_ctx::OxyProjectContext;
 pub use thread_owner::OxyThreadOwnerLookup;

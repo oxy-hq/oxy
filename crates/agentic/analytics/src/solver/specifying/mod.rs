@@ -1363,10 +1363,11 @@ pub(super) fn build_specifying_handler()
                             // SQL file's `/* oxy: ... */` header, falling back
                             // to the agent's default connector when absent or
                             // when the named connector isn't registered.
-                            let connector_name = crate::config::parse_oxy_comment_block(&sql)
-                                .and_then(|b| b.database)
-                                .filter(|db| solver.connectors.contains_key(db))
-                                .unwrap_or(default_conn);
+                            let connector_name =
+                                agentic_core::subrun::parse_oxy_comment_block(&sql)
+                                    .and_then(|b| b.database)
+                                    .filter(|db| solver.connectors.contains_key(db))
+                                    .unwrap_or(default_conn);
                             return TransitionResult::ok(ProblemState::Executing(
                                 crate::AnalyticsSolution {
                                     payload: SolutionPayload::Sql(sql),

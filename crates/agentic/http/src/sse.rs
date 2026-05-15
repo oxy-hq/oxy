@@ -49,6 +49,59 @@ pub fn squash_deltas(events: Vec<UiEvent>) -> Vec<UiEvent> {
 }
 
 /// Returns true for event types that signal the run has terminated.
-pub fn is_terminal(event_type: &str) -> bool {
+///
+/// `done`/`error`/`cancelled` are the analytics/builder terminal events.
+/// `subrun_completed` is the workflow domain's terminal event — without
+/// it here, workflow SSE streams never close server-side: the loop keeps
+/// waiting on the run's notifier even after the run row flips to `done`/
+/// `failed`, the client's `fetchEventSource` promise never resolves, and
+/// any `finally`-block cleanup (e.g. `setIsLoading(false)` in the chat
+/// thread runner) never fires. The result is a spinner that hangs forever
+/// after the workflow actually finished.
+///
+/// `source_type` is required because `subrun_completed` is the
+/// *workflow run's own* terminal event for source_type="workflow", but
+/// it's just an intermediate event for analytics/builder runs that
+/// delegated to a procedure — the analytics pipeline still has more
+/// events to emit once the child workflow returns. Without this gate,
+/// the SSE loop would exit on the child procedure's `subrun_completed`
+/// and the user would see the run frozen mid-stream until they
+/// navigated away and back (which re-opens the SSE and replays the
+/// post-resume events from the DB).
+pub fn is_terminal(event_type: &str, source_type: &str) -> bool {
     matches!(event_type, "done" | "error" | "cancelled")
+        || (source_type == "workflow" && event_type == "subrun_completed")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_terminal;
+
+    #[test]
+    fn done_terminates_any_source() {
+        assert!(is_terminal("done", "analytics"));
+        assert!(is_terminal("done", "workflow"));
+        assert!(is_terminal("done", "builder"));
+    }
+
+    /// Regression: a workflow delegated to from analytics emits
+    /// `subrun_completed` mid-run. The analytics SSE used to exit
+    /// there, freezing the UI until the user navigated away and back
+    /// (which re-opens the stream and replays from the DB). Gate the
+    /// terminal classification on `source_type == "workflow"` so only
+    /// the procedure's own run treats it as terminal.
+    #[test]
+    fn subrun_completed_terminates_workflow_only() {
+        assert!(is_terminal("subrun_completed", "workflow"));
+        assert!(!is_terminal("subrun_completed", "analytics"));
+        assert!(!is_terminal("subrun_completed", "builder"));
+    }
+
+    #[test]
+    fn unrelated_events_are_not_terminal() {
+        assert!(!is_terminal("subrun_started", "analytics"));
+        assert!(!is_terminal("subrun_step_completed", "analytics"));
+        assert!(!is_terminal("input_resolved", "analytics"));
+        assert!(!is_terminal("input_resolved", "workflow"));
+    }
 }

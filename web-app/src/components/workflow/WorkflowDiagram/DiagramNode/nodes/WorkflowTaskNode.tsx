@@ -1,50 +1,47 @@
-import { useMemo } from "react";
-import type { TaskRun } from "@/services/types";
-import useWorkflow, {
-  type TaskConfigWithId,
-  type WorkflowTaskConfigWithId
-} from "@/stores/useWorkflow";
-import {
-  distanceBetweenHeaderAndContent,
-  headerHeight,
-  nodeBorderHeight,
-  paddingHeight
-} from "../../layout/constants";
+import { useNavigate } from "react-router-dom";
+
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
+import type { TaskConfigWithId, WorkflowTaskConfigWithId } from "@/stores/useWorkflow";
 import { NodeHeader } from "./NodeHeader";
 
 type Props = {
   task: TaskConfigWithId;
-  taskRun?: TaskRun;
+  /** Unused — sub-workflows are now navigated to as their own page; the
+   *  legacy in-place expand was removed. Kept on the prop so the
+   *  NodeContent dispatch table doesn't need to change. */
   expanded?: boolean;
 };
 
-export function WorkflowTaskNode({ task, taskRun, expanded }: Props) {
-  const nodes = useWorkflow((state) => state.nodes);
-  const setNodeExpanded = useWorkflow((state) => state.setNodeExpanded);
-  const tasks = (task as WorkflowTaskConfigWithId).tasks;
-  const expandable = useMemo(() => !!tasks && tasks.length > 0, [tasks]);
+/**
+ * Sub-workflow task node — clicking the expand chevron navigates to
+ * the child workflow's run page rather than expanding the diagram
+ * in-place. Run selection happens on the destination page via its
+ * own run-history dropdown.
+ */
+export function WorkflowTaskNode({ task }: Props) {
+  const navigate = useNavigate();
+  const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
+  const subSrc = (task as WorkflowTaskConfigWithId).src;
+  const expandable = !!subSrc;
 
-  const node = nodes.find((n) => n.id === task.id);
   const onExpandClick = () => {
-    setNodeExpanded(task.id, !expanded);
+    if (!subSrc) return;
+    const pathB64 = encodeBase64(subSrc);
+    navigate(ROUTES.ORG(orgSlug).WORKSPACE(project.id).WORKFLOW(pathB64).ROOT);
   };
-  if (!node?.height) return null;
-  const usedHeight =
-    headerHeight + distanceBetweenHeaderAndContent + paddingHeight + nodeBorderHeight;
-  const childSpace = node.height - usedHeight;
 
   return (
-    <>
-      <NodeHeader
-        name={task.name}
-        type={task.type}
-        task={task}
-        taskRun={taskRun}
-        expandable={expandable}
-        expanded={expanded}
-        onExpandClick={onExpandClick}
-      />
-      {expandable && expanded && <div style={{ height: `${childSpace}px` }}></div>}
-    </>
+    <NodeHeader
+      name={task.name}
+      type={task.type}
+      task={task}
+      expandable={expandable}
+      expanded={false}
+      onExpandClick={onExpandClick}
+    />
   );
 }

@@ -29,7 +29,16 @@ const SUPPORTED_TYPES: &[&str] = &[
     "ToolType",
     // Agentic/FSM
     "AgenticConfig",
-    // Workflow
+    // Workflow.
+    //
+    // `VisualizeTask` and `EvalConfig` are intentionally absent: the
+    // agentic runner does not execute `type: visualize` steps (the
+    // legacy chart-from-data task type is retired; charts come from
+    // the chat agent's `visualize` tool now) and inline workflow
+    // `tests:` blocks are replaced by standalone `*.agent.test.yml` /
+    // `*.aw.test.yml` files. Surfacing them in the builder copilot's
+    // schema palette would let it suggest options that fail at parse
+    // time.
     "Workflow",
     "Task",
     "TaskType",
@@ -38,10 +47,13 @@ const SUPPORTED_TYPES: &[&str] = &[
     "SemanticQueryTask",
     "FormatterTask",
     "WorkflowTask",
-    "VisualizeTask",
     "LoopSequentialTask",
     "ConditionalTask",
-    "EvalConfig",
+    // `TaskCache` (legacy name for the new `CacheConfig`) gates the
+    // file-presence cache. See `agentic_workflow::config::CacheConfig`
+    // for the new runner; the schema name stays "TaskCache" so
+    // existing YAML / IDE suggestions match.
+    "TaskCache",
     // App
     "AppConfig",
     "Display",
@@ -122,10 +134,9 @@ impl BuilderSchemaProvider for OxyBuilderSchemaProvider {
             "SemanticQueryTask" => serde_json::to_value(schema_for!(cfg::SemanticQueryTask)),
             "FormatterTask" => serde_json::to_value(schema_for!(cfg::FormatterTask)),
             "WorkflowTask" => serde_json::to_value(schema_for!(cfg::WorkflowTask)),
-            "VisualizeTask" => serde_json::to_value(schema_for!(cfg::VisualizeTask)),
             "LoopSequentialTask" => serde_json::to_value(schema_for!(cfg::LoopSequentialTask)),
             "ConditionalTask" => serde_json::to_value(schema_for!(cfg::ConditionalTask)),
-            "EvalConfig" => serde_json::to_value(schema_for!(cfg::EvalConfig)),
+            "TaskCache" => serde_json::to_value(schema_for!(cfg::TaskCache)),
 
             // App
             "AppConfig" => serde_json::to_value(schema_for!(cfg::AppConfig)),

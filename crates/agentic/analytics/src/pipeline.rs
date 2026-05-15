@@ -22,9 +22,9 @@ use crate::catalog::SchemaCatalog;
 use crate::config::{AgentConfig, BuildContext, ConfigError, ResolvedModelInfo};
 use crate::events::AnalyticsEvent;
 use crate::metric_sink::SharedMetricSink;
-use crate::procedure::ProcedureRunner;
 use crate::solver::build_analytics_handlers;
 use crate::types::{AnalyticsIntent, ConversationTurn, QuestionType, SpecHint};
+use agentic_core::subrun::SubrunRunner;
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -48,13 +48,34 @@ pub struct PipelineParams {
     /// `config.llm.extended_thinking`.  The caller no longer needs to extract
     /// these values manually.
     pub use_extended_thinking: bool,
-    /// Optional procedure search provider for the `search_procedures` tool.
-    /// Procedure *execution* is handled by the coordinator, not this runner.
-    pub procedure_runner: Option<Arc<dyn ProcedureRunner>>,
+    /// Optional subrun search provider for the `search_procedures` tool.
+    /// Subrun *execution* is handled by the coordinator, not this runner.
+    pub subrun_runner: Option<Arc<dyn SubrunRunner>>,
     /// Optional sink for recording Tier 1 metric usage (measures +
     /// dimensions) to an external observability backend. `None` means
     /// metrics won't be recorded — the pipeline still runs.
     pub metric_sink: Option<SharedMetricSink>,
+    /// Optional human-input provider override. When `None`, the solver
+    /// uses its default [`DeferredInputProvider`] which suspends the
+    /// run on every `ask_user` call. Workflow delegations override
+    /// this with [`AutoAcceptInputProvider`] so a nested `ask_user`
+    /// doesn't deadlock the parent workflow run until live event
+    /// streaming reaches the workflow UI.
+    pub human_input: Option<agentic_core::human_input::HumanInputHandle>,
+    /// SQL-generation mode. When `true`, the analytics FSM terminates
+    /// after SQL is produced:
+    ///   - Pre-validated paths (semantic-layer, verified `.sql`,
+    ///     vendor engine) skip `executing` and `interpreting`
+    ///     entirely; the SQL becomes the run's terminal answer.
+    ///   - LLM-generated SQL (path D) runs a `LIMIT 0` smoke check
+    ///     instead of materialising rows, then terminates.
+    ///   - Procedure delegation is incompatible with SQL mode and is
+    ///     rejected at runtime.
+    ///
+    /// Set via the workflow `type: agent` step when the
+    /// `output: { mode: sql }` block is present on the task. The
+    /// natural-language `interpreting` stage is bypassed.
+    pub sql_generation_mode: bool,
 }
 
 // ── start_pipeline ───────────────────────────────────────────────────────────
@@ -119,13 +140,18 @@ pub async fn start_pipeline(
 
     let cancel_event_tx = event_stream.clone();
 
-    let solver = solver
+    let mut solver = solver
         .with_events(event_stream.clone())
         .with_source_attribution(params.agent_id.clone(), params.question.clone())
-        .with_metric_sink(params.metric_sink.clone());
+        .with_metric_sink(params.metric_sink.clone())
+        .with_sql_generation_mode(params.sql_generation_mode);
+    if let Some(provider) = params.human_input.clone() {
+        solver = solver.with_human_input(provider);
+    }
+    let solver = solver;
 
-    let solver = if let Some(runner) = params.procedure_runner {
-        solver.with_procedure_runner(runner)
+    let solver = if let Some(runner) = params.subrun_runner {
+        solver.with_subrun_runner(runner)
     } else {
         solver
     };
@@ -271,13 +297,18 @@ pub async fn resume_pipeline(
 
     let cancel_event_tx = event_stream.clone();
 
-    let solver = solver
+    let mut solver = solver
         .with_events(event_stream.clone())
         .with_source_attribution(params.agent_id.clone(), params.question.clone())
-        .with_metric_sink(params.metric_sink.clone());
+        .with_metric_sink(params.metric_sink.clone())
+        .with_sql_generation_mode(params.sql_generation_mode);
+    if let Some(provider) = params.human_input.clone() {
+        solver = solver.with_human_input(provider);
+    }
+    let solver = solver;
 
-    let solver = if let Some(runner) = params.procedure_runner {
-        solver.with_procedure_runner(runner)
+    let solver = if let Some(runner) = params.subrun_runner {
+        solver.with_subrun_runner(runner)
     } else {
         solver
     };

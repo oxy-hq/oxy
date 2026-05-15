@@ -17,7 +17,6 @@ members = [
   "crates/shared",
   "crates/test-utils",
   "crates/thread",
-  "crates/workflow",
   "crates/infrastructure/llm/anthropic",
   "crates/infrastructure/llm/ollama",
   "crates/infrastructure/llm/gemini",
@@ -88,7 +87,6 @@ oxy-semantic = { path = "crates/semantic" }
 oxy-shared = { path = "crates/shared" }
 oxy-test-utils = { path = "crates/test-utils" }
 oxy-thread = { path = "crates/thread" }
-oxy-workflow = { path = "crates/workflow" }
 
 # External dependencies
 async-openai = {version = "0.35.0"}
@@ -203,7 +201,8 @@ scopeguard = "1.2.0"
 secrecy = "0.10.3"
 self_update = "0.42.0"
 semver = "1.0"
-serde_arrow = "0.14.1"
+serde_arrow = "0.14.0"
+serde_jcs = "0.1.0"
 serde_urlencoded = "0.7"
 serde_with = "3.20.0"
 serial_test = "3.4.0"
@@ -221,7 +220,15 @@ tabled = "0.20.0"
 terminal-light = "1.8.0"
 terminal_size = "0.4.4"
 tokio-postgres = "0.7"
+# tokio-postgres TLS connector backed by rustls. Matches the workspace's
+# existing rustls-based Postgres TLS stack (sqlx uses runtime-tokio-rustls),
+# avoiding a parallel OpenSSL dependency.
+tokio-postgres-rustls = "0.13"
 tokio-stream = "0.1.18"
+# Mozilla root certificate bundle — RDS certs chain to public CAs already
+# present here, so we don't need OS trust store integration for the
+# task-router's LISTEN connection.
+webpki-roots = "0.26"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7.18", features = ["rt"] }
 tower = "0.5.3"

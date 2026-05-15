@@ -6,6 +6,8 @@ delt = "delt"
 AKS = "AKS"
 # "PNGs" is flagged because typos sees "PN" as a fragment; it is valid English.
 PN = "PN"
+# "RTO" is the Recovery Time Objective acronym, not a typo.
+RTO = "RTO"
 
 [type.md]
 extend-ignore-re = [

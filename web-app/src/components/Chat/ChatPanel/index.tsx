@@ -82,7 +82,10 @@ const ChatPanel = ({
         setPendingThinkingMode(data.id, thinkingMode);
         break;
       case "workflow":
-        runWorkflow(data.id);
+        // `data.source` carries the workflow's path-base64 (set when the
+        // thread was created above). The new agentic-workflows runner
+        // decodes it back into a workflow_ref.
+        runWorkflow(data.id, data.source);
         break;
     }
     navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREAD(data.id));

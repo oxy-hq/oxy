@@ -54,6 +54,8 @@ fn test_conditional_matches_first_truthy_branch() {
                 tasks: vec![TaskConfig {
                     name: "big_task".into(),
                     task_type: TaskType::Unknown,
+                    export: None,
+                    cache: None,
                 }],
             },
             ConditionBranch {
@@ -61,6 +63,8 @@ fn test_conditional_matches_first_truthy_branch() {
                 tasks: vec![TaskConfig {
                     name: "small_task".into(),
                     task_type: TaskType::Unknown,
+                    export: None,
+                    cache: None,
                 }],
             },
         ],
@@ -84,6 +88,8 @@ fn test_conditional_falls_through_to_else() {
         else_tasks: Some(vec![TaskConfig {
             name: "fallback".into(),
             task_type: TaskType::Unknown,
+            export: None,
+            cache: None,
         }]),
     };
 
@@ -135,6 +141,7 @@ fn test_classify_step_agent_with_consistency_prompt() {
         variables: None,
         consistency_prompt: Some("custom prompt".into()),
         consistency_model: None,
+        output: None,
     };
     let kind = orch.classify_step(&TaskType::Agent(agent_task));
     match kind {
@@ -160,6 +167,7 @@ fn test_classify_step_agent_inherits_workflow_prompt() {
         variables: None,
         consistency_prompt: None, // no task-level override
         consistency_model: None,
+        output: None,
     };
     let kind = orch.classify_step(&TaskType::Agent(agent_task));
     match kind {
@@ -185,6 +193,7 @@ fn test_classify_step_agent_task_prompt_overrides_workflow() {
         variables: None,
         consistency_prompt: Some("task prompt".into()),
         consistency_model: None,
+        output: None,
     };
     let kind = orch.classify_step(&TaskType::Agent(agent_task));
     match kind {
@@ -223,6 +232,8 @@ async fn test_bug_repro_answer_channel_closed_when_senders_dropped() {
         tasks: vec![TaskConfig {
             name: "s0".into(),
             task_type: TaskType::Unknown, // classify -> StepKind::Delegated
+            export: None,
+            cache: None,
         }],
         description: String::new(),
         variables: None,
@@ -236,7 +247,7 @@ async fn test_bug_repro_answer_channel_closed_when_senders_dropped() {
     let (outcome_tx, mut outcome_rx) = mpsc::channel::<TaskOutcome>(4);
     let (answer_tx, answer_rx) = mpsc::channel::<String>(4);
 
-    // Spawn the orchestrator. It will emit procedure_started, step_started,
+    // Spawn the orchestrator. It will emit subrun_started, step_started,
     // then suspend waiting on answer_rx.recv().
     let orch_task = tokio::spawn(async move { orch.run(event_tx, outcome_tx, answer_rx).await });
 

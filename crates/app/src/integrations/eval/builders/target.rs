@@ -12,7 +12,6 @@ use oxy::execute::{
 };
 use oxy_agent::AgentLauncherExecutable;
 use oxy_shared::errors::OxyError;
-use oxy_workflow::builders::WorkflowLauncherExecutable;
 
 use super::types::EvalTarget;
 
@@ -57,7 +56,56 @@ impl Executable<EvalTarget> for EvalTargetWrapper {
         input: EvalTarget,
     ) -> Result<Self::Response, OxyError> {
         match input {
-            EvalTarget::Workflow(w) => WorkflowLauncherExecutable.execute(ctx, w).await,
+            EvalTarget::Workflow(w) => {
+                // Drive the workflow synchronously through the inline
+                // runner, then wrap the per-step JSON results in an
+                // OutputContainer::Map so the eval scoring layer (which
+                // expects an OutputContainer to project task refs from)
+                // can consume it unchanged.
+                let resolved = ctx
+                    .workspace
+                    .config_manager
+                    .resolve_file(&w.workflow_ref)
+                    .await
+                    .map_err(|e| {
+                        OxyError::ConfigurationError(format!(
+                            "Failed to resolve workflow path '{}': {e}",
+                            w.workflow_ref
+                        ))
+                    })?;
+                let yaml = tokio::fs::read_to_string(&resolved)
+                    .await
+                    .map_err(|e| OxyError::RuntimeError(format!("read {resolved}: {e}")))?;
+                let workflow: agentic_workflow::WorkflowConfig = serde_yaml::from_str(&yaml)
+                    .map_err(|e| OxyError::RuntimeError(format!("parse workflow YAML: {e}")))?;
+
+                let agent_runner =
+                    crate::agentic_wiring::OxyInlineAgentRunner::new(ctx.workspace.clone());
+                let project_ctx = std::sync::Arc::new(
+                    crate::agentic_wiring::OxyProjectContext::new(ctx.workspace.clone()),
+                );
+                let workspace: std::sync::Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
+
+                let variables = w.variables.map(|vars| {
+                    let map: serde_json::Map<String, serde_json::Value> =
+                        vars.into_iter().collect();
+                    serde_json::Value::Object(map)
+                });
+                let results = agentic_pipeline::workflow_run::run_inline_workflow_with(
+                    workspace.as_ref(),
+                    workflow,
+                    variables,
+                    Some(&agent_runner),
+                )
+                .await
+                .map_err(|e| OxyError::RuntimeError(format!("inline workflow: {e}")))?;
+
+                let mut out = indexmap::IndexMap::with_capacity(results.len());
+                for (k, v) in results {
+                    out.insert(k, OutputContainer::Variable(v));
+                }
+                Ok(OutputContainer::Map(out))
+            }
             EvalTarget::Agent(a) => AgentLauncherExecutable.execute(ctx, a).await,
             EvalTarget::Agentic(agentic_input) => {
                 // Resolve the config path to absolute via the project manager so

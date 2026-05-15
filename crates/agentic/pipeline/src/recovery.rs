@@ -28,10 +28,11 @@ pub async fn recover_active_runs(
     schema_cache: Option<Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>>,
     builder_test_runner: Option<Arc<dyn agentic_builder::BuilderTestRunner>>,
     builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
+    router: Arc<dyn agentic_runtime::router::TaskRouter>,
 ) -> usize {
     // Pre-pass: clean up stale queue entries from the previous server lifetime.
     // Tasks "claimed" by now-dead workers get re-queued or dead-lettered.
-    let transport = DurableTransport::new(db.clone());
+    let transport = DurableTransport::with_router(db.clone(), router.clone(), None);
     let reaped = transport.run_reaper().await;
     if reaped > 0 {
         tracing::info!(target: "recovery", count = reaped, "reaper pre-pass: cleaned stale queue entries");
@@ -63,6 +64,7 @@ pub async fn recover_active_runs(
             schema_cache.clone(),
             builder_test_runner.clone(),
             builder_app_runner.clone(),
+            router.clone(),
         )
         .await
         {
@@ -91,10 +93,15 @@ async fn recover_single_run(
     schema_cache: Option<Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>>,
     builder_test_runner: Option<Arc<dyn agentic_builder::BuilderTestRunner>>,
     builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
+    router: Arc<dyn agentic_runtime::router::TaskRouter>,
 ) -> Result<(), String> {
     use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
 
-    let transport = DurableTransport::new(db.clone());
+    // Scope to this run's task tree so recovery's worker can't poach
+    // a sibling run's queued root. See `drive_with_coordinator` in
+    // `lib.rs` for the full explanation of why this matters under
+    // LISTEN/NOTIFY-driven wake.
+    let transport = DurableTransport::with_router(db.clone(), router, Some(root.id.clone()));
     let executor = Arc::new(PipelineTaskExecutor {
         platform,
         builder_bridges,
@@ -128,8 +135,8 @@ async fn recover_single_run(
                     | "done"
                     | "error"
                     | "cancelled"
-                    | "procedure_completed"
-                    | "procedure_step_completed"
+                    | "subrun_completed"
+                    | "subrun_step_completed"
             )
         }) {
             let delete_from = last_complete.seq + 1;
@@ -205,6 +212,14 @@ async fn recover_single_run(
     )
     .await
     .map_err(|e| format!("failed to reconstruct coordinator: {e}"))?;
+    // `from_db` returns a coordinator with the default no-op
+    // completion policy + resolver — recovered runs may still
+    // complete with `workflow_continue` metadata and may still
+    // suspend on workflow delegations, so re-attach both the
+    // workflow policy and resolver before driving.
+    let coordinator = coordinator
+        .with_completion_policy(Arc::new(agentic_workflow::WorkflowCompletionPolicy))
+        .with_delegation_resolver(Arc::new(agentic_workflow::WorkflowDelegationResolver));
 
     // ── Step 2: Walk tree and classify each task ────────────────────────
     let tree = agentic_runtime::crud::load_task_tree(&db, &root.id)

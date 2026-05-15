@@ -8,6 +8,7 @@ use agentic_core::result::CellValue;
 use serde_json::{Value, json};
 
 use crate::config::{SemanticQueryConfig, TaskType};
+use crate::render::{render_jinja_string, validate_workspace_relative_path};
 use crate::workspace::WorkspaceContext;
 
 /// Default row limit for step execution results.
@@ -17,14 +18,14 @@ const DEFAULT_SAMPLE_LIMIT: u64 = 10_000;
 pub async fn run_workflow_step(
     workspace: &dyn WorkspaceContext,
     step_config: Value,
-    _render_context: Value,
+    render_context: Value,
     _workflow_context: Value,
 ) -> Result<String, String> {
     let task: crate::config::TaskConfig = serde_json::from_value(step_config)
         .map_err(|e| format!("failed to deserialize step config: {e}"))?;
 
     let result = match &task.task_type {
-        TaskType::ExecuteSql(cfg) => execute_sql(workspace, cfg).await,
+        TaskType::ExecuteSql(cfg) => execute_sql(workspace, cfg, &render_context).await,
         TaskType::SemanticQuery(cfg) => execute_semantic_query(workspace, cfg).await,
 
         // These should never reach step_executor — handled by orchestrator.
@@ -39,26 +40,63 @@ pub async fn run_workflow_step(
         TaskType::OmniQuery(cfg) => execute_omni_query(workspace, cfg).await,
         TaskType::LookerQuery(cfg) => execute_looker_query(workspace, cfg).await,
 
-        // Not yet supported in the agentic pipeline.
-        TaskType::Visualize(_) => Err("visualize not yet supported".into()),
+        // Catches the retired `type: visualize` (now `#[serde(other)]`)
+        // and any unknown task type the schema doesn't recognise.
         TaskType::Unknown => Err("unknown task type".into()),
     }?;
+
+    // Exports are written from the decision-task hook in
+    // `pipeline::executor::workflow::run_decision_task` after
+    // `commit_decision` succeeds. That hook handles every step type
+    // uniformly (inline, delegated workflow steps, agent steps,
+    // sub-workflows) by walking the result_delta; doing it here too
+    // would double-write for inline tasks. See
+    // `pipeline/src/executor/workflow.rs::write_step_exports`.
 
     serde_json::to_string(&result).map_err(|e| format!("failed to serialize result: {e}"))
 }
 
 /// Execute a raw SQL query via the database connector.
-async fn execute_sql(workspace: &dyn WorkspaceContext, cfg: &Value) -> Result<Value, String> {
+///
+/// Jinja templating is applied at three points so workflow authors can
+/// pass loop/iteration context through to the SQL layer:
+///
+/// 1. `sql_file` path itself (e.g. `data/example_{{schedules.value}}.sql`).
+/// 2. The per-task `variables` map values (each value may reference the
+///    parent `render_context` — e.g. `variable_b: "{{ metrics.value }}"`).
+/// 3. The SQL content (inline or from-file), with the merged
+///    `render_context + variables` as its environment.
+///
+/// Without this rendering, a multi-loop procedure ends up calling
+/// `tokio::fs::read_to_string` on a literal `example_{{schedules.value}}_.sql`
+/// path which obviously fails. Matches the legacy oxy-workflow runner's
+/// `Renderer::eval_expression` / `render` behavior.
+async fn execute_sql(
+    workspace: &dyn WorkspaceContext,
+    cfg: &Value,
+    render_context: &Value,
+) -> Result<Value, String> {
     let database = cfg
         .get("database")
         .and_then(|v| v.as_str())
         .ok_or("execute_sql: missing 'database' field")?;
 
-    // Support both inline sql and sql_file.
-    let sql = if let Some(q) = cfg.get("sql_query").and_then(|v| v.as_str()) {
+    // Render the per-task `variables` map (its own values may reference
+    // `render_context`) and merge into the SQL render env.
+    let sql_context = merge_sql_variables(render_context, cfg.get("variables"))?;
+
+    let raw_sql = if let Some(q) = cfg.get("sql_query").and_then(|v| v.as_str()) {
         q.to_string()
     } else if let Some(path) = cfg.get("sql_file").and_then(|v| v.as_str()) {
-        let full_path = workspace.workspace_path().join(path);
+        let resolved_path = render_jinja_string(path, render_context)
+            .map_err(|e| format!("render sql_file path {path:?}: {e}"))?;
+        // Containment: a rendered path that originated in untrusted
+        // upstream data (a SQL row value substituted via Jinja) must
+        // stay inside the workspace. Mirrors the read-side containment
+        // applied to `WorkspaceContext::resolve_workflow_yaml`.
+        let full_path =
+            validate_workspace_relative_path(workspace.workspace_path(), &resolved_path)
+                .map_err(|e| format!("sql_file {resolved_path:?}: {e}"))?;
         tokio::fs::read_to_string(&full_path)
             .await
             .map_err(|e| format!("failed to read SQL file {}: {e}", full_path.display()))?
@@ -66,13 +104,41 @@ async fn execute_sql(workspace: &dyn WorkspaceContext, cfg: &Value) -> Result<Va
         return Err("execute_sql: need 'sql_query' or 'sql_file'".into());
     };
 
+    let sql =
+        render_jinja_string(&raw_sql, &sql_context).map_err(|e| format!("render SQL body: {e}"))?;
+
     let connector = workspace.get_connector(database).await?;
     let exec_result = connector
         .execute_query(&sql, DEFAULT_SAMPLE_LIMIT)
         .await
         .map_err(|e| format!("SQL execution failed: {e}"))?;
 
-    Ok(query_result_to_json(&exec_result.result))
+    Ok(attach_sql(query_result_to_json(&exec_result.result), &sql))
+}
+
+/// Build the SQL renderer context by rendering each entry of the task's
+/// `variables` map against `render_context` and then merging the result
+/// into a flat object on top of `render_context`. Variables override
+/// existing keys (matching the legacy precedence).
+fn merge_sql_variables(render_context: &Value, variables: Option<&Value>) -> Result<Value, String> {
+    let mut merged = render_context.clone();
+    let Some(map) = variables.and_then(|v| v.as_object()) else {
+        return Ok(merged);
+    };
+    let merged_map = merged
+        .as_object_mut()
+        .ok_or("execute_sql: render_context must be a JSON object")?;
+    for (k, v) in map {
+        let resolved = match v.as_str() {
+            Some(s) => Value::String(
+                render_jinja_string(s, render_context)
+                    .map_err(|e| format!("render variable {k:?}: {e}"))?,
+            ),
+            None => v.clone(),
+        };
+        merged_map.insert(k.clone(), resolved);
+    }
+    Ok(merged)
 }
 
 /// Compile a semantic query via airlayer and execute the resulting SQL.
@@ -96,7 +162,21 @@ async fn execute_semantic_query(
         .await
         .map_err(|e| format!("semantic query execution failed: {e}"))?;
 
-    Ok(query_result_to_json(&exec_result.result))
+    Ok(attach_sql(query_result_to_json(&exec_result.result), &sql))
+}
+
+/// Add the executed SQL string to a query-result JSON object so the export
+/// wrapper can write it out for `format: sql`. Non-object results are
+/// returned unchanged (defensive — every caller currently produces an
+/// object, but a future variant might not).
+fn attach_sql(result: Value, sql: &str) -> Value {
+    match result {
+        Value::Object(mut map) => {
+            map.insert("sql".to_string(), Value::String(sql.to_string()));
+            Value::Object(map)
+        }
+        other => other,
+    }
 }
 
 /// Convert a `QueryResult` to the JSON format expected by downstream steps.

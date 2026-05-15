@@ -10,13 +10,13 @@ use std::sync::Arc;
 use axum::Router;
 use axum::routing::{delete, get, post, put};
 
-use agentic_http::{AgenticState, router as agentic_router};
+use agentic_http::{AgenticState, router as agentic_router, workflow_router};
 
 use crate::api::{
     agent, api_keys, app, artifacts, chart, data, data_repo, database, execution_analytics,
     exported_chart, file, integration, local_setup, message, metrics, modeling, onboarding,
     result_files, run, semantic, task, test_file, test_project_run, test_run, thread, traces,
-    workflow, workspace_members, workspaces,
+    workspace_members, workspaces,
 };
 
 use super::AppState;
@@ -31,8 +31,9 @@ pub(super) fn build_workspace_routes(
     let mut router = Router::new()
         .route("/details", get(workspaces::get_workspace))
         .route("/status", get(workspaces::get_workspace_status))
-        .nest("/workflows", build_workflow_routes())
-        .nest("/automations", build_automation_routes())
+        // Legacy `/workflows` and `/automations` routes have been retired.
+        // Workflow execution and listing now live under
+        // `/agentic-workflows`, mounted below.
         .nest("/threads", build_thread_routes())
         .nest("/agents", build_agent_routes())
         .nest("/api-keys", build_api_key_routes())
@@ -84,8 +85,13 @@ pub(super) fn build_workspace_routes(
         .nest("/onboarding", build_onboarding_routes())
         .route("/sql/{pathb64}", post(data::execute_sql))
         .route("/sql/query", post(data::execute_sql_query))
-        .route("/semantic", post(semantic::execute_semantic_query))
-        .route("/semantic/compile", post(semantic::compile_semantic_query))
+        // Semantic-layer endpoints the IDE uses. The legacy `/semantic`
+        // execute route was retired alongside `oxy-workflow`; execution
+        // now flows through the agentic pipeline. Compile + the
+        // read-only file handlers stay here so the IDE's topic / view
+        // explorer + SQL preview panel keep working without re-introducing
+        // a workflow dependency on the request path. Compile reaches
+        // into airlayer via `agentic_workflow::semantic_bridge`.
         .route(
             "/semantic/topic/{file_path_b64}",
             get(semantic::get_topic_details),
@@ -94,6 +100,8 @@ pub(super) fn build_workspace_routes(
             "/semantic/view/{file_path_b64}",
             get(semantic::get_view_details),
         )
+        .route("/semantic/compile", post(semantic::compile_semantic_query))
+        .route("/semantic", post(semantic::execute_semantic_query))
         .route(
             "/results/files/{file_id}",
             get(result_files::get_result_file),
@@ -102,7 +110,10 @@ pub(super) fn build_workspace_routes(
             "/results/files/{file_id}",
             delete(result_files::delete_result_file),
         )
-        .nest("/analytics", agentic_router(agentic_state))
+        .nest("/analytics", agentic_router(agentic_state.clone()))
+        // New agentic-workflow surface — coexists with the legacy `/workflows`
+        // routes during migration. Will subsume them in the cleanup task.
+        .nest("/agentic-workflows", workflow_router(agentic_state))
         .nest("/modeling", modeling::build_modeling_routes());
 
     if include_git_features {
@@ -152,26 +163,9 @@ fn build_git_routes() -> Router<AppState> {
         .route("/reset-to-commit", post(workspaces::reset_to_commit))
 }
 
-fn build_workflow_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(workflow::list))
-        .route("/from-query", post(workflow::create_from_query))
-        .route("/runs/bulk-delete", post(run::bulk_delete_workflow_runs))
-        .route("/{pathb64}", get(workflow::get))
-        .route("/{pathb64}/run", post(workflow::run_workflow))
-        .route("/{pathb64}/run-sync", post(workflow::run_workflow_sync))
-        .route("/{pathb64}/logs", get(workflow::get_logs))
-        .route("/{pathb64}/runs", get(run::get_workflow_runs))
-        .route("/{pathb64}/runs", post(run::create_workflow_run))
-        .route(
-            "/{pathb64}/runs/{run_id}",
-            get(workflow::get_workflow_run).delete(run::delete_workflow_run),
-        )
-}
-
-fn build_automation_routes() -> Router<AppState> {
-    Router::new().route("/save", post(workflow::save_automation))
-}
+// `build_workflow_routes` and `build_automation_routes` were retired
+// alongside `oxy-workflow`. The agentic-pipeline workflow surface mounted
+// at `/agentic-workflows` replaces every endpoint they exposed.
 
 fn build_thread_routes() -> Router<AppState> {
     Router::new()
@@ -183,11 +177,9 @@ fn build_thread_routes() -> Router<AppState> {
         .route("/{id}", delete(thread::delete_thread))
         .route("/{id}/task", post(task::ask_task))
         .route("/{id}/agentic", post(task::ask_agentic))
-        .route("/{id}/workflow", post(workflow::run_workflow_thread))
-        .route(
-            "/{id}/workflow-sync",
-            post(workflow::run_workflow_thread_sync),
-        )
+        // Thread-bound legacy `/workflow` and `/workflow-sync` routes were
+        // retired with `oxy-workflow`. Use the agentic-pipeline workflow
+        // surface (`/agentic-workflows/runs`) instead.
         .route("/{id}/messages", get(message::get_messages_by_thread))
         .route("/{id}/agent", post(agent::ask_agent))
         .route("/{id}/stop", post(thread::stop_thread))

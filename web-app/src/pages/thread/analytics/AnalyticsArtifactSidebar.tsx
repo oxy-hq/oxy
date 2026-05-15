@@ -10,7 +10,7 @@ import type { ArtifactItem, ProcedureItem, SqlItem } from "@/hooks/analyticsStep
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
 import { extractDisplayBlockForSeq } from "@/hooks/useAnalyticsRun";
 import useTheme from "@/stores/useTheme";
-import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
+import SubrunDagPanel from "../agentic/SubrunDagPanel";
 import { VERIFIED_SQL_FILE_TOOLTIP, VERIFIED_TOOLTIP } from "../constants";
 import {
   AnalyzeDbtProjectView,
@@ -85,7 +85,7 @@ const AnalyticsArtifactSidebar = ({
   // ── kind === "procedure" → full DAG panel ─────────────────────────────────
   if (item.kind === "procedure") {
     return (
-      <ProcedureRunDagPanel
+      <SubrunDagPanel
         procedureName={item.procedureName}
         steps={item.steps}
         events={runEvents}

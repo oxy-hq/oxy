@@ -17,9 +17,6 @@ use crate::server::service::statics::BROADCASTER;
 use crate::server::service::task_manager::TASK_MANAGER;
 use crate::server::service::types::pagination::{Paginated, Pagination};
 use crate::server::service::types::run::{RunDetails, RunInfo, RunStatus};
-use crate::server::service::workflow::run_workflow_v2;
-use oxy::checkpoint::types::RetryStrategy;
-use oxy::execute::types::OutputContainer;
 use oxy::execute::writer::Handler;
 use oxy::utils::{create_sse_broadcast, file_path_to_source_id};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
@@ -115,8 +112,14 @@ pub struct RetryParam {
 
 #[derive(serde::Deserialize, ToSchema)]
 pub struct CreateRunRequest {
-    #[serde(flatten)]
-    retry_strategy: RetryStrategy,
+    // The legacy `RetryStrategy` from `oxy::checkpoint::types` carried the
+    // retry shape for the workflow execution path that's now retired.
+    // The endpoint preserves an empty body so existing OpenAPI clients
+    // still parse; all retry logic now flows through
+    // `/agentic-workflows/runs` with explicit `retry_from_run_id` +
+    // `cache_enabled` fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    retry_strategy: Option<serde_json::Value>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, ToSchema)]
@@ -150,145 +153,18 @@ pub struct CreateRunResponse {
     tag = "Runs"
 )]
 pub async fn create_workflow_run(
-    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
-    extract::Json(payload): extract::Json<CreateRunRequest>,
+    Path((_workspace_id, _pathb64)): Path<(Uuid, String)>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    WorkspaceManagerExtractor(_workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(_effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
+    extract::Json(_payload): extract::Json<CreateRunRequest>,
 ) -> Result<extract::Json<CreateRunResponse>, StatusCode> {
-    let decoded_path = BASE64_STANDARD
-        .decode(pathb64)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
-    let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?);
-
-    let workflow_config = workspace_manager
-        .config_manager
-        .resolve_workflow(&path)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get workflow config: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let runs_manager = workspace_manager.runs_manager.clone().ok_or_else(|| {
-        tracing::error!("Failed to initialize RunsManager");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    let (source_run_info, root_run_info) = runs_manager
-        .get_root_run(
-            &file_path_to_source_id(&path),
-            &payload.retry_strategy,
-            None,
-            Some(user.id),
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get run info: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let replay_id = payload.retry_strategy.replay_id(&source_run_info.root_ref);
-    let run_info = root_run_info.unwrap_or(source_run_info);
-
-    tracing::debug!("Creating new run {:?} with {:?}", run_info, replay_id);
-    let task_id = run_info.task_id()?;
-    let topic_ref = BROADCASTER.create_topic(&task_id).await.map_err(|err| {
-        tracing::error!("Failed to create topic for task ID {task_id}: {err}");
-        StatusCode::BAD_REQUEST
-    })?;
-    let run_index = run_info.run_index.ok_or(StatusCode::BAD_REQUEST)?;
-    let topic_id = task_id.clone();
-    let cb_source_id = run_info.source_id.clone();
-    let cb_user_id = user.id; // Clone user.id for the callback
-    let callback_fn = async move |output: Option<OutputContainer>| -> Result<(), OxyError> {
-        // Handle the completion of the run and broadcast events
-        if let Some(closed) = BROADCASTER.remove_topic(&topic_id).await {
-            let last_task_ref = workflow_config.tasks.last().map(|t| t.name.clone());
-            if let Some(output) = output
-                && let Some(last_task_name) = last_task_ref
-            {
-                let outputs = output.find_ref(&last_task_name)?;
-                let last_output = outputs.first();
-                if let Some(last_output) = last_output {
-                    runs_manager
-                        .update_run_output(
-                            &cb_source_id,
-                            run_index,
-                            last_task_name,
-                            last_output.to_json()?,
-                        )
-                        .await?;
-                }
-            };
-
-            let mut group_handler = GroupBlockHandler::new();
-            for event in closed.items {
-                group_handler.handle_event(event).await?;
-            }
-            let groups = group_handler.collect();
-            for group in groups {
-                runs_manager.upsert_run(group, Some(cb_user_id)).await?;
-            }
-            drop(closed.sender); // Drop the sender to close the channel
-        } else {
-            tracing::warn!(
-                "Failed to remove topic: {} - topic does not exist or was already removed",
-                topic_id
-            );
-        }
-        Ok(())
-    };
-    let source_id = run_info.source_id.clone();
-    let user_id = user.id.to_string();
-
-    TASK_MANAGER
-        .spawn(task_id.clone(), async move |cancellation_token| {
-            let run_fut = {
-                let converted_run_index = run_index
-                    .try_into()
-                    .map_err(|e| tracing::error!("Failed to convert run_index to u32: {}", e))
-                    .unwrap_or(0); // Default to 0 if conversion fails
-                run_workflow_v2(
-                    workspace_manager.clone(),
-                    source_id,
-                    topic_ref,
-                    RetryStrategy::Retry {
-                        replay_id,
-                        run_index: converted_run_index,
-                    },
-                    None,
-                    None,
-                    Some(crate::service::agent::ExecutionSource::WebApi {
-                        thread_id: task_id.clone(),
-                        user_id,
-                    }),
-                    Some(user.id),
-                    Some(effective_role),
-                )
-            };
-            tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    tracing::debug!("Task {task_id} was cancelled");
-                    if let Err(err) = callback_fn(None).await {
-                        tracing::error!("Failed to handle callback for task {task_id}: {err}");
-                    }
-                }
-                res = run_fut => {
-                    let output = match res {
-                        Ok(value) => Some(value),
-                        Err(err) => {
-                            tracing::error!("Task {task_id} failed: {err}");
-                            None
-                        },
-                    };
-                    if let Err(err) = callback_fn(output).await {
-                        tracing::error!("Failed to handle callback for task {task_id}: {err}");
-                    }
-                }
-            }
-        })
-        .await;
-
-    Ok(extract::Json(CreateRunResponse { run: run_info }))
+    // The legacy create-workflow-run path drove the retired
+    // `oxy-workflow` launcher. Clients should POST to
+    // `/api/{workspace}/agentic-workflows/runs` instead. We surface 410
+    // Gone so any unmigrated client sees a loud failure rather than a
+    // silent no-op.
+    Err(StatusCode::GONE)
 }
 
 #[derive(serde::Deserialize, ToSchema, Debug)]

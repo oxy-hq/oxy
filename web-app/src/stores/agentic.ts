@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
-import { useStreamEvents } from "@/components/workflow/useWorkflowRun";
+import { useStreamEvents } from "@/hooks/api/events/useStreamEvents";
 import queryKeys from "@/hooks/api/queryKey";
 import { MessageFactory } from "@/hooks/messaging/core/messageFactory";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";

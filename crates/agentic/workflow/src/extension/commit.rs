@@ -57,6 +57,12 @@ pub struct DecisionCommit {
     /// writes O(1 result) instead of O(all results), eliminating the O(S²) write
     /// pattern that caused slowdowns for long and loop-heavy workflows.
     pub result_delta: Value,
+    /// The single new step hash produced by this decision, paired with
+    /// `result_delta`. Same shape: `{"step_name": "<hex>"}` when a step
+    /// completed, `{}` otherwise. Merged into `step_hashes` in the same
+    /// UPDATE as `result_delta` so a hash is never persisted without its
+    /// matching result.
+    pub step_hash_delta: Value,
     /// Events to append to `agentic_run_events`. Assigned monotonic seqs
     /// starting at `max(seq) + 1` within the transaction.
     pub events: Vec<(String, Value)>,
@@ -122,6 +128,7 @@ pub async fn commit_decision(
         commit.expected_version,
         commit.new_state.current_step as i32,
         commit.result_delta,
+        commit.step_hash_delta,
         pending_json,
     )
     .await?;

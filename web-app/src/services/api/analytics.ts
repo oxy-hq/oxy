@@ -265,23 +265,23 @@ type ChartRenderedBlock = {
   };
 };
 
-type ProcedureStartedBlock = {
+type SubrunStartedBlock = {
   seq: number;
-  event_type: "procedure_started";
+  event_type: "subrun_started";
   payload: {
     /** Human-readable procedure name (file stem without `.procedure` suffix). */
-    procedure_name: string;
+    subrun_name: string;
     /** Ordered list of top-level task descriptors from the procedure definition. */
     steps: Array<{ name: string; task_type: string }>;
   };
 };
 
-type ProcedureCompletedBlock = {
+type SubrunCompletedBlock = {
   seq: number;
-  event_type: "procedure_completed";
+  event_type: "subrun_completed";
   payload: {
-    /** Human-readable procedure name, matching the paired `procedure_started`. */
-    procedure_name: string;
+    /** Human-readable procedure name, matching the paired `subrun_started`. */
+    subrun_name: string;
     /** `true` when the procedure completed without error. */
     success: boolean;
     /** Error message when `success` is false. */
@@ -289,20 +289,20 @@ type ProcedureCompletedBlock = {
   };
 };
 
-type ProcedureStepStartedBlock = {
+type SubrunStepStartedBlock = {
   seq: number;
-  event_type: "procedure_step_started";
+  event_type: "subrun_step_started";
   payload: {
     /** Human-readable task name from the procedure YAML. */
     step: string;
   };
 };
 
-type ProcedureStepCompletedBlock = {
+type SubrunStepCompletedBlock = {
   seq: number;
-  event_type: "procedure_step_completed";
+  event_type: "subrun_step_completed";
   payload: {
-    /** Matches the `step` field of the paired `procedure_step_started` event. */
+    /** Matches the `step` field of the paired `subrun_step_started` event. */
     step: string;
     success: boolean;
     error?: string;
@@ -440,10 +440,10 @@ export type UiBlock =
   | QueryExecutedBlock
   | AnalyticsValidationFailedBlock
   | ChartRenderedBlock
-  | ProcedureStartedBlock
-  | ProcedureCompletedBlock
-  | ProcedureStepStartedBlock
-  | ProcedureStepCompletedBlock
+  | SubrunStartedBlock
+  | SubrunCompletedBlock
+  | SubrunStepStartedBlock
+  | SubrunStepCompletedBlock
   | TaskPlanReadyBlock
   | TaskSqlResolvedBlock
   | TaskExecutedBlock

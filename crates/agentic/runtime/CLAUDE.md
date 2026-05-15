@@ -2,18 +2,17 @@
 
 Transport-agnostic execution infrastructure for agentic pipelines. Provides run lifecycle management, event persistence, and streaming — used by both HTTP and CLI.
 
-## Modules
+## Layout
 
-| Module | Purpose |
-| -------- | --------- |
-| `entity/` | SeaORM models for `agentic_runs`, `agentic_run_events`, `agentic_run_suspensions` |
-| `crud` | All database operations (insert/update/query runs, events, suspensions) |
-| `migration` | Migrator with `seaql_migrations_orchestrator` tracking table |
-| `state` | `RuntimeState` — in-memory run management (notifiers, channels, status cache) |
-| `handle` | `PipelineHandle<Ev>` and `PipelineOutcome` — domain-agnostic pipeline interface |
-| `bridge` | `run_bridge()` — event channel → batch DB writes → notify subscribers |
-| `outcome` | `drive_pipeline()` — outcome loop (done/suspended/failed/cancelled → DB state) |
-| `event_registry` | `EventRegistry` + `StreamProcessor` — domain-aware event deserialization for SSE |
+Stage 1 of the airway/airform extraction split the crate into two sub-layers; pick the layer your code actually needs.
+
+| Layer | Modules | Purpose |
+| -------- | --------- | --------- |
+| `lifecycle/` | `state`, `handle`, `bridge`, `event_registry`, `entity/{run,run_event,run_suspension}`, `crud/{runs,events,suspension,queries}` | The "what a run *is*" half: run row + event log + suspensions + SSE plumbing. Zero orchestrator deps. |
+| `orchestrator/` | `coordinator/`, `worker`, `router/`, `transport/`, `circuit_breaker`, `background`, `entity/{task_queue,task_outcome}`, `crud/{queue,outcomes,recovery}` | The "how a run *executes*" half: durable task queue + coordinator + worker pool + transports. Built on top of lifecycle. |
+| (root) | `migration` | Single SeaORM migrator covering both layers (`seaql_migrations_orchestrator` tracking table). |
+
+The legacy flat paths (`agentic_runtime::coordinator`, `agentic_runtime::state`, `agentic_runtime::crud::*`, etc.) are still re-exported at the crate root for back-compat with the ~180 external callsites — new external code should prefer the canonical `lifecycle::…` / `orchestrator::…` paths so the layering shows up in `use` lists. Inside this crate the canonical paths are mandatory; the flat aliases are external-only.
 
 ## Rules
 
@@ -47,7 +46,24 @@ pub struct PipelineHandle<Ev: DomainEvents> {
 }
 ```
 
+## Integrating a new system
+
+If you're standing up a new top-level system on top of this runtime
+(airway, airform, future ELT/transformation runners), follow the
+walkthrough in
+[`internal-docs/agentic-runtime-integration.md`](../../../internal-docs/agentic-runtime-integration.md).
+It covers both common patterns:
+
+- **Pipeline-style** (analytics, builder) — `DomainSolver` +
+  `PipelineHandle`. Lifecycle only; no orchestrator queue.
+- **Queue-driven** (workflow, likely airway/airform) — `Worker` impl
+  draining the durable task queue; coordinator does the fan-out + resume.
+
+The integration doc has the API surface for both layers, the
+contributor checklist, and the rules around extension tables and
+migrators.
+
 ## Testing
 
-- Unit tests: `cargo nextest run -p agentic-runtime` (10 tests, no DB required)
-- Integration tests: `OXY_DATABASE_URL=... cargo nextest run -p agentic-runtime --test integration_tests` (8 tests, requires PostgreSQL)
+- Unit tests: `cargo nextest run -p agentic-runtime`
+- Integration tests: `OXY_DATABASE_URL=... cargo nextest run -p agentic-runtime --test integration_tests` (requires PostgreSQL — use testcontainers, never the dev DB)

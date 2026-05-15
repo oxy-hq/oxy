@@ -169,55 +169,13 @@ fn extract_procedure_databases(content: &str) -> Vec<String> {
 
 /// Parsed contents of the leading `/* oxy: ... */` comment block in a SQL file.
 ///
-/// Both fields are optional; missing or empty values become `None`.
-#[derive(Debug, Default, Clone, PartialEq)]
-pub struct OxyCommentBlock {
-    /// Human-readable description used by procedure search to rank the file.
-    pub description: Option<String>,
-    /// Logical connector name to execute the SQL against, overriding the
-    /// agent's default connector.
-    pub database: Option<String>,
-}
+/// Re-exported from `agentic_core::subrun` so the parser has a single home.
+pub use agentic_core::subrun::OxyCommentBlock;
 
 /// Parse the leading `/* oxy: ... */` comment block of a SQL file.
 ///
-/// Recognises the format:
-/// ```sql
-/// /*
-///   oxy:
-///     description: "Monthly revenue by region"
-///     database: my_db
-/// */
-/// ```
-///
-/// Returns `None` when the file has no leading comment block, or when the
-/// block doesn't contain an `oxy:` key. The returned [`OxyCommentBlock`] only
-/// carries fields that are present and non-empty.
-pub fn parse_oxy_comment_block(content: &str) -> Option<OxyCommentBlock> {
-    let start = content.find("/*")?;
-    let end_offset = content[start..].find("*/")?;
-    let comment = &content[start + 2..start + end_offset];
-
-    #[derive(serde::Deserialize)]
-    struct OxyInner {
-        description: Option<String>,
-        database: Option<String>,
-    }
-    #[derive(serde::Deserialize)]
-    struct OxyComment {
-        oxy: Option<OxyInner>,
-    }
-    let inner = serde_yaml::from_str::<OxyComment>(comment).ok()?.oxy?;
-    let block = OxyCommentBlock {
-        description: inner.description.filter(|s| !s.is_empty()),
-        database: inner.database.filter(|s| !s.is_empty()),
-    };
-    if block == OxyCommentBlock::default() {
-        None
-    } else {
-        Some(block)
-    }
-}
+/// Re-exported from `agentic_core::subrun` so the format has a single source of truth.
+pub use agentic_core::subrun::parse_oxy_comment_block;
 
 /// Push `name` into `list` if it is not already present.
 fn push_unique(list: &mut Vec<String>, name: String) {

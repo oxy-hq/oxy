@@ -201,67 +201,36 @@ pub(super) fn problem_state_from_resume(
     }
 }
 
-/// Parse a delegation answer (JSON array of step results) into an
-/// `AnalyticsResult` with proper `QueryResult` entries.
+/// Parse a delegation answer into an `AnalyticsResult` with proper
+/// `QueryResult` entries.
+///
+/// The workflow's terminal-answer shape is `{task_name: result, ...}`
+/// (an object keyed by task name in declaration order) per
+/// `agentic_workflow::step_decider::build_final_answer`. Older runs
+/// emitted a bare `Vec<Value>`; we still accept that shape for
+/// rolling-upgrade safety.
+///
+/// Each value is one of:
+/// - `{columns: [...], rows: [[...]]}` — tabular step result
+/// - `{text: "..."}` — agent / formatter result
+///
+/// Both shapes become `QueryResultSet` entries the analytics
+/// interpreter can scan when binding chart axes / answer text.
 fn parse_delegation_answer(answer: &str) -> Option<AnalyticsResult> {
-    let steps: Vec<serde_json::Value> = serde_json::from_str(answer).ok()?;
+    let value: serde_json::Value = serde_json::from_str(answer).ok()?;
+    let steps: Vec<&serde_json::Value> = match &value {
+        serde_json::Value::Object(map) => map.values().collect(),
+        serde_json::Value::Array(arr) => arr.iter().collect(),
+        _ => return None,
+    };
     if steps.is_empty() {
         return None;
     }
 
     let mut result_sets = Vec::new();
-    for step in &steps {
-        if let Some(columns_arr) = step["columns"].as_array() {
-            let columns: Vec<String> = columns_arr
-                .iter()
-                .filter_map(|c| c.as_str().map(str::to_string))
-                .collect();
-            let rows: Vec<QueryRow> = step["rows"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|r| {
-                            r.as_array().map(|cells| {
-                                QueryRow(
-                                    cells
-                                        .iter()
-                                        .map(|cell| match cell {
-                                            serde_json::Value::Number(n) => {
-                                                CellValue::Number(n.as_f64().unwrap_or(0.0))
-                                            }
-                                            serde_json::Value::String(s) => {
-                                                CellValue::Text(s.clone())
-                                            }
-                                            serde_json::Value::Null => CellValue::Null,
-                                            other => CellValue::Text(other.to_string()),
-                                        })
-                                        .collect(),
-                                )
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            let total = rows.len() as u64;
-            result_sets.push(crate::types::QueryResultSet {
-                data: QueryResult {
-                    columns,
-                    rows,
-                    total_row_count: total,
-                    truncated: false,
-                },
-                summary: None,
-            });
-        } else if let Some(text) = step["text"].as_str() {
-            result_sets.push(crate::types::QueryResultSet {
-                data: QueryResult {
-                    columns: vec!["result".to_string()],
-                    rows: vec![QueryRow(vec![CellValue::Text(text.to_string())])],
-                    total_row_count: 1,
-                    truncated: false,
-                },
-                summary: None,
-            });
+    for step in steps {
+        if let Some(set) = step_to_result_set(step) {
+            result_sets.push(set);
         }
     }
 
@@ -271,6 +240,58 @@ fn parse_delegation_answer(answer: &str) -> Option<AnalyticsResult> {
         Some(AnalyticsResult {
             results: result_sets,
         })
+    }
+}
+
+fn step_to_result_set(step: &serde_json::Value) -> Option<crate::types::QueryResultSet> {
+    if let Some(columns_arr) = step.get("columns").and_then(|v| v.as_array()) {
+        let columns: Vec<String> = columns_arr
+            .iter()
+            .filter_map(|c| c.as_str().map(str::to_string))
+            .collect();
+        let rows: Vec<QueryRow> = step
+            .get("rows")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|r| {
+                        r.as_array()
+                            .map(|cells| QueryRow(cells.iter().map(json_cell_to_value).collect()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let total = rows.len() as u64;
+        Some(crate::types::QueryResultSet {
+            data: QueryResult {
+                columns,
+                rows,
+                total_row_count: total,
+                truncated: false,
+            },
+            summary: None,
+        })
+    } else if let Some(text) = step.get("text").and_then(|v| v.as_str()) {
+        Some(crate::types::QueryResultSet {
+            data: QueryResult {
+                columns: vec!["result".to_string()],
+                rows: vec![QueryRow(vec![CellValue::Text(text.to_string())])],
+                total_row_count: 1,
+                truncated: false,
+            },
+            summary: None,
+        })
+    } else {
+        None
+    }
+}
+
+fn json_cell_to_value(cell: &serde_json::Value) -> CellValue {
+    match cell {
+        serde_json::Value::Number(n) => CellValue::Number(n.as_f64().unwrap_or(0.0)),
+        serde_json::Value::String(s) => CellValue::Text(s.clone()),
+        serde_json::Value::Null => CellValue::Null,
+        other => CellValue::Text(other.to_string()),
     }
 }
 
@@ -314,5 +335,66 @@ pub(super) fn populate_resume_context(
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: a workflow's terminal answer is now an object keyed
+    /// by task name (per `agentic_workflow::step_decider::build_final_answer`).
+    /// `parse_delegation_answer` must walk the object's values so the
+    /// analytics interpreter sees one `QueryResultSet` per step. Without
+    /// this, charts that bind to the workflow's table results render
+    /// empty.
+    #[test]
+    fn object_shape_workflow_answer_produces_result_sets() {
+        let answer = r#"{
+            "query": { "columns": ["a", "b"], "rows": [[1, 2], [3, 4]] },
+            "report": { "text": "summary" }
+        }"#;
+        let result = parse_delegation_answer(answer).expect("parsed");
+        assert_eq!(result.results.len(), 2);
+        // Tabular step round-trips columns and rows.
+        let tabular = result
+            .results
+            .iter()
+            .find(|r| r.data.columns == vec!["a", "b"])
+            .expect("tabular result");
+        assert_eq!(tabular.data.rows.len(), 2);
+        // Text step lands as a single-cell result with the synthetic `result` column.
+        let text = result
+            .results
+            .iter()
+            .find(|r| r.data.columns == vec!["result"])
+            .expect("text result");
+        assert_eq!(text.data.rows.len(), 1);
+        if let CellValue::Text(s) = &text.data.rows[0].0[0] {
+            assert_eq!(s, "summary");
+        } else {
+            panic!("expected text cell");
+        }
+    }
+
+    /// Older runs persisted before `build_final_answer` switched to the
+    /// object shape emitted a bare `Vec<Value>`. Keep the array path
+    /// working so a queued resume from before the shape change still
+    /// renders correctly.
+    #[test]
+    fn array_shape_workflow_answer_still_parses() {
+        let answer = r#"[
+            { "columns": ["x"], "rows": [["v1"]] },
+            { "text": "hi" }
+        ]"#;
+        let result = parse_delegation_answer(answer).expect("parsed");
+        assert_eq!(result.results.len(), 2);
+    }
+
+    #[test]
+    fn empty_inputs_return_none() {
+        assert!(parse_delegation_answer("{}").is_none());
+        assert!(parse_delegation_answer("[]").is_none());
+        assert!(parse_delegation_answer("not-json").is_none());
     }
 }

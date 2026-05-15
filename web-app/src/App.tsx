@@ -22,6 +22,7 @@ import TracesPage from "@/pages/ide/observability/traces";
 import ThreadPage from "@/pages/thread";
 import Threads from "@/pages/threads";
 import WorkflowPage from "@/pages/workflow";
+import WorkflowsListPage from "@/pages/workflow/WorkflowsListPage";
 import "@xyflow/react/dist/style.css";
 import React, { useEffect, useRef } from "react";
 import { HotkeysProvider, useHotkeys } from "react-hotkeys-hook";
@@ -222,6 +223,14 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           element={
             <MainPageWrapper>
               <ThreadPage />
+            </MainPageWrapper>
+          }
+        />
+        <Route
+          path='workflows'
+          element={
+            <MainPageWrapper>
+              <WorkflowsListPage />
             </MainPageWrapper>
           }
         />

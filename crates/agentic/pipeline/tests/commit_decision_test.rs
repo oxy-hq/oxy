@@ -94,10 +94,14 @@ fn two_step_workflow() -> agentic_workflow::WorkflowConfig {
             agentic_workflow::config::TaskConfig {
                 name: "step_sql".to_string(),
                 task_type: agentic_workflow::config::TaskType::Unknown,
+                export: None,
+                cache: None,
             },
             agentic_workflow::config::TaskConfig {
                 name: "step_fmt".to_string(),
                 task_type: agentic_workflow::config::TaskType::Unknown,
+                export: None,
+                cache: None,
             },
         ],
         description: String::new(),
@@ -125,6 +129,13 @@ async fn seed_run(db: &DatabaseConnection) -> (String, WorkflowRunState) {
         render_context: json!({}),
         pending_children: HashMap::new(),
         decision_version: 0,
+        step_hashes: HashMap::new(),
+        retry_from_run_id: None,
+        cache_enabled: false,
+        prior_step_hashes: HashMap::new(),
+        prior_results: HashMap::new(),
+        initial_render_context: json!({}),
+        invalidate_iterations: HashMap::new(),
     };
     insert_workflow_state(db, &state)
         .await
@@ -195,10 +206,10 @@ async fn continuing_commits_state_and_events_atomically() {
 
     let events: Vec<(String, Value)> = vec![
         (
-            "procedure_step_completed".into(),
+            "subrun_step_completed".into(),
             json!({"step": "step_sql", "success": true}),
         ),
-        ("procedure_step_started".into(), json!({"step": "step_fmt"})),
+        ("subrun_step_started".into(), json!({"step": "step_fmt"})),
     ];
 
     let outcome = commit_decision(
@@ -209,6 +220,7 @@ async fn continuing_commits_state_and_events_atomically() {
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_sql": {"rows": 3}}),
+            step_hash_delta: json!({}),
             events,
             attempt: 0,
             terminal: DecisionTerminal::Continuing,
@@ -229,9 +241,9 @@ async fn continuing_commits_state_and_events_atomically() {
     let events = crud::get_all_events(&db, &run_id).await.unwrap();
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].seq, 0);
-    assert_eq!(events[0].event_type, "procedure_step_completed");
+    assert_eq!(events[0].event_type, "subrun_step_completed");
     assert_eq!(events[1].seq, 1);
-    assert_eq!(events[1].event_type, "procedure_step_started");
+    assert_eq!(events[1].event_type, "subrun_step_started");
 
     // Continuing terminal leaves queue & run untouched.
     assert_eq!(
@@ -264,8 +276,8 @@ async fn complete_workflow_terminal_atomically_finalizes_run_and_queue() {
         .insert("step_fmt".into(), json!({"text": "ok"}));
 
     let events = vec![(
-        "procedure_completed".into(),
-        json!({"procedure_name": "atomic_test", "success": true}),
+        "subrun_completed".into(),
+        json!({"subrun_name": "atomic_test", "success": true}),
     )];
 
     let outcome = commit_decision(
@@ -276,6 +288,7 @@ async fn complete_workflow_terminal_atomically_finalizes_run_and_queue() {
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_fmt": {"text": "ok"}}),
+            step_hash_delta: json!({}),
             events,
             attempt: 0,
             terminal: DecisionTerminal::CompleteWorkflow {
@@ -294,7 +307,7 @@ async fn complete_workflow_terminal_atomically_finalizes_run_and_queue() {
     );
     let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(run.answer.as_deref(), Some("[\"done\"]"));
-    assert_eq!(event_types(&db, &run_id).await, vec!["procedure_completed"]);
+    assert_eq!(event_types(&db, &run_id).await, vec!["subrun_completed"]);
 }
 
 /// FailWorkflow terminal: run row flipped to `failed` and decision queue
@@ -317,8 +330,9 @@ async fn fail_workflow_terminal_atomically_marks_run_and_queue_failed() {
             expected_version: 0,
             new_state: state,
             result_delta: json!({}),
+            step_hash_delta: json!({}),
             events: vec![(
-                "procedure_completed".into(),
+                "subrun_completed".into(),
                 json!({"success": false, "error": "boom"}),
             )],
             attempt: 0,
@@ -381,7 +395,8 @@ async fn version_conflict_rolls_back_all_writes() {
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_fmt": {"text": "x"}}),
-            events: vec![("procedure_completed".into(), json!({"success": true}))],
+            step_hash_delta: json!({}),
+            events: vec![("subrun_completed".into(), json!({"success": true}))],
             attempt: 0,
             terminal: DecisionTerminal::CompleteWorkflow {
                 final_answer: "stale".into(),
@@ -441,12 +456,10 @@ async fn events_append_after_existing_coordinator_events() {
             expected_version: 0,
             new_state: state,
             result_delta: json!({}),
+            step_hash_delta: json!({}),
             events: vec![
-                (
-                    "procedure_step_completed".into(),
-                    json!({"step": "step_sql"}),
-                ),
-                ("procedure_step_started".into(), json!({"step": "step_fmt"})),
+                ("subrun_step_completed".into(), json!({"step": "step_sql"})),
+                ("subrun_step_started".into(), json!({"step": "step_fmt"})),
             ],
             attempt: 0,
             terminal: DecisionTerminal::Continuing,
@@ -469,8 +482,8 @@ async fn events_append_after_existing_coordinator_events() {
         vec![
             "delegation_completed",
             "input_resolved",
-            "procedure_step_completed",
-            "procedure_step_started",
+            "subrun_step_completed",
+            "subrun_step_started",
         ]
     );
 }
@@ -501,6 +514,7 @@ async fn sequential_deltas_accumulate_in_results_column() {
             expected_version: 0,
             new_state: state.clone(),
             result_delta: json!({"step_sql": {"rows": 3}}),
+            step_hash_delta: json!({}),
             events: vec![],
             attempt: 0,
             terminal: DecisionTerminal::Continuing,
@@ -531,6 +545,7 @@ async fn sequential_deltas_accumulate_in_results_column() {
             expected_version: 1,
             new_state: state2,
             result_delta: json!({"step_fmt": {"text": "ok"}}),
+            step_hash_delta: json!({}),
             events: vec![],
             attempt: 0,
             terminal: DecisionTerminal::Continuing,
@@ -580,6 +595,7 @@ async fn complete_workflow_with_pending_steps_is_rejected() {
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_sql": {"rows": 1}}),
+            step_hash_delta: json!({}),
             events: vec![],
             attempt: 0,
             terminal: DecisionTerminal::CompleteWorkflow {

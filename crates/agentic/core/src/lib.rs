@@ -29,6 +29,7 @@ pub mod orchestrator;
 pub mod result;
 pub mod solver;
 pub mod state;
+pub mod subrun;
 pub mod tools;
 pub mod transport;
 pub mod ui_stream;
@@ -59,6 +60,10 @@ pub use orchestrator::{
 pub use result::{CellValue, QueryResult, QueryRow};
 pub use solver::{DomainSolver, FanoutWorker};
 pub use state::ProblemState;
+pub use subrun::{
+    OxyCommentBlock, SubrunError, SubrunOutput, SubrunRef, SubrunRunner, SubrunStep,
+    SubrunStepResult, parse_oxy_comment_block,
+};
 pub use tools::{ToolDef, ToolError};
 pub use transport::{CoordinatorTransport, TransportError, WorkerMessage, WorkerTransport};
 pub use ui_stream::{UiBlock, UiTransformState, serialize_ui_block};

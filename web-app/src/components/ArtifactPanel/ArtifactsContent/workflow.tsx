@@ -1,9 +1,24 @@
-import { ReactFlowProvider } from "@xyflow/react";
+/**
+ * Workflow artifact panel.
+ *
+ * The legacy panel rendered a full React-Flow diagram of the procedure
+ * (driven by `useWorkflowConfig` + recursive sub-workflow expansion).
+ * That hook talked to the retired `/workflows/{pathb64}` endpoint, so
+ * the panel now degrades to a deep link into the rebuilt run page plus
+ * the existing logs view, which still works because logs ride along on
+ * the artifact itself.
+ */
+
+import { ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
+
 import EmptyState from "@/components/ui/EmptyState";
-import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
+import { Button } from "@/components/ui/shadcn/button";
 import OutputLogs from "@/components/workflow/output/Logs";
-import WorkflowDiagram from "@/components/workflow/WorkflowDiagram";
-import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { decodeBase64 } from "@/libs/encoding";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { WorkflowArtifact } from "@/types/artifact";
 
 type Props = {
@@ -11,44 +26,53 @@ type Props = {
   onArtifactClick?: (id: string) => void;
 };
 
+/** Pure header — receives display + nav data, no fetching. */
+export const WorkflowArtifactHeader = ({
+  displayPath,
+  href
+}: {
+  displayPath: string;
+  href: string;
+}) => (
+  <div className='flex items-center justify-between gap-2 border-border border-b px-4 py-2'>
+    <div className='flex min-w-0 items-center gap-2'>
+      <span className='truncate font-mono text-muted-foreground text-sm'>{displayPath}</span>
+    </div>
+    <Button asChild size='sm' variant='outline'>
+      <Link to={href}>
+        Open <ExternalLink className='size-3.5' />
+      </Link>
+    </Button>
+  </div>
+);
+
 const WorkflowArtifactPanel = ({ artifact, onArtifactClick }: Props) => {
-  const { data: workflowConfig } = useWorkflowConfig(artifact.content.value.ref);
-
-  if (!workflowConfig) {
-    return <LoadingSkeleton />;
-  }
-
+  const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
+  const pathB64 = artifact.content.value.ref;
+  const displayPath = decodeBase64(pathB64);
+  const href = ROUTES.ORG(orgSlug).WORKSPACE(project.id).WORKFLOW(pathB64).ROOT;
+  const logs = artifact.content.value.output ?? [];
   return (
     <div className='flex h-full flex-col'>
-      <div className='flex-1'>
-        <ReactFlowProvider>
-          <WorkflowDiagram
-            workflowId={artifact.content.value.ref}
-            workflowConfig={workflowConfig}
+      <WorkflowArtifactHeader displayPath={displayPath} href={href} />
+      <div className='flex h-full flex-col bg-sidebar-background'>
+        {logs.length === 0 ? (
+          <EmptyState
+            className='mt-[150px]'
+            title='No logs yet'
+            description='Run the procedure to see the logs'
           />
-        </ReactFlowProvider>
-      </div>
-
-      <div className='flex-1 border-border border-t'>
-        <div className='flex h-full flex-col bg-sidebar-background'>
-          {(artifact.content.value.output ?? []).length === 0 && (
-            <EmptyState
-              className='mt-[150px]'
-              title='No logs yet'
-              description='Run the procedure to see the logs'
+        ) : (
+          <div className='min-h-0 flex-1'>
+            <OutputLogs
+              onArtifactClick={onArtifactClick}
+              isPending={artifact.is_streaming || false}
+              logs={logs}
+              onlyShowResult={false}
             />
-          )}
-          {(artifact.content.value.output ?? []).length > 0 && (
-            <div className='min-h-0 flex-1'>
-              <OutputLogs
-                onArtifactClick={onArtifactClick}
-                isPending={artifact.is_streaming || false}
-                logs={artifact.content.value.output ?? []}
-                onlyShowResult={false}
-              />
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

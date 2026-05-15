@@ -1,7 +1,6 @@
 use itertools::Itertools;
 
 use oxy::{
-    checkpoint::types::RetryStrategy,
     config::{
         constants::EVAL_SOURCE,
         model::{
@@ -17,13 +16,12 @@ use oxy::{
 };
 use oxy_agent::types::AgentInput;
 use oxy_shared::errors::OxyError;
-use oxy_workflow::builders::WorkflowInput;
 
 use super::{
     EvalInput, EvalResult,
     generator::GeneratorExecutable,
     solver::SolverExecutable,
-    types::{EvalTarget, MetricKind, RunStats},
+    types::{EvalTarget, EvalWorkflowInput, MetricKind, RunStats},
 };
 
 #[derive(Clone, Debug)]
@@ -94,9 +92,9 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                                 task_ref,
                                 ..test.clone()
                             },
-                            EvalTarget::Workflow(WorkflowInput {
+                            EvalTarget::Workflow(EvalWorkflowInput {
                                 workflow_ref: workflow_ref.to_string(),
-                                retry: RetryStrategy::NoRetry { variables: None },
+                                variables: None,
                             }),
                         )
                     })

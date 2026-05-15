@@ -1,8 +1,8 @@
 //! Semantic query compilation abstraction for the builder domain.
 //!
-//! Replaces direct use of `oxy_workflow::semantic_validator_builder` and
-//! `oxy_workflow::semantic_builder` with a trait that the pipeline layer
-//! can implement.
+//! The builder solver invokes semantic compilation through this trait so
+//! the pipeline layer can supply the concrete implementation (typically
+//! `agentic_workflow::semantic_bridge`).
 
 use agentic_core::tools::ToolError;
 use async_trait::async_trait;

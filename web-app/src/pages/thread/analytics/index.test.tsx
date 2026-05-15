@@ -174,13 +174,13 @@ const openPanel = () => fireEvent.click(screen.getByTestId("proc-trigger"));
 // ── procedureInfo derivation ───────────────────────────────────────────────────
 
 describe("AnalyticsThread — procedureInfo derivation", () => {
-  it("does not render ProcedureRunDagPanel when state is idle", () => {
+  it("does not render SubrunDagPanel when state is idle", () => {
     mockUseAnalyticsRun.mockReturnValue(makeResult({ state: { tag: "idle" } }));
     render(<AnalyticsThread thread={THREAD} />);
     expect(screen.queryByRole("heading")).toBeNull();
   });
 
-  it("does not render ProcedureRunDagPanel when running but no procedure_started event", () => {
+  it("does not render SubrunDagPanel when running but no subrun_started event", () => {
     mockUseAnalyticsRun.mockReturnValue(runningWith([]));
     render(<AnalyticsThread thread={THREAD} />);
     expect(screen.queryByRole("heading")).toBeNull();
@@ -188,8 +188,8 @@ describe("AnalyticsThread — procedureInfo derivation", () => {
 
   it("shows panel with correct procedure name after triggering via trace row", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "store_deep_dive",
+      sseEv("subrun_started", {
+        subrun_name: "store_deep_dive",
         steps: [
           { name: "fetch_data", task_type: "execute_sql" },
           { name: "process_data", task_type: "execute_sql" }
@@ -204,15 +204,13 @@ describe("AnalyticsThread — procedureInfo derivation", () => {
     });
   });
 
-  it("renders all steps from the procedure_started event", async () => {
+  it("renders all steps from the subrun_started event", async () => {
     const STEPS = [
       { name: "fetch_data", task_type: "execute_sql" },
       { name: "process_data", task_type: "execute_sql" },
       { name: "generate_report", task_type: "formatter" }
     ];
-    const events: SseEvent[] = [
-      sseEv("procedure_started", { procedure_name: "my_proc", steps: STEPS })
-    ];
+    const events: SseEvent[] = [sseEv("subrun_started", { subrun_name: "my_proc", steps: STEPS })];
     mockUseAnalyticsRun.mockReturnValue(runningWith(events));
     render(<AnalyticsThread thread={THREAD} />);
     openPanel();
@@ -223,14 +221,14 @@ describe("AnalyticsThread — procedureInfo derivation", () => {
     });
   });
 
-  it("uses the last procedure_started event when duplicates exist", async () => {
+  it("uses the last subrun_started event when duplicates exist", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "first_proc",
+      sseEv("subrun_started", {
+        subrun_name: "first_proc",
         steps: [{ name: "step_a", task_type: "execute_sql" }]
       }),
-      sseEv("procedure_started", {
-        procedure_name: "second_proc",
+      sseEv("subrun_started", {
+        subrun_name: "second_proc",
         steps: [{ name: "step_b", task_type: "execute_sql" }]
       })
     ];
@@ -243,13 +241,13 @@ describe("AnalyticsThread — procedureInfo derivation", () => {
     expect(screen.queryByRole("heading", { name: "first_proc" })).toBeNull();
   });
 
-  it("passes all SSE events to ProcedureRunDagPanel for step status derivation", async () => {
+  it("passes all SSE events to SubrunDagPanel for step status derivation", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "my_proc",
+      sseEv("subrun_started", {
+        subrun_name: "my_proc",
         steps: [{ name: "step_a", task_type: "execute_sql" }]
       }),
-      sseEv("procedure_step_started", { step: "step_a" })
+      sseEv("subrun_step_started", { step: "step_a" })
     ];
     mockUseAnalyticsRun.mockReturnValue(runningWith(events));
     render(<AnalyticsThread thread={THREAD} />);
@@ -267,8 +265,8 @@ describe("AnalyticsThread — panel open/close behavior", () => {
   it("panel is not open before user triggers it", () => {
     mockUseAnalyticsRun.mockReturnValue(
       runningWith([
-        sseEv("procedure_started", {
-          procedure_name: "p",
+        sseEv("subrun_started", {
+          subrun_name: "p",
           steps: [{ name: "s", task_type: "execute_sql" }]
         })
       ])
@@ -286,8 +284,8 @@ describe("AnalyticsThread — panel open/close behavior", () => {
 
   it("shows 'Running…' header subtitle while isRunning is true", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "running_proc",
+      sseEv("subrun_started", {
+        subrun_name: "running_proc",
         steps: [{ name: "step_a", task_type: "execute_sql" }]
       })
     ];
@@ -307,8 +305,8 @@ describe("AnalyticsThread — panel open/close behavior", () => {
   it("second trigger click closes the panel (toggle)", async () => {
     mockUseAnalyticsRun.mockReturnValue(
       runningWith([
-        sseEv("procedure_started", {
-          procedure_name: "p",
+        sseEv("subrun_started", {
+          subrun_name: "p",
           steps: [{ name: "s", task_type: "execute_sql" }]
         })
       ])
@@ -324,10 +322,10 @@ describe("AnalyticsThread — panel open/close behavior", () => {
 // ── Close button ──────────────────────────────────────────────────────────────
 
 describe("AnalyticsThread — procedure panel close", () => {
-  it("hides ProcedureRunDagPanel when onClose is triggered", async () => {
+  it("hides SubrunDagPanel when onClose is triggered", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "my_proc",
+      sseEv("subrun_started", {
+        subrun_name: "my_proc",
         steps: [{ name: "step_a", task_type: "execute_sql" }]
       })
     ];
@@ -339,7 +337,7 @@ describe("AnalyticsThread — procedure panel close", () => {
       expect(screen.getByRole("heading", { name: "my_proc" })).toBeInTheDocument();
     });
 
-    // Click the close button on ProcedureRunDagPanel
+    // Click the close button on SubrunDagPanel
     fireEvent.click(screen.getByRole("button", { name: "Close panel" }));
 
     // Panel should be hidden
@@ -350,8 +348,8 @@ describe("AnalyticsThread — procedure panel close", () => {
 
   it("does not re-open the panel after close on rerender", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "my_proc",
+      sseEv("subrun_started", {
+        subrun_name: "my_proc",
         steps: [{ name: "step_a", task_type: "execute_sql" }]
       })
     ];
@@ -376,14 +374,14 @@ describe("AnalyticsThread — procedure panel close", () => {
 // ── Procedure step status propagation ────────────────────────────────────────
 
 describe("AnalyticsThread — step status propagation via events", () => {
-  it("step shows Done when procedure_step_completed success=true", async () => {
+  it("step shows Done when subrun_step_completed success=true", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "p",
+      sseEv("subrun_started", {
+        subrun_name: "p",
         steps: [{ name: "step_a", task_type: "execute_sql" }]
       }),
-      sseEv("procedure_step_started", { step: "step_a" }),
-      sseEv("procedure_step_completed", { step: "step_a", success: true })
+      sseEv("subrun_step_started", { step: "step_a" }),
+      sseEv("subrun_step_completed", { step: "step_a", success: true })
     ];
     mockUseAnalyticsRun.mockReturnValue(runningWith(events));
     render(<AnalyticsThread thread={THREAD} />);
@@ -393,14 +391,14 @@ describe("AnalyticsThread — step status propagation via events", () => {
     });
   });
 
-  it("step shows Failed when procedure_step_completed success=false", async () => {
+  it("step shows Failed when subrun_step_completed success=false", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "p",
+      sseEv("subrun_started", {
+        subrun_name: "p",
         steps: [{ name: "step_a", task_type: "execute_sql" }]
       }),
-      sseEv("procedure_step_started", { step: "step_a" }),
-      sseEv("procedure_step_completed", { step: "step_a", success: false, error: "timeout" })
+      sseEv("subrun_step_started", { step: "step_a" }),
+      sseEv("subrun_step_completed", { step: "step_a", success: false, error: "timeout" })
     ];
     mockUseAnalyticsRun.mockReturnValue(runningWith(events));
     render(<AnalyticsThread thread={THREAD} />);
@@ -410,14 +408,14 @@ describe("AnalyticsThread — step status propagation via events", () => {
     });
   });
 
-  it("shows Completed subtitle when procedure_completed success=true and not running", async () => {
+  it("shows Completed subtitle when subrun_completed success=true and not running", async () => {
     const events: SseEvent[] = [
-      sseEv("procedure_started", {
-        procedure_name: "p",
+      sseEv("subrun_started", {
+        subrun_name: "p",
         steps: [{ name: "step_a", task_type: "execute_sql" }]
       }),
-      sseEv("procedure_step_completed", { step: "step_a", success: true }),
-      sseEv("procedure_completed", { procedure_name: "p", success: true })
+      sseEv("subrun_step_completed", { step: "step_a", success: true }),
+      sseEv("subrun_completed", { subrun_name: "p", success: true })
     ];
     mockUseAnalyticsRun.mockReturnValue(
       makeResult({

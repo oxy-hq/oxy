@@ -1,20 +1,22 @@
 //! Procedure discovery and search for the agentic analytics domain.
 //!
-//! `OxyProcedureRunner` implements the `ProcedureRunner` trait, providing
-//! procedure search via fuzzy matching against YAML metadata. Procedure
+//! `OxyProcedureRunner` implements the [`SubrunRunner`] trait, providing
+//! subrun search via fuzzy matching against YAML metadata. Subrun
 //! *execution* is handled by the coordinator-worker architecture (via
 //! `WorkflowStepOrchestrator`), not by this module.
+//!
+//! [`SubrunRunner`]: agentic_core::subrun::SubrunRunner
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use agentic_analytics::procedure::{ProcedureRef, ProcedureRunner};
+use agentic_core::subrun::{SubrunRef, SubrunRunner};
 
 use crate::workspace::WorkspaceContext;
 
 /// Discovers and searches `.procedure.yml` files.
 ///
-/// Wire this into `AnalyticsSolver::with_procedure_runner(Arc::new(runner))`.
+/// Wire this into `AnalyticsSolver::with_subrun_runner(Arc::new(runner))`.
 ///
 /// Supply the procedure file paths discovered from the agent config's `context`
 /// globs via [`with_procedure_files`](Self::with_procedure_files). When set,
@@ -44,8 +46,8 @@ impl OxyProcedureRunner {
 }
 
 #[async_trait::async_trait]
-impl ProcedureRunner for OxyProcedureRunner {
-    async fn search(&self, query: &str) -> Vec<ProcedureRef> {
+impl SubrunRunner for OxyProcedureRunner {
+    async fn search(&self, query: &str) -> Vec<SubrunRef> {
         let workspace_path = self.workspace.workspace_path().to_path_buf();
 
         // Use context-resolved paths when available; fall back to full project scan.
@@ -166,17 +168,29 @@ fn extract_file_meta(path: &Path) -> (String, ProcedureMeta) {
 
 /// Extract a description string from the `oxy:` comment block in a SQL file.
 ///
-/// Delegates to the shared parser in `agentic_analytics::config` so the
+/// Delegates to [`agentic_core::subrun::parse_oxy_comment_block`] so the
 /// `oxy:` comment block format has a single source of truth.
 fn extract_sql_description(content: &str) -> Option<String> {
-    agentic_analytics::config::parse_oxy_comment_block(content).and_then(|b| b.description)
+    agentic_core::subrun::parse_oxy_comment_block(content).and_then(|b| b.description)
 }
 
-fn filter_procedure_paths(
-    paths: &[PathBuf],
-    workspace_path: &Path,
-    query: &str,
-) -> Vec<ProcedureRef> {
+/// Convert `path` to a `workspace_path`-relative form. If `path` is
+/// already relative, returns it unchanged. If absolute, strips the
+/// `workspace_path` prefix when possible; falls back to the original
+/// path if the prefix doesn't match (e.g., a symlink resolved
+/// differently). The fallback is conservative — downstream validation
+/// will reject the still-absolute path with a clear error rather than
+/// silently constructing an out-of-workspace reference.
+fn make_workspace_relative(path: &Path, workspace_path: &Path) -> PathBuf {
+    if path.is_relative() {
+        return path.to_path_buf();
+    }
+    path.strip_prefix(workspace_path)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn filter_procedure_paths(paths: &[PathBuf], workspace_path: &Path, query: &str) -> Vec<SubrunRef> {
     let query_lower = query.to_lowercase();
 
     // Split the query into lowercase tokens; empty tokens are dropped.
@@ -184,7 +198,7 @@ fn filter_procedure_paths(
 
     // Collect all procedure/workflow/SQL candidates, reading metadata upfront
     // so that description and retrieval config participate in filtering/scoring.
-    let mut scored: Vec<(f64, ProcedureRef)> = paths
+    let mut scored: Vec<(f64, SubrunRef)> = paths
         .iter()
         .filter(|p| is_context_file(p))
         .filter_map(|path| {
@@ -255,17 +269,23 @@ fn filter_procedure_paths(
                 return None;
             }
 
-            let abs_path = if path.is_absolute() {
-                path.clone()
-            } else {
-                workspace_path.join(path)
-            };
+            // SubrunRef::path is the *workspace-relative* path. The
+            // downstream contract — DelegationTarget::Workflow's
+            // `workflow_ref` + `WorkspaceContext::resolve_workflow_yaml` —
+            // rejects absolute paths as a containment guard against
+            // `..`-traversal, so the LLM-visible identifier we surface
+            // here must already be relative. `list_workflow_files()`
+            // returns absolute paths today, but downstream callers
+            // (procedure-runner, search tool result) treat the path
+            // string as a stable key, not as a filesystem location;
+            // making it relative is the correct fix.
+            let rel_path = make_workspace_relative(path, workspace_path);
 
             Some((
                 score,
-                ProcedureRef {
+                SubrunRef {
                     name,
-                    path: abs_path,
+                    path: rel_path,
                     description: meta.description,
                 },
             ))
@@ -538,13 +558,59 @@ mod tests {
     }
 
     #[test]
-    fn absolute_paths_are_preserved() {
+    fn absolute_input_paths_become_workspace_relative() {
+        // `list_workflow_files()` returns absolute paths today; the
+        // search tool must strip the workspace prefix so the
+        // LLM-visible `path` and downstream `DelegationTarget::Workflow`
+        // are workspace-relative. The containment validator on the
+        // worker side rejects absolute `workflow_ref`s.
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("workflows").join("sales.procedure.yml");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::File::create(&file_path).unwrap();
+
+        let refs = filter_procedure_paths(&[file_path.clone()], dir.path(), "");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(
+            refs[0].path,
+            PathBuf::from("workflows/sales.procedure.yml"),
+            "absolute input should be stripped to workspace-relative; \
+             got {:?}",
+            refs[0].path
+        );
+        assert!(
+            refs[0].path.is_relative(),
+            "SubrunRef::path must be relative"
+        );
+    }
+
+    #[test]
+    fn relative_input_paths_pass_through_unchanged() {
+        // Callers can also feed relative paths directly (e.g. tests
+        // using `make_path` with a bare filename) — those stay as-is.
+        let refs = filter_procedure_paths(
+            &[PathBuf::from("workflows/sales.procedure.yml")],
+            Path::new("/project"),
+            "",
+        );
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].path, PathBuf::from("workflows/sales.procedure.yml"));
+    }
+
+    #[test]
+    fn unrelated_absolute_input_falls_back_to_original() {
+        // If the input path doesn't share the workspace prefix
+        // (symlink, misconfig), we conservatively keep the original
+        // absolute path so the downstream validator rejects it with
+        // a clear error rather than silently constructing an
+        // out-of-workspace ref.
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("sales.procedure.yml");
         std::fs::File::create(&file_path).unwrap();
 
-        let refs = filter_procedure_paths(&[file_path.clone()], dir.path(), "");
-        assert_eq!(refs[0].path, file_path);
+        let refs = filter_procedure_paths(&[file_path.clone()], Path::new("/nowhere/else"), "");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].path, file_path, "fallback should preserve input");
     }
 
     // ── fuzzy scoring ─────────────────────────────────────────────────────────
