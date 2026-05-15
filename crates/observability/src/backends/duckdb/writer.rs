@@ -88,6 +88,10 @@ const SPAN_BUFFER_CAPACITY: usize = 100;
 /// Interval between timer-based flushes. Matches the upstream telemetry bridge.
 const FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// Interval between periodic WAL checkpoints. Keeps the WAL file bounded even
+/// when SIGKILL prevents a clean connection close (e.g. k8s liveness evictions).
+const CHECKPOINT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
 // ── Writer startup ──────────────────────────────────────────────────────────
 
 /// Start the background writer task and return a handle for sending writes.
@@ -105,10 +109,16 @@ pub fn start_writer(conn: Arc<Mutex<Connection>>) -> WriterHandle {
 
 async fn writer_loop(conn: Arc<Mutex<Connection>>, mut rx: mpsc::UnboundedReceiver<WriteOp>) {
     let mut span_buffer: Vec<SpanRecord> = Vec::with_capacity(SPAN_BUFFER_CAPACITY);
-    let mut interval = tokio::time::interval(FLUSH_INTERVAL);
+
+    let mut flush_interval = tokio::time::interval(FLUSH_INTERVAL);
     // The first tick completes immediately; consume it so we don't flush an
     // empty buffer right after startup.
-    interval.tick().await;
+    flush_interval.tick().await;
+
+    let mut checkpoint_interval = tokio::time::interval(CHECKPOINT_INTERVAL);
+    // Consume the first tick so the initial checkpoint fires after the full
+    // interval, not immediately at startup.
+    checkpoint_interval.tick().await;
 
     loop {
         tokio::select! {
@@ -144,12 +154,33 @@ async fn writer_loop(conn: Arc<Mutex<Connection>>, mut rx: mpsc::UnboundedReceiv
                     }
                 }
             }
-            _ = interval.tick() => {
+            _ = flush_interval.tick() => {
                 if !span_buffer.is_empty() {
                     flush_spans(&conn, &mut span_buffer).await;
                 }
             }
+            _ = checkpoint_interval.tick() => {
+                periodic_checkpoint(&conn).await;
+            }
         }
+    }
+}
+
+/// Run a WAL checkpoint so data accumulated since the last checkpoint is
+/// written to the main database file. Called periodically to bound WAL size
+/// independently of DuckDB's autocheckpoint threshold.
+async fn periodic_checkpoint(conn: &Arc<Mutex<Connection>>) {
+    let conn = Arc::clone(conn);
+    let result = tokio::task::spawn_blocking(move || {
+        conn.lock()
+            .expect("DuckDB connection lock poisoned")
+            .execute_batch("CHECKPOINT")
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => tracing::debug!("DuckDB periodic WAL checkpoint complete"),
+        Ok(Err(e)) => tracing::warn!("DuckDB periodic WAL checkpoint failed: {e}"),
+        Err(e) => tracing::warn!("DuckDB checkpoint task panicked: {e}"),
     }
 }
 

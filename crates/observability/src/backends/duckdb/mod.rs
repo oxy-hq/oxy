@@ -66,7 +66,18 @@ impl DuckDBStorage {
         })?;
 
         // Enable WAL mode for better concurrent read/write behavior.
-        conn.execute_batch("PRAGMA disable_progress_bar; SET wal_autocheckpoint = '512MB';")
+        //
+        // wal_autocheckpoint = 32 MB: chosen against this workload's write
+        // profile. Spans average ~1.5 KB each; at the maximum batch rate
+        // (100 spans/s) we accumulate ~150 KB/s, reaching 32 MB after ~3.5
+        // minutes — safely inside the 5-minute periodic checkpoint window.
+        // Under typical load (~5 spans/s) 32 MB would take ~72 minutes to
+        // accumulate, so auto-checkpoint acts as a pure safety net and never
+        // fires during normal operation. 16 MB was too tight: a burst of 10
+        // concurrent agentic queries (~50 spans/s) would race the timer and
+        // cause redundant checkpoints. 64 MB would be too loose, providing no
+        // safety margin if the periodic checkpoint is delayed.
+        conn.execute_batch("PRAGMA disable_progress_bar; SET wal_autocheckpoint = '32MB';")
             .map_err(|e| {
                 OxyError::RuntimeError(format!("Failed to configure DuckDB WAL mode: {e}"))
             })?;
@@ -115,9 +126,26 @@ impl DuckDBStorage {
         &self.conn
     }
 
-    /// Gracefully shut down the writer, flushing any buffered data.
+    /// Gracefully shut down the writer, flushing any buffered data, then
+    /// checkpoint the WAL so all written data lands in the main db file.
+    ///
+    /// The `Connection` is held behind an `Arc` inside a process-global
+    /// `OnceLock` and is never dropped, so DuckDB's implicit clean-close
+    /// checkpoint never fires. We must call `CHECKPOINT` explicitly here.
     pub async fn shutdown(&self) {
         self.writer.shutdown().await;
+        let conn = Arc::clone(&self.conn);
+        let _ = tokio::task::spawn_blocking(move || match conn.lock() {
+            Ok(c) => {
+                if let Err(e) = c.execute_batch("CHECKPOINT") {
+                    tracing::warn!("DuckDB shutdown checkpoint failed: {e}");
+                } else {
+                    tracing::info!("DuckDB WAL checkpoint complete (shutdown)");
+                }
+            }
+            Err(e) => tracing::warn!("DuckDB connection lock poisoned at shutdown: {e}"),
+        })
+        .await;
     }
 
     /// Delete span, classification, and metric_usage rows older than
