@@ -15,22 +15,37 @@ name: Skills reconcile
 #   card or sync script in a way that breaks the source-of-truth
 #   chain.
 #
-# - `reconcile` (schedule + workflow_dispatch): heavy weekly run.
-#   Mints an Argo App token, checks out oxy-hq/skills, and drives
-#   anthropics/claude-code-action@v1 through detect → re-condense →
-#   bump SHA → re-vendor → verify → open-PR. Never auto-merges; the
-#   cards are opinionated prose and review-by-default is the design.
+# - `reconcile` (repository_dispatch + schedule + workflow_dispatch):
+#   heavy run that mints an Argo App token, checks out oxy-hq/skills,
+#   and drives anthropics/claude-code-action@v1 through detect →
+#   re-condense → bump SHA → re-vendor → verify → open-PR. Never
+#   auto-merges; the cards are opinionated prose and review-by-default
+#   is the design.
+#
+#   Primary trigger is `repository_dispatch: skills-updated`, fired by
+#   oxy-hq/skills/.github/workflows/notify-oxygen-internal.yaml as
+#   soon as a push to skills@main touches a tracked file. Latency:
+#   seconds, not days. The Monday cron stays as a safety net in case
+#   the dispatch is missed.
 #
 # See:
 #   - crates/agentic/builder/knowledge/README.md (drift + provenance)
 #   - scripts/check-skills-drift.sh (the underlying check)
 #   - scripts/sync-skills.sh        (verbatim YAML vendoring)
+#   - oxy-hq/skills/.github/workflows/notify-oxygen-internal.yaml
+#     (the upstream dispatcher)
 #   - .github/workflows/update-product-context.yaml (precedent)
 
 on:
   schedule:
-    - cron: "0 10 * * 1" # Mon 10:00 UTC
+    - cron: "0 10 * * 1" # Mon 10:00 UTC (safety net for missed dispatches)
   workflow_dispatch:
+  repository_dispatch:
+    # Fired by oxy-hq/skills when a push to main touches a file the
+    # knowledge module vendors. Payload carries the skills SHA, ref,
+    # and compare URL for traceability; the reconcile job re-derives
+    # the SHA from a fresh checkout so the payload is informational.
+    types: [skills-updated]
   pull_request:
     paths:
       - "crates/agentic/builder/knowledge/**"
@@ -73,8 +88,9 @@ jobs:
               echo "All knowledge cards are reconciled against \`oxy-hq/skills@main\`."
             elif [ "$STATUS" -eq 1 ]; then
               echo
-              echo "Drift detected. The weekly \`reconcile\` job will pick this up;"
-              echo "see \`crates/agentic/builder/knowledge/README.md\` for the manual"
+              echo "Drift detected. A \`skills-updated\` dispatch from oxy-hq/skills"
+              echo "(or the Monday safety-net cron) will pick this up; see"
+              echo "\`crates/agentic/builder/knowledge/README.md\` for the manual"
               echo "reconcile workflow if you want to resolve sooner."
             else
               echo
@@ -90,6 +106,26 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Log trigger
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_SHA: ${{ github.event.client_payload.sha }}
+          DISPATCH_REF: ${{ github.event.client_payload.ref }}
+          DISPATCH_COMPARE: ${{ github.event.client_payload.compare_url }}
+        run: |
+          {
+            echo "## Reconcile trigger"
+            echo
+            echo "- event: \`${EVENT_NAME}\`"
+            if [ "${EVENT_NAME}" = "repository_dispatch" ]; then
+              echo "- skills SHA: \`${DISPATCH_SHA}\`"
+              echo "- skills ref: \`${DISPATCH_REF}\`"
+              if [ -n "${DISPATCH_COMPARE}" ]; then
+                echo "- compare: ${DISPATCH_COMPARE}"
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/create-github-app-token@v3
         name: Create GitHub App Token
         id: app-token

@@ -86,13 +86,22 @@ GH_TOKEN=$(gh auth token) bash scripts/check-skills-drift.sh
 The check also runs in CI via `.github/workflows/skills-reconcile.yaml`:
 - on PRs that touch this directory or the sync scripts (informational
   `check` job, doesn't block the PR), and
-- weekly on `main` (the `reconcile` job, which goes a step further than
-  reporting and opens a PR with re-condensed cards for human review).
+- on `main` via the `reconcile` job, which goes a step further than
+  reporting and opens a PR with re-condensed cards for human review.
 
-The reconcile loop is therefore: **drift CI flags →** re-condense the
-affected card from the listed sources → **bump `reconciled-at:`** to
-the new SHA → **re-run** `scripts/sync-skills.sh` so the templates and
-`Last synced:` line move together.
+The `reconcile` job is webhook-driven: a companion workflow in
+`oxy-hq/skills` (`.github/workflows/notify-oxygen-internal.yaml`) fires
+a `skills-updated` repository_dispatch on every push to `skills@main`
+that touches a tracked file, and oxygen-internal runs the reconcile
+flow within seconds. A weekly Monday cron stays as a safety net for
+missed dispatches (token expiry, a tracked path filter we forgot to
+extend upstream, etc.).
+
+The reconcile loop is therefore: **upstream push →** dispatch → drift
+detected → re-condense the affected card from the listed sources →
+**bump `reconciled-at:`** to the new SHA → **re-run**
+`scripts/sync-skills.sh` so the templates and `Last synced:` line move
+together → open PR for human review.
 
 ## Why compile-time embedding
 
