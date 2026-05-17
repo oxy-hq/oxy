@@ -271,18 +271,18 @@ fn step_to_result_set(step: &serde_json::Value) -> Option<crate::types::QueryRes
             },
             summary: None,
         })
-    } else if let Some(text) = step.get("text").and_then(|v| v.as_str()) {
-        Some(crate::types::QueryResultSet {
-            data: QueryResult {
-                columns: vec!["result".to_string()],
-                rows: vec![QueryRow(vec![CellValue::Text(text.to_string())])],
-                total_row_count: 1,
-                truncated: false,
-            },
-            summary: None,
-        })
     } else {
-        None
+        step.get("text")
+            .and_then(|v| v.as_str())
+            .map(|text| crate::types::QueryResultSet {
+                data: QueryResult {
+                    columns: vec!["result".to_string()],
+                    rows: vec![QueryRow(vec![CellValue::Text(text.to_string())])],
+                    total_row_count: 1,
+                    truncated: false,
+                },
+                summary: None,
+            })
     }
 }
 

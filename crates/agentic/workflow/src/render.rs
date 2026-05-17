@@ -119,7 +119,7 @@ fn add_global_helpers(env: &mut minijinja::Environment<'static>) {
 /// templates. Returns `Err` with a parse or render error on failure;
 /// missing keys are forgiven (chainable undefined).
 pub(crate) fn render_jinja_string(template: &str, context: &Value) -> Result<String, String> {
-    let mut env = workflow_env();
+    let env = workflow_env();
     let tmpl = env
         .template_from_str(template)
         .map_err(|e| format!("template parse error: {e}"))?;

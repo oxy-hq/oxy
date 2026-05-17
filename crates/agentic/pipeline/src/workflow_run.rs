@@ -425,7 +425,7 @@ pub async fn list_workflow_runs(
     workflow_ref: &str,
     limit: u64,
 ) -> Result<Vec<WorkflowRunSummary>, WorkflowRunError> {
-    use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
+    use sea_orm::{FromQueryResult, Statement};
 
     #[derive(FromQueryResult)]
     struct Row {
@@ -825,11 +825,11 @@ async fn run_delegated_step(
             )))
         }
     }
-    .or_else(|e| {
+    .map_err(|e| {
         // Surface a hint about which step failed rather than a bare error
         // string — Data Apps log this directly to the user.
         let _ = state;
-        Err(e)
+        e
     })
 }
 
