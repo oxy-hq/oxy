@@ -12,15 +12,12 @@ use uuid::Uuid;
 
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
-use crate::server::service::block::GroupBlockHandler;
 use crate::server::service::statics::BROADCASTER;
 use crate::server::service::task_manager::TASK_MANAGER;
 use crate::server::service::types::pagination::{Paginated, Pagination};
 use crate::server::service::types::run::{RunDetails, RunInfo, RunStatus};
-use oxy::execute::writer::Handler;
 use oxy::utils::{create_sse_broadcast, file_path_to_source_id};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
-use oxy_shared::errors::OxyError;
 
 #[derive(serde::Deserialize, ToSchema)]
 pub struct PaginationQuery {

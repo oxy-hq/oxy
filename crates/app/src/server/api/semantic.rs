@@ -247,11 +247,7 @@ pub async fn get_topic_details(
             datasource: view.datasource.clone(),
             table: view.table.clone(),
             dimensions: json_array(&view.dimensions),
-            measures: view
-                .measures
-                .as_ref()
-                .map(|m| json_array(m))
-                .unwrap_or_default(),
+            measures: view.measures.as_ref().map(json_array).unwrap_or_default(),
         });
     }
 
