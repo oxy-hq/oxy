@@ -1224,6 +1224,8 @@ impl TaskExecutor for HappyPathExecutor {
                     answers: None,
                 })
             }
+
+            TaskSpec::Airway { .. } => Err("airway not exercised by this test".to_string()),
         }
     }
 }

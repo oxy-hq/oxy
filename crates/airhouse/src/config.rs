@@ -29,6 +29,14 @@ pub const LOCAL_ORG_ID: Uuid = Uuid::nil();
 
 const DEFAULT_WIRE_PORT: u16 = 5445;
 
+/// Well-known coordinates of the local Airhouse stack defined in
+/// `docker-compose.airhouse.yml`. Used by [`autodetect_local_airhouse`] to
+/// wire `--local` mode to a running compose stack without manual env setup.
+pub const LOCAL_DEFAULT_BASE_URL: &str = "http://localhost:8080";
+pub const LOCAL_DEFAULT_ADMIN_TOKEN: &str = "airhouse-local-token";
+pub const LOCAL_DEFAULT_WIRE_HOST: &str = "localhost";
+pub const LOCAL_DEFAULT_WIRE_PORT: &str = "5445";
+
 /// Names of all required Airhouse env vars. Used in error messages.
 pub const REQUIRED_VARS: &[&str] = &[
     AIRHOUSE_BASE_URL_VAR,
@@ -159,6 +167,68 @@ pub fn wire_endpoint() -> Option<WireEndpoint> {
     })
 }
 
+// ── Local-mode autodetect ─────────────────────────────────────────────────────
+
+/// In `--local` mode, wire Oxy to a running local Airhouse stack
+/// (`docker-compose.airhouse.yml`) without manual env configuration.
+///
+/// If none of the `AIRHOUSE_*` vars are set, probe the compose stack's
+/// control-plane health endpoint. When it responds, inject the well-known
+/// compose defaults into the process env so the per-workspace provision flow
+/// works out of the box. Returns `true` when defaults were injected.
+///
+/// No-op (returns `false`) when:
+/// - any `AIRHOUSE_*` var is already set — a deliberate (or partial →
+///   `Misconfigured`) setup must not be masked by autodetected defaults; or
+/// - the local stack is not reachable — the integration then stays
+///   `Disabled` with its normal "not configured" message.
+///
+/// Must be called once at local-mode startup, before the first
+/// [`AirhouseConfig::cached`] read.
+pub async fn autodetect_local_airhouse() -> bool {
+    let any_set = REQUIRED_VARS
+        .iter()
+        .any(|k| std::env::var(k).is_ok_and(|v| !v.is_empty()));
+    if any_set {
+        return false;
+    }
+
+    let health_url = format!("{LOCAL_DEFAULT_BASE_URL}/healthz");
+    let reachable = match reqwest::Client::new()
+        .get(&health_url)
+        .timeout(std::time::Duration::from_millis(1500))
+        .send()
+        .await
+    {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    };
+    if !reachable {
+        tracing::info!(
+            "local Airhouse not detected at {LOCAL_DEFAULT_BASE_URL} — integration \
+             stays disabled. Run `docker compose -f docker-compose.airhouse.yml up -d` \
+             to enable per-workspace provisioning in local mode."
+        );
+        return false;
+    }
+
+    // Safety: called once at local-mode startup before the HTTP server
+    // accepts requests and before the first `AirhouseConfig::cached()` read.
+    // Every reader runs strictly after this write on the same task, so no
+    // data race can occur (mirrors `oxy start`'s OXY_DATABASE_URL injection).
+    unsafe {
+        std::env::set_var(AIRHOUSE_BASE_URL_VAR, LOCAL_DEFAULT_BASE_URL);
+        std::env::set_var(AIRHOUSE_ADMIN_TOKEN_VAR, LOCAL_DEFAULT_ADMIN_TOKEN);
+        std::env::set_var(AIRHOUSE_WIRE_HOST_VAR, LOCAL_DEFAULT_WIRE_HOST);
+        std::env::set_var(AIRHOUSE_WIRE_PORT_VAR, LOCAL_DEFAULT_WIRE_PORT);
+    }
+    tracing::info!(
+        base_url = LOCAL_DEFAULT_BASE_URL,
+        "detected local Airhouse stack — autoconfigured AIRHOUSE_* for local mode"
+    );
+    true
+}
+
 // ── Factory functions ─────────────────────────────────────────────────────────
 
 /// Build a `TenantProvisioner` for the given DB connection if Airhouse is enabled.
@@ -236,6 +306,26 @@ mod tests {
             assert_eq!(cfg.base_url, "http://airhouse:8080"); // trailing slash trimmed
             assert_eq!(cfg.wire_port, DEFAULT_WIRE_PORT);
         });
+    }
+
+    #[tokio::test]
+    async fn autodetect_noop_when_a_var_already_set() {
+        let _g = ENV_LOCK.lock().unwrap();
+        for k in REQUIRED_VARS {
+            unsafe { std::env::remove_var(k) };
+        }
+        // A deliberate (or partial) config must not be masked by autodetected
+        // defaults — even one var present short-circuits before any probe.
+        unsafe { std::env::set_var(AIRHOUSE_BASE_URL_VAR, "http://my-airhouse:9999") };
+
+        assert!(!autodetect_local_airhouse().await);
+        assert_eq!(
+            std::env::var(AIRHOUSE_BASE_URL_VAR).unwrap(),
+            "http://my-airhouse:9999"
+        );
+        assert!(std::env::var(AIRHOUSE_ADMIN_TOKEN_VAR).is_err());
+
+        unsafe { std::env::remove_var(AIRHOUSE_BASE_URL_VAR) };
     }
 
     #[test]

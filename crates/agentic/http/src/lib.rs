@@ -117,3 +117,27 @@ where
         .route("/files/{path_b64}", get(routes::get_workflow_file))
         .layer(axum::Extension(state))
 }
+
+/// Build the airway sub-router. Mount with
+/// `.nest("/agentic-airway", airway_router(state))`.
+///
+/// Shares [`AgenticState`] with the analytics + workflow routers so
+/// cancellation and the SSE event registry are common. Airway runs go
+/// through the same coordinator + worker queue as workflow runs; this
+/// router only seeds the queue and exposes cancel. Events reuse the
+/// domain-agnostic `stream_events` handler — they're routed by the
+/// run's `source_type` (`"airway"`).
+pub fn airway_router<S>(state: Arc<AgenticState>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new()
+        .route(
+            "/runs",
+            post(routes::create_airway_run).get(routes::list_runs_for_pipeline),
+        )
+        // Reuse the domain-agnostic SSE handler.
+        .route("/runs/{id}/events", get(routes::stream_events))
+        .route("/runs/{id}/cancel", post(routes::cancel_airway_run))
+        .layer(axum::Extension(state))
+}

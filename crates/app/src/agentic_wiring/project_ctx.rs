@@ -14,7 +14,7 @@ use agentic_connector::{
     SnowflakeAuth, SnowflakeConfig,
 };
 use agentic_pipeline::SharedMetricSink;
-use agentic_pipeline::platform::ProjectContext;
+use agentic_pipeline::platform::{ProjectContext, ResolvedPipelineDestination};
 use agentic_workflow::WorkspaceContext;
 use agentic_workflow::workspace::IntegrationConfig;
 use async_trait::async_trait;
@@ -200,6 +200,67 @@ impl ProjectContext for OxyProjectContext {
             self.role.clone(),
         )
         .await
+    }
+
+    async fn resolve_pipeline_destination(
+        &self,
+        db_name: &str,
+    ) -> Option<ResolvedPipelineDestination> {
+        let db = self
+            .workspace_manager
+            .config_manager
+            .resolve_database(db_name)
+            .ok()?;
+        match &db.database_type {
+            // Postgres/Redshift: `resolve_connector` already substituted
+            // secrets into the connection params.
+            DatabaseType::Postgres(_) | DatabaseType::Redshift(_) => {
+                match self.resolve_connector(db_name).await? {
+                    ConnectorConfig::Postgres(c) | ConnectorConfig::Redshift(c) => {
+                        Some(ResolvedPipelineDestination {
+                            kind: "postgres".to_string(),
+                            connection_string: pg_wire_dsn(
+                                &c.user,
+                                &c.password,
+                                &c.host,
+                                c.port,
+                                &c.database,
+                            ),
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            // Airhouse speaks the Postgres wire protocol; `airhouse_managed`
+            // mints an ephemeral per-subject credential here.
+            DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_) => {
+                match airhouse_wire_params(
+                    &db,
+                    &self.workspace_manager,
+                    self.subject,
+                    self.role.clone(),
+                )
+                .await
+                {
+                    Ok((host, port, user, password, database)) => {
+                        Some(ResolvedPipelineDestination {
+                            kind: "airhouse".to_string(),
+                            connection_string: pg_wire_dsn(
+                                &user, &password, &host, port, &database,
+                            ),
+                        })
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            db = %db_name,
+                            "airway airhouse destination resolve failed: {e}"
+                        );
+                        None
+                    }
+                }
+            }
+            _ => None,
+        }
     }
 
     async fn resolve_model(
@@ -822,7 +883,44 @@ async fn build_airhouse_connector(
     subject: Option<uuid::Uuid>,
     role: Option<WorkspaceRole>,
 ) -> Result<Arc<dyn DatabaseConnector>, OxyError> {
-    let (host, port, user, password, database) = match &db.database_type {
+    let (host, port, user, password, database) =
+        airhouse_wire_params(db, workspace_manager, subject, role).await?;
+
+    let conn = airhouse::AirhouseConnector::new(&host, port, &user, &password, &database)
+        .await
+        .map_err(|e| {
+            OxyError::DBError(format!(
+                "airhouse connector failed to connect to {host}:{port}/{database} as {user}: {e}"
+            ))
+        })?;
+    Ok(Arc::new(conn) as Arc<dyn DatabaseConnector>)
+}
+
+/// Build a `postgresql://` URL, percent-encoding the userinfo and path
+/// so credentials containing `@ : / ?` survive parsing by airway's
+/// Postgres/airhouse destination.
+fn pg_wire_dsn(user: &str, password: &str, host: &str, port: u16, database: &str) -> String {
+    format!(
+        "postgresql://{}:{}@{}:{}/{}",
+        urlencoding::encode(user),
+        urlencoding::encode(password),
+        host,
+        port,
+        urlencoding::encode(database),
+    )
+}
+
+/// Resolve the Postgres-wire connection parameters for an `airhouse` /
+/// `airhouse_managed` database. For `airhouse_managed` this mints an
+/// ephemeral per-subject credential via the SA broker. Shared by the
+/// connector builder and the airway destination resolver.
+async fn airhouse_wire_params(
+    db: &oxy::config::model::Database,
+    workspace_manager: &WorkspaceManager,
+    subject: Option<uuid::Uuid>,
+    role: Option<WorkspaceRole>,
+) -> Result<(String, u16, String, String, String), OxyError> {
+    let params = match &db.database_type {
         DatabaseType::Airhouse(ah) => {
             let host = ah
                 .get_host(&workspace_manager.secrets_manager)
@@ -858,14 +956,7 @@ async fn build_airhouse_connector(
         }
     };
 
-    let conn = airhouse::AirhouseConnector::new(&host, port, &user, &password, &database)
-        .await
-        .map_err(|e| {
-            OxyError::DBError(format!(
-                "airhouse connector failed to connect to {host}:{port}/{database} as {user}: {e}"
-            ))
-        })?;
-    Ok(Arc::new(conn) as Arc<dyn DatabaseConnector>)
+    Ok(params)
 }
 
 /// Mint an ephemeral wire-protocol credential for an `airhouse_managed`

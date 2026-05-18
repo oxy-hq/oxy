@@ -113,6 +113,11 @@ impl TaskExecutor for PipelineTaskExecutor {
                 self.execute_workflow_decision(run_id, pending_child_answer.clone())
                     .await
             }
+
+            TaskSpec::Airway {
+                pipeline_ref,
+                variables,
+            } => self.execute_airway(pipeline_ref, variables.as_ref()).await,
         }
     }
 
@@ -356,6 +361,118 @@ impl PipelineTaskExecutor {
 
         let (task, _bridge) = started.into_executing_task();
         Ok(task)
+    }
+
+    /// Dispatch a `TaskSpec::Airway`. Loads `.airway.yml` from the
+    /// workspace, parses it into an [`AirwayPipelineSpec`], and hands
+    /// off to `AirwayWorker` which spawns the engine run and returns
+    /// the runtime-shape channel pair.
+    ///
+    /// `variables` is captured but not yet applied — YAML templating
+    /// lands in a follow-up alongside the CLI/HTTP entry points.
+    async fn execute_airway(
+        &self,
+        pipeline_ref: &str,
+        variables: Option<&serde_json::Value>,
+    ) -> Result<ExecutingTask, String> {
+        // Defence-in-depth: `start_airway_run` already contained the
+        // ref at submit time, but re-validate at queue-claim too (the
+        // queued spec is caller-influenced). `workspace_path` resolves
+        // through `PlatformContext`'s `WorkspaceContext` supertrait.
+        let path =
+            crate::pipeline_ref::resolve_pipeline_ref(self.platform.workspace_path(), pipeline_ref)
+                .map_err(|e| format!("airway: {e}"))?;
+        let yaml = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("airway: read pipeline_ref `{pipeline_ref}`: {e}"))?;
+        // Render with the same `variables` that `start_airway_run`
+        // validated against, so the worker's document matches what the
+        // submitter saw.
+        let mut spec = agentic_airway::AirwayPipelineSpec::from_yaml_with_vars(&yaml, variables)
+            .map_err(|e| format!("airway: parse `{pipeline_ref}`: {e}"))?;
+
+        self.resolve_airway_source_secrets(&mut spec).await?;
+        self.resolve_airway_destination(&mut spec).await?;
+
+        let worker = agentic_airway::AirwayWorker::new(Arc::new(self.db.clone()));
+        Ok(worker.execute(spec))
+    }
+
+    /// Substitute the Toast source's `*_var` credential references with
+    /// values from the platform secret manager, then strip the `_var`
+    /// keys so the connector factory sees only resolved literals.
+    /// Toast-specific by design — each vendor source opts in explicitly.
+    async fn resolve_airway_source_secrets(
+        &self,
+        spec: &mut agentic_airway::AirwayPipelineSpec,
+    ) -> Result<(), String> {
+        if spec.source.kind != "toast" {
+            return Ok(());
+        }
+        let Some(obj) = spec.source.config.as_object_mut() else {
+            return Ok(());
+        };
+        // (field, var-key) pairs Toast supports as managed secrets.
+        for (field, var_key) in [
+            ("client_secret", "client_secret_var"),
+            ("client_id", "client_id_var"),
+        ] {
+            let Some(var_val) = obj.get(var_key) else {
+                continue;
+            };
+            let var_name = var_val
+                .as_str()
+                .ok_or_else(|| format!("airway toast: `{var_key}` must be a string secret name"))?;
+            let secret = self
+                .platform
+                .resolve_secret(var_name)
+                .await
+                .ok_or_else(|| {
+                    format!(
+                        "airway toast: secret `{var_name}` (referenced by `{var_key}`) \
+                     could not be resolved from the secret manager"
+                    )
+                })?;
+            obj.insert(field.to_string(), serde_json::Value::String(secret));
+            obj.remove(var_key);
+        }
+        Ok(())
+    }
+
+    /// Turn a `destination: { database, dataset_name }` reference into a
+    /// concrete inline connector by resolving the named `config.yml`
+    /// database through the platform (secret substitution + per-subject
+    /// `airhouse_managed` minting happen host-side). Inline destinations
+    /// (the `memory` fixture, already-resolved specs) pass through.
+    async fn resolve_airway_destination(
+        &self,
+        spec: &mut agentic_airway::AirwayPipelineSpec,
+    ) -> Result<(), String> {
+        let agentic_airway::DestinationSpec::Reference(ref_) = &spec.destination else {
+            return Ok(());
+        };
+        let database = ref_.database.clone();
+        let dataset_name = ref_.dataset_name.clone();
+        let resolved = self
+            .platform
+            .resolve_pipeline_destination(&database)
+            .await
+            .ok_or_else(|| {
+                format!(
+                    "airway: destination `database: {database}` is not a known \
+                     config.yml database with an airway-writable type \
+                     (postgres or airhouse)"
+                )
+            })?;
+        spec.destination =
+            agentic_airway::DestinationSpec::Inline(agentic_airway::DestinationConfig {
+                kind: resolved.kind,
+                config: serde_json::json!({
+                    "connection_string": resolved.connection_string,
+                    "dataset_name": dataset_name,
+                }),
+            });
+        Ok(())
     }
 }
 

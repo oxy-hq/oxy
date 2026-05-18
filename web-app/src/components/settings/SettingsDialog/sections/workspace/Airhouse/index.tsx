@@ -5,6 +5,7 @@ import { AirhouseLogo } from "@/components/icons";
 import useAddAirhouseToConfig from "@/hooks/api/airhouse/useAddAirhouseToConfig";
 import useAirhouseConnection from "@/hooks/api/airhouse/useAirhouseConnection";
 import useProvisionAirhouse from "@/hooks/api/airhouse/useProvisionAirhouse";
+import useAuthConfig from "@/hooks/auth/useAuthConfig";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import SectionHeader from "../../../components/SectionHeader";
@@ -18,6 +19,7 @@ function statusFromError(err: unknown): number | undefined {
 const Airhouse: React.FC = () => {
   const { workspace } = useCurrentWorkspace();
   const orgRole = useCurrentOrg((s) => s.role);
+  const { data: authConfig } = useAuthConfig();
   const workspaceId = workspace?.id;
   const { data: connection, isLoading, error } = useAirhouseConnection(workspaceId);
   const provision = useProvisionAirhouse(workspaceId);
@@ -26,9 +28,12 @@ const Airhouse: React.FC = () => {
   // Provisioning creates a tenant-wide resource and a service account; only
   // org Owner/Admin should be able to do it. Non-admins still see the page
   // and the read-only connection details once provisioning is done — they
-  // just can't trigger the initial setup. Local-mode is unaffected since the
-  // seeded local guest is always Owner.
-  const canProvision = orgRole === "owner" || orgRole === "admin";
+  // just can't trigger the initial setup. In local mode there is no org
+  // picker so `useCurrentOrg.role` is never populated; the single seeded
+  // guest is always Owner server-side (and the provision endpoint enforces
+  // that regardless), so treat local mode as always able to provision.
+  const isLocal = authConfig?.mode === "local";
+  const canProvision = isLocal || orgRole === "owner" || orgRole === "admin";
 
   const handleProvision = async (tenantName: string) => {
     try {

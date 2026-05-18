@@ -31,6 +31,17 @@ use agentic_workflow::WorkspaceContext;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
+/// A `config.yml` database resolved into an airway destination: the
+/// destination `kind` airway should build, plus an already-credentialed
+/// connection string (secrets resolved, `airhouse_managed` minted).
+#[derive(Debug, Clone)]
+pub struct ResolvedPipelineDestination {
+    /// airway destination kind (`postgres`, `airhouse`, …).
+    pub kind: String,
+    /// Connection string with credentials already substituted in.
+    pub connection_string: String,
+}
+
 /// Project config access — connectors, models, secrets.
 ///
 /// Returns agentic-owned types. The adapter is responsible for translating
@@ -39,6 +50,19 @@ use std::collections::HashMap;
 #[async_trait]
 pub trait ProjectContext: Send + Sync {
     async fn resolve_connector(&self, db_name: &str) -> Option<ConnectorConfig>;
+
+    /// Resolve a `config.yml` database name into an airway pipeline
+    /// destination (kind + credentialed connection string). Handles
+    /// secret substitution and per-subject `airhouse_managed` minting.
+    /// Returns `None` when the database is unknown or its type has no
+    /// airway destination mapping. Default `None` so adapters without
+    /// airway support compile unchanged.
+    async fn resolve_pipeline_destination(
+        &self,
+        _db_name: &str,
+    ) -> Option<ResolvedPipelineDestination> {
+        None
+    }
 
     /// Return a connector instance the host built itself, when the database
     /// type isn't representable as a [`ConnectorConfig`] variant in

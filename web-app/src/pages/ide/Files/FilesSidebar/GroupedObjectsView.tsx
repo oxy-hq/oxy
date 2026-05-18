@@ -1,4 +1,4 @@
-import { AppWindow, BookOpen, ChevronDown, ChevronRight, Workflow } from "lucide-react";
+import { AppWindow, BookOpen, ChevronDown, ChevronRight, Database, Workflow } from "lucide-react";
 import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -109,6 +109,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
   const [openGroups, setOpenGroups] = React.useState({
     semanticObjects: true,
     procedures: true,
+    pipelines: true,
     agents: true,
     apps: true,
     tests: true
@@ -214,6 +215,16 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
         onToggle={() => toggleGroup("procedures")}
         onFileClick={handleFileClick}
         icon={Workflow}
+      />
+
+      <CollapsibleGroup
+        label='Pipelines'
+        files={grouped.pipelines}
+        isOpen={openGroups.pipelines}
+        activePath={activePath}
+        onToggle={() => toggleGroup("pipelines")}
+        onFileClick={handleFileClick}
+        icon={Database}
       />
 
       <CollapsibleGroup

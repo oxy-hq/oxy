@@ -340,5 +340,8 @@ pub(crate) fn source_type_for_spec(spec: &TaskSpec) -> &'static str {
         TaskSpec::WorkflowStep { .. } => "workflow_step",
         TaskSpec::WorkflowDecision { .. } => "workflow",
         TaskSpec::Resume { .. } => "analytics", // resume inherits parent type
+        // Match agentic_airway::SOURCE_TYPE — inlined here to keep the
+        // runtime free of a dep on the airway domain crate.
+        TaskSpec::Airway { .. } => "airway",
     }
 }

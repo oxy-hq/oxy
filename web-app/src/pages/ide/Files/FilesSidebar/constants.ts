@@ -16,6 +16,7 @@ export const OBJECT_FILE_TYPES = [
   FileType.AGENT,
   FileType.AGENTIC_WORKFLOW,
   FileType.ANALYTICS_AGENT,
+  FileType.PIPELINE,
   FileType.APP,
   FileType.VIEW,
   FileType.TOPIC,

@@ -1,0 +1,47 @@
+[package]
+name = "agentic-airway"
+description = "Airway ELT pipeline runtime for the agentic framework"
+version.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+agentic-core = { workspace = true }
+agentic-runtime = { workspace = true }
+
+# Airway engine itself. Pinned by rev in the workspace Cargo.toml so
+# updates are explicit — matches how airform-* and airlayer are pinned.
+airway = { workspace = true }
+
+# SeaORM for the airway_* extension entities + migrator. Backs the
+# `AirwayPgStateStore` impl of `airway::StateStore`.
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+
+# Standard cohort
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+minijinja = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+agentic-runtime = { workspace = true }
+sea-orm-migration = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+testcontainers = { version = "0.27", features = [
+    "blocking",
+    "reusable-containers",
+] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }

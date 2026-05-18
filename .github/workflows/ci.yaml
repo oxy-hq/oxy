@@ -213,6 +213,19 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
+      - uses: actions/create-github-app-token@v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            airlayer
+            airform
+            airway-internal
+            snowflake-rs
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -235,6 +248,18 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
+      # Private cargo git deps live under github.com/oxy-hq/* (airway,
+      # airform, airlayer, snowflake-rs). The default checkout token
+      # only auths THIS repo, so a fresh `rev` bump forces an
+      # unauthenticated fetch that fails with "revision not found".
+      # Rewrite oxy-hq HTTPS remotes to carry a read-only token. Scoped
+      # to github.com/oxy-hq/ so public crates are unaffected. Must run
+      # before any cargo step (git-fetch-with-cli is on in .cargo/config).
+      - name: Auth git for private cargo deps
+        run: |
+          git config --global \
+            url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/oxy-hq/".insteadOf \
+            "https://github.com/oxy-hq/"
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:

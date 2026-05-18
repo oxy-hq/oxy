@@ -590,7 +590,29 @@ async fn run_inline_workflow_internal(
     let workflow_context = serde_json::json!({
         "workspace_path": workspace.workspace_path().to_string_lossy(),
     });
-    let initial_render_context = initial_render_context.unwrap_or_else(|| serde_json::json!({}));
+    // Fold effective variables (workflow `variables:` declarations +
+    // runtime overrides) into the seed render context so templates can
+    // reference them by name (`{{ metric_label }}`). This mirrors the
+    // queue path's seed step in `executor::workflow::execute_workflow`;
+    // without it, standalone CLI / Data App runs leave declared
+    // `{default: X}` variables invisible to render-context lookups and
+    // SQL like `ROUND({{ aggregation_sql }}, 2)` renders as `ROUND(, 2)`.
+    let mut initial_render_context =
+        initial_render_context.unwrap_or_else(|| serde_json::json!({}));
+    let declared = workflow
+        .variables
+        .as_ref()
+        .and_then(|m| serde_json::to_value(m).ok());
+    let effective =
+        agentic_workflow::variables::effective_variables(declared.as_ref(), variables.as_ref());
+    if let (Some(ctx_obj), Some(vars_obj)) = (
+        initial_render_context.as_object_mut(),
+        effective.as_object(),
+    ) {
+        for (k, v) in vars_obj {
+            ctx_obj.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
     let mut state = WorkflowRunState {
         run_id: format!("inline-{}", Uuid::new_v4()),
         workflow,
@@ -819,11 +841,58 @@ async fn run_delegated_step(
                 .await
                 .map_err(WorkflowRunError::Inline)
         }
-        TaskSpec::Workflow { .. } | TaskSpec::Resume { .. } | TaskSpec::WorkflowDecision { .. } => {
-            Err(WorkflowRunError::Inline(format!(
-                "TaskSpec::{spec:?} cannot run inline; only WorkflowStep and Agent are supported"
-            )))
+        // Sub-workflow step (`type: workflow`). The queue path delegates
+        // this to a child coordinator run; inline we recurse directly.
+        // The recursive call folds the sub-workflow's own `variables:`
+        // defaults plus the parent's override block (`variables`) into
+        // its render context, then returns its `step → result` map. We
+        // serialize that map to a JSON string because the decider folds
+        // a child answer back via `serde_json::from_str` — so the parent
+        // template `{{ child_step.report.text }}` resolves identically
+        // to the queue path.
+        TaskSpec::Workflow {
+            workflow_ref,
+            variables,
+            body,
+            initial_render_context,
+            ..
+        } => {
+            let sub_workflow: WorkflowConfig = if let Some(body) = body {
+                serde_json::from_value(body.clone()).map_err(|e| {
+                    WorkflowRunError::Inline(format!("parse inline sub-workflow body: {e}"))
+                })?
+            } else {
+                let yaml = workspace
+                    .resolve_workflow_yaml(workflow_ref)
+                    .await
+                    .map_err(|e| {
+                        WorkflowRunError::Inline(format!(
+                            "load sub-workflow '{workflow_ref}': {e}"
+                        ))
+                    })?;
+                serde_yaml::from_str(&yaml).map_err(|e| {
+                    WorkflowRunError::Inline(format!(
+                        "parse sub-workflow '{workflow_ref}': {e}"
+                    ))
+                })?
+            };
+            let sub_results = Box::pin(run_inline_workflow_internal(
+                workspace,
+                sub_workflow,
+                variables.clone(),
+                agent_runner,
+                initial_render_context.clone(),
+            ))
+            .await?;
+            serde_json::to_string(&sub_results).map_err(|e| {
+                WorkflowRunError::Inline(format!("serialize sub-workflow results: {e}"))
+            })
         }
+        TaskSpec::Resume { .. }
+        | TaskSpec::WorkflowDecision { .. }
+        | TaskSpec::Airway { .. } => Err(WorkflowRunError::Inline(format!(
+            "TaskSpec::{spec:?} cannot run inline; only WorkflowStep, Agent and Workflow are supported"
+        ))),
     }
     .map_err(|e| {
         // Surface a hint about which step failed rather than a bare error

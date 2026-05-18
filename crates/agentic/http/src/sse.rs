@@ -68,9 +68,34 @@ pub fn squash_deltas(events: Vec<UiEvent>) -> Vec<UiEvent> {
 /// and the user would see the run frozen mid-stream until they
 /// navigated away and back (which re-opens the SSE and replays the
 /// post-resume events from the DB).
+///
+/// `load_completed`/`pipeline_error` are the airway domain's terminal
+/// events (snake_case `AirwayEvent` tags). Airway never emits
+/// `done`/`error`; a finished pipeline emits `load_completed` (even
+/// when some resources were skipped → `completed_with_errors`) and a
+/// failed one emits `pipeline_error`. Without gating these as terminal
+/// for `source_type == "airway"`, the SSE loop never sets `terminal`
+/// and only closes via the notifier-deregister fallback, which races
+/// the final `load_completed` write — the client's stream stays open,
+/// `streaming` stays true, and the run page spins forever even though
+/// the data already finished loading. They're scoped to airway because
+/// other domains have no such event types (no cross-domain risk), same
+/// pattern as the workflow gate above.
+///
+/// `task_failed` is the coordinator's failure event when
+/// `execute_airway` errors *before* the engine starts (secrets /
+/// connector / destination / config resolution). The worker emits no
+/// `pipeline_error` on that path, so for `source_type == "airway"`
+/// `task_failed` is also terminal — otherwise the SSE only closes via
+/// the notifier fallback and the run page shows nothing.
 pub fn is_terminal(event_type: &str, source_type: &str) -> bool {
     matches!(event_type, "done" | "error" | "cancelled")
         || (source_type == "workflow" && event_type == "subrun_completed")
+        || (source_type == "airway"
+            && matches!(
+                event_type,
+                "load_completed" | "pipeline_error" | "task_failed"
+            ))
 }
 
 #[cfg(test)]
@@ -95,6 +120,25 @@ mod tests {
         assert!(is_terminal("subrun_completed", "workflow"));
         assert!(!is_terminal("subrun_completed", "analytics"));
         assert!(!is_terminal("subrun_completed", "builder"));
+    }
+
+    /// Regression: an airway run finishes by emitting `load_completed`
+    /// (or `pipeline_error` on failure) — never `done`/`error`. Before
+    /// gating these as terminal for `source_type == "airway"`, the SSE
+    /// loop never closed deterministically and the run page spun
+    /// forever after the load had actually finished (notably
+    /// "completed with N skipped resource(s)" runs).
+    #[test]
+    fn airway_terminal_events_terminate_airway_only() {
+        assert!(is_terminal("load_completed", "airway"));
+        assert!(is_terminal("pipeline_error", "airway"));
+        assert!(is_terminal("task_failed", "airway"));
+        assert!(is_terminal("cancelled", "airway"));
+        assert!(!is_terminal("load_completed", "analytics"));
+        assert!(!is_terminal("pipeline_error", "workflow"));
+        assert!(!is_terminal("task_failed", "analytics"));
+        assert!(!is_terminal("load_progress", "airway"));
+        assert!(!is_terminal("resource_failed", "airway"));
     }
 
     #[test]

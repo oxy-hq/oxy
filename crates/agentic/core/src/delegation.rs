@@ -229,6 +229,21 @@ pub enum TaskSpec {
         #[serde(skip_serializing_if = "Option::is_none")]
         pending_child_answer: Option<ChildCompletion>,
     },
+    /// Run an airway ELT pipeline end-to-end (extract → normalize → load).
+    ///
+    /// Unlike [`TaskSpec::Workflow`], airway runs are atomic from the queue's
+    /// perspective — no per-step decisions, no fan-out at the coordinator.
+    /// The fan-out across resources happens inside the airway engine itself
+    /// (see `airway::extract_parallel`).
+    Airway {
+        /// Path or identifier for the pipeline spec. The pipeline crate loads
+        /// + parses this into an `AirwayPipelineSpec`.
+        pipeline_ref: String,
+        /// Variables to render into the YAML at run time. Same shape as
+        /// [`TaskSpec::Workflow::variables`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        variables: Option<Value>,
+    },
 }
 
 /// A completed child task's outcome, packaged for folding into a workflow

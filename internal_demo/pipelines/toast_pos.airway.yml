@@ -1,0 +1,24 @@
+name: toast_pos
+source:
+  kind: toast
+  config:
+    # Redacted demo: supply your own Toast partner client_id and the
+    # restaurant GUIDs from your Toast management-group listing. The
+    # client secret is resolved from the TOAST_CLIENT_SECRET env var
+    # (never committed).
+    client_id: REPLACE_ME
+    client_secret_var: TOAST_CLIENT_SECRET
+    restaurant_guids:
+      - "00000000-0000-0000-0000-000000000000"
+    base_url: https://ws-api.toasttab.com
+destination:
+  # A database defined in config.yml. Credentials are resolved at run
+  # time (airhouse_managed mints an ephemeral per-user credential).
+  database: local-acme
+  dataset_name: toast_pos
+
+# Optional: restrict to a subset of the source's resources.
+# resources: []
+
+# In-flight extractions when running resources in parallel (1-16).
+concurrency: 1

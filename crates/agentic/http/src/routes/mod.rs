@@ -69,10 +69,12 @@ pub struct RunSummary {
     pub ui_events: Option<Vec<sse::UiEvent>>,
 }
 
+pub mod airway;
 pub mod run;
 pub mod thread;
 pub mod workflow;
 
+pub use airway::{cancel_airway_run, create_airway_run, list_runs_for_pipeline};
 pub use run::{
     UpdateThinkingModeRequest, answer_run, cancel_run, create_run, stream_events,
     update_thinking_mode,

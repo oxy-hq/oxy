@@ -52,6 +52,11 @@ const ROUTES = {
             ROOT: `${wsBase}/workflows/${pathb64}`
           }),
 
+          PIPELINE: (pathb64: string) => ({
+            ROOT: `${wsBase}/pipelines/${pathb64}`,
+            RUN: (runId: string) => `${wsBase}/pipelines/${pathb64}/runs/${runId}`
+          }),
+
           APP: (pathb64: string) => `${wsBase}/apps/${pathb64}`,
 
           IDE: {
@@ -91,6 +96,9 @@ const ROUTES = {
             },
             MODELING: {
               ROOT: `${wsBase}/ide/modeling`
+            },
+            PIPELINES: {
+              ROOT: `${wsBase}/ide/pipelines`
             }
           },
 

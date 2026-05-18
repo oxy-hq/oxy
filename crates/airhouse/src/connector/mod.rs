@@ -712,13 +712,13 @@ fn typed_row_stream_from_messages(messages: &[SimpleQueryMessage]) -> TypedRowSt
 /// own `_agentic_%` temp tables.
 async fn fetch_schema(client: &Client) -> Result<SchemaInfo, ConnectorError> {
     let schema_sql = "\
-        SELECT table_name, column_name, data_type \
+        SELECT table_schema, table_name, column_name, data_type \
         FROM information_schema.columns \
         WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast', 'ducklake') \
           AND table_name NOT LIKE 'ducklake_%' \
           AND table_name NOT LIKE '_agentic_%' \
           AND table_name NOT LIKE 'airhouse_%' \
-        ORDER BY table_name, ordinal_position";
+        ORDER BY table_schema, table_name, ordinal_position";
 
     let messages = client.simple_query(schema_sql).await.map_err(|e| {
         ConnectorError::ConnectionError(format!(
@@ -736,12 +736,24 @@ async fn fetch_schema(client: &Client) -> Result<SchemaInfo, ConnectorError> {
             Some(s) => s.to_string(),
             None => continue,
         };
+        // airhouse (DuckLake) has no implicit search_path to the
+        // dataset, so an unqualified `SELECT * FROM orders` errors.
+        // Qualify every table as `"schema"."table"` here so every
+        // consumer (IDE table click, SQL editor, agents) gets a
+        // runnable reference. Quoting both parts also disambiguates
+        // same-named tables across schemas (previously collided on the
+        // bare-name map key).
+        let schema = match row.get("table_schema") {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        let qualified = format!("{}.{}", quote_ident(&schema), quote_ident(&table));
         let column = match row.get("column_name") {
             Some(s) => s.to_string(),
             None => continue,
         };
         let data_type = row.get("data_type").unwrap_or_default().to_string();
-        map.entry(table).or_default().push(SchemaColumnInfo {
+        map.entry(qualified).or_default().push(SchemaColumnInfo {
             name: column,
             data_type,
             min: None,

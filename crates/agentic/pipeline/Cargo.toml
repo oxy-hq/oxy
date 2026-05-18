@@ -9,6 +9,7 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
+agentic-airway = { workspace = true }
 agentic-analytics = { workspace = true }
 agentic-builder = { workspace = true }
 agentic-connector = { workspace = true, features = [

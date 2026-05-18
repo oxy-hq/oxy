@@ -1,0 +1,76 @@
+//! Airway ELT runtime — Pattern B subsystem on `agentic-runtime`.
+//!
+//! Stage 1 surface: `SOURCE_TYPE` constant, `event_handler()` for the
+//! runtime's `EventRegistry`, plus stubs (`AirwayEvent`, `AirwayWorker`,
+//! `TaskSpec::Airway` helpers) so the rest of the workspace can compile
+//! against the new variant before stages 2–4 fill in real behaviour.
+//!
+//! See [`internal-docs/airway-crate-layout.md`] for the full layout the
+//! later stages will fill in.
+
+pub mod boxed;
+pub mod config;
+pub mod destination_factory;
+pub mod error;
+pub mod events;
+pub mod extension;
+pub mod source_factory;
+pub mod state_store;
+pub mod task_spec;
+pub mod worker;
+
+pub use config::{
+    AirwayPipelineSpec, DestinationConfig, DestinationRef, DestinationSpec, SourceConfig,
+};
+pub use destination_factory::build_destination;
+pub use error::AirwayError;
+pub use events::AirwayEvent;
+pub use extension::AirwayMigrator;
+pub use source_factory::build_source_connector;
+pub use state_store::AirwayPgStateStore;
+pub use worker::AirwayWorker;
+
+/// `source_type` to register this domain under in the runtime event
+/// registry. Used by the SSE layer to look up the right processor for a
+/// run's events.
+pub const SOURCE_TYPE: &str = "airway";
+
+/// Build a [`DomainHandler`] for registering airway events with the
+/// runtime's [`EventRegistry`].
+///
+/// Airway events are emitted as `(event_type, payload)` JSON pairs by
+/// the worker; the processor is a passthrough that preserves both
+/// fields verbatim. Same shape as `agentic-workflow`'s event handler.
+///
+/// [`DomainHandler`]: agentic_runtime::event_registry::DomainHandler
+/// [`EventRegistry`]: agentic_runtime::event_registry::EventRegistry
+pub fn event_handler() -> agentic_runtime::event_registry::DomainHandler {
+    use agentic_runtime::event_registry::{DomainHandler, RowProcessor};
+    use std::sync::Arc;
+
+    let processor: RowProcessor =
+        Arc::new(|event_type, payload| Some(vec![(event_type.to_string(), payload.clone())]));
+
+    DomainHandler {
+        processor,
+        summary_fn: Arc::new(|_| None),
+        tool_summary_fn: Arc::new(|_, _| None),
+        should_accumulate: Some(Arc::new(|_| false)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_type_is_airway() {
+        assert_eq!(SOURCE_TYPE, "airway");
+    }
+
+    #[test]
+    fn event_handler_constructs() {
+        // Smoke test — confirms the handler builds without panicking.
+        let _ = event_handler();
+    }
+}

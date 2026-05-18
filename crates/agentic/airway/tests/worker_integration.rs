@@ -1,0 +1,221 @@
+//! End-to-end integration test for the airway worker.
+//!
+//! Spins up a real Postgres via testcontainers, runs the runtime +
+//! airway migrators, then drives a full pipeline: a filesystem source
+//! (a temp JSONL file) → the in-process memory destination. Proves the
+//! whole chain — source factory, `Source::from_connector` bridge,
+//! `AirwayPgStateStore`, the engine run, and the
+//! `PipelineEvent → AirwayEvent` forwarder — works against a live DB.
+//!
+//! Requires Docker (or `OXY_DATABASE_URL` pointing at a throwaway PG).
+
+use std::io::Write;
+use std::sync::Arc;
+use std::time::Duration;
+
+use agentic_airway::config::AirwayPipelineSpec;
+use agentic_airway::extension::{AirwayMigrator, load_audit, pipeline_state};
+use agentic_airway::worker::AirwayWorker;
+use agentic_core::delegation::TaskOutcome;
+use agentic_runtime::migration::RuntimeMigrator;
+use sea_orm::{Database, DatabaseConnection, EntityTrait};
+use sea_orm_migration::MigratorTrait;
+
+static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+static TEST_CONTAINER: tokio::sync::OnceCell<
+    Arc<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
+> = tokio::sync::OnceCell::const_new();
+
+/// Real Postgres + the migrators the worker depends on. `None` when no
+/// DB is available (Docker down and `OXY_DATABASE_URL` unset) so the
+/// test self-skips rather than failing the suite.
+async fn test_db() -> Option<DatabaseConnection> {
+    let url = TEST_DB_URL
+        .get_or_init(|| async {
+            if let Ok(url) = std::env::var("OXY_DATABASE_URL") {
+                return url;
+            }
+            use testcontainers::runners::AsyncRunner;
+            use testcontainers::{ImageExt, ReuseDirective};
+            use testcontainers_modules::postgres::Postgres;
+
+            let container = TEST_CONTAINER
+                .get_or_init(|| async {
+                    Arc::new(
+                        Postgres::default()
+                            .with_tag("18-alpine")
+                            .with_reuse(ReuseDirective::Always)
+                            .start()
+                            .await
+                            .expect("start Postgres testcontainer — is Docker running?"),
+                    )
+                })
+                .await;
+            let port = container
+                .get_host_port_ipv4(5432_u16)
+                .await
+                .expect("get Postgres port");
+            format!("postgresql://postgres:postgres@127.0.0.1:{port}/postgres")
+        })
+        .await
+        .clone();
+
+    let mut db = None;
+    for attempt in 0..10 {
+        match Database::connect(&url).await {
+            Ok(conn) => {
+                db = Some(conn);
+                break;
+            }
+            Err(e) if attempt < 9 => {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                eprintln!("test_db: attempt {attempt} failed: {e}, retrying");
+            }
+            Err(e) => panic!("connect to test DB failed after 10 retries: {e}"),
+        }
+    }
+    let db = db?;
+
+    // RuntimeMigrator first: `airway_run_extensions.run_id` FKs to
+    // `agentic_runs.id`, so the runtime tables must exist before
+    // AirwayMigrator's third migration runs.
+    RuntimeMigrator::up(&db, None)
+        .await
+        .expect("runtime migrations");
+    AirwayMigrator::up(&db, None)
+        .await
+        .expect("airway migrations");
+    Some(db)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn worker_runs_filesystem_to_memory_end_to_end() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    // Unique pipeline name so concurrent test runs don't collide on the
+    // `airway_pipeline_state` primary key.
+    let pipeline_name = format!("it_fs_mem_{}", uuid::Uuid::new_v4().simple());
+
+    // ── Temp JSONL source: three user records, one per line ───────────────
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut f = std::fs::File::create(dir.path().join("users.jsonl")).expect("create jsonl");
+    writeln!(f, r#"{{"id": 1, "name": "Alice"}}"#).unwrap();
+    writeln!(f, r#"{{"id": 2, "name": "Bob"}}"#).unwrap();
+    writeln!(f, r#"{{"id": 3, "name": "Carol"}}"#).unwrap();
+    f.flush().unwrap();
+
+    let yaml = format!(
+        r#"
+name: {pipeline_name}
+source:
+  kind: filesystem
+  config:
+    base_path: {base}
+    pattern: "*.jsonl"
+    format: jsonl
+    table_name: users
+destination:
+  kind: memory
+  config:
+    dataset_name: scratch
+"#,
+        base = dir.path().display(),
+    );
+    let spec = AirwayPipelineSpec::from_yaml_str(&yaml).expect("parse spec");
+
+    // ── Drive the worker ──────────────────────────────────────────────────
+    let worker = AirwayWorker::new(Arc::new(db.clone()));
+    let mut task = worker.execute(spec);
+
+    // Collect events until the task produces its terminal outcome.
+    let mut event_types: Vec<String> = Vec::new();
+    let outcome = loop {
+        tokio::select! {
+            ev = task.events.recv() => {
+                match ev {
+                    Some((event_type, _payload)) => event_types.push(event_type),
+                    None => { /* event channel closed; keep waiting for outcome */ }
+                }
+            }
+            oc = task.outcomes.recv() => {
+                break oc.expect("worker produced an outcome");
+            }
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                panic!("airway run timed out; events so far: {event_types:?}");
+            }
+        }
+    };
+
+    // Drain any events still buffered after the outcome arrived.
+    while let Ok(Some((event_type, _))) =
+        tokio::time::timeout(Duration::from_millis(100), task.events.recv()).await
+    {
+        event_types.push(event_type);
+    }
+
+    // ── Assertions ────────────────────────────────────────────────────────
+    match &outcome {
+        TaskOutcome::Done { .. } => {}
+        other => panic!("expected Done, got {other:?}; events: {event_types:?}"),
+    }
+
+    assert!(
+        event_types.iter().any(|e| e == "load_started"),
+        "missing load_started; got {event_types:?}"
+    );
+    assert!(
+        event_types.iter().any(|e| e == "extract_completed"),
+        "missing extract_completed; got {event_types:?}"
+    );
+    assert!(
+        event_types.iter().any(|e| e == "load_completed"),
+        "missing load_completed; got {event_types:?}"
+    );
+
+    // State store row was written by `AirwayPgStateStore::save` at the
+    // end of a successful run.
+    let state_row = pipeline_state::Entity::find_by_id(pipeline_name.clone())
+        .one(&db)
+        .await
+        .expect("query pipeline_state")
+        .expect("pipeline_state row exists after a successful run");
+    assert!(
+        state_row.version >= 1,
+        "version should have advanced past the initial 0, got {}",
+        state_row.version
+    );
+
+    // Audit row transitioned to completed.
+    let audit_rows = load_audit::Entity::find()
+        .all(&db)
+        .await
+        .expect("query load_audit");
+    let ours: Vec<_> = audit_rows
+        .into_iter()
+        .filter(|r| r.pipeline_name == pipeline_name)
+        .collect();
+    assert_eq!(ours.len(), 1, "exactly one audit row for this run");
+    assert_eq!(
+        ours[0].status,
+        load_audit::status::COMPLETED,
+        "audit row should be completed; error_message={:?}",
+        ours[0].error_message
+    );
+    // This airway revision infers + hashes the schema before
+    // `record_load_start`, so even a first load carries a non-empty
+    // fingerprint. The nullable column + empty-string→`None` mapping in
+    // `AirwayPgStateStore::record_load_start` remains the defensive
+    // contract for engine revisions that record the audit row *before*
+    // schema inference; here we just assert a real hash landed.
+    assert!(
+        ours[0]
+            .schema_hash
+            .as_deref()
+            .is_some_and(|h| !h.is_empty()),
+        "expected a non-empty schema fingerprint, got {:?}",
+        ours[0].schema_hash
+    );
+}

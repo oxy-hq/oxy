@@ -1,6 +1,6 @@
 use crate::cli::ServeArgs;
 use crate::server::serve_mode::ServeMode;
-use agentic_pipeline::{AnalyticsMigrator, WorkflowMigrator};
+use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, WorkflowMigrator};
 use agentic_runtime::migration::RuntimeMigrator;
 use axum::handler::Handler;
 use axum::http::HeaderValue;
@@ -49,6 +49,14 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
                export OXY_DATABASE_URL=postgresql://user:password@localhost:5432/oxy"
                 .to_string(),
         ));
+    }
+
+    // In local mode, autodetect a running local Airhouse stack
+    // (docker-compose.airhouse.yml) and inject the well-known AIRHOUSE_*
+    // defaults so per-workspace provisioning works without manual env
+    // configuration. Must run before AirhouseConfig is read below.
+    if args.local {
+        airhouse::config::autodetect_local_airhouse().await;
     }
 
     // Fail fast if Airhouse vars are partially set.
@@ -293,6 +301,14 @@ async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
         .await
         .map_err(|e| OxyError::RuntimeError(format!("workflow migrations failed: {}", e)))?;
     println!("migrations: workflow migrations complete");
+
+    // Run airway extension migrations (separate tracking table). Must
+    // follow the runtime migrator — `airway_run_extensions.run_id` FKs
+    // to `agentic_runs.id`.
+    AirwayMigrator::up(&db, None)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("airway migrations failed: {}", e)))?;
+    println!("migrations: airway migrations complete");
 
     // Run airhouse migrations (separate tracking table). The wrapper pre-stamps
     // `seaql_migrations_airhouse` from the central tracking table so existing

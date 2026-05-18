@@ -13,6 +13,7 @@ import {
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
+import AirwayPage from "@/pages/airway";
 import Home from "@/pages/home";
 import ClusterMapPage from "@/pages/ide/observability/clusters";
 import MetricDetailPage from "@/pages/ide/observability/metrics/MetricsDetailPage";
@@ -72,6 +73,7 @@ import LookerExplorerPage from "./pages/ide/Files/Editor/LookerExplore";
 import ModelingPage from "./pages/ide/modeling";
 import ObservabilityLayout from "./pages/ide/observability";
 import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
+import PipelinesPage from "./pages/ide/pipelines";
 import TestsLayout from "./pages/ide/tests";
 import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
 import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
@@ -243,6 +245,22 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           }
         />
         <Route
+          path='pipelines/:pathb64'
+          element={
+            <MainPageWrapper>
+              <AirwayPage />
+            </MainPageWrapper>
+          }
+        />
+        <Route
+          path='pipelines/:pathb64/runs/:runId'
+          element={
+            <MainPageWrapper>
+              <AirwayPage />
+            </MainPageWrapper>
+          }
+        />
+        <Route
           path='apps/:pathb64'
           element={
             <MainPageWrapper>
@@ -267,6 +285,9 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
 
           {/* Data Modeling routes */}
           <Route path='modeling' element={<ModelingPage />} />
+
+          {/* Airway pipeline routes */}
+          <Route path='pipelines' element={<PipelinesPage />} />
 
           {/* Tests routes */}
           <Route path='tests' element={<TestsLayout />}>

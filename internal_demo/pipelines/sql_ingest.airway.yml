@@ -1,0 +1,25 @@
+name: sql_ingest
+source:
+  kind: sql_database
+  config:
+    connection_string: postgresql://postgres:postgres@localhost:15432/oxy
+    backend: postgres # postgres | mysql | sqlite | mssql | oracle | custom
+    tables:
+      - name: users
+        write_disposition: append # append | replace | merge
+destination:
+  # A database defined in config.yml. Credentials are resolved at run
+  # time (airhouse_managed mints an ephemeral per-user credential).
+  database: local-acme
+  dataset_name: sql_ingest
+
+# Optional: restrict to a subset of the source's resources.
+# resources: []
+
+# In-flight extractions when running resources in parallel (1-16).
+concurrency: 1
+
+# Streaming (concurrent extract->sink, live per-table progress) is on
+# by default for streaming-capable destinations. Uncomment to force
+# the bulk path.
+# streaming: false

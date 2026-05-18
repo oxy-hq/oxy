@@ -10,7 +10,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::routing::{delete, get, post, put};
 
-use agentic_http::{AgenticState, router as agentic_router, workflow_router};
+use agentic_http::{AgenticState, airway_router, router as agentic_router, workflow_router};
 
 use crate::api::{
     agent, api_keys, app, artifacts, chart, data, data_repo, database, execution_analytics,
@@ -113,7 +113,8 @@ pub(super) fn build_workspace_routes(
         .nest("/analytics", agentic_router(agentic_state.clone()))
         // New agentic-workflow surface — coexists with the legacy `/workflows`
         // routes during migration. Will subsume them in the cleanup task.
-        .nest("/agentic-workflows", workflow_router(agentic_state))
+        .nest("/agentic-workflows", workflow_router(agentic_state.clone()))
+        .nest("/agentic-airway", airway_router(agentic_state))
         .nest("/modeling", modeling::build_modeling_routes());
 
     if include_git_features {

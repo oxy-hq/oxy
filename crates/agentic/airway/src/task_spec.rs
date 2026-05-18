@@ -1,0 +1,86 @@
+//! Helpers for constructing and decoding the `TaskSpec::Airway` variant.
+//!
+//! The variant itself lives in `agentic-core::delegation` so the
+//! runtime queue can serialize/deserialize it without taking a dep on
+//! this crate. These helpers exist so callers (pipeline facade, CLI,
+//! tests) can build/parse airway tasks ergonomically without poking at
+//! the enum directly.
+
+use agentic_core::delegation::TaskSpec;
+use serde_json::Value;
+
+/// Strongly-typed view of the data carried by a [`TaskSpec::Airway`].
+#[derive(Debug, Clone)]
+pub struct AirwayTaskSpec {
+    pub pipeline_ref: String,
+    pub variables: Option<Value>,
+}
+
+impl AirwayTaskSpec {
+    /// Build a new airway task spec.
+    pub fn new(pipeline_ref: impl Into<String>) -> Self {
+        Self {
+            pipeline_ref: pipeline_ref.into(),
+            variables: None,
+        }
+    }
+
+    /// Attach variables that will be rendered into the pipeline YAML
+    /// at run time.
+    pub fn with_variables(mut self, variables: Value) -> Self {
+        self.variables = Some(variables);
+        self
+    }
+
+    /// Materialise as a runtime [`TaskSpec`] for the durable queue.
+    pub fn into_task_spec(self) -> TaskSpec {
+        TaskSpec::Airway {
+            pipeline_ref: self.pipeline_ref,
+            variables: self.variables,
+        }
+    }
+
+    /// Inverse of [`AirwayTaskSpec::into_task_spec`]. Returns `None`
+    /// when the spec is some other variant.
+    pub fn from_task_spec(spec: &TaskSpec) -> Option<Self> {
+        match spec {
+            TaskSpec::Airway {
+                pipeline_ref,
+                variables,
+            } => Some(Self {
+                pipeline_ref: pipeline_ref.clone(),
+                variables: variables.clone(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_through_task_spec() {
+        let spec = AirwayTaskSpec::new("pipelines/shopify.airway.yml")
+            .with_variables(serde_json::json!({"since": "2026-01-01"}));
+        let runtime_spec = spec.into_task_spec();
+
+        let back = AirwayTaskSpec::from_task_spec(&runtime_spec).expect("airway variant");
+        assert_eq!(back.pipeline_ref, "pipelines/shopify.airway.yml");
+        assert_eq!(
+            back.variables.as_ref().and_then(|v| v.get("since")),
+            Some(&serde_json::json!("2026-01-01")),
+        );
+    }
+
+    #[test]
+    fn rejects_non_airway_variant() {
+        let other = TaskSpec::Agent {
+            agent_id: "x".to_string(),
+            question: "q".to_string(),
+            extra: None,
+        };
+        assert!(AirwayTaskSpec::from_task_spec(&other).is_none());
+    }
+}

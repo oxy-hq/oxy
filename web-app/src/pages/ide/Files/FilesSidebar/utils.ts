@@ -3,6 +3,7 @@ import {
   BookOpen,
   Bot,
   Braces,
+  Database,
   Eye,
   FileCode,
   Network,
@@ -43,6 +44,8 @@ export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
       return Bot;
     case FileType.AGENTIC_WORKFLOW:
       return Network;
+    case FileType.PIPELINE:
+      return Database;
     case FileType.APP:
       return AppWindow;
     case FileType.VIEW:
@@ -66,6 +69,7 @@ export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
 
 interface GroupedObjects {
   procedures: FileTreeModel[];
+  pipelines: FileTreeModel[];
   agents: FileTreeModel[];
   apps: FileTreeModel[];
   tests: FileTreeModel[];
@@ -76,6 +80,7 @@ interface GroupedObjects {
 export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
   const groups: GroupedObjects = {
     procedures: [],
+    pipelines: [],
     agents: [],
     apps: [],
     tests: [],
@@ -92,6 +97,9 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
       case FileType.AUTOMATION:
       case FileType.AGENTIC_WORKFLOW:
         groups.procedures.push(file);
+        break;
+      case FileType.PIPELINE:
+        groups.pipelines.push(file);
         break;
       case FileType.AGENT:
       case FileType.ANALYTICS_AGENT:

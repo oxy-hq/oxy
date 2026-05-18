@@ -492,5 +492,6 @@ fn chain_label(spec: &TaskSpec) -> &'static str {
         TaskSpec::WorkflowDecision { .. } => "WorkflowDecision (chain)",
         TaskSpec::WorkflowStep { .. } => "WorkflowStep (chain)",
         TaskSpec::Resume { .. } => "Resume (chain)",
+        TaskSpec::Airway { .. } => "Airway (chain)",
     }
 }

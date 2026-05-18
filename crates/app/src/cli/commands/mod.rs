@@ -1,6 +1,7 @@
 mod a2a;
 mod admin;
 mod agentic_cli;
+mod airway;
 pub mod clean;
 pub mod export_chart;
 mod init;
@@ -283,6 +284,11 @@ enum SubCommand {
     /// Supports analytics and builder domains. Use --json for LLM-readable output.
     /// Requires OXY_DATABASE_URL to be set.
     Agentic(agentic_cli::AgenticArgs),
+    /// Run airway ELT pipelines.
+    ///
+    /// Execute a `.airway.yml` pipeline (extract → normalize → load)
+    /// and stream progress events. Requires OXY_DATABASE_URL to be set.
+    Airway(airway::AirwayArgs),
     /// Operator-only administration commands.
     ///
     /// Hosts deployment-wide actions like Airhouse SA rotation. These are
@@ -608,6 +614,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Intent(_) => "intent",
             SubCommand::ExportChart(_) => "export-chart",
             SubCommand::Agentic(_) => "agentic",
+            SubCommand::Airway(_) => "airway",
             SubCommand::Admin(_) => "admin",
         };
 
@@ -1024,6 +1031,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Agentic(agentic_args)) => {
             agentic_cli::handle_agentic_command(agentic_args).await?;
+        }
+
+        Some(SubCommand::Airway(airway_args)) => {
+            airway::handle_airway_command(airway_args).await?;
         }
 
         Some(SubCommand::Admin(admin_args)) => {

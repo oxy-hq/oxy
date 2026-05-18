@@ -4,7 +4,9 @@
 //! solver building, and pipeline startup. Both the HTTP layer and the CLI
 //! use this crate — no domain logic is duplicated.
 
+pub mod airway_run;
 pub mod executor;
+pub mod pipeline_ref;
 pub mod platform;
 pub mod recovery;
 pub mod workflow_run;
@@ -27,6 +29,9 @@ use crate::platform::{BuilderBridges, PlatformContext, ProjectContext};
 
 // ── Re-exports for consumers ────────────────────────────────────────────────
 
+pub use agentic_airway::{
+    AirwayMigrator, SOURCE_TYPE as AIRWAY_SOURCE_TYPE, event_handler as airway_event_handler,
+};
 /// Re-export so HTTP/CLI don't import domain crates directly.
 pub use agentic_analytics::AnalyticsRunMeta;
 pub use agentic_analytics::SchemaCatalog as AnalyticsSchemaCatalog;
@@ -1291,6 +1296,7 @@ pub fn build_event_registry() -> EventRegistry {
         agentic_workflow::SOURCE_TYPE,
         agentic_workflow::event_handler(),
     );
+    registry.register(AIRWAY_SOURCE_TYPE, airway_event_handler());
     registry
 }
 
@@ -1542,4 +1548,31 @@ pub async fn run_agentic_eval(
             OrchestratorError::ResumeNotSupported => "resume not supported".into(),
             OrchestratorError::Fatal(e) => format!("fatal: {e:?}"),
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: every queue-driven domain must be in
+    /// `build_event_registry`, or `stream_events` has no `RowProcessor`
+    /// for its rows and the SSE stream silently drops them (the bug
+    /// where the airway run page only saw the generic task row).
+    #[test]
+    fn build_event_registry_routes_airway_events() {
+        let registry = build_event_registry();
+        let mut proc = registry.stream_processor(AIRWAY_SOURCE_TYPE);
+        let out = proc.process(
+            "load_started",
+            &serde_json::json!({
+                "event_type": "load_started",
+                "pipeline_name": "p",
+                "load_id": "l"
+            }),
+        );
+        assert!(
+            out.iter().any(|(ty, _)| ty == "load_started"),
+            "airway events must survive the registry, got {out:?}"
+        );
+    }
 }
