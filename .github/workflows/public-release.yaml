@@ -262,6 +262,19 @@ jobs:
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
+      - uses: actions/create-github-app-token@v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            airlayer
+            airform
+            airway-internal
+            snowflake-rs
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -294,6 +307,15 @@ jobs:
         with:
           shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Private cargo git deps live under github.com/oxy-hq/* (airway,
+      # airform, airlayer, snowflake-rs). Rewrite oxy-hq HTTPS remotes to
+      # carry a read-only token so `cargo build` can fetch them.
+      - name: Auth git for private cargo deps
+        run: |
+          git config --global \
+            url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/oxy-hq/".insteadOf \
+            "https://github.com/oxy-hq/"
 
       # Install protoc from the OS package manager instead of arduino/setup-protoc
       # to avoid GitHub release rate limits / outages.
