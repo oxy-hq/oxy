@@ -2,7 +2,7 @@
 source:
   - oxy-hq/skills/skills/oxy-agentic-builder/SKILL.md
   - oxy-hq/skills/skills/oxy-agentic-builder/QUICK-REFERENCE.md
-reconciled-at: 7d98cd247517749da07819263ce87577a3583ff1
+reconciled-at: f9ebd8af267cfea5b52fa96994763898ab8a0e34
 note: |
   Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
   the verbatim YAML templates. Re-condense by hand when source material
@@ -84,9 +84,16 @@ semantic_engine:                  # OPTIONAL — Cube/Looker delegation
 | `interpreting` | Natural-language answer + chart        | Thinking usually disabled               |
 | `diagnosing`   | Back-edge entered when a validator fails | Internal — not directly configurable    |
 
-Each `states.<name>` block accepts `instructions` (appended to the global
-prompt for that state), `thinking`, `max_retries`, and `model`. State keys
-must match a fixed name above; otherwise the override is silently ignored.
+**Skipping & retries.** When `clarifying` produces an intent the semantic
+layer can compile directly, `solving` is dynamically skipped — never write
+`solving` `instructions:` assuming the LLM authors SQL, because it may
+never see them. When `diagnosing` re-enters an upstream state, the retry
+generates fresh from the spec; it does not anchor on the previous attempt.
+
+Each `states.<name>` block accepts `instructions` (appended to — not
+replacing — the global prompt for that state), `thinking`, `max_retries`,
+and `model`. State keys must match a fixed name above; otherwise the
+override is silently ignored.
 
 ## `llm:` fields
 

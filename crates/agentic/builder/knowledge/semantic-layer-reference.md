@@ -2,7 +2,7 @@
 source:
   - oxy-hq/skills/skills/oxy-semantic-layer/SKILL.md
   - oxy-hq/skills/skills/oxy-semantic-layer/QUICK-REFERENCE.md
-reconciled-at: 303763a60ec824429b427a91a207a5880d73fb80
+reconciled-at: f9ebd8af267cfea5b52fa96994763898ab8a0e34
 note: |
   Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
   the verbatim YAML templates. Re-condense by hand when source material
@@ -278,9 +278,20 @@ needed — `expr: <col>` is enough.
 
 ## Validation workflow
 
-1. `oxy validate` — checks YAML shape across the project.
-2. `oxy build` — compiles the semantic layer; catches entity-key and
-   join errors that pure YAML validation misses.
-3. `semantic_query` tool (inside the builder) — runs a real query against a
+1. `oxy build` — **mandatory final step.** Compiles the semantic layer;
+   catches entity-key references, cross-view join wiring, and SQL
+   expression errors that pure YAML parsing cannot. Do **not** consider
+   a view or topic edit done until `oxy build` passes.
+2. `semantic_query` tool (inside the builder) — runs a real query against a
    topic and surfaces compile-time errors with the generated SQL, which is
    the fastest way to confirm a view+topic pair is wired correctly.
+
+**Do NOT use `oxy validate` on view or topic files.** It is for
+`*.workflow.yml`, `*.agent.yml`, and `*.app.yml` files only. Running it on
+view/topic files will report misleading results — passing it does not
+mean the semantic layer compiles. Use `oxy build` instead.
+
+When refreshing or rebuilding a view, **always build fresh from the
+schema source** (`semantics.yml` / `.databases/`). Do not consult git
+history to recover previous definitions — old views drift from the live
+schema and reintroducing them silently re-introduces bugs.

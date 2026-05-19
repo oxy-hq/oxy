@@ -2,7 +2,7 @@
 source:
   - oxy-hq/skills/skills/oxy-app-builder/SKILL.md
   - oxy-hq/skills/skills/oxy-app-builder/QUICK-REFERENCE.md
-reconciled-at: 303763a60ec824429b427a91a207a5880d73fb80
+reconciled-at: f9ebd8af267cfea5b52fa96994763898ab8a0e34
 note: |
   Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
   the verbatim YAML templates. Re-condense by hand when source material
@@ -219,11 +219,13 @@ common gotchas:
 | DuckDB     | `DATE_TRUNC('month', <col>)`                       | `STDDEV(<col>)`          |
 | ClickHouse | `toStartOfMonth(<col>)`                            | `stddevPop(<col>)` (lowercase) |
 
-Other places dialects diverge in `.app.yml` SQL: identifier quoting
-(``"col"`` in Postgres/Snowflake, `` `col` `` in BigQuery/MySQL),
-casting (`CAST(x AS DATE)` is portable; `x::date` is Postgres-only),
-and date arithmetic (`INTERVAL '1 day'` is Postgres/DuckDB; BigQuery
-uses `DATE_ADD(d, INTERVAL 1 DAY)`).
+Other places `.app.yml` SQL diverges across dialects:
+
+| Concern             | Postgres / DuckDB            | Snowflake               | BigQuery                          | ClickHouse / MySQL    |
+| ------------------- | ---------------------------- | ----------------------- | --------------------------------- | --------------------- |
+| Identifier quoting  | `"col"`                      | `"col"`                 | `` `col` ``                       | `` `col` `` / unquoted |
+| Cast to date        | `CAST(x AS DATE)`, `x::date` | `CAST(x AS DATE)`       | `CAST(x AS DATE)`                 | `toDate(x)`           |
+| Date arithmetic     | `d + INTERVAL '1 day'`       | `DATEADD(day, 1, d)`    | `DATE_ADD(d, INTERVAL 1 DAY)`     | `d + INTERVAL 1 DAY`  |
 
 ## Profiling template
 
@@ -380,11 +382,15 @@ display:
 
 ## Validation
 
-- `oxy validate --file=my_app.app.yml` checks YAML structure.
+- `oxy validate --file=my_app.app.yml` checks YAML structure only — it
+  does **not** execute task SQL.
 - Apps render in the Oxy web UI (`oxy start --enterprise`). `oxy run` does
   **not** execute `.app.yml` files.
-- Pre-test any workflows or agents the app references before opening the app
-  in the UI — SQL errors inside them won't surface until the app runs.
+- **Pre-test referenced workflows and agents before finalizing the app.**
+  Each task that points at a `workflow_ref` / `agent_ref` is opaque to
+  `oxy validate`; SQL errors inside those files won't surface until the
+  app runs. Run any referenced `*.workflow.yml` and `*.agent.yml` once
+  to confirm they execute clean before opening the app.
 
 ## Smoke-testing the app (do this before declaring done)
 
