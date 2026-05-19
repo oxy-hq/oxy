@@ -39,14 +39,30 @@ impl Coordinator {
         // uses this to stamp the *original* iteration index on each
         // entry — not the position in the fan-out — so the decider's
         // fold can map a partial fan-out (e.g. forcing iteration 7
-        // out of 30) back to the right `items[i]`. Built outside the
-        // mut-borrow block below because `self.tasks` is fully
-        // borrowed for the borrow's duration.
-        let loop_index_lookup: HashMap<String, usize> = self
+        // out of 30) back to the right `items[i]`.
+        //
+        // Only built when the parent is actually in `WaitingOnChildren`.
+        // Both single- and multi-child delegations suspend the parent
+        // into `WaitingOnChildren` (see `suspension.rs`), so the happy
+        // path always falls through here. The `_ => ResumeImmediate`
+        // arm below covers defensive edges — a child outcome landing
+        // after the parent has already been resumed — and skipping the
+        // lookup there avoids cloning every loop child's `task_id` on
+        // those late-arrival events. Peek at the status with a shared
+        // borrow before the mut-borrow block claims `self.tasks`.
+        let needs_loop_index_lookup = self
             .tasks
-            .iter()
-            .filter_map(|(id, n)| n.loop_iteration.as_ref().map(|m| (id.clone(), m.index)))
-            .collect();
+            .get(parent_id)
+            .map(|n| matches!(n.status, TaskStatus::WaitingOnChildren { .. }))
+            .unwrap_or(false);
+        let loop_index_lookup: HashMap<String, usize> = if needs_loop_index_lookup {
+            self.tasks
+                .iter()
+                .filter_map(|(id, n)| n.loop_iteration.as_ref().map(|m| (id.clone(), m.index)))
+                .collect()
+        } else {
+            HashMap::new()
+        };
         enum NextAction {
             ResumeImmediate {
                 answer: String,
