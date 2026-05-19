@@ -142,7 +142,7 @@ fn make_tool_call_span(
         status_code: "OK".to_string(),
         status_message: String::new(),
         event_data: "[]".to_string(),
-        timestamp: ts_offset(1).to_string(),
+        timestamp: ts_offset(1),
     }
 }
 
@@ -165,7 +165,7 @@ fn make_agent_parent_span(trace_id: &str, span_id: &str, agent_ref: &str) -> Spa
         status_code: "OK".to_string(),
         status_message: String::new(),
         event_data: "[]".to_string(),
-        timestamp: ts_offset(0).to_string(),
+        timestamp: ts_offset(0),
     }
 }
 
@@ -3009,7 +3009,7 @@ fn make_analytics_run_span(
         status_code: "OK".to_string(),
         status_message: String::new(),
         event_data: "[]".to_string(),
-        timestamp: ts_offset(0).to_string(),
+        timestamp: ts_offset(0),
     }
 }
 

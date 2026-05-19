@@ -23,6 +23,7 @@ use oxy::state_dir::get_state_dir;
 use oxy::theme::StyledText;
 use oxy_observability::{ObservabilityStore, SpanRecord};
 use tokio::sync::mpsc::UnboundedReceiver;
+use uuid::Uuid;
 
 static PENDING_RECEIVER: OnceCell<Mutex<Option<UnboundedReceiver<SpanRecord>>>> = OnceCell::new();
 
@@ -132,15 +133,64 @@ async fn resolve_backend() -> (Option<Arc<dyn ObservabilityStore>>, Option<Strin
             }
         }
         "airhouse" => {
-            match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::from_env()
-                .await
+            // Use the existing AIRHOUSE_WIRE_HOST/PORT config; credentials are
+            // minted via the system token broker (admin role, local workspace)
+            // so no separate OXY_AIRHOUSE_OBS_USER/PASSWORD/DATABASE vars are
+            // needed.
+            let airhouse_cfg = airhouse::AirhouseConfig::from_env();
+            let Some(runtime_cfg) = airhouse_cfg.as_runtime() else {
+                eprintln!(
+                    "{}",
+                    "Airhouse observability requires AIRHOUSE_WIRE_HOST (and AIRHOUSE_BASE_URL, \
+                     AIRHOUSE_ADMIN_TOKEN) to be set."
+                        .error()
+                );
+                return (None, None);
+            };
+            let host = runtime_cfg.wire_host.clone();
+            let port = runtime_cfg.wire_port;
+            let insecure = std::env::var("OXY_AIRHOUSE_OBS_INSECURE")
+                .ok()
+                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+                .unwrap_or(false);
+
+            // Credential fn: mints admin credentials via the system broker.
+            // Re-invoked on every reconnect so ephemeral tokens are refreshed.
+            let get_credentials: oxy_observability::backends::airhouse::CredentialFn =
+                Arc::new(move || {
+                    Box::pin(async move {
+                        let broker =
+                            airhouse::token_broker().ok_or_else(|| {
+                                oxy_shared::errors::OxyError::ConfigurationError(
+                                    "Airhouse observability: token broker not initialised; \
+                                     check AIRHOUSE_BASE_URL / AIRHOUSE_ADMIN_TOKEN"
+                                        .into(),
+                                )
+                            })?;
+                        let cred = broker
+                            .mint_for_system(
+                                Uuid::nil(),
+                                airhouse::SystemPurpose::AgenticBackground,
+                                airhouse::UserRole::Admin,
+                                airhouse::DEFAULT_INTERNAL_TTL,
+                            )
+                            .await?;
+                        Ok((cred.username, cred.password, cred.tenant))
+                    })
+                });
+
+            match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::connect(
+                &host,
+                port,
+                insecure,
+                get_credentials,
+            )
+            .await
             {
                 Ok(storage) => match storage.ensure_schema().await {
                     Ok(()) => (
                         Some(Arc::new(storage) as Arc<dyn ObservabilityStore>),
-                        Some(
-                            "Observability: airhouse (AIRHOUSE_WIRE_HOST)".to_string(),
-                        ),
+                        Some("Observability: airhouse (AIRHOUSE_WIRE_HOST)".to_string()),
                     ),
                     Err(e) => {
                         eprintln!(

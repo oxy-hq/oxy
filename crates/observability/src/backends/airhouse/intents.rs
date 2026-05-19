@@ -59,6 +59,13 @@ pub async fn load_embeddings(
     Ok(result)
 }
 
+/// Replace the full cluster table with `clusters`.
+///
+/// Implemented as a global DELETE followed by N sequential INSERT statements (no
+/// transaction, no PK support in DuckLake). Concurrent readers may observe
+/// a zero-cluster or partial window during the rebuild. **Assumes a single
+/// concurrent writer** — the clustering pipeline is single-threaded, so
+/// this invariant holds in practice.
 pub async fn store_clusters(
     storage: &AirhouseObservabilityStorage,
     clusters: &[IntentCluster],
@@ -111,6 +118,12 @@ pub async fn load_clusters(
     Ok(result)
 }
 
+/// Upsert a classification row.
+///
+/// DuckLake does not support PRIMARY KEY constraints, so this is implemented
+/// as DELETE + INSERT. **Assumes at most one concurrent writer per
+/// `(trace_id, question)` key** — oxy's intent pipeline is single-writer
+/// per trace, so this invariant holds in practice.
 #[allow(clippy::too_many_arguments)]
 pub async fn store_classification(
     storage: &AirhouseObservabilityStorage,
@@ -136,8 +149,15 @@ pub async fn store_classification(
         0.0
     };
     let emb = format_float_array(embedding);
+    storage
+        .execute(&format!(
+            "DELETE FROM oxy_obs_intent_classifications WHERE trace_id='{}' AND question='{}'",
+            esc(trace_id),
+            esc(question),
+        ))
+        .await?;
     let sql = format!(
-        "INSERT OR REPLACE INTO oxy_obs_intent_classifications
+        "INSERT INTO oxy_obs_intent_classifications
          (trace_id, question, cluster_id, intent_name, confidence, embedding, source_type, source)
          VALUES ('{}', '{}', {}, '{}', {}, {}, '{}', '{}')",
         esc(trace_id),
@@ -225,15 +245,26 @@ pub async fn get_unknown_count(
     Ok(count)
 }
 
+/// Upsert a cluster record.
+///
+/// Implemented as DELETE + INSERT (no PK support in DuckLake). **Assumes
+/// at most one concurrent writer per `cluster_id`** — the clustering
+/// pipeline is single-threaded, so this invariant holds in practice.
 pub async fn update_cluster_record(
     storage: &AirhouseObservabilityStorage,
     cluster: &IntentCluster,
 ) -> Result<(), OxyError> {
+    storage
+        .execute(&format!(
+            "DELETE FROM oxy_obs_intent_clusters WHERE cluster_id={}",
+            cluster.cluster_id,
+        ))
+        .await?;
     let centroid = format_float_array(&cluster.centroid);
     let sample_questions = serde_json::to_string(&cluster.sample_questions)
         .unwrap_or_else(|_| "[]".into());
     let sql = format!(
-        "INSERT OR REPLACE INTO oxy_obs_intent_clusters
+        "INSERT INTO oxy_obs_intent_clusters
          (cluster_id, intent_name, intent_description, centroid,
           sample_questions, question_count, updated_at)
          VALUES ({}, '{}', '{}', {}, '{}', {}, current_timestamp)",

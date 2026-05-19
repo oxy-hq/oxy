@@ -78,8 +78,53 @@ pub async fn resolve_observability_backend() -> (
             }
         }
         "airhouse" => {
-            match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::from_env()
-                .await
+            let airhouse_cfg = airhouse::AirhouseConfig::from_env();
+            let Some(runtime_cfg) = airhouse_cfg.as_runtime() else {
+                eprintln!(
+                    "{}",
+                    "Airhouse observability requires AIRHOUSE_WIRE_HOST (and AIRHOUSE_BASE_URL, \
+                     AIRHOUSE_ADMIN_TOKEN) to be set."
+                        .error()
+                );
+                return (None, None);
+            };
+            let host = runtime_cfg.wire_host.clone();
+            let port = runtime_cfg.wire_port;
+            let insecure = env::var("OXY_AIRHOUSE_OBS_INSECURE")
+                .ok()
+                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+                .unwrap_or(false);
+
+            let get_credentials: oxy_observability::backends::airhouse::CredentialFn =
+                std::sync::Arc::new(move || {
+                    Box::pin(async move {
+                        let broker =
+                            airhouse::token_broker().ok_or_else(|| {
+                                oxy_shared::errors::OxyError::ConfigurationError(
+                                    "Airhouse observability: token broker not initialised; \
+                                     check AIRHOUSE_BASE_URL / AIRHOUSE_ADMIN_TOKEN"
+                                        .into(),
+                                )
+                            })?;
+                        let cred = broker
+                            .mint_for_system(
+                                uuid::Uuid::nil(),
+                                airhouse::SystemPurpose::AgenticBackground,
+                                airhouse::UserRole::Admin,
+                                airhouse::DEFAULT_INTERNAL_TTL,
+                            )
+                            .await?;
+                        Ok((cred.username, cred.password, cred.tenant))
+                    })
+                });
+
+            match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::connect(
+                &host,
+                port,
+                insecure,
+                get_credentials,
+            )
+            .await
             {
                 Ok(storage) => match storage.ensure_schema().await {
                     Ok(()) => (

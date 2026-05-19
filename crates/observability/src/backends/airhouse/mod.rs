@@ -10,10 +10,13 @@
 //! |---|---|---|
 //! | `AIRHOUSE_WIRE_HOST` | — | Airhouse wire-protocol host (required) |
 //! | `AIRHOUSE_WIRE_PORT` | `5445` | Airhouse wire-protocol port |
-//! | `OXY_AIRHOUSE_OBS_USER` | — | pgwire username (required) |
-//! | `OXY_AIRHOUSE_OBS_PASSWORD` | — | pgwire password (required) |
-//! | `OXY_AIRHOUSE_OBS_DATABASE` | — | Tenant/database name (required) |
 //! | `OXY_AIRHOUSE_OBS_INSECURE` | unset | Set to `true` to skip TLS (use only on localhost) |
+//!
+//! Credentials (`user`, `password`, `database`) are supplied via a
+//! [`CredentialFn`] callback at construction time. The callback is re-invoked
+//! on every reconnect so ephemeral (token-broker-minted) credentials are
+//! transparently refreshed. See `observability_boot.rs` in the `oxy-app`
+//! crate for the wiring that calls the Airhouse token broker.
 //!
 //! # SQL approach
 //!
@@ -50,6 +53,18 @@ use crate::types::{
     TraceEnrichmentRow, TraceRow,
 };
 
+// ── Credential provider ───────────────────────────────────────────────────────
+
+/// Async callback that returns `(user, password, database)`.
+///
+/// Called once at construction and again on every reconnect so ephemeral
+/// (token-broker-minted) credentials are transparently refreshed.
+pub type CredentialFn = Arc<
+    dyn Fn() -> Pin<Box<dyn Future<Output = Result<(String, String, String), OxyError>> + Send>>
+        + Send
+        + Sync,
+>;
+
 // ── Storage struct ────────────────────────────────────────────────────────────
 
 /// A boxed `Connection` future (erased TLS-stream type for reconnect reuse).
@@ -70,7 +85,6 @@ impl std::fmt::Debug for AirhouseObservabilityStorage {
 
 // ── TLS helpers ───────────────────────────────────────────────────────────────
 
-/// Returns the process-wide rustls connector, building it once.
 fn get_rustls_connector() -> MakeRustlsConnect {
     use std::sync::OnceLock;
     static TLS: OnceLock<MakeRustlsConnect> = OnceLock::new();
@@ -101,39 +115,67 @@ async fn try_connect(
 
 // ── Reconnect driver ──────────────────────────────────────────────────────────
 
+fn make_pg_config(host: &str, port: u16, user: &str, password: &str, database: &str) -> tokio_postgres::Config {
+    let mut cfg = tokio_postgres::Config::new();
+    cfg.host(host);
+    cfg.port(port);
+    cfg.user(user);
+    cfg.password(password);
+    cfg.dbname(database);
+    cfg
+}
+
 /// Drives the pgwire connection future and reconnects with exponential backoff
-/// on drop. Runs inside a single spawned task using a loop to avoid recursive
-/// spawns and per-reconnect config clones.
+/// on drop. Runs inside a single spawned task; an inner loop handles all
+/// reconnect attempts so no additional tasks are spawned per reconnect.
 fn spawn_driver(
     initial_conn: BoxConn,
     client_ref: Arc<RwLock<Arc<Client>>>,
-    config: tokio_postgres::Config,
+    host: String,
+    port: u16,
     insecure: bool,
+    get_credentials: CredentialFn,
 ) {
     tokio::spawn(async move {
-        let mut current_conn = initial_conn;
+        let mut conn = initial_conn;
         loop {
-            match current_conn.await {
-                Ok(()) => break, // clean disconnect — stop
-                Err(e) => tracing::warn!("Airhouse observability connection dropped: {e}"),
+            if let Err(e) = conn.await {
+                tracing::warn!("Airhouse observability connection dropped: {}", pg_err_chain(&e));
+            } else {
+                // Clean server-initiated close — still try to reconnect.
+                tracing::info!("Airhouse observability connection closed cleanly; reconnecting");
             }
             let mut delay = Duration::from_millis(200);
-            current_conn = loop {
+            loop {
                 tokio::time::sleep(delay).await;
+                let creds = match get_credentials().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Airhouse observability credential refresh failed: {e}, retrying in {delay:?}"
+                        );
+                        delay = (delay * 2).min(Duration::from_secs(30));
+                        continue;
+                    }
+                };
+                let (user, password, database) = creds;
+                let config = make_pg_config(&host, port, &user, &password, &database);
                 match try_connect(&config, insecure).await {
                     Ok((new_client, new_conn)) => {
                         *client_ref.write().await = Arc::new(new_client);
                         tracing::info!("Airhouse observability reconnected");
-                        break new_conn;
+                        conn = new_conn;
+                        break; // back to outer loop to drive new_conn
                     }
                     Err(e) => {
                         tracing::warn!(
-                            "Airhouse observability reconnect failed: {e}, retrying in {delay:?}"
+                            "Airhouse observability reconnect failed: {}, retrying in {delay:?}",
+                            pg_err_chain(&e)
                         );
                         delay = (delay * 2).min(Duration::from_secs(30));
                     }
                 }
-            };
+            }
         }
     });
 }
@@ -143,70 +185,41 @@ fn spawn_driver(
 impl AirhouseObservabilityStorage {
     /// Connect to Airhouse via the pgwire simple-query protocol.
     ///
-    /// Set `insecure = true` only for localhost/trusted-network deployments.
-    /// When `false` (default), TLS is required.
+    /// `get_credentials` is called once now and again on every reconnect to
+    /// supply a fresh `(user, password, database)` triple — use the Airhouse
+    /// token broker in the caller so ephemeral credentials are refreshed
+    /// automatically.
+    ///
+    /// Set `insecure = true` only for localhost / trusted-network deployments.
     pub async fn connect(
         host: &str,
         port: u16,
-        user: &str,
-        password: &str,
-        database: &str,
         insecure: bool,
+        get_credentials: CredentialFn,
     ) -> Result<Self, OxyError> {
-        let mut config = tokio_postgres::Config::new();
-        config.host(host);
-        config.port(port);
-        config.user(user);
-        config.password(password);
-        config.dbname(database);
+        let (user, password, database) = get_credentials().await.map_err(|e| {
+            OxyError::RuntimeError(format!("Airhouse observability credential fetch failed: {e}"))
+        })?;
 
-        let (client, conn) =
-            try_connect(&config, insecure)
-                .await
-                .map_err(|e| {
-                    OxyError::RuntimeError(format!("Airhouse observability connect failed: {e}"))
-                })?;
+        let config = make_pg_config(host, port, &user, &password, &database);
+        let (client, conn) = try_connect(&config, insecure).await.map_err(|e| {
+            OxyError::RuntimeError(format!(
+                "Airhouse observability connect failed: {}",
+                pg_err_chain(&e)
+            ))
+        })?;
 
         let client_ref = Arc::new(RwLock::new(Arc::new(client)));
-        spawn_driver(conn, Arc::clone(&client_ref), config, insecure);
+        spawn_driver(
+            conn,
+            Arc::clone(&client_ref),
+            host.to_string(),
+            port,
+            insecure,
+            get_credentials,
+        );
 
         Ok(Self { client: client_ref })
-    }
-
-    /// Connect using standard `AIRHOUSE_*` and `OXY_AIRHOUSE_OBS_*` env vars.
-    pub async fn from_env() -> Result<Self, OxyError> {
-        let host = std::env::var("AIRHOUSE_WIRE_HOST").map_err(|_| {
-            OxyError::RuntimeError(
-                "AIRHOUSE_WIRE_HOST is required for the Airhouse observability backend".into(),
-            )
-        })?;
-        let port = std::env::var("AIRHOUSE_WIRE_PORT")
-            .ok()
-            .and_then(|s| s.parse::<u16>().ok())
-            .unwrap_or(5445);
-        let user = std::env::var("OXY_AIRHOUSE_OBS_USER").map_err(|_| {
-            OxyError::RuntimeError(
-                "OXY_AIRHOUSE_OBS_USER is required for the Airhouse observability backend".into(),
-            )
-        })?;
-        let password = std::env::var("OXY_AIRHOUSE_OBS_PASSWORD").map_err(|_| {
-            OxyError::RuntimeError(
-                "OXY_AIRHOUSE_OBS_PASSWORD is required for the Airhouse observability backend"
-                    .into(),
-            )
-        })?;
-        let database = std::env::var("OXY_AIRHOUSE_OBS_DATABASE").map_err(|_| {
-            OxyError::RuntimeError(
-                "OXY_AIRHOUSE_OBS_DATABASE is required for the Airhouse observability backend"
-                    .into(),
-            )
-        })?;
-        let insecure = std::env::var("OXY_AIRHOUSE_OBS_INSECURE")
-            .ok()
-            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-            .unwrap_or(false);
-
-        Self::connect(&host, port, &user, &password, &database, insecure).await
     }
 
     /// Execute a SQL string and return all messages (caller filters rows).
@@ -219,7 +232,7 @@ impl AirhouseObservabilityStorage {
         client
             .simple_query(sql)
             .await
-            .map_err(|e| OxyError::RuntimeError(format!("Airhouse query failed: {e}")))
+            .map_err(|e| OxyError::RuntimeError(format!("Airhouse query failed: {}", pg_err_chain(&e))))
     }
 
     /// Execute a SQL statement, ignoring the result messages.
@@ -230,8 +243,11 @@ impl AirhouseObservabilityStorage {
     /// Run all `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` DDL.
     pub async fn ensure_schema(&self) -> Result<(), OxyError> {
         for ddl in schema::ALL_DDL {
+            let stmt_hint = ddl.trim().lines().next().unwrap_or("(unknown)");
             self.execute(ddl).await.map_err(|e| {
-                OxyError::RuntimeError(format!("Airhouse schema DDL failed: {e}"))
+                OxyError::RuntimeError(format!(
+                    "Airhouse schema DDL failed at [{stmt_hint}]: {e}"
+                ))
             })?;
         }
         Ok(())
@@ -240,11 +256,26 @@ impl AirhouseObservabilityStorage {
 
 // ── SQL helpers ───────────────────────────────────────────────────────────────
 
-/// Escape a string for safe embedding in DuckDB SQL.
+/// Format a `tokio_postgres::Error` with its full source chain.
 ///
-/// Doubles single-quote characters (`'` → `''`) and strips NUL bytes —
-/// pgwire simple-query is NUL-terminated, so an embedded `\0` would silently
-/// truncate the SQL string at the wire level.
+/// `tokio_postgres::Error` Display shows only a short kind label (e.g.
+/// `"db error"`); the actual server message lives in the `source()` chain.
+/// Traversing the chain produces `"db error: FATAL: password authentication
+/// failed for user \"foo\""` which is actionable.
+fn pg_err_chain(e: &tokio_postgres::Error) -> String {
+    use std::error::Error as StdError;
+    let mut msg = e.to_string();
+    let mut src: Option<&dyn StdError> = e.source();
+    while let Some(s) = src {
+        msg.push_str(": ");
+        msg.push_str(&s.to_string());
+        src = s.source();
+    }
+    msg
+}
+
+/// Escape a string for safe embedding in DuckDB SQL.
+/// Strips NUL bytes (pgwire is NUL-terminated) and doubles single quotes.
 pub(crate) fn esc(s: &str) -> String {
     s.replace('\0', "").replace('\'', "''")
 }
@@ -393,7 +424,7 @@ impl ObservabilityStore for AirhouseObservabilityStorage {
         source_type: &str,
         source: &str,
     ) -> Result<(), OxyError> {
-        // Upserts by PRIMARY KEY (trace_id, question) — same as store_classification.
+        // Delete-then-insert on (trace_id, question) — same as store_classification.
         intents::store_classification(
             self,
             trace_id,
@@ -508,7 +539,7 @@ impl ObservabilityStore for AirhouseObservabilityStorage {
         // Batch into chunks to keep SQL strings manageable.
         for chunk in spans.chunks(500) {
             let mut sql = String::from(
-                "INSERT OR REPLACE INTO oxy_obs_spans \
+                "INSERT INTO oxy_obs_spans \
                  (trace_id, span_id, parent_span_id, span_name, service_name, \
                   span_attributes, duration_ns, status_code, status_message, \
                   event_data, timestamp) VALUES ",
@@ -578,6 +609,11 @@ mod tests {
     // ── esc ───────────────────────────────────────────────────────────────────
 
     #[test]
+    fn esc_empty() {
+        assert_eq!(esc(""), "");
+    }
+
+    #[test]
     fn esc_no_special_chars() {
         assert_eq!(esc("hello world"), "hello world");
     }
@@ -599,51 +635,41 @@ mod tests {
 
     #[test]
     fn esc_nul_and_quote_combined() {
-        // NUL removed first, then quote doubled — order in the chain matters.
         assert_eq!(esc("a\0'b"), "a''b");
-    }
-
-    #[test]
-    fn esc_empty() {
-        assert_eq!(esc(""), "");
     }
 
     // ── parse_float_array ─────────────────────────────────────────────────────
 
     #[test]
     fn parse_float_array_basic() {
-        let v = parse_float_array("[1.0,2.5,3.0]");
-        assert_eq!(v, vec![1.0f32, 2.5, 3.0]);
+        assert_eq!(parse_float_array("[1.0,2.5,3.0]"), vec![1.0f32, 2.5, 3.0]);
     }
 
     #[test]
     fn parse_float_array_empty_string() {
-        assert!(parse_float_array("[]").is_empty());
-        assert!(parse_float_array("").is_empty());
+        assert_eq!(parse_float_array(""), Vec::<f32>::new());
     }
 
     #[test]
-    fn parse_float_array_whitespace_tolerant() {
-        let v = parse_float_array("[ 1.0, 2.0 ]");
-        assert_eq!(v, vec![1.0f32, 2.0]);
+    fn parse_float_array_empty_brackets() {
+        assert_eq!(parse_float_array("[]"), Vec::<f32>::new());
     }
 
     #[test]
-    fn parse_float_array_skips_invalid() {
-        // Non-parseable tokens are filtered out silently.
-        let v = parse_float_array("[1.0,NaN,2.0]");
-        // "NaN" parses as f32::NAN — filter_map keeps it; just check len.
-        assert_eq!(v.len(), 3);
-        assert_eq!(v[0], 1.0);
-        assert_eq!(v[2], 2.0);
+    fn parse_float_array_whitespace() {
+        assert_eq!(parse_float_array("[ 1.0 , 2.0 ]"), vec![1.0f32, 2.0]);
+    }
+
+    #[test]
+    fn parse_float_array_invalid_entries_skipped() {
+        assert_eq!(parse_float_array("[1.0,bad,3.0]"), vec![1.0f32, 3.0]);
     }
 
     // ── format_float_array ────────────────────────────────────────────────────
 
     #[test]
     fn format_float_array_basic() {
-        let s = format_float_array(&[1.0, 2.5, 3.0]);
-        assert_eq!(s, "[1,2.5,3]::FLOAT[]");
+        assert_eq!(format_float_array(&[1.0, 2.0, 3.0]), "[1,2,3]::FLOAT[]");
     }
 
     #[test]
@@ -657,12 +683,10 @@ mod tests {
     }
 
     #[test]
-    fn format_roundtrip() {
-        let orig = vec![1.0f32, 0.25, 3.75];
-        let encoded = format_float_array(&orig);
-        // Strip the ::FLOAT[] suffix before parsing.
-        let raw = encoded.trim_end_matches("::FLOAT[]");
-        let decoded = parse_float_array(raw);
-        assert_eq!(decoded, orig);
+    fn format_float_array_roundtrip() {
+        let original = vec![1.5f32, -2.25, 0.0, 100.0];
+        let formatted = format_float_array(&original);
+        let parsed = parse_float_array(&formatted.replace("::FLOAT[]", ""));
+        assert_eq!(parsed, original);
     }
 }

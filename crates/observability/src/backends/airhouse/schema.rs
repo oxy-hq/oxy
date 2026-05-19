@@ -15,8 +15,7 @@ CREATE TABLE IF NOT EXISTS oxy_obs_spans (
     status_code VARCHAR DEFAULT 'UNSET',
     status_message VARCHAR DEFAULT '',
     event_data VARCHAR DEFAULT '[]',
-    timestamp TIMESTAMPTZ DEFAULT current_timestamp,
-    PRIMARY KEY (trace_id, span_id)
+    timestamp TIMESTAMPTZ DEFAULT current_timestamp
 )
 "#;
 
@@ -28,7 +27,7 @@ pub const CREATE_SPANS_INDEX_NAME: &str =
 
 pub const CREATE_INTENT_CLUSTERS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS oxy_obs_intent_clusters (
-    cluster_id INTEGER PRIMARY KEY,
+    cluster_id INTEGER NOT NULL,
     intent_name VARCHAR NOT NULL,
     intent_description VARCHAR DEFAULT '',
     centroid FLOAT[],
@@ -49,8 +48,7 @@ CREATE TABLE IF NOT EXISTS oxy_obs_intent_classifications (
     embedding FLOAT[],
     source_type VARCHAR DEFAULT 'agent',
     source VARCHAR DEFAULT '',
-    classified_at TIMESTAMPTZ DEFAULT current_timestamp,
-    PRIMARY KEY (trace_id, question)
+    classified_at TIMESTAMPTZ DEFAULT current_timestamp
 )
 "#;
 
