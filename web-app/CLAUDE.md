@@ -232,3 +232,44 @@ If you only need the project (outside the IDE), use `useCurrentProject()` from `
 - **Type-safe error handling:** When catching errors, type them as `unknown` and narrow with `instanceof Error` or a typed API error helper before accessing `.message`. Never cast caught errors as `any`.
 - **Async/await in event handlers:** Wrap `async` event handlers in `try/catch` only when the function is not already managed by React Query. If using `mutateAsync`, wrap the call site; if using `mutate`, rely on the `onError` callback instead.
 - **Validation errors:** Use Zod schema validation for form inputs. Surface field-level errors through React Hook Form's `formState.errors` — do not manually set error state alongside RHF.
+
+## Agentic Browser Tests
+
+Cross-cutting UI flows are tested by `web-app/tests/agentic/`. Treat this as a regression-test surface for any change that touches:
+
+- Chat panel (`pages/home/**`, `components/Chat/**`) → `flows/chat-*.flow.test.yml`
+- IDE (`pages/ide/**`) → `flows/ide-*.flow.test.yml`
+- Builder dialog (`components/BuilderDialog/**`) → `flows/builder-*.flow.test.yml`
+- Onboarding (`pages/onboarding/**`, `components/workspaces/**`) → `flows/onboarding-*.flow.test.yml`
+- Semantic layer + agentic analytics integration (`pages/thread/analytics/**`, `pages/ide/Objects/SemanticLayer/**`) → `flows/semantic-*.flow.test.yml`
+
+**Quick commands:**
+
+```bash
+pnpm test:agentic --list                  # list flows + cases + tags (no execution)
+pnpm test:agentic --dry-run               # validate YAML, run durability lint, preview cost
+pnpm test:agentic --inspect-cache         # dump recorded actions from .cache/bespoke-actions.json
+pnpm test:agentic --watch <name>          # re-run dry-run on YAML change
+pnpm test:agentic <name>                  # actually run a flow (requires ANTHROPIC_API_KEY)
+pnpm test:agentic --check-coverage --staged < <(git diff --cached --name-only)
+                                          # which flows touch staged paths (advisory)
+```
+
+**Selector conventions:**
+
+- Prefer `[data-testid=...]` selectors in `act:` prompts (record best, drift least).
+- Fall back to `role=…[name=…]` if no testid is available; use `text=…` only as a last resort.
+- The runtime auto-records 2–3 fallback selector strategies per click, so flows survive label tweaks. UI transformations big enough to defeat all fallbacks trigger a healing PR comment for human review (`pnpm test:agentic --accept-healing <flow>` to promote the new recording into `.cache/bespoke-actions.json`).
+- When adding a `data-testid` to a component you also test in `tests/agentic/flows/`, follow the `<feature>-<element>` convention and reference it verbatim in the flow's `act:` prompt.
+- Specific testids worth knowing about in agentic flows:
+  - `app-page-root` — root of `/apps/<id>` page; used as a page-state lock.
+  - `agent-selector-button` — chat panel's agent picker trigger.
+  - `chat-panel-submit-button` — submit a question from `/` chat panel.
+  - `message-input-send-button` / `message-input-stop-button` — thread page input controls; visibility indicates whether a run is in-flight.
+  - `builder-dialog-root`, `builder-input-textarea`, `builder-auto-approve-toggle` — Cmd+I builder dialog.
+  - `file-change-accept` / `file-change-reject` — per-`edit_file` suspension buttons in the analytics thread view.
+  - `reasoning-pill-<label-kebab>` — agentic-analytics reasoning trace artifact pills (e.g. `reasoning-pill-semantic-query`, `reasoning-pill-compile-semantic-query`); clicking opens the right-side artifact sidebar.
+
+**Hard rule (per the 2026-05-06 incident):** never seed/mutate external systems (warehouses, port-forwarded services). The setup-command surface in `tests/agentic/fixtures/reset.ts` is intentionally minimal — `goto:`, `reset_test_file`, and `restore_demo_file:` only, none of which can make a network call. Cloud-mode flows drive onboarding through the UI wizard rather than via API seeding. Any new setup command that would call out is prohibited. See `tests/agentic/README.md` policy section for details.
+
+**Adding a new flow:** see `tests/agentic/canonical-prompts.md` for copy-pasteable prelude steps that share cache entries via `cache_scope: shared`. Use `pnpm test:agentic --scaffold <name> --from <component-path>` to bootstrap a starter YAML once that command lands (Phase C).

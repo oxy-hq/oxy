@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Ask a sales question on the Home page using the demo project's `default`
+# agent (Oxymart sales analyst) and verify that a SQL artifact is rendered.
+
+name: chat ask returns SQL artifact
+target: chat
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  max_steps: 15
+
+setup:
+  - "goto:/"
+
+cases:
+  - name: ask a question and get a SQL artifact
+    tags: [chat, critical]
+    steps:
+      # Canonical chat-prelude. `cache_scope: shared` lets `threads-list`
+      # reuse this exact recording — see canonical-prompts.md. If you
+      # edit this step, mirror the change in `threads-list.flow.test.yml`
+      # or both flows pay cold cost on first record.
+      - act: |
+          Submit "What were the total weekly sales by store?" to the
+          'default' agent on the home page:
+          1. browser_click [data-testid=agent-selector-button].
+          2. From the dropdown, click `role=menuitem[name='default']`.
+          3. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
+          4. browser_click [data-testid=chat-panel-submit-button].
+          End the turn once the URL changes to /threads/<id>.
+        cache_scope: shared
+      - wait_for: streaming_complete
+    expect:
+      - assert: "selector [data-testid=agent-artifact] is visible"
+      - assert: "selector [data-testid=agent-artifact] has attribute data-artifact-kind=execute_sql"
+      - judge: "the response includes a coherent answer about weekly sales per store, not an error message"

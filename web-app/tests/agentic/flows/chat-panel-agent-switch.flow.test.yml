@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Verify the agent-selector dropdown switches between agents and the
+# active agent is reflected in the selector button. Specifically targets
+# the "user changes their mind about which agent to talk to mid-session"
+# regression class — selector state can desync from the chat input state
+# in some scroll positions.
+#
+# Demo project ships two agents that both appear in the dropdown:
+#   - `default` (default.agent.yml — Oxymart sales analyst, classic agent)
+#   - `analytics` (analytics.agentic.yml — agentic analytics pipeline)
+#
+# We toggle from default → analytics → back to default.
+
+name: chat panel agent switch
+target: chat
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  max_steps: 25
+
+setup:
+  - "goto:/"
+
+cases:
+  - name: switch from default to analytics agent and back
+    tags: [chat, regression]
+    steps:
+      - wait_for: "selector:[data-testid=agent-selector-button]"
+
+      - act: |
+          browser_click [data-testid=agent-selector-button] to open the
+          dropdown, then browser_click `role=menuitem[name='analytics']`.
+          Trigger button updates to 'analytics'.
+
+      - wait_for: "selector:[data-testid=agent-selector-button]"
+
+      - act: |
+          browser_click [data-testid=agent-selector-button] again, then
+          browser_click `role=menuitem[name='default']`. Trigger button
+          reverts to 'default'.
+
+    expect:
+      - assert: "selector [data-testid=agent-selector-button] is visible"
+      - judge: |
+          The page is on the home/chat surface, the agent selector
+          button is visible, and the selector text reflects the
+          'default' agent (NOT 'analytics' or another agent). No error
+          banner is visible.

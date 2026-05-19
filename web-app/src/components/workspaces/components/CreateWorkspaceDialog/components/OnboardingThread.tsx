@@ -80,6 +80,25 @@ const GITHUB_LLM_KEY_PREFIX = "github_llm_key_";
 /** Message-id prefix for GitHub-mode warehouse credential prompts. */
 const GITHUB_WAREHOUSE_PREFIX = "github_warehouse_";
 
+/**
+ * Map a wizard message id to a test-id prefix for the SelectionCards
+ * children, so agentic browser tests can target options by id rather than
+ * visible text. Returns undefined for messages that don't render selection
+ * cards (or for which test stability isn't a concern).
+ */
+function selectionCardsTestIdPrefix(messageId: string): string | undefined {
+  switch (messageId) {
+    case "warehouse_type":
+      return "onboarding-warehouse";
+    case "llm_provider":
+      return "onboarding-llm-provider";
+    case "llm_model":
+      return "onboarding-llm-model";
+    default:
+      return undefined;
+  }
+}
+
 /** Advance past a skipped prompt in GitHub mode by dispatching the cursor move. */
 function handleSkip(messageId: string, orchestrator: Orchestrator) {
   if (messageId.startsWith(GITHUB_LLM_KEY_PREFIX)) {
@@ -448,6 +467,7 @@ function renderInputBlock(
         <SelectionCards
           options={block.options}
           collapseAfter={block.collapseAfter}
+          testIdPrefix={selectionCardsTestIdPrefix(message.id)}
           onSelect={(id) => {
             if (message.id === "llm_provider") {
               orchestrator.setLlmProvider(id as Parameters<typeof orchestrator.setLlmProvider>[0]);

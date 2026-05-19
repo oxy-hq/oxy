@@ -199,10 +199,19 @@ export default function InviteStep({
           )}
 
           <div className='flex items-center justify-end gap-2 pt-2'>
-            <Button variant='ghost' onClick={onContinue} disabled={createBulkInvitations.isPending}>
+            <Button
+              variant='ghost'
+              onClick={onContinue}
+              disabled={createBulkInvitations.isPending}
+              data-testid='onboarding-skip-invite-button'
+            >
               Skip for now
             </Button>
-            <Button onClick={handleSendAndContinue} disabled={createBulkInvitations.isPending}>
+            <Button
+              onClick={handleSendAndContinue}
+              disabled={createBulkInvitations.isPending}
+              data-testid='onboarding-invite-continue-button'
+            >
               {createBulkInvitations.isPending ? (
                 <Loader2 className='size-4 animate-spin' />
               ) : (

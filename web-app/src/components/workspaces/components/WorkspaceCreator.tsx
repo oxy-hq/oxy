@@ -134,6 +134,7 @@ export default function WorkspaceCreator({
           <Label htmlFor='new-ws-name'>Workspace name</Label>
           <Input
             id='new-ws-name'
+            data-testid='onboarding-workspace-name-input'
             placeholder='my-workspace'
             value={workspaceName}
             onChange={(e) => setWorkspaceName(e.target.value)}
@@ -162,7 +163,11 @@ export default function WorkspaceCreator({
           >
             Back
           </Button>
-          <Button className='flex-1' onClick={handleNewCreate}>
+          <Button
+            className='flex-1'
+            onClick={handleNewCreate}
+            data-testid='onboarding-create-workspace-button'
+          >
             Create workspace
           </Button>
         </div>
@@ -180,6 +185,7 @@ export default function WorkspaceCreator({
           description='Clone an existing repository and start working immediately.'
           badge='Recommended'
           onClick={() => setMode("github")}
+          testId='onboarding-github-workspace-card'
         />
         <OptionCard
           label='02'
@@ -187,6 +193,7 @@ export default function WorkspaceCreator({
           title='Demo Workspace'
           description='Explore Oxygen with pre-built sample data and example queries.'
           onClick={handleDemo}
+          testId='onboarding-demo-workspace-card'
         />
         <OptionCard
           label='03'
@@ -198,6 +205,7 @@ export default function WorkspaceCreator({
             setError(null);
             setMode("new");
           }}
+          testId='onboarding-blank-workspace-card'
         />
       </div>
 

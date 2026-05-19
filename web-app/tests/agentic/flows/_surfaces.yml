@@ -1,0 +1,47 @@
+# Map of source-path globs → agentic browser test flows that exercise
+# them. Read by `pnpm test:agentic --check-coverage --staged` (also
+# wired into the husky pre-commit hook) to print an advisory list of
+# flows worth re-running when the touched paths overlap. Advisory only
+# — never blocks a commit.
+#
+# Path patterns are substring-prefixed (e.g. "src/pages/home/" matches
+# any file under that directory). Use the new flow file's name (without
+# the .flow.test.yml suffix). Keep paths relative to web-app/.
+
+- surface: chat-panel
+  paths:
+    - "src/pages/home/"
+    - "src/components/Chat/"
+  flows:
+    - chat-ask
+    - chat-panel-agent-switch
+
+- surface: ide
+  paths:
+    - "src/pages/ide/"
+  flows:
+    - ide-save
+    - ide-compile-error
+
+- surface: builder
+  paths:
+    - "src/components/BuilderDialog/"
+  flows:
+    - builder-edits-app
+    - builder-rejected-suggestion
+
+- surface: onboarding
+  paths:
+    - "src/pages/onboarding/"
+    - "src/components/workspaces/components/CreateWorkspaceDialog/"
+    - "src/components/workspaces/components/WorkspaceCreator"
+    - "src/components/org/CreateOrgDialog"
+  flows:
+    - onboarding-blank-workspace
+
+- surface: threads
+  paths:
+    - "src/pages/threads/"
+    - "src/pages/thread/"
+  flows:
+    - threads-list

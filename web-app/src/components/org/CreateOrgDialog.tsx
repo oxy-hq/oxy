@@ -65,7 +65,7 @@ export default function CreateOrgDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-md'>
+      <DialogContent className='sm:max-w-md' data-testid='onboarding-create-org-dialog'>
         <DialogHeader>
           <DialogTitle className='font-semibold text-base'>Create organization</DialogTitle>
         </DialogHeader>
@@ -74,6 +74,7 @@ export default function CreateOrgDialog({
             <Label htmlFor='org-name'>Organization name</Label>
             <Input
               id='org-name'
+              data-testid='onboarding-org-name-input'
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               placeholder='Acme Inc'
@@ -84,6 +85,7 @@ export default function CreateOrgDialog({
             <Label htmlFor='org-slug'>URL slug</Label>
             <Input
               id='org-slug'
+              data-testid='onboarding-org-slug-input'
               value={slug}
               onChange={(e) => {
                 setSlugTouched(true);
@@ -97,6 +99,7 @@ export default function CreateOrgDialog({
           <Button
             type='submit'
             size='sm'
+            data-testid='onboarding-create-org-submit'
             disabled={!name.trim() || !slug.trim() || createOrg.isPending}
           >
             {createOrg.isPending ? "Creating…" : "Create organization"}

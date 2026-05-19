@@ -93,7 +93,7 @@ test.describe("Navigation", () => {
 
   test("should navigate to app page from sidebar", async ({ page }) => {
     // Find and click on an app link
-    const appLink = page.locator('[data-testid^="app-link-"]').first();
+    const appLink = page.locator('[data-testid^="sidebar-app-link-"]').first();
     await expect(appLink).toBeVisible({ timeout: 10000 });
     await appLink.click();
 

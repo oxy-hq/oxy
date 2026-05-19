@@ -77,12 +77,14 @@ export default function OnboardingPage() {
                 title='Create organization'
                 description='Start a new workspace and invite your team.'
                 onClick={() => setCreateOpen(true)}
+                testId='onboarding-create-org-card'
               />
               <OnboardingOption
                 icon={<MailPlus className='size-5 text-primary' />}
                 title='Join organization'
                 description='Paste an invitation code or link from your team.'
                 onClick={() => setJoinOpen(true)}
+                testId='onboarding-join-org-card'
               />
             </div>
           </>
@@ -99,17 +101,20 @@ function OnboardingOption({
   icon,
   title,
   description,
-  onClick
+  onClick,
+  testId
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   onClick: () => void;
+  testId?: string;
 }) {
   return (
     <button
       type='button'
       onClick={onClick}
+      data-testid={testId}
       className='group text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
     >
       <Card className='h-full transition-colors group-hover:border-primary/40'>

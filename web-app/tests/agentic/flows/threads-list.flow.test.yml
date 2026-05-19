@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Verify the threads list page renders, a thread can be opened from the
+# list, and the thread detail page loads. Targets the "user wants to find
+# a past conversation" path.
+#
+# **Why a chat-ask prelude.** A fresh `oxy start --local --enterprise`
+# Postgres has zero threads, and `/threads` is empty until the user
+# submits at least one question. Rather than add a new `seed_thread`
+# fixture that calls into the API (extra surface area subject to the
+# read-only-against-external-systems policy), the flow drives a small
+# chat-ask interaction first — same surface as `chat-ask` but the goal
+# here is just to put a row in the list, then navigate.
+
+name: threads list
+target: threads
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  # 1 chat submit + waits + 1 navigate + 1 click + judge. Pad for the
+  # initial chat-ask iteration (the `default` agent is fast on a single
+  # question).
+  max_steps: 25
+
+setup:
+  - "goto:/"
+
+cases:
+  - name: submit a question, navigate to /threads, open the seeded thread
+    tags: [threads, regression]
+    steps:
+      # Canonical chat-prelude — byte-identical to chat-ask's step so
+      # `cache_scope: shared` lets both flows reuse the same recording.
+      # If you change this text, mirror it in chat-ask.flow.test.yml.
+      - act: |
+          Submit "What were the total weekly sales by store?" to the
+          'default' agent on the home page:
+          1. browser_click [data-testid=agent-selector-button].
+          2. From the dropdown, click `role=menuitem[name='default']`.
+          3. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
+          4. browser_click [data-testid=chat-panel-submit-button].
+          End the turn once the URL changes to /threads/<id>.
+        cache_scope: shared
+
+      - wait_for: streaming_complete
+
+      - act: |
+          browser_click [data-testid=sidebar-threads-toggle]. URL
+          changes to /threads with a paginated thread list.
+
+      - wait_for: "selector:[data-testid=thread-item]"
+
+      - act: |
+          browser_click [data-testid=thread-title] on the first row.
+          URL changes to /threads/<id>; conversation history loads.
+
+      - wait_for: network_idle
+
+    expect:
+      # No `[data-testid=thread-item]` assert — by `expect:` runtime the
+      # flow has navigated from /threads (list) to /threads/<id> (detail).
+      # The judge covers what matters: real conversation rendered.
+      - judge: |
+          The page is on a thread detail URL (/threads/<id>) with a past
+          conversation visible (at least one user message + one agent
+          response). The conversation is about weekly sales per store
+          (the question we submitted in the prelude). No error banner.

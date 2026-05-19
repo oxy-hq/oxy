@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FlowTestConfig",
+  "description": "Schema for .flow.test.yml files — agent-driven browser tests. The runner exposes only generic browser tools to the LLM; steps are described in natural language and the LLM reads the page (accessibility tree) to act.",
+  "type": "object",
+  "required": ["cases"],
+  "properties": {
+    "name": {
+      "type": ["string", "null"]
+    },
+    "target": {
+      "description": "Surface area being tested (chat, ide, threads, onboarding, any). Documentation hint only — does not change the toolkit exposed to the LLM.",
+      "type": ["string", "null"],
+      "enum": ["chat", "ide", "threads", "onboarding", "any", null]
+    },
+    "settings": {
+      "default": {
+        "runs": 1,
+        "model": "claude-sonnet-4-6",
+        "judge_model": "claude-haiku-4-5-20251001",
+        "trace": "on-failure",
+        "cache_actions": true,
+        "max_steps": 30,
+        "backend_mode": "local"
+      },
+      "allOf": [{ "$ref": "#/definitions/FlowSettings" }]
+    },
+    "setup": {
+      "type": "array",
+      "default": [],
+      "items": { "type": "string" },
+      "description": "Named fixture commands run before each case: reset_test_file, goto:/path"
+    },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/FlowCase" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "FlowSettings": {
+      "type": "object",
+      "properties": {
+        "runs": { "type": "integer", "default": 1, "minimum": 1 },
+        "model": { "type": "string", "default": "claude-sonnet-4-6" },
+        "judge_model": { "type": "string", "default": "claude-haiku-4-5-20251001" },
+        "trace": { "type": "string", "enum": ["on-failure", "always", "never"], "default": "on-failure" },
+        "cache_actions": { "type": "boolean", "default": true },
+        "max_steps": { "type": "integer", "default": 30, "minimum": 1 },
+        "backend_mode": {
+          "type": "string",
+          "enum": ["local", "cloud"],
+          "default": "local",
+          "description": "Which oxy backend mode the flow exercises. 'local' = single-workspace (oxy start --local --enterprise on :3000); 'cloud' = multi-tenant onboarding (oxy start --enterprise --clean, runner targets the auth-disabled internal port :3001). Flows in a single invocation must agree."
+        }
+      },
+      "additionalProperties": false
+    },
+    "FlowCase": {
+      "type": "object",
+      "required": ["name", "steps"],
+      "properties": {
+        "name": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/FlowStep" }
+        },
+        "expect": {
+          "type": "array",
+          "default": [],
+          "items": { "$ref": "#/definitions/FlowExpect" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "FlowStep": {
+      "type": "object",
+      "oneOf": [
+        { "required": ["act"] },
+        { "required": ["wait_for"] }
+      ],
+      "properties": {
+        "act": {
+          "type": "string",
+          "description": "Natural-language step. The LLM reads the page via browser_snapshot and chooses generic browser actions."
+        },
+        "wait_for": {
+          "type": "string",
+          "description": "Named wait primitive: streaming_complete, network_idle, selector:<sel>"
+        },
+        "cache_scope": {
+          "type": "string",
+          "enum": ["flow", "shared"],
+          "default": "flow",
+          "description": "Cache scope. 'shared' lets two flows that describe the same canonical step (e.g., a copy-pasted prelude from canonical-prompts.md) reuse a single recording. 'flow' (default) keeps the recording private to this flow/case/step."
+        }
+      },
+      "additionalProperties": false
+    },
+    "FlowExpect": {
+      "type": "object",
+      "oneOf": [
+        { "required": ["assert"] },
+        { "required": ["judge"] }
+      ],
+      "properties": {
+        "assert": {
+          "type": "string",
+          "description": "Deterministic assertion: 'text X visible', 'selector Y has attribute Z=W', 'tool succeeded'."
+        },
+        "judge": {
+          "type": "string",
+          "description": "Natural-language claim verified by LLM judge against screenshot + DOM text."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

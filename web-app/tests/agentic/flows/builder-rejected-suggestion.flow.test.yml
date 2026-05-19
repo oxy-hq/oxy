@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Verify that when a user rejects a builder-proposed file edit, the
+# pipeline resumes with the rejection acknowledged and the file is NOT
+# modified. Auto-approve is OFF so the builder suspends on the
+# file-mutation tool call for explicit Reject.
+#
+# Architecture note: the builder pipeline does NOT have a single
+# end-of-run "propose_change" suspension. Each file-mutating tool
+# (`edit_file`, `write_file`, `delete_file`, `manage_directory`)
+# individually triggers a `BuilderEvent::FileChangePending` event that
+# surfaces an Accept/Reject in the thread UI (see
+# `crates/agentic/builder/CLAUDE.md` for the pipeline shape). For the
+# simple prompt below, the builder is expected to call `edit_file`
+# exactly once → a single suspension. If the builder makes multiple
+# file-mutation tool calls across turns this flow will hang at the
+# second suspension; the prompt is intentionally minimal to keep it to
+# one.
+#
+# This flow runs in **local mode** against `demo_project/insights.app.yml`.
+#
+# Reliability notes:
+#   - `wait_for: selector:[data-testid=app-page-root]` locks the page
+#     state at the top so a stray browser_navigate by the LLM fails
+#     fast rather than silently testing the wrong surface.
+#   - Auto-approve starts OFF in every Playwright context (localStorage
+#     is empty → `autoApprove === false` at mount; see
+#     `BuilderDialog/index.tsx:51`). We deliberately do NOT click the
+#     toggle — the conditional read-then-click pattern is brittle.
+#   - The Reject button is selected via `[data-testid=file-change-reject]`
+#     (see `pages/thread/analytics/FileChangeDiff.tsx`) rather than
+#     `text=Reject` so the test survives copy edits.
+#
+# `restore_demo_file:insights.app.yml` reverts the file from
+# `git show HEAD:...` before each run so the rejection path is
+# verified against a known-canonical starting point.
+#
+# Preconditions:
+#   * $ANTHROPIC_API_KEY in the runner's environment.
+#   * Docker Desktop running. backend_mode: local — runner spawns
+#     `oxy start --local --enterprise` from `demo_project/` itself.
+
+name: builder rejected suggestion
+target: any
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  # ~3 act steps + waits + judge. Pad for builder pipeline iterations
+  # before reaching the file-mutation suspension.
+  max_steps: 30
+
+# `aW5zaWdodHMuYXBwLnltbA==` is base64("insights.app.yml"). Local-mode
+# router has no org/workspace prefix — `/apps/<base64>` resolves
+# directly to AppPage rendering the file from `demo_project/`.
+setup:
+  - "restore_demo_file:insights.app.yml"
+  - "goto:/apps/aW5zaWdodHMuYXBwLnltbA=="
+
+cases:
+  - name: builder proposes an edit and user clicks Reject
+    tags: [builder, regression]
+    steps:
+      # Lock the page state. If the LLM later drifts to /ide or /, the
+      # next snapshot will not contain [data-testid=app-page-root] and
+      # the subsequent step will fail loudly.
+      - wait_for: "selector:[data-testid=app-page-root]"
+
+      - act: |
+          Open the builder dialog and submit a build prompt in one
+          atomic sequence. Auto-approve starts OFF in a fresh browser
+          context; we leave it OFF so the builder suspends on the file
+          edit.
+
+          1. browser_press_key "Meta+i". [data-testid=builder-dialog-root]
+             becomes visible.
+          2. browser_click [data-testid=builder-input-textarea] to focus.
+          3. browser_keyboard_type (NOT browser_type) to APPEND:
+               "Add a noop comment line at the very top of the file."
+          4. browser_press_key "Enter". URL changes to /threads/<id>.
+
+          Do NOT click the auto-approve toggle — it's already OFF and
+          we want OFF.
+          Do NOT browser_navigate away (e.g. to /ide). The dialog and
+          the resulting builder run must stay on /apps/<id> →
+          /threads/<id>.
+          Do NOT browser_snapshot mid-sequence — the snapshot summarizer
+          sometimes reports the Radix-portal dialog as missing, which
+          makes the LLM re-press Meta+i and close it.
+
+      # The builder runs read_file → edit_file. The edit_file call
+      # triggers a FileChangePending suspension; the thread renders
+      # FileChangeDiff with Accept / Reject buttons.
+      - wait_for: "selector:[data-testid=file-change-reject];timeout_ms=180000"
+
+      - act: |
+          A file-change suspension is active. The thread shows
+          Accept / Reject buttons for the proposed edit.
+
+          1. browser_click [data-testid=file-change-reject].
+
+          The pipeline resumes with the rejection acknowledged and the
+          run ends without mutating insights.app.yml.
+
+      # Can't use `streaming_complete` here: it requires a streaming
+      # signal (stop button visible) to appear within 20s, but the
+      # post-suspension `interpreting` phase for a reject is often near-
+      # instant — state transitions suspended → running → done so fast
+      # that the transient stop-button window is missed. Instead wait
+      # for the post-suspension `[data-testid=message-input-send-button]`
+      # to reappear: `pages/thread/analytics/index.tsx:795` renders
+      # `<SuspensionPrompt>` during suspended state and switches to
+      # `<BuilderMessageInput>` (which renders MessageInputShell's send
+      # button when not loading) once the resume completes.
+      - wait_for: "selector:[data-testid=message-input-send-button];timeout_ms=60000"
+
+    expect:
+      # The judge confirms (a) the rejection was acknowledged in the
+      # response and (b) no error banner. The file-modification check
+      # is implicit: `restore_demo_file:insights.app.yml` reverts before
+      # each run, so any leaked edit from run N is wiped before run N+1
+      # — but if reject-path bookkeeping is broken on this run, the
+      # response text would say "edit applied" / "file updated" and the
+      # judge catches it.
+      - judge: |
+          The thread page shows the builder run completed with the
+          user's rejection acknowledged. The assistant response
+          references not applying the edit — wording like "edit not
+          applied", "you rejected the change", "no changes were made",
+          "discarded the proposal", or similar. There is NO confirmation
+          language like "edit applied", "file updated", "changes saved".
+          No red error banner is visible. The agent message is no
+          longer streaming (no Stop button beside the chat input).

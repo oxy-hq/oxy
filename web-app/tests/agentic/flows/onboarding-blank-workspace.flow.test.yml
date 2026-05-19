@@ -1,0 +1,199 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Cloud-mode end-to-end onboarding flow: creates an org, spins up a
+# blank workspace, drives the agentic onboarding wizard, and verifies
+# the generated apps load and the analytics agent answers a suggested
+# prompt.
+#
+# The warehouse is DuckDB backed by the committed
+# `demo_project/.db/oxymart.csv` (a Walmart-style retail dataset that
+# the demo project ships in `.db/`). DuckDB is file-based, so this
+# flow has no network credentials and cannot reach any remote
+# warehouse by construction — the test policy (see
+# `web-app/tests/agentic/README.md`) forbids flows from depending on
+# live warehouses.
+#
+# Operator preconditions for a local run:
+#
+#   1. `$ANTHROPIC_API_KEY` exported. The runner injects it at the
+#      Anthropic SDK and Playwright dispatch boundaries only
+#      (runner/secrets.ts); the cache and result artifacts store the
+#      `${ANTHROPIC_API_KEY}` placeholder verbatim.
+#
+#   2. Cloud mode wants a clean Postgres so the org-creation step
+#      doesn't 409. `backend_mode: cloud` below makes the runner spawn
+#      `oxy start --enterprise --clean` itself. To drive a backend you
+#      started, pass `--no-auto-backend --no-auto-frontend` and point
+#      OXY_BASE_URL / OXY_HEALTH_URL at the auth-disabled internal port
+#      (3001).
+#
+# In CI: registered in the agentic-tests matrix under `mode: cloud`,
+# same boot path; the runner targets port 3001.
+
+name: blank workspace onboarding end-to-end (DuckDB + oxymart.csv)
+target: onboarding
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: cloud
+  # ~5 prelude steps + ~10 wizard steps + ~4 post-completion steps + waits.
+  # Pad for retries on the build phase, which legitimately takes 60–180s
+  # on a small one-table dataset and may surface a propose_change
+  # suspension the LLM has to dismiss with a snapshot loop.
+  max_steps: 80
+
+setup:
+  - "goto:/"
+
+cases:
+  - name: onboard a fresh DuckDB workspace and verify apps + prompt work
+    tags: [onboarding, regression, slow]
+    steps:
+      # ── Cloud-mode prelude: org → skip invite → blank workspace ───────────
+      - wait_for: "selector:text=Welcome to Oxygen"
+
+      - act: |
+          On the "Welcome to Oxygen" page, click the card with
+          [data-testid=onboarding-create-org-card] (the leftmost option labeled
+          "Create organization"). A dialog with [data-testid=onboarding-create-org-dialog]
+          opens.
+        cache_scope: shared
+
+      - act: |
+          Fill in the org dialog and submit:
+          1. browser_click [data-testid=onboarding-org-name-input], then browser_type
+             text "Sample Test Org".
+          2. The slug field [data-testid=onboarding-org-slug-input] auto-populates;
+             leave it untouched.
+          3. browser_click [data-testid=onboarding-create-org-submit].
+          The dialog closes and the URL changes to /<slug>/onboarding?step=invite.
+        cache_scope: shared
+
+      - wait_for: "selector:text=Invite your team"
+
+      - act: |
+          On the invite step, click [data-testid=onboarding-skip-invite-button]
+          to bypass invitations. The page advances to the workspace step.
+        cache_scope: shared
+
+      - wait_for: "selector:text=Create your first workspace"
+
+      - act: |
+          Click [data-testid=onboarding-blank-workspace-card]. The form swaps
+          to a workspace-name prompt.
+        cache_scope: shared
+
+      - act: |
+          Leave [data-testid=onboarding-workspace-name-input] empty (default
+          name) and click [data-testid=onboarding-create-workspace-button].
+          The page enters the "Setting up workspace…" loading state and
+          auto-redirects to /<slug>/workspaces/<uuid>/onboarding once ready.
+        cache_scope: shared
+
+      # The agentic wizard auto-advances welcome → llm_provider after
+      # ~800ms. Wait for the provider question to render before continuing.
+      - wait_for: "selector:text=which LLM provider;timeout_ms=60000"
+
+      # ── Agentic wizard: provider → key → warehouse → upload → tables → build
+      - act: browser_click [data-testid=onboarding-llm-provider-anthropic].
+
+      - act: |
+          Pick the Claude model. Try
+          [data-testid=onboarding-llm-model-claude-sonnet-4-6] first; if
+          absent, click the first `[data-testid^=onboarding-llm-model-]`
+          button whose visible label starts with "Claude".
+
+      - act: |
+          Fill the API key step:
+          1. browser_click [data-testid=onboarding-secure-input], then
+             browser_type text=${ANTHROPIC_API_KEY}.
+          2. browser_click [data-testid=onboarding-secure-input-submit].
+          Page advances to "Now let's connect your data warehouse."
+
+      - wait_for: "selector:text=connect your data warehouse;timeout_ms=60000"
+
+      - act: browser_click [data-testid=onboarding-warehouse-duckdb].
+
+      - act: |
+          Upload the committed oxymart.csv to the DuckDB warehouse:
+          1. browser_file_upload selector="#credential-dataset"
+             paths=["demo_project/.db/oxymart.csv"].
+          2. browser_click the form's CTA (label "Upload & Connect").
+          Backend uploads to .db/ inside the new workspace, then runs
+          schema discovery (< 5s for a 1-file warehouse), then advances
+          to the table picker.
+
+      - wait_for: "selector:input[placeholder='Search tables...'];timeout_ms=60000"
+
+      - act: |
+          Select the one table. DuckDB exposes `oxymart.csv` as a table
+          named `oxymart` under the `main` schema:
+          1. browser_click the `main` schema row to expand it.
+          2. browser_click `text=oxymart` to select the table.
+          3. browser_click the confirm button (label "Continue with 1 table").
+          Page transitions to the build phase showing semantic / agent /
+          app jobs streaming.
+
+      # Build phase. Realistic wall-clock 60–180s on a 1-table DuckDB
+      # warehouse, occasionally up to 4 min if an LLM-driven retry eats
+      # the budget. The default 30s wait timeout would fail every run, so
+      # override via the `;timeout_ms=` suffix.
+      - wait_for: "selector:text=Workspace ready;timeout_ms=300000"
+
+      # ── Post-completion verifications ──────────────────────────────────
+      #
+      # The completion screen (suggested prompts + app buttons) is
+      # ephemeral react-router state — it lives only inside the
+      # AgenticSetupPage component instance. Clicking ANY of its buttons
+      # navigates away and `shouldRedirectAway` flips true on the next
+      # mount, so we cannot come back. Verify in this order:
+      #
+      #   1. Suggested prompt — click it FIRST, while still on the
+      #      completion screen. After click the page navigates to
+      #      /threads/<id> and the prompt auto-submits. Once the stream
+      #      finishes, the thread is persisted; we leave it without
+      #      trying to return.
+      #   2. App #1 — open from the SIDEBAR.
+      - act: |
+          On the completion screen, browser_click the FIRST suggested-
+          prompt button (under "Try these with your analytics agent").
+          URL changes to /threads/<id>; the chat panel auto-submits.
+
+      - wait_for: streaming_complete
+
+      - act: |
+          Confirm the assistant response rendered without error (no red
+          banner, no "Operation cancelled" / "I cannot answer"), then
+          open the first dashboard app via the left sidebar. Apps live
+          in a section labeled "Apps"; browser_click the first app
+          button. URL changes to /apps/<base64>.
+
+      - wait_for: network_idle
+
+      # The app preview shows `[data-testid=app-preview-loading]` while
+      # tasks execute. Warm-replay finishes act/wait_for fast enough to
+      # screenshot before the spinner clears, which fails the judge's
+      # "at least one display block visible" claim. Wait for the spinner
+      # to hide so the rendered dashboard is captured.
+      - wait_for: "selector_hidden:[data-testid=app-preview-loading];timeout_ms=60000"
+
+    expect:
+      # Note: by the time `expect` runs the page has navigated to the
+      # first app — selector-based asserts that target the thread page
+      # would always fail because we left that page two steps ago. Rely
+      # on the judge to cover the prompt response + app loading.
+      - judge: |
+          The screenshot shows a workspace dashboard app rendered without
+          an error banner — at least one display block (chart, table, or
+          markdown) is visible. This evidence, combined with the fact
+          that the flow reached this final step at all, confirms:
+          (a) cloud-mode org+workspace creation worked,
+          (b) the agentic onboarding wizard built the views/agent/apps
+              against the uploaded oxymart.csv,
+          (c) the apps generated by the builder load against the
+              DuckDB-backed `oxymart` table, and
+          (d) the analytics agent successfully answered a suggested
+              prompt earlier in the flow (without that step the run
+              would have failed at `wait_for: streaming_complete`).

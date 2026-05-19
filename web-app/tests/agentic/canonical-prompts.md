@@ -1,0 +1,229 @@
+# Canonical Prompts Library
+
+Verbatim `act:` step text intended to be copy-pasted into new flows. The
+runtime hashes `stepText` to derive cache keys; two flows that paste the
+same text resolve to the same recording, so reusing prompts here gives
+**cross-flow cache reuse** — the prelude is recorded once and replayed
+free across every flow that uses it.
+
+To opt into shared caching, add `cache_scope: shared` to the step. The
+default scope is `flow` (private to that flow file/case/step index).
+
+## How to use
+
+1. Find the snippet for the surface you need (e.g. cloud-mode prelude).
+2. Copy the YAML block **verbatim** into your flow's `steps:` list.
+3. Do not edit the prompt text — even whitespace/punctuation changes
+   make the cache key diverge.
+4. If your flow needs a tweaked variant (different org name, different
+   workspace type), keep the canonical step verbatim and add a follow-up
+   step with the divergence.
+
+> **Naming convention.** All testid selectors used here follow the
+> `[<feature>-<element>]` pattern, mirroring the source attributes
+> (e.g. `onboarding-create-org-button`, `builder-input-textarea`).
+> If a snippet here references a testid that no longer resolves, the
+> recording will Tier-1-heal on its first replay (re-ranking the
+> remaining fallback strategies silently) and the failure will
+> surface in the markdown summary's drift section.
+
+---
+
+## Onboarding (cloud mode prelude)
+
+These steps assume `oxy serve` is running with cloud auth disabled (port
+3001) and zero pre-existing orgs. Together they take a fresh user from
+`/` to a workspace ready to receive the first interaction.
+
+### Open the welcome page
+
+```yaml
+- wait_for: "selector:text=Welcome to Oxygen"
+```
+
+### Click "Create organization" on the welcome screen
+
+```yaml
+- act: |
+    On the "Welcome to Oxygen" page, click the card with
+    [data-testid=onboarding-create-org-card] (the leftmost option labeled
+    "Create organization"). A dialog with [data-testid=onboarding-create-org-dialog]
+    opens.
+  cache_scope: shared
+```
+
+### Fill the create-org dialog and submit
+
+```yaml
+- act: |
+    Fill in the org dialog and submit:
+    1. browser_click [data-testid=onboarding-org-name-input], then browser_type
+       text "Sample Test Org".
+    2. The slug field [data-testid=onboarding-org-slug-input] auto-populates;
+       leave it untouched.
+    3. browser_click [data-testid=onboarding-create-org-submit].
+    The dialog closes and the URL changes to /<slug>/onboarding?step=invite.
+  cache_scope: shared
+```
+
+### Skip the invite step
+
+```yaml
+- wait_for: "selector:text=Invite your team"
+
+- act: |
+    On the invite step, click [data-testid=onboarding-skip-invite-button]
+    to bypass invitations. The page advances to the workspace step.
+  cache_scope: shared
+```
+
+### Pick "Demo Workspace"
+
+```yaml
+- wait_for: "selector:text=Create your first workspace"
+
+- act: |
+    Click [data-testid=onboarding-demo-workspace-card]. The card flips
+    into a "Setting up workspace…" loading state and auto-redirects to
+    /<slug>/workspaces/<uuid>/onboarding once ready (3–10 seconds).
+  cache_scope: shared
+```
+
+### Pick "Blank Workspace"
+
+```yaml
+- wait_for: "selector:text=Create your first workspace"
+
+- act: |
+    Click [data-testid=onboarding-blank-workspace-card]. The form swaps
+    to a workspace-name prompt.
+  cache_scope: shared
+
+- act: |
+    Leave [data-testid=onboarding-workspace-name-input] empty (default
+    name) and click [data-testid=onboarding-create-workspace-button].
+    The page enters the "Setting up workspace…" loading state and
+    auto-redirects to /<slug>/workspaces/<uuid>/onboarding once ready.
+  cache_scope: shared
+```
+
+### Provide the Anthropic key
+
+```yaml
+- act: |
+    The onboarding thread asks for the Anthropic API key in
+    [data-testid=onboarding-secure-input] (password-style).
+    1. browser_click that input, then browser_type text=${ANTHROPIC_API_KEY}.
+    2. browser_click [data-testid=onboarding-secure-input-submit].
+    The thread advances and the page eventually shows "Workspace ready".
+  cache_scope: shared
+
+- wait_for: "selector:text=Workspace ready;timeout_ms=180000"
+```
+
+---
+
+## Builder dialog
+
+### Open the builder via Cmd+I and submit a build prompt (single action)
+
+The builder dialog must be opened **and** submitted in a single `act:`
+because Meta+i toggles the dialog closed if pressed twice. See
+`builder-edits-app.flow.test.yml` for the canonical sequence.
+
+```yaml
+- act: |
+    Open the builder dialog AND submit a build prompt in one action
+    sequence (do not re-press Meta+i mid-sequence; do not click outside
+    the dialog):
+
+    1. browser_press_key with key "Meta+i" to open the dialog. Verify
+       [data-testid=builder-dialog-root] becomes visible.
+    2. If [data-testid=builder-auto-approve-toggle] has data-state="off",
+       click it to flip ON. (If already on, leave it.)
+    3. browser_click [data-testid=builder-input-textarea] to focus.
+    4. browser_keyboard_type the build prompt text.
+    5. browser_press_key with key "Enter". The dialog closes and the URL
+       changes to /threads/<id>.
+```
+
+(No `cache_scope: shared` here — the prompt body varies per flow, so
+sharing across flows would defeat the purpose. The mechanics around the
+prompt body are stable but the body itself changes.)
+
+---
+
+## Chat panel
+
+### Submit the canonical "weekly sales by store" question (shared)
+
+This exact text is used by `chat-ask` and `threads-list` so they
+resolve to the same `cache_scope: shared` entry. Editing it in one
+flow without editing the other forces a cold record on first run.
+
+```yaml
+- act: |
+    Submit "What were the total weekly sales by store?" to the
+    'default' agent on the home page:
+    1. browser_click [data-testid=agent-selector-button].
+    2. From the dropdown, click `role=menuitem[name='default']`.
+    3. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
+    4. browser_click [data-testid=chat-panel-submit-button].
+    End the turn once the URL changes to /threads/<id>.
+  cache_scope: shared
+```
+
+### Submit an arbitrary question (per-flow)
+
+If you need a different question, leave `cache_scope` at the default
+(`flow`) — the prelude above only shares when the prompt body is
+byte-identical.
+
+---
+
+## Sidebar navigation
+
+### Click an app sidebar link
+
+```yaml
+- act: |
+    In the left sidebar, click [data-testid=sidebar-app-link-<app-name>]
+    where <app-name> matches the app's filename without `.app.yml`. The
+    URL changes to /apps/<base64>.
+  cache_scope: shared
+```
+
+### Click a thread sidebar link
+
+```yaml
+- act: |
+    In the left sidebar's "Recent threads" section, click
+    [data-testid=sidebar-thread-link-<thread-id>]. The URL changes to
+    /threads/<thread-id>.
+  cache_scope: shared
+```
+
+---
+
+## When NOT to use shared scope
+
+- **Body varies between flows.** If your prompt has any flow-specific
+  content (workspace name, custom selector, app name), do not paste it
+  here verbatim — diverging text invalidates the shared key for everyone.
+- **Step depends on prior state.** A canonical "click submit" only works
+  if every flow that uses it arrived at the same page state through the
+  same prelude. If your flow has a different prefix, the cached actions
+  may not replay successfully.
+- **First implementation.** Land the flow with `cache_scope: flow`
+  (default), confirm the recording is stable, then promote to `shared`
+  in a follow-up commit.
+
+## Promoting a step to shared
+
+If you have a flow-private recording that you want to share:
+
+1. Move the prompt verbatim into this file.
+2. Add `cache_scope: shared` to your flow's step.
+3. Re-run the flow once cold. The new shared key gets recorded.
+4. Subsequent runs across all flows referencing the same prompt hit the
+   shared entry.

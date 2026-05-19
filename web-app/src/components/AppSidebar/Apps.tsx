@@ -40,7 +40,7 @@ export function Apps() {
             return (
               <SidebarMenuSubItem key={pathb64}>
                 <SidebarMenuSubButton asChild isActive={location.pathname === appUri}>
-                  <Link to={appUri} data-testid={`app-link-${app.name}`}>
+                  <Link to={appUri} data-testid={`sidebar-app-link-${app.name}`}>
                     <span>{appDisplayLabel(app)}</span>
                   </Link>
                 </SidebarMenuSubButton>

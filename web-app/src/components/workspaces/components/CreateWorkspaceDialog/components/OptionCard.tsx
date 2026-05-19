@@ -7,13 +7,15 @@ interface Props {
   description: string;
   badge?: string;
   onClick: () => void;
+  testId?: string;
 }
 
-export function OptionCard({ label, icon, title, description, badge, onClick }: Props) {
+export function OptionCard({ label, icon, title, description, badge, onClick, testId }: Props) {
   return (
     <button
       type='button'
       onClick={onClick}
+      data-testid={testId}
       className='group flex items-center gap-4 rounded-lg border border-border bg-transparent px-4 py-3.5 text-left transition-all hover:border-primary/40 hover:bg-primary/[0.03]'
     >
       <span className='shrink-0 font-mono text-[11px] text-muted-foreground/50 tabular-nums'>

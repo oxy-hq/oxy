@@ -1,0 +1,47 @@
+name: Download oxy binary
+description: >-
+  Download the prebuilt `oxy` binary uploaded as an artifact by an upstream
+  build job and prepend its directory to PATH so later steps can invoke
+  `oxy` directly. Supports cross-run downloads when `run-id` + `github-token`
+  are passed.
+
+inputs:
+  artifact-name:
+    description: Artifact name to download.
+    required: false
+    default: oxy-binary-ci
+  destination:
+    description: Directory to extract the binary into (relative to workspace).
+    required: false
+    default: bin
+  run-id:
+    description: Run id to download from. Empty (default) means the current run.
+    required: false
+    default: ""
+  github-token:
+    description: Token used to download from a different run. Required when `run-id` is set.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Download oxy binary (current run)
+      if: inputs.run-id == ''
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ./${{ inputs.destination }}
+
+    - name: Download oxy binary (cross-run)
+      if: inputs.run-id != ''
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ./${{ inputs.destination }}
+        run-id: ${{ inputs.run-id }}
+        github-token: ${{ inputs.github-token }}
+
+    - name: Add binary to PATH
+      shell: bash
+      run: echo "$GITHUB_WORKSPACE/${{ inputs.destination }}" >> "$GITHUB_PATH"

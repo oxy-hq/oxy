@@ -160,6 +160,10 @@ const ArtifactPill = ({
   const pill = (
     <button
       type='button'
+      data-testid={`reasoning-pill-${label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")}`}
       onClick={(e) => {
         e.stopPropagation();
         onClick();

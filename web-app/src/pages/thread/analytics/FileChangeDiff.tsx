@@ -95,6 +95,7 @@ const FileChangeDiff = ({ payload, suggestions, onAnswer, isAnswering }: FileCha
           {suggestions.map((s) => (
             <Button
               key={s}
+              data-testid={`file-change-${s.toLowerCase()}`}
               variant={s === "Accept" ? "default" : "outline"}
               size='sm'
               onClick={() => onAnswer(s)}

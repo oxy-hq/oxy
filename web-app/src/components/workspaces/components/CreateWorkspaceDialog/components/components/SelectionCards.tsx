@@ -9,6 +9,12 @@ interface SelectionCardsProps {
   selectedId?: string;
   disabled?: boolean;
   collapseAfter?: number;
+  /**
+   * When set, every option button renders `data-testid={`${testIdPrefix}-${option.id}`}`.
+   * Used by agentic browser tests so they can target "DuckDB" without
+   * relying on visible text (which drifts with copy edits / i18n).
+   */
+  testIdPrefix?: string;
 }
 
 export default function SelectionCards({
@@ -16,7 +22,8 @@ export default function SelectionCards({
   onSelect,
   selectedId,
   disabled,
-  collapseAfter
+  collapseAfter,
+  testIdPrefix
 }: SelectionCardsProps) {
   const hasCollapse =
     typeof collapseAfter === "number" && collapseAfter > 0 && collapseAfter < options.length;
@@ -32,6 +39,7 @@ export default function SelectionCards({
             <button
               key={option.id}
               type='button'
+              data-testid={testIdPrefix ? `${testIdPrefix}-${option.id}` : undefined}
               onClick={() => !disabled && onSelect(option.id)}
               disabled={disabled}
               className={cn(

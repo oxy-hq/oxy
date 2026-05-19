@@ -19,6 +19,12 @@ on:
     paths-ignore:
       - "docs/**"
   workflow_dispatch:
+    inputs:
+      agentic_only:
+        description: "Skip non-agentic jobs (typos, fmt-web, build-web, smoke, e2e, cargo clippy/nextest) so the agentic-tests matrix runs against just a freshly-built binary. Use this for fast iteration on browser-test selectors."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -52,6 +58,7 @@ jobs:
   typos:
     name: Typos
     if: |
+      inputs.agentic_only != true &&
       !(github.event_name == 'push' &&
         github.ref == 'refs/heads/main' &&
         startsWith(github.event.head_commit.message, 'chore: release')) &&
@@ -72,7 +79,7 @@ jobs:
     concurrency:
       group: fmt-web-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    if: needs.changesets.outputs.web-app == 'true'
+    if: inputs.agentic_only != true && needs.changesets.outputs.web-app == 'true'
     runs-on:
       ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
@@ -107,7 +114,7 @@ jobs:
     concurrency:
       group: build-web-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    if: needs.changesets.outputs.web-app == 'true'
+    if: inputs.agentic_only != true && needs.changesets.outputs.web-app == 'true'
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v6
@@ -173,8 +180,16 @@ jobs:
       group: cargo-check-and-test-${{ matrix.task }}-${{
         github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    needs: [changesets, typos]
-    if: needs.changesets.outputs.oxy == 'true'
+    # `typos` dropped from `needs` because it's optional in `agentic_only`
+    # mode (skipped). GH Actions' needs-propagation would otherwise skip
+    # this job whenever typos is skipped, blocking the agentic-tests
+    # matrix from getting the binary.
+    needs: [changesets]
+    # In agentic_only mode the agentic-tests matrix needs the binary
+    # this job produces, so force it to run even if
+    # `needs.changesets.outputs.oxy` is false (a no-Rust PR can still
+    # iterate on browser tests).
+    if: inputs.agentic_only == true || needs.changesets.outputs.oxy == 'true'
     name: Format cargo, check & test (${{ matrix.task }})
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
     env:
@@ -280,18 +295,58 @@ jobs:
           echo "Postgres is ready!"
         env:
           PGPASSWORD: password
+
+      # `cargo build` embeds the web-app dist into the oxy binary via
+      # `include_dir!` in crates/app/src/cli/commands/serve.rs. The dist
+      # path is a committed symlink: `crates/app/dist -> ../../web-app/dist`.
+      # If `web-app/dist` is empty when cargo runs, the binary serves 404
+      # on `/` — every Playwright/agentic flow then fails because the
+      # frontend never loads. Build the web-app first so the symlink
+      # resolves to populated content. Only matters for the `test` task
+      # (which uploads the binary used by smoke + agentic jobs); `check`
+      # is clippy and doesn't read dist content.
+      - name: Setup pnpm
+        if: matrix.task == 'test'
+        uses: pnpm/action-setup@v5
+        with:
+          run_install: false
+      - name: Setup Node.js
+        if: matrix.task == 'test'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+      - name: Build web-app dist (embedded into oxy binary)
+        if: matrix.task == 'test'
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm --filter oxy-web build
+
       - name: Run task
         env:
           OXY_DATABASE_URL: "postgresql://admin:password@localhost:5432/default"
           OXY_BIN: "${{ github.workspace }}/target/ci/oxy"
+          AGENTIC_ONLY: ${{ inputs.agentic_only }}
         run: |
           if [[ "${{ matrix.task }}" == "check" ]]; then
+            if [[ "$AGENTIC_ONLY" == "true" ]]; then
+              echo "agentic_only mode: skipping clippy"
+              exit 0
+            fi
             cargo clippy --profile ci --verbose --workspace --fix
           elif [[ "${{ matrix.task }}" == "test" ]]; then
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 
             cargo build --profile ci
+
+            if [[ "$AGENTIC_ONLY" == "true" ]]; then
+              echo "agentic_only mode: skipping migrate, nextest, gen-config-schema"
+              exit 0
+            fi
+
             ./target/ci/oxy migrate
 
             # Run tests (no coverage instrumentation)
@@ -331,15 +386,7 @@ jobs:
       - uses: gacts/install-hurl@v1
 
       - name: Download oxy binary
-        uses: actions/download-artifact@v8
-        with:
-          name: oxy-binary-ci
-          path: ./bin
-
-      - name: Make binary executable
-        run: |
-          chmod +x ./bin/oxy
-          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+        uses: ./.github/actions/download-oxy-binary
 
       - name: Start oxy
         working-directory: examples
@@ -447,39 +494,11 @@ jobs:
           metric_frequency: 3
           comment_on_pr: false
 
-      # Download pre-built binary (shared artifact!)
       - name: Download oxy binary
-        uses: actions/download-artifact@v8
-        with:
-          name: oxy-binary-ci
-          path: ./bin
+        uses: ./.github/actions/download-oxy-binary
 
-      - name: Make binary executable
-        run: |
-          chmod +x ./bin/oxy
-          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
-
-      # Setup Node.js and pnpm for web-app tests
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24.x
-          cache: "pnpm"
-
-      # Cache Playwright browsers - significant time saver!
-      - name: Cache Playwright browsers
-        uses: actions/cache@v5
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
+      - name: Set up web-app test environment
+        uses: ./.github/actions/setup-web-app-test-env
 
       # Cache Turbo for monorepo builds
       - name: Cache Turbo
@@ -489,21 +508,6 @@ jobs:
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-
-
-      - name: Install dependencies
-        env:
-          NODE_OPTIONS: "--max-old-space-size=8192"
-        run: pnpm install --frozen-lockfile --prefer-offline
-
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        working-directory: web-app
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Playwright system dependencies only
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        working-directory: web-app
-        run: pnpm exec playwright install-deps chromium
 
       # Setup BigQuery credentials if needed
       - name: Setup BigQuery credentials
@@ -764,3 +768,23 @@ jobs:
                 }
               ]
             }
+
+  # The matrix, services, boot logic, and healing PR comment live in
+  # `.github/workflows/agentic-tests.yaml`. That file is also runnable
+  # standalone via workflow_dispatch — see its `on:` block for the
+  # required inputs.
+  agentic-tests:
+    name: Agentic browser tests
+    needs: [ changesets, cargo-check-and-test ]
+    if: |
+      (
+        inputs.agentic_only == true ||
+        needs.changesets.outputs.web-app == 'true' ||
+        needs.changesets.outputs.oxy == 'true'
+      ) && (
+        github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'pull_request' ||
+        github.event_name == 'push'
+      )
+    uses: ./.github/workflows/agentic-tests.yaml
+    secrets: inherit

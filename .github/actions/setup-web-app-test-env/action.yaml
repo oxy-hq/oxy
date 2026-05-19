@@ -1,0 +1,53 @@
+name: Set up web-app test environment
+description: >-
+  Install pnpm, Node, and Playwright (cached) so a job can run web-app
+  integration tests. Used by jobs that drive Playwright against a running
+  oxy backend.
+
+inputs:
+  install-playwright:
+    description: Whether to install Playwright browsers.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v5
+      with:
+        run_install: false
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: 24.x
+        cache: pnpm
+
+    - name: Cache Playwright browsers
+      if: inputs.install-playwright == 'true'
+      id: playwright-cache
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          playwright-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+      run: pnpm install --frozen-lockfile --prefer-offline
+
+    - name: Install Playwright browsers
+      if: inputs.install-playwright == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: web-app
+      run: pnpm exec playwright install --with-deps chromium
+
+    - name: Install Playwright system dependencies only
+      if: inputs.install-playwright == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
+      shell: bash
+      working-directory: web-app
+      run: pnpm exec playwright install-deps chromium

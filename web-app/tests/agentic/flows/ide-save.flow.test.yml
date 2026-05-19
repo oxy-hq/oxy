@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Open `test.sql` from the demo project in the IDE, append a comment, save,
+# and verify the save button hides. `reset_test_file` wipes test.sql to a
+# clean state so reruns start consistently.
+
+name: IDE open, edit, and save
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  max_steps: 20
+
+setup:
+  - reset_test_file
+  - "goto:/ide"
+
+cases:
+  - name: open test.sql, append a comment, save
+    tags: [ide, critical]
+    steps:
+      - act: "In the IDE file tree on the left, click 'test.sql' (root). URL changes to /ide/files/<base64>; Monaco loads the file."
+      - act: |
+          Append '-- agentic test edit' to the open file:
+          1. browser_click selector ".monaco-editor" to focus. (Page has
+             TWO Monaco editors — file editor on top, SQL IDE results
+             below. `.first()` picks the file editor.)
+          2. browser_press_key "Meta+End" then "Enter".
+          3. browser_keyboard_type (NOT browser_type — Monaco's hidden
+             textarea breaks selector-based focus) text "-- agentic test edit".
+      - act: "browser_press_key 'Meta+s'. Wait for [data-testid=ide-save-button] to disappear."
+    expect:
+      - assert: "save button is not visible"
+      - judge: "the editor content includes the line '-- agentic test edit'"

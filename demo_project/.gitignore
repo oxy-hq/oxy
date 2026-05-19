@@ -13,3 +13,7 @@ results/
 # DuckDB runtime artifacts written next to the seed CSV in .db/.
 .db/*.duckdb
 .db/*.wal
+
+# Scratch file written by web-app/tests/agentic/fixtures/reset.ts
+# (the `reset_test_file` setup command) for the ide-save flow.
+test.sql

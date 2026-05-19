@@ -38,6 +38,7 @@ export default function SecureInput({
         <div className='relative flex-1'>
           <Input
             id='secure-input'
+            data-testid='onboarding-secure-input'
             type={visible ? "text" : "password"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -56,7 +57,12 @@ export default function SecureInput({
             {visible ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
           </button>
         </div>
-        <Button onClick={handleSubmit} disabled={disabled || !value.trim()} size='sm'>
+        <Button
+          onClick={handleSubmit}
+          disabled={disabled || !value.trim()}
+          size='sm'
+          data-testid='onboarding-secure-input-submit'
+        >
           {buttonLabel}
           <ArrowRight className='ml-1 h-3 w-3' />
         </Button>
