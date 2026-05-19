@@ -18,6 +18,7 @@ async-trait = { workspace = true }
 glob = { workspace = true }
 oxy = { workspace = true }
 oxy-airform = { workspace = true }
+oxy-airlayer-compat = { workspace = true }
 regex = { workspace = true }
 schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 serde = { workspace = true, features = ["derive"] }

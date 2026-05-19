@@ -163,101 +163,26 @@ fn validate_single_file(
     }
 }
 
-// ── Semantic file validation via airlayer ───────────────────────────────────
+// ── Semantic file validation ────────────────────────────────────────────────
 
-/// Validate a semantic file by parsing it through airlayer's type system.
+/// Validate a semantic file by parsing it through the canonical
+/// `oxy-airlayer-compat` shim — the same parser analytics, the workflow
+/// bridge, and `oxy validate` use, so the builder validator cannot accept a
+/// file analytics would reject. See
+/// `internal-docs/semantic-validation-standardization.md`.
 fn validate_semantic_file(abs: &Path) -> Result<(), String> {
     let content = std::fs::read_to_string(abs).map_err(|e| e.to_string())?;
     let file_name = abs.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     if file_name.ends_with(".view.yml") {
-        parse_view_yaml(&content)
+        oxy_airlayer_compat::parse_view_yaml(&content)
             .map(|_| ())
             .map_err(|e| e.to_string())
     } else {
-        parse_topic_yaml(&content)
+        oxy_airlayer_compat::parse_topic_yaml(&content)
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
-}
-
-// ── Airlayer YAML parsing shims ────────────────────────────────────────────
-//
-// Thin wrappers that handle differences between oxy's YAML format and
-// airlayer's expected types (e.g. optional `description` field).
-
-#[derive(serde::Deserialize)]
-struct ViewShim {
-    name: String,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    label: Option<String>,
-    #[serde(default, alias = "data_source")]
-    datasource: Option<String>,
-    #[serde(default)]
-    dialect: Option<String>,
-    #[serde(default)]
-    table: Option<String>,
-    #[serde(default)]
-    sql: Option<String>,
-    #[serde(default)]
-    entities: Vec<airlayer::Entity>,
-    #[serde(default)]
-    dimensions: Vec<airlayer::Dimension>,
-    #[serde(default)]
-    measures: Option<Vec<airlayer::Measure>>,
-    #[serde(default)]
-    segments: Vec<airlayer::schema::models::Segment>,
-}
-
-#[derive(serde::Deserialize)]
-struct TopicShim {
-    name: String,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    views: Vec<String>,
-    #[serde(default)]
-    base_view: Option<String>,
-    #[serde(default)]
-    retrieval: Option<airlayer::schema::models::TopicRetrievalConfig>,
-    #[serde(default)]
-    default_filters: Option<Vec<airlayer::schema::models::TopicFilter>>,
-}
-
-fn parse_view_yaml(yaml: &str) -> Result<airlayer::View, Box<dyn std::error::Error + Send + Sync>> {
-    let shim: ViewShim = serde_yaml::from_str(yaml)?;
-    Ok(airlayer::View {
-        name: shim.name,
-        description: shim.description,
-        label: shim.label,
-        datasource: shim.datasource,
-        dialect: shim.dialect,
-        table: shim.table,
-        sql: shim.sql,
-        entities: shim.entities,
-        dimensions: shim.dimensions,
-        measures: shim.measures,
-        segments: shim.segments,
-        pre_aggregations: None,
-        meta: None,
-    })
-}
-
-fn parse_topic_yaml(
-    yaml: &str,
-) -> Result<airlayer::Topic, Box<dyn std::error::Error + Send + Sync>> {
-    let shim: TopicShim = serde_yaml::from_str(yaml)?;
-    Ok(airlayer::Topic {
-        name: shim.name,
-        description: shim.description,
-        views: shim.views,
-        base_view: shim.base_view,
-        retrieval: shim.retrieval,
-        default_filters: shim.default_filters,
-        meta: None,
-    })
 }
 
 fn list_semantic_files(project_path: &Path) -> Vec<PathBuf> {

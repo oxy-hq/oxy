@@ -9,6 +9,7 @@ pub mod executor;
 pub mod pipeline_ref;
 pub mod platform;
 pub mod recovery;
+pub mod revert;
 pub mod workflow_run;
 
 use std::collections::HashMap;
@@ -29,6 +30,7 @@ use crate::platform::{BuilderBridges, PlatformContext, ProjectContext};
 
 // ── Re-exports for consumers ────────────────────────────────────────────────
 
+pub use crate::revert::{RevertedFile, revert_builder_file_changes};
 pub use agentic_airway::{
     AirwayMigrator, SOURCE_TYPE as AIRWAY_SOURCE_TYPE, event_handler as airway_event_handler,
 };
@@ -167,6 +169,64 @@ impl std::fmt::Display for PipelineError {
 impl From<sea_orm::DbErr> for PipelineError {
     fn from(e: sea_orm::DbErr) -> Self {
         Self::Db(e)
+    }
+}
+
+impl std::error::Error for PipelineError {}
+
+/// Error from [`PipelineBuilder::start`], carrying the persisted `run_id`
+/// when one was created before the failure.
+///
+/// On a fast failure (e.g. a broken semantics file) the run row is still
+/// inserted and marked `failed`, so it appears in the thread's run history.
+/// Callers (the HTTP layer) need that id to de-duplicate the live failed
+/// state against the persisted run — without it the frontend renders the
+/// user message and error twice.
+#[derive(Debug)]
+pub struct PipelineStartError {
+    /// `Some` when a run row was inserted (and marked failed) before the
+    /// error; `None` when the failure happened before any row existed
+    /// (e.g. config not found) or for delegation children.
+    pub run_id: Option<String>,
+    pub source: PipelineError,
+}
+
+impl std::fmt::Display for PipelineStartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Delegate to the source so existing `format!("{e}")` callers are
+        // unaffected by the wrapper.
+        write!(f, "{}", self.source)
+    }
+}
+
+impl std::error::Error for PipelineStartError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+impl From<PipelineError> for PipelineStartError {
+    fn from(source: PipelineError) -> Self {
+        Self {
+            run_id: None,
+            source,
+        }
+    }
+}
+
+/// Transition a run row to `failed` on a start/resume error, recording the
+/// cause in `error_message`. Best-effort: a DB failure here (including the
+/// no-row case where config loading failed before the run was inserted)
+/// must not mask the original pipeline error, so we only log it.
+async fn mark_run_failed_best_effort(db: &DatabaseConnection, run_id: &str, err: &PipelineError) {
+    let msg = err.to_string();
+    if let Err(e) = agentic_runtime::crud::update_run_failed(db, run_id, &msg).await {
+        tracing::debug!(
+            run_id,
+            error = %e,
+            original = %msg,
+            "could not mark run failed after pipeline error (run row may not exist yet)"
+        );
     }
 }
 
@@ -332,7 +392,7 @@ impl PipelineBuilder {
     pub async fn start(
         mut self,
         db: &DatabaseConnection,
-    ) -> Result<StartedPipeline, PipelineError> {
+    ) -> Result<StartedPipeline, PipelineStartError> {
         let domain = self.domain.take().ok_or_else(|| {
             PipelineError::Config("domain not set (call .analytics() or .builder())".into())
         })?;
@@ -345,7 +405,7 @@ impl PipelineBuilder {
         };
         let base_dir = self.platform.workspace_path().to_path_buf();
 
-        match domain {
+        let result = match domain {
             Domain::Analytics { agent_id } => {
                 self.start_analytics(db, &run_id, &agent_id, &base_dir, skip_db_insert)
                     .await
@@ -354,7 +414,26 @@ impl PipelineBuilder {
                 self.start_builder(db, &run_id, model, &base_dir, skip_db_insert)
                     .await
             }
+        };
+
+        // Single chokepoint: any failure after the run row was inserted must
+        // transition it to a terminal (`failed`) state. The run row is the
+        // source of truth the SSE handler uses to close hung streams, so a
+        // build failure that never reaches the orchestrator (e.g. a broken
+        // semantics file) still produces a terminal event for the client.
+        // Skipped for delegation children — the parent coordinator owns that
+        // run row and will finalize it.
+        if let Err(e) = &result
+            && !skip_db_insert
+        {
+            mark_run_failed_best_effort(db, &run_id, e).await;
         }
+        result.map_err(|source| PipelineStartError {
+            // Surface the run_id only when a row was actually inserted, so
+            // the caller can reconcile it with the persisted run history.
+            run_id: (!skip_db_insert).then(|| run_id.clone()),
+            source,
+        })
     }
 
     /// Resume a suspended run with the user's answer.
@@ -379,7 +458,7 @@ impl PipelineBuilder {
         // Update DB status back to running.
         agentic_runtime::crud::update_run_running(db, run_id).await?;
 
-        match source_type {
+        let result = match source_type {
             "analytics" => {
                 self.resume_analytics(db, run_id, agent_id, &base_dir, resume_data, answer)
                     .await
@@ -391,7 +470,15 @@ impl PipelineBuilder {
             _ => Err(PipelineError::Config(format!(
                 "cold resume not supported for source_type: {source_type}"
             ))),
+        };
+
+        // Single chokepoint (mirrors `start`): the run row was just moved
+        // back to `running`, so any resume failure must move it to `failed`
+        // — otherwise the open SSE stream on the suspended run waits forever.
+        if let Err(e) = &result {
+            mark_run_failed_best_effort(db, run_id, e).await;
         }
+        result
     }
 
     async fn start_analytics(

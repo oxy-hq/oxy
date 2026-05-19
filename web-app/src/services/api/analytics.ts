@@ -521,6 +521,22 @@ export class AnalyticsService {
     await apiClient.post(`/${projectId}/analytics/runs/${runId}/cancel`);
   }
 
+  /**
+   * Revert builder-applied file change(s) for a run. Pass `filePaths` to
+   * revert specific files; omit (or pass an empty array) to revert every
+   * file the builder changed in this run.
+   */
+  static async revertBuilderFileChanges(
+    projectId: string,
+    runId: string,
+    filePaths?: string[]
+  ): Promise<{ ok: boolean; reverted: { file_path: string; action: string }[] }> {
+    const res = await apiClient.post(`/${projectId}/analytics/runs/${runId}/revert-file-changes`, {
+      file_paths: filePaths ?? []
+    });
+    return res.data;
+  }
+
   static async updateThinkingMode(
     projectId: string,
     runId: string,

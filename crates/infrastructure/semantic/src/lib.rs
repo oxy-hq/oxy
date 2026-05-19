@@ -1,0 +1,485 @@
+//! Canonical oxy → airlayer semantic compatibility layer.
+//!
+//! This is the **single** parser/validator for oxy's `.view.yml` /
+//! `.topic.yml` files. It exists because oxy's YAML format differs slightly
+//! from airlayer's strict schema (optional `description`, the `data_source`
+//! alias for `datasource`, defaulted collections). Before this crate the
+//! same shim was duplicated across `agentic-analytics`, the host builder
+//! validator, and partially diverged in the workflow semantic bridge — a
+//! file accepted by one path could be rejected by another. See
+//! `internal-docs/semantic-validation-standardization.md`.
+//!
+//! Pure infrastructure: depends only on `airlayer` + `serde`. No `oxy-*`,
+//! no `agentic-*`. Importable by any agentic domain, the host adapters,
+//! and the CLI alike.
+
+use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
+
+/// Error from parsing or validating oxy semantic files.
+#[derive(Debug, thiserror::Error)]
+pub enum SemanticError {
+    #[error("failed to read {path}: {source}")]
+    Io {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to parse semantic YAML: {0}")]
+    Parse(#[from] serde_yaml::Error),
+    /// airlayer engine construction / compile validation failure.
+    #[error("semantic engine error: {0}")]
+    Engine(String),
+}
+
+// ── YAML shim types ──────────────────────────────────────────────────────────
+//
+// Thin wrappers that add `#[serde(default)]` on optional fields and accept
+// oxy's YAML aliases before converting into the real airlayer types.
+
+/// Intermediate view representation for oxy YAML files.
+#[derive(Debug, Deserialize)]
+struct ViewShim {
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    label: Option<String>,
+    /// Oxy YAML may use `data_source` or `datasource`.
+    #[serde(default, alias = "data_source")]
+    datasource: Option<String>,
+    #[serde(default)]
+    dialect: Option<String>,
+    #[serde(default)]
+    table: Option<String>,
+    #[serde(default)]
+    sql: Option<String>,
+    #[serde(default)]
+    entities: Vec<airlayer::Entity>,
+    #[serde(default)]
+    dimensions: Vec<airlayer::Dimension>,
+    #[serde(default)]
+    measures: Option<Vec<airlayer::Measure>>,
+    #[serde(default)]
+    segments: Vec<airlayer::schema::models::Segment>,
+}
+
+/// Intermediate topic representation for oxy YAML files.
+#[derive(Debug, Deserialize)]
+struct TopicShim {
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    views: Vec<String>,
+    #[serde(default)]
+    base_view: Option<String>,
+    #[serde(default)]
+    retrieval: Option<airlayer::schema::models::TopicRetrievalConfig>,
+    #[serde(default)]
+    default_filters: Option<Vec<airlayer::schema::models::TopicFilter>>,
+}
+
+// ── YAML parsing ─────────────────────────────────────────────────────────────
+
+/// Parse an oxy `.view.yml` string into an `airlayer::View`.
+///
+/// Handles differences from airlayer's strict format:
+/// - `description` defaults to `None` when absent
+/// - `data_source` accepted as an alias for `datasource`
+pub fn parse_view_yaml(yaml: &str) -> Result<airlayer::View, SemanticError> {
+    let shim: ViewShim = serde_yaml::from_str(yaml)?;
+    Ok(airlayer::View {
+        name: shim.name,
+        description: shim.description,
+        label: shim.label,
+        datasource: shim.datasource,
+        dialect: shim.dialect,
+        table: shim.table,
+        sql: shim.sql,
+        entities: shim.entities,
+        dimensions: shim.dimensions,
+        measures: shim.measures,
+        segments: shim.segments,
+        pre_aggregations: None,
+        meta: None,
+    })
+}
+
+/// Parse an oxy `.topic.yml` string into an `airlayer::Topic`.
+pub fn parse_topic_yaml(yaml: &str) -> Result<airlayer::Topic, SemanticError> {
+    let shim: TopicShim = serde_yaml::from_str(yaml)?;
+    Ok(airlayer::Topic {
+        name: shim.name,
+        description: shim.description,
+        views: shim.views,
+        base_view: shim.base_view,
+        retrieval: shim.retrieval,
+        default_filters: shim.default_filters,
+        meta: None,
+    })
+}
+
+// ── File-set loading / validation ────────────────────────────────────────────
+
+/// Returns `true` for a `.view.yml` / `.view.yaml` file name.
+fn is_view_file(name: &str) -> bool {
+    name.ends_with(".view.yml") || name.ends_with(".view.yaml")
+}
+
+/// Returns `true` for a `.topic.yml` / `.topic.yaml` file name.
+fn is_topic_file(name: &str) -> bool {
+    name.ends_with(".topic.yml") || name.ends_with(".topic.yaml")
+}
+
+/// Parse an explicit list of `.view.yml` / `.topic.yml` paths into an
+/// [`airlayer::SemanticLayer`]. Files with other suffixes are ignored.
+///
+/// This is the one place that does the oxy-flavored parse loop; every
+/// caller (analytics catalog load, builder validation, workflow bridge,
+/// `oxy validate`) should funnel through here so they cannot disagree.
+pub fn build_layer<P: AsRef<Path>>(paths: &[P]) -> Result<airlayer::SemanticLayer, SemanticError> {
+    let mut views = Vec::new();
+    let mut topics = Vec::new();
+
+    for path in paths {
+        let path = path.as_ref();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !is_view_file(name) && !is_topic_file(name) {
+            continue;
+        }
+        let content = std::fs::read_to_string(path).map_err(|source| SemanticError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        if is_view_file(name) {
+            views.push(parse_view_yaml(&content)?);
+        } else {
+            topics.push(parse_topic_yaml(&content)?);
+        }
+    }
+
+    let topic_opt = if topics.is_empty() {
+        None
+    } else {
+        Some(topics)
+    };
+    Ok(airlayer::SemanticLayer::new(views, topic_opt))
+}
+
+/// Recursively collect `.view.yml` / `.topic.yml` files under `root`.
+fn collect_semantic_paths(root: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_semantic_paths(&path, out);
+        } else if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && (is_view_file(name) || is_topic_file(name))
+        {
+            out.push(path);
+        }
+    }
+}
+
+/// Discover and parse every `.view.yml` / `.topic.yml` under `root` (recursive).
+///
+/// The canonical replacement for `airlayer::SemanticEngine::load(dir, …)`:
+/// using airlayer's native directory loader bypasses the oxy shim (it
+/// rejects the `data_source` alias and lacks the defaulted-collection
+/// leniency), which is exactly how the workflow path used to disagree with
+/// analytics. Funnel directory loads through here instead.
+pub fn load_layer_from_dir(root: &Path) -> Result<airlayer::SemanticLayer, SemanticError> {
+    let mut paths = Vec::new();
+    collect_semantic_paths(root, &mut paths);
+    // Deterministic order so engine construction is reproducible.
+    paths.sort();
+    build_layer(&paths)
+}
+
+/// Parse + build the airlayer engine to surface compile/validation errors.
+///
+/// Dialect-agnostic (empty [`airlayer::DatasourceDialectMap`]) so it can be
+/// used as a pure "is this semantic file set well-formed?" check by the
+/// builder validator and `oxy validate`. Callers that need a dialect-aware
+/// engine (analytics) build it from [`build_layer`] with their own map.
+pub fn validate_files<P: AsRef<Path>>(paths: &[P]) -> Result<(), SemanticError> {
+    let layer = build_layer(paths)?;
+    airlayer::SemanticEngine::from_semantic_layer(layer, airlayer::DatasourceDialectMap::new())
+        .map_err(|e| SemanticError::Engine(e.to_string()))?;
+    Ok(())
+}
+
+/// Two paths refer to the same file. Canonicalizes when possible (handles
+/// `..`, symlinks); falls back to literal comparison for not-yet-created
+/// files.
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
+}
+
+/// Build the project's semantic layer with `target`'s content replaced by
+/// `proposed` (or `proposed` added as a new file when `target` is not yet
+/// on disk). The pre-write equivalent of "what analytics would load after
+/// this edit lands".
+fn build_layer_with_override(
+    root: &Path,
+    target: &Path,
+    proposed: &str,
+) -> Result<airlayer::SemanticLayer, SemanticError> {
+    let mut paths = Vec::new();
+    collect_semantic_paths(root, &mut paths);
+    paths.sort();
+
+    let mut views = Vec::new();
+    let mut topics = Vec::new();
+    let mut replaced = false;
+
+    for p in &paths {
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let is_target = same_path(p, target);
+        let content = if is_target {
+            replaced = true;
+            proposed.to_string()
+        } else {
+            std::fs::read_to_string(p).map_err(|source| SemanticError::Io {
+                path: p.display().to_string(),
+                source,
+            })?
+        };
+        if is_view_file(name) {
+            views.push(parse_view_yaml(&content)?);
+        } else if is_topic_file(name) {
+            topics.push(parse_topic_yaml(&content)?);
+        }
+    }
+
+    if !replaced {
+        // New file not yet on disk — include the proposed content.
+        let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if is_view_file(name) {
+            views.push(parse_view_yaml(proposed)?);
+        } else if is_topic_file(name) {
+            topics.push(parse_topic_yaml(proposed)?);
+        }
+    }
+
+    let topic_opt = if topics.is_empty() {
+        None
+    } else {
+        Some(topics)
+    };
+    Ok(airlayer::SemanticLayer::new(views, topic_opt))
+}
+
+/// Pre-write gate for `.view.yml` / `.topic.yml`.
+///
+/// Returns `Err(reason)` when the write must be refused:
+/// - the proposed content does not parse (malformed YAML / wrong shape) —
+///   **always** refused; an unparsable file is unambiguously the writer's
+///   fault and analytics would fail-fast on it.
+/// - the proposed content breaks the semantic engine **and the on-disk
+///   layer compiled cleanly before this change** — a working→broken
+///   regression.
+///
+/// When the layer was already broken (the delegated builder is mid-repair),
+/// only the parse check applies: cross-file engine errors are allowed so the
+/// agent can make progress instead of being stuck behind a pre-existing
+/// breakage it is trying to fix.
+///
+/// Non-semantic paths are always `Ok` — this is a no-op for them.
+pub fn gate_semantic_write(root: &Path, target_abs: &Path, proposed: &str) -> Result<(), String> {
+    let name = target_abs
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if !is_view_file(name) && !is_topic_file(name) {
+        return Ok(());
+    }
+
+    // 1. The proposed file itself must parse — always enforced.
+    let parsed = if is_view_file(name) {
+        parse_view_yaml(proposed).map(|_| ())
+    } else {
+        parse_topic_yaml(proposed).map(|_| ())
+    };
+    if let Err(e) = parsed {
+        return Err(format!(
+            "semantic validation failed for '{name}': {e}. \
+             The change was not applied — fix the file and retry."
+        ));
+    }
+
+    // 2. Regression guard: only block cross-file breakage if the layer was
+    //    healthy before this edit.
+    let mut on_disk = Vec::new();
+    collect_semantic_paths(root, &mut on_disk);
+    let before_ok = validate_files(&on_disk).is_ok();
+    if !before_ok {
+        // Already broken — the builder is presumably fixing it. The parse
+        // check above still guarantees this file is well-formed.
+        return Ok(());
+    }
+
+    match build_layer_with_override(root, target_abs, proposed) {
+        Ok(layer) => airlayer::SemanticEngine::from_semantic_layer(
+            layer,
+            airlayer::DatasourceDialectMap::new(),
+        )
+        .map(|_| ())
+        .map_err(|e| {
+            format!(
+                "semantic validation failed for '{name}': applying this change \
+                 would break the semantic layer ({e}). The change was not \
+                 applied — adjust it so the layer still compiles."
+            )
+        }),
+        // A parse error in some *other* file despite before_ok shouldn't
+        // happen, but treat it as non-blocking rather than misattribute it.
+        Err(_) => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn view_accepts_data_source_alias_and_defaults() {
+        let yaml = "name: orders\ndata_source: warehouse\ntable: orders\n";
+        let v = parse_view_yaml(yaml).expect("valid view");
+        assert_eq!(v.name, "orders");
+        assert_eq!(v.datasource.as_deref(), Some("warehouse"));
+        assert!(v.description.is_none());
+        assert!(v.dimensions.is_empty());
+    }
+
+    #[test]
+    fn topic_minimal_parses() {
+        let t = parse_topic_yaml("name: sales\nviews: [orders]\n").expect("valid topic");
+        assert_eq!(t.name, "sales");
+        assert_eq!(t.views, vec!["orders".to_string()]);
+    }
+
+    #[test]
+    fn malformed_yaml_is_parse_error() {
+        let err = parse_view_yaml("name: [unclosed").unwrap_err();
+        assert!(matches!(err, SemanticError::Parse(_)));
+    }
+
+    fn tmpdir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "alc_{tag}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(d.join("semantics/views")).unwrap();
+        d
+    }
+
+    #[test]
+    fn gate_ignores_non_semantic_files() {
+        let d = tmpdir("gate_nonsem");
+        assert!(gate_semantic_write(&d, &d.join("config.yml"), "not: validated").is_ok());
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn gate_always_rejects_unparsable_proposed() {
+        let d = tmpdir("gate_malformed");
+        let target = d.join("semantics/views/x.view.yml");
+        let err = gate_semantic_write(&d, &target, "name: [unclosed").unwrap_err();
+        assert!(err.contains("semantic validation failed"));
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn gate_allows_valid_edit_on_valid_layer() {
+        let d = tmpdir("gate_ok");
+        std::fs::write(
+            d.join("semantics/views/orders.view.yml"),
+            "name: orders\ntable: orders\n",
+        )
+        .unwrap();
+        let target = d.join("semantics/views/orders.view.yml");
+        assert!(gate_semantic_write(&d, &target, "name: orders\ntable: orders_v2\n").is_ok());
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn gate_blocks_regression_on_previously_valid_layer() {
+        let d = tmpdir("gate_regress");
+        std::fs::write(
+            d.join("semantics/views/orders.view.yml"),
+            "name: orders\ntable: orders\n",
+        )
+        .unwrap();
+        // Add a topic whose base_view does not exist — parseable, but the
+        // engine rejects it (this is the exact original-bug shape).
+        let target = d.join("semantics/topics/bad.topic.yml");
+        let res = gate_semantic_write(
+            &d,
+            &target,
+            "name: bad\nbase_view: missing_view\nviews: [missing_view]\n",
+        );
+        assert!(
+            res.is_err(),
+            "a working→broken regression must be refused, got {res:?}"
+        );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn gate_allows_edit_when_layer_already_broken() {
+        let d = tmpdir("gate_repair");
+        // Pre-existing broken topic on disk.
+        std::fs::create_dir_all(d.join("semantics/topics")).unwrap();
+        std::fs::write(
+            d.join("semantics/topics/bad.topic.yml"),
+            "name: bad\nbase_view: missing_view\nviews: [missing_view]\n",
+        )
+        .unwrap();
+        // A perfectly valid, unrelated view edit must still be allowed so
+        // the delegated builder can make progress repairing the layer.
+        let target = d.join("semantics/views/orders.view.yml");
+        assert!(
+            gate_semantic_write(&d, &target, "name: orders\ntable: orders\n").is_ok(),
+            "edits must be allowed while the layer is already broken (repair)"
+        );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn load_layer_from_dir_discovers_nested_and_honors_data_source_alias() {
+        let dir = std::env::temp_dir().join(format!("alc_dir_{}", std::process::id()));
+        let views = dir.join("semantics/views");
+        std::fs::create_dir_all(&views).unwrap();
+        // `data_source` alias — airlayer's native loader would reject this;
+        // the shared loader (used by analytics, workflow, builder) must not.
+        std::fs::write(
+            views.join("orders.view.yml"),
+            "name: orders\ndata_source: warehouse\ntable: orders\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("semantics/sales.topic.yml"),
+            "name: sales\nviews: [orders]\n",
+        )
+        .unwrap();
+
+        let layer = load_layer_from_dir(&dir).expect("dir load");
+        assert_eq!(layer.views.len(), 1);
+        assert_eq!(layer.views[0].datasource.as_deref(), Some("warehouse"));
+        assert_eq!(layer.topics.as_ref().map(|t| t.len()), Some(1));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

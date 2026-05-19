@@ -259,6 +259,7 @@ dependencies = [
  "futures",
  "futures-core",
  "glob",
+ "oxy-airlayer-compat",
  "reqwest 0.12.28",
  "rusqlite",
  "schemars 0.8.22",
@@ -290,6 +291,7 @@ dependencies = [
  "glob",
  "oxy",
  "oxy-airform",
+ "oxy-airlayer-compat",
  "regex",
  "schemars 0.8.22",
  "serde",
@@ -454,6 +456,7 @@ dependencies = [
  "chrono-english",
  "minijinja",
  "omni",
+ "oxy-airlayer-compat",
  "oxy-looker",
  "sea-orm",
  "sea-orm-migration",
@@ -9840,6 +9843,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxy-airlayer-compat"
+version = "0.5.55"
+dependencies = [
+ "airlayer",
+ "serde",
+ "serde_yaml",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "oxy-anthropic"
 version = "0.5.55"
 dependencies = [
@@ -9921,6 +9934,7 @@ dependencies = [
  "oxy",
  "oxy-agent",
  "oxy-airform",
+ "oxy-airlayer-compat",
  "oxy-auth",
  "oxy-billing",
  "oxy-git",

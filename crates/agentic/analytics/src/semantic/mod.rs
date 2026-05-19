@@ -147,27 +147,11 @@ impl SemanticCatalog {
         paths: &[PathBuf],
         dialects: airlayer::DatasourceDialectMap,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let mut views = Vec::new();
-        let mut topics = Vec::new();
-
-        for path in paths {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let content = std::fs::read_to_string(path)?;
-            if name.ends_with(".view.yml") || name.ends_with(".view.yaml") {
-                views.push(airlayer_compat::parse_view_yaml(&content)?);
-            } else if name.ends_with(".topic.yml") || name.ends_with(".topic.yaml") {
-                topics.push(airlayer_compat::parse_topic_yaml(&content)?);
-            }
-            // Other suffixes silently ignored.
-        }
-
-        let topic_opt = if topics.is_empty() {
-            None
-        } else {
-            Some(topics)
-        };
-
-        let layer = airlayer::SemanticLayer::new(views, topic_opt);
+        // Parsing goes through the canonical infra shim (re-exported as
+        // `airlayer_compat::build_layer`) so analytics agrees with every
+        // other semantic-file consumer. Dialect-aware engine construction
+        // stays here — it is analytics-specific.
+        let layer = airlayer_compat::build_layer(paths)?;
         let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects).map_err(
             |e| -> Box<dyn std::error::Error + Send + Sync> {
                 Box::new(std::io::Error::other(e.to_string()))

@@ -1,8 +1,10 @@
-//! Semantic query compilation using airlayer directly.
+//! Semantic query compilation using airlayer.
 //!
-//! Uses `airlayer::SemanticEngine::load()` to parse `.view.yml` and `.topic.yml`
-//! files and compile semantic queries to SQL. No oxy dependency — uses local
-//! config types and airlayer's native types end-to-end.
+//! `.view.yml` / `.topic.yml` discovery + parsing goes through the canonical
+//! `oxy-airlayer-compat` shim (NOT airlayer's native directory loader, which
+//! rejects oxy's `data_source` alias) so the workflow path agrees with
+//! analytics and the builder validator. See
+//! `internal-docs/semantic-validation-standardization.md`.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -31,8 +33,12 @@ pub fn resolve_and_compile(
 ) -> Result<(String, String), WorkflowError> {
     let dialects = airlayer::DatasourceDialectMap::from_config_databases(databases);
 
-    // airlayer parses .view.yml + .topic.yml and creates the engine.
-    let engine = airlayer::SemanticEngine::load(scan_path, Some(scan_path), dialects)
+    // Canonical shim-based discovery + parse (honors the `data_source`
+    // alias), then build the dialect-aware engine — identical to how
+    // analytics constructs its engine.
+    let layer = oxy_airlayer_compat::load_layer_from_dir(scan_path)
+        .map_err(|e| WorkflowError::Runtime(format!("semantic engine error: {e}")))?;
+    let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects)
         .map_err(|e| WorkflowError::Runtime(format!("semantic engine error: {e}")))?;
 
     let semantic_layer = engine.semantic_layer();

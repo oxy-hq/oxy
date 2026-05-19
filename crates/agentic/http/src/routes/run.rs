@@ -46,6 +46,40 @@ async fn build_onboarding_llm_client(
     }
 }
 
+/// Build a structured error response for a failed pipeline start/resume.
+///
+/// The body is `{ "error": <human message> }` so the frontend can surface
+/// the real cause (e.g. a broken semantics file) instead of a bare status
+/// code. Configuration / semantic-layer failures are reworded into a
+/// user-facing sentence; everything else passes through verbatim.
+fn classify_pipeline_error_message(raw: &str) -> String {
+    if raw.contains("semantic") || raw.contains("ConfigError") || raw.contains("config error") {
+        format!(
+            "Your project configuration is invalid, so this run could not start: {raw}. \
+             Fix the reported file (often a broken .view.yml / .topic.yml semantic \
+             definition) and try again."
+        )
+    } else {
+        raw.to_string()
+    }
+}
+
+/// `run_id` is included when the failed run was persisted, so the frontend
+/// can reconcile its live failed state with the run that appears in thread
+/// history (otherwise it renders the question + error twice).
+fn pipeline_error_response(
+    status: StatusCode,
+    err: impl std::fmt::Display,
+    run_id: Option<&str>,
+) -> Response {
+    let message = classify_pipeline_error_message(&err.to_string());
+    let mut body = serde_json::json!({ "error": message });
+    if let Some(rid) = run_id {
+        body["run_id"] = serde_json::Value::String(rid.to_string());
+    }
+    (status, Json(body)).into_response()
+}
+
 pub async fn create_run(
     Extension(state): Extension<Arc<AgenticState>>,
     Extension(platform): Extension<Arc<dyn PlatformContext>>,
@@ -167,7 +201,7 @@ pub async fn create_run(
                 error = %e,
                 "create_run: pipeline start failed"
             );
-            return (StatusCode::BAD_REQUEST, format!("pipeline error: {e}")).into_response();
+            return pipeline_error_response(StatusCode::BAD_REQUEST, &e, e.run_id.as_deref());
         }
     };
 
@@ -208,6 +242,72 @@ pub async fn create_run(
 
 // ── GET /runs/:id/events (SSE) ────────────────────────────────────────────────
 
+/// Synthesize a terminal SSE event from the run row's authoritative
+/// `task_status`.
+///
+/// The SSE contract is that the stream closes only after a terminal event
+/// (`done`/`error`/`cancelled`). That contract used to depend on *some*
+/// code path remembering to persist a terminal event row — which it does
+/// not when a run dies *before* the orchestrator loop starts (e.g. a
+/// broken semantics file fails solver construction). The single source of
+/// truth for run lifecycle is the `task_status` column, so when a stream
+/// is about to close without having emitted a terminal event we derive
+/// one from the run row instead of letting the client hang.
+///
+/// Returns `None` when the run is not (yet) terminal — the caller should
+/// keep the stream open.
+/// Pure mapping from a run row's terminal `task_status` to the SSE event
+/// type + payload the frontend already knows how to render. Returns `None`
+/// for non-terminal statuses (the stream should stay open). Split out from
+/// the DB fetch so it can be unit-tested without a database.
+fn terminal_event_for_status(
+    task_status: Option<&str>,
+    error_message: Option<&str>,
+    answer: Option<&str>,
+    run_id: &str,
+) -> Option<(&'static str, serde_json::Value)> {
+    match task_status? {
+        "failed" | "timed_out" => Some((
+            "error",
+            serde_json::json!({
+                "message": error_message
+                    .unwrap_or("The run failed before it could report an error."),
+                "trace_id": run_id,
+            }),
+        )),
+        "cancelled" => Some(("cancelled", serde_json::json!({ "trace_id": run_id }))),
+        "done" => Some((
+            "done",
+            serde_json::json!({
+                "answer": answer.unwrap_or_default(),
+                "trace_id": run_id,
+            }),
+        )),
+        // running / awaiting_input / delegating — not terminal yet.
+        _ => None,
+    }
+}
+
+async fn synth_terminal_event(
+    db: &sea_orm::DatabaseConnection,
+    run_id: &str,
+    seq: i64,
+) -> Option<SseEvent> {
+    let run = db::get_run(db, run_id).await.ok().flatten()?;
+    let (event_type, payload) = terminal_event_for_status(
+        run.task_status.as_deref(),
+        run.error_message.as_deref(),
+        run.answer.as_deref(),
+        run_id,
+    )?;
+    Some(
+        SseEvent::default()
+            .id(seq.to_string())
+            .event(event_type)
+            .data(payload.to_string()),
+    )
+}
+
 pub async fn stream_events(
     Path(RunIdPath { id: run_id }): Path<RunIdPath>,
     headers: HeaderMap,
@@ -236,6 +336,10 @@ pub async fn stream_events(
     let stream = async_stream::stream! {
         let mut last_sent_seq = last_seq;
         let mut processor = registry.stream_processor(&source_type);
+        // Tracks whether a terminal event (`done`/`error`/`cancelled`) was
+        // streamed. If the run ends without one, we synthesize it from the
+        // run row so the client never hangs (see `synth_terminal_event`).
+        let mut terminal_emitted = false;
 
         loop {
             let rows = match db::get_events_after(&db, &run_id, last_sent_seq).await {
@@ -273,6 +377,7 @@ pub async fn stream_events(
 
                     if sse::is_terminal(&ui_event_type, &source_type) {
                         terminal = true;
+                        terminal_emitted = true;
                     }
                 }
             }
@@ -282,6 +387,7 @@ pub async fn stream_events(
             if !still_active {
                 if let Ok(final_rows) = db::get_events_after(&db, &run_id, last_sent_seq).await {
                     for row in final_rows {
+                        last_sent_seq = row.seq;
                         if row.event_type == "recovery_resumed" {
                             let event = SseEvent::default()
                                 .id(row.seq.to_string())
@@ -299,10 +405,23 @@ pub async fn stream_events(
                                 .event(&ui_event_type)
                                 .data(ui_payload.to_string());
                             yield Ok(event);
+                            if sse::is_terminal(&ui_event_type, &source_type) {
+                                terminal_emitted = true;
+                            }
                         }
                     }
                 }
-                break;
+                // The run is no longer active. If nothing terminal was ever
+                // streamed (a failure outside the orchestrator loop, e.g. a
+                // broken semantics file), derive the terminal event from the
+                // authoritative run-row status so the client doesn't hang.
+                if !terminal_emitted
+                    && let Some(ev) =
+                        synth_terminal_event(&db, &run_id, last_sent_seq + 1).await
+                {
+                    yield Ok(ev);
+                }
+                return;
             }
 
             match &notifier {
@@ -312,8 +431,27 @@ pub async fn stream_events(
                         _ = state.shutdown_token.cancelled() => break,
                     }
                 }
-                None => break,
+                // No notifier was ever registered for this run (it failed
+                // before the driver task spawned). Same fallback as above.
+                None => {
+                    if !terminal_emitted
+                        && let Some(ev) =
+                            synth_terminal_event(&db, &run_id, last_sent_seq + 1).await
+                    {
+                        yield Ok(ev);
+                    }
+                    return;
+                }
             }
+        }
+
+        // Reached only via the shutdown-token / DB-error `break` paths
+        // above. Make a best-effort attempt to close with a terminal event
+        // rather than dropping the client mid-stream.
+        if !terminal_emitted
+            && let Some(ev) = synth_terminal_event(&db, &run_id, last_sent_seq + 1).await
+        {
+            yield Ok(ev);
         }
     };
 
@@ -549,11 +687,11 @@ pub async fn answer_run(
     {
         Ok(s) => s,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("failed to resume pipeline: {e}"),
-            )
-                .into_response();
+            // `builder.resume()` already transitioned the run row to
+            // `failed` via the pipeline chokepoint, so any SSE stream still
+            // open on this suspended run will synthesize a terminal `error`
+            // event and stop hanging. Return the real cause to the caller.
+            return pipeline_error_response(StatusCode::BAD_REQUEST, &e, Some(&run_id));
         }
     };
 
@@ -585,6 +723,43 @@ pub async fn answer_run(
     });
 
     Json(serde_json::json!({ "ok": true, "resumed": true })).into_response()
+}
+
+// ── POST /runs/:id/revert-file-changes ───────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct RevertFileChangesRequest {
+    /// Files to revert. Empty / omitted reverts every file the builder
+    /// changed in this run.
+    #[serde(default)]
+    pub file_paths: Vec<String>,
+}
+
+/// Revert builder-applied file change(s) for a run. Used by the analytics
+/// suspend → builder-agent panel to undo edits the delegated builder
+/// auto-applied (e.g. a semantic-file fix that wasn't wanted).
+pub async fn revert_file_changes(
+    Path(RunIdPath { id: run_id }): Path<RunIdPath>,
+    Extension(state): Extension<Arc<AgenticState>>,
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+    Json(body): Json<RevertFileChangesRequest>,
+) -> Response {
+    match agentic_pipeline::revert_builder_file_changes(
+        &state.db,
+        &platform,
+        &run_id,
+        &body.file_paths,
+    )
+    .await
+    {
+        Ok(reverted) => {
+            Json(serde_json::json!({ "ok": true, "reverted": reverted })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(run_id = %run_id, error = %e, "revert_file_changes failed");
+            pipeline_error_response(StatusCode::BAD_REQUEST, &e, Some(&run_id))
+        }
+    }
 }
 
 // ── POST /runs/:id/cancel ─────────────────────────────────────────────────────
@@ -646,3 +821,73 @@ pub async fn update_thinking_mode(
 }
 
 // ── GET /threads/:thread_id/runs ──────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_pipeline_error_message, terminal_event_for_status};
+
+    #[test]
+    fn failed_status_maps_to_error_event_with_message() {
+        let (ty, payload) = terminal_event_for_status(
+            Some("failed"),
+            Some("semantic catalog error: bad yaml"),
+            None,
+            "r1",
+        )
+        .expect("failed is terminal");
+        assert_eq!(ty, "error");
+        assert_eq!(payload["message"], "semantic catalog error: bad yaml");
+        assert_eq!(payload["trace_id"], "r1");
+    }
+
+    #[test]
+    fn timed_out_maps_to_error_event() {
+        let (ty, _) = terminal_event_for_status(Some("timed_out"), None, None, "r1")
+            .expect("timed_out is terminal");
+        assert_eq!(ty, "error");
+    }
+
+    #[test]
+    fn failed_without_message_uses_fallback_text() {
+        let (_, payload) = terminal_event_for_status(Some("failed"), None, None, "r1").unwrap();
+        assert_eq!(
+            payload["message"],
+            "The run failed before it could report an error."
+        );
+    }
+
+    #[test]
+    fn cancelled_and_done_map_to_their_events() {
+        assert_eq!(
+            terminal_event_for_status(Some("cancelled"), None, None, "r1")
+                .unwrap()
+                .0,
+            "cancelled"
+        );
+        let (ty, payload) =
+            terminal_event_for_status(Some("done"), None, Some("42"), "r1").unwrap();
+        assert_eq!(ty, "done");
+        assert_eq!(payload["answer"], "42");
+    }
+
+    #[test]
+    fn non_terminal_statuses_do_not_synthesize() {
+        for s in ["running", "awaiting_input", "delegating"] {
+            assert!(terminal_event_for_status(Some(s), None, None, "r1").is_none());
+        }
+        assert!(terminal_event_for_status(None, None, None, "r1").is_none());
+    }
+
+    #[test]
+    fn semantic_errors_are_reworded_for_the_user() {
+        let msg = classify_pipeline_error_message("build error: semantic catalog error: x");
+        assert!(msg.contains("Your project configuration is invalid"));
+        assert!(msg.contains("semantic catalog error: x"));
+    }
+
+    #[test]
+    fn non_config_errors_pass_through_verbatim() {
+        let msg = classify_pipeline_error_message("db error: connection refused");
+        assert_eq!(msg, "db error: connection refused");
+    }
+}

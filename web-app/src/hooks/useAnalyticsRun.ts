@@ -31,6 +31,42 @@ function isDelegationSuspension(questions: HumanInputQuestion[]): boolean {
   );
 }
 
+/**
+ * Pull a human-readable message out of an Axios-style error. The agentic
+ * API returns `{ "error": "<cause>" }` (or, on older paths, a plain text
+ * body) for a failed run start/resume — surface that instead of the
+ * generic "Request failed with status code 400".
+ */
+function extractApiErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === "object" && "response" in err) {
+    const data = (err as { response?: { data?: unknown } }).response?.data;
+    if (typeof data === "string" && data.trim()) return data;
+    if (data && typeof data === "object" && "error" in data) {
+      const m = (data as { error?: unknown }).error;
+      if (typeof m === "string" && m.trim()) return m;
+    }
+  }
+  return err instanceof Error ? err.message : fallback;
+}
+
+/**
+ * The agentic API returns the persisted `run_id` on a failed start/resume
+ * when a run row was created (e.g. a broken semantics file fails the run
+ * but it is still recorded in thread history). Capturing it lets the live
+ * failed state de-duplicate against that persisted run instead of
+ * rendering the question + error twice.
+ */
+function extractApiErrorRunId(err: unknown): string {
+  if (err && typeof err === "object" && "response" in err) {
+    const data = (err as { response?: { data?: unknown } }).response?.data;
+    if (data && typeof data === "object" && "run_id" in data) {
+      const rid = (data as { run_id?: unknown }).run_id;
+      if (typeof rid === "string") return rid;
+    }
+  }
+  return "";
+}
+
 // ── SSE event types ───────────────────────────────────────────────────────────
 
 /** Derive a typed SSE event from a UiBlock by mapping event_type → type and payload → data. */
@@ -379,9 +415,39 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
             return prev;
           });
           throw err; // stop retrying
+        },
+        onclose() {
+          // The server closed the stream. The backend now guarantees a
+          // terminal event (`done`/`error`/`cancelled`) before closing —
+          // derived from the run row when a failure happens outside the
+          // orchestrator loop (e.g. a broken semantics file) — so in the
+          // normal path `onmessage` has already aborted and moved us out
+          // of running/suspended. This is the last-resort safety net: if
+          // we are somehow still pending, treat the closed stream as a
+          // failure rather than letting fetch-event-source silently
+          // reconnect forever (which looked like a hung spinner).
+          setState((prev) => {
+            if (prev.tag === "running" || prev.tag === "suspended") {
+              return {
+                tag: "failed",
+                runId,
+                message:
+                  "The run ended unexpectedly — the stream closed without a " +
+                  "result. This is usually a project configuration error " +
+                  "(such as a broken semantic file). Reload the page to see " +
+                  "the recorded error.",
+                durationMs: 0,
+                events: prev.events
+              };
+            }
+            return prev;
+          });
+          // Returning normally makes fetch-event-source reconnect; throw to stop.
+          throw new Error("analytics stream closed");
         }
       }).catch(() => {
-        // fetchEventSource rejects when abort() is called — that's expected
+        // fetchEventSource rejects on abort() or our onclose/onerror throw —
+        // all expected; state was already set by the relevant handler.
       });
     },
     [projectId, appendEvent]
@@ -408,10 +474,14 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
           openStream(run_id);
         })
         .catch((err: unknown) => {
+          // Use the persisted run_id (when the run row was created) so the
+          // terminal-reconcile effect can drop this live failed state once
+          // the same run appears in thread history — otherwise the user
+          // message and error render twice until a page refresh.
           setState({
             tag: "failed",
-            runId: "",
-            message: err instanceof Error ? err.message : "Failed to start run",
+            runId: extractApiErrorRunId(err),
+            message: extractApiErrorMessage(err, "Failed to start run"),
             durationMs: 0,
             events: []
           });
@@ -447,7 +517,7 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
           setState({
             tag: "failed",
             runId,
-            message: `answer rejected: ${err instanceof Error ? err.message : String(err)}`,
+            message: extractApiErrorMessage(err, "Failed to resume run"),
             durationMs: 0,
             events: []
           });

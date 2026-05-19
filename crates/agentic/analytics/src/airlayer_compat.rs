@@ -9,103 +9,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde::Deserialize;
-
 use agentic_connector::DatabaseConnector;
 use airlayer::DatasourceDialectMap;
 
-// ── YAML shim types ──────────────────────────────────────────────────────────
-//
-// These thin wrappers add `#[serde(default)]` on optional fields and accept
-// oxy's YAML aliases (e.g. `data_source`) before converting into the real
-// airlayer types.
-
-/// Intermediate view representation for oxy YAML files.
-#[derive(Debug, Deserialize)]
-struct ViewShim {
-    name: String,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    label: Option<String>,
-    /// Oxy YAML may use `data_source` or `datasource`.
-    #[serde(default, alias = "data_source")]
-    datasource: Option<String>,
-    #[serde(default)]
-    dialect: Option<String>,
-    #[serde(default)]
-    table: Option<String>,
-    #[serde(default)]
-    sql: Option<String>,
-    #[serde(default)]
-    entities: Vec<airlayer::Entity>,
-    #[serde(default)]
-    dimensions: Vec<airlayer::Dimension>,
-    #[serde(default)]
-    measures: Option<Vec<airlayer::Measure>>,
-    #[serde(default)]
-    segments: Vec<airlayer::schema::models::Segment>,
-}
-
-/// Intermediate topic representation for oxy YAML files.
-#[derive(Debug, Deserialize)]
-struct TopicShim {
-    name: String,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    views: Vec<String>,
-    #[serde(default)]
-    base_view: Option<String>,
-    #[serde(default)]
-    retrieval: Option<airlayer::schema::models::TopicRetrievalConfig>,
-    #[serde(default)]
-    default_filters: Option<Vec<airlayer::schema::models::TopicFilter>>,
-}
-
 // ── YAML parsing ─────────────────────────────────────────────────────────────
-
-/// Parse an oxy `.view.yml` string into an `airlayer::View`.
-///
-/// Handles differences from airlayer's strict format:
-/// - `description` defaults to `None` when absent
-/// - `data_source` accepted as alias for `datasource`
-pub fn parse_view_yaml(
-    yaml: &str,
-) -> Result<airlayer::View, Box<dyn std::error::Error + Send + Sync>> {
-    let shim: ViewShim = serde_yaml::from_str(yaml)?;
-    Ok(airlayer::View {
-        name: shim.name,
-        description: shim.description,
-        label: shim.label,
-        datasource: shim.datasource,
-        dialect: shim.dialect,
-        table: shim.table,
-        sql: shim.sql,
-        entities: shim.entities,
-        dimensions: shim.dimensions,
-        measures: shim.measures,
-        segments: shim.segments,
-        pre_aggregations: None,
-        meta: None,
-    })
-}
-
-/// Parse an oxy `.topic.yml` string into an `airlayer::Topic`.
-pub fn parse_topic_yaml(
-    yaml: &str,
-) -> Result<airlayer::Topic, Box<dyn std::error::Error + Send + Sync>> {
-    let shim: TopicShim = serde_yaml::from_str(yaml)?;
-    Ok(airlayer::Topic {
-        name: shim.name,
-        description: shim.description,
-        views: shim.views,
-        base_view: shim.base_view,
-        retrieval: shim.retrieval,
-        default_filters: shim.default_filters,
-        meta: None,
-    })
-}
+//
+// The oxy → airlayer YAML shim is the canonical one in `oxy-airlayer-compat`
+// (infrastructure) so analytics, the builder validator, the workflow bridge
+// and `oxy validate` cannot disagree. Re-exported here so existing
+// `crate::airlayer_compat::parse_*_yaml` call sites are unchanged.
+// See internal-docs/semantic-validation-standardization.md.
+pub use oxy_airlayer_compat::{build_layer, parse_topic_yaml, parse_view_yaml};
 
 // ── Dialect mapping ──────────────────────────────────────────────────────────
 

@@ -22,6 +22,7 @@ members = [
   "crates/infrastructure/llm/gemini",
   "crates/infrastructure/llm/openai",
   "crates/infrastructure/llm/oxy-llm",
+  "crates/infrastructure/semantic",
   "crates/agentic/analytics",
   "crates/agentic/airway",
   "crates/agentic/builder",
@@ -72,6 +73,7 @@ migration = { path = "crates/migration" }
 omni = { path = "crates/integration/omni" }
 oxy = { path = "crates/core" }
 oxy-agent = { path = "crates/agent" }
+oxy-airlayer-compat = { path = "crates/infrastructure/semantic" }
 oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }
 oxy-auth = { path = "crates/auth" }
 oxy-billing = { path = "crates/billing" }

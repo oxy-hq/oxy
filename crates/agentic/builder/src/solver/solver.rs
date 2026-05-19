@@ -498,6 +498,27 @@ pub(crate) async fn emit_domain(tx: &Option<EventStream<BuilderEvent>>, event: B
     }
 }
 
+/// Read a file's current content for a change event; a missing or unreadable
+/// (e.g. binary) file is treated as empty.
+async fn read_for_change_event(project_root: &Path, file_path: &str) -> String {
+    match crate::tools::safe_path(project_root, file_path) {
+        Ok(abs) => tokio::fs::read_to_string(&abs).await.unwrap_or_default(),
+        Err(_) => String::new(),
+    }
+}
+
+/// True when a file tool's `{"answer": ...}` output indicates the change was
+/// accepted (by the user or an auto-accept provider). On the non-suspending
+/// (auto-accept / delegated-builder) path the file is written inline with no
+/// `FileChangePending`/resume round-trip, so this is where we learn an edit
+/// was actually applied and must emit `FileChanged` for it.
+fn change_was_applied(output: &serde_json::Value) -> bool {
+    output
+        .get("answer")
+        .and_then(|v| v.as_str())
+        .is_some_and(|a| a.to_lowercase().contains("accept"))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_tool(
     name: &str,
@@ -597,76 +618,137 @@ pub(crate) async fn dispatch_tool(
         "write_file" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
+            let old_content = read_for_change_event(project_root, &file_path).await;
             let result = execute_write_file(project_root, params, human_input.as_ref()).await;
-            if let Err(ToolError::Suspended { ref prompt, .. }) = result {
-                let (new_content, old_content) = serde_json::from_str::<serde_json::Value>(prompt)
-                    .ok()
-                    .map(|v| {
-                        (
-                            v["new_content"].as_str().unwrap_or("").to_string(),
-                            v["old_content"].as_str().unwrap_or("").to_string(),
+            match &result {
+                Err(ToolError::Suspended { prompt, .. }) => {
+                    let (new_content, old_content) =
+                        serde_json::from_str::<serde_json::Value>(prompt)
+                            .ok()
+                            .map(|v| {
+                                (
+                                    v["new_content"].as_str().unwrap_or("").to_string(),
+                                    v["old_content"].as_str().unwrap_or("").to_string(),
+                                )
+                            })
+                            .unwrap_or_default();
+                    emit_domain(
+                        event_tx,
+                        BuilderEvent::FileChangePending {
+                            file_path,
+                            description,
+                            new_content,
+                            old_content,
+                        },
+                    )
+                    .await;
+                }
+                Ok(v) if change_was_applied(v) => {
+                    let new_content = params["content"].as_str().unwrap_or("").to_string();
+                    if new_content != old_content {
+                        emit_domain(
+                            event_tx,
+                            BuilderEvent::FileChanged {
+                                file_path,
+                                description,
+                                new_content,
+                                old_content,
+                                is_deletion: false,
+                            },
                         )
-                    })
-                    .unwrap_or_default();
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::FileChangePending {
-                        file_path,
-                        description,
-                        new_content,
-                        old_content,
-                    },
-                )
-                .await;
+                        .await;
+                    }
+                }
+                _ => {}
             }
             result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "edit_file" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
+            let old_content = read_for_change_event(project_root, &file_path).await;
             let result = execute_edit_file(project_root, params, human_input.as_ref()).await;
-            if let Err(ToolError::Suspended { ref prompt, .. }) = result {
-                let (new_content, old_content) = serde_json::from_str::<serde_json::Value>(prompt)
-                    .ok()
-                    .map(|v| {
-                        (
-                            v["new_content"].as_str().unwrap_or("").to_string(),
-                            v["old_content"].as_str().unwrap_or("").to_string(),
+            match &result {
+                Err(ToolError::Suspended { prompt, .. }) => {
+                    let (new_content, old_content) =
+                        serde_json::from_str::<serde_json::Value>(prompt)
+                            .ok()
+                            .map(|v| {
+                                (
+                                    v["new_content"].as_str().unwrap_or("").to_string(),
+                                    v["old_content"].as_str().unwrap_or("").to_string(),
+                                )
+                            })
+                            .unwrap_or_default();
+                    emit_domain(
+                        event_tx,
+                        BuilderEvent::FileChangePending {
+                            file_path,
+                            description,
+                            new_content,
+                            old_content,
+                        },
+                    )
+                    .await;
+                }
+                Ok(v) if change_was_applied(v) => {
+                    // edit_file applies a search/replace; the post-edit
+                    // content is whatever is now on disk.
+                    let new_content = read_for_change_event(project_root, &file_path).await;
+                    if new_content != old_content {
+                        emit_domain(
+                            event_tx,
+                            BuilderEvent::FileChanged {
+                                file_path,
+                                description,
+                                new_content,
+                                old_content,
+                                is_deletion: false,
+                            },
                         )
-                    })
-                    .unwrap_or_default();
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::FileChangePending {
-                        file_path,
-                        description,
-                        new_content,
-                        old_content,
-                    },
-                )
-                .await;
+                        .await;
+                    }
+                }
+                _ => {}
             }
             result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "delete_file" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
+            let old_content = read_for_change_event(project_root, &file_path).await;
             let result = execute_delete_file(project_root, params, human_input.as_ref()).await;
-            if let Err(ToolError::Suspended { ref prompt, .. }) = result {
-                let old_content = serde_json::from_str::<serde_json::Value>(prompt)
-                    .ok()
-                    .and_then(|v| v["old_content"].as_str().map(String::from))
-                    .unwrap_or_default();
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::FileChangePending {
-                        file_path,
-                        description,
-                        new_content: String::new(),
-                        old_content,
-                    },
-                )
-                .await;
+            match &result {
+                Err(ToolError::Suspended { prompt, .. }) => {
+                    let old_content = serde_json::from_str::<serde_json::Value>(prompt)
+                        .ok()
+                        .and_then(|v| v["old_content"].as_str().map(String::from))
+                        .unwrap_or_default();
+                    emit_domain(
+                        event_tx,
+                        BuilderEvent::FileChangePending {
+                            file_path,
+                            description,
+                            new_content: String::new(),
+                            old_content,
+                        },
+                    )
+                    .await;
+                }
+                Ok(v) if change_was_applied(v) => {
+                    emit_domain(
+                        event_tx,
+                        BuilderEvent::FileChanged {
+                            file_path,
+                            description,
+                            new_content: String::new(),
+                            old_content,
+                            is_deletion: true,
+                        },
+                    )
+                    .await;
+                }
+                _ => {}
             }
             result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }

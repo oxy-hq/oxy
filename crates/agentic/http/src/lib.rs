@@ -62,6 +62,10 @@ where
         .route("/runs/{id}/answer", post(routes::answer_run))
         .route("/runs/{id}/cancel", post(routes::cancel_run))
         .route(
+            "/runs/{id}/revert-file-changes",
+            post(routes::revert_file_changes),
+        )
+        .route(
             "/runs/{id}/thinking_mode",
             patch(routes::update_thinking_mode),
         )
