@@ -104,7 +104,11 @@ jobs:
   agentic-tests:
     name: agentic / ${{ matrix.flow.name }}
     needs: [resolve-matrix]
-    runs-on: ubuntu-latest
+    # Must match the binary's architecture (cargo-check-and-test builds
+    # `oxy-binary-ci` on `warp-ubuntu-latest-arm64-4x` in this repo).
+    # Running on x86_64 ubuntu-latest produced an ENOEXEC fallback to
+    # /bin/sh that surfaced as "Syntax error: Unterminated quoted string".
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
     # `continue-on-error: true` while we calibrate cost + reliability on
     # the matrix. Flip to false once the suite has ≥3 consecutive green
     # main-branch runs.

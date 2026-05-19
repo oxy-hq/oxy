@@ -385,5 +385,10 @@ pub async fn get_execution_list(
         })
         .collect();
 
-    Ok(ExecutionListData { executions, total, limit, offset })
+    Ok(ExecutionListData {
+        executions,
+        total,
+        limit,
+        offset,
+    })
 }

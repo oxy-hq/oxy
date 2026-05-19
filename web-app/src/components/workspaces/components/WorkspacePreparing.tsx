@@ -11,11 +11,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import type { WorkspaceCreationType } from "@/components/workspaces/types";
+import { useAuth } from "@/contexts/AuthContext";
 import queryKeys from "@/hooks/api/queryKey";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import { cn } from "@/libs/shadcn/utils";
 import { setLastWorkspaceId } from "@/libs/utils/lastWorkspace";
-import { initOnboardingStateForWorkspace } from "@/libs/utils/onboardingStorage";
+import { initOnboardingStateForStorageKey } from "@/libs/utils/onboardingStorage";
 import ROUTES from "@/libs/utils/routes";
 
 const REDIRECT_SECONDS = 5;
@@ -51,12 +52,24 @@ export default function WorkspacePreparing({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: workspaces } = useAllWorkspaces(orgId);
+  const { isLocalMode } = useAuth();
 
   // The list query was cached before this workspace existed — invalidate once
   // on mount so the first poll includes the new entry.
   useEffect(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list() });
   }, [queryClient]);
+
+  // The seeding step below assumes `storage_key === workspaceId`, which
+  // only holds for cloud workspaces. Local-mode storage_keys are
+  // `local:{path-hash}`; mounting here in local mode would silently key
+  // the wizard state into the wrong namespace. Fail loudly in dev.
+  if (import.meta.env.DEV && isLocalMode) {
+    throw new Error(
+      "WorkspacePreparing was mounted in local mode. This component assumes " +
+        "storage_key === workspaceId, which is only true for cloud workspaces."
+    );
+  }
 
   const ws = workspaces?.find((w) => w.id === workspaceId);
   const status = ws?.status;
@@ -67,8 +80,10 @@ export default function WorkspacePreparing({
   //   github: collects only the secrets the cloned repo's config.yml needs.
   //   demo:   collects only the LLM key (DuckDB needs no credentials, the
   //           sample workspace already ships agents/apps/semantic layer).
+  // workspaceId is safe to pass as the storage_key here per the cloud-only
+  // assertion above.
   const goToWorkspace = useCallback(() => {
-    initOnboardingStateForWorkspace(workspaceId, creationType);
+    initOnboardingStateForStorageKey(workspaceId, creationType);
     navigate(ROUTES.ORG(orgSlug).WORKSPACE(workspaceId).ONBOARDING, { replace: true });
   }, [creationType, navigate, orgSlug, workspaceId]);
 

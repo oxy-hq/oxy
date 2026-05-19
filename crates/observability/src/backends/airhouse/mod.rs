@@ -68,8 +68,7 @@ pub type CredentialFn = Arc<
 // ── Storage struct ────────────────────────────────────────────────────────────
 
 /// A boxed `Connection` future (erased TLS-stream type for reconnect reuse).
-type BoxConn =
-    Pin<Box<dyn Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static>>;
+type BoxConn = Pin<Box<dyn Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static>>;
 
 pub struct AirhouseObservabilityStorage {
     /// Swapped on reconnect; read-locked during every query.
@@ -115,7 +114,13 @@ async fn try_connect(
 
 // ── Reconnect driver ──────────────────────────────────────────────────────────
 
-fn make_pg_config(host: &str, port: u16, user: &str, password: &str, database: &str) -> tokio_postgres::Config {
+fn make_pg_config(
+    host: &str,
+    port: u16,
+    user: &str,
+    password: &str,
+    database: &str,
+) -> tokio_postgres::Config {
     let mut cfg = tokio_postgres::Config::new();
     cfg.host(host);
     cfg.port(port);
@@ -140,7 +145,10 @@ fn spawn_driver(
         let mut conn = initial_conn;
         loop {
             if let Err(e) = conn.await {
-                tracing::warn!("Airhouse observability connection dropped: {}", pg_err_chain(&e));
+                tracing::warn!(
+                    "Airhouse observability connection dropped: {}",
+                    pg_err_chain(&e)
+                );
             } else {
                 // Clean server-initiated close — still try to reconnect.
                 tracing::info!("Airhouse observability connection closed cleanly; reconnecting");
@@ -198,7 +206,9 @@ impl AirhouseObservabilityStorage {
         get_credentials: CredentialFn,
     ) -> Result<Self, OxyError> {
         let (user, password, database) = get_credentials().await.map_err(|e| {
-            OxyError::RuntimeError(format!("Airhouse observability credential fetch failed: {e}"))
+            OxyError::RuntimeError(format!(
+                "Airhouse observability credential fetch failed: {e}"
+            ))
         })?;
 
         let config = make_pg_config(host, port, &user, &password, &database);
@@ -229,10 +239,9 @@ impl AirhouseObservabilityStorage {
     /// do not serialize.
     pub(crate) async fn query(&self, sql: &str) -> Result<Vec<SimpleQueryMessage>, OxyError> {
         let client = Arc::clone(&*self.client.read().await);
-        client
-            .simple_query(sql)
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Airhouse query failed: {}", pg_err_chain(&e))))
+        client.simple_query(sql).await.map_err(|e| {
+            OxyError::RuntimeError(format!("Airhouse query failed: {}", pg_err_chain(&e)))
+        })
     }
 
     /// Execute a SQL statement, ignoring the result messages.
@@ -245,9 +254,7 @@ impl AirhouseObservabilityStorage {
         for ddl in schema::ALL_DDL {
             let stmt_hint = ddl.trim().lines().next().unwrap_or("(unknown)");
             self.execute(ddl).await.map_err(|e| {
-                OxyError::RuntimeError(format!(
-                    "Airhouse schema DDL failed at [{stmt_hint}]: {e}"
-                ))
+                OxyError::RuntimeError(format!("Airhouse schema DDL failed at [{stmt_hint}]: {e}"))
             })?;
         }
         Ok(())

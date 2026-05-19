@@ -1,7 +1,10 @@
 import type React from "react";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import { redirectToHome } from "@/libs/utils";
-import { clearAllOnboardingState } from "@/libs/utils/onboardingStorage";
+import {
+  clearAllOnboardingState,
+  clearLegacyLocalOnboardingState
+} from "@/libs/utils/onboardingStorage";
 import type { AuthConfigResponse, UserInfo } from "@/types/auth";
 
 interface AuthContextType {
@@ -50,6 +53,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, authConfig
   const storedToken = () => localStorage.getItem("auth_token");
 
   const isLocalMode = authConfig.mode === "local";
+
+  // The nil-UUID key shape can only have come from the legacy local-mode
+  // path, so running this unconditionally (rather than gating on
+  // `isLocalMode`) also cleans up after a dev who alternated `--local`
+  // and cloud on the same origin.
+  useEffect(() => {
+    clearLegacyLocalOnboardingState();
+  }, []);
 
   const value: AuthContextType = {
     getUser: storedUser,

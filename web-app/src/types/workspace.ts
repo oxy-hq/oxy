@@ -38,6 +38,13 @@ export interface Workspace {
    * existing callers that build a partial Workspace don't have to fabricate
    * a value; consumers that need the role should fall back to "viewer". */
   current_user_role?: WorkspaceRole;
+
+  /** Namespace for per-workspace browser state (onboarding wizard
+   * localStorage). UUID in cloud; `local:{path-hash}` in local — see
+   * `compute_workspace_storage_key` in the Rust side for the contract.
+   * Optional only because some legacy callers fabricate partial
+   * Workspaces; real server responses always populate it. */
+  storage_key?: string;
 }
 
 type BranchOrigin = "local_only" | "remote_only" | "both";

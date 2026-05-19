@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveMessages, deriveRailState, initialState } from "./orchestrator";
+import { deriveMessages, deriveRailState, initialState, reducer } from "./orchestrator";
 import type { GithubSetup, OnboardingState } from "./types";
 
 /**
@@ -199,5 +199,37 @@ describe("deriveMessages — one prompt at a time", () => {
     const messages = deriveMessages(state);
     expect(messages.find((m) => m.id === "github_llm_key_OPENAI_API_KEY")).toBeDefined();
     expect(messages.find((m) => m.id === "github_llm_key_ANTHROPIC_API_KEY")).toBeUndefined();
+  });
+});
+
+describe("reducer — INIT_GITHUB_FLOW", () => {
+  it("seeds a fresh state into the github flow", () => {
+    const next = reducer(
+      { ...initialState, storageKey: "local:abc" },
+      { type: "INIT_GITHUB_FLOW", mode: "demo" }
+    );
+    expect(next.mode).toBe("demo");
+    expect(next.step).toBe("github_loading");
+  });
+
+  it("is idempotent — does not clobber a wizard that already chose a mode", () => {
+    const inFlight: OnboardingState = {
+      ...initialState,
+      storageKey: "uuid-1",
+      mode: "new",
+      step: "warehouse_credentials"
+    };
+    const next = reducer(inFlight, { type: "INIT_GITHUB_FLOW", mode: "demo" });
+    expect(next).toBe(inFlight);
+  });
+
+  it("is idempotent — does not clobber a wizard advanced past welcome", () => {
+    const advanced: OnboardingState = {
+      ...initialState,
+      storageKey: "local:xyz",
+      step: "github_llm_keys"
+    };
+    const next = reducer(advanced, { type: "INIT_GITHUB_FLOW", mode: "demo" });
+    expect(next).toBe(advanced);
   });
 });

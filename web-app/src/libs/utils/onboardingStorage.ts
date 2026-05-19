@@ -3,9 +3,10 @@
  * utility layer so foundational consumers (AuthContext, Home) don't need to
  * reach into the wizard's internals to read/clear it.
  *
- * Keys are namespaced as `oxy_onboarding_state:{workspaceId}` so concurrent
- * onboardings on different workspaces don't stomp on each other and a stored
- * blob can never hydrate the wrong workspace's wizard.
+ * Keys are `oxy_onboarding_state:{storage_key}`, where `storage_key` comes
+ * from the server (`WorkspaceDetailsResponse`): workspace UUID in cloud,
+ * `local:{path-hash}` in local — see `compute_workspace_storage_key` in
+ * the Rust side for the path-derivation contract.
  */
 
 import type {
@@ -16,9 +17,11 @@ import type {
 
 const STORAGE_KEY_PREFIX = "oxy_onboarding_state:";
 export const LEGACY_GLOBAL_KEY = "oxy_onboarding_state";
+/** Pre-`storage_key` local-mode entries were keyed under the nil UUID. */
+export const LEGACY_LOCAL_NIL_UUID_KEY = `${STORAGE_KEY_PREFIX}00000000-0000-0000-0000-000000000000`;
 
-export function storageKey(workspaceId: string): string {
-  return `${STORAGE_KEY_PREFIX}${workspaceId}`;
+export function storageKey(storageKeyId: string): string {
+  return `${STORAGE_KEY_PREFIX}${storageKeyId}`;
 }
 
 /** Fields safe to persist (no credentials). */
@@ -42,11 +45,11 @@ export const VALID_STEPS: ReadonlySet<OnboardingStep> = new Set<OnboardingStep>(
   "complete"
 ]);
 
-export function initOnboardingStateForWorkspace(
-  workspaceId: string,
+export function initOnboardingStateForStorageKey(
+  storageKeyId: string,
   mode: OnboardingMode = "new"
 ): void {
-  if (!workspaceId) return;
+  if (!storageKeyId) return;
   try {
     // Demo workspaces reuse the github flow's "inspect existing config.yml,
     // collect missing secrets" shape — the only difference is that the demo
@@ -55,25 +58,25 @@ export function initOnboardingStateForWorkspace(
     const step: OnboardingStep = reusesGithubFlow ? "github_loading" : "welcome";
     const seeded: PersistableState = {
       step,
-      workspaceId,
+      storageKey: storageKeyId,
       mode,
       connectionStatus: "idle",
       discoveredSchemas: [],
       selectedTables: []
     };
-    localStorage.setItem(storageKey(workspaceId), JSON.stringify(seeded));
+    localStorage.setItem(storageKey(storageKeyId), JSON.stringify(seeded));
   } catch {
     // localStorage may be unavailable
   }
 }
 
-export function getPersistedStepForWorkspace(workspaceId: string): OnboardingStep | undefined {
-  if (!workspaceId) return undefined;
+export function getPersistedStepForStorageKey(storageKeyId: string): OnboardingStep | undefined {
+  if (!storageKeyId) return undefined;
   try {
-    const raw = localStorage.getItem(storageKey(workspaceId));
+    const raw = localStorage.getItem(storageKey(storageKeyId));
     if (!raw) return undefined;
     const parsed = JSON.parse(raw) as PersistableState;
-    if (parsed?.workspaceId !== workspaceId) return undefined;
+    if (parsed?.storageKey !== storageKeyId) return undefined;
     if (typeof parsed.step !== "string" || !VALID_STEPS.has(parsed.step)) return undefined;
     return parsed.step;
   } catch {
@@ -81,15 +84,15 @@ export function getPersistedStepForWorkspace(workspaceId: string): OnboardingSte
   }
 }
 
-export function hasPendingOnboardingForWorkspace(workspaceId: string): boolean {
-  const step = getPersistedStepForWorkspace(workspaceId);
+export function hasPendingOnboardingForStorageKey(storageKeyId: string): boolean {
+  const step = getPersistedStepForStorageKey(storageKeyId);
   return step !== undefined && step !== "complete";
 }
 
-export function clearOnboardingStateForWorkspace(workspaceId: string): void {
-  if (!workspaceId) return;
+export function clearOnboardingStateForStorageKey(storageKeyId: string): void {
+  if (!storageKeyId) return;
   try {
-    localStorage.removeItem(storageKey(workspaceId));
+    localStorage.removeItem(storageKey(storageKeyId));
   } catch {
     // ignore
   }
@@ -104,6 +107,15 @@ export function clearAllOnboardingState(): void {
       if (k?.startsWith(STORAGE_KEY_PREFIX)) toRemove.push(k);
     }
     for (const k of toRemove) localStorage.removeItem(k);
+  } catch {
+    // ignore
+  }
+}
+
+/** One-shot cleanup for upgraders carrying a pre-`storage_key` entry. */
+export function clearLegacyLocalOnboardingState(): void {
+  try {
+    localStorage.removeItem(LEGACY_LOCAL_NIL_UUID_KEY);
   } catch {
     // ignore
   }

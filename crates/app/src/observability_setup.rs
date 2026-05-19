@@ -98,14 +98,13 @@ pub async fn resolve_observability_backend() -> (
             let get_credentials: oxy_observability::backends::airhouse::CredentialFn =
                 std::sync::Arc::new(move || {
                     Box::pin(async move {
-                        let broker =
-                            airhouse::token_broker().ok_or_else(|| {
-                                oxy_shared::errors::OxyError::ConfigurationError(
-                                    "Airhouse observability: token broker not initialised; \
+                        let broker = airhouse::token_broker().ok_or_else(|| {
+                            oxy_shared::errors::OxyError::ConfigurationError(
+                                "Airhouse observability: token broker not initialised; \
                                      check AIRHOUSE_BASE_URL / AIRHOUSE_ADMIN_TOKEN"
-                                        .into(),
-                                )
-                            })?;
+                                    .into(),
+                            )
+                        })?;
                         let cred = broker
                             .mint_for_system(
                                 uuid::Uuid::nil(),

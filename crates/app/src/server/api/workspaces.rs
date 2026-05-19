@@ -194,6 +194,39 @@ pub struct WorkspaceDetailsResponse {
     /// (`"owner" | "admin" | "member" | "viewer"`). Lets the UI gate
     /// destructive actions without a 403 roundtrip.
     pub current_user_role: String,
+
+    /// See `compute_workspace_storage_key`.
+    pub storage_key: String,
+}
+
+/// Returns the value to put in `WorkspaceDetailsResponse.storage_key`.
+/// `None` (cloud) yields the workspace UUID; `Some(path)` (local) yields
+/// `local:{hash}` over the canonical, absolute, OS-encoded path bytes so
+/// two `--local` sessions in different directories on the same dev port
+/// don't collide and a dev alternating `--local` and cloud on the same
+/// origin keeps separate keyspaces. Falls back through raw / current_dir
+/// joins when `canonicalize` fails so the helper is total.
+pub fn compute_workspace_storage_key(
+    workspace_id: Uuid,
+    local_path: Option<&std::path::Path>,
+) -> String {
+    match local_path {
+        Some(path) => {
+            use sha2::{Digest, Sha256};
+            let normalized = std::fs::canonicalize(path).unwrap_or_else(|_| {
+                if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    std::env::current_dir()
+                        .map(|cwd| cwd.join(path))
+                        .unwrap_or_else(|_| path.to_path_buf())
+                }
+            });
+            let digest = Sha256::digest(normalized.as_os_str().as_encoded_bytes());
+            format!("local:{}", &hex::encode(digest)[..16])
+        }
+        None => workspace_id.to_string(),
+    }
 }
 
 // BranchType and ProjectBranch imported from oxy::api_types
@@ -904,15 +937,24 @@ pub async fn get_workspace(
             None => false,
         };
         if !config_exists {
+            // `setup_demo` / `setup_empty` write into `startup_cwd`, so hashing
+            // it here keeps the storage_key stable across the bootstrap → ready
+            // transition (the workspace path resolves to the same dir post-setup).
+            let storage_key =
+                compute_workspace_storage_key(workspace_id, Some(app_state.startup_cwd.as_path()));
             return Ok(build_workspace_details_response_for_uninitialized_local(
                 workspace_id,
                 &project.name,
                 role_str,
+                storage_key,
             ));
         }
     }
 
     let workspace_root = workspace_root(&project).await?;
+
+    let local_path_for_key = app_state.mode.is_local().then(|| workspace_root.as_path());
+    let storage_key = compute_workspace_storage_key(workspace_id, local_path_for_key);
 
     build_workspace_details_response(
         workspace_id,
@@ -920,6 +962,7 @@ pub async fn get_workspace(
         &workspace_root,
         app_state.mode.is_local(),
         role_str,
+        storage_key,
     )
     .await
 }
@@ -935,6 +978,7 @@ fn no_git_response(
     workspace_error: Option<String>,
     requires_local_setup: bool,
     current_user_role: String,
+    storage_key: String,
 ) -> ResponseJson<WorkspaceDetailsResponse> {
     let mode = GitMode::None;
     ResponseJson(WorkspaceDetailsResponse {
@@ -951,6 +995,7 @@ fn no_git_response(
         protected_branches: vec!["main".to_string()],
         requires_local_setup,
         current_user_role,
+        storage_key,
     })
 }
 
@@ -961,9 +1006,18 @@ pub fn build_workspace_details_response_for_uninitialized_local(
     workspace_id: Uuid,
     name: &str,
     current_user_role: String,
+    storage_key: String,
 ) -> ResponseJson<WorkspaceDetailsResponse> {
     let now = chrono::Utc::now().to_string();
-    no_git_response(workspace_id, name, now, None, true, current_user_role)
+    no_git_response(
+        workspace_id,
+        name,
+        now,
+        None,
+        true,
+        current_user_role,
+        storage_key,
+    )
 }
 
 pub async fn build_workspace_details_response(
@@ -975,6 +1029,7 @@ pub async fn build_workspace_details_response(
     // the router's `include_git_features` — matches `ServeMode::is_local`.
     git_disabled: bool,
     current_user_role: String,
+    storage_key: String,
 ) -> Result<ResponseJson<WorkspaceDetailsResponse>, StatusCode> {
     let now = chrono::Utc::now().to_string();
 
@@ -992,6 +1047,7 @@ pub async fn build_workspace_details_response(
             )),
             false,
             current_user_role,
+            storage_key,
         ));
     }
 
@@ -1006,6 +1062,7 @@ pub async fn build_workspace_details_response(
             None,
             false,
             current_user_role,
+            storage_key,
         ));
     }
 
@@ -1075,6 +1132,7 @@ pub async fn build_workspace_details_response(
         protected_branches,
         requires_local_setup: false,
         current_user_role,
+        storage_key,
     }))
 }
 

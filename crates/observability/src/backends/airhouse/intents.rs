@@ -3,7 +3,10 @@
 use oxy_shared::errors::OxyError;
 use tokio_postgres::SimpleQueryMessage;
 
-use super::{AirhouseObservabilityStorage, esc, get_i64, get_str, get_u64, parse_float_array, format_float_array};
+use super::{
+    AirhouseObservabilityStorage, esc, format_float_array, get_i64, get_str, get_u64,
+    parse_float_array,
+};
 use crate::intent_types::IntentCluster;
 use crate::types::IntentAnalyticsRow;
 
@@ -32,7 +35,13 @@ pub async fn fetch_unprocessed_questions(
     );
     let msgs = storage.query(&sql).await?;
     let result = rows(&msgs)
-        .map(|r| (get_str(r, "trace_id"), get_str(r, "question"), get_str(r, "source")))
+        .map(|r| {
+            (
+                get_str(r, "trace_id"),
+                get_str(r, "question"),
+                get_str(r, "source"),
+            )
+        })
         .collect();
     Ok(result)
 }
@@ -70,12 +79,14 @@ pub async fn store_clusters(
     storage: &AirhouseObservabilityStorage,
     clusters: &[IntentCluster],
 ) -> Result<(), OxyError> {
-    storage.execute("DELETE FROM oxy_obs_intent_clusters").await?;
+    storage
+        .execute("DELETE FROM oxy_obs_intent_clusters")
+        .await?;
 
     for cluster in clusters {
         let centroid = format_float_array(&cluster.centroid);
-        let sample_questions = serde_json::to_string(&cluster.sample_questions)
-            .unwrap_or_else(|_| "[]".into());
+        let sample_questions =
+            serde_json::to_string(&cluster.sample_questions).unwrap_or_else(|_| "[]".into());
         let sql = format!(
             "INSERT INTO oxy_obs_intent_clusters
              (cluster_id, intent_name, intent_description, centroid, sample_questions, question_count)
@@ -233,10 +244,9 @@ pub async fn load_unknown_classifications(
     Ok(result)
 }
 
-pub async fn get_unknown_count(
-    storage: &AirhouseObservabilityStorage,
-) -> Result<usize, OxyError> {
-    let sql = "SELECT count(*) AS n FROM oxy_obs_intent_classifications WHERE intent_name = 'unknown'";
+pub async fn get_unknown_count(storage: &AirhouseObservabilityStorage) -> Result<usize, OxyError> {
+    let sql =
+        "SELECT count(*) AS n FROM oxy_obs_intent_classifications WHERE intent_name = 'unknown'";
     let msgs = storage.query(sql).await?;
     let count = rows(&msgs)
         .next()
@@ -261,8 +271,8 @@ pub async fn update_cluster_record(
         ))
         .await?;
     let centroid = format_float_array(&cluster.centroid);
-    let sample_questions = serde_json::to_string(&cluster.sample_questions)
-        .unwrap_or_else(|_| "[]".into());
+    let sample_questions =
+        serde_json::to_string(&cluster.sample_questions).unwrap_or_else(|_| "[]".into());
     let sql = format!(
         "INSERT INTO oxy_obs_intent_clusters
          (cluster_id, intent_name, intent_description, centroid,
@@ -278,9 +288,7 @@ pub async fn update_cluster_record(
     storage.execute(&sql).await
 }
 
-pub async fn get_next_cluster_id(
-    storage: &AirhouseObservabilityStorage,
-) -> Result<u32, OxyError> {
+pub async fn get_next_cluster_id(storage: &AirhouseObservabilityStorage) -> Result<u32, OxyError> {
     let sql = "SELECT COALESCE(MAX(cluster_id), 0) AS max_id FROM oxy_obs_intent_clusters";
     let msgs = storage.query(sql).await?;
     let max_id = rows(&msgs)

@@ -11,6 +11,7 @@ import type {
   GithubSetup,
   LlmProvider,
   OnboardingMessage,
+  OnboardingMode,
   OnboardingRailState,
   OnboardingState,
   OnboardingStep,
@@ -81,7 +82,8 @@ export function humanizeTopicSlug(slug: string): string {
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 
-type Action =
+// Exported for unit tests; consumers use `useOnboardingOrchestrator`.
+export type Action =
   | { type: "SET_LLM_PROVIDER"; provider: LlmProvider }
   | { type: "SET_LLM_MODEL"; model: string; modelRef: string; vendor: string }
   | { type: "SET_LLM_KEY"; apiKey: string }
@@ -126,7 +128,11 @@ type Action =
   | { type: "START_GITHUB_WAREHOUSE_TEST" }
   | { type: "FAIL_GITHUB_WAREHOUSE_TEST"; error: string }
   | { type: "START_GITHUB_LLM_KEY_TEST" }
-  | { type: "FAIL_GITHUB_LLM_KEY_TEST"; error: string };
+  | { type: "FAIL_GITHUB_LLM_KEY_TEST"; error: string }
+  /** Idempotent: only mutates when `mode` is undefined and `step` is still
+   * the initial `welcome`, so dispatching from a render-time effect won't
+   * clobber an in-flight wizard. */
+  | { type: "INIT_GITHUB_FLOW"; mode: OnboardingMode };
 
 // ── Initial State ───────────────────────────────────────────────────────────
 
@@ -139,7 +145,8 @@ export const initialState: OnboardingState = {
 
 // ── Reducer ─────────────────────────────────────────────────────────────────
 
-function reducer(state: OnboardingState, action: Action): OnboardingState {
+// Exported for unit tests; consumers use `useOnboardingOrchestrator`.
+export function reducer(state: OnboardingState, action: Action): OnboardingState {
   switch (action.type) {
     case "SET_LLM_PROVIDER":
       return { ...state, step: "llm_model", llmProvider: action.provider };
@@ -433,6 +440,15 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
         ...state,
         githubWarehouseSubmitting: false,
         githubWarehouseError: action.error
+      };
+
+    case "INIT_GITHUB_FLOW":
+      // Idempotence guard — see action type doc.
+      if (state.mode !== undefined || state.step !== "welcome") return state;
+      return {
+        ...state,
+        mode: action.mode,
+        step: "github_loading"
       };
 
     case "GO_TO_STEP": {
@@ -1593,7 +1609,7 @@ function getWarehouseFields(type: WarehouseType) {
 // ── Hook ────────────────────────────────────────────────────────────────────
 
 function saveState(state: OnboardingState) {
-  if (!state.workspaceId) return;
+  if (!state.storageKey) return;
   try {
     const { llmApiKey: _, warehouseCredentials: __, ...safe } = state;
     // Persist only the schema skeleton — drop per-schema tables and transient
@@ -1609,25 +1625,25 @@ function saveState(state: OnboardingState) {
         loaded: false
       }))
     };
-    localStorage.setItem(storageKey(state.workspaceId), JSON.stringify(persistable));
+    localStorage.setItem(storageKey(state.storageKey), JSON.stringify(persistable));
   } catch {
     // localStorage may be unavailable
   }
 }
 
-function loadState(workspaceId: string): OnboardingState {
+function loadState(storageKeyId: string): OnboardingState {
   try {
     localStorage.removeItem(LEGACY_GLOBAL_KEY);
   } catch {
     // ignore
   }
-  if (!workspaceId) return initialState;
-  const fresh: OnboardingState = { ...initialState, workspaceId };
+  if (!storageKeyId) return initialState;
+  const fresh: OnboardingState = { ...initialState, storageKey: storageKeyId };
   try {
-    const raw = localStorage.getItem(storageKey(workspaceId));
+    const raw = localStorage.getItem(storageKey(storageKeyId));
     if (!raw) return fresh;
     const parsed = JSON.parse(raw) as PersistableState;
-    if (parsed?.workspaceId !== workspaceId) return fresh;
+    if (parsed?.storageKey !== storageKeyId) return fresh;
     if (typeof parsed?.step !== "string" || !VALID_STEPS.has(parsed.step)) {
       return fresh;
     }
@@ -1649,8 +1665,8 @@ function loadState(workspaceId: string): OnboardingState {
   }
 }
 
-export function useOnboardingOrchestrator(workspaceId: string) {
-  const [state, dispatch] = useReducer(reducer, workspaceId, loadState);
+export function useOnboardingOrchestrator(storageKeyId: string) {
+  const [state, dispatch] = useReducer(reducer, storageKeyId, loadState);
 
   // Persist to localStorage on state changes. Debounced because dispatches
   // can burst during lazy table loads / per-schema expansion, and JSON
@@ -1817,6 +1833,11 @@ export function useOnboardingOrchestrator(workspaceId: string) {
     []
   );
 
+  const initGithubFlow = useCallback(
+    (mode: OnboardingMode) => dispatch({ type: "INIT_GITHUB_FLOW", mode }),
+    []
+  );
+
   return {
     state,
     messages,
@@ -1852,6 +1873,7 @@ export function useOnboardingOrchestrator(workspaceId: string) {
     failGithubLlmKeyTest,
     advanceGithubWarehouse,
     startGithubWarehouseTest,
-    failGithubWarehouseTest
+    failGithubWarehouseTest,
+    initGithubFlow
   };
 }

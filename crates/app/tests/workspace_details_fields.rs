@@ -8,7 +8,7 @@
 
 use oxy_app::api::workspaces::{
     GitCapabilities, GitMode, build_workspace_details_response,
-    build_workspace_details_response_for_uninitialized_local,
+    build_workspace_details_response_for_uninitialized_local, compute_workspace_storage_key,
 };
 use std::process::Command;
 use tempfile::TempDir;
@@ -58,6 +58,7 @@ async fn git_enabled_workspace_reports_local_mode() {
         tmp.path(),
         false,
         "owner".to_string(),
+        workspace_id.to_string(),
     )
     .await
     .expect("builder returned error");
@@ -66,6 +67,11 @@ async fn git_enabled_workspace_reports_local_mode() {
     assert_eq!(body.id, workspace_id);
     assert_eq!(body.name, "test-workspace");
     assert_eq!(body.current_user_role, "owner");
+    assert_eq!(
+        body.storage_key,
+        workspace_id.to_string(),
+        "cloud-mode storage_key must be the workspace UUID"
+    );
     assert!(
         body.workspace_error.is_none(),
         "no workspace_error expected"
@@ -112,6 +118,7 @@ async fn missing_workspace_directory_reports_workspace_error() {
         &missing,
         false,
         "admin".to_string(),
+        workspace_id.to_string(),
     )
     .await
     .expect("builder returned error");
@@ -161,12 +168,14 @@ async fn local_mode_forces_git_mode_none_even_with_dot_git_present() {
     init_git_repo(tmp.path());
 
     let workspace_id = Uuid::new_v4();
+    let local_storage_key = compute_workspace_storage_key(workspace_id, Some(tmp.path()));
     let resp = build_workspace_details_response(
         workspace_id,
         "local-workspace",
         tmp.path(),
         true, // git_disabled
         "owner".to_string(),
+        local_storage_key.clone(),
     )
     .await
     .expect("builder returned error");
@@ -177,6 +186,12 @@ async fn local_mode_forces_git_mode_none_even_with_dot_git_present() {
         GitMode::None,
         "local mode must force git_mode=None regardless of on-disk .git"
     );
+    assert!(
+        body.storage_key.starts_with("local:"),
+        "local-mode storage_key must use the local: prefix, got {:?}",
+        body.storage_key
+    );
+    assert_eq!(body.storage_key, local_storage_key);
     let expected_caps: GitCapabilities = GitMode::None.into();
     assert_eq!(
         body.capabilities, expected_caps,
@@ -199,6 +214,7 @@ async fn uninitialized_local_workspace_returns_requires_local_setup_true() {
         workspace_id,
         "local",
         "owner".to_string(),
+        "local:abc123def456".to_string(),
     );
 
     let body = resp.0;
@@ -207,4 +223,99 @@ async fn uninitialized_local_workspace_returns_requires_local_setup_true() {
     assert!(body.workspace_error.is_none());
     assert_eq!(body.name, "local");
     assert_eq!(body.current_user_role, "owner");
+    assert_eq!(body.storage_key, "local:abc123def456");
+}
+
+#[tokio::test]
+async fn storage_key_differs_per_local_path_and_matches_uuid_for_cloud() {
+    let workspace_id = Uuid::new_v4();
+    let cloud = compute_workspace_storage_key(workspace_id, None);
+    assert_eq!(
+        cloud,
+        workspace_id.to_string(),
+        "cloud storage_key must equal the UUID"
+    );
+
+    let a = TempDir::new().expect("tempdir-a");
+    let b = TempDir::new().expect("tempdir-b");
+    let key_a = compute_workspace_storage_key(workspace_id, Some(a.path()));
+    let key_b = compute_workspace_storage_key(workspace_id, Some(b.path()));
+    assert!(key_a.starts_with("local:"));
+    assert!(key_b.starts_with("local:"));
+    assert_ne!(
+        key_a, key_b,
+        "different local paths must yield different storage_keys"
+    );
+    // Same path → same key (deterministic).
+    assert_eq!(
+        key_a,
+        compute_workspace_storage_key(workspace_id, Some(a.path()))
+    );
+}
+
+#[tokio::test]
+async fn storage_key_resolves_symlinks() {
+    let workspace_id = Uuid::new_v4();
+    let target = TempDir::new().expect("tempdir-target");
+    let parent = TempDir::new().expect("tempdir-parent");
+    let link = parent.path().join("alias");
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target.path(), &link).expect("symlink");
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(target.path(), &link).expect("symlink");
+
+    let direct = compute_workspace_storage_key(workspace_id, Some(target.path()));
+    let via_link = compute_workspace_storage_key(workspace_id, Some(&link));
+    assert_eq!(
+        direct, via_link,
+        "symlinked path must hash to the same storage_key as its target"
+    );
+}
+
+#[tokio::test]
+async fn storage_key_handles_missing_path() {
+    let workspace_id = Uuid::new_v4();
+    let tmp = TempDir::new().expect("tempdir");
+    let missing = tmp.path().join("does-not-exist");
+    assert!(!missing.exists());
+
+    let key = compute_workspace_storage_key(workspace_id, Some(&missing));
+    assert!(
+        key.starts_with("local:"),
+        "missing-path key must still use local: prefix, got {key:?}"
+    );
+    // Same missing path → same key (deterministic) even without canonicalize.
+    assert_eq!(
+        key,
+        compute_workspace_storage_key(workspace_id, Some(&missing))
+    );
+}
+
+// `#[serial]` because the test mutates process cwd; nextest's
+// process-per-test isolation makes this safe on the project's default
+// runner but a `cargo test` (threaded) run would race.
+#[tokio::test]
+#[serial_test::serial]
+async fn storage_key_normalizes_relative_to_absolute() {
+    let workspace_id = Uuid::new_v4();
+    let tmp = TempDir::new().expect("tempdir");
+    let original_cwd = std::env::current_dir().expect("get cwd");
+
+    let parent = tmp.path().parent().expect("tempdir parent");
+    let leaf = tmp.path().file_name().expect("tempdir name");
+    std::env::set_current_dir(parent).expect("set cwd");
+
+    let relative_key =
+        compute_workspace_storage_key(workspace_id, Some(std::path::Path::new(leaf)));
+    let absolute_key = compute_workspace_storage_key(workspace_id, Some(tmp.path()));
+
+    // Restore before any assertion that could panic so a failure doesn't
+    // leave the process cwd in the temp dir.
+    std::env::set_current_dir(&original_cwd).expect("restore cwd");
+
+    assert_eq!(
+        relative_key, absolute_key,
+        "relative and absolute paths to the same directory must hash equally"
+    );
 }

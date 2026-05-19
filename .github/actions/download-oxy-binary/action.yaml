@@ -42,6 +42,13 @@ runs:
         run-id: ${{ inputs.run-id }}
         github-token: ${{ inputs.github-token }}
 
+    # actions/upload-artifact does not preserve POSIX permissions, so the
+    # downloaded `oxy` binary lands without the execute bit and `nohup oxy …`
+    # fails with "Permission denied". Restore it before adding to PATH.
+    - name: Restore executable bit
+      shell: bash
+      run: chmod +x "$GITHUB_WORKSPACE/${{ inputs.destination }}/oxy"
+
     - name: Add binary to PATH
       shell: bash
       run: echo "$GITHUB_WORKSPACE/${{ inputs.destination }}" >> "$GITHUB_PATH"

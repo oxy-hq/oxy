@@ -159,14 +159,13 @@ async fn resolve_backend() -> (Option<Arc<dyn ObservabilityStore>>, Option<Strin
             let get_credentials: oxy_observability::backends::airhouse::CredentialFn =
                 Arc::new(move || {
                     Box::pin(async move {
-                        let broker =
-                            airhouse::token_broker().ok_or_else(|| {
-                                oxy_shared::errors::OxyError::ConfigurationError(
-                                    "Airhouse observability: token broker not initialised; \
+                        let broker = airhouse::token_broker().ok_or_else(|| {
+                            oxy_shared::errors::OxyError::ConfigurationError(
+                                "Airhouse observability: token broker not initialised; \
                                      check AIRHOUSE_BASE_URL / AIRHOUSE_ADMIN_TOKEN"
-                                        .into(),
-                                )
-                            })?;
+                                    .into(),
+                            )
+                        })?;
                         let cred = broker
                             .mint_for_system(
                                 Uuid::nil(),

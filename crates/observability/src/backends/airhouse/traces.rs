@@ -4,7 +4,9 @@ use oxy_shared::errors::OxyError;
 use tokio_postgres::SimpleQueryMessage;
 
 use super::{AirhouseObservabilityStorage, esc, get_i64, get_str, parse_float_array};
-use crate::types::{ClusterInfoRow, ClusterMapDataRow, TraceDetailRow, TraceEnrichmentRow, TraceRow};
+use crate::types::{
+    ClusterInfoRow, ClusterMapDataRow, TraceDetailRow, TraceEnrichmentRow, TraceRow,
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -26,8 +28,7 @@ pub async fn list_traces(
     duration_filter: Option<&str>,
 ) -> Result<(Vec<TraceRow>, i64), OxyError> {
     let mut conditions = vec![
-        "s.span_name IN ('workflow.run_workflow', 'agent.run_agent', 'analytics.run')"
-            .to_string(),
+        "s.span_name IN ('workflow.run_workflow', 'agent.run_agent', 'analytics.run')".to_string(),
         "s.parent_span_id = ''".to_string(),
     ];
 
@@ -48,9 +49,7 @@ pub async fn list_traces(
 
     let where_clause = conditions.join(" AND ");
 
-    let count_sql = format!(
-        "SELECT count(*) AS n FROM oxy_obs_spans s WHERE {where_clause}"
-    );
+    let count_sql = format!("SELECT count(*) AS n FROM oxy_obs_spans s WHERE {where_clause}");
     let count_msgs = storage.query(&count_sql).await?;
     let total = rows(&count_msgs)
         .next()

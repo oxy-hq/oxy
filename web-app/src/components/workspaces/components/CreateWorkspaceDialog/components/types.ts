@@ -108,12 +108,10 @@ interface ColumnInfo {
 
 export interface OnboardingState {
   step: OnboardingStep;
-  /**
-   * The workspace this onboarding run belongs to. Set when the onboarding
-   * flow is initialized for a newly-created blank workspace, so we can detect
-   * incomplete onboarding per workspace (e.g., redirect home → /onboarding).
-   */
-  workspaceId?: string;
+  /** Matches `Workspace.storage_key`. Used as both the localStorage namespace
+   * and a hydration guard — a persisted blob whose `storageKey` doesn't match
+   * the active workspace is discarded rather than re-hydrating into it. */
+  storageKey?: string;
   /** Which onboarding variant this run is. Defaults to `"new"`. */
   mode?: OnboardingMode;
   /** For `mode === "github"`: the setup work detected from the cloned repo. */

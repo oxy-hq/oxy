@@ -58,7 +58,13 @@ pub async fn get_metrics_analytics(
     let agg_msgs = storage.query(&agg_sql).await?;
     let (total_queries, unique_metrics, avg_per_metric) = rows(&agg_msgs)
         .next()
-        .map(|r| (get_i64(r, "total"), get_i64(r, "uniq"), get_f64(r, "avg_per")))
+        .map(|r| {
+            (
+                get_i64(r, "total"),
+                get_i64(r, "uniq"),
+                get_f64(r, "avg_per"),
+            )
+        })
         .unwrap_or((0, 0, 0.0));
 
     let popular_sql = format!(
@@ -151,7 +157,12 @@ pub async fn get_metrics_analytics(
         most_popular,
         most_popular_count,
         trend_vs_last_period: trend,
-        by_source_type: SourceTypeBreakdownData { agent, workflow, task, analytics },
+        by_source_type: SourceTypeBreakdownData {
+            agent,
+            workflow,
+            task,
+            analytics,
+        },
         by_context_type: ContextTypeBreakdownData {
             sql: sql_count,
             semantic_query,
@@ -200,7 +211,12 @@ pub async fn get_metrics_list(
         })
         .collect();
 
-    Ok(MetricsListData { metrics, total, limit, offset })
+    Ok(MetricsListData {
+        metrics,
+        total,
+        limit,
+        offset,
+    })
 }
 
 pub async fn get_metric_detail(
@@ -233,7 +249,14 @@ pub async fn get_metric_detail(
     let agg_msgs = storage.query(&agg_sql).await?;
     let (total_queries, prev_count, via_agent, via_workflow) = rows(&agg_msgs)
         .next()
-        .map(|r| (get_i64(r, "total"), get_i64(r, "prev"), get_i64(r, "via_agent"), get_i64(r, "via_workflow")))
+        .map(|r| {
+            (
+                get_i64(r, "total"),
+                get_i64(r, "prev"),
+                get_i64(r, "via_agent"),
+                get_i64(r, "via_workflow"),
+            )
+        })
         .unwrap_or((0, 0, 0, 0));
 
     let trend = if prev_count > 0 {
@@ -259,7 +282,10 @@ pub async fn get_metric_detail(
     );
     let trend_msgs = storage.query(&trend_sql).await?;
     let usage_trend: Vec<UsageTrendPointData> = rows(&trend_msgs)
-        .map(|r| UsageTrendPointData { date: get_str(r, "date"), count: get_u64(r, "cnt") })
+        .map(|r| UsageTrendPointData {
+            date: get_str(r, "date"),
+            count: get_u64(r, "cnt"),
+        })
         .collect();
 
     let related_sql = format!(

@@ -191,7 +191,10 @@ pub async fn get_effective_run_state(
         return Ok(("done".to_string(), None));
     }
     let last_event = get_last_run_event(db, &run.id).await?;
-    Ok(effective_run_state_from_last_event(run, last_event.as_ref()))
+    Ok(effective_run_state_from_last_event(
+        run,
+        last_event.as_ref(),
+    ))
 }
 
 pub async fn get_thread_history(
@@ -255,8 +258,8 @@ pub async fn get_thread_history_with_events(
     thread_id: Uuid,
     limit: u64,
 ) -> Result<Vec<(String, String, Vec<ToolExchangeRow>)>, DbErr> {
-    use std::collections::HashMap;
     use sea_orm::QuerySelect;
+    use std::collections::HashMap;
 
     let runs = run::Entity::find()
         .filter(run::Column::ThreadId.eq(thread_id))
@@ -282,7 +285,10 @@ pub async fn get_thread_history_with_events(
     // Group events by run_id, preserving ascending seq order from the query.
     let mut events_by_run: HashMap<String, Vec<run_event::Model>> = HashMap::new();
     for event in all_events {
-        events_by_run.entry(event.run_id.clone()).or_default().push(event);
+        events_by_run
+            .entry(event.run_id.clone())
+            .or_default()
+            .push(event);
     }
 
     let mut result = Vec::new();
@@ -292,7 +298,11 @@ pub async fn get_thread_history_with_events(
         let last_event = run_events.last();
         let (status, error_message) = effective_run_state_from_last_event(&r, last_event);
 
-        let answer = match (status.as_str(), r.answer.as_deref(), error_message.as_deref()) {
+        let answer = match (
+            status.as_str(),
+            r.answer.as_deref(),
+            error_message.as_deref(),
+        ) {
             ("done", Some(ans), _) => ans.to_string(),
             ("done", None, Some(error)) => format!("Error: {}", error),
             ("failed", _, Some(error)) => format!("Error: {}", error),
@@ -314,7 +324,11 @@ pub async fn get_thread_history_with_events(
                 "tool_result" => {
                     if let Some((name, input)) = pending_call.take() {
                         let output = event.payload["output"].as_str().unwrap_or("").to_string();
-                        exchanges.push(ToolExchangeRow { name, input, output });
+                        exchanges.push(ToolExchangeRow {
+                            name,
+                            input,
+                            output,
+                        });
                     }
                 }
                 _ => {}

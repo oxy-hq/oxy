@@ -55,8 +55,7 @@ CREATE TABLE IF NOT EXISTS oxy_obs_intent_classifications (
 pub const CREATE_INTENT_CLASSIFICATIONS_INDEX_TRACE: &str =
     "CREATE INDEX IF NOT EXISTS oxy_obs_idx_ic_trace ON oxy_obs_intent_classifications(trace_id)";
 
-pub const CREATE_INTENT_CLASSIFICATIONS_INDEX_TS: &str =
-    "CREATE INDEX IF NOT EXISTS oxy_obs_idx_ic_ts ON oxy_obs_intent_classifications(classified_at DESC)";
+pub const CREATE_INTENT_CLASSIFICATIONS_INDEX_TS: &str = "CREATE INDEX IF NOT EXISTS oxy_obs_idx_ic_ts ON oxy_obs_intent_classifications(classified_at DESC)";
 
 pub const CREATE_METRIC_USAGE_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS oxy_obs_metric_usage (
@@ -71,8 +70,7 @@ CREATE TABLE IF NOT EXISTS oxy_obs_metric_usage (
 )
 "#;
 
-pub const CREATE_METRIC_USAGE_INDEX_METRIC: &str =
-    "CREATE INDEX IF NOT EXISTS oxy_obs_idx_mu_metric ON oxy_obs_metric_usage(metric_name, created_at)";
+pub const CREATE_METRIC_USAGE_INDEX_METRIC: &str = "CREATE INDEX IF NOT EXISTS oxy_obs_idx_mu_metric ON oxy_obs_metric_usage(metric_name, created_at)";
 
 pub const CREATE_METRIC_USAGE_INDEX_TRACE: &str =
     "CREATE INDEX IF NOT EXISTS oxy_obs_idx_mu_trace ON oxy_obs_metric_usage(trace_id)";

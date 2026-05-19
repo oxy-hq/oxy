@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, Database, GitFork, Key, Lock, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Database, GitFork, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import ChatPanel from "@/components/Chat/ChatPanel";
@@ -10,7 +10,7 @@ import useDatabases from "@/hooks/api/databases/useDatabases";
 import useGithubSetup from "@/hooks/api/onboarding/useGithubSetup";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
-import { hasPendingOnboardingForWorkspace } from "@/libs/utils/onboardingStorage";
+import { hasPendingOnboardingForStorageKey } from "@/libs/utils/onboardingStorage";
 import ROUTES from "@/libs/utils/routes";
 import { getAgentNameFromPath } from "@/libs/utils/string";
 import useCurrentOrg from "@/stores/useCurrentOrg";
@@ -139,12 +139,6 @@ const Home = () => {
 
   const routes = ROUTES.ORG(orgSlug).WORKSPACE(project.id);
 
-  // Absolute path: `home` and `onboarding` are siblings in WorkspaceLayout,
-  // so relative `to='onboarding'` resolves to `/home/onboarding` (404).
-  if (hasPendingOnboardingForWorkspace(project.id)) {
-    return <Navigate to={routes.ONBOARDING} replace />;
-  }
-
   if (setupPending || agentsPending || databasesPending) {
     return loadingFallback;
   }
@@ -180,46 +174,32 @@ const Home = () => {
     resolvedKeyVar === undefined
       ? missingLlmKeys.length > 0
       : resolvedKeyVar !== null && missingLlmKeyVars.has(resolvedKeyVar);
-  const llmGapLabel =
-    resolvedKeyVar !== undefined && resolvedKeyVar !== null && defaultAgent
-      ? `${resolvedKeyVar} not set for ${defaultAgent.name ?? getAgentNameFromPath(defaultAgent.path)}`
-      : "No LLM API key";
 
   const hasDatabases = databases.length > 0;
   const hasPublicAgents = agents.filter((a) => a.public).length > 0;
   const hasWarehouseCredentials = warehousesNeedingCreds.length === 0;
-  const isSetupComplete =
-    !llmKeyMissingForAgent && hasDatabases && hasPublicAgents && hasWarehouseCredentials;
+
+  // We don't redirect on `!hasDatabases` / `!hasPublicAgents` because those
+  // gaps aren't fixable in the wizard — they need config.yml edits, so the
+  // toast below points the user at the IDE / Settings instead.
+  const projectStorageKey = project.storage_key ?? project.id;
+  const hasPendingWizardState = hasPendingOnboardingForStorageKey(projectStorageKey);
+  const hasMissingCredentials = !anyApiError && (llmKeyMissingForAgent || !hasWarehouseCredentials);
+  // Absolute path: `home` and `onboarding` are siblings in WorkspaceLayout,
+  // so relative `to='onboarding'` resolves to `/home/onboarding` (404).
+  if (hasPendingWizardState || hasMissingCredentials) {
+    return <Navigate to={routes.ONBOARDING} replace />;
+  }
+  const isSetupComplete = hasDatabases && hasPublicAgents;
   // On API error we don't render any gap rows (we can't trust the data), so
   // the user would see a locked chat with no actionable steps. Let them try
   // chatting instead.
   const shouldDisableChat = !anyApiError && !isSetupComplete;
 
-  // Surface gaps as a toast rather than redirecting — the wizard is one-shot
-  // and ends in a dead-end "complete" state, and the user just came from
-  // there. Each gap opens the relevant Settings section or navigates.
+  // Credential gaps already triggered the redirect above; these are the
+  // wizard-unfixable gaps (no databases / no agents).
   const gaps: SetupGap[] = [];
   if (!anyApiError) {
-    if (llmKeyMissingForAgent) {
-      gaps.push({
-        icon: Key,
-        label: llmGapLabel,
-        action: () => openSettings("workspace.secrets"),
-        cta: "Add key"
-      });
-    }
-    if (!hasWarehouseCredentials) {
-      const names = warehousesNeedingCreds.map((w) => w.name).join(", ");
-      gaps.push({
-        icon: Lock,
-        label:
-          warehousesNeedingCreds.length === 1
-            ? `Missing credentials for ${names}`
-            : "Missing warehouse credentials",
-        action: () => openSettings("workspace.secrets"),
-        cta: "Add credentials"
-      });
-    }
     if (!hasDatabases) {
       gaps.push({
         icon: Database,

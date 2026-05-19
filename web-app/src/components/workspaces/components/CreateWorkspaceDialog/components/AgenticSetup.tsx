@@ -12,15 +12,13 @@ import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
-import useOnboardingReadiness from "@/hooks/api/onboarding/useOnboardingReadiness";
+import useGithubSetup from "@/hooks/api/onboarding/useGithubSetup";
 import { sseEventToUiBlock, useAnalyticsRun } from "@/hooks/useAnalyticsRun";
 import { useBuilderActivity } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import {
-  clearOnboardingStateForWorkspace,
-  getPersistedStepForWorkspace,
-  hasPendingOnboardingForWorkspace,
-  initOnboardingStateForWorkspace
+  clearOnboardingStateForStorageKey,
+  initOnboardingStateForStorageKey
 } from "@/libs/utils/onboardingStorage";
 import ROUTES from "@/libs/utils/routes";
 import { AnalyticsService, type HumanInputQuestion, type UiBlock } from "@/services/api/analytics";
@@ -44,19 +42,22 @@ import { useViewRunManager } from "./useViewRunManager";
  *  one database, at least one public agent — redirect any visit away. */
 export default function AgenticSetupPage() {
   const { project } = useCurrentProjectBranch();
-  // Key the inner component by project.id so navigating between workspaces
-  // remounts the orchestrator with the correct workspace's persisted state
-  // — without this, useReducer keeps the previous workspace's state alive.
-  return <AgenticSetupForWorkspace key={project.id} workspaceId={project.id} />;
+  // Falling back to `project.id` keeps fabricated/partial Workspace
+  // objects (legacy callers; tests) working until they fill in storage_key.
+  const storageKey = project.storage_key ?? project.id;
+  return <AgenticSetupForWorkspace key={storageKey} storageKey={storageKey} />;
 }
 
-function AgenticSetupForWorkspace({ workspaceId }: { workspaceId: string }) {
+function AgenticSetupForWorkspace({ storageKey }: { storageKey: string }) {
+  // Must share Home's probe so the two pages can't disagree on "is
+  // onboarding done?" — `useOnboardingReadiness` is coarser (any LLM key
+  // set) and would ping-pong with Home's per-`key_var` view.
   const {
-    data: readiness,
-    isPending: readinessPending,
-    isError: readinessError,
-    refetch: refetchReadiness
-  } = useOnboardingReadiness();
+    data: githubSetup,
+    isPending: setupPending,
+    isError: setupError,
+    refetch: refetchSetup
+  } = useGithubSetup();
   const {
     data: databases,
     isPending: databasesPending,
@@ -70,40 +71,50 @@ function AgenticSetupForWorkspace({ workspaceId }: { workspaceId: string }) {
     refetch: refetchAgents
   } = useAgents();
 
-  const orchestrator = useOnboardingOrchestrator(workspaceId);
+  const orchestrator = useOnboardingOrchestrator(storageKey);
+  const { initGithubFlow } = orchestrator;
 
-  const persistedStep = getPersistedStepForWorkspace(workspaceId);
   const publicAgentCount = (agents ?? []).filter((a) => a.public).length;
-  const isReady =
-    readiness?.has_llm_key === true && (databases?.length ?? 0) > 0 && publicAgentCount > 0;
+  const missingLlmKeyVars = githubSetup?.missing_llm_key_vars ?? [];
+  const warehousesNeedingCreds = (githubSetup?.warehouses ?? []).filter(
+    (w) => w.dialect.toLowerCase() !== "duckdb" && w.missing_vars.length > 0
+  );
+  const hasMissingCredentials = missingLlmKeyVars.length > 0 || warehousesNeedingCreds.length > 0;
+  const hasMinimumWorkspace = (databases?.length ?? 0) > 0 && publicAgentCount > 0;
+  const isReady = !hasMissingCredentials && hasMinimumWorkspace;
 
-  // Only redirect away when the user has *no* pending onboarding state.
-  // `isReady` can be true for a workspace whose own `key_var` secrets aren't
-  // set yet — e.g. the operator has `OPENAI_API_KEY` in the server env, which
-  // satisfies the readiness probe even though the cloned repo / demo
-  // `config.yml` still references `key_var`s the user hasn't filled in. If
-  // we redirected on `isReady` alone we would erase the state the user just
-  // started in `WorkspacePreparing` and they'd never see the wizard.
-  //
-  // The home page mirrors this contract from the other side: it redirects
-  // *to* onboarding whenever a pending state exists, so the two pages can
-  // never ping-pong — exactly one of them owns the user at a time.
-  //
-  // We still need a "you finished — get out of here" path for users who
-  // navigate back to /onboarding after completion, hence the
-  // `persistedStep` checks: explicit `complete`, or no state at all.
-  const isPending = hasPendingOnboardingForWorkspace(workspaceId);
-  const shouldRedirectAway =
-    isReady && !isPending && (persistedStep === undefined || persistedStep === "complete");
+  // "In flight" requires a `mode` — a modeless `welcome` entry (e.g. from a
+  // direct /onboarding visit on a fully-set-up workspace) shouldn't trap the
+  // user on a static welcome screen, so it falls through to the redirect-
+  // away path. When creds *are* missing, the seed effect below promotes
+  // modeless state into `mode: "demo"` before this check matters.
+  const isInFlightWizard =
+    orchestrator.state.mode !== undefined && orchestrator.state.step !== "complete";
+  const shouldRedirectAway = isReady && !isInFlightWizard;
 
-  // Side effects belong in useEffect, not in the render body. Strict Mode
-  // would otherwise call this twice per mount; concurrent rendering may
-  // discard the render entirely while still leaving localStorage cleared.
   useEffect(() => {
-    if (shouldRedirectAway) clearOnboardingStateForWorkspace(workspaceId);
-  }, [shouldRedirectAway, workspaceId]);
+    if (shouldRedirectAway) clearOnboardingStateForStorageKey(storageKey);
+  }, [shouldRedirectAway, storageKey]);
 
-  if (readinessPending || databasesPending || agentsPending) {
+  // The credential-driven Home → /onboarding redirect doesn't seed mode/step
+  // the way cloud's `WorkspacePreparing` does, so do it here. Mode inferred
+  // from storage_key shape (UUID → cloud github-import wording; `local:` →
+  // demo wording). `initGithubFlow` is idempotent — see its action doc.
+  const inferredCredentialFlowMode = storageKey.startsWith("local:") ? "demo" : "github";
+  useEffect(() => {
+    if (!hasMissingCredentials) return;
+    if (orchestrator.state.mode !== undefined) return;
+    if (orchestrator.state.step !== "welcome") return;
+    initGithubFlow(inferredCredentialFlowMode);
+  }, [
+    hasMissingCredentials,
+    orchestrator.state.mode,
+    orchestrator.state.step,
+    initGithubFlow,
+    inferredCredentialFlowMode
+  ]);
+
+  if (setupPending || databasesPending || agentsPending) {
     return (
       <div className='flex h-full items-center justify-center'>
         <Spinner className='size-6' />
@@ -115,7 +126,7 @@ function AgenticSetupForWorkspace({ workspaceId }: { workspaceId: string }) {
   // data we can neither redirect nor safely render the wizard (an
   // already-onboarded workspace would see a stale form). Surface a retry
   // affordance instead of falling through.
-  if (readinessError || databasesError || agentsError) {
+  if (setupError || databasesError || agentsError) {
     return (
       <div className='flex h-full items-center justify-center p-6'>
         <div className='flex max-w-sm flex-col items-center gap-3 text-center'>
@@ -128,7 +139,7 @@ function AgenticSetupForWorkspace({ workspaceId }: { workspaceId: string }) {
             variant='outline'
             size='sm'
             onClick={() => {
-              void refetchReadiness();
+              void refetchSetup();
               void refetchDatabases();
               void refetchAgents();
             }}
@@ -148,12 +159,19 @@ function AgenticSetupForWorkspace({ workspaceId }: { workspaceId: string }) {
     return <Navigate to='..' replace />;
   }
 
-  // `github` and `demo` share the same flow — both start from a config.yml
-  // that already exists on disk and just need missing secrets filled in.
-  if (orchestrator.state.mode === "github" || orchestrator.state.mode === "demo") {
-    return <GithubOnboardingPage orchestrator={orchestrator} />;
+  // BlankOnboardingPage is reserved for the cloud "create from scratch" flow
+  // (the only path that sets `mode: "new"`). Everything else — demo/github
+  // imports, all of local, post-completion credential gaps — uses
+  // GithubOnboardingPage, which only prompts for missing secrets.
+  // The `step !== "complete"` guard lets a finished new-wizard whose
+  // credentials are later revoked fall into the lightweight flow instead of
+  // restarting the from-scratch arc.
+  const isResumingNewWizard =
+    orchestrator.state.mode === "new" && orchestrator.state.step !== "complete";
+  if (isResumingNewWizard) {
+    return <BlankOnboardingPage orchestrator={orchestrator} />;
   }
-  return <BlankOnboardingPage orchestrator={orchestrator} />;
+  return <GithubOnboardingPage orchestrator={orchestrator} />;
 }
 
 type OrchestratorHandle = ReturnType<typeof useOnboardingOrchestrator>;
@@ -162,6 +180,7 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
   const actions = useOnboardingActions(orchestrator);
   const { project } = useCurrentProjectBranch();
   const projectId = project?.id ?? "";
+  const storageKeyForReset = project?.storage_key ?? project?.id ?? "";
   const { isMobile } = useSidebar();
   const navigate = useNavigate();
 
@@ -1017,11 +1036,17 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
       }
     }
 
-    // Reset to a fresh state but keep the workspace tag so the home-page
-    // guard still redirects back here until onboarding completes.
-    initOnboardingStateForWorkspace(projectId);
+    // Reset to a fresh state but keep the workspace's storage_key so the
+    // home-page guard still redirects back here until onboarding completes.
+    if (storageKeyForReset) initOnboardingStateForStorageKey(storageKeyForReset);
     window.location.reload();
-  }, [projectId, orchestrator.state.phaseRunIds, orchestrator.state.viewRunIds, resetManifest]);
+  }, [
+    projectId,
+    storageKeyForReset,
+    orchestrator.state.phaseRunIds,
+    orchestrator.state.viewRunIds,
+    resetManifest
+  ]);
 
   return (
     <div className='flex h-full flex-col'>
@@ -1147,6 +1172,7 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
   const actions = useOnboardingActions(orchestrator);
   const { project } = useCurrentProjectBranch();
   const projectId = project?.id ?? "";
+  const projectStorageKey = project?.storage_key ?? project?.id ?? "";
   const { isMobile } = useSidebar();
   const navigate = useNavigate();
 
@@ -1157,7 +1183,7 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
   const appRun = useAnalyticsRun({ projectId });
   const app2Run = useAnalyticsRun({ projectId });
 
-  const { step, workspaceId: onboardingWorkspaceId } = orchestrator.state;
+  const { step, storageKey: onboardingStorageKey } = orchestrator.state;
   const { fetchGithubSetup } = actions;
   const { setGithubSetup } = orchestrator;
 
@@ -1176,7 +1202,7 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
   // prompt straight to "complete".
   useEffect(() => {
     if (step !== "github_loading") return;
-    if (!projectId || projectId !== onboardingWorkspaceId) return;
+    if (!projectStorageKey || projectStorageKey !== onboardingStorageKey) return;
     let cancelled = false;
     fetchGithubSetup().catch((err: unknown) => {
       if (cancelled) return;
@@ -1187,7 +1213,7 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
     return () => {
       cancelled = true;
     };
-  }, [step, fetchGithubSetup, setGithubSetup, projectId, onboardingWorkspaceId]);
+  }, [step, fetchGithubSetup, setGithubSetup, projectStorageKey, onboardingStorageKey]);
 
   const [startOverOpen, setStartOverOpen] = useState(false);
   const resetManifest = useMemo<OnboardingResetRequest>(() => {
@@ -1223,9 +1249,9 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
         toast.error("Failed to fully reset onboarding. Some secrets may remain.");
       }
     }
-    initOnboardingStateForWorkspace(projectId, mode);
+    if (projectStorageKey) initOnboardingStateForStorageKey(projectStorageKey, mode);
     window.location.reload();
-  }, [projectId, resetManifest, mode]);
+  }, [projectId, projectStorageKey, resetManifest, mode]);
 
   const railState = orchestrator.railState;
   const headerSubtitle =
