@@ -1,4 +1,5 @@
 /target
+*.rlib
 
 # Local-only development coordination artifacts
 SESSION_HANDOFF.md

@@ -162,6 +162,27 @@ fn terminal_error_message(
         .or_else(|| fallback.map(ToOwned::to_owned))
 }
 
+/// Compute the effective run state from an already-fetched last event, avoiding a DB round-trip.
+fn effective_run_state_from_last_event(
+    run: &run::Model,
+    last_event: Option<&run_event::Model>,
+) -> (String, Option<String>) {
+    if run.answer.is_some() {
+        return ("done".to_string(), None);
+    }
+    match last_event.map(|e| e.event_type.as_str()) {
+        Some("done") => ("done".to_string(), None),
+        Some("error") => (
+            "failed".to_string(),
+            terminal_error_message(last_event, run.error_message.as_deref()),
+        ),
+        _ => (
+            user_facing_status(run.task_status.as_deref()).to_string(),
+            run.error_message.clone(),
+        ),
+    }
+}
+
 pub async fn get_effective_run_state(
     db: &DatabaseConnection,
     run: &run::Model,
@@ -169,21 +190,8 @@ pub async fn get_effective_run_state(
     if run.answer.is_some() {
         return Ok(("done".to_string(), None));
     }
-
     let last_event = get_last_run_event(db, &run.id).await?;
-    let effective = match last_event.as_ref().map(|event| event.event_type.as_str()) {
-        Some("done") => ("done".to_string(), None),
-        Some("error") => (
-            "failed".to_string(),
-            terminal_error_message(last_event.as_ref(), run.error_message.as_deref()),
-        ),
-        _ => (
-            user_facing_status(run.task_status.as_deref()).to_string(),
-            run.error_message.clone(),
-        ),
-    };
-
-    Ok(effective)
+    Ok(effective_run_state_from_last_event(run, last_event.as_ref()))
 }
 
 pub async fn get_thread_history(
@@ -247,7 +255,9 @@ pub async fn get_thread_history_with_events(
     thread_id: Uuid,
     limit: u64,
 ) -> Result<Vec<(String, String, Vec<ToolExchangeRow>)>, DbErr> {
+    use std::collections::HashMap;
     use sea_orm::QuerySelect;
+
     let runs = run::Entity::find()
         .filter(run::Column::ThreadId.eq(thread_id))
         .filter(run::Column::TaskStatus.is_in(["done", "failed", "cancelled", "timed_out"]))
@@ -256,11 +266,34 @@ pub async fn get_thread_history_with_events(
         .all(db)
         .await?;
 
+    if runs.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Single batch query for all events across every run in this page.
+    let run_ids: Vec<String> = runs.iter().map(|r| r.id.clone()).collect();
+    let all_events = run_event::Entity::find()
+        .filter(run_event::Column::RunId.is_in(run_ids))
+        .order_by_asc(run_event::Column::RunId)
+        .order_by_asc(run_event::Column::Seq)
+        .all(db)
+        .await?;
+
+    // Group events by run_id, preserving ascending seq order from the query.
+    let mut events_by_run: HashMap<String, Vec<run_event::Model>> = HashMap::new();
+    for event in all_events {
+        events_by_run.entry(event.run_id.clone()).or_default().push(event);
+    }
+
     let mut result = Vec::new();
     for r in runs {
-        let (status, error_message) = get_effective_run_state(db, &r).await?;
-        let answer = match (status.as_str(), r.answer, error_message) {
-            ("done", Some(answer), _) => answer,
+        let run_events = events_by_run.remove(&r.id).unwrap_or_default();
+        // Derive state from the in-memory last event — no extra DB round-trip.
+        let last_event = run_events.last();
+        let (status, error_message) = effective_run_state_from_last_event(&r, last_event);
+
+        let answer = match (status.as_str(), r.answer.as_deref(), error_message.as_deref()) {
+            ("done", Some(ans), _) => ans.to_string(),
             ("done", None, Some(error)) => format!("Error: {}", error),
             ("failed", _, Some(error)) => format!("Error: {}", error),
             ("failed", _, None) => "Error: run failed".to_string(),
@@ -269,15 +302,9 @@ pub async fn get_thread_history_with_events(
             _ => continue,
         };
 
-        let events = run_event::Entity::find()
-            .filter(run_event::Column::RunId.eq(&r.id))
-            .order_by_asc(run_event::Column::Seq)
-            .all(db)
-            .await?;
-
         let mut exchanges: Vec<ToolExchangeRow> = Vec::new();
         let mut pending_call: Option<(String, String)> = None;
-        for event in events {
+        for event in run_events {
             match event.event_type.as_str() {
                 "tool_call" => {
                     let name = event.payload["name"].as_str().unwrap_or("").to_string();
@@ -287,11 +314,7 @@ pub async fn get_thread_history_with_events(
                 "tool_result" => {
                     if let Some((name, input)) = pending_call.take() {
                         let output = event.payload["output"].as_str().unwrap_or("").to_string();
-                        exchanges.push(ToolExchangeRow {
-                            name,
-                            input,
-                            output,
-                        });
+                        exchanges.push(ToolExchangeRow { name, input, output });
                     }
                 }
                 _ => {}
