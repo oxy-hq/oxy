@@ -77,8 +77,7 @@ jobs:
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
           CURRENT_DATE=$(date -u +'%Y%m%d')
-          BUILD_DOCKER="${{ inputs.build_docker == false && 'false' || 'true' }}"
-
+          BUILD_DOCKER="${{ github.event_name == 'workflow_dispatch' && inputs.build_docker == false && 'false' || 'true' }}"
           echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "current_date=${CURRENT_DATE}" >> $GITHUB_OUTPUT
 
