@@ -10,6 +10,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tracing::warn;
+
 use agentic_core::subrun::{SubrunRef, SubrunRunner};
 
 use crate::workspace::WorkspaceContext;
@@ -56,7 +58,10 @@ impl SubrunRunner for OxyProcedureRunner {
         } else {
             match self.workspace.list_workflow_files().await {
                 Ok(p) => p,
-                Err(_) => return vec![],
+                Err(e) => {
+                    warn!(error = %e, "OxyProcedureRunner: list_workflow_files failed; returning empty search results");
+                    return vec![];
+                }
             }
         };
 
