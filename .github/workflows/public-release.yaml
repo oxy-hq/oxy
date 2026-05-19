@@ -538,7 +538,6 @@ jobs:
         run: |
           VERSION="${{ needs.determine-build-type.outputs.version }}"
           CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
-          DATE="${{ needs.determine-build-type.outputs.current_date }}"
           SHORT_SHA="${{ needs.determine-build-type.outputs.short_sha }}"
           IMAGE="ghcr.io/${{ github.repository_owner }}/oxygen"
           ARCH="${{ matrix.arch_tag }}"
@@ -546,8 +545,7 @@ jobs:
           if [ "$CHANNEL" = "stable" ]; then
             TAGS="${IMAGE}:${VERSION}-${ARCH},${IMAGE}:latest-${ARCH}"
           else
-            TAGS="${IMAGE}:edge-${DATE}-${ARCH}"
-            TAGS="${TAGS},${IMAGE}:edge-${SHORT_SHA}-${ARCH}"
+            TAGS="${IMAGE}:edge-${SHORT_SHA}-${ARCH}"
             TAGS="${TAGS},${IMAGE}:edge-latest-${ARCH}"
           fi
 
@@ -588,13 +586,13 @@ jobs:
         run: |
           VERSION="${{ needs.determine-build-type.outputs.version }}"
           CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
-          DATE="${{ needs.determine-build-type.outputs.current_date }}"
+          SHORT_SHA="${{ needs.determine-build-type.outputs.short_sha }}"
           IMAGE="ghcr.io/${{ github.repository_owner }}/oxygen"
 
           if [ "$CHANNEL" = "stable" ]; then
             echo "ref=${IMAGE}:${VERSION}-amd64" >> $GITHUB_OUTPUT
           else
-            echo "ref=${IMAGE}:edge-${DATE}-amd64" >> $GITHUB_OUTPUT
+            echo "ref=${IMAGE}:edge-${SHORT_SHA}-amd64" >> $GITHUB_OUTPUT
           fi
 
       - name: Run Trivy vulnerability scanner (image)
@@ -650,7 +648,7 @@ jobs:
         run: |
           VERSION="${{ needs.determine-build-type.outputs.version }}"
           CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
-          DATE="${{ needs.determine-build-type.outputs.current_date }}"
+          SHORT_SHA="${{ needs.determine-build-type.outputs.short_sha }}"
           IMAGE="ghcr.io/${{ github.repository_owner }}/oxygen"
 
           push_manifest() {
@@ -666,7 +664,7 @@ jobs:
             push_manifest "${VERSION}"
             push_manifest "latest"
           else
-            push_manifest "edge-${DATE}"
+            push_manifest "edge-${SHORT_SHA}"
             push_manifest "edge-latest"
           fi
 
