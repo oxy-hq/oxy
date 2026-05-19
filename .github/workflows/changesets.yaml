@@ -35,7 +35,6 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: changes
         with:
-          base: ${{ github.ref_name }}
           filters: |
             oxy:
               - "crates/**"
