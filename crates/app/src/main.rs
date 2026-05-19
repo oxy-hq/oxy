@@ -218,7 +218,7 @@ fn main() {
         eprintln!(
             "{}",
             "Observability disabled: OXY_OBSERVABILITY_BACKEND is not set. \
-             Set it to duckdb, postgres, or clickhouse to record traces."
+             Set it to duckdb, postgres, clickhouse, or airhouse to record traces."
                 .text()
         );
     }

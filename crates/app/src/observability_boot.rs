@@ -131,12 +131,40 @@ async fn resolve_backend() -> (Option<Arc<dyn ObservabilityStore>>, Option<Strin
                 }
             }
         }
+        "airhouse" => {
+            match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::from_env()
+                .await
+            {
+                Ok(storage) => match storage.ensure_schema().await {
+                    Ok(()) => (
+                        Some(Arc::new(storage) as Arc<dyn ObservabilityStore>),
+                        Some(
+                            "Observability: airhouse (AIRHOUSE_WIRE_HOST)".to_string(),
+                        ),
+                    ),
+                    Err(e) => {
+                        eprintln!(
+                            "{}",
+                            format!("Airhouse observability schema init failed: {e}").error()
+                        );
+                        (None, None)
+                    }
+                },
+                Err(e) => {
+                    eprintln!(
+                        "{}",
+                        format!("Airhouse observability init failed: {e}").error()
+                    );
+                    (None, None)
+                }
+            }
+        }
         other => {
             eprintln!(
                 "{}",
                 format!(
                     "Unknown OXY_OBSERVABILITY_BACKEND='{other}'. \
-                     Valid values: duckdb, postgres, clickhouse."
+                     Valid values: duckdb, postgres, clickhouse, airhouse."
                 )
                 .error()
             );

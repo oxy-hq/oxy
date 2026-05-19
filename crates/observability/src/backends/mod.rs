@@ -11,3 +11,6 @@ pub mod postgres;
 
 #[cfg(feature = "clickhouse")]
 pub mod clickhouse;
+
+#[cfg(feature = "airhouse")]
+pub mod airhouse;

@@ -77,6 +77,32 @@ pub async fn resolve_observability_backend() -> (
                 }
             }
         }
+        "airhouse" => {
+            match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::from_env()
+                .await
+            {
+                Ok(storage) => match storage.ensure_schema().await {
+                    Ok(()) => (
+                        Some(Arc::new(storage) as Arc<dyn oxy_observability::ObservabilityStore>),
+                        Some("Observability: airhouse (AIRHOUSE_WIRE_HOST)".to_string()),
+                    ),
+                    Err(e) => {
+                        eprintln!(
+                            "{}",
+                            format!("Airhouse observability schema init failed: {e}").error()
+                        );
+                        (None, None)
+                    }
+                },
+                Err(e) => {
+                    eprintln!(
+                        "{}",
+                        format!("Airhouse observability init failed: {e}").error()
+                    );
+                    (None, None)
+                }
+            }
+        }
         _ => {
             if has_db_url {
                 match oxy_observability::backends::postgres::PostgresObservabilityStorage::from_env(
@@ -139,7 +165,7 @@ pub async fn ensure_global_store_initialized() -> Result<(), oxy_shared::errors:
     let store = store.ok_or_else(|| {
         oxy_shared::errors::OxyError::RuntimeError(
             "Could not initialize observability storage (check OXY_DATABASE_URL / \
-             OXY_OBSERVABILITY_BACKEND / OXY_CLICKHOUSE_URL)"
+             OXY_OBSERVABILITY_BACKEND / OXY_CLICKHOUSE_URL / OXY_AIRHOUSE_OBS_*)"
                 .into(),
         )
     })?;

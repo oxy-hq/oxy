@@ -24,6 +24,7 @@ oxy-observability = { workspace = true, features = [
     "duckdb",
     "postgres",
     "clickhouse",
+    "airhouse",
 ] }
 oxy-shared = { workspace = true }
 oxy-airform = { workspace = true }
