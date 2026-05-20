@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.56] - 2026-05-20
+
+### 🚀 Features
+
+- Platform cleanup - refactor workflow run to use orchestrator  runner (#2300)
+- Airway ELT integration + streaming pipeline (#2337)
+- Add Airhouse observability backend support (#2340)
+- Agentic browser test suite + cloud-mode CI matrix job (#2275)
+- Add Airhouse observability backend (#2356)
+- Agentic browser test skill (migrated from oxy-hq/skills#11) (#2358)
+- Data app publish paradigm (#2313)
+- Web-app guard third-party renderers with ErrorBoundary (#2332)
+
+### 🐛 Bug Fixes
+
+- Optimize character search for redaction in redact_secrets function
+- Downgrade windows-sys dependency versions for compatibility
+- Update CI workflow to conditionally use ARM64 runner and disable certain jobs
+- Update CI workflow to use consistent runner for ARM64 jobs
+- Add periodic WAL checkpoints to bound DuckDB file growth (#2331)
+- Improve semantic layer & events handling for builder  (#2343)
+- Add logging for workflow file listing errors in OxyProcedureRunner (#2352)
+- Scope onboarding wizard state per deployment in local mode (#2302)
+- Ide git actions and monaco theme (#2330)
+- Web app hidden bugs (#2333)
+- Revert observability to env-var credentials (PR #2356 regression) (#2360)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2344)
+
+### ⚡ Performance
+
+- Avoid cloning task_ids in coordinator hot path (#2353)
+- Batch query run events to eliminate N+1 queries (#2354)
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove dead code and unused dependencies in web-app (#2324)
+- Remove unused Rust dependencies across 10 crates (#2326)
+- Conditionally run disk space cleanup on GitHub-hosted runners
+- *(skills-reconcile)* Trigger on repository_dispatch from skills (#2328)
+- Weekly auto-fix 2026-05-17 (#2339)
+- *(skills)* Reconcile knowledge cards with skills@f9ebd8af (#2345)
+- Add GitHub App token auth for private cargo dependencies (#2351)
+- Remove base parameter from paths-filter
+- Update BUILD_DOCKER condition in public-release.yaml
+- Use short SHA instead of date for edge image tags (#2357)
+
 ## [0.5.55] - 2026-05-14
 
 ### 🚀 Features
@@ -20,6 +69,7 @@ All notable changes to this project will be documented in this file.
 
 - Update dependencies in sdk/typescript and web-app
 - Simplify public release workflow and speed up builds (#2294)
+- Release 0.5.55 (#2314)
 
 ## [0.5.54] - 2026-05-12
 
