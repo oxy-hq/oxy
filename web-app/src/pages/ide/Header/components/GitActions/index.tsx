@@ -14,6 +14,8 @@ export function GitActions() {
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
 
   if (isLocalMode) return null;
+  // Workspace has no git (git_mode === "none"); every capability is false.
+  if (!gitState.caps.can_switch_branch) return null;
 
   const canBrowseHistory = !!gitState.caps.can_browse_history;
 

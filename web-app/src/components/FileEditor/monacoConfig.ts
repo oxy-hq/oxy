@@ -27,7 +27,6 @@ export const configureMonacoEnvironment = () => {
 
 export const configureMonaco = (monaco: Monaco) => {
   monaco.editor.defineTheme("github-dark", monacoGitHubDarkDefaultTheme);
-  monaco.editor.setTheme("github-dark");
 
   configureMonacoYaml(monaco, {
     enableSchemaRequest: true,
