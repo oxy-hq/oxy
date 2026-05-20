@@ -14,6 +14,8 @@ import ELK from "elkjs";
 import { Loader2 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
+import { ErrorBoundary } from "react-error-boundary";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import useModelingLineage from "@/hooks/api/modeling/useModelingLineage";
 import { cn } from "@/libs/shadcn/utils";
 import type { LineageEdge, LineageNode } from "@/types/modeling";
@@ -273,7 +275,19 @@ function LineageGraphInner({ nodeId, dbtProjectName }: LineageGraphProps) {
 
 const LineageGraph: React.FC<LineageGraphProps> = (props) => (
   <ReactFlowProvider>
-    <LineageGraphInner {...props} />
+    <ErrorBoundary
+      resetKeys={[props.nodeId, props.dbtProjectName]}
+      fallback={
+        <div className='flex h-full w-full items-center justify-center p-4'>
+          <ErrorAlert
+            title='Failed to render lineage graph'
+            message='The lineage could not be drawn. Try refreshing the page.'
+          />
+        </div>
+      }
+    >
+      <LineageGraphInner {...props} />
+    </ErrorBoundary>
   </ReactFlowProvider>
 );
 

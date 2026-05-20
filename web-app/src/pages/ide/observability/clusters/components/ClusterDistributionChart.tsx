@@ -2,9 +2,11 @@ import type { EChartsOption } from "echarts";
 import { getInstanceByDom, init } from "echarts";
 import { PieChart as PieChartIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import { useResizeDetector } from "react-resize-detector";
 import { resolveColor } from "@/components/Echarts/resolveColor";
 import theme from "@/components/Echarts/theme.json";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import {
   Card,
   CardContent,
@@ -20,10 +22,7 @@ interface ClusterDistributionChartProps {
   isLoading: boolean;
 }
 
-export default function ClusterDistributionChart({
-  clusters,
-  isLoading
-}: ClusterDistributionChartProps) {
+function ClusterDistributionChartInner({ clusters, isLoading }: ClusterDistributionChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
 
   const onResize = useCallback(() => {
@@ -164,5 +163,21 @@ export default function ClusterDistributionChart({
         <div ref={chartRef} style={{ height: 260, width: "100%" }} />
       </CardContent>
     </Card>
+  );
+}
+
+export default function ClusterDistributionChart(props: ClusterDistributionChartProps) {
+  return (
+    <ErrorBoundary
+      resetKeys={[props.clusters]}
+      fallback={
+        <ErrorAlert
+          title='Failed to render distribution chart'
+          message='The distribution chart could not be displayed.'
+        />
+      }
+    >
+      <ClusterDistributionChartInner {...props} />
+    </ErrorBoundary>
   );
 }

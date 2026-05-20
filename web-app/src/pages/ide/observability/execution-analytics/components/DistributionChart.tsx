@@ -2,9 +2,11 @@ import type { EChartsOption } from "echarts";
 import { getInstanceByDom, init } from "echarts";
 import { PieChart } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import { useResizeDetector } from "react-resize-detector";
 import { resolveColor } from "@/components/Echarts/resolveColor";
 import theme from "@/components/Echarts/theme.json";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import {
   Card,
   CardContent,
@@ -19,7 +21,7 @@ interface DistributionChartProps {
   isLoading: boolean;
 }
 
-export default function DistributionChart({ summary, isLoading }: DistributionChartProps) {
+function DistributionChartInner({ summary, isLoading }: DistributionChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
 
   const onResize = useCallback(() => {
@@ -153,5 +155,21 @@ export default function DistributionChart({ summary, isLoading }: DistributionCh
         <div ref={chartRef} className='h-[220px] w-full' />
       </CardContent>
     </Card>
+  );
+}
+
+export default function DistributionChart(props: DistributionChartProps) {
+  return (
+    <ErrorBoundary
+      resetKeys={[props.summary]}
+      fallback={
+        <ErrorAlert
+          title='Failed to render distribution chart'
+          message='The execution-type breakdown could not be displayed.'
+        />
+      }
+    >
+      <DistributionChartInner {...props} />
+    </ErrorBoundary>
   );
 }

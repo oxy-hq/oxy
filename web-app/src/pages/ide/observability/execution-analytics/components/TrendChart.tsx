@@ -2,9 +2,11 @@ import type { EChartsOption } from "echarts";
 import { getInstanceByDom, init } from "echarts";
 import { TrendingUp } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import { useResizeDetector } from "react-resize-detector";
 import { resolveColor } from "@/components/Echarts/resolveColor";
 import theme from "@/components/Echarts/theme.json";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import {
   Card,
   CardContent,
@@ -19,7 +21,7 @@ interface TrendChartProps {
   days: number;
 }
 
-export default function TrendChart({ projectId, days }: TrendChartProps) {
+function TrendChartInner({ projectId, days }: TrendChartProps) {
   const { data: timeSeries = [], isLoading } = useExecutionTimeSeries(projectId, { days });
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -138,5 +140,21 @@ export default function TrendChart({ projectId, days }: TrendChartProps) {
         <div ref={chartRef} className='h-[220px] w-full' />
       </CardContent>
     </Card>
+  );
+}
+
+export default function TrendChart(props: TrendChartProps) {
+  return (
+    <ErrorBoundary
+      resetKeys={[props.projectId, props.days]}
+      fallback={
+        <ErrorAlert
+          title='Failed to render trend chart'
+          message='The trend chart could not be displayed.'
+        />
+      }
+    >
+      <TrendChartInner {...props} />
+    </ErrorBoundary>
   );
 }

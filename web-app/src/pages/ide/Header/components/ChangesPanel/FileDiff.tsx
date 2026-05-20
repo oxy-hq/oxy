@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { ErrorBoundary } from "react-error-boundary";
 import { getLanguageFromFileName } from "@/components/FileEditor/constants";
 import { BaseMonacoEditor } from "@/components/MonacoEditor";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { FileService } from "@/services/api";
@@ -35,24 +37,35 @@ function RegularFileDiff({ file, splitView }: Pick<Props, "file" | "splitView">)
   });
 
   return (
-    <BaseMonacoEditor
-      value={currentContent}
-      original={isAdded ? "" : originalContent}
-      diffMode
-      splitView={splitView}
-      language={language}
-      path={file.path}
-      height='100%'
-      options={{
-        readOnly: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        fontSize: 12,
-        lineNumbers: "on",
-        wordWrap: "on",
-        wrappingStrategy: "advanced"
-      }}
-    />
+    <ErrorBoundary
+      resetKeys={[file.path, branchName]}
+      fallback={
+        <ErrorAlert
+          className='m-3'
+          title='Failed to render diff viewer'
+          message='The file diff could not be displayed. Try refreshing the page.'
+        />
+      }
+    >
+      <BaseMonacoEditor
+        value={currentContent}
+        original={isAdded ? "" : originalContent}
+        diffMode
+        splitView={splitView}
+        language={language}
+        path={file.path}
+        height='100%'
+        options={{
+          readOnly: true,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          fontSize: 12,
+          lineNumbers: "on",
+          wordWrap: "on",
+          wrappingStrategy: "advanced"
+        }}
+      />
+    </ErrorBoundary>
   );
 }
 

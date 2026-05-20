@@ -1,8 +1,10 @@
 import type { EChartsOption } from "echarts";
 import { getInstanceByDom, init } from "echarts";
 import { useCallback, useEffect, useRef } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import { useResizeDetector } from "react-resize-detector";
 import theme from "@/components/Echarts/theme.json";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 
 interface MiniChartProps {
   options: EChartsOption;
@@ -10,7 +12,7 @@ interface MiniChartProps {
   title: string;
 }
 
-export default function MiniChart({ options, isLoading }: MiniChartProps) {
+function MiniChartInner({ options, isLoading }: MiniChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
 
   const onResize = useCallback(() => {
@@ -57,5 +59,22 @@ export default function MiniChart({ options, isLoading }: MiniChartProps) {
     <div className='flex flex-col rounded-lg border border-border p-3'>
       <div ref={chartRef} className='h-[100px] w-full' />
     </div>
+  );
+}
+
+export default function MiniChart(props: MiniChartProps) {
+  return (
+    <ErrorBoundary
+      resetKeys={[props.options]}
+      fallback={
+        <ErrorAlert
+          className='m-3'
+          title={`Failed to render ${props.title}`}
+          message='This metric chart could not be displayed.'
+        />
+      }
+    >
+      <MiniChartInner {...props} />
+    </ErrorBoundary>
   );
 }

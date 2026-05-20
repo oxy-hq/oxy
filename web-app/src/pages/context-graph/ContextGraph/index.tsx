@@ -8,7 +8,9 @@ import {
   useNodesState
 } from "@xyflow/react";
 import { useMemo } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import "@xyflow/react/dist/style.css";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import type { ContextGraph as ContextGraphType } from "@/types/contextGraph";
 import { ContextGraphNode } from "./components/ContextGraphNode";
 import { GraphControlPanel } from "./components/GraphControlPanel";
@@ -90,7 +92,19 @@ function ContextGraphInner({ data }: ContextGraphProps) {
 export function ContextGraph(props: ContextGraphProps) {
   return (
     <ReactFlowProvider>
-      <ContextGraphInner {...props} />
+      <ErrorBoundary
+        resetKeys={[props.data]}
+        fallback={
+          <div className='flex h-full w-full items-center justify-center p-4'>
+            <ErrorAlert
+              title='Failed to render context graph'
+              message='The graph could not be drawn. Try refreshing the page.'
+            />
+          </div>
+        }
+      >
+        <ContextGraphInner {...props} />
+      </ErrorBoundary>
     </ReactFlowProvider>
   );
 }

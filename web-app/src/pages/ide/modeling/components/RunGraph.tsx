@@ -14,6 +14,8 @@ import ELK from "elkjs";
 import { ChevronDown, ChevronUp, Loader2, XCircle } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ErrorBoundary } from "react-error-boundary";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import useModelingLineage from "@/hooks/api/modeling/useModelingLineage";
 import type { RunStreamState } from "@/hooks/api/modeling/useModelingRunStream";
 import { cn } from "@/libs/shadcn/utils";
@@ -440,7 +442,19 @@ function RunGraphInner({ dbtProjectName, runStream, selectedNodeId }: RunGraphPr
 
 const RunGraph: React.FC<RunGraphProps> = (props) => (
   <ReactFlowProvider>
-    <RunGraphInner {...props} />
+    <ErrorBoundary
+      resetKeys={[props.dbtProjectName, props.selectedNodeId]}
+      fallback={
+        <div className='flex h-full w-full items-center justify-center p-4'>
+          <ErrorAlert
+            title='Failed to render run graph'
+            message='The run graph could not be drawn. Try refreshing the page.'
+          />
+        </div>
+      }
+    >
+      <RunGraphInner {...props} />
+    </ErrorBoundary>
   </ReactFlowProvider>
 );
 

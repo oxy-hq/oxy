@@ -1,4 +1,5 @@
 import Editor from "@monaco-editor/react";
+import { ErrorBoundary } from "react-error-boundary";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Spinner } from "@/components/ui/shadcn/spinner";
@@ -15,22 +16,33 @@ const SqlArtifactPanel = ({ artifact }: Props) => {
   return (
     <div className='flex h-full flex-col'>
       <div className='flex-1'>
-        <Editor
-          height='100%'
-          width='100%'
-          theme={monacoTheme}
-          defaultValue={artifact.content.value.sql_query}
-          language='sql'
-          value={artifact.content.value.sql_query}
-          loading={<Spinner />}
-          options={{
-            readOnly: true,
-            scrollBeyondLastLine: true,
-            formatOnPaste: true,
-            formatOnType: true,
-            automaticLayout: true
-          }}
-        />
+        <ErrorBoundary
+          resetKeys={[artifact.id, artifact.content.value.sql_query]}
+          fallback={
+            <ErrorAlert
+              className='m-3'
+              title='Failed to render SQL editor'
+              message='The SQL editor could not be displayed.'
+            />
+          }
+        >
+          <Editor
+            height='100%'
+            width='100%'
+            theme={monacoTheme}
+            defaultValue={artifact.content.value.sql_query}
+            language='sql'
+            value={artifact.content.value.sql_query}
+            loading={<Spinner />}
+            options={{
+              readOnly: true,
+              scrollBeyondLastLine: true,
+              formatOnPaste: true,
+              formatOnType: true,
+              automaticLayout: true
+            }}
+          />
+        </ErrorBoundary>
       </div>
 
       {!!artifact.content.value.error && (

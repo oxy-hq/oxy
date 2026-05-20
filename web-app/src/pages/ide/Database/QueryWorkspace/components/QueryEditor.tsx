@@ -2,10 +2,12 @@ import { get } from "lodash";
 import { Code, Play, Plus, Save, X } from "lucide-react";
 import type { editor } from "monaco-editor";
 import { useCallback, useRef, useState } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import { toast } from "sonner";
 import { format as formatSQL } from "sql-formatter";
 import { BaseMonacoEditor, useMonacoSetup } from "@/components/MonacoEditor";
 import DatabaseSelector from "@/components/sql/DatabaseSelector";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -271,16 +273,27 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
 
       <div className='flex-1 overflow-hidden'>
         {activeTab ? (
-          <BaseMonacoEditor
-            value={activeTab.content}
-            onChange={handleContentChange}
-            onMount={handleEditorMount}
-            language='sql'
-            options={{
-              minimap: { enabled: false },
-              scrollBeyondLastLine: true
-            }}
-          />
+          <ErrorBoundary
+            resetKeys={[activeTab.id]}
+            fallback={
+              <ErrorAlert
+                className='m-3'
+                title='Failed to render SQL editor'
+                message='The SQL editor could not be displayed. Try refreshing the page.'
+              />
+            }
+          >
+            <BaseMonacoEditor
+              value={activeTab.content}
+              onChange={handleContentChange}
+              onMount={handleEditorMount}
+              language='sql'
+              options={{
+                minimap: { enabled: false },
+                scrollBeyondLastLine: true
+              }}
+            />
+          </ErrorBoundary>
         ) : (
           <div className='flex h-full flex-col items-center justify-center text-muted-foreground'>
             <Code className='mb-4 h-12 w-12 opacity-30' />

@@ -1,5 +1,7 @@
 import { Editor } from "@monaco-editor/react";
+import { ErrorBoundary } from "react-error-boundary";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import useTheme from "@/stores/useTheme";
 import type { OmniQueryArtifact } from "@/types/artifact";
@@ -31,45 +33,66 @@ const OmniQueryArtifactPanel = ({ artifact }: Props) => {
       {/* Omni Query JSON Section */}
       <div className='border-b p-4'>
         <h4 className='mb-2 font-medium text-sm'>Omni Query</h4>
-        <Editor
-          height='200px'
-          width='100%'
-          theme={monacoTheme}
-          defaultValue={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
-          language='json'
-          value={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
-          loading={<Spinner />}
-          options={{
-            readOnly: true,
-            scrollBeyondLastLine: false,
-            formatOnPaste: true,
-            formatOnType: true,
-            automaticLayout: true,
-            minimap: { enabled: false },
-            wordWrap: "on"
-          }}
-        />
+        <ErrorBoundary
+          resetKeys={[artifact.id]}
+          fallback={
+            <ErrorAlert
+              title='Failed to render Omni query'
+              message='The Omni query editor could not be displayed.'
+            />
+          }
+        >
+          <Editor
+            height='200px'
+            width='100%'
+            theme={monacoTheme}
+            defaultValue={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
+            language='json'
+            value={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
+            loading={<Spinner />}
+            options={{
+              readOnly: true,
+              scrollBeyondLastLine: false,
+              formatOnPaste: true,
+              formatOnType: true,
+              automaticLayout: true,
+              minimap: { enabled: false },
+              wordWrap: "on"
+            }}
+          />
+        </ErrorBoundary>
       </div>
 
       <h4 className='mb-2 font-medium text-sm'>Generated SQL</h4>
       {/* Generated SQL Section */}
       <div className='flex-1'>
-        <Editor
-          height='100%'
-          width='100%'
-          theme={monacoTheme}
-          defaultValue={artifact.content.value.sql}
-          language='sql'
-          value={artifact.content.value.sql}
-          loading={<Spinner />}
-          options={{
-            readOnly: true,
-            scrollBeyondLastLine: true,
-            formatOnPaste: true,
-            formatOnType: true,
-            automaticLayout: true
-          }}
-        />
+        <ErrorBoundary
+          resetKeys={[artifact.id, artifact.content.value.sql]}
+          fallback={
+            <ErrorAlert
+              className='m-3'
+              title='Failed to render SQL editor'
+              message='The SQL editor could not be displayed.'
+            />
+          }
+        >
+          <Editor
+            height='100%'
+            width='100%'
+            theme={monacoTheme}
+            defaultValue={artifact.content.value.sql}
+            language='sql'
+            value={artifact.content.value.sql}
+            loading={<Spinner />}
+            options={{
+              readOnly: true,
+              scrollBeyondLastLine: true,
+              formatOnPaste: true,
+              formatOnType: true,
+              automaticLayout: true
+            }}
+          />
+        </ErrorBoundary>
       </div>
 
       {/* Results Section */}

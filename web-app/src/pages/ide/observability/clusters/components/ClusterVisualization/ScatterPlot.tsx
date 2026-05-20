@@ -1,7 +1,9 @@
 import { formatDistanceToNow } from "date-fns";
 import * as echarts from "echarts";
 import { useEffect, useMemo, useRef } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import { resolveColor } from "@/components/Echarts/resolveColor";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 
 interface ScatterPlotProps {
@@ -12,7 +14,7 @@ interface ScatterPlotProps {
   selectedPoint: ClusterMapPoint | null;
 }
 
-function ScatterPlot({
+function ScatterPlotInner({
   points,
   getPointColor,
   clusters,
@@ -263,6 +265,24 @@ function formatTooltip(params: unknown, getPointColor: (point: ClusterMapPoint) 
       ${timeAgo ? `<div style="color: var(--muted-foreground); font-size: 11px; margin-top: 8px;">${timeAgo}</div>` : ""}
     </div>
   `;
+}
+
+function ScatterPlot(props: ScatterPlotProps) {
+  return (
+    <ErrorBoundary
+      resetKeys={[props.points, props.clusters]}
+      fallback={
+        <div className='flex h-full w-full items-center justify-center p-4'>
+          <ErrorAlert
+            title='Failed to render cluster map'
+            message='The cluster map could not be displayed.'
+          />
+        </div>
+      }
+    >
+      <ScatterPlotInner {...props} />
+    </ErrorBoundary>
+  );
 }
 
 export default ScatterPlot;

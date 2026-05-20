@@ -2,9 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, ChevronsDown, RotateCcw } from "lucide-react";
 import type { editor } from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import { toast } from "sonner";
 import { getLanguageFromFileName } from "@/components/FileEditor/constants";
 import { BaseMonacoEditor } from "@/components/MonacoEditor";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -633,24 +635,35 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
                 </span>
               </div>
               <div className='min-h-0 flex-1'>
-                <BaseMonacoEditor
-                  value={incomingText}
-                  language={language}
-                  path={`incoming:${file.path}`}
-                  height='100%'
-                  options={RO_OPTIONS}
-                  onMount={(ed) => {
-                    incomingRef.current = ed;
-                    incomingDecRef.current = applyHighlightDecs(
-                      ed,
-                      incomingRanges,
-                      "cmx-hl-theirs",
-                      []
-                    );
-                    setupScrollSync();
-                    setIncomingReady(true);
-                  }}
-                />
+                <ErrorBoundary
+                  resetKeys={[file.path]}
+                  fallback={
+                    <ErrorAlert
+                      className='m-3'
+                      title='Failed to render incoming editor'
+                      message='The incoming side could not be displayed.'
+                    />
+                  }
+                >
+                  <BaseMonacoEditor
+                    value={incomingText}
+                    language={language}
+                    path={`incoming:${file.path}`}
+                    height='100%'
+                    options={RO_OPTIONS}
+                    onMount={(ed) => {
+                      incomingRef.current = ed;
+                      incomingDecRef.current = applyHighlightDecs(
+                        ed,
+                        incomingRanges,
+                        "cmx-hl-theirs",
+                        []
+                      );
+                      setupScrollSync();
+                      setIncomingReady(true);
+                    }}
+                  />
+                </ErrorBoundary>
               </div>
             </ResizablePanel>
 
@@ -663,24 +676,35 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
                 <span className='rounded bg-info/10 px-1 py-0.5 text-[9px] text-info/50'>mine</span>
               </div>
               <div className='min-h-0 flex-1'>
-                <BaseMonacoEditor
-                  value={currentText}
-                  language={language}
-                  path={`current:${file.path}`}
-                  height='100%'
-                  options={RO_OPTIONS}
-                  onMount={(ed) => {
-                    currentRef.current = ed;
-                    currentDecRef.current = applyHighlightDecs(
-                      ed,
-                      currentRanges,
-                      "cmx-hl-mine",
-                      []
-                    );
-                    setupScrollSync();
-                    setCurrentReady(true);
-                  }}
-                />
+                <ErrorBoundary
+                  resetKeys={[file.path]}
+                  fallback={
+                    <ErrorAlert
+                      className='m-3'
+                      title='Failed to render current editor'
+                      message='The current side could not be displayed.'
+                    />
+                  }
+                >
+                  <BaseMonacoEditor
+                    value={currentText}
+                    language={language}
+                    path={`current:${file.path}`}
+                    height='100%'
+                    options={RO_OPTIONS}
+                    onMount={(ed) => {
+                      currentRef.current = ed;
+                      currentDecRef.current = applyHighlightDecs(
+                        ed,
+                        currentRanges,
+                        "cmx-hl-mine",
+                        []
+                      );
+                      setupScrollSync();
+                      setCurrentReady(true);
+                    }}
+                  />
+                </ErrorBoundary>
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -706,22 +730,33 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
           </div>
           {/* Relative container: Monaco editor + React action-bar overlay */}
           <div className='relative min-h-0 flex-1'>
-            <BaseMonacoEditor
-              value={result}
-              onChange={(v) => setResult(v)}
-              language={language}
-              path={`result:${file.path}`}
-              height='100%'
-              options={{ ...RO_OPTIONS, readOnly: false }}
-              onMount={(ed, m) => {
-                resultRef.current = ed;
-                const initial = parseConflicts(result);
-                resultDecRef.current = applyResultDecs(ed, initial, []);
-                resultZonesRef.current = injectZones(ed, initial);
-                ed.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => saveDraftRef.current?.());
-                setResultReady(true);
-              }}
-            />
+            <ErrorBoundary
+              resetKeys={[file.path]}
+              fallback={
+                <ErrorAlert
+                  className='m-3'
+                  title='Failed to render merge result editor'
+                  message='The merge result editor could not be displayed. Try refreshing the page.'
+                />
+              }
+            >
+              <BaseMonacoEditor
+                value={result}
+                onChange={(v) => setResult(v)}
+                language={language}
+                path={`result:${file.path}`}
+                height='100%'
+                options={{ ...RO_OPTIONS, readOnly: false }}
+                onMount={(ed, m) => {
+                  resultRef.current = ed;
+                  const initial = parseConflicts(result);
+                  resultDecRef.current = applyResultDecs(ed, initial, []);
+                  resultZonesRef.current = injectZones(ed, initial);
+                  ed.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => saveDraftRef.current?.());
+                  setResultReady(true);
+                }}
+              />
+            </ErrorBoundary>
             {/* Action bars rendered as a React overlay — completely outside
                 Monaco's DOM so mouse events are never intercepted by Monaco. */}
             <div className='pointer-events-none absolute inset-0 overflow-hidden'>
