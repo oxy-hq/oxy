@@ -95,27 +95,17 @@ pub async fn resolve_observability_backend() -> (
                 .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
                 .unwrap_or(false);
 
-            let get_credentials: oxy_observability::backends::airhouse::CredentialFn =
-                std::sync::Arc::new(move || {
-                    Box::pin(async move {
-                        let broker = airhouse::token_broker().ok_or_else(|| {
-                            oxy_shared::errors::OxyError::ConfigurationError(
-                                "Airhouse observability: token broker not initialised; \
-                                     check AIRHOUSE_BASE_URL / AIRHOUSE_ADMIN_TOKEN"
-                                    .into(),
-                            )
-                        })?;
-                        let cred = broker
-                            .mint_for_system(
-                                uuid::Uuid::nil(),
-                                airhouse::SystemPurpose::AgenticBackground,
-                                airhouse::UserRole::Admin,
-                                airhouse::DEFAULT_INTERNAL_TTL,
-                            )
-                            .await?;
-                        Ok((cred.username, cred.password, cred.tenant))
-                    })
-                });
+            let Some(get_credentials) =
+                oxy_observability::backends::airhouse::credentials_from_env()
+            else {
+                eprintln!(
+                    "{}",
+                    "Airhouse observability requires OXY_AIRHOUSE_OBS_USER, \
+                     OXY_AIRHOUSE_OBS_PASSWORD, and OXY_AIRHOUSE_OBS_DATABASE to be set."
+                        .error()
+                );
+                return (None, None);
+            };
 
             match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::connect(
                 &host,

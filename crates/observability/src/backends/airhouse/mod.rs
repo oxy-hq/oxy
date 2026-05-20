@@ -10,13 +10,19 @@
 //! |---|---|---|
 //! | `AIRHOUSE_WIRE_HOST` | — | Airhouse wire-protocol host (required) |
 //! | `AIRHOUSE_WIRE_PORT` | `5445` | Airhouse wire-protocol port |
+//! | `OXY_AIRHOUSE_OBS_USER` | — | pgwire username (required) |
+//! | `OXY_AIRHOUSE_OBS_PASSWORD` | — | pgwire password (required) |
+//! | `OXY_AIRHOUSE_OBS_DATABASE` | — | Tenant/database name (required) |
 //! | `OXY_AIRHOUSE_OBS_INSECURE` | unset | Set to `true` to skip TLS (use only on localhost) |
 //!
-//! Credentials (`user`, `password`, `database`) are supplied via a
-//! [`CredentialFn`] callback at construction time. The callback is re-invoked
-//! on every reconnect so ephemeral (token-broker-minted) credentials are
-//! transparently refreshed. See `observability_boot.rs` in the `oxy-app`
-//! crate for the wiring that calls the Airhouse token broker.
+//! Credentials are supplied to [`AirhouseObservabilityStorage::connect`] via a
+//! [`CredentialFn`] callback that is re-invoked on every reconnect. The
+//! standard wiring in `oxy-app` uses [`credentials_from_env`] to read the
+//! three `OXY_AIRHOUSE_OBS_*` vars; the callback shape supports swapping in a
+//! refresh-on-mint provider once a dedicated observability tenant exists in
+//! the airhouse control plane. The SA-backed token broker is **not** a valid
+//! source here: it mints per-(workspace, subject, role) credentials and
+//! observability has no workspace context.
 //!
 //! # SQL approach
 //!
@@ -64,6 +70,40 @@ pub type CredentialFn = Arc<
         + Send
         + Sync,
 >;
+
+/// Build a [`CredentialFn`] that reads `OXY_AIRHOUSE_OBS_USER`,
+/// `OXY_AIRHOUSE_OBS_PASSWORD`, and `OXY_AIRHOUSE_OBS_DATABASE` from the
+/// process environment on every call. Returns `None` if any of the three are
+/// missing or empty so the caller can surface a clear "not configured" error
+/// before constructing the storage.
+pub fn credentials_from_env() -> Option<CredentialFn> {
+    fn read(var: &str) -> Option<String> {
+        std::env::var(var).ok().filter(|v| !v.is_empty())
+    }
+    // Validate eagerly so callers fail fast at boot rather than at first
+    // reconnect.
+    read("OXY_AIRHOUSE_OBS_USER")?;
+    read("OXY_AIRHOUSE_OBS_PASSWORD")?;
+    read("OXY_AIRHOUSE_OBS_DATABASE")?;
+    Some(Arc::new(|| {
+        Box::pin(async move {
+            let user = read("OXY_AIRHOUSE_OBS_USER").ok_or_else(|| {
+                OxyError::ConfigurationError("OXY_AIRHOUSE_OBS_USER is not set or is empty".into())
+            })?;
+            let password = read("OXY_AIRHOUSE_OBS_PASSWORD").ok_or_else(|| {
+                OxyError::ConfigurationError(
+                    "OXY_AIRHOUSE_OBS_PASSWORD is not set or is empty".into(),
+                )
+            })?;
+            let database = read("OXY_AIRHOUSE_OBS_DATABASE").ok_or_else(|| {
+                OxyError::ConfigurationError(
+                    "OXY_AIRHOUSE_OBS_DATABASE is not set or is empty".into(),
+                )
+            })?;
+            Ok((user, password, database))
+        })
+    }))
+}
 
 // ── Storage struct ────────────────────────────────────────────────────────────
 
@@ -695,5 +735,86 @@ mod tests {
         let formatted = format_float_array(&original);
         let parsed = parse_float_array(&formatted.replace("::FLOAT[]", ""));
         assert_eq!(parsed, original);
+    }
+
+    // ── credentials_from_env ──────────────────────────────────────────────────
+
+    /// All three OBS env vars touch the process-wide environment, so the
+    /// credentials_from_env tests must serialize against each other.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn clear_obs_env() {
+        for k in [
+            "OXY_AIRHOUSE_OBS_USER",
+            "OXY_AIRHOUSE_OBS_PASSWORD",
+            "OXY_AIRHOUSE_OBS_DATABASE",
+        ] {
+            // SAFETY: serialized via ENV_LOCK; no other thread reads these in
+            // tests.
+            unsafe { std::env::remove_var(k) };
+        }
+    }
+
+    #[tokio::test]
+    async fn credentials_from_env_returns_none_when_unset() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_obs_env();
+        assert!(credentials_from_env().is_none());
+    }
+
+    #[tokio::test]
+    async fn credentials_from_env_returns_none_when_partial() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_obs_env();
+        // SAFETY: serialized via ENV_LOCK.
+        unsafe {
+            std::env::set_var("OXY_AIRHOUSE_OBS_USER", "obs");
+            std::env::set_var("OXY_AIRHOUSE_OBS_PASSWORD", "pw");
+            // database missing
+        }
+        assert!(credentials_from_env().is_none());
+        clear_obs_env();
+    }
+
+    #[tokio::test]
+    async fn credentials_from_env_returns_none_when_empty_string() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_obs_env();
+        // SAFETY: serialized via ENV_LOCK.
+        unsafe {
+            std::env::set_var("OXY_AIRHOUSE_OBS_USER", "obs");
+            std::env::set_var("OXY_AIRHOUSE_OBS_PASSWORD", "");
+            std::env::set_var("OXY_AIRHOUSE_OBS_DATABASE", "obs_db");
+        }
+        assert!(credentials_from_env().is_none());
+        clear_obs_env();
+    }
+
+    #[tokio::test]
+    async fn credentials_from_env_reads_triple_on_each_call() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_obs_env();
+        // SAFETY: serialized via ENV_LOCK.
+        unsafe {
+            std::env::set_var("OXY_AIRHOUSE_OBS_USER", "obs_user");
+            std::env::set_var("OXY_AIRHOUSE_OBS_PASSWORD", "obs_pw");
+            std::env::set_var("OXY_AIRHOUSE_OBS_DATABASE", "obs_db");
+        }
+        let cred_fn = credentials_from_env().expect("all three set");
+
+        let (u, p, d) = cred_fn().await.unwrap();
+        assert_eq!(
+            (u.as_str(), p.as_str(), d.as_str()),
+            ("obs_user", "obs_pw", "obs_db")
+        );
+
+        // Second call sees fresh env — confirms the closure re-reads on every
+        // invocation, which is what spawn_driver relies on for ephemeral
+        // credential refresh.
+        unsafe { std::env::set_var("OXY_AIRHOUSE_OBS_PASSWORD", "rotated_pw") };
+        let (_, p2, _) = cred_fn().await.unwrap();
+        assert_eq!(p2, "rotated_pw");
+
+        clear_obs_env();
     }
 }
