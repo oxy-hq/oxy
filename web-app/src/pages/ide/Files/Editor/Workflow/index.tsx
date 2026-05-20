@@ -92,7 +92,6 @@ const WorkflowFormWrapper = () => {
     try {
       if (!content) return undefined;
       const parsed = YAML.parse(content) as Partial<WorkflowFormData>;
-      console.log("Parsed YAML content:", parsed);
       return {
         ...parsed,
         tasks: Array.isArray(parsed.tasks) ? transformTasksForForm(parsed.tasks) : parsed.tasks,

@@ -24,7 +24,12 @@ export default function OrgGuard() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
   const location = useLocation();
   const { data: orgs, isPending } = useOrgs();
-  const { org: currentOrg, role, setOrg, clearOrg } = useCurrentOrg();
+  // Subscribe via selectors so unrelated store fields (e.g. workspace switches)
+  // don't re-render the guard on every change.
+  const currentOrg = useCurrentOrg((s) => s.org);
+  const role = useCurrentOrg((s) => s.role);
+  const setOrg = useCurrentOrg((s) => s.setOrg);
+  const clearOrg = useCurrentOrg((s) => s.clearOrg);
   const { authConfig } = useAuth();
   const billingEnabled = authConfig.billing_enabled;
 

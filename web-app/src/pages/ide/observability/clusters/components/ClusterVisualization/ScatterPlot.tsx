@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from "date-fns";
-import * as echarts from "echarts";
+import { type ECharts, type EChartsOption, init as initEcharts } from "echarts";
 import { useEffect, useMemo, useRef } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import { resolveColor } from "@/components/Echarts/resolveColor";
@@ -22,7 +22,7 @@ function ScatterPlotInner({
   selectedPoint
 }: ScatterPlotProps) {
   const chartRef = useRef<HTMLDivElement>(null);
-  const chartInstance = useRef<echarts.ECharts | null>(null);
+  const chartInstance = useRef<ECharts | null>(null);
 
   // Memoize series data without selectedPoint dependency
   const seriesData = useMemo(() => {
@@ -32,7 +32,7 @@ function ScatterPlotInner({
   useEffect(() => {
     if (!chartRef.current) return;
 
-    chartInstance.current = echarts.init(chartRef.current, undefined, {
+    chartInstance.current = initEcharts(chartRef.current, undefined, {
       renderer: "canvas"
     });
 
@@ -162,7 +162,7 @@ function buildSeriesData(points: ClusterMapPoint[], clusters: ClusterSummary[]) 
 function buildChartOption(
   seriesData: ReturnType<typeof buildSeriesData>,
   getPointColor: (point: ClusterMapPoint) => string
-): echarts.EChartsOption {
+): EChartsOption {
   return {
     animation: false,
     backgroundColor: "transparent",

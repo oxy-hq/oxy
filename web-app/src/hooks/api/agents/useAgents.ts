@@ -5,7 +5,7 @@ import queryKeys from "../queryKey";
 
 export default function useAgents(
   enabled = true,
-  refetchOnWindowFocus = true,
+  refetchOnWindowFocus = false,
   refetchOnMount: boolean | "always" = true
 ) {
   const { project, branchName } = useCurrentProjectBranch();

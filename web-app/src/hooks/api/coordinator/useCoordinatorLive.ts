@@ -28,6 +28,13 @@ const useCoordinatorLive = () => {
       },
       openWhenHidden: true,
       signal: controller.signal,
+      async onopen(res) {
+        // 401/403 must throw so fetchEventSource stops retrying — otherwise a
+        // revoked token hammers the endpoint until the tab is closed.
+        if (res.status === 401 || res.status === 403) {
+          throw new Error(`Coordinator live auth failed: ${res.status}`);
+        }
+      },
       onmessage(ev) {
         if (ev.event === "snapshot") {
           queryClient.invalidateQueries({
@@ -35,9 +42,16 @@ const useCoordinatorLive = () => {
           });
         }
       },
-      onerror() {
-        // Silently reconnect on error — fetchEventSource handles retries.
+      onerror(err) {
+        // Intentional aborts (route change, unmount) shouldn't surface as errors.
+        // Auth errors thrown from onopen must propagate to stop the retry loop.
+        if (controller.signal.aborted || err instanceof Error) {
+          throw err;
+        }
+        // Other transient errors: let fetchEventSource back off and reconnect.
       }
+    }).catch(() => {
+      // Expected when abort() is called or when onopen/onerror throws.
     });
 
     return () => {

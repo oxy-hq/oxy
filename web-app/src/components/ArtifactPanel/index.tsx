@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useCallback } from "react";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { ArtifactService } from "@/services/api";
 import type { Artifact } from "@/types/artifact";
@@ -41,7 +42,7 @@ const ArtifactPanel = ({
   const { project, branchName } = useCurrentProjectBranch();
   const artifactQueries = useQueries({
     queries: selectedArtifactIds.map((id) => ({
-      queryKey: ["artifact", project.id, branchName, id],
+      queryKey: queryKeys.artifact.get(project.id, branchName, id),
       queryFn: () => ArtifactService.getArtifact(project.id, branchName, id)
     }))
   });

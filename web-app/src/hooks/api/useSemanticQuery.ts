@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { type SemanticQueryRequest, SemanticService } from "@/services/api/semantic";
+import queryKeys from "./queryKey";
 
 export function useExecuteSemanticQuery() {
   const { project } = useCurrentProjectBranch();
@@ -27,7 +28,7 @@ export function useTopicDetails(filePathB64: string | undefined) {
   const projectId = project.id;
 
   return useQuery({
-    queryKey: ["topicDetails", projectId, filePathB64],
+    queryKey: queryKeys.semantic.topicDetails(projectId, filePathB64),
     queryFn: () => {
       if (!filePathB64) throw new Error("Topic file path is required");
       return SemanticService.getTopicDetails(projectId, filePathB64);
@@ -42,7 +43,7 @@ export function useViewDetails(filePathB64: string | undefined) {
   const projectId = project.id;
 
   return useQuery({
-    queryKey: ["viewDetails", projectId, filePathB64],
+    queryKey: queryKeys.semantic.viewDetails(projectId, filePathB64),
     queryFn: () => {
       if (!filePathB64) throw new Error("View file path is required");
       return SemanticService.getViewDetails(projectId, filePathB64);

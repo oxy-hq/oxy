@@ -27,7 +27,6 @@ const SqlEditor = () => {
       },
       {
         onSuccess: (data) => {
-          console.log("SQL execution result", data);
           // Response is either string[][] (JSON format) or { file_name: string } (Arrow format)
           if (Array.isArray(data)) {
             setResult(data);

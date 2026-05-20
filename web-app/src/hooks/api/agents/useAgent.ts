@@ -6,7 +6,7 @@ import queryKeys from "../queryKey";
 export default function useAgent(
   pathb64: string,
   enabled = true,
-  refetchOnWindowFocus = true,
+  refetchOnWindowFocus = false,
   refetchOnMount: boolean | "always" = true
 ) {
   const { project, branchName } = useCurrentProjectBranch();

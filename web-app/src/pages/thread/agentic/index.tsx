@@ -75,7 +75,7 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: autoscroll fires on messages/streaming change; intentionally reads isUserScrolledUp.current at fire time
   useEffect(() => {
     if (isUserScrolledUp.current) return;
     bottomRef.current?.scrollIntoView({

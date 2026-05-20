@@ -31,7 +31,7 @@ export function useSmartScroll({
     return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: checkAtBottom only reads refs; depending on it would re-attach the scroll listener every render
   useEffect(() => {
     if (!enabled) return;
     const scrollContainer = scrollContainerRef.current;
@@ -56,7 +56,7 @@ export function useSmartScroll({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: autoscroll fires on messages/streaming change; intentionally reads hasUserScrolledUpRef.current at fire time
   useEffect(() => {
     if (!enabled) return;
 

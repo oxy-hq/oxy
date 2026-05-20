@@ -131,8 +131,6 @@ export const Echarts = ({
         resultEl.setAttribute("data-ready", "true");
         resultEl.setAttribute("data-index", String(chartIndex ?? 0));
         document.body.appendChild(resultEl);
-
-        console.log(`Chart exported: ${chartName} (index: ${chartIndex ?? 0})`);
       } catch (error) {
         console.error("Failed to export chart:", error);
       }

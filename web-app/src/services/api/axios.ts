@@ -1,6 +1,7 @@
 import axios from "axios";
 import { toast } from "sonner";
 
+import { clearAuthScopedStorage } from "@/libs/utils/authStorage";
 import { usePaywallStore } from "@/stores/usePaywallStore";
 import { apiBaseURL } from "../env";
 
@@ -51,8 +52,9 @@ const makeResponseErrorHandler = () => {
     const url = error.config?.url ?? "";
 
     if (status === 401 && !publicAPIPaths.includes(url)) {
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("user");
+      // Sweep persisted per-user state alongside the token; a hard navigate
+      // to /login lets Zustand rehydrate the next user from a clean slate.
+      clearAuthScopedStorage();
       window.location.href = "/login";
     }
 

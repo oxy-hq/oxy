@@ -118,7 +118,6 @@ export const registerAuthenticatedParquetFile = async (
   // Drop table if it exists to ensure fresh data
   try {
     await conn.query(`DROP TABLE IF EXISTS "${tableName}"`);
-    console.log(`Dropped existing table "${tableName}" if it existed`);
   } catch (e) {
     console.warn("Error dropping table:", e);
   }
@@ -134,9 +133,7 @@ export const registerAuthenticatedParquetFile = async (
     );
 
     // Verify the table was created
-    const verifyResult = await conn.query(`SELECT COUNT(*) as cnt FROM "${tableName}"`);
-    const count = verifyResult.toArray()[0].cnt;
-    console.log(`Successfully loaded Parquet data into table "${tableName}" with ${count} rows`);
+    await conn.query(`SELECT COUNT(*) as cnt FROM "${tableName}"`);
   } catch (e) {
     console.error("Error loading Parquet data:", e);
     await conn.close();

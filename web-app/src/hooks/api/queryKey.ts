@@ -74,7 +74,26 @@ const workflowKeys = {
 const chartKeys = {
   all: ["chart"] as const,
   get: (projectId: string, branchName: string, file_path: string) =>
-    [...chartKeys.all, "get", projectId, branchName, file_path] as const
+    [...chartKeys.all, "get", projectId, branchName, file_path] as const,
+  // For AppPreview displays compiled in DuckDB-WASM. `dataKey` should uniquely
+  // identify the source dataset (e.g. taskName + json file_path); avoid passing
+  // the full data object — that thrashes the cache across renders.
+  fromDisplay: (
+    projectId: string,
+    branchName: string,
+    displayKey: string,
+    dataKey: string,
+    isDarkMode: boolean
+  ) =>
+    [
+      ...chartKeys.all,
+      "fromDisplay",
+      projectId,
+      branchName,
+      displayKey,
+      dataKey,
+      isDarkMode
+    ] as const
 };
 
 const fileKeys = {
@@ -310,11 +329,26 @@ const featureFlagKeys = {
   list: () => [...featureFlagKeys.all, "list"] as const
 };
 
+const authConfigKeys = {
+  all: ["authConfig"] as const,
+  current: () => [...authConfigKeys.all] as const
+};
+
+const semanticKeys = {
+  all: ["semantic"] as const,
+  topicDetails: (projectId: string, filePathB64: string | undefined) =>
+    [...semanticKeys.all, "topicDetails", projectId, filePathB64] as const,
+  viewDetails: (projectId: string, filePathB64: string | undefined) =>
+    [...semanticKeys.all, "viewDetails", projectId, filePathB64] as const
+};
+
 const queryKeys = {
   airhouse: airhouseKeys,
   billing: billingKeys,
   adminBilling: adminBillingKeys,
   featureFlags: featureFlagKeys,
+  authConfig: authConfigKeys,
+  semantic: semanticKeys,
   org: orgKeys,
   agent: agentKeys,
   builder: builderKeys,

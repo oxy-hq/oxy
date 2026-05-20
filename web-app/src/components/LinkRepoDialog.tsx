@@ -18,8 +18,7 @@ import { Label } from "./ui/shadcn/label";
 // ─── GitHub mode: namespace + repo + branch picker ───────────────────────────
 
 function GitHubLinkForm({ onClose }: { onClose: () => void }) {
-  const { org } = useCurrentOrg();
-  const orgId = org?.id ?? "";
+  const orgId = useCurrentOrg((s) => s.org?.id) ?? "";
   const addRepo = useAddRepositoryFromGitHub();
   const [namespaceId, setNamespaceId] = useState("");
   const [repoId, setRepoId] = useState<number | null>(null);

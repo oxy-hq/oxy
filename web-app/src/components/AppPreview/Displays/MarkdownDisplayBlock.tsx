@@ -30,7 +30,16 @@ export const MarkdownDisplayBlock = ({
   data?: DataContainer;
 }) => {
   const dataContainer = flattenTablesForTemplate(data || {});
-  const rendered_content = nunjucksEnv.renderString(display.content, dataContainer as object);
+  // Nunjucks throws on malformed templates or unexpected control values; a
+  // single bad block must not blow up the whole AppPreview, so we fall back
+  // to the raw template text plus a small error notice.
+  let rendered_content: string;
+  try {
+    rendered_content = nunjucksEnv.renderString(display.content, dataContainer as object);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown template error";
+    rendered_content = `> **Template error:** ${message}\n\n\`\`\`\n${display.content}\n\`\`\``;
+  }
   return (
     <div className='markdown-display' data-testid='app-markdown-display-block'>
       <Markdown>{rendered_content}</Markdown>

@@ -111,13 +111,11 @@ export const VirtualizedTable = ({
         const needsRegistration = !tableName || registeredFilePathRef.current !== filePath;
 
         if (needsRegistration) {
-          console.log("Registering Parquet file:", filePath);
           const registeredName = await registerAuthenticatedParquetFile(
             filePath,
             project.id,
             branchName
           );
-          console.log("Registered table name:", registeredName);
           setTableName(registeredName);
           registeredFilePathRef.current = filePath; // Track the registered filePath
           tableToQuery = registeredName; // Use the newly registered name for this query

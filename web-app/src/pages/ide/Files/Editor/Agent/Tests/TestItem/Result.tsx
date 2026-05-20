@@ -46,18 +46,33 @@ const Similarity = ({ score, records }: SimilarityMetric) => {
 
               <ReactMarkdown
                 components={{
-                  code: ({ ...props }) => {
-                    const text = String(props.children);
-                    const coloredText = text.replace(
-                      /(\+\+\+|---)/g,
-                      (match) =>
-                        `<span class="${match === "+++" ? "text-success" : "text-destructive"}">${match}</span>`
-                    );
+                  code: ({ children, ...props }) => {
+                    const text = typeof children === "string" ? children : String(children);
+                    // Split on +++ / --- diff markers while preserving them, then
+                    // render each segment as a React text node so injected HTML
+                    // in record.cot (LLM-generated) cannot escape into the DOM.
+                    const parts = text.split(/(\+\+\+|---)/g);
                     return (
-                      <code
-                        className='whitespace-pre-wrap break-words'
-                        dangerouslySetInnerHTML={{ __html: coloredText }}
-                      />
+                      <code {...props} className='whitespace-pre-wrap break-words'>
+                        {parts.map((part, i) => {
+                          const k = `${i}:${part}`;
+                          if (part === "+++") {
+                            return (
+                              <span key={k} className='text-success'>
+                                {part}
+                              </span>
+                            );
+                          }
+                          if (part === "---") {
+                            return (
+                              <span key={k} className='text-destructive'>
+                                {part}
+                              </span>
+                            );
+                          }
+                          return <span key={k}>{part}</span>;
+                        })}
+                      </code>
                     );
                   },
                   pre: ({ ...props }) => (

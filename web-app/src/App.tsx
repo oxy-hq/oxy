@@ -15,17 +15,12 @@ import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import AirwayPage from "@/pages/airway";
 import Home from "@/pages/home";
-import ClusterMapPage from "@/pages/ide/observability/clusters";
-import MetricDetailPage from "@/pages/ide/observability/metrics/MetricsDetailPage";
-import MetricsPage from "@/pages/ide/observability/metrics/MetricsListPage";
-import TraceDetailPage from "@/pages/ide/observability/trace";
-import TracesPage from "@/pages/ide/observability/traces";
 import ThreadPage from "@/pages/thread";
 import Threads from "@/pages/threads";
 import WorkflowPage from "@/pages/workflow";
 import WorkflowsListPage from "@/pages/workflow/WorkflowsListPage";
 import "@xyflow/react/dist/style.css";
-import React, { useEffect, useRef } from "react";
+import React, { Suspense, useEffect, useRef } from "react";
 import { HotkeysProvider, useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/shadcn/spinner";
@@ -47,37 +42,12 @@ import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
 import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
 import { setLastWorkspaceId } from "./libs/utils/lastWorkspace";
-import AdminBillingQueue from "./pages/admin/AdminBillingQueue";
-import AdminFeatureFlags from "./pages/admin/AdminFeatureFlags";
-import AdminLayout from "./pages/admin/AdminLayout";
 import AppPage from "./pages/app";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
-import CheckoutCancelledPage from "./pages/billing/CheckoutCancelled";
-import CheckoutSuccessPage from "./pages/billing/CheckoutSuccess";
 import GitHubCallback from "./pages/github/callback";
 import InvitePage from "./pages/Invite";
-import IdePage from "./pages/ide";
-import CoordinatorLayout from "./pages/ide/coordinator";
-import ActiveRunsPage from "./pages/ide/coordinator/ActiveRuns";
-import QueueHealthPage from "./pages/ide/coordinator/QueueHealth";
-import RecoveryPage from "./pages/ide/coordinator/Recovery";
-import RunHistoryPage from "./pages/ide/coordinator/RunHistory";
-import RunTreePage from "./pages/ide/coordinator/RunTree";
-import DatabaseLayout from "./pages/ide/Database";
-import QueryWorkspacePage from "./pages/ide/Database/QueryWorkspace";
-import FilesLayout from "./pages/ide/Files";
-import EditorPage from "./pages/ide/Files/Editor";
-import LookerExplorerPage from "./pages/ide/Files/Editor/LookerExplore";
-import ModelingPage from "./pages/ide/modeling";
-import ObservabilityLayout from "./pages/ide/observability";
-import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
-import PipelinesPage from "./pages/ide/pipelines";
-import TestsLayout from "./pages/ide/tests";
-import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
-import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
-import TestsRunsPage from "./pages/ide/tests/TestsRunsPage";
 import LoginPage from "./pages/login";
 import OrgDispatcher from "./pages/OrgDispatcher";
 import OnboardingPage from "./pages/onboarding";
@@ -88,6 +58,52 @@ import useCurrentOrg from "./stores/useCurrentOrg";
 import useCurrentWorkspace from "./stores/useCurrentWorkspace";
 import useFileQuickOpen from "./stores/useFileQuickOpen";
 import type { AuthConfigResponse } from "./types/auth";
+
+// Lazy-load the entire IDE subtree. The IDE pulls in Monaco, monaco-yaml,
+// and the editors vendor chunk (~300-400KB gzipped); users who never visit
+// /ide should not pay for it on initial load.
+const IdePage = React.lazy(() => import("./pages/ide"));
+const FilesLayout = React.lazy(() => import("./pages/ide/Files"));
+const EditorPage = React.lazy(() => import("./pages/ide/Files/Editor"));
+const LookerExplorerPage = React.lazy(() => import("./pages/ide/Files/Editor/LookerExplore"));
+const DatabaseLayout = React.lazy(() => import("./pages/ide/Database"));
+const QueryWorkspacePage = React.lazy(() => import("./pages/ide/Database/QueryWorkspace"));
+const ModelingPage = React.lazy(() => import("./pages/ide/modeling"));
+const PipelinesPage = React.lazy(() => import("./pages/ide/pipelines"));
+const TestsLayout = React.lazy(() => import("./pages/ide/tests"));
+const TestsDashboardPage = React.lazy(() => import("./pages/ide/tests/TestsDashboardPage"));
+const TestsRunsPage = React.lazy(() => import("./pages/ide/tests/TestsRunsPage"));
+const TestFileDetailPage = React.lazy(() => import("./pages/ide/tests/TestFileDetailPage"));
+const CoordinatorLayout = React.lazy(() => import("./pages/ide/coordinator"));
+const ActiveRunsPage = React.lazy(() => import("./pages/ide/coordinator/ActiveRuns"));
+const RunHistoryPage = React.lazy(() => import("./pages/ide/coordinator/RunHistory"));
+const RecoveryPage = React.lazy(() => import("./pages/ide/coordinator/Recovery"));
+const QueueHealthPage = React.lazy(() => import("./pages/ide/coordinator/QueueHealth"));
+const RunTreePage = React.lazy(() => import("./pages/ide/coordinator/RunTree"));
+const ObservabilityLayout = React.lazy(() => import("./pages/ide/observability"));
+const ExecutionAnalytics = React.lazy(
+  () => import("./pages/ide/observability/execution-analytics")
+);
+const ClusterMapPage = React.lazy(() => import("./pages/ide/observability/clusters"));
+const MetricDetailPage = React.lazy(
+  () => import("./pages/ide/observability/metrics/MetricsDetailPage")
+);
+const MetricsPage = React.lazy(() => import("./pages/ide/observability/metrics/MetricsListPage"));
+const TraceDetailPage = React.lazy(() => import("./pages/ide/observability/trace"));
+const TracesPage = React.lazy(() => import("./pages/ide/observability/traces"));
+
+// Admin and Stripe return URLs are visited rarely; defer their bundles too.
+const AdminLayout = React.lazy(() => import("./pages/admin/AdminLayout"));
+const AdminBillingQueue = React.lazy(() => import("./pages/admin/AdminBillingQueue"));
+const AdminFeatureFlags = React.lazy(() => import("./pages/admin/AdminFeatureFlags"));
+const CheckoutSuccessPage = React.lazy(() => import("./pages/billing/CheckoutSuccess"));
+const CheckoutCancelledPage = React.lazy(() => import("./pages/billing/CheckoutCancelled"));
+
+const RouteFallback = () => (
+  <div className='flex h-full w-full items-center justify-center'>
+    <Spinner className='size-6' />
+  </div>
+);
 
 const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -268,7 +284,14 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
             </MainPageWrapper>
           }
         />
-        <Route path='ide' element={<IdePage />}>
+        <Route
+          path='ide'
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <IdePage />
+            </Suspense>
+          }
+        >
           {/* Files routes */}
           <Route path='files' element={<FilesLayout />}>
             <Route path=':pathb64' element={<EditorPage />} />
@@ -395,7 +418,13 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
         >
           {/* Admin queue (OXY_OWNER-gated server-side) — sits outside
               `OwnerRedirect` so owners can actually reach it. */}
-          <Route element={<AdminLayout />}>
+          <Route
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AdminLayout />
+              </Suspense>
+            }
+          >
             <Route path='admin/billing/queue' element={<AdminBillingQueue />} />
             <Route path='admin/feature-flags' element={<AdminFeatureFlags />} />
           </Route>
@@ -414,8 +443,22 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
               {/* Stripe Checkout return URLs. The path includes `/billing/`,
                   which is the `OrgGuard` paywall bypass — these pages
                   render even while billing.status is `incomplete`. */}
-              <Route path='billing/checkout-success' element={<CheckoutSuccessPage />} />
-              <Route path='billing/checkout-cancelled' element={<CheckoutCancelledPage />} />
+              <Route
+                path='billing/checkout-success'
+                element={
+                  <Suspense fallback={<RouteFallback />}>
+                    <CheckoutSuccessPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path='billing/checkout-cancelled'
+                element={
+                  <Suspense fallback={<RouteFallback />}>
+                    <CheckoutCancelledPage />
+                  </Suspense>
+                }
+              />
 
               {/* Org root picks a workspace and redirects into it */}
               <Route index element={<OrgDispatcher />} />

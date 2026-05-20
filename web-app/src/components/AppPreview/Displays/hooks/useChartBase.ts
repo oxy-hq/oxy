@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { EChartsOption } from "echarts";
 import { resolveColor } from "@/components/Echarts/resolveColor";
+import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { getDuckDB } from "@/libs/duckdb";
 import useTheme from "@/stores/useTheme";
@@ -24,18 +25,28 @@ export const useChartBase = <T extends BaseChartDisplay>({
   const isDarkMode = theme === "dark";
   const dataAvailable = data && display.data;
 
+  // Resolve the referenced data slice up-front so we can put a *stable*
+  // identifier (the parquet file_path) into the query key instead of the
+  // whole DataContainer blob — otherwise every render re-hashes a payload
+  // that can be hundreds of KB.
+  const referencedTable = dataAvailable
+    ? ((getData(data, display.data) as TableData | null) ?? null)
+    : null;
+  const tableKey = referencedTable?.file_path ?? "no-data";
+  const displayKey = JSON.stringify(display);
+
   const {
     isPending,
     isError,
     data: chartOptions
   } = useQuery({
-    queryKey: ["chart", display, data, isDarkMode, branchName, project.id],
+    queryKey: queryKeys.chart.fromDisplay(project.id, branchName, displayKey, tableKey, isDarkMode),
     queryFn: async () => {
       if (!dataAvailable) {
         return createNoDataOptions(display.title);
       }
 
-      const tableData = getData(data, display.data) as TableData | null;
+      const tableData = referencedTable;
       if (!tableData) {
         return createNoDataOptions(display.title);
       }

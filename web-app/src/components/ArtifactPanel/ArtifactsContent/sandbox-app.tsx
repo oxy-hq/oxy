@@ -130,8 +130,6 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
         console.error("[Oxy] No API key available to provide to iframe");
       }
 
-      console.log("[Oxy] Sending API key to iframe");
-
       // Send authentication response to iframe
       if (event.source) {
         event.source.postMessage(
@@ -165,7 +163,6 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
       if (!isV0LogMessage(data)) {
         return;
       }
-      console.log("[Oxy] Received console log from iframe:", data);
 
       // Verify the message is from our iframe
       if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {

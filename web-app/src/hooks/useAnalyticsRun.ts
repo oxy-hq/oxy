@@ -502,10 +502,14 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
     (text: string) => {
       if (state.tag !== "suspended") return;
       const { runId, events } = state;
+      const answerController = abortRef.current;
       setState({ tag: "running", runId, events });
       setIsAnswering(true);
       AnalyticsService.submitAnswer(projectId, runId, text)
         .then((res) => {
+          // The user may have navigated away or hit Stop while the answer was
+          // in flight; don't reopen a stream they no longer care about.
+          if (answerController?.signal.aborted) return;
           if (res.resumed) {
             // Cold resume: pipeline was rebuilt server-side after a restart.
             // Reconnect SSE so we receive events from the new pipeline.
@@ -513,13 +517,16 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
           }
         })
         .catch((err: unknown) => {
+          if (answerController?.signal.aborted) return;
           abortRef.current?.abort();
           setState({
             tag: "failed",
             runId,
             message: extractApiErrorMessage(err, "Failed to resume run"),
             durationMs: 0,
-            events: []
+            // Preserve the suspended-state events so the UI can show what got
+            // us there; clearing them throws away the run's whole transcript.
+            events
           });
         })
         .finally(() => setIsAnswering(false));

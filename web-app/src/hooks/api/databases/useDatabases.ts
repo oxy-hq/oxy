@@ -6,7 +6,7 @@ import queryKeys from "../queryKey";
 
 export default function useDatabases(
   enabled = true,
-  refetchOnWindowFocus = true,
+  refetchOnWindowFocus = false,
   refetchOnMount: boolean | "always" = false
 ) {
   const { project, branchName } = useCurrentProjectBranch();

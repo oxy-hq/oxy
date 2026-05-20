@@ -1,6 +1,7 @@
 import type React from "react";
 import { createContext, useContext, useEffect } from "react";
 import { redirectToHome } from "@/libs/utils";
+import { clearAuthScopedStorage } from "@/libs/utils/authStorage";
 import {
   clearAllOnboardingState,
   clearLegacyLocalOnboardingState
@@ -39,8 +40,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, authConfig
   };
 
   const logout = () => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("user");
+    clearAuthScopedStorage();
     // Clear any in-flight wizard state so a different user signing in on the
     // same browser doesn't inherit it (and so the same user can't be re-trapped
     // in pending onboarding for a workspace they intentionally walked away from).

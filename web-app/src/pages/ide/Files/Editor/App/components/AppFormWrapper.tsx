@@ -30,8 +30,6 @@ export const AppFormWrapper = () => {
     }
   }, [content]);
 
-  console.log("Rendering AppFormWrapper with data:", data);
-
   const onChange = useMemo(
     () =>
       debounce((formData: AppFormData) => {

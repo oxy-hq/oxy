@@ -6,7 +6,7 @@ import queryKeys from "../queryKey";
 
 const useSecrets = (
   enabled = true,
-  refetchOnWindowFocus = true,
+  refetchOnWindowFocus = false,
   refetchOnMount: boolean | "always" = false
 ) => {
   const { project } = useCurrentProjectBranch();
