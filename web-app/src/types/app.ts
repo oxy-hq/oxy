@@ -131,4 +131,8 @@ export type AppItem = {
   path: string;
   /** Human-friendly title from the app's `title:` field, when present. */
   title?: string;
+  /** Whether the app is published. Unpublished apps are hidden from the sidebar. */
+  published?: boolean;
+  /** Whether the calling user can change the publish state (false for Viewer). */
+  can_publish?: boolean;
 };

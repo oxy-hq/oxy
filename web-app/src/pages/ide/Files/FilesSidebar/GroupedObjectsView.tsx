@@ -1,6 +1,7 @@
 import { AppWindow, BookOpen, ChevronDown, ChevronRight, Database, Workflow } from "lucide-react";
 import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { Badge } from "@/components/ui/shadcn/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -14,6 +15,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem
 } from "@/components/ui/shadcn/sidebar";
+import useApps from "@/hooks/api/apps/useApps";
 import useLookerIntegrations from "@/hooks/api/integrations/useLookerIntegrations";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
@@ -36,6 +38,8 @@ interface CollapsibleGroupProps {
   onToggle: () => void;
   onFileClick: (file: FileTreeModel) => void;
   icon?: React.ComponentType;
+  /** Optional per-file trailing badge (e.g. "Draft" pill for unpublished apps). */
+  badgeFor?: (file: FileTreeModel) => React.ReactNode;
 }
 
 const CollapsibleGroup: React.FC<CollapsibleGroupProps> = ({
@@ -45,7 +49,8 @@ const CollapsibleGroup: React.FC<CollapsibleGroupProps> = ({
   activePath,
   onToggle,
   onFileClick,
-  icon: Icon
+  icon: Icon,
+  badgeFor
 }) => {
   if (files.length === 0) return null;
 
@@ -72,7 +77,8 @@ const CollapsibleGroup: React.FC<CollapsibleGroupProps> = ({
                   className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
                 >
                   {Icon ? <Icon /> : <FileIcon file={file} />}
-                  <span>{getObjectName(file)}</span>
+                  <span className='flex-1 truncate'>{getObjectName(file)}</span>
+                  {badgeFor?.(file)}
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             ))}
@@ -116,6 +122,26 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
   });
 
   const { data: lookerIntegrations } = useLookerIntegrations();
+  const { data: appList } = useApps();
+  const publishedByPath = React.useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const a of appList ?? []) {
+      map.set(a.path, !!a.published);
+    }
+    return map;
+  }, [appList]);
+  const appBadge = React.useCallback(
+    (file: FileTreeModel) => {
+      const published = publishedByPath.get(file.path);
+      if (published === undefined || published) return null;
+      return (
+        <Badge variant='outline' className='font-normal text-[10px] text-muted-foreground'>
+          Draft
+        </Badge>
+      );
+    },
+    [publishedByPath]
+  );
 
   const toggleGroup = (group: keyof typeof openGroups) => {
     setOpenGroups((prev) => ({ ...prev, [group]: !prev[group] }));
@@ -244,6 +270,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
         onToggle={() => toggleGroup("apps")}
         onFileClick={handleFileClick}
         icon={AppWindow}
+        badgeFor={appBadge}
       />
 
       <CollapsibleGroup

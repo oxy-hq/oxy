@@ -99,8 +99,8 @@ const databaseKeys = {
 
 const appKeys = {
   all: ["app"] as const,
-  list: (projectId: string, branchName: string) =>
-    [...appKeys.all, "list", projectId, branchName] as const,
+  list: (projectId: string, branchName: string, publishedOnly = false) =>
+    [...appKeys.all, "list", projectId, branchName, publishedOnly] as const,
   getAppData: (projectId: string, branchName: string, appPath: string) =>
     [...appKeys.all, "getAppData", projectId, branchName, appPath] as const,
   getData: (projectId: string, branchName: string, appPath: string) =>

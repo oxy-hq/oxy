@@ -1,7 +1,7 @@
 use crate::server::router::AppState;
 use crate::server::service::retrieval::EnumIndexManager;
 use crate::server::service::secret_manager::SecretManagerService;
-use axum::extract::{FromRequestParts, Path};
+use axum::extract::{FromRequestParts, OptionalFromRequestParts, Path};
 use axum::extract::{Query, State};
 use axum::http::request::Parts;
 use axum::{
@@ -80,6 +80,23 @@ where
             .ok_or(StatusCode::INTERNAL_SERVER_ERROR);
 
         async move { result }
+    }
+}
+
+/// Local mode doesn't attach an `EffectiveWorkspaceRole`, so handlers that work
+/// in both modes (e.g. `list_apps`) read it as `Option<EffectiveWorkspaceRole>`.
+impl<S> OptionalFromRequestParts<S> for EffectiveWorkspaceRole
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Option<Self>, Self::Rejection>> + Send {
+        let result = parts.extensions.get::<EffectiveWorkspaceRole>().cloned();
+        async move { Ok(result) }
     }
 }
 

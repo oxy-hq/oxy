@@ -3075,6 +3075,13 @@ pub struct AppConfig {
     #[garde(length(min = 1))]
     #[garde(dive)]
     pub display: Vec<Display>,
+    /// When false (default), the app is treated as a draft and hidden from the
+    /// left sidebar. Authors can still open, edit, and run it from the IDE.
+    /// Flip to true to make the app visible to consumers.
+    #[serde(default)]
+    #[schemars(default)]
+    #[garde(skip)]
+    pub published: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]

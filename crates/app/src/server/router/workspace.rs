@@ -325,6 +325,8 @@ fn build_app_routes() -> Router<AppState> {
         .route("/{pathb64}/result", post(app::get_app_result))
         .route("/{pathb64}/displays", get(app::get_displays))
         .route("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
+        .route("/{pathb64}/publish", post(app::publish_app))
+        .route("/{pathb64}/unpublish", post(app::unpublish_app))
         .route("/file/{pathb64}", get(app::get_data))
         .route("/source/{pathb64}", get(app::get_source_file))
         .route("/save-from-run/{run_id}", post(app::save_app_builder_run))

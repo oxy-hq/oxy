@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::cli::commands::export_chart::export_charts_to_dir;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::role_guards::WorkspaceEditor;
+use crate::server::api::middlewares::workspace_context::{
+    EffectiveWorkspaceRole, WorkspaceManagerExtractor,
+};
 use crate::server::service::app::{
     AppResultChartDisplay, AppResultData, AppResultDisplay, AppResultMarkdownDisplay,
     AppResultTableDisplay, AppService, DisplayWithError, GetAppResultResponse, TaskKind,
@@ -14,6 +17,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use entity::workspace_members::WorkspaceRole;
 use oxy::config::model::{
     AppTaskMode, ControlConfig, DatabaseType, Display, DuckDBOptions, SQL, TaskType,
 };
@@ -32,6 +36,22 @@ pub struct AppItem {
     /// Human-friendly title pulled from the app's `title:` field, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Whether the app's `published` field is true. Unpublished apps are
+    /// hidden from the left sidebar but remain visible in the IDE.
+    #[serde(default)]
+    pub published: bool,
+    /// Whether the calling user is allowed to flip the publish state.
+    /// True for any workspace role above Viewer.
+    #[serde(default)]
+    pub can_publish: bool,
+}
+
+#[derive(Deserialize, Default)]
+pub struct ListAppsQuery {
+    /// When true, only published apps are returned (used by the sidebar).
+    /// Defaults to false so the IDE Objects view keeps seeing everything.
+    #[serde(default)]
+    pub published_only: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -91,6 +111,37 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
     }
 }
 
+/// Best-effort read of `title` and `published` from an app YAML file by parsing
+/// just the root mapping — no schema validation, no `deny_unknown_fields`. We
+/// only need these two surface fields for sidebar/listing, so a downstream
+/// validation error elsewhere in the file shouldn't make the app vanish from
+/// the IDE or get accidentally un-published.
+async fn read_app_metadata(app_path: &std::path::Path) -> (Option<String>, bool) {
+    let Ok(yaml) = tokio::fs::read_to_string(app_path).await else {
+        tracing::warn!(path = %app_path.display(), "Failed to read app file");
+        return (None, false);
+    };
+    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(&yaml) else {
+        tracing::warn!(path = %app_path.display(), "Failed to parse app YAML");
+        return (None, false);
+    };
+    let Some(map) = value.as_mapping() else {
+        return (None, false);
+    };
+
+    let title = map
+        .get(serde_yaml::Value::String("title".to_string()))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let published = map
+        .get(serde_yaml::Value::String("published".to_string()))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    (title, published)
+}
+
 /// List all apps in the project
 ///
 /// Retrieves all app configurations available in the project. Returns app metadata
@@ -100,7 +151,8 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
     method(get),
     path = "/{workspace_id}/apps",
     params(
-        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
+        ("published_only" = Option<bool>, Query, description = "When true, return only apps with `published: true` (defaults to false)")
     ),
     responses(
         (status = OK, description = "Success", body = Vec<AppItem>, content_type = "application/json")
@@ -111,9 +163,19 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
 )]
 pub async fn list_apps(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    role: Option<EffectiveWorkspaceRole>,
+    extract::Query(query): extract::Query<ListAppsQuery>,
 ) -> Result<extract::Json<Vec<AppItem>>, StatusCode> {
     let config_manager = &workspace_manager.config_manager;
     let workspace_path = config_manager.workspace_path();
+
+    // In local mode there's no role plumbing — treat the caller as an Owner so the
+    // publish toggle is available. In cloud mode the workspace_middleware always
+    // attaches an EffectiveWorkspaceRole.
+    let can_publish = match role {
+        Some(EffectiveWorkspaceRole(r)) => r > WorkspaceRole::Viewer,
+        None => true,
+    };
 
     let apps = config_manager.list_apps().await.map_err(|e| {
         tracing::error!("Failed to list apps: {}", e);
@@ -132,27 +194,144 @@ pub async fn list_apps(
             .to_string()
             .replace(".app.yml", "");
 
-        // Best-effort: a malformed app file shouldn't hide the rest of the list.
-        let title = match config_manager.resolve_app(relative_path).await {
-            Ok(cfg) => cfg.title.filter(|t| !t.trim().is_empty()),
-            Err(err) => {
-                tracing::warn!(
-                    path = %relative_path.display(),
-                    error = %err,
-                    "Failed to parse app config for title; falling back to filename"
-                );
-                None
-            }
-        };
+        // Read `title` and `published` directly from the YAML root mapping so that a
+        // schema or validation error elsewhere in the file (e.g. a typo in `tasks:`)
+        // doesn't silently unpublish an app or hide its title from the IDE.
+        let (title, published) = read_app_metadata(app_path).await;
+
+        if query.published_only && !published {
+            continue;
+        }
 
         app_items.push(AppItem {
             name,
             path: relative_path.to_string_lossy().to_string(),
             title,
+            published,
+            can_publish,
         });
     }
 
     Ok(extract::Json(app_items))
+}
+
+/// Set `published: true` on the app's YAML file. Authoring permission
+/// (Owner/Admin/Member) is required — Viewers are rejected with 403 by the
+/// `WorkspaceEditor` extractor.
+pub async fn publish_app(
+    _: WorkspaceEditor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+) -> Result<extract::Json<AppItem>, StatusCode> {
+    set_publish_state(workspace_manager, &pathb64, true).await
+}
+
+/// Set `published: false` on the app's YAML file.
+pub async fn unpublish_app(
+    _: WorkspaceEditor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+) -> Result<extract::Json<AppItem>, StatusCode> {
+    set_publish_state(workspace_manager, &pathb64, false).await
+}
+
+async fn set_publish_state(
+    workspace_manager: oxy::adapters::workspace::manager::WorkspaceManager,
+    pathb64: &str,
+    published: bool,
+) -> Result<extract::Json<AppItem>, StatusCode> {
+    let relative_path = decode_path(pathb64)?;
+    let workspace_path = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+    let workspace_path_canonical = workspace_path.canonicalize().map_err(|e| {
+        tracing::error!(
+            "Failed to canonicalize workspace path {:?}: {}",
+            workspace_path,
+            e
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let absolute_path = workspace_path_canonical
+        .join(&relative_path)
+        .canonicalize()
+        .map_err(|e| {
+            tracing::warn!("App file not found: {:?} - {}", relative_path, e);
+            StatusCode::NOT_FOUND
+        })?;
+
+    if !absolute_path.starts_with(&workspace_path_canonical) {
+        tracing::warn!(
+            "Rejected path traversal attempt outside workspace: {:?}",
+            relative_path
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if !absolute_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with(".app.yml"))
+    {
+        tracing::warn!(
+            "Refused to set publish state on non-app file: {:?}",
+            absolute_path
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let yaml = tokio::fs::read_to_string(&absolute_path)
+        .await
+        .map_err(|e| {
+            tracing::warn!("Failed to read app file {:?}: {}", absolute_path, e);
+            StatusCode::NOT_FOUND
+        })?;
+
+    let mut root: serde_yaml::Value = serde_yaml::from_str(&yaml).map_err(|e| {
+        tracing::warn!("Failed to parse app YAML at {:?}: {}", absolute_path, e);
+        StatusCode::UNPROCESSABLE_ENTITY
+    })?;
+
+    let mapping = root.as_mapping_mut().ok_or_else(|| {
+        tracing::warn!("App YAML at {:?} is not a mapping", absolute_path);
+        StatusCode::UNPROCESSABLE_ENTITY
+    })?;
+    mapping.insert(
+        serde_yaml::Value::String("published".to_string()),
+        serde_yaml::Value::Bool(published),
+    );
+
+    let serialized = serde_yaml::to_string(&root).map_err(|e| {
+        tracing::error!("Failed to serialize app YAML: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    tokio::fs::write(&absolute_path, serialized)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to write app file {:?}: {}", absolute_path, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let name = relative_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string().replace(".app.yml", ""))
+        .unwrap_or_default();
+    let title = workspace_manager
+        .config_manager
+        .resolve_app(&relative_path)
+        .await
+        .ok()
+        .and_then(|cfg| cfg.title.filter(|t| !t.trim().is_empty()));
+
+    Ok(extract::Json(AppItem {
+        name,
+        path: relative_path.to_string_lossy().to_string(),
+        title,
+        published,
+        can_publish: true,
+    }))
 }
 
 /// Extract all single-quoted file paths (ending in .csv, .parquet, .json) from a SQL string.

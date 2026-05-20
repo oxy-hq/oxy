@@ -8,6 +8,7 @@ import { useEditorQueryInvalidation } from "../useEditorQueryInvalidation";
 import { usePreviewRefresh } from "../usePreviewRefresh";
 import { AppFormWrapper } from "./components/AppFormWrapper";
 import { ModeSwitcher } from "./components/ModeSwitcher";
+import { PublishToggle } from "./components/PublishToggle";
 import { AppViewMode } from "./types";
 
 const AppEditor = () => {
@@ -33,6 +34,7 @@ const AppEditor = () => {
   return (
     <EditorPageWrapper
       headerPrefixAction={<ModeSwitcher viewMode={viewMode} setViewMode={setViewMode} />}
+      headerActions={<PublishToggle pathb64={pathb64} />}
       pathb64={pathb64}
       onSaved={handleSaved}
       git={gitEnabled}

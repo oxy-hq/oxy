@@ -3,8 +3,37 @@ import type { AppData, AppDisplay, AppItem } from "@/types/app";
 import { apiClient } from "./axios";
 
 export class AppService {
-  static async listApps(projectId: string, branchName: string): Promise<AppItem[]> {
+  static async listApps(
+    projectId: string,
+    branchName: string,
+    options: { publishedOnly?: boolean } = {}
+  ): Promise<AppItem[]> {
     const response = await apiClient.get(`/${projectId}/apps`, {
+      params: {
+        branch: branchName,
+        ...(options.publishedOnly ? { published_only: true } : {})
+      }
+    });
+    return response.data;
+  }
+
+  static async publishApp(
+    projectId: string,
+    branchName: string,
+    pathb64: string
+  ): Promise<AppItem> {
+    const response = await apiClient.post(`/${projectId}/apps/${pathb64}/publish`, null, {
+      params: { branch: branchName }
+    });
+    return response.data;
+  }
+
+  static async unpublishApp(
+    projectId: string,
+    branchName: string,
+    pathb64: string
+  ): Promise<AppItem> {
+    const response = await apiClient.post(`/${projectId}/apps/${pathb64}/unpublish`, null, {
       params: { branch: branchName }
     });
     return response.data;

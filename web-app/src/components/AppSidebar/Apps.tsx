@@ -17,7 +17,7 @@ import { appDisplayLabel } from "@/utils/appLabel";
 
 export function Apps() {
   const location = useLocation();
-  const { data: apps, isPending } = useApps();
+  const { data: apps, isPending } = useApps({ publishedOnly: true });
   const { project } = useCurrentProjectBranch();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const projectId = project.id;

@@ -60,6 +60,14 @@ fn insert_metric(storage: &DuckDBStorage, metric: &MetricUsageRecord) {
     .expect("Failed to insert test metric");
 }
 
+/// Return a UTC timestamp string for "now", formatted to match what the
+/// queries expect. Used so fixtures always satisfy `INTERVAL '30 DAY'`
+/// filters regardless of when the suite is run.
+fn recent_ts() -> String {
+    use chrono::Utc;
+    Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
 /// Create a root agent span (the kind list_traces filters for).
 ///
 /// Attributes use flat dotted keys to match the `->>'agent.ref'` operator.

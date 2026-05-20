@@ -27,6 +27,11 @@
         "$ref": "#/definitions/Display"
       }
     },
+    "published": {
+      "description": "When false (default), the app is treated as a draft and hidden from the left sidebar. Authors can still open, edit, and run it from the IDE. Flip to true to make the app visible to consumers.",
+      "default": false,
+      "type": "boolean"
+    },
     "tasks": {
       "description": "tasks to prepare the data for the app",
       "type": "array",
