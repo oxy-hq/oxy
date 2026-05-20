@@ -112,6 +112,22 @@ cargo nextest run --test serve
 cargo nextest run test_internal_port_disabled
 ```
 
+## Browser Testing (UI features)
+
+When you add or modify a UI feature in `web-app/`, consider adding an agentic browser test under `web-app/tests/agentic/flows/`. The runner is Playwright + LLM-driven action selection on cold runs, with warm-replay on subsequent runs (~$0.002 / run after first record).
+
+The [`agentic-browser-test`](.claude/skills/agentic-browser-test/SKILL.md) skill handles authoring + maintenance. Slash commands:
+
+- `/test-feature <description>` — one-shot `.flow.test.yml` generation from a free-form description
+- `/agentic-test-add-case <flow> <description>` — extend an existing flow with a new case
+- `/run-agentic-tests <pattern>` — run with `HEADED=1 DEBUG=1`; the runner auto-spawns the right backend (local vs cloud)
+- `/fix-agentic-test <flow-or-bucket>` — triage a failure (Tier-1 silent re-rank / Tier-2 staged heal / behavioral / cache-health)
+- `/accept-agentic-healing <flow>` — promote staged Tier-2 healing recordings
+
+CI runs the suite as a reusable workflow at `.github/workflows/agentic-tests.yaml`, bucketed by domain (`builder`, `semantic`, `ask-agent`, `threads`, `ide`, `onboarding`). For full mechanics see `web-app/tests/agentic/README.md` and `internal-docs/agentic-browser-testing-spec.md`.
+
+**When working on a new feature or bug fix that touches the UI**, default to drafting a regression test alongside the code change — `/test-feature` is cheap and the warm-replay model means the test costs ~$0.002 per CI run thereafter.
+
 ## Committing Changes
 
 Commit with a clear and concise message following the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification.

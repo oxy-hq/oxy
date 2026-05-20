@@ -243,7 +243,19 @@ Cross-cutting UI flows are tested by `web-app/tests/agentic/`. Treat this as a r
 - Onboarding (`pages/onboarding/**`, `components/workspaces/**`) → `flows/onboarding-*.flow.test.yml`
 - Semantic layer + agentic analytics integration (`pages/thread/analytics/**`, `pages/ide/Objects/SemanticLayer/**`) → `flows/semantic-*.flow.test.yml`
 
-**Quick commands:**
+**Skill-driven workflow (preferred for authoring + triage):**
+
+The [`agentic-browser-test`](../.claude/skills/agentic-browser-test/SKILL.md) skill handles authoring + maintenance — you don't need to learn the YAML schema, action-cache contract, or healing model directly.
+
+- `/test-feature <description>` — one-shot `.flow.test.yml` generation
+- `/agentic-test-add-case <flow> <description>` — extend an existing flow
+- `/run-agentic-tests <pattern>` — run with `HEADED=1 DEBUG=1`; runner auto-spawns the right backend
+- `/fix-agentic-test <flow-or-bucket>` — triage a failure (Tier-1 / Tier-2 / behavioral / cache-health)
+- `/accept-agentic-healing <flow>` — promote staged Tier-2 healing recordings
+
+The skill re-reads the canonical sources (this README, `json-schemas/flow-test.json`, `canonical-prompts.md`, existing flows, `_budgets.yml`) on every invocation, so it stays in sync as the surface evolves.
+
+**Quick commands (raw CLI):**
 
 ```bash
 pnpm test:agentic --list                  # list flows + cases + tags (no execution)
@@ -272,4 +284,4 @@ pnpm test:agentic --check-coverage --staged < <(git diff --cached --name-only)
 
 **Hard rule (per the 2026-05-06 incident):** never seed/mutate external systems (warehouses, port-forwarded services). The setup-command surface in `tests/agentic/fixtures/reset.ts` is intentionally minimal — `goto:`, `reset_test_file`, and `restore_demo_file:` only, none of which can make a network call. Cloud-mode flows drive onboarding through the UI wizard rather than via API seeding. Any new setup command that would call out is prohibited. See `tests/agentic/README.md` policy section for details.
 
-**Adding a new flow:** see `tests/agentic/canonical-prompts.md` for copy-pasteable prelude steps that share cache entries via `cache_scope: shared`. Use `pnpm test:agentic --scaffold <name> --from <component-path>` to bootstrap a starter YAML once that command lands (Phase C).
+**Adding a new flow:** prefer `/test-feature <description>` (the skill greps for testids, picks the right primitives, validates against the schema, and adds a `_budgets.yml` entry). For component-driven bootstrapping you can also use `pnpm test:agentic --scaffold <name> --from <component-path>` directly. See `tests/agentic/canonical-prompts.md` for copy-pasteable prelude steps that share cache entries via `cache_scope: shared`.
