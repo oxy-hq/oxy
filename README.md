@@ -6,13 +6,11 @@
 <a href="https://deepwiki.com/oxy-hq/oxygen" title="DeepWiki"><img src="https://deepwiki.com/badge.svg" alt="DeepWiki"></a>
 </p>
 
-## The Open-Source AI Data Analyst built for Speed and Precision 
+## The Open-Source OS for AI Transformation 
 
-Oxygen is the open-source AI data analyst built for speed and precision. Written in Rust and declarative by design, Oxygen provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
+Oxygen OS is the operating system for AI transformation. Oxygen has three components: Data Infrastructure, World Model, and Agentic Intelligence. 
 
-Using Oxygen, users can automate data Q&A and reporting, and accelerate building data artifacts such as semantic topics and data applications. 
-
-Oxygen integrates natively with your existing data stack - data warehouses, ELT tools, semantic layers, and BI tools. Oxygen also comes with its own data tools for a zero-config experience. 
+With Oxygen, organizations can build a digital twin of their operations and deploy custom Applications and Agents that power complex workflows and decisions. 
 
 To learn more, read our [docs](https://oxy.tech/docs) or contact us via github issues or [contact form](https://form.typeform.com/to/hQlOTpzW).
 
