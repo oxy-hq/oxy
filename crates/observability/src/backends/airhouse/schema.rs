@@ -2,6 +2,11 @@
 //!
 //! Tables are prefixed with `oxy_obs_` so they don't collide with any
 //! user-defined tables that may exist in the same Airhouse tenant.
+//!
+//! NOTE: DuckLake rejects PRIMARY KEY, UNIQUE, and CREATE INDEX statements
+//! with "Not implemented Error". Keep DDL plain table definitions only;
+//! query optimization must rely on DuckLake's own predicate pushdown over
+//! partitioned parquet, not on catalog-level indexes.
 
 pub const CREATE_SPANS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS oxy_obs_spans (
@@ -18,12 +23,6 @@ CREATE TABLE IF NOT EXISTS oxy_obs_spans (
     timestamp TIMESTAMPTZ DEFAULT current_timestamp
 )
 "#;
-
-pub const CREATE_SPANS_INDEX_TS: &str =
-    "CREATE INDEX IF NOT EXISTS oxy_obs_idx_spans_ts ON oxy_obs_spans(timestamp DESC)";
-
-pub const CREATE_SPANS_INDEX_NAME: &str =
-    "CREATE INDEX IF NOT EXISTS oxy_obs_idx_spans_name ON oxy_obs_spans(span_name)";
 
 pub const CREATE_INTENT_CLUSTERS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS oxy_obs_intent_clusters (
@@ -52,11 +51,6 @@ CREATE TABLE IF NOT EXISTS oxy_obs_intent_classifications (
 )
 "#;
 
-pub const CREATE_INTENT_CLASSIFICATIONS_INDEX_TRACE: &str =
-    "CREATE INDEX IF NOT EXISTS oxy_obs_idx_ic_trace ON oxy_obs_intent_classifications(trace_id)";
-
-pub const CREATE_INTENT_CLASSIFICATIONS_INDEX_TS: &str = "CREATE INDEX IF NOT EXISTS oxy_obs_idx_ic_ts ON oxy_obs_intent_classifications(classified_at DESC)";
-
 pub const CREATE_METRIC_USAGE_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS oxy_obs_metric_usage (
     id VARCHAR DEFAULT uuid(),
@@ -70,22 +64,11 @@ CREATE TABLE IF NOT EXISTS oxy_obs_metric_usage (
 )
 "#;
 
-pub const CREATE_METRIC_USAGE_INDEX_METRIC: &str = "CREATE INDEX IF NOT EXISTS oxy_obs_idx_mu_metric ON oxy_obs_metric_usage(metric_name, created_at)";
-
-pub const CREATE_METRIC_USAGE_INDEX_TRACE: &str =
-    "CREATE INDEX IF NOT EXISTS oxy_obs_idx_mu_trace ON oxy_obs_metric_usage(trace_id)";
-
 /// DDL statements to run on first startup. Each entry is a single statement
 /// executed as a separate `simple_query` call.
 pub const ALL_DDL: &[&str] = &[
     CREATE_SPANS_TABLE,
-    CREATE_SPANS_INDEX_TS,
-    CREATE_SPANS_INDEX_NAME,
     CREATE_INTENT_CLUSTERS_TABLE,
     CREATE_INTENT_CLASSIFICATIONS_TABLE,
-    CREATE_INTENT_CLASSIFICATIONS_INDEX_TRACE,
-    CREATE_INTENT_CLASSIFICATIONS_INDEX_TS,
     CREATE_METRIC_USAGE_TABLE,
-    CREATE_METRIC_USAGE_INDEX_METRIC,
-    CREATE_METRIC_USAGE_INDEX_TRACE,
 ];
