@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.57] - 2026-05-21
+
+### 🐛 Bug Fixes
+
+- Observability drop CREATE INDEX DDL from airhouse backend (#2368)
+
+### 💼 Other
+
+- *(deps)* Bump crate-ci/typos from 1.46.1 to 1.46.2 (#2362)
+
 ## [0.5.56] - 2026-05-20
 
 ### 🚀 Features
@@ -50,6 +60,7 @@ All notable changes to this project will be documented in this file.
 - Remove base parameter from paths-filter
 - Update BUILD_DOCKER condition in public-release.yaml
 - Use short SHA instead of date for edge image tags (#2357)
+- Release 0.5.56 (#2325)
 
 ## [0.5.55] - 2026-05-14
 
