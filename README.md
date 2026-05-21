@@ -6,11 +6,11 @@
 <a href="https://deepwiki.com/oxy-hq/oxygen" title="DeepWiki"><img src="https://deepwiki.com/badge.svg" alt="DeepWiki"></a>
 </p>
 
-## The Open-Source OS for AI Transformation 
+## The Operating System for AI Transformation 
 
 Oxygen OS is the operating system for AI transformation. Oxygen has three components: Data Infrastructure, World Model, and Agentic Intelligence. 
 
-With Oxygen, organizations can build a digital twin of their operations and deploy custom Applications and Agents that power complex workflows and decisions. 
+With Oxygen, organizations can build a digital twin of their operations and deploy custom applications and agents that power complex workflows and decisions. 
 
 To learn more, read our [docs](https://oxy.tech/docs) or contact us via github issues or [contact form](https://form.typeform.com/to/hQlOTpzW).
 
