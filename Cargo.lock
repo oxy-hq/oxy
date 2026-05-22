@@ -449,7 +449,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-semantic"
-version = "0.5.55"
+version = "0.5.57"
 dependencies = [
  "agentic-connector",
  "agentic-core",

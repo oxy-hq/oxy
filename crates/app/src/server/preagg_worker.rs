@@ -126,6 +126,7 @@ async fn run_preagg_cycle(config: Arc<PreaggWorkerConfig>, cache: Arc<RwLock<Ref
         None,
         "preagg_cycle",
         None,
+        config.ctx.workspace_manager().workspace_id,
     )
     .await
     {
