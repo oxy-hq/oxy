@@ -31,6 +31,7 @@
 //! re-exported below so existing callers keep working without
 //! touching every import.
 
+pub mod cron;
 pub mod lifecycle;
 pub mod migration;
 pub mod orchestrator;
@@ -49,7 +50,7 @@ pub use orchestrator::{background, circuit_breaker, coordinator, router, transpo
 /// Union of lifecycle + orchestrator entities under the legacy
 /// `agentic_runtime::entity::*` path.
 pub mod entity {
-    pub use crate::lifecycle::entity::{run, run_event, run_suspension};
+    pub use crate::lifecycle::entity::{run, run_event, run_suspension, schedule};
     pub use crate::orchestrator::entity::{task_outcome, task_queue};
 }
 
@@ -60,24 +61,28 @@ pub mod entity {
 /// `agentic_runtime::crud::events::insert_event`.
 pub mod crud {
     pub use crate::lifecycle::crud::{
+        DRIVER_LEASE_TTL_SECS, now, transition_run, user_facing_status,
+    };
+    pub use crate::lifecycle::crud::{
         EventRow, ThreadHistoryTurn, ToolExchangeRow, batch_insert_events, delete_events_from_seq,
         get_all_events, get_effective_run_state, get_events_after, get_max_seq, get_run,
         get_run_by_thread, get_runs_by_thread, get_suspension, get_thread_history,
-        get_thread_history_with_events, insert_event, insert_run, insert_run_with_parent,
-        list_active_runs, list_recent_runs, list_runs_filtered, load_task_tree, update_run_done,
-        update_run_failed, update_run_running, update_run_suspended,
+        get_thread_history_with_events, heartbeat_driver, insert_event, insert_run,
+        insert_run_with_parent, is_cancel_requested, list_active_runs, list_recent_runs,
+        list_runs_filtered, load_task_tree, release_driver, request_cancel, try_acquire_driver,
+        update_run_done, update_run_failed, update_run_running, update_run_suspended,
         update_run_terminal_from_events, update_task_status, upsert_suspension,
     };
     pub use crate::lifecycle::crud::{events, queries, runs, suspension};
-    pub use crate::lifecycle::crud::{now, transition_run, user_facing_status};
     pub use crate::orchestrator::crud::{
-        QueueStats, QueueTaskRow, StuckRun, cancel_queued_task, claim_task, claim_task_under_root,
-        cleanup_stale_runs, complete_child_done_txn, complete_child_failed_txn,
-        complete_queue_task, enqueue_task, fail_queue_task, find_stuck_workflow_runs,
-        get_active_root_runs, get_max_child_counter, get_outcomes_for_parent, get_queue_entry,
-        get_queue_stats, get_resumable_root_runs, get_run_answer, increment_attempt,
-        insert_child_run, insert_task_outcome, mark_recovery_failed, reap_stale_tasks,
-        requeue_task, suspend_with_data_txn, update_queue_heartbeat,
+        QueueStats, QueueTaskRow, StuckRun, TaskScope, cancel_queued_task, claim_task,
+        claim_task_under_root, cleanup_stale_runs, complete_child_done_txn,
+        complete_child_failed_txn, complete_queue_task, enqueue_task, fail_queue_task,
+        find_pending_global_runs, find_stuck_runs, find_stuck_workflow_runs, get_active_root_runs,
+        get_max_child_counter, get_outcomes_for_parent, get_queue_entry, get_queue_stats,
+        get_resumable_root_runs, get_run_answer, increment_attempt, insert_child_run,
+        insert_task_outcome, mark_recovery_failed, reap_stale_tasks, requeue_task,
+        suspend_with_data_txn, update_queue_heartbeat,
     };
     pub use crate::orchestrator::crud::{outcomes, queue, recovery};
 }

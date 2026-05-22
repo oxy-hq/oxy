@@ -24,6 +24,7 @@ pub mod onboarding;
 pub mod organizations;
 pub mod result_files;
 pub mod run;
+pub mod schedules;
 pub mod secrets;
 pub mod semantic;
 pub mod task;

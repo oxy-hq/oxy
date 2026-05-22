@@ -99,6 +99,136 @@ mod duckdb {
         assert_eq!(res.summary.row_count, 0);
     }
 
+    /// A multi-statement DDL/DML script ending in a returning SELECT — the
+    /// shape of a workflow `execute_sql` setup file
+    /// (`CREATE TABLE …; CREATE INDEX …; INSERT …; SELECT 'ready'`).
+    /// Regression test: previously the connector wrapped the whole script
+    /// in `CREATE TEMP TABLE _t AS (…)` and DuckDB rejected it with
+    /// `Parser Error: syntax error at or near "CREATE"`.
+    #[tokio::test]
+    async fn multi_statement_script_runs_and_samples_final_select() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        let c = DuckDbConnector::new(conn);
+
+        let script = "CREATE OR REPLACE TABLE video_activity (\
+                          video_id VARCHAR NOT NULL,\
+                          d DATE NOT NULL,\
+                          views BIGINT,\
+                          PRIMARY KEY (video_id, d)\
+                      );\n\
+                      CREATE INDEX IF NOT EXISTS va_d_idx ON video_activity (d);\n\
+                      CREATE INDEX IF NOT EXISTS va_v_idx ON video_activity (views);\n\
+                      INSERT INTO video_activity VALUES ('v1', DATE '2026-01-01', 100);\n\
+                      -- workaround comment with ; semicolon\n\
+                      SELECT 'video_activity ready' AS status;";
+
+        let res = c.execute_query(script, 100).await.unwrap();
+
+        assert_eq!(res.result.columns, ["status"]);
+        assert_eq!(res.result.total_row_count, 1);
+        assert_eq!(res.result.rows.len(), 1);
+        assert_eq!(
+            res.result.rows[0].0[0],
+            CellValue::Text("video_activity ready".into())
+        );
+
+        // The prefix statements actually ran: the table and its row exist.
+        let check = c
+            .execute_query("SELECT views FROM video_activity WHERE video_id = 'v1'", 10)
+            .await
+            .unwrap();
+        assert_eq!(check.result.rows[0].0[0], CellValue::Number(100.0));
+    }
+
+    /// A multi-statement script whose final statement is non-returning
+    /// DDL/DML: the side effects must apply and the call returns a
+    /// well-formed empty result instead of a parser error.
+    #[tokio::test]
+    async fn multi_statement_script_non_returning_final_is_empty_result() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        let c = DuckDbConnector::new(conn);
+
+        let res = c
+            .execute_query(
+                "CREATE TABLE t (a INT);\nINSERT INTO t VALUES (1);\nINSERT INTO t VALUES (2);",
+                100,
+            )
+            .await
+            .unwrap();
+
+        assert!(res.result.columns.is_empty());
+        assert!(res.result.rows.is_empty());
+        assert_eq!(res.result.total_row_count, 0);
+        assert!(!res.result.truncated);
+
+        // Both inserts applied.
+        let check = c.execute_query("SELECT COUNT(*) FROM t", 10).await.unwrap();
+        assert_eq!(check.result.rows[0].0[0], CellValue::Number(2.0));
+    }
+
+    /// A single non-returning statement (no semicolons) is also handled:
+    /// run for side effects, empty result.
+    /// Regression: `date_diff` with a bare string-literal part, projected
+    /// non-aggregated over a *populated* `GROUP BY`, only binds when the
+    /// DuckDB ICU extension is loaded. The connector must load ICU on
+    /// every connection (matching oxy-core); without it this fails with
+    /// `No function matches … (STRING_LITERAL, DATE, DATE)` and an empty
+    /// candidate list. Reproduces the gallant-demo velocity workflow bug.
+    #[tokio::test]
+    async fn date_diff_string_literal_over_group_by_binds_with_icu() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        let c = DuckDbConnector::new(conn);
+
+        c.execute_query(
+            "CREATE TABLE va (id VARCHAR, publish_date TIMESTAMP, d DATE, views BIGINT);\n\
+             INSERT INTO va VALUES \
+                ('v1', TIMESTAMP '2024-01-01 00:00:00', DATE '2024-01-03', 10),\
+                ('v1', TIMESTAMP '2024-01-01 00:00:00', DATE '2024-01-20', 20),\
+                ('v2', TIMESTAMP '2024-02-01 00:00:00', DATE '2024-02-02', 30);",
+            100,
+        )
+        .await
+        .unwrap();
+
+        // Non-aggregated date_diff over a GROUP BY key (the days_live shape)
+        // plus an aggregated date_diff inside SUM(CASE …) (the window shape).
+        let res = c
+            .execute_query(
+                "SELECT id, \
+                    date_diff('day', publish_date::DATE, CURRENT_DATE::DATE) AS days_live, \
+                    SUM(CASE WHEN date_diff('day', publish_date::DATE, d::DATE) < 7 \
+                             THEN views ELSE 0 END) AS v7 \
+                 FROM va GROUP BY id, publish_date ORDER BY id",
+                100,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.result.columns, ["id", "days_live", "v7"]);
+        assert_eq!(res.result.total_row_count, 2);
+        // v1: only the 2024-01-03 row is within 7 days of publish → 10.
+        assert_eq!(res.result.rows[0].0[0], CellValue::Text("v1".into()));
+        assert_eq!(res.result.rows[0].0[2], CellValue::Number(10.0));
+    }
+
+    /// A single non-returning statement (no semicolons) is also handled:
+    /// run for side effects, empty result.
+    #[tokio::test]
+    async fn single_non_returning_statement_is_empty_result() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        let c = DuckDbConnector::new(conn);
+
+        let res = c
+            .execute_query("CREATE TABLE solo (a INT)", 100)
+            .await
+            .unwrap();
+        assert!(res.result.columns.is_empty());
+        assert_eq!(res.result.total_row_count, 0);
+
+        // Table exists and is queryable afterwards.
+        c.execute_query("SELECT * FROM solo", 10).await.unwrap();
+    }
+
     #[tokio::test]
     async fn stats_correctness() {
         let c = make_sales_connector();

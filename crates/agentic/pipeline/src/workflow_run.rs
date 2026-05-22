@@ -239,9 +239,15 @@ pub trait InlineAgentRunner: Send + Sync {
 /// Returns the freshly minted `run_id`. The caller is responsible for any
 /// runtime-state side effects (registering cancel/answer channels, spawning
 /// SSE subscribers); this function only touches the database.
+/// `scope` records who will drive the seeded run: [`TaskScope::Scoped`] when
+/// a co-located coordinator is spawned right after (every HTTP/CLI caller
+/// today), [`TaskScope::Global`] when the Phase 2 scheduler seeds it for the
+/// standalone/recovery loop to pick up.
 pub async fn start_workflow_run(
     db: &DatabaseConnection,
     request: StartWorkflowRequest,
+    scope: crud::TaskScope,
+    workspace_id: Uuid,
 ) -> Result<String, WorkflowRunError> {
     request.validate()?;
 
@@ -279,6 +285,7 @@ pub async fn start_workflow_run(
         thread_uuid,
         agentic_workflow::SOURCE_TYPE,
         Some(metadata),
+        workspace_id,
     )
     .await?;
 
@@ -290,7 +297,7 @@ pub async fn start_workflow_run(
         body: None,
         initial_render_context: None,
     };
-    crud::enqueue_task(db, &run_id, &run_id, None, &spec, None).await?;
+    crud::enqueue_task(db, &run_id, &run_id, None, &spec, None, scope).await?;
 
     Ok(run_id)
 }

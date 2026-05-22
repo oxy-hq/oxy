@@ -96,9 +96,17 @@ async fn test_insert_run_analytics_creates_extension() {
     let Some(db) = test_db().await else { return };
     let run_id = test_run_id();
 
-    insert_run(&db, &run_id, "test_agent", "What is revenue?", None, None)
-        .await
-        .expect("insert_run failed");
+    insert_run(
+        &db,
+        &run_id,
+        "test_agent",
+        "What is revenue?",
+        None,
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert_run failed");
 
     // Verify run record exists.
     let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
@@ -123,9 +131,17 @@ async fn test_insert_run_builder_no_extension() {
     let Some(db) = test_db().await else { return };
     let run_id = test_run_id();
 
-    insert_run(&db, &run_id, "__builder__", "Build a dashboard", None, None)
-        .await
-        .expect("insert_run failed");
+    insert_run(
+        &db,
+        &run_id,
+        "__builder__",
+        "Build a dashboard",
+        None,
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert_run failed");
 
     let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(run.source_type.as_deref(), Some("builder"));
@@ -147,6 +163,7 @@ async fn test_insert_run_with_thinking_mode() {
         "Q",
         None,
         Some("extended_thinking".to_string()),
+        uuid::Uuid::nil(),
     )
     .await
     .unwrap();
@@ -165,7 +182,7 @@ async fn test_update_run_done_with_spec_hint() {
     let Some(db) = test_db().await else { return };
     let run_id = test_run_id();
 
-    insert_run(&db, &run_id, "agent", "Q", None, None)
+    insert_run(&db, &run_id, "agent", "Q", None, None, uuid::Uuid::nil())
         .await
         .unwrap();
 
@@ -192,7 +209,7 @@ async fn test_update_run_done_without_spec_hint() {
     let Some(db) = test_db().await else { return };
     let run_id = test_run_id();
 
-    insert_run(&db, &run_id, "agent", "Q", None, None)
+    insert_run(&db, &run_id, "agent", "Q", None, None, uuid::Uuid::nil())
         .await
         .unwrap();
     update_run_done(&db, &run_id, "Done", None).await.unwrap();
@@ -211,7 +228,7 @@ async fn test_update_thinking_mode() {
     let Some(db) = test_db().await else { return };
     let run_id = test_run_id();
 
-    insert_run(&db, &run_id, "agent", "Q", None, None)
+    insert_run(&db, &run_id, "agent", "Q", None, None, uuid::Uuid::nil())
         .await
         .unwrap();
 
@@ -235,15 +252,23 @@ async fn test_get_analytics_extensions_bulk() {
     let id2 = test_run_id();
     let id3 = test_run_id();
 
-    insert_run(&db, &id1, "agent_a", "Q1", None, None)
+    insert_run(&db, &id1, "agent_a", "Q1", None, None, uuid::Uuid::nil())
         .await
         .unwrap();
-    insert_run(&db, &id2, "agent_b", "Q2", None, None)
+    insert_run(&db, &id2, "agent_b", "Q2", None, None, uuid::Uuid::nil())
         .await
         .unwrap();
-    insert_run(&db, &id3, "__builder__", "Q3", None, None)
-        .await
-        .unwrap();
+    insert_run(
+        &db,
+        &id3,
+        "__builder__",
+        "Q3",
+        None,
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
 
     let exts = get_analytics_extensions(&db, &[id1.clone(), id2.clone(), id3.clone()])
         .await

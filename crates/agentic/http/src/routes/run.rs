@@ -137,6 +137,7 @@ pub async fn create_run(
     let skip_interpreting = body.onboarding_context.is_some();
 
     let mut builder = PipelineBuilder::new(platform.clone())
+        .workspace_id(platform.workspace_id())
         .with_builder_bridges(bridges.clone())
         .question(&question)
         .thinking_mode(body.thinking_mode)
@@ -598,8 +599,12 @@ pub async fn answer_run(
                 .collect()
         });
 
-    // Rebuild the pipeline and drive it.
+    // Rebuild the pipeline and drive it. `existing_run_id` skips the
+    // DB insert (this is a resume), so workspace_id here is informational
+    // only — but set it for consistency in case a future drive path adds
+    // a fresh insert.
     let mut builder = PipelineBuilder::new(platform.clone())
+        .workspace_id(platform.workspace_id())
         .with_builder_bridges(bridges.clone())
         .question(&run.question)
         .schema_cache(Arc::clone(&state.schema_cache))
@@ -768,6 +773,13 @@ pub async fn cancel_run(
     Path(RunIdPath { id: run_id }): Path<RunIdPath>,
     Extension(state): Extension<Arc<AgenticState>>,
 ) -> Response {
+    // Durable cross-process cancel signal — set before the in-memory
+    // fast path: a recovered run has a registered cancel_tx (so
+    // `state.cancel` returns true) but is driven out-of-process where
+    // nothing observes the watch; its forwarder polls this flag.
+    agentic_runtime::crud::request_cancel(&state.db, &run_id)
+        .await
+        .ok();
     if state.cancel(&run_id) {
         return Json(serde_json::json!({ "ok": true })).into_response();
     }

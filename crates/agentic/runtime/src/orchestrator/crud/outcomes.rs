@@ -212,6 +212,20 @@ pub async fn insert_child_run(
     attempt: i32,
     task_metadata: Option<Value>,
 ) -> Result<(), DbErr> {
+    // Inherit the parent's workspace_id so out-of-process drivers can
+    // route every row in a task tree to the same `PlatformContext`. One
+    // extra round-trip here on each delegation; coordinator caches this
+    // via the `run` model once it's loaded, so the lookup is bounded.
+    let parent = run::Entity::find_by_id(parent_run_id.to_string())
+        .one(db)
+        .await?
+        .ok_or_else(|| {
+            DbErr::RecordNotFound(format!(
+                "insert_child_run: parent run {parent_run_id} not found"
+            ))
+        })?;
+    let workspace_id = parent.workspace_id;
+
     let ts = now();
     let run_model = run::ActiveModel {
         id: Set(child_run_id.to_string()),
@@ -226,6 +240,10 @@ pub async fn insert_child_run(
         task_metadata: Set(task_metadata),
         attempt: Set(attempt),
         recovery_requested_at: Set(None),
+        driver_id: Set(None),
+        driver_heartbeat_at: Set(None),
+        cancel_requested_at: Set(None),
+        workspace_id: Set(workspace_id),
         created_at: Set(ts),
         updated_at: Set(ts),
     };

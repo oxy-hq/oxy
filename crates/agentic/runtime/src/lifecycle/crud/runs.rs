@@ -1,12 +1,137 @@
 //! Lifecycle CRUD on the `agentic_runs` table.
 
-use sea_orm::{ActiveValue::*, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveValue::*, ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr,
+    EntityTrait, QueryFilter, Statement,
+};
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::lifecycle::entity::run;
 
-use super::{now, transition_run};
+use super::{DRIVER_LEASE_TTL_SECS, now, transition_run};
+
+// ── Driver lease ────────────────────────────────────────────────────────────
+//
+// A per-run lease (`driver_id` + `driver_heartbeat_at`) recording which
+// driver process/loop is actively driving a run. CAS-acquired with a
+// staleness window so a periodic recovery loop cannot double-drive a run a
+// live driver already owns. See [`DRIVER_LEASE_TTL_SECS`].
+
+/// Try to acquire (or renew) the driver lease on `run_id` for `driver_id`.
+///
+/// Succeeds when the run is unleased, already held by `driver_id`
+/// (idempotent renew), or the current holder's heartbeat is stale past
+/// [`DRIVER_LEASE_TTL_SECS`]. Returns `true` if the lease is now held by
+/// `driver_id`, `false` if a different live driver owns it (caller must not
+/// drive the run — release any claimed queue task and skip).
+pub async fn try_acquire_driver(
+    db: &DatabaseConnection,
+    run_id: &str,
+    driver_id: &str,
+) -> Result<bool, DbErr> {
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            // Deliberately does NOT touch `updated_at`: the lease is
+            // bookkeeping, not run progress. Conflating them would push a
+            // stranded run back inside the `find_stuck_runs` grace window
+            // on every acquire/heartbeat and mask genuine staleness.
+            "UPDATE agentic_runs \
+             SET driver_id = $1, driver_heartbeat_at = now() \
+             WHERE id = $2 \
+               AND (driver_id IS NULL \
+                    OR driver_id = $1 \
+                    OR driver_heartbeat_at IS NULL \
+                    OR driver_heartbeat_at < now() - make_interval(secs => $3))",
+            [
+                driver_id.into(),
+                run_id.into(),
+                (DRIVER_LEASE_TTL_SECS as i32).into(),
+            ],
+        ))
+        .await?;
+    Ok(res.rows_affected() == 1)
+}
+
+/// Heartbeat the driver lease. Returns `true` while `driver_id` still holds
+/// the lease; `false` means it was lost (the caller should stop driving).
+pub async fn heartbeat_driver(
+    db: &DatabaseConnection,
+    run_id: &str,
+    driver_id: &str,
+) -> Result<bool, DbErr> {
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            // No `updated_at` bump — see `try_acquire_driver`.
+            "UPDATE agentic_runs \
+             SET driver_heartbeat_at = now() \
+             WHERE id = $1 AND driver_id = $2",
+            [run_id.into(), driver_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected() == 1)
+}
+
+/// Release the driver lease, but only if `driver_id` still owns it (so a
+/// driver that lost the lease to a stale-takeover cannot clobber the new
+/// holder). Terminal `transition_run` clears the lease unconditionally.
+pub async fn release_driver(
+    db: &DatabaseConnection,
+    run_id: &str,
+    driver_id: &str,
+) -> Result<(), DbErr> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        // No `updated_at` bump — see `try_acquire_driver`. (Terminal
+        // `transition_run` legitimately bumps it; that is a real state
+        // change, this is not.)
+        "UPDATE agentic_runs \
+         SET driver_id = NULL, driver_heartbeat_at = NULL \
+         WHERE id = $1 AND driver_id = $2",
+        [run_id.into(), driver_id.into()],
+    ))
+    .await?;
+    Ok(())
+}
+
+// ── Cross-process cancel (§12 FU4a) ──────────────────────────────────────────
+
+/// Durable, cross-process cancel signal. Set by the HTTP cancel endpoint
+/// so a recovered / Global run driven out-of-process can be cancelled —
+/// the in-memory watch channel only reaches a same-process coordinator.
+/// Idempotent; does not overwrite an earlier request timestamp.
+pub async fn request_cancel(db: &DatabaseConnection, run_id: &str) -> Result<(), DbErr> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_runs \
+         SET cancel_requested_at = COALESCE(cancel_requested_at, now()) \
+         WHERE id = $1",
+        [run_id.into()],
+    ))
+    .await?;
+    Ok(())
+}
+
+/// Has cancel been requested for this run? Polled by the driver's cancel
+/// forwarder so the signal is observed cross-process.
+pub async fn is_cancel_requested(db: &DatabaseConnection, run_id: &str) -> Result<bool, DbErr> {
+    use sea_orm::{FromQueryResult, Statement};
+    #[derive(FromQueryResult)]
+    struct R {
+        requested: bool,
+    }
+    let row = R::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT cancel_requested_at IS NOT NULL AS requested \
+         FROM agentic_runs WHERE id = $1",
+        [run_id.into()],
+    ))
+    .one(db)
+    .await?;
+    Ok(row.map(|r| r.requested).unwrap_or(false))
+}
 
 pub async fn insert_run(
     db: &DatabaseConnection,
@@ -15,6 +140,7 @@ pub async fn insert_run(
     thread_id: Option<Uuid>,
     source_type: &str,
     metadata: Option<Value>,
+    workspace_id: Uuid,
 ) -> Result<(), DbErr> {
     insert_run_inner(
         db,
@@ -25,11 +151,16 @@ pub async fn insert_run(
         metadata,
         None,
         0,
+        workspace_id,
     )
     .await
 }
 
 /// Insert a child run with a parent reference for the task tree.
+///
+/// Child rows always inherit the parent's `workspace_id` — pass the
+/// parent's `workspace_id` here so a single coordinator txn doesn't pay
+/// an extra round-trip to re-read it.
 pub async fn insert_run_with_parent(
     db: &DatabaseConnection,
     run_id: &str,
@@ -38,6 +169,7 @@ pub async fn insert_run_with_parent(
     source_type: &str,
     metadata: Option<Value>,
     attempt: i32,
+    workspace_id: Uuid,
 ) -> Result<(), DbErr> {
     insert_run_inner(
         db,
@@ -48,10 +180,12 @@ pub async fn insert_run_with_parent(
         metadata,
         Some(parent_run_id),
         attempt,
+        workspace_id,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_run_inner(
     db: &DatabaseConnection,
     run_id: &str,
@@ -61,6 +195,7 @@ async fn insert_run_inner(
     metadata: Option<Value>,
     parent_run_id: Option<&str>,
     attempt: i32,
+    workspace_id: Uuid,
 ) -> Result<(), DbErr> {
     let ts = now();
     let model = run::ActiveModel {
@@ -76,6 +211,10 @@ async fn insert_run_inner(
         task_metadata: Set(None),
         attempt: Set(attempt),
         recovery_requested_at: Set(None),
+        driver_id: Set(None),
+        driver_heartbeat_at: Set(None),
+        cancel_requested_at: Set(None),
+        workspace_id: Set(workspace_id),
         created_at: Set(ts),
         updated_at: Set(ts),
     };

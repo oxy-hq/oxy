@@ -185,6 +185,10 @@ impl OxyProjectContext {
 
 #[async_trait]
 impl ProjectContext for OxyProjectContext {
+    fn workspace_id(&self) -> uuid::Uuid {
+        self.workspace_manager.workspace_id
+    }
+
     async fn resolve_connector(&self, db_name: &str) -> Option<ConnectorConfig> {
         resolve_connector_impl(db_name, &self.workspace_manager).await
     }
@@ -387,6 +391,14 @@ impl WorkspaceContext for OxyProjectContext {
         self.workspace_manager
             .config_manager
             .list_workflows()
+            .await
+            .map_err(|e| format!("{e}"))
+    }
+
+    async fn list_airway_files(&self) -> Result<Vec<PathBuf>, String> {
+        self.workspace_manager
+            .config_manager
+            .list_pipelines()
             .await
             .map_err(|e| format!("{e}"))
     }

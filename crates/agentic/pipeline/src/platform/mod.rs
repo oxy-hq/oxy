@@ -85,6 +85,18 @@ pub trait ProjectContext: Send + Sync {
 
     async fn resolve_secret(&self, var_name: &str) -> Option<String>;
 
+    /// Workspace identifier stamped onto every run this context starts
+    /// (`agentic_runs.workspace_id`). HTTP handlers + the scheduler tick
+    /// pass this into `start_*_run` so out-of-process drivers (recovery
+    /// loop, latency worker) can look the cached `PlatformContext` back
+    /// up by id when they pick up a queued row.
+    ///
+    /// Defaults to the nil UUID so test fakes + the local single-workspace
+    /// mode (where nil == `LOCAL_WORKSPACE_ID`) compile unchanged.
+    fn workspace_id(&self) -> uuid::Uuid {
+        uuid::Uuid::nil()
+    }
+
     /// Optional sink for Tier 1 analytics metric usage. Hosts with an
     /// observability backend return an adapter that writes into it;
     /// hosts without one (tests, embedded use) return `None` and

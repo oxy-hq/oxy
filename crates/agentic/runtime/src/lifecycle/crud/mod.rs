@@ -26,7 +26,8 @@ pub use queries::{
     list_recent_runs, list_runs_filtered,
 };
 pub use runs::{
-    insert_run, insert_run_with_parent, load_task_tree, update_run_done, update_run_failed,
+    heartbeat_driver, insert_run, insert_run_with_parent, is_cancel_requested, load_task_tree,
+    release_driver, request_cancel, try_acquire_driver, update_run_done, update_run_failed,
     update_run_running, update_run_suspended, update_run_terminal_from_events, update_task_status,
 };
 pub use suspension::{get_suspension, upsert_suspension};
@@ -34,6 +35,13 @@ pub use suspension::{get_suspension, upsert_suspension};
 pub fn now() -> chrono::DateTime<chrono::FixedOffset> {
     chrono::Utc::now().fixed_offset()
 }
+
+/// How long a driver lease (`agentic_runs.driver_id` /
+/// `driver_heartbeat_at`) is honored without a heartbeat before another
+/// driver may steal it. The driving loop must heartbeat well inside this
+/// window (Task 6 owns the ticker). Gates recovery selection so a periodic
+/// loop cannot double-drive a run a live driver already owns.
+pub const DRIVER_LEASE_TTL_SECS: i64 = 90;
 
 /// Derive the user-facing status from the internal task_status.
 /// Used by the API serialization layer — NOT stored in DB.
@@ -72,6 +80,14 @@ pub async fn transition_run(
     }
     if let Some(err) = error_message {
         model.error_message = Set(Some(err.to_string()));
+    }
+    // A terminal run needs no driver — clear the lease so it isn't left
+    // dangling (and so observability doesn't show a "held" lease on a
+    // finished run). Unconditional here is safe: the run is terminal, no
+    // driver should still be acting on it.
+    if matches!(task_status, "done" | "failed" | "cancelled" | "timed_out") {
+        model.driver_id = Set(None);
+        model.driver_heartbeat_at = Set(None);
     }
     run::Entity::update(model).exec(db).await?;
     Ok(())

@@ -30,7 +30,8 @@ use agentic_core::result::{
 use crate::clickhouse_typed::{ch_type_to_typed, parse_ch_cell};
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, is_returning_statement,
+    normalize_sql, plan_sql_script,
 };
 
 // ── HTTP response types ────────────────────────────────────────────────────────
@@ -171,6 +172,32 @@ impl ClickHouseConnector {
         )
         .await
     }
+
+    /// Execute a side-effect statement (DDL/DML) via HTTP, discarding any
+    /// body. Unlike [`http_query`](Self::http_query) this does not append
+    /// `FORMAT JSONCompact`, which would make a `CREATE`/`INSERT`
+    /// statement a syntax error.
+    async fn http_exec(&self, sql: &str) -> Result<(), ConnectorError> {
+        let response = self
+            .client
+            .post(&self.url)
+            .header("X-ClickHouse-User", &self.user)
+            .header("X-ClickHouse-Key", &self.password)
+            .header("X-ClickHouse-Database", &self.database)
+            .body(sql.to_string())
+            .send()
+            .await
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(ConnectorError::query_failed(
+                sql.to_string(),
+                format!("HTTP {status}: {text}"),
+            ));
+        }
+        Ok(())
+    }
 }
 
 // ── HTTP helper ────────────────────────────────────────────────────────────────
@@ -231,7 +258,23 @@ impl DatabaseConnector for ClickHouseConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
-        let sql = normalize_sql(sql);
+        // The count/sample steps wrap the SQL in `({sql})`; a
+        // multi-statement script there is a parser error. Run leading
+        // statements for side effects, sample only the final statement.
+        let script = plan_sql_script(sql);
+        for stmt in &script.prefix {
+            self.http_exec(stmt).await?;
+        }
+
+        let sql = normalize_sql(&script.final_stmt);
+
+        if !is_returning_statement(sql) {
+            if !sql.is_empty() {
+                self.http_exec(sql).await?;
+            }
+            return Ok(ExecutionResult::empty());
+        }
+
         // 1. Total row count via subquery.
         let count_sql = format!("SELECT count() FROM ({sql})");
         let count_resp = self.http_query(&count_sql).await?;

@@ -1,4 +1,4 @@
-import { ChevronsRight, HeartPulse, Inbox, List, Radio } from "lucide-react";
+import { CalendarClock, ChevronsRight, HeartPulse, Inbox, List, Radio } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -54,6 +54,17 @@ const CoordinatorSidebar: React.FC<{
                 <Link to={ws.IDE.COORDINATOR.RUN_HISTORY}>
                   <List className='h-4 w-4' />
                   <span>Run History</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={location.pathname.includes("/coordinator/schedules")}
+              >
+                <Link to={ws.IDE.COORDINATOR.SCHEDULES}>
+                  <CalendarClock className='h-4 w-4' />
+                  <span>Schedules</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

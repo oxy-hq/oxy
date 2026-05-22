@@ -7,6 +7,31 @@ use sea_orm::{
 use crate::lifecycle::crud::now;
 use crate::orchestrator::entity::task_queue;
 
+/// Ownership regime for a queued task — decides whether the global/recovery
+/// claim path may pick it up.
+///
+/// Stamped onto `agentic_task_queue.scope_owned` at INSERT and preserved
+/// across `claimed -> queued` reaping. The global `claim_task` filters
+/// `scope_owned = false`, so a [`TaskScope::Scoped`] task can never be
+/// poached out from under the co-located coordinator that owns its tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskScope {
+    /// A co-located scoped coordinator owns this task's tree (every
+    /// interactive HTTP/CLI run today). The global claim path must skip it.
+    Scoped,
+    /// No in-process driver owns this task — scheduler-seeded or
+    /// crash-orphaned. The global/recovery loop is responsible for it.
+    Global,
+}
+
+impl TaskScope {
+    /// `true` for [`TaskScope::Scoped`] — the value written to
+    /// `agentic_task_queue.scope_owned`.
+    pub fn is_owned(self) -> bool {
+        matches!(self, TaskScope::Scoped)
+    }
+}
+
 /// Insert a new task into the durable queue with status `queued`.
 pub async fn enqueue_task(
     db: &DatabaseConnection,
@@ -15,6 +40,7 @@ pub async fn enqueue_task(
     parent_task_id: Option<&str>,
     spec: &agentic_core::delegation::TaskSpec,
     policy: Option<&agentic_core::delegation::TaskPolicy>,
+    scope: TaskScope,
 ) -> Result<(), DbErr> {
     let now = now();
     let model = task_queue::ActiveModel {
@@ -30,6 +56,7 @@ pub async fn enqueue_task(
         visibility_timeout_secs: Set(60),
         claim_count: Set(0),
         max_claims: Set(3),
+        scope_owned: Set(scope.is_owned()),
         created_at: Set(now),
         updated_at: Set(now),
     };
@@ -53,9 +80,17 @@ pub async fn enqueue_task(
     Ok(())
 }
 
-/// Atomically claim the oldest queued task. Returns `None` if no tasks
-/// are available. Uses `FOR UPDATE SKIP LOCKED` to avoid contention
+/// Atomically claim the oldest queued task **that no co-located scoped
+/// coordinator owns** (`scope_owned = false`). Returns `None` if no such
+/// task is available. Uses `FOR UPDATE SKIP LOCKED` to avoid contention
 /// between concurrent workers.
+///
+/// This is the unscoped/global claim path (the standalone worker and the
+/// recovery loop). The `scope_owned = false` predicate is what prevents it
+/// from poaching an interactive run's task out from under the per-request
+/// coordinator that owns its tree — those rows are stamped `scope_owned =
+/// true` at enqueue (see [`TaskScope`]) and are claimed only via
+/// [`claim_task_under_root`], which deliberately ignores `scope_owned`.
 pub async fn claim_task(
     db: &DatabaseConnection,
     worker_id: &str,
@@ -74,6 +109,7 @@ pub async fn claim_task(
         WHERE task_id = ( \
             SELECT task_id FROM agentic_task_queue \
             WHERE queue_status = 'queued' \
+              AND scope_owned = false \
             ORDER BY created_at \
             LIMIT 1 \
             FOR UPDATE SKIP LOCKED \

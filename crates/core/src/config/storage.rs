@@ -46,6 +46,7 @@ pub(super) trait ConfigStorage {
     async fn list_analytics_agents(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
+    async fn list_pipelines(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError>;
     async fn get_charts_dir(&self) -> Result<PathBuf, OxyError>;
     async fn get_results_dir(&self) -> Result<PathBuf, OxyError>;
@@ -401,6 +402,10 @@ impl ConfigStorage for LocalSource {
         workflows.extend(self.list_by_sub_extension(None, "workflow"));
         workflows.extend(self.list_by_sub_extension(None, "automation"));
         Ok(workflows)
+    }
+
+    async fn list_pipelines(&self) -> Result<Vec<PathBuf>, OxyError> {
+        Ok(self.list_by_sub_extension(None, "airway"))
     }
 
     async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {

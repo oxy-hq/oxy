@@ -192,7 +192,9 @@ async fn cmd_run(args: RunArgs) -> Result<(), OxyError> {
     let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx);
     let platform_for_delegation = platform.clone();
     let bridges_for_delegation = bridges.clone();
+    let workspace_id = platform.workspace_id();
     let mut builder = PipelineBuilder::new(platform)
+        .workspace_id(workspace_id)
         .with_builder_bridges(bridges)
         .question(&args.question)
         .thinking_mode(thinking_mode);

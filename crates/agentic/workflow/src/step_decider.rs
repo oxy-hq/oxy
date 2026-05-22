@@ -516,6 +516,35 @@ impl WorkflowDecider {
                 output_mode,
                 ..
             } => {
+                // Render the prompt against the parent context so
+                // `{{ prior_step.col[0] }}` / `{{ prior_step }}`
+                // references resolve to actual values before the LLM
+                // sees them. Without this the agent receives the raw
+                // template syntax and complains the data is missing.
+                let prompt = match render_jinja_string(&prompt, &state.render_context) {
+                    Ok(rendered) => rendered,
+                    Err(err) => {
+                        let err = format!("agent {step_name} prompt render: {err}");
+                        events.push((
+                            "subrun_step_completed".to_string(),
+                            json!({ "step": step_name, "success": false, "error": &err }),
+                        ));
+                        events.push((
+                            "subrun_completed".to_string(),
+                            json!({
+                                "subrun_name": state.workflow.name,
+                                "success": false,
+                            }),
+                        ));
+                        return (
+                            state,
+                            WorkflowDecision::Fail {
+                                error: err,
+                                emitted_events: events,
+                            },
+                        );
+                    }
+                };
                 // The `extra` envelope carries domain-opaque per-agent
                 // params. Today it carries the analytics agent's
                 // `output_mode` (when `output: { mode: sql }` is set);
@@ -569,6 +598,36 @@ impl WorkflowDecider {
             }
 
             StepKind::SubWorkflow { src, variables } => {
+                // Render the override map against the parent context so a
+                // passthrough like `variables: { month: "{{ month }}" }`
+                // resolves here instead of reaching the child verbatim.
+                let variables = match crate::variables::render_override_variables(
+                    variables.as_ref(),
+                    &state.render_context,
+                ) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        let err = format!("sub-workflow {step_name}: {err}");
+                        events.push((
+                            "subrun_step_completed".to_string(),
+                            json!({ "step": step_name, "success": false, "error": &err }),
+                        ));
+                        events.push((
+                            "subrun_completed".to_string(),
+                            json!({
+                                "subrun_name": state.workflow.name,
+                                "success": false,
+                            }),
+                        ));
+                        return (
+                            state,
+                            WorkflowDecision::Fail {
+                                error: err,
+                                emitted_events: events,
+                            },
+                        );
+                    }
+                };
                 let spec = TaskSpec::Workflow {
                     workflow_ref: src,
                     variables,
@@ -788,6 +847,17 @@ impl WorkflowDecider {
                                 step_name.clone(),
                                 json!({ "value": item, "index": i }),
                             );
+                            // Also expose `value` / `index` at top level so
+                            // bare `{{ value }}` / `{{ index }}` (the
+                            // idiomatic loop-body references) resolve
+                            // without forcing authors to write the
+                            // qualified `{{ <loop_step>.value }}` form.
+                            // Nested loops: innermost wins (insert
+                            // overwrites), matching standard templating
+                            // semantics; the qualified form remains
+                            // available for disambiguation.
+                            obj.insert("value".to_string(), item.clone());
+                            obj.insert("index".to_string(), json!(i));
                         }
                         DelegationItem {
                             target: DelegationTarget::Workflow {

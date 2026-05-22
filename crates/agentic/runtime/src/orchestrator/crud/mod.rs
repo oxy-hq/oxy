@@ -15,11 +15,12 @@ pub use outcomes::{
     insert_child_run, insert_task_outcome, suspend_with_data_txn,
 };
 pub use queue::{
-    QueueStats, QueueTaskRow, cancel_queued_task, claim_task, claim_task_under_root,
+    QueueStats, QueueTaskRow, TaskScope, cancel_queued_task, claim_task, claim_task_under_root,
     complete_queue_task, enqueue_task, fail_queue_task, get_queue_entry, get_queue_stats,
     reap_stale_tasks, requeue_task, update_queue_heartbeat,
 };
 pub use recovery::{
-    StuckRun, cleanup_stale_runs, find_stuck_workflow_runs, get_active_root_runs,
-    get_max_child_counter, get_resumable_root_runs, increment_attempt, mark_recovery_failed,
+    StuckRun, cleanup_stale_runs, find_pending_global_runs, find_stuck_runs,
+    find_stuck_workflow_runs, get_active_root_runs, get_max_child_counter, get_resumable_root_runs,
+    increment_attempt, mark_recovery_failed,
 };

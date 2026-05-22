@@ -164,9 +164,18 @@ impl WorkflowStepOrchestrator {
                     consistency_prompt,
                     extra,
                 } => {
-                    // Render the prompt with current context.
-                    // NOTE: Full minijinja rendering happens on the step worker side.
-                    // Here we pass the raw prompt; the agent pipeline handles it.
+                    // Render the prompt against the parent context here.
+                    // The downstream agent pipeline does NOT re-render
+                    // templates, so a passthrough sends raw `{{ ... }}`
+                    // straight to the LLM, which then complains the
+                    // data wasn't included.
+                    let prompt =
+                        match crate::render::render_jinja_string(&prompt, &self.render_context) {
+                            Ok(rendered) => rendered,
+                            Err(err) => {
+                                return Err(format!("agent {step_name} prompt render: {err}"));
+                            }
+                        };
                     if consistency_run > 1 {
                         self.suspend_for_consistency_agents(
                             &outcome_tx,
@@ -194,23 +203,34 @@ impl WorkflowStepOrchestrator {
                 }
 
                 StepKind::SubWorkflow { src, variables } => {
-                    self.suspend_for_step(
-                        &outcome_tx,
-                        &mut answer_rx,
-                        &step_name,
-                        TaskSpec::Workflow {
-                            workflow_ref: src,
-                            variables,
-                            // Child sub-workflows always run fresh — cache
-                            // linkage at child-run granularity is a v2
-                            // feature.
-                            retry_from_run_id: None,
-                            cache_enabled: false,
-                            body: None,
-                            initial_render_context: None,
-                        },
-                    )
-                    .await
+                    // Render the override map against the parent context so a
+                    // passthrough like `variables: { month: "{{ month }}" }`
+                    // resolves here instead of reaching the child verbatim.
+                    match crate::variables::render_override_variables(
+                        variables.as_ref(),
+                        &self.render_context,
+                    ) {
+                        Ok(variables) => {
+                            self.suspend_for_step(
+                                &outcome_tx,
+                                &mut answer_rx,
+                                &step_name,
+                                TaskSpec::Workflow {
+                                    workflow_ref: src,
+                                    variables,
+                                    // Child sub-workflows always run fresh —
+                                    // cache linkage at child-run granularity
+                                    // is a v2 feature.
+                                    retry_from_run_id: None,
+                                    cache_enabled: false,
+                                    body: None,
+                                    initial_render_context: None,
+                                },
+                            )
+                            .await
+                        }
+                        Err(err) => Err(format!("sub-workflow {step_name}: {err}")),
+                    }
                 }
 
                 StepKind::Loop {
@@ -658,6 +678,12 @@ impl WorkflowStepOrchestrator {
                 let mut iter_context = base_context.clone();
                 if let Some(obj) = iter_context.as_object_mut() {
                     obj.insert(step_name.to_string(), json!({ "value": item, "index": i }));
+                    // Also expose `value` / `index` at top level so bare
+                    // `{{ value }}` / `{{ index }}` resolve in the loop
+                    // body without forcing the qualified form. Nested
+                    // loops: innermost wins.
+                    obj.insert("value".to_string(), item.clone());
+                    obj.insert("index".to_string(), json!(i));
                 }
 
                 DelegationItem {

@@ -177,9 +177,15 @@ resources:
         thread_id: None,
     };
 
-    let run_id = start_airway_run(&db, &ws, request)
-        .await
-        .expect("start_airway_run");
+    let run_id = start_airway_run(
+        &db,
+        &ws,
+        request,
+        agentic_pipeline::TaskScope::Global,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("start_airway_run");
 
     let rendered_name = format!("{pipeline_name}_prod");
 
@@ -258,9 +264,15 @@ async fn start_airway_run_rejects_missing_pipeline_file() {
         variables: None,
         thread_id: None,
     };
-    let err = start_airway_run(&db, &ws, request)
-        .await
-        .expect_err("missing file must error before any DB write");
+    let err = start_airway_run(
+        &db,
+        &ws,
+        request,
+        agentic_pipeline::TaskScope::Global,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect_err("missing file must error before any DB write");
     assert!(
         err.to_string().contains("does-not-exist.airway.yml"),
         "got: {err}"

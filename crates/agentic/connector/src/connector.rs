@@ -123,6 +123,28 @@ pub struct ExecutionResult {
     pub summary: ResultSummary,
 }
 
+impl ExecutionResult {
+    /// An empty result with no columns and no rows.
+    ///
+    /// Returned when a statement runs purely for its side effects (DDL/DML
+    /// with no result set) so callers get a well-formed, zero-row result
+    /// instead of a parser error from trying to sample non-returning SQL.
+    pub fn empty() -> Self {
+        ExecutionResult {
+            result: QueryResult {
+                columns: Vec::new(),
+                rows: Vec::new(),
+                total_row_count: 0,
+                truncated: false,
+            },
+            summary: ResultSummary {
+                row_count: 0,
+                columns: Vec::new(),
+            },
+        }
+    }
+}
+
 /// Structured details for a failed query. Connectors that have access to
 /// vendor-specific metadata (SQLSTATE, hints, position) populate the optional
 /// fields; bare driver errors are surfaced via [`ConnectorError::query_failed`]
@@ -208,6 +230,214 @@ pub fn normalize_sql(sql: &str) -> &str {
     sql.trim_end().trim_end_matches(';').trim_end()
 }
 
+// ── Multi-statement scripts ───────────────────────────────────────────────────
+
+/// A SQL script split into the statements that must run for their side
+/// effects ([`prefix`]) and the single trailing statement whose result the
+/// caller cares about ([`final_stmt`]).
+///
+/// `execute_query` exists to *sample* a result set, so every backend wraps
+/// the user SQL in something like `CREATE TEMP TABLE _t AS ({sql})` or
+/// `SELECT * FROM ({sql})`. That wrapping is only valid for a single
+/// SELECT-family statement — a DDL/DML script
+/// (`CREATE TABLE …; CREATE INDEX …; SELECT …`) substituted into the
+/// parentheses produces a parser error (`syntax error at or near "CREATE"`).
+///
+/// [`plan_sql_script`] lets a connector run the leading statements directly
+/// and reserve the wrap/sample path for [`final_stmt`].
+///
+/// [`prefix`]: SqlScript::prefix
+/// [`final_stmt`]: SqlScript::final_stmt
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SqlScript {
+    /// Leading statements to execute for their side effects (may be empty).
+    pub prefix: Vec<String>,
+    /// The trailing statement whose result the caller wants. Never empty
+    /// for non-empty input (falls back to the trimmed input).
+    pub final_stmt: String,
+}
+
+impl SqlScript {
+    /// `true` when there is more than one statement (i.e. [`prefix`] is
+    /// non-empty).
+    ///
+    /// [`prefix`]: SqlScript::prefix
+    pub fn is_multi_statement(&self) -> bool {
+        !self.prefix.is_empty()
+    }
+}
+
+/// Split a SQL string into top-level statements, ignoring `;` that appears
+/// inside string literals, quoted identifiers, line/block comments, and
+/// Postgres dollar-quoted bodies. Each returned statement is trimmed; empty
+/// statements (e.g. trailing `;` or comment-only segments) are dropped.
+pub fn split_sql_statements(sql: &str) -> Vec<String> {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut statements = Vec::new();
+    let mut start = 0usize;
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            // String literal / quoted identifier — consume until the
+            // matching close quote, treating a doubled quote as an escape.
+            '\'' | '"' | '`' => {
+                let quote = c;
+                i += 1;
+                while i < chars.len() {
+                    if chars[i] == quote {
+                        if i + 1 < chars.len() && chars[i + 1] == quote {
+                            i += 2; // escaped quote ("" / '')
+                            continue;
+                        }
+                        break;
+                    }
+                    i += 1;
+                }
+                i += 1;
+            }
+            // Line comment — skip to end of line.
+            '-' if chars.get(i + 1) == Some(&'-') => {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+            }
+            // Block comment — skip to closing */.
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                i += 2;
+                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                    i += 1;
+                }
+                i += 2;
+            }
+            // Postgres dollar-quoted string: $tag$ ... $tag$ (tag may be empty).
+            '$' => {
+                if let Some(tag_len) = dollar_tag_len(&chars[i..]) {
+                    let tag: Vec<char> = chars[i..i + tag_len].to_vec();
+                    i += tag_len;
+                    while i < chars.len() {
+                        if chars[i] == '$' && chars[i..].starts_with(tag.as_slice()) {
+                            i += tag.len();
+                            break;
+                        }
+                        i += 1;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+            ';' => {
+                let stmt: String = chars[start..i].iter().collect();
+                let trimmed = stmt.trim();
+                if !is_blank_statement(trimmed) {
+                    statements.push(trimmed.to_string());
+                }
+                i += 1;
+                start = i;
+            }
+            _ => i += 1,
+        }
+    }
+
+    let tail: String = chars[start..].iter().collect();
+    let tail = tail.trim();
+    if !is_blank_statement(tail) {
+        statements.push(tail.to_string());
+    }
+    statements
+}
+
+/// `true` when `stmt` carries no executable SQL — only whitespace and/or
+/// comments. Such segments (a trailing `-- comment`, a stray `;;`) must be
+/// dropped, not executed.
+fn is_blank_statement(stmt: &str) -> bool {
+    strip_leading_noise(stmt).is_empty()
+}
+
+/// If `chars` begins with a Postgres dollar-quote opening tag (`$$` or
+/// `$ident$`), return the tag length in chars; otherwise `None`.
+fn dollar_tag_len(chars: &[char]) -> Option<usize> {
+    debug_assert_eq!(chars.first(), Some(&'$'));
+    let mut j = 1;
+    while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+        j += 1;
+    }
+    if j < chars.len() && chars[j] == '$' {
+        Some(j + 1)
+    } else {
+        None
+    }
+}
+
+/// Best-effort check for whether `stmt` produces a result set the caller
+/// can sample. Leading comments/whitespace are stripped, then the first
+/// keyword is matched. Non-returning statements (DDL/DML without
+/// `RETURNING`, `SET`, etc.) should be executed for side effects only.
+pub fn is_returning_statement(stmt: &str) -> bool {
+    let body = strip_leading_noise(stmt);
+    let kw: String = body
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect::<String>()
+        .to_ascii_uppercase();
+    matches!(
+        kw.as_str(),
+        "SELECT"
+            | "WITH"
+            | "VALUES"
+            | "TABLE"
+            | "FROM" // DuckDB `FROM tbl` shorthand
+            | "SHOW"
+            | "DESCRIBE"
+            | "DESC"
+            | "PRAGMA"
+            | "EXPLAIN"
+            | "SUMMARIZE"
+            | "CALL"
+            | "PIVOT"
+            | "UNPIVOT"
+    )
+}
+
+/// Strip leading whitespace and SQL comments so the first real keyword can
+/// be inspected.
+fn strip_leading_noise(sql: &str) -> &str {
+    let mut s = sql.trim_start();
+    loop {
+        if let Some(rest) = s.strip_prefix("--") {
+            s = rest.find('\n').map(|n| &rest[n + 1..]).unwrap_or("");
+            s = s.trim_start();
+        } else if let Some(rest) = s.strip_prefix("/*") {
+            s = rest.find("*/").map(|n| &rest[n + 2..]).unwrap_or("");
+            s = s.trim_start();
+        } else {
+            return s;
+        }
+    }
+}
+
+/// Plan a (possibly multi-statement) SQL string into leading side-effect
+/// statements plus the final statement to sample. For single-statement
+/// input the prefix is empty and `final_stmt` is the (semicolon-stripped)
+/// input.
+pub fn plan_sql_script(sql: &str) -> SqlScript {
+    let mut statements = split_sql_statements(sql);
+    match statements.len() {
+        0 => SqlScript {
+            prefix: Vec::new(),
+            final_stmt: sql.trim().to_string(),
+        },
+        _ => {
+            let final_stmt = statements.pop().expect("len checked > 0");
+            SqlScript {
+                prefix: statements,
+                final_stmt,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +449,108 @@ mod tests {
         assert_eq!(normalize_sql("SELECT 1;\n"), "SELECT 1");
         assert_eq!(normalize_sql("SELECT 1"), "SELECT 1");
         assert_eq!(normalize_sql("SELECT 1\nLIMIT 100;"), "SELECT 1\nLIMIT 100");
+    }
+
+    #[test]
+    fn split_single_statement_no_split() {
+        assert_eq!(split_sql_statements("SELECT 1"), vec!["SELECT 1"]);
+        assert_eq!(split_sql_statements("SELECT 1;"), vec!["SELECT 1"]);
+        assert_eq!(split_sql_statements("  SELECT 1 ;  \n"), vec!["SELECT 1"]);
+    }
+
+    #[test]
+    fn split_multi_statement() {
+        let s = split_sql_statements(
+            "CREATE TABLE t (a INT);\nCREATE INDEX i ON t (a);\nSELECT 'done' AS status;",
+        );
+        assert_eq!(
+            s,
+            vec![
+                "CREATE TABLE t (a INT)",
+                "CREATE INDEX i ON t (a)",
+                "SELECT 'done' AS status",
+            ]
+        );
+    }
+
+    #[test]
+    fn split_ignores_semicolons_in_literals_and_comments() {
+        // Semicolons inside string literals, quoted identifiers, and
+        // comments must NOT split. Leading comments are preserved as part
+        // of the following statement (harmless to every SQL parser, and
+        // safer than rewriting the user's SQL).
+        let s = split_sql_statements(
+            "INSERT INTO t VALUES ('a;b', 'c''; still');\n\
+             -- a comment with ; semicolon\n\
+             /* block ; comment */\n\
+             SELECT col AS \"weird;name\";",
+        );
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0], "INSERT INTO t VALUES ('a;b', 'c''; still')");
+        assert!(s[1].ends_with("SELECT col AS \"weird;name\""));
+        assert!(is_returning_statement(&s[1]));
+    }
+
+    #[test]
+    fn split_ignores_semicolons_in_dollar_quotes() {
+        let s = split_sql_statements(
+            "CREATE FUNCTION f() RETURNS int AS $$ BEGIN; RETURN 1; END; $$ LANGUAGE plpgsql;\n\
+             SELECT f();",
+        );
+        assert_eq!(s.len(), 2);
+        assert!(s[0].contains("BEGIN; RETURN 1; END;"));
+        assert_eq!(s[1], "SELECT f()");
+    }
+
+    #[test]
+    fn split_drops_trailing_and_blank_segments() {
+        assert_eq!(
+            split_sql_statements("SELECT 1;;\n  ;\n-- trailing comment\n"),
+            vec!["SELECT 1"]
+        );
+        assert_eq!(split_sql_statements("   ;  ; "), Vec::<String>::new());
+    }
+
+    #[test]
+    fn returning_statement_classification() {
+        assert!(is_returning_statement("SELECT 1"));
+        assert!(is_returning_statement(
+            "  with x as (select 1) select * from x"
+        ));
+        assert!(is_returning_statement(
+            "-- lead\n/* c */ FROM my_table SELECT *"
+        ));
+        assert!(is_returning_statement("VALUES (1),(2)"));
+        assert!(is_returning_statement("summarize my_table"));
+        assert!(!is_returning_statement("CREATE TABLE t (a INT)"));
+        assert!(!is_returning_statement("INSERT INTO t VALUES (1)"));
+        assert!(!is_returning_statement("CREATE INDEX i ON t (a)"));
+        assert!(!is_returning_statement("SET search_path = 'x'"));
+    }
+
+    #[test]
+    fn plan_single_vs_multi() {
+        let single = plan_sql_script("SELECT 1;");
+        assert!(!single.is_multi_statement());
+        assert_eq!(single.prefix, Vec::<String>::new());
+        assert_eq!(single.final_stmt, "SELECT 1");
+
+        let multi = plan_sql_script(
+            "CREATE TABLE t (a INT);\nCREATE INDEX i ON t (a);\nSELECT 'ready' AS status;",
+        );
+        assert!(multi.is_multi_statement());
+        assert_eq!(
+            multi.prefix,
+            vec!["CREATE TABLE t (a INT)", "CREATE INDEX i ON t (a)"]
+        );
+        assert_eq!(multi.final_stmt, "SELECT 'ready' AS status");
+    }
+
+    #[test]
+    fn plan_empty_input_falls_back() {
+        let p = plan_sql_script("   ");
+        assert!(!p.is_multi_statement());
+        assert_eq!(p.final_stmt, "");
     }
 }
 

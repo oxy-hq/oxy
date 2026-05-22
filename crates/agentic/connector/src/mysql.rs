@@ -28,7 +28,8 @@ use agentic_core::result::{
 
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, is_returning_statement,
+    normalize_sql, plan_sql_script,
 };
 
 // ── Value / type helpers ────────────────────────────────────────────────────
@@ -317,7 +318,11 @@ impl DatabaseConnector for MysqlConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
-        let sql = normalize_sql(sql);
+        // The temp-table wrap below only accepts one SELECT-family
+        // statement; a multi-statement DDL/DML script substituted into
+        // `({sql})` is a parser error. Run leading statements for side
+        // effects, sample only the final statement.
+        let script = plan_sql_script(sql);
         let tmp = "_agentic_tmp";
 
         // Acquire one connection for the whole method. MySQL TEMPORARY TABLE
@@ -329,6 +334,25 @@ impl DatabaseConnector for MysqlConnector {
             .acquire()
             .await
             .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
+
+        for stmt in &script.prefix {
+            sqlx::query(stmt)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| ConnectorError::query_failed(stmt.clone(), e.to_string()))?;
+        }
+
+        let sql = normalize_sql(&script.final_stmt);
+
+        if !is_returning_statement(sql) {
+            if !sql.is_empty() {
+                sqlx::query(sql)
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
+            }
+            return Ok(ExecutionResult::empty());
+        }
 
         // 1. Drop any leftover temp table from a previous (failed) execution.
         sqlx::query(&format!("DROP TEMPORARY TABLE IF EXISTS {tmp}"))

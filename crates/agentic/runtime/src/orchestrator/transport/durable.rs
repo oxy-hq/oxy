@@ -224,9 +224,19 @@ impl DurableTransport {
             // Re-enqueue as a WorkflowDecision. `enqueue_task` upserts on
             // conflict — if another writer has already re-driven the run
             // between our query and this call, we harmlessly overwrite with
-            // the same spec shape.
-            if let Err(e) =
-                crud::enqueue_task(&self.db, &run.run_id, &run.run_id, None, &spec, None).await
+            // the same spec shape. The stuck-run sweeper rescues orphaned
+            // runs that have no in-process driver, so this is `Global`:
+            // the recovery/global loop is responsible for driving it.
+            if let Err(e) = crud::enqueue_task(
+                &self.db,
+                &run.run_id,
+                &run.run_id,
+                None,
+                &spec,
+                None,
+                crud::TaskScope::Global,
+            )
+            .await
             {
                 tracing::error!(
                     run_id = %run.run_id,
@@ -313,7 +323,16 @@ impl CoordinatorTransport for DurableTransport {
         self.cancel_tokens
             .insert(assignment.task_id.clone(), CancellationToken::new());
 
-        // Persist the assignment in the queue.
+        // Persist the assignment in the queue. A scoped transport
+        // (`task_id_root` set — every per-run interactive coordinator)
+        // owns this task's tree, so the global claim path must not poach
+        // it; an unscoped transport (the global/recovery driver) enqueues
+        // work that no co-located coordinator owns.
+        let scope = if self.task_id_root.is_some() {
+            crud::TaskScope::Scoped
+        } else {
+            crud::TaskScope::Global
+        };
         crud::enqueue_task(
             &self.db,
             &assignment.task_id,
@@ -321,6 +340,7 @@ impl CoordinatorTransport for DurableTransport {
             assignment.parent_task_id.as_deref(),
             &assignment.spec,
             assignment.policy.as_ref(),
+            scope,
         )
         .await
         .map_err(|e| TransportError::Other(format!("enqueue failed: {e}")))?;

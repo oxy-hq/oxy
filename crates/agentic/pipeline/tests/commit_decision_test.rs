@@ -113,9 +113,17 @@ fn two_step_workflow() -> agentic_workflow::WorkflowConfig {
 
 async fn seed_run(db: &DatabaseConnection) -> (String, WorkflowRunState) {
     let run_id = format!("wf-commit-{}", Uuid::new_v4());
-    crud::insert_run(db, &run_id, "test commit_decision", None, "workflow", None)
-        .await
-        .expect("insert run");
+    crud::insert_run(
+        db,
+        &run_id,
+        "test commit_decision",
+        None,
+        "workflow",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert run");
 
     let state = WorkflowRunState {
         run_id: run_id.clone(),
@@ -156,6 +164,7 @@ async fn seed_queue_row(db: &DatabaseConnection, task_id: &str, run_id: &str) {
             pending_child_answer: None,
         },
         None,
+        crud::TaskScope::Global,
     )
     .await
     .expect("enqueue decision task");

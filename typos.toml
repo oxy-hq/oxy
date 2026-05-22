@@ -8,6 +8,8 @@ AKS = "AKS"
 PN = "PN"
 # "RTO" is the Recovery Time Objective acronym, not a typo.
 RTO = "RTO"
+# "YoY" is the year-over-year abbreviation used in column names / examples.
+yoy = "yoy"
 
 [type.md]
 extend-ignore-re = [

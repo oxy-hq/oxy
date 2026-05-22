@@ -110,7 +110,17 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
         thread_id: None,
     };
 
-    let run_id = match start_airway_run(&db, workspace.as_ref(), request).await {
+    // Single-process CLI: a co-located scoped coordinator drives this run.
+    // Local workspace == Uuid::nil() (LOCAL_WORKSPACE_ID).
+    let run_id = match start_airway_run(
+        &db,
+        workspace.as_ref(),
+        request,
+        agentic_pipeline::TaskScope::Scoped,
+        Uuid::nil(),
+    )
+    .await
+    {
         Ok(id) => id,
         Err(AirwayRunError::InvalidInput(msg)) | Err(AirwayRunError::Io(msg)) => {
             return Err(OxyError::ConfigurationError(msg));

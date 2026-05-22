@@ -219,6 +219,9 @@ impl ConfigManager {
     pub async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_workflows().await
     }
+    pub async fn list_pipelines(&self) -> Result<Vec<PathBuf>, OxyError> {
+        self.storage.list_pipelines().await
+    }
 
     pub async fn resolve_app<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {
         self.storage.load_app_config(app_path).await

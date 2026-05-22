@@ -62,7 +62,8 @@ pub use config::{
 
 pub use connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails,
-    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, SqlScript,
+    is_returning_statement, normalize_sql, plan_sql_script, split_sql_statements,
 };
 
 #[cfg(feature = "arrow")]

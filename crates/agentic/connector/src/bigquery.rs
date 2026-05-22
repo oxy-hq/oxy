@@ -29,7 +29,8 @@ use agentic_core::result::{
 use crate::bigquery_typed::{bq_field_to_typed, decode_bq_row};
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, is_returning_statement,
+    normalize_sql, plan_sql_script,
 };
 
 // ── Connector ─────────────────────────────────────────────────────────────────
@@ -87,8 +88,44 @@ impl DatabaseConnector for BigQueryConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
-        let sql = normalize_sql(sql);
-        // 1. Run the user query with a row limit.
+        // The COUNT step below wraps the SQL in `({sql})`, which is invalid
+        // for a multi-statement script. Run leading statements as their own
+        // jobs for side effects, then sample only the final statement.
+        let script = plan_sql_script(sql);
+        for stmt in &script.prefix {
+            let req = QueryRequest {
+                query: stmt.clone(),
+                use_legacy_sql: false,
+                timeout_ms: Some(180_000),
+                ..Default::default()
+            };
+            self.client
+                .job()
+                .query(&self.project_id, req)
+                .await
+                .map_err(|e| ConnectorError::query_failed(stmt.clone(), e.to_string()))?;
+        }
+
+        let sql = normalize_sql(&script.final_stmt);
+
+        if !is_returning_statement(sql) {
+            if !sql.is_empty() {
+                let req = QueryRequest {
+                    query: sql.to_string(),
+                    use_legacy_sql: false,
+                    timeout_ms: Some(180_000),
+                    ..Default::default()
+                };
+                self.client
+                    .job()
+                    .query(&self.project_id, req)
+                    .await
+                    .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
+            }
+            return Ok(ExecutionResult::empty());
+        }
+
+        // 1. Run the final query with a row limit.
         let request = QueryRequest {
             query: sql.to_string(),
             use_legacy_sql: false,

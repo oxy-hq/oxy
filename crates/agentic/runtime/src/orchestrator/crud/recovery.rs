@@ -3,9 +3,10 @@
 use sea_orm::{
     ActiveValue::*, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, QueryFilter,
 };
+use uuid::Uuid;
 
 use crate::lifecycle::crud::events::get_max_seq;
-use crate::lifecycle::crud::{now, transition_run};
+use crate::lifecycle::crud::{DRIVER_LEASE_TTL_SECS, now, transition_run};
 use crate::lifecycle::entity::run;
 
 /// Find root runs that are still active (not terminal) for restart recovery.
@@ -68,7 +69,33 @@ pub async fn cleanup_stale_runs(db: &DatabaseConnection) -> Result<u64, DbErr> {
         // Check if this run has any events at all.
         let event_count = get_max_seq(db, &r.id).await.unwrap_or(-1) + 1;
         if event_count == 0 && r.parent_run_id.is_none() {
-            // Root run with zero events — never started, just fail it.
+            // Root with zero events. Two sub-cases:
+            //
+            // (a) A scheduler-seeded or run-now-seeded Global run that
+            //     hasn't been driven yet: its queue entry is still
+            //     `queued` with `scope_owned = false`, waiting for the
+            //     latency worker / periodic loop to pick it up. Force-
+            //     failing this is a regression — the run is valid pending
+            //     work, not an orphan.
+            //
+            // (b) Any other zero-event root with no queued entry: stale
+            //     placeholder from a request that died before enqueuing.
+            //     Safe to fail.
+            //
+            // The discriminator is whether a `queued` queue row exists
+            // for this run id.
+            let has_queued = crate::orchestrator::crud::queue::get_queue_entry(db, &r.id)
+                .await
+                .ok()
+                .flatten()
+                .map(|q| q.queue_status == "queued")
+                .unwrap_or(false);
+            if has_queued {
+                // Leave as-is; the recovery loop / latency worker will
+                // drive it on the next tick.
+                continue;
+            }
+            // (b): never started AND no queued entry — fail it.
             let update = run::ActiveModel {
                 id: Set(r.id.clone()),
                 task_status: Set(Some("failed".to_string())),
@@ -140,8 +167,23 @@ pub async fn cleanup_stale_runs(db: &DatabaseConnection) -> Result<u64, DbErr> {
 ///
 /// Includes tasks marked `"shutdown"` (graceful shutdown — always resumable)
 /// and `"needs_resume"` (crash recovery — best effort).
-pub async fn get_resumable_root_runs(db: &DatabaseConnection) -> Result<Vec<run::Model>, DbErr> {
-    run::Entity::find()
+///
+/// Excludes runs a *live* driver already owns: a run is only resumable if it
+/// is unleased or its driver lease has gone stale past
+/// [`DRIVER_LEASE_TTL_SECS`]. This is the F1 guard — without it, calling this
+/// on an interval (the Phase 2 global loop) would re-select and double-drive
+/// runs that are still in flight.
+///
+/// `workspace_id` — when `Some`, only return runs owned by that workspace.
+/// Cloud-mode startup recovery iterates per workspace and passes the
+/// current workspace id; local mode passes `None` (the single workspace
+/// is identified by the nil UUID and every other row would also be nil).
+pub async fn get_resumable_root_runs(
+    db: &DatabaseConnection,
+    workspace_id: Option<Uuid>,
+) -> Result<Vec<run::Model>, DbErr> {
+    let lease_cutoff = now() - chrono::Duration::seconds(DRIVER_LEASE_TTL_SECS);
+    let mut query = run::Entity::find()
         .filter(run::Column::ParentRunId.is_null())
         .filter(run::Column::TaskStatus.is_in([
             "running",
@@ -150,8 +192,16 @@ pub async fn get_resumable_root_runs(db: &DatabaseConnection) -> Result<Vec<run:
             "needs_resume",
             "shutdown",
         ]))
-        .all(db)
-        .await
+        .filter(
+            Condition::any()
+                .add(run::Column::DriverId.is_null())
+                .add(run::Column::DriverHeartbeatAt.is_null())
+                .add(run::Column::DriverHeartbeatAt.lt(lease_cutoff)),
+        );
+    if let Some(ws) = workspace_id {
+        query = query.filter(run::Column::WorkspaceId.eq(ws));
+    }
+    query.all(db).await
 }
 
 // ── Stuck-workflow-run sweeper ───────────────────────────────────────────────
@@ -161,6 +211,10 @@ pub async fn get_resumable_root_runs(db: &DatabaseConnection) -> Result<Vec<run:
 pub struct StuckRun {
     pub run_id: String,
     pub task_status: Option<String>,
+    /// Owning workspace — used by recovery loops to look up the right
+    /// cached `PlatformContext` before driving the run. Nil UUID for
+    /// local serve mode (== `LOCAL_WORKSPACE_ID`).
+    pub workspace_id: Uuid,
 }
 
 /// Find workflow runs that are stranded: `task_status` is non-terminal but no
@@ -186,6 +240,7 @@ pub async fn find_stuck_workflow_runs(
     struct Row {
         id: String,
         task_status: Option<String>,
+        workspace_id: Uuid,
     }
 
     // Active statuses from `get_active_root_runs` / `cleanup_stale_runs` — a
@@ -193,7 +248,7 @@ pub async fn find_stuck_workflow_runs(
     // We intentionally exclude `awaiting_input` (HITL suspension — driven by
     // a user action, not a queue row).
     let sql = "\
-        SELECT r.id, r.task_status \
+        SELECT r.id, r.task_status, r.workspace_id \
         FROM agentic_runs r \
         WHERE r.source_type = 'workflow' \
           AND r.task_status IN ('running', 'delegating', 'waiting_on_child', 'waiting_on_children') \
@@ -217,6 +272,178 @@ pub async fn find_stuck_workflow_runs(
         .map(|r| StuckRun {
             run_id: r.id,
             task_status: r.task_status,
+            workspace_id: r.workspace_id,
+        })
+        .collect())
+}
+
+/// Find runs that are stranded **and** safe for the periodic global
+/// driver loop to pick up — generalized over `find_stuck_workflow_runs`
+/// for `workflow` + `airway` (the Phase 1/2 schedulable targets).
+///
+/// "Stranded" means: no queue entry is `claimed` (a live worker — the
+/// dead case is the reaper's job) **and** no entry is `queued` *and*
+/// `scope_owned = true`. The `scope_owned` split is load-bearing:
+///
+/// - `claimed` (any scope) → a live coordinator owns it → exclude (this is
+///   the rung-2 anti-poaching invariant; a live per-request coordinator
+///   always has a `claimed`, heart-beating entry, and a live coordinator's
+///   transient not-yet-claimed children are `queued scope_owned = true`).
+/// - `queued` + `scope_owned = true` → an interactive run's not-yet-claimed
+///   task; its live coordinator is about to claim it (the grace window
+///   covers the enqueue→start gap) → exclude.
+/// - `queued` + `scope_owned = false` → a Global orphan / scheduler-seeded
+///   task with **no consumer** in Phase 1 (no standalone unscoped claim
+///   worker). This does NOT shield the run — it is exactly the rung-4 /
+///   Phase-2 case the periodic driver must pick up and drive.
+///
+/// Also excludes runs whose driver lease is still fresh, so two ticks /
+/// replicas don't both grab the same stranded run.
+///
+/// `get_resumable_root_runs` is still correct for *startup* recovery: a
+/// process restart kills every in-flight coordinator, so everything
+/// resumable is genuinely orphaned.
+///
+/// `workspace_id` — when `Some`, only return runs owned by that workspace.
+/// `None` returns every workspace's stranded runs. The recovery loop in
+/// cloud mode passes the per-iteration workspace_id so it doesn't try to
+/// drive workspace-B's run with workspace-A's `PlatformContext`; the
+/// startup pass + tests pass `None`.
+pub async fn find_stuck_runs(
+    db: &DatabaseConnection,
+    grace_secs: u64,
+    workspace_id: Option<Uuid>,
+) -> Result<Vec<StuckRun>, DbErr> {
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement, Value};
+
+    #[derive(FromQueryResult)]
+    struct Row {
+        id: String,
+        task_status: Option<String>,
+        workspace_id: Uuid,
+    }
+
+    // The workspace filter is conditional, but every binding must be the
+    // same number of placeholders across paths — branch on whether
+    // `workspace_id` is set and append the extra clause + value.
+    let mut values: Vec<Value> = vec![
+        (grace_secs as i32).into(),
+        (DRIVER_LEASE_TTL_SECS as i32).into(),
+    ];
+    let workspace_clause = if let Some(ws) = workspace_id {
+        values.push(ws.into());
+        " AND r.workspace_id = $3 "
+    } else {
+        ""
+    };
+    let sql = format!(
+        "\
+        SELECT r.id, r.task_status, r.workspace_id \
+        FROM agentic_runs r \
+        WHERE r.source_type IN ('workflow', 'airway') \
+          AND r.parent_run_id IS NULL \
+          AND r.task_status IN ('running', 'delegating', 'waiting_on_child', 'waiting_on_children', 'needs_resume', 'shutdown') \
+          AND r.updated_at < now() - make_interval(secs => $1) \
+          AND (r.driver_id IS NULL \
+               OR r.driver_heartbeat_at IS NULL \
+               OR r.driver_heartbeat_at < now() - make_interval(secs => $2)) \
+          {workspace_clause} \
+          AND NOT EXISTS ( \
+              SELECT 1 FROM agentic_task_queue q \
+              WHERE (q.task_id = r.id OR q.task_id LIKE r.id || '.%') \
+                AND ( \
+                  q.queue_status = 'claimed' \
+                  OR (q.queue_status = 'queued' AND q.scope_owned = true) \
+                ) \
+          )"
+    );
+
+    let rows = Row::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .all(db)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| StuckRun {
+            run_id: r.id,
+            task_status: r.task_status,
+            workspace_id: r.workspace_id,
+        })
+        .collect())
+}
+
+/// Find runs that have a `queued` + `scope_owned = false` queue entry
+/// AND are not currently lease-held — the §12 FU4c latency-worker
+/// selection. No grace window: a queued row only exists after the seed
+/// function fully commits, so there's no mid-commit race to wait out
+/// (unlike `find_stuck_runs` which guards against an in-flight worker
+/// that's about to enqueue).
+///
+/// This is intentionally narrower than `find_stuck_runs`: it picks up
+/// freshly-seeded Global runs at claim-time (cron / `run-now`) so the
+/// periodic loop's grace window doesn't gate them.
+///
+/// `workspace_id` — when `Some`, only return pending rows owned by that
+/// workspace. When `None`, returns every workspace's pending rows; the
+/// caller (e.g. the cloud-mode latency worker) is responsible for
+/// grouping by `StuckRun.workspace_id` and routing each row to the
+/// correct cached `PlatformContext`.
+pub async fn find_pending_global_runs(
+    db: &DatabaseConnection,
+    workspace_id: Option<Uuid>,
+) -> Result<Vec<StuckRun>, DbErr> {
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement, Value};
+
+    #[derive(FromQueryResult)]
+    struct Row {
+        id: String,
+        task_status: Option<String>,
+        workspace_id: Uuid,
+    }
+
+    let mut values: Vec<Value> = vec![(DRIVER_LEASE_TTL_SECS as i32).into()];
+    let workspace_clause = if let Some(ws) = workspace_id {
+        values.push(ws.into());
+        " AND r.workspace_id = $2 "
+    } else {
+        ""
+    };
+    let sql = format!(
+        "\
+        SELECT r.id, r.task_status, r.workspace_id \
+        FROM agentic_runs r \
+        WHERE r.source_type IN ('workflow', 'airway') \
+          AND r.parent_run_id IS NULL \
+          AND r.task_status IN ('running', 'delegating', 'waiting_on_child', 'waiting_on_children', 'needs_resume', 'shutdown') \
+          AND (r.driver_id IS NULL \
+               OR r.driver_heartbeat_at IS NULL \
+               OR r.driver_heartbeat_at < now() - make_interval(secs => $1)) \
+          {workspace_clause} \
+          AND EXISTS ( \
+              SELECT 1 FROM agentic_task_queue q \
+              WHERE (q.task_id = r.id OR q.task_id LIKE r.id || '.%') \
+                AND q.queue_status = 'queued' \
+                AND q.scope_owned = false \
+          )"
+    );
+
+    let rows = Row::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StuckRun {
+            run_id: r.id,
+            task_status: r.task_status,
+            workspace_id: r.workspace_id,
         })
         .collect())
 }

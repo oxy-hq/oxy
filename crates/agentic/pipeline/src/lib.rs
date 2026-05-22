@@ -10,6 +10,7 @@ pub mod pipeline_ref;
 pub mod platform;
 pub mod recovery;
 pub mod revert;
+pub mod scheduler;
 pub mod workflow_run;
 
 use std::collections::HashMap;
@@ -48,6 +49,9 @@ pub use agentic_core::human_input::{
 };
 pub use agentic_llm::LlmClient;
 pub use agentic_llm::{AnthropicProvider, OpenAiProvider};
+/// Re-exported so HTTP/CLI consumers name the seed-function ownership arg
+/// through the facade instead of importing `agentic-runtime` directly.
+pub use agentic_runtime::crud::TaskScope;
 pub use agentic_workflow::{
     SOURCE_TYPE as WORKFLOW_SOURCE_TYPE, WorkflowMigrator,
     WorkspaceContext as WorkflowWorkspaceContext,
@@ -129,6 +133,11 @@ pub struct PipelineBuilder {
     /// LLM-generated SQL). Used by the workflow `type: agent` step
     /// when `AgentTaskConfig.output.mode == Sql`.
     analytics_sql_mode: bool,
+    /// Workspace owning the run; stamped onto `agentic_runs.workspace_id`
+    /// at insert. HTTP handlers read this from the `/{workspace_id}/...`
+    /// path; CLI / eval default to the nil UUID (= `LOCAL_WORKSPACE_ID`,
+    /// the single-workspace local serve mode's implicit id).
+    workspace_id: Uuid,
 }
 
 enum Domain {
@@ -250,7 +259,16 @@ impl PipelineBuilder {
             builder_skip_interpreting: false,
             builder_tool_allowlist: None,
             analytics_sql_mode: false,
+            workspace_id: Uuid::nil(),
         }
+    }
+
+    /// Set the workspace that owns the run. HTTP handlers pass the
+    /// `/{workspace_id}/...` path segment; CLI / eval leave at the
+    /// default nil UUID (= local single-workspace mode).
+    pub fn workspace_id(mut self, workspace_id: Uuid) -> Self {
+        self.workspace_id = workspace_id;
+        self
     }
 
     /// Supply the four builder-domain port impls. Required before starting
@@ -519,6 +537,7 @@ impl PipelineBuilder {
                 self.thread_id,
                 source_type,
                 Some(metadata),
+                self.workspace_id,
             )
             .await?;
             agentic_analytics::insert_run_meta(db, run_id, agent_id, self.thinking_mode.to_db())
@@ -532,6 +551,15 @@ impl PipelineBuilder {
             .await;
 
         // Resolve databases + connectors.
+        //
+        // Effective set = `agent.databases` ∪ databases referenced from the
+        // agent's `context:` glob. No fallback to "everything in
+        // config.yml" — an agent only gets connector access to what it
+        // explicitly declares. The previous auto-fill (f7c474080) was
+        // unwound because a misparsed agent (e.g. classic `.agent.yml`
+        // shape silently dropped to defaults) would otherwise inherit
+        // the whole workspace's database surface and start chasing SQL
+        // it has no business running.
         let mut effective_databases: Vec<String> = config.databases.clone();
         if let Ok(resolved) = config.resolve_context(base_dir) {
             for db_name in resolved.referenced_databases {
@@ -545,16 +573,28 @@ impl PipelineBuilder {
         connectors.extend(resolved.pre_built);
 
         // Procedure runner.
-        let subrun_runner: Option<Arc<dyn agentic_core::subrun::SubrunRunner>> = {
-            let procedure_files = config
-                .resolve_context(base_dir)
-                .map(|ctx| ctx.procedure_files)
-                .unwrap_or_default();
-            let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = self.platform.clone();
-            let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
-                .with_procedure_files(procedure_files);
-            Some(Arc::new(runner))
-        };
+        //
+        // Only injected when the agent's `context:` glob actually
+        // resolves to procedure files. Without an explicit declaration
+        // we don't hand the FSM a SubrunRunner at all — an empty list
+        // would cause `OxyProcedureRunner::search()` to fall back to
+        // `workspace.list_workflow_files()` (every workflow in the
+        // project), and a misparsed/empty agent would then chain
+        // `search_procedures` → arbitrary workflow → another agent
+        // step → another empty agent → recursion. The previous
+        // behavior was "always inject and let the runner fall back"
+        // — unwound here so an agent only sees procedures it asked for.
+        let subrun_runner: Option<Arc<dyn agentic_core::subrun::SubrunRunner>> = config
+            .resolve_context(base_dir)
+            .ok()
+            .map(|ctx| ctx.procedure_files)
+            .filter(|files| !files.is_empty())
+            .map(|files| {
+                let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = self.platform.clone();
+                let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
+                    .with_procedure_files(files);
+                Arc::new(runner) as Arc<dyn agentic_core::subrun::SubrunRunner>
+            });
 
         // Thread history.
         let (history, prior_spec_hint) = if let Some(tid) = self.thread_id {
@@ -592,10 +632,23 @@ impl PipelineBuilder {
             sql_generation_mode: self.analytics_sql_mode,
         };
 
-        // Start pipeline.
-        let handle = agentic_analytics::start_pipeline(params)
-            .await
-            .map_err(|e| PipelineError::Build(format!("{e}")))?;
+        // Start pipeline. Connector-less narrative-wrapper agents
+        // (`databases: []`, `context: []`, no `states:` overrides,
+        // just `instructions:`) take the brief one-shot LLM path
+        // instead of the full Clarifying → … → Interpreting FSM —
+        // the FSM is overhead for "format these numbers" prompts and
+        // can spawn an unbounded subrun chain when `instructions:` is
+        // ever empty. Detection is on the parsed config, no flag in
+        // the workflow YAML required.
+        let handle = if agentic_analytics::is_brief_agent(&params.config) {
+            agentic_analytics::start_brief_pipeline(params)
+                .await
+                .map_err(|e| PipelineError::Build(format!("{e}")))?
+        } else {
+            agentic_analytics::start_pipeline(params)
+                .await
+                .map_err(|e| PipelineError::Build(format!("{e}")))?
+        };
 
         Ok(StartedPipeline {
             run_id: run_id.to_string(),
@@ -648,6 +701,15 @@ impl PipelineBuilder {
             .await;
 
         // Resolve databases + connectors.
+        //
+        // Effective set = `agent.databases` ∪ databases referenced from the
+        // agent's `context:` glob. No fallback to "everything in
+        // config.yml" — an agent only gets connector access to what it
+        // explicitly declares. The previous auto-fill (f7c474080) was
+        // unwound because a misparsed agent (e.g. classic `.agent.yml`
+        // shape silently dropped to defaults) would otherwise inherit
+        // the whole workspace's database surface and start chasing SQL
+        // it has no business running.
         let mut effective_databases: Vec<String> = config.databases.clone();
         if let Ok(resolved) = config.resolve_context(base_dir) {
             for db_name in resolved.referenced_databases {
@@ -661,16 +723,28 @@ impl PipelineBuilder {
         connectors.extend(resolved.pre_built);
 
         // Procedure runner.
-        let subrun_runner: Option<Arc<dyn agentic_core::subrun::SubrunRunner>> = {
-            let procedure_files = config
-                .resolve_context(base_dir)
-                .map(|ctx| ctx.procedure_files)
-                .unwrap_or_default();
-            let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = self.platform.clone();
-            let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
-                .with_procedure_files(procedure_files);
-            Some(Arc::new(runner))
-        };
+        //
+        // Only injected when the agent's `context:` glob actually
+        // resolves to procedure files. Without an explicit declaration
+        // we don't hand the FSM a SubrunRunner at all — an empty list
+        // would cause `OxyProcedureRunner::search()` to fall back to
+        // `workspace.list_workflow_files()` (every workflow in the
+        // project), and a misparsed/empty agent would then chain
+        // `search_procedures` → arbitrary workflow → another agent
+        // step → another empty agent → recursion. The previous
+        // behavior was "always inject and let the runner fall back"
+        // — unwound here so an agent only sees procedures it asked for.
+        let subrun_runner: Option<Arc<dyn agentic_core::subrun::SubrunRunner>> = config
+            .resolve_context(base_dir)
+            .ok()
+            .map(|ctx| ctx.procedure_files)
+            .filter(|files| !files.is_empty())
+            .map(|files| {
+                let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = self.platform.clone();
+                let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
+                    .with_procedure_files(files);
+                Arc::new(runner) as Arc<dyn agentic_core::subrun::SubrunRunner>
+            });
 
         // Thread history.
         let (history, prior_spec_hint) = if let Some(tid) = self.thread_id {
@@ -847,6 +921,7 @@ impl PipelineBuilder {
                 self.thread_id,
                 source_type,
                 Some(metadata),
+                self.workspace_id,
             )
             .await?;
         }
@@ -1424,6 +1499,7 @@ pub async fn insert_run(
     question: &str,
     thread_id: Option<Uuid>,
     thinking_mode: Option<String>,
+    workspace_id: Uuid,
 ) -> Result<(), sea_orm::DbErr> {
     let source_type = if agent_id == "__builder__" {
         "builder"
@@ -1434,8 +1510,16 @@ pub async fn insert_run(
         "agent_id": agent_id,
         "thinking_mode": thinking_mode,
     });
-    agentic_runtime::crud::insert_run(db, run_id, question, thread_id, source_type, Some(metadata))
-        .await?;
+    agentic_runtime::crud::insert_run(
+        db,
+        run_id,
+        question,
+        thread_id,
+        source_type,
+        Some(metadata),
+        workspace_id,
+    )
+    .await?;
 
     if agent_id != "__builder__" {
         agentic_analytics::insert_run_meta(db, run_id, agent_id, thinking_mode).await?;
@@ -1592,7 +1676,16 @@ pub async fn run_agentic_eval(
     tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
 
     let solver = solver.with_events(event_stream.clone());
-    let solver = {
+    // Same rule as the two PipelineBuilder sites: only inject a
+    // procedure runner when the agent's `context:` actually resolved
+    // some files. An empty list would fall through to
+    // `workspace.list_workflow_files()` (full project scan), giving
+    // the FSM access to every workflow in the project — which has
+    // caused a runaway subrun chain when a misparsed agent had no
+    // concrete instructions.
+    let solver = if procedure_files.is_empty() {
+        solver
+    } else {
         let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = platform.clone();
         let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
             .with_procedure_files(procedure_files);

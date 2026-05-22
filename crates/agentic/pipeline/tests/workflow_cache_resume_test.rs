@@ -119,9 +119,17 @@ async fn seed_run(
     cache_enabled: bool,
 ) -> String {
     let run_id = format!("cache-{}", uuid::Uuid::new_v4());
-    crud::insert_run(db, &run_id, "cache test", None, "workflow", None)
-        .await
-        .expect("insert run");
+    crud::insert_run(
+        db,
+        &run_id,
+        "cache test",
+        None,
+        "workflow",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert run");
     let yaml_hash = agentic_workflow::hash::canonical_hash(&workflow).expect("hash");
     let state = agentic_workflow::extension::WorkflowRunState {
         run_id: run_id.clone(),

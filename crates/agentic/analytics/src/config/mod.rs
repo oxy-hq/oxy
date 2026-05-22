@@ -278,7 +278,7 @@ fn build_engine(cfg: &SemanticEngineConfig) -> Result<Box<dyn SemanticEngine>, C
 /// When `azure_deployment_id` and `azure_api_version` are both `Some`, the
 /// model is Azure OpenAI: `OpenAiCompatProvider` is used with the full Azure
 /// Chat Completions URL regardless of `vendor`.
-fn build_llm_client(
+pub(crate) fn build_llm_client(
     vendor: &LlmVendor,
     api_key: &str,
     model: &str,

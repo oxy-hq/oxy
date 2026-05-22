@@ -79,6 +79,7 @@ const ROUTES = {
               ROOT: `${wsBase}/ide/coordinator`,
               ACTIVE_RUNS: `${wsBase}/ide/coordinator/active-runs`,
               RUN_HISTORY: `${wsBase}/ide/coordinator/run-history`,
+              SCHEDULES: `${wsBase}/ide/coordinator/schedules`,
               RECOVERY: `${wsBase}/ide/coordinator/recovery`,
               QUEUE: `${wsBase}/ide/coordinator/queue`,
               RUN_TREE: (runId: string) => `${wsBase}/ide/coordinator/runs/${runId}/tree`

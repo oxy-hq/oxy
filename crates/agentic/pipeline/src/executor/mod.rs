@@ -211,7 +211,8 @@ impl PipelineTaskExecutor {
         existing_run_id: Option<String>,
         extra: Option<&serde_json::Value>,
     ) -> Result<ExecutingTask, String> {
-        let mut pb = PipelineBuilder::new(self.platform.clone());
+        let mut pb =
+            PipelineBuilder::new(self.platform.clone()).workspace_id(self.platform.workspace_id());
         if let Some(bridges) = self.builder_bridges.clone() {
             pb = pb.with_builder_bridges(bridges);
         }
@@ -328,7 +329,13 @@ impl PipelineTaskExecutor {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let mut builder = PipelineBuilder::new(self.platform.clone()).question(&run.question);
+        // Resume path: `existing_run_id` will be set below, so the
+        // builder skips the DB insert — workspace_id is not consulted at
+        // INSERT time. We still set it for trace coherence and so any
+        // future cold-resume insert lands on the right row.
+        let mut builder = PipelineBuilder::new(self.platform.clone())
+            .workspace_id(self.platform.workspace_id())
+            .question(&run.question);
         if let Some(bridges) = self.builder_bridges.clone() {
             builder = builder.with_builder_bridges(bridges);
         }

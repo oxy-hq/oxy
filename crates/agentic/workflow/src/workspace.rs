@@ -47,4 +47,11 @@ pub trait WorkspaceContext: Send + Sync {
 
     /// Read the raw YAML content of a workflow file.
     async fn resolve_workflow_yaml(&self, workflow_ref: &str) -> Result<String, String>;
+
+    /// List all `.airway.yml` pipeline files in the workspace. Default
+    /// returns empty so existing impls (test fakes) need no change; the
+    /// real host adapter overrides it.
+    async fn list_airway_files(&self) -> Result<Vec<PathBuf>, String> {
+        Ok(vec![])
+    }
 }

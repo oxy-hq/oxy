@@ -26,6 +26,29 @@ pub struct Model {
     /// Non-null means "resume this run on next server startup". Replaces the
     /// old `needs_resume`/`shutdown` task_status values.
     pub recovery_requested_at: Option<DateTimeWithTimeZone>,
+    /// Driver lease owner: the id of the coordinator process/loop currently
+    /// driving this run. CAS-acquired; NULL means no live driver. Used to gate
+    /// recovery selection so a periodic loop cannot double-drive a run.
+    pub driver_id: Option<String>,
+    /// Last heartbeat from the lease holder in `driver_id`. A lease is
+    /// considered stale (re-acquirable) once this is older than the lease TTL.
+    pub driver_heartbeat_at: Option<DateTimeWithTimeZone>,
+    /// Set by the HTTP cancel endpoint. A DB-observable cancel signal so a
+    /// recovered / Global run (driven out-of-process by the periodic loop
+    /// or a standalone worker) can be cancelled — the in-memory watch
+    /// channel only reaches a same-process coordinator.
+    pub cancel_requested_at: Option<DateTimeWithTimeZone>,
+    /// Workspace that owns this run. Plain UUID, no FK to `workspaces.id`
+    /// (cross-domain reference per agentic boundary rules). Stamped at row
+    /// insert by the `start_*_run` paths; the nil UUID means "local /
+    /// pre-migration", which the local serve mode treats as its single
+    /// workspace.
+    ///
+    /// Lets out-of-process drivers (recovery loop, latency worker)
+    /// resolve which workspace's `PlatformContext` to use for a row they
+    /// pick up — without this column they have no way to route a run
+    /// back to its workspace.
+    pub workspace_id: Uuid,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

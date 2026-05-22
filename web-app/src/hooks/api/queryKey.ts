@@ -48,7 +48,14 @@ const airwayKeys = {
   all: ["agentic-airway"] as const,
   run: (projectId: string, runId: string) => [...airwayKeys.all, "run", projectId, runId] as const,
   runsForPipeline: (projectId: string, pipelineRef: string) =>
-    [...airwayKeys.all, "runs-for-pipeline", projectId, pipelineRef] as const
+    [...airwayKeys.all, "runs-for-pipeline", projectId, pipelineRef] as const,
+  files: (projectId: string) => [...airwayKeys.all, "files", projectId] as const
+};
+
+const scheduleKeys = {
+  all: ["agentic-schedules"] as const,
+  list: (projectId: string) => [...scheduleKeys.all, "list", projectId] as const,
+  item: (projectId: string, id: string) => [...scheduleKeys.all, projectId, { id }] as const
 };
 
 const workflowKeys = {
@@ -363,6 +370,7 @@ const queryKeys = {
   workflow: workflowKeys,
   agenticWorkflow: agenticWorkflowKeys,
   airway: airwayKeys,
+  schedule: scheduleKeys,
   chart: chartKeys,
   file: fileKeys,
   database: databaseKeys,

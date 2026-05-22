@@ -24,6 +24,8 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::{mpsc, watch};
@@ -103,7 +105,20 @@ pub async fn create_airway_run(
     // free — `start_airway_run` only needs the workspace surface.
     let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
 
-    let run_id = match start_airway_run(&state.db, workspace.as_ref(), body).await {
+    // Interactive run: a co-located scoped coordinator is spawned right
+    // below via `spawn_airway_run_drive`, so it owns this run's tree.
+    // workspace_id from the platform context so out-of-process drivers
+    // can route this row back to its workspace.
+    let workspace_id = platform.workspace_id();
+    let run_id = match start_airway_run(
+        &state.db,
+        workspace.as_ref(),
+        body,
+        agentic_pipeline::TaskScope::Scoped,
+        workspace_id,
+    )
+    .await
+    {
         Ok(id) => id,
         Err(AirwayRunError::InvalidInput(msg)) | Err(AirwayRunError::Io(msg)) => {
             return (StatusCode::BAD_REQUEST, msg).into_response();
@@ -149,6 +164,10 @@ pub async fn cancel_airway_run(
     if let Err(resp) = ensure_run_access(&state, &user.id, &run_id).await {
         return resp;
     }
+    // Durable cross-process cancel signal (see cancel_workflow_run).
+    agentic_runtime::crud::request_cancel(&state.db, &run_id)
+        .await
+        .ok();
     if !state.cancel(&run_id) {
         // No live cancel channel. Same race as the workflow cancel
         // handler: distinguish "stuck queue row" (defensive fail) from
@@ -209,4 +228,51 @@ async fn ensure_run_access(
             Err((StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response())
         }
     }
+}
+
+// ── GET /agentic-airway/files ─────────────────────
+//
+// Mirrors `/agentic-workflows/files`: lists `.airway.yml` pipeline
+// files as { path, path_b64 } so the Schedules UI target picker can be
+// populated for airway schedules.
+
+#[derive(Serialize)]
+pub struct AirwayFile {
+    /// Workspace-relative path, usable as a schedule `target_ref`.
+    pub path: String,
+    /// URL-safe base64 of `path` (parity with the workflow files shape).
+    pub path_b64: String,
+}
+
+pub async fn list_airway_files(
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+) -> Response {
+    let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
+    let paths = match workspace.list_airway_files().await {
+        Ok(p) => p,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("list files: {e}"),
+            )
+                .into_response();
+        }
+    };
+    let root = workspace.workspace_path().to_path_buf();
+    let files: Vec<AirwayFile> = paths
+        .into_iter()
+        .map(|abs| {
+            let rel = abs
+                .strip_prefix(&root)
+                .unwrap_or(&abs)
+                .to_string_lossy()
+                .to_string();
+            let path_b64 = URL_SAFE_NO_PAD.encode(rel.as_bytes());
+            AirwayFile {
+                path: rel,
+                path_b64,
+            }
+        })
+        .collect();
+    Json(files).into_response()
 }

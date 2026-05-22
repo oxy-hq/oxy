@@ -98,6 +98,8 @@ duckdb = { version = "=1.10501.0", features = ["bundled"] }
 axum = {version = "0.8.9", features = ["macros", "http2"]}
 axum-server = {version = "0.8.0", features = ["tls-rustls"]}
 chrono = "*"
+chrono-tz = "0.8"
+croner = "3"
 indexmap = {version = "2.14.0", features = ["serde"]}
 log = {version = "0.4"}
 minijinja = {version = "2.19.0"}

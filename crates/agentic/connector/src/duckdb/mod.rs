@@ -27,7 +27,8 @@ use agentic_core::result::{ColumnSpec, TypedRowError, TypedRowStream, TypedValue
 
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, normalize_sql,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, is_returning_statement, normalize_sql,
+    plan_sql_script,
 };
 
 // Re-export Connection so callers / integration tests can construct connections
@@ -88,6 +89,7 @@ pub struct DuckDbConnector {
 impl DuckDbConnector {
     /// Wrap an existing, already-configured DuckDB connection.
     pub fn new(conn: Connection) -> Self {
+        ensure_icu(&conn);
         Self {
             conn: Mutex::new(conn),
             loaded_tables: Vec::new(),
@@ -178,6 +180,7 @@ impl DuckDbConnector {
         conn: Connection,
         files: &[(&Path, LoadStrategy)],
     ) -> Result<Self, ConnectorError> {
+        ensure_icu(&conn);
         let mut loaded_tables: Vec<TableInfo> = Vec::with_capacity(files.len());
 
         for (path, strategy) in files {
@@ -279,6 +282,36 @@ fn normalize_table_name(stem: &str) -> String {
     }
 }
 
+/// Install + load the DuckDB ICU extension on `conn`.
+///
+/// Mirrors what oxy-core's DuckDB connector does on every connection
+/// (`crates/core/src/connector/duckdb.rs`). ICU registers the
+/// timezone-aware date/time function overloads; without it DuckDB's
+/// binder fails to resolve `date_diff`/`date_trunc` calls whose part is a
+/// bare string literal in some bind paths (e.g. a non-aggregated
+/// `date_diff('day', <group_key>::DATE, CURRENT_DATE::DATE)` projected
+/// over a populated `GROUP BY`), surfacing as a confusing
+/// `No function matches … (STRING_LITERAL, DATE, DATE)` with an empty
+/// candidate list. The agentic connector historically skipped this, so
+/// the same SQL worked through the classic agent / SQL-IDE path (oxy-core
+/// connector) but failed through workflow `execute_sql` (this connector).
+///
+/// Best-effort: the extension is bundled with libduckdb-sys so this
+/// succeeds offline, but a failure is logged rather than fatal so bare
+/// in-memory connectors used in tests/sandboxes still construct.
+fn ensure_icu(conn: &Connection) {
+    if let Err(e) = conn
+        .execute_batch("INSTALL icu;")
+        .and_then(|()| conn.execute_batch("LOAD icu;"))
+    {
+        tracing::warn!(
+            error = %e,
+            "DuckDB ICU extension failed to load; date/time functions with a \
+             string-literal part (date_diff/date_trunc) may fail to bind"
+        );
+    }
+}
+
 // ── DatabaseConnector impl ────────────────────────────────────────────────────
 
 #[async_trait]
@@ -297,15 +330,42 @@ impl DatabaseConnector for DuckDbConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
-        let sql = normalize_sql(sql);
+        // `execute_query` samples a single result set, so the rows/stats
+        // path below wraps the user SQL in `CREATE TEMP TABLE _t AS (sql)`.
+        // That wrap is only valid for one SELECT-family statement — a
+        // multi-statement DDL/DML script (e.g. a workflow `execute_sql`
+        // setup file: `CREATE TABLE …; CREATE INDEX …; SELECT …`) would
+        // produce `Parser Error: syntax error at or near "CREATE"`. Run
+        // any leading statements for their side effects first, then sample
+        // only the final statement.
+        let script = plan_sql_script(sql);
         let conn = self
             .conn
             .lock()
             .map_err(|e| ConnectorError::ConnectionError(format!("mutex poisoned: {e}")))?;
 
+        for stmt in &script.prefix {
+            conn.execute_batch(stmt)
+                .map_err(|e| ConnectorError::query_failed(stmt.clone(), e.to_string()))?;
+        }
+
+        let sql = normalize_sql(&script.final_stmt);
+
+        // The final statement doesn't return rows (DDL/DML such as a
+        // trailing `CREATE INDEX` or `INSERT`): execute it for its side
+        // effect and return a well-formed empty result instead of feeding
+        // non-returning SQL into the sampling wrap.
+        if !is_returning_statement(sql) {
+            if !sql.is_empty() {
+                conn.execute_batch(sql)
+                    .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
+            }
+            return Ok(ExecutionResult::empty());
+        }
+
         let tmp = "_agentic_tmp";
 
-        // 1. Create the temp table once from the user's query.
+        // 1. Create the temp table once from the final (returning) query.
         conn.execute_batch(&format!("DROP TABLE IF EXISTS {tmp};"))
             .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 

@@ -80,6 +80,7 @@ const RunHistoryPage = React.lazy(() => import("./pages/ide/coordinator/RunHisto
 const RecoveryPage = React.lazy(() => import("./pages/ide/coordinator/Recovery"));
 const QueueHealthPage = React.lazy(() => import("./pages/ide/coordinator/QueueHealth"));
 const RunTreePage = React.lazy(() => import("./pages/ide/coordinator/RunTree"));
+const SchedulesPage = React.lazy(() => import("./pages/ide/coordinator/Schedules"));
 const ObservabilityLayout = React.lazy(() => import("./pages/ide/observability"));
 const ExecutionAnalytics = React.lazy(
   () => import("./pages/ide/observability/execution-analytics")
@@ -323,6 +324,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           <Route path='coordinator' element={<CoordinatorLayout />}>
             <Route path='active-runs' element={<ActiveRunsPage />} />
             <Route path='run-history' element={<RunHistoryPage />} />
+            <Route path='schedules' element={<SchedulesPage />} />
             <Route path='recovery' element={<RecoveryPage />} />
             <Route path='queue' element={<QueueHealthPage />} />
             <Route path='runs/:runId/tree' element={<RunTreePage />} />

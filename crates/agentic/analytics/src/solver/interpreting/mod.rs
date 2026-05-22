@@ -78,7 +78,18 @@ impl AnalyticsSolver {
             system_base
         };
         let thinking = self.thinking_for_state("interpreting", ThinkingConfig::Disabled);
-        let max_rounds_base = self.max_tool_rounds_for_state("interpreting", 2);
+        // Default to 5 rounds (matching `clarifying` / `specifying`).
+        // Interpreting drives `render_chart`, which often needs a couple
+        // of retries to get column types right plus a follow-up tweak —
+        // the previous default of 2 ran out almost immediately for any
+        // multi-chart prompt and surfaced the "all 2 allotted tool
+        // rounds" HITL suspension. Authors can still override per agent
+        // via `.agentic.yml`:
+        //
+        //     states:
+        //       interpreting:
+        //         max_retries: 8
+        let max_rounds_base = self.max_tool_rounds_for_state("interpreting", 5);
 
         // Check for a resume from a prior max_tool_rounds suspension.
         let mut resume_extra_rounds: u32 = 0;

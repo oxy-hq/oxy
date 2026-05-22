@@ -74,10 +74,16 @@ pub enum AirwayRunError {
 /// Returns the fresh `run_id`. The caller is responsible for any
 /// runtime-state side effects (registering cancel watches, spawning
 /// SSE subscribers); this function only touches the database.
+/// `scope` records who will drive the seeded run: [`TaskScope::Scoped`] when
+/// a co-located coordinator is spawned right after (every HTTP/CLI caller
+/// today), [`TaskScope::Global`] when the Phase 2 scheduler seeds it for the
+/// standalone/recovery loop to pick up.
 pub async fn start_airway_run(
     db: &DatabaseConnection,
     workspace: &dyn WorkspaceContext,
     request: StartAirwayRequest,
+    scope: crud::TaskScope,
+    workspace_id: Uuid,
 ) -> Result<String, AirwayRunError> {
     if request.pipeline_ref.trim().is_empty() {
         return Err(AirwayRunError::InvalidInput(
@@ -119,6 +125,7 @@ pub async fn start_airway_run(
         request.thread_id,
         agentic_airway::SOURCE_TYPE,
         Some(metadata),
+        workspace_id,
     )
     .await?;
 
@@ -128,7 +135,7 @@ pub async fn start_airway_run(
         pipeline_ref: request.pipeline_ref,
         variables: request.variables,
     };
-    crud::enqueue_task(db, &run_id, &run_id, None, &task_spec, None).await?;
+    crud::enqueue_task(db, &run_id, &run_id, None, &task_spec, None, scope).await?;
 
     Ok(run_id)
 }

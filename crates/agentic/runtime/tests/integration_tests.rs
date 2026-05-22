@@ -118,6 +118,7 @@ async fn test_insert_and_get_run() {
         None,
         "analytics",
         Some(json!({ "agent_id": "test_agent" })),
+        uuid::Uuid::nil(),
     )
     .await
     .expect("insert_run failed");
@@ -144,9 +145,17 @@ async fn test_update_run_lifecycle() {
     };
     let run_id = test_run_id();
 
-    crud::insert_run(&db, &run_id, "Q", None, "analytics", None)
-        .await
-        .unwrap();
+    crud::insert_run(
+        &db,
+        &run_id,
+        "Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
 
     // running → suspended
     crud::update_run_suspended(&db, &run_id).await.unwrap();
@@ -180,7 +189,7 @@ async fn test_update_run_failed() {
     };
     let run_id = test_run_id();
 
-    crud::insert_run(&db, &run_id, "Q", None, "builder", None)
+    crud::insert_run(&db, &run_id, "Q", None, "builder", None, uuid::Uuid::nil())
         .await
         .unwrap();
 
@@ -202,9 +211,17 @@ async fn test_batch_insert_and_get_events() {
     };
     let run_id = test_run_id();
 
-    crud::insert_run(&db, &run_id, "Q", None, "analytics", None)
-        .await
-        .unwrap();
+    crud::insert_run(
+        &db,
+        &run_id,
+        "Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
 
     let events = vec![
         (
@@ -252,9 +269,17 @@ async fn test_suspension_round_trip() {
     };
     let run_id = test_run_id();
 
-    crud::insert_run(&db, &run_id, "Q", None, "analytics", None)
-        .await
-        .unwrap();
+    crud::insert_run(
+        &db,
+        &run_id,
+        "Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
 
     let resume_data = agentic_core::human_input::SuspendedRunData {
         from_state: "clarifying".to_string(),
@@ -288,9 +313,17 @@ async fn test_cleanup_stale_runs() {
     };
     let run_id = test_run_id();
 
-    crud::insert_run(&db, &run_id, "Q", None, "analytics", None)
-        .await
-        .unwrap();
+    crud::insert_run(
+        &db,
+        &run_id,
+        "Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
     // Run is "running" — cleanup should mark it failed.
     let count = crud::cleanup_stale_runs(&db).await.unwrap();
     assert!(count >= 1);
@@ -311,9 +344,17 @@ async fn test_registry_processes_analytics_core_events() {
     };
     let run_id = test_run_id();
 
-    crud::insert_run(&db, &run_id, "Q", None, "analytics", None)
-        .await
-        .unwrap();
+    crud::insert_run(
+        &db,
+        &run_id,
+        "Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
 
     let events = vec![
         (
@@ -371,7 +412,7 @@ async fn test_registry_processes_builder_domain_events() {
     };
     let run_id = test_run_id();
 
-    crud::insert_run(&db, &run_id, "Q", None, "builder", None)
+    crud::insert_run(&db, &run_id, "Q", None, "builder", None, uuid::Uuid::nil())
         .await
         .unwrap();
 
@@ -451,9 +492,17 @@ async fn test_registry_passes_through_delegation_ui_blocks() {
     let run_id = test_run_id();
     let child_run_id = test_run_id();
 
-    crud::insert_run(&db, &run_id, "Q", None, "analytics", None)
-        .await
-        .unwrap();
+    crud::insert_run(
+        &db,
+        &run_id,
+        "Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
 
     // Simulate the exact sequence the coordinator persists for a builder delegation.
     let events = vec![
@@ -695,9 +744,17 @@ mod coordinator_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -789,9 +846,17 @@ mod coordinator_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -857,9 +922,17 @@ mod coordinator_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -934,9 +1007,17 @@ mod coordinator_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -1106,9 +1187,17 @@ mod coordinator_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -1268,9 +1357,17 @@ mod coordinator_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -1415,9 +1512,17 @@ mod coordinator_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -1636,14 +1741,31 @@ mod task_tree_tests {
         let child_id = test_run_id();
 
         // Insert parent.
-        crud::insert_run(&db, &parent_id, "parent Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &parent_id,
+            "parent Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         // Insert child with parent reference.
-        crud::insert_run_with_parent(&db, &child_id, &parent_id, "child Q", "analytics", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_id,
+            &parent_id,
+            "child Q",
+            "analytics",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let child = crud::get_run(&db, &child_id).await.unwrap().unwrap();
         assert_eq!(child.parent_run_id.as_deref(), Some(parent_id.as_str()));
@@ -1656,9 +1778,17 @@ mod task_tree_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         // running → suspended_human
         crud::update_task_status(&db, &run_id, "awaiting_input", None)
@@ -1693,12 +1823,29 @@ mod task_tree_tests {
         let child_id = test_run_id();
         let grandchild_id = test_run_id();
 
-        crud::insert_run(&db, &root_id, "root Q", None, "analytics", None)
-            .await
-            .unwrap();
-        crud::insert_run_with_parent(&db, &child_id, &root_id, "child Q", "analytics", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &root_id,
+            "root Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_id,
+            &root_id,
+            "child Q",
+            "analytics",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::insert_run_with_parent(
             &db,
             &grandchild_id,
@@ -1707,6 +1854,7 @@ mod task_tree_tests {
             "analytics",
             None,
             0,
+            uuid::Uuid::nil(),
         )
         .await
         .unwrap();
@@ -1728,12 +1876,28 @@ mod task_tree_tests {
         let active_id = test_run_id();
         let done_id = test_run_id();
 
-        crud::insert_run(&db, &active_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
-        crud::insert_run(&db, &done_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &active_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        crud::insert_run(
+            &db,
+            &done_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_task_status(&db, &done_id, "done", None)
             .await
             .unwrap();
@@ -1759,9 +1923,17 @@ mod task_tree_tests {
         let child_id = test_run_id();
 
         // Set up a task tree in the DB: root waiting on child, child running.
-        crud::insert_run(&db, &root_id, "root Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &root_id,
+            "root Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_task_status(
             &db,
             &root_id,
@@ -1771,9 +1943,18 @@ mod task_tree_tests {
         .await
         .unwrap();
 
-        crud::insert_run_with_parent(&db, &child_id, &root_id, "child Q", "analytics", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_id,
+            &root_id,
+            "child Q",
+            "analytics",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         // Insert some events so next_seq can be computed.
         crud::insert_event(&db, &root_id, 0, "test_event", &json!({}), 0)
@@ -1820,9 +2001,17 @@ mod task_tree_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         use agentic_core::delegation::{SuspendReason, TaskAssignment, TaskOutcome, TaskSpec};
         use agentic_core::human_input::SuspendedRunData;
@@ -2147,9 +2336,17 @@ mod fanout_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -2232,9 +2429,17 @@ mod fanout_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -2301,9 +2506,17 @@ mod fanout_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -2465,9 +2678,17 @@ mod retry_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -2537,9 +2758,17 @@ mod retry_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         /// Executor that always fails on the primary workflow but succeeds on fallback.
         struct FallbackExecutor;
@@ -2676,9 +2905,17 @@ mod retry_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         /// Executor that fails with a specific error and only retries on matching patterns.
         struct PatternExecutor {
@@ -2848,12 +3085,29 @@ mod crash_recovery_tests {
         let child_id = format!("{parent_id}.1");
 
         // Create parent and child runs.
-        crud::insert_run(&db, &parent_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
-        crud::insert_run_with_parent(&db, &child_id, &parent_id, "child Q", "analytics", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &parent_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_id,
+            &parent_id,
+            "child Q",
+            "analytics",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         // Insert a task outcome.
         crud::insert_task_outcome(&db, &child_id, &parent_id, "done", Some("42"))
@@ -2879,12 +3133,29 @@ mod crash_recovery_tests {
         let parent_id = test_run_id();
         let child_id = format!("{parent_id}.1");
 
-        crud::insert_run(&db, &parent_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
-        crud::insert_run_with_parent(&db, &child_id, &parent_id, "child Q", "analytics", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &parent_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_id,
+            &parent_id,
+            "child Q",
+            "analytics",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         // Insert twice — should not error.
         crud::insert_task_outcome(&db, &child_id, &parent_id, "done", Some("first"))
@@ -2918,9 +3189,17 @@ mod crash_recovery_tests {
         let child_id = format!("{parent_id}.1");
 
         // Set up parent run.
-        crud::insert_run(&db, &parent_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &parent_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         // Parent is delegating, but task_metadata.completed is EMPTY
         // (simulating crash before record_child_result).
         crud::update_task_status(
@@ -2942,9 +3221,18 @@ mod crash_recovery_tests {
             .unwrap();
 
         // Set up child run (marked done in DB).
-        crud::insert_run_with_parent(&db, &child_id, &parent_id, "child Q", "analytics", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_id,
+            &parent_id,
+            "child Q",
+            "analytics",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_task_status(&db, &child_id, "done", None)
             .await
             .unwrap();
@@ -2993,9 +3281,17 @@ mod crash_recovery_tests {
         let parent_id = test_run_id();
         let child_id = format!("{parent_id}.1");
 
-        crud::insert_run(&db, &parent_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &parent_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_task_status(
             &db,
             &parent_id,
@@ -3010,9 +3306,18 @@ mod crash_recovery_tests {
         .unwrap();
 
         // Child exists but no task_outcome — simulating crash before outcome write.
-        crud::insert_run_with_parent(&db, &child_id, &parent_id, "child Q", "analytics", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_id,
+            &parent_id,
+            "child Q",
+            "analytics",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         // Child is still "running" in the DB.
 
         let state = Arc::new(RuntimeState::new());
@@ -3045,9 +3350,17 @@ mod crash_recovery_tests {
         let child2_id = format!("{parent_id}.2");
         let child3_id = format!("{parent_id}.3");
 
-        crud::insert_run(&db, &parent_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &parent_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_task_status(
             &db,
             &parent_id,
@@ -3071,6 +3384,7 @@ mod crash_recovery_tests {
                 "analytics",
                 None,
                 0,
+                uuid::Uuid::nil(),
             )
             .await
             .unwrap();
@@ -3128,9 +3442,17 @@ mod crash_recovery_tests {
         let child1_id = format!("{parent_id}.1");
         let child2_id = format!("{parent_id}.2");
 
-        crud::insert_run(&db, &parent_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &parent_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_task_status(
             &db,
             &parent_id,
@@ -3157,6 +3479,7 @@ mod crash_recovery_tests {
                 "analytics",
                 None,
                 0,
+                uuid::Uuid::nil(),
             )
             .await
             .unwrap();
@@ -3224,9 +3547,17 @@ mod crash_recovery_tests {
         let parent_id = test_run_id();
         let child_id = format!("{parent_id}.1");
 
-        crud::insert_run(&db, &parent_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &parent_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_task_status(
             &db,
             &parent_id,
@@ -3244,9 +3575,18 @@ mod crash_recovery_tests {
             .await
             .unwrap();
 
-        crud::insert_run_with_parent(&db, &child_id, &parent_id, "child Q", "analytics", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_id,
+            &parent_id,
+            "child Q",
+            "analytics",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_run_failed(&db, &child_id, "child exploded")
             .await
             .unwrap();
@@ -3286,9 +3626,17 @@ mod crash_recovery_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         use agentic_core::delegation::{SuspendReason, TaskAssignment, TaskOutcome, TaskSpec};
         use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
@@ -3418,9 +3766,17 @@ mod crash_recovery_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         use agentic_core::delegation::{SuspendReason, TaskAssignment, TaskOutcome, TaskSpec};
         use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
@@ -3742,9 +4098,17 @@ mod answer_channel_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -3840,9 +4204,17 @@ mod answer_channel_tests {
             return;
         };
         let run_id = test_run_id();
-        crud::insert_run(&db, &run_id, "test Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &run_id,
+            "test Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         let state = Arc::new(RuntimeState::new());
         let transport = LocalTransport::with_defaults();
@@ -3942,15 +4314,41 @@ mod recovery_attempt_tests {
         let grandchild_a = format!("{root_id}.1.3"); // child_counter was 3
 
         // 1. Create initial run tree (attempt 0).
-        crud::insert_run(&db, &root_id, "root Q", None, "analytics", None)
-            .await
-            .unwrap();
-        crud::insert_run_with_parent(&db, &child_1, &root_id, "child 1 Q", "workflow", None, 0)
-            .await
-            .unwrap();
-        crud::insert_run_with_parent(&db, &child_2, &root_id, "child 2 Q", "workflow", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &root_id,
+            "root Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_1,
+            &root_id,
+            "child 1 Q",
+            "workflow",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_2,
+            &root_id,
+            "child 2 Q",
+            "workflow",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::insert_run_with_parent(
             &db,
             &grandchild_a,
@@ -3959,6 +4357,7 @@ mod recovery_attempt_tests {
             "workflow_step",
             None,
             0,
+            uuid::Uuid::nil(),
         )
         .await
         .unwrap();
@@ -4020,9 +4419,17 @@ mod recovery_attempt_tests {
         let root_id = test_run_id();
 
         // 1. Create root run.
-        crud::insert_run(&db, &root_id, "root Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &root_id,
+            "root Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::update_task_status(&db, &root_id, "running", None)
             .await
             .unwrap();
@@ -4030,23 +4437,59 @@ mod recovery_attempt_tests {
         // 2. Attempt 0 creates children with simple counter format.
         let child_0_1 = format!("{root_id}.1");
         let child_0_2 = format!("{root_id}.2");
-        crud::insert_run_with_parent(&db, &child_0_1, &root_id, "Q", "workflow", None, 0)
-            .await
-            .unwrap();
-        crud::insert_run_with_parent(&db, &child_0_2, &root_id, "Q", "workflow", None, 0)
-            .await
-            .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_0_1,
+            &root_id,
+            "Q",
+            "workflow",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_0_2,
+            &root_id,
+            "Q",
+            "workflow",
+            None,
+            0,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         // 3. Recovery attempt 1 creates children with a1_ prefix.
         crud::increment_attempt(&db, &root_id).await.unwrap();
         let child_1_3 = format!("{root_id}.a1_3");
         let child_1_4 = format!("{root_id}.a1_4");
-        crud::insert_run_with_parent(&db, &child_1_3, &root_id, "Q", "workflow", None, 1)
-            .await
-            .unwrap();
-        crud::insert_run_with_parent(&db, &child_1_4, &root_id, "Q", "workflow", None, 1)
-            .await
-            .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_1_3,
+            &root_id,
+            "Q",
+            "workflow",
+            None,
+            1,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        crud::insert_run_with_parent(
+            &db,
+            &child_1_4,
+            &root_id,
+            "Q",
+            "workflow",
+            None,
+            1,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         // 4. Recovery attempt 2 — verify counter starts above 4.
         crud::increment_attempt(&db, &root_id).await.unwrap();
@@ -4058,9 +4501,18 @@ mod recovery_attempt_tests {
 
         // 5. Simulate coordinator creating a new child — should not collide.
         let child_2_5 = format!("{root_id}.a2_{}", max_counter + 1);
-        crud::insert_run_with_parent(&db, &child_2_5, &root_id, "Q", "workflow", None, 2)
-            .await
-            .expect("should not collide with existing children");
+        crud::insert_run_with_parent(
+            &db,
+            &child_2_5,
+            &root_id,
+            "Q",
+            "workflow",
+            None,
+            2,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .expect("should not collide with existing children");
     }
 
     /// Verifies that from_db reconstructs a coordinator that can create new
@@ -4076,9 +4528,17 @@ mod recovery_attempt_tests {
         let workflow_child = format!("{root_id}.1");
 
         // 1. Set up: root → workflow child, root waiting on children.
-        crud::insert_run(&db, &root_id, "analytics Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &root_id,
+            "analytics Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
         crud::insert_run_with_parent(
             &db,
             &workflow_child,
@@ -4087,6 +4547,7 @@ mod recovery_attempt_tests {
             "workflow",
             None,
             0,
+            uuid::Uuid::nil(),
         )
         .await
         .unwrap();
@@ -4114,6 +4575,7 @@ mod recovery_attempt_tests {
             "workflow_step",
             None,
             0,
+            uuid::Uuid::nil(),
         )
         .await
         .unwrap();
@@ -4125,6 +4587,7 @@ mod recovery_attempt_tests {
             "workflow_step",
             None,
             0,
+            uuid::Uuid::nil(),
         )
         .await
         .unwrap();
@@ -4155,6 +4618,7 @@ mod recovery_attempt_tests {
             "workflow_step",
             None,
             1,
+            uuid::Uuid::nil(),
         )
         .await
         .unwrap();
@@ -4166,6 +4630,7 @@ mod recovery_attempt_tests {
             "workflow_step",
             None,
             1,
+            uuid::Uuid::nil(),
         )
         .await
         .unwrap();
@@ -4213,6 +4678,7 @@ mod recovery_attempt_tests {
             "workflow_step",
             None,
             2,
+            uuid::Uuid::nil(),
         )
         .await
         .expect("should not collide with any existing children");
@@ -4227,9 +4693,17 @@ mod recovery_attempt_tests {
         };
 
         let root_id = test_run_id();
-        crud::insert_run(&db, &root_id, "Q", None, "analytics", None)
-            .await
-            .unwrap();
+        crud::insert_run(
+            &db,
+            &root_id,
+            "Q",
+            None,
+            "analytics",
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
 
         // Simulate: step A completed, step B started but crashed before completing.
         crud::insert_event(&db, &root_id, 0, "step_start", &json!({"label": "A"}), 0)
@@ -4307,9 +4781,17 @@ async fn enqueue_test_task(db: &DatabaseConnection) -> (String, String) {
     let run_id = test_run_id();
     let task_id = run_id.clone(); // root tasks share run_id as task_id
 
-    crud::insert_run(db, &run_id, "test question", None, "analytics", None)
-        .await
-        .expect("insert_run failed");
+    crud::insert_run(
+        db,
+        &run_id,
+        "test question",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert_run failed");
 
     let spec = TaskSpec::Agent {
         agent_id: "test_agent".into(),
@@ -4317,9 +4799,17 @@ async fn enqueue_test_task(db: &DatabaseConnection) -> (String, String) {
         extra: None,
     };
 
-    crud::enqueue_task(db, &task_id, &run_id, None, &spec, None)
-        .await
-        .expect("enqueue_task failed");
+    crud::enqueue_task(
+        db,
+        &task_id,
+        &run_id,
+        None,
+        &spec,
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .expect("enqueue_task failed");
 
     (task_id, run_id)
 }
@@ -4497,9 +4987,17 @@ async fn setup_durable_transport(
 ) -> (std::sync::Arc<DurableTransport>, String) {
     cleanup_queued_entries(db).await;
     let run_id = test_run_id();
-    crud::insert_run(db, &run_id, "durable test", None, "analytics", None)
-        .await
-        .unwrap();
+    crud::insert_run(
+        db,
+        &run_id,
+        "durable test",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
     let transport = DurableTransport::new(db.clone());
     (transport, run_id)
 }
@@ -4798,4 +5296,425 @@ async fn test_requeue_task_upserts_existing_entry() {
     // The re-queued task should be claimable.
     let reclaimed = crud::claim_task(&db, "worker-2").await.unwrap().unwrap();
     assert_eq!(reclaimed.task_id, task_id);
+}
+
+/// Driver lease: CAS acquire/renew, contention rejection, stale-takeover,
+/// the recovery-selection gate, scoped release, and terminal auto-clear.
+#[tokio::test]
+async fn test_driver_lease() {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = test_run_id();
+    crud::insert_run(
+        &db,
+        &run_id,
+        "Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert_run");
+
+    // Acquire, then idempotent re-acquire by the same driver.
+    assert!(
+        crud::try_acquire_driver(&db, &run_id, "drv-A")
+            .await
+            .unwrap()
+    );
+    assert!(
+        crud::try_acquire_driver(&db, &run_id, "drv-A")
+            .await
+            .unwrap()
+    );
+    // A different driver is rejected while A's lease is fresh.
+    assert!(
+        !crud::try_acquire_driver(&db, &run_id, "drv-B")
+            .await
+            .unwrap()
+    );
+
+    // Heartbeat only succeeds for the lease holder.
+    assert!(!crud::heartbeat_driver(&db, &run_id, "drv-B").await.unwrap());
+    assert!(crud::heartbeat_driver(&db, &run_id, "drv-A").await.unwrap());
+
+    // A fresh lease excludes the run from recovery selection (the F1 gate).
+    let resumable = crud::get_resumable_root_runs(&db, None).await.unwrap();
+    assert!(
+        !resumable.iter().any(|r| r.id == run_id),
+        "run with a live lease must not be resumable"
+    );
+
+    // Age A's heartbeat past the TTL → B can steal it, and the run becomes
+    // resumable again.
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_runs SET driver_heartbeat_at = now() - make_interval(secs => $1) \
+         WHERE id = $2",
+        [
+            (agentic_runtime::crud::DRIVER_LEASE_TTL_SECS as i32 + 60).into(),
+            run_id.clone().into(),
+        ],
+    ))
+    .await
+    .unwrap();
+    let resumable = crud::get_resumable_root_runs(&db, None).await.unwrap();
+    assert!(
+        resumable.iter().any(|r| r.id == run_id),
+        "run with a stale lease must be resumable"
+    );
+    assert!(
+        crud::try_acquire_driver(&db, &run_id, "drv-B")
+            .await
+            .unwrap()
+    );
+
+    // A non-owner release is a no-op; the owner can release.
+    crud::release_driver(&db, &run_id, "drv-A").await.unwrap();
+    assert!(
+        !crud::try_acquire_driver(&db, &run_id, "drv-C")
+            .await
+            .unwrap(),
+        "drv-B still owns it, drv-A's release must not have cleared it"
+    );
+    crud::release_driver(&db, &run_id, "drv-B").await.unwrap();
+    let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert!(run.driver_id.is_none(), "owner release clears the lease");
+
+    // Terminal transition auto-clears any held lease.
+    assert!(
+        crud::try_acquire_driver(&db, &run_id, "drv-D")
+            .await
+            .unwrap()
+    );
+    crud::update_run_done(&db, &run_id, "ok", None)
+        .await
+        .expect("update_run_done");
+    let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert!(
+        run.driver_id.is_none() && run.driver_heartbeat_at.is_none(),
+        "terminal transition clears the driver lease"
+    );
+}
+
+/// Rung-2 acceptance proof (consolidated, claim + lease layers).
+///
+/// The whole Phase-1 safety story in one deterministic test:
+///   1. The unscoped/global claim path NEVER returns a `scope_owned`
+///      (interactive) task — even when it is the only queued row.
+///   2. The scoped path STILL claims that interactive task, so the
+///      per-request coordinator never stalls.
+///   3. The driver-lease CAS rejects a second concurrent driver for the
+///      same run, so two loops/replicas can't double-drive.
+#[tokio::test]
+async fn test_rung2_global_never_poaches_scoped() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_scoped = test_run_id();
+    let run_global = test_run_id();
+
+    // Queue rows FK to agentic_runs — seed the run rows first.
+    crud::insert_run(
+        &db,
+        &run_scoped,
+        "Q",
+        None,
+        "workflow",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert run_scoped");
+    crud::insert_run(
+        &db,
+        &run_global,
+        "Q",
+        None,
+        "workflow",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert run_global");
+
+    let spec = |rid: &str| TaskSpec::WorkflowDecision {
+        run_id: rid.to_string(),
+        pending_child_answer: None,
+    };
+
+    // An interactive run's root task (a per-request coordinator owns it)…
+    crud::enqueue_task(
+        &db,
+        &run_scoped,
+        &run_scoped,
+        None,
+        &spec(&run_scoped),
+        None,
+        crud::TaskScope::Scoped,
+    )
+    .await
+    .expect("enqueue scoped");
+    // …and a global (scheduler-seeded / orphaned) root task.
+    crud::enqueue_task(
+        &db,
+        &run_global,
+        &run_global,
+        None,
+        &spec(&run_global),
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .expect("enqueue global");
+
+    // (1) The global worker claims ONLY the Global task.
+    let claimed = crud::claim_task(&db, "global-worker-1")
+        .await
+        .expect("claim_task")
+        .expect("a global task must be claimable");
+    assert_eq!(
+        claimed.task_id, run_global,
+        "global claim path must return the Global task, never the Scoped one"
+    );
+    assert!(!claimed.scope_owned);
+
+    // The Scoped task is now the only queued row. The global path must
+    // STILL refuse it — this is the anti-poaching invariant.
+    let none = crud::claim_task(&db, "global-worker-2")
+        .await
+        .expect("claim_task");
+    assert!(
+        none.is_none(),
+        "global claim path must never claim a scope_owned task, even as \
+         the sole queued row (got {none:?})"
+    );
+
+    // (2) The scoped path still claims the interactive task → the
+    // per-request coordinator is not starved.
+    let scoped = crud::claim_task_under_root(&db, "scoped-coordinator", &run_scoped)
+        .await
+        .expect("claim_task_under_root")
+        .expect("scoped worker must still claim its own task");
+    assert_eq!(scoped.task_id, run_scoped);
+
+    // (3) Driver-lease CAS rejects a concurrent second driver.
+    let leased_run = test_run_id();
+    crud::insert_run(
+        &db,
+        &leased_run,
+        "Q",
+        None,
+        "workflow",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert_run");
+    assert!(
+        crud::try_acquire_driver(&db, &leased_run, "driver-A")
+            .await
+            .unwrap(),
+        "first driver acquires the lease"
+    );
+    assert!(
+        !crud::try_acquire_driver(&db, &leased_run, "driver-B")
+            .await
+            .unwrap(),
+        "a concurrent second driver must be rejected (no double-drive)"
+    );
+}
+
+/// Rung-4 acceptance proof: kill a Global run's driver mid-flight, the
+/// reaper re-queues its task, and the periodic loop becomes able to drive
+/// it exactly once — with no partial-state corruption.
+///
+/// Deterministic at the data layer (no real coordinators / timing): the
+/// rung-4 invariant is the composition of reaper + stranded-selection +
+/// lease-CAS, each provable directly.
+#[tokio::test]
+async fn test_rung4_kill_and_recover() {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = test_run_id();
+    crud::insert_run(&db, &run_id, "Q", None, "workflow", None, uuid::Uuid::nil())
+        .await
+        .expect("insert_run");
+    // A scheduler-seeded / orphan Global root task.
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &TaskSpec::WorkflowDecision {
+            run_id: run_id.clone(),
+            pending_child_answer: None,
+        },
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .expect("enqueue");
+
+    // A driver claims it and takes the lease — then is hard-killed
+    // (no further heartbeats).
+    let claimed = crud::claim_task(&db, "dead-worker")
+        .await
+        .unwrap()
+        .expect("global worker claims the Global task");
+    assert_eq!(claimed.task_id, run_id);
+    assert!(
+        crud::try_acquire_driver(&db, &run_id, "dead-driver")
+            .await
+            .unwrap()
+    );
+
+    // Age everything past the relevant windows: queue heartbeat past the
+    // visibility timeout, driver lease past its TTL, run past the grace.
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_task_queue \
+         SET last_heartbeat = now() - make_interval(secs => 3600) \
+         WHERE task_id = $1",
+        [run_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_runs \
+         SET driver_heartbeat_at = now() - make_interval(secs => 3600), \
+             updated_at = now() - make_interval(secs => 3600) \
+         WHERE id = $1",
+        [run_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+
+    // Reaper re-queues the dead worker's task.
+    crud::reap_stale_tasks(&db).await.expect("reap");
+    let entry = crud::get_queue_entry(&db, &run_id)
+        .await
+        .unwrap()
+        .expect("queue row still present");
+    assert_eq!(entry.queue_status, "queued", "reaper must re-queue");
+    assert!(entry.worker_id.is_none(), "reaper clears the dead worker");
+    assert!(
+        !entry.scope_owned,
+        "scope_owned must be preserved across reaping"
+    );
+
+    // Rung-4 invariant: a reaper-requeued Global task (queued,
+    // scope_owned=false) IS now stranded — the periodic loop will pick it
+    // up. (Pre-fix this was excluded forever → nothing drove it.)
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        stuck.iter().any(|r| r.run_id == run_id),
+        "a reaper-requeued Global run must be selectable by the periodic loop"
+    );
+
+    // Exactly-once: the dead driver's lease is stale, so a fresh driver
+    // takes it — and a second concurrent driver is then rejected.
+    assert!(
+        crud::try_acquire_driver(&db, &run_id, "recovery-driver")
+            .await
+            .unwrap(),
+        "fresh driver takes over the stale lease"
+    );
+    assert!(
+        !crud::try_acquire_driver(&db, &run_id, "other-driver")
+            .await
+            .unwrap(),
+        "no second driver while the recovery driver holds a fresh lease"
+    );
+
+    // No partial-state corruption: run still non-terminal, and the
+    // recovered driver's scoped reconstruction reclaims the same task with
+    // its original spec intact.
+    let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(run.task_status.as_deref(), Some("running"));
+    let reclaimed = crud::claim_task_under_root(&db, "recovery-coordinator", &run_id)
+        .await
+        .unwrap()
+        .expect("scoped reconstruction reclaims the requeued task");
+    assert_eq!(reclaimed.task_id, run_id);
+    let spec: TaskSpec = serde_json::from_value(reclaimed.spec).unwrap();
+    assert!(matches!(spec, TaskSpec::WorkflowDecision { .. }));
+}
+
+/// §12 FU4a: the durable cross-process cancel flag — `request_cancel` is
+/// idempotent (preserves the first timestamp) and `is_cancel_requested`
+/// reflects it. This is the DB-observable signal the recovered/Global
+/// run's cancel forwarder polls.
+#[tokio::test]
+async fn test_request_cancel_flag() {
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
+
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = test_run_id();
+    crud::insert_run(&db, &run_id, "Q", None, "workflow", None, uuid::Uuid::nil())
+        .await
+        .expect("insert_run");
+
+    assert!(
+        !crud::is_cancel_requested(&db, &run_id).await.unwrap(),
+        "fresh run has no cancel request"
+    );
+
+    crud::request_cancel(&db, &run_id).await.unwrap();
+    assert!(crud::is_cancel_requested(&db, &run_id).await.unwrap());
+
+    #[derive(FromQueryResult)]
+    struct Ts {
+        cancel_requested_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    }
+    let first = Ts::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT cancel_requested_at FROM agentic_runs WHERE id = $1",
+        [run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .unwrap()
+    .cancel_requested_at
+    .expect("set");
+
+    // Idempotent: a second request must not move the timestamp.
+    crud::request_cancel(&db, &run_id).await.unwrap();
+    let second = Ts::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT cancel_requested_at FROM agentic_runs WHERE id = $1",
+        [run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .unwrap()
+    .cancel_requested_at
+    .expect("still set");
+    assert_eq!(first, second, "request_cancel must be idempotent");
+
+    // Unknown run → false, not an error.
+    assert!(!crud::is_cancel_requested(&db, "no-such-run").await.unwrap());
+
+    // Cleared on terminal transition (terminal nulls the lease; the
+    // cancel flag is separate and intentionally NOT auto-cleared, so a
+    // late observer still sees it — assert it persists through terminal).
+    crud::update_run_done(&db, &run_id, "ok", None)
+        .await
+        .unwrap();
+    assert!(
+        crud::is_cancel_requested(&db, &run_id).await.unwrap(),
+        "cancel flag persists across terminal (audit trail)"
+    );
 }

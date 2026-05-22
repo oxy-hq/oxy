@@ -85,7 +85,20 @@ pub async fn create_workflow_run(
     Extension(bridges): Extension<BuilderBridges>,
     Json(body): Json<StartWorkflowRequest>,
 ) -> Response {
-    let run_id = match start_workflow_run(&state.db, body).await {
+    // Interactive run: a co-located scoped coordinator is spawned right
+    // below via `spawn_workflow_run_drive`, so it owns this run's tree.
+    // workspace_id stamped from the platform context (injected by the
+    // app's workspace_middleware from the `/{workspace_id}/...` path) so
+    // out-of-process drivers can route this row back to its workspace.
+    let workspace_id = platform.workspace_id();
+    let run_id = match start_workflow_run(
+        &state.db,
+        body,
+        agentic_pipeline::TaskScope::Scoped,
+        workspace_id,
+    )
+    .await
+    {
         Ok(id) => id,
         Err(WorkflowRunError::InvalidInput(msg)) => {
             return (StatusCode::BAD_REQUEST, msg).into_response();
@@ -239,6 +252,13 @@ pub async fn cancel_workflow_run(
     if let Err(resp) = ensure_run_access(&state, &user.id, &run_id).await {
         return resp;
     }
+    // Durable, cross-process cancel signal: a recovered / Global run is
+    // driven out-of-process (periodic loop / future standalone worker),
+    // where the in-memory `state.cancel` watch never reaches it. Its
+    // cancel forwarder polls this flag. Harmless for interactive runs.
+    agentic_runtime::crud::request_cancel(&state.db, &run_id)
+        .await
+        .ok();
     if !state.cancel(&run_id) {
         // No live cancel channel — two indistinguishable cases:
         //   1. Coordinator never ran (stuck queue row), OR

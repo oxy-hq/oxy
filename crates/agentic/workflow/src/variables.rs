@@ -34,6 +34,43 @@
 
 use serde_json::{Map, Value};
 
+use crate::render::render_jinja_string;
+
+/// Render a `type: workflow` task's `variables:` override map against the
+/// parent's render context, before the map is handed to the child
+/// workflow as runtime overrides.
+///
+/// Each string value is treated as a Jinja template evaluated against
+/// `render_context`, mirroring how `execute_sql` resolves its own
+/// `variables:` block. Without this, a passthrough like
+/// `variables: { month: "{{ month }}" }` reaches the child verbatim —
+/// the child then "renders" `{{ month }}` against a context where
+/// `month` is literally the string `"{{ month }}"`, so it never
+/// substitutes and lands in SQL as `DATE '{{ month }}'`.
+///
+/// Non-string values (numbers, bools, arrays, objects) pass through
+/// unchanged. `None` / non-object inputs are returned as-is.
+pub fn render_override_variables(
+    variables: Option<&Value>,
+    render_context: &Value,
+) -> Result<Option<Value>, String> {
+    let Some(map) = variables.and_then(|v| v.as_object()) else {
+        return Ok(variables.cloned());
+    };
+    let mut out: Map<String, Value> = Map::new();
+    for (k, v) in map {
+        let resolved = match v.as_str() {
+            Some(s) => Value::String(
+                render_jinja_string(s, render_context)
+                    .map_err(|e| format!("render workflow variable {k:?}: {e}"))?,
+            ),
+            None => v.clone(),
+        };
+        out.insert(k.clone(), resolved);
+    }
+    Ok(Some(Value::Object(out)))
+}
+
 /// Resolve the effective value for a single variable declaration.
 ///
 /// Returns the `default` field for the `{default: X, ...}` shape;
@@ -132,5 +169,28 @@ mod tests {
         let decl = json!({ "config": { "host": "localhost", "port": 5432 } });
         let v = effective_variables(Some(&decl), None);
         assert_eq!(v, decl);
+    }
+
+    #[test]
+    fn render_override_variables_resolves_string_templates() {
+        // The monthly_report → portfolio_summary passthrough shape.
+        let ctx = json!({ "month": "2026-04-01", "value": "Peppa Pig" });
+        let vars = json!({ "month": "{{ month }}", "brand_rollup": "{{ value }}" });
+        let out = render_override_variables(Some(&vars), &ctx).unwrap();
+        assert_eq!(
+            out,
+            Some(json!({ "month": "2026-04-01", "brand_rollup": "Peppa Pig" }))
+        );
+    }
+
+    #[test]
+    fn render_override_variables_passes_through_non_strings_and_none() {
+        let ctx = json!({});
+        let vars = json!({ "limit": 4, "flag": true });
+        assert_eq!(
+            render_override_variables(Some(&vars), &ctx).unwrap(),
+            Some(vars.clone())
+        );
+        assert_eq!(render_override_variables(None, &ctx).unwrap(), None);
     }
 }

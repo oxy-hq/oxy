@@ -93,7 +93,7 @@ async fn age_run(db: &DatabaseConnection, run_id: &str, secs: i64) {
 
 async fn seed_workflow_run(db: &DatabaseConnection) -> String {
     let run_id = format!("wf-stuck-{}", uuid::Uuid::new_v4());
-    crud::insert_run(db, &run_id, "Q", None, "workflow", None)
+    crud::insert_run(db, &run_id, "Q", None, "workflow", None, uuid::Uuid::nil())
         .await
         .unwrap();
     run_id
@@ -144,6 +144,7 @@ async fn find_stuck_runs_ignores_run_with_in_flight_child() {
             extra: None,
         },
         None,
+        crud::TaskScope::Global,
     )
     .await
     .unwrap();
@@ -240,4 +241,256 @@ async fn sweeper_re_enqueues_workflow_decision_idempotently() {
     // Spec is unchanged.
     let spec_after: TaskSpec = serde_json::from_value(entry_after.spec).unwrap();
     assert!(matches!(spec_after, TaskSpec::WorkflowDecision { .. }));
+}
+
+// ── find_stuck_runs (periodic global-driver selection, Task 6 correction) ────
+//
+// The rung-2 invariant: the periodic loop must NEVER select a run a live
+// per-request coordinator is driving. The discriminator is "has a live
+// queue entry" (claimed/heart-beating), NOT task_status — which is exactly
+// why `get_resumable_root_runs` is wrong for the periodic path.
+
+async fn seed_run(db: &DatabaseConnection, source_type: &str) -> String {
+    let run_id = format!("{source_type}-stuck-{}", uuid::Uuid::new_v4());
+    crud::insert_run(db, &run_id, "Q", None, source_type, None, uuid::Uuid::nil())
+        .await
+        .unwrap();
+    run_id
+}
+
+/// THE rung-2 selection invariant: a run with a `claimed` queue entry — a
+/// live interactive run — must be excluded so the periodic loop cannot
+/// poach it (double-drive + partial-event deletion).
+#[tokio::test(flavor = "multi_thread")]
+async fn find_stuck_runs_excludes_run_with_live_queue_entry() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = seed_run(&db, "workflow").await;
+    age_run(&db, &run_id, 120).await;
+
+    // Root task claimed + heart-beating: a live scoped coordinator owns it.
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &TaskSpec::WorkflowDecision {
+            run_id: run_id.clone(),
+            pending_child_answer: None,
+        },
+        None,
+        crud::TaskScope::Scoped,
+    )
+    .await
+    .unwrap();
+    crud::claim_task_under_root(&db, "live-coordinator", &run_id)
+        .await
+        .unwrap()
+        .expect("scoped claim should succeed");
+
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        !stuck.iter().any(|r| r.run_id == run_id),
+        "a run with a live (claimed) queue entry must NOT be selected by \
+         the periodic loop — this is the rung-2 anti-poaching invariant"
+    );
+
+    // Sanity: with no live queue entry it IS stranded.
+    let other = seed_run(&db, "workflow").await;
+    age_run(&db, &other, 120).await;
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(stuck.iter().any(|r| r.run_id == other));
+}
+
+/// Generalized beyond workflow: airway runs are also schedulable (Phase 2)
+/// and must be picked up by the periodic loop when stranded.
+#[tokio::test(flavor = "multi_thread")]
+async fn find_stuck_runs_includes_airway() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = seed_run(&db, "airway").await;
+    age_run(&db, &run_id, 120).await;
+
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        stuck.iter().any(|r| r.run_id == run_id),
+        "stranded airway run must be selected"
+    );
+}
+
+/// A fresh driver lease excludes a stranded run from selection so two
+/// ticks / replicas don't both grab it; once stale it is selectable again.
+#[tokio::test(flavor = "multi_thread")]
+async fn find_stuck_runs_respects_driver_lease() {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = seed_run(&db, "workflow").await;
+    age_run(&db, &run_id, 120).await;
+
+    assert!(
+        crud::try_acquire_driver(&db, &run_id, "drv-1")
+            .await
+            .unwrap()
+    );
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        !stuck.iter().any(|r| r.run_id == run_id),
+        "a run with a fresh driver lease must be excluded"
+    );
+
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_runs SET driver_heartbeat_at = now() - make_interval(secs => $1) \
+         WHERE id = $2",
+        [
+            (agentic_runtime::crud::DRIVER_LEASE_TTL_SECS as i32 + 60).into(),
+            run_id.clone().into(),
+        ],
+    ))
+    .await
+    .unwrap();
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        stuck.iter().any(|r| r.run_id == run_id),
+        "a run with a stale driver lease must be selectable again"
+    );
+}
+
+/// Workspace-scoped selection: when the workspace_id filter is set, only
+/// runs stamped with that workspace are returned. Closes the cloud-mode
+/// routing gap that motivated `agentic_runs.workspace_id` — without the
+/// filter the periodic loop would drive every workspace's stranded rows
+/// through whichever PlatformContext happened to win the iteration race.
+///
+/// Also asserts the selection helpers populate `StuckRun.workspace_id`
+/// so a single shared latency worker can route per-row without re-fetching
+/// the agentic_runs row just to learn which workspace it belongs to.
+#[tokio::test(flavor = "multi_thread")]
+async fn find_stuck_runs_scopes_to_workspace_id() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let ws_a = uuid::Uuid::new_v4();
+    let ws_b = uuid::Uuid::new_v4();
+
+    let run_a = format!("ws-a-{}", uuid::Uuid::new_v4());
+    let run_b = format!("ws-b-{}", uuid::Uuid::new_v4());
+    crud::insert_run(&db, &run_a, "Q", None, "workflow", None, ws_a)
+        .await
+        .unwrap();
+    crud::insert_run(&db, &run_b, "Q", None, "workflow", None, ws_b)
+        .await
+        .unwrap();
+    age_run(&db, &run_a, 120).await;
+    age_run(&db, &run_b, 120).await;
+
+    let only_a = crud::find_stuck_runs(&db, 30, Some(ws_a)).await.unwrap();
+    assert!(
+        only_a.iter().any(|r| r.run_id == run_a),
+        "workspace A filter must include run_a"
+    );
+    assert!(
+        !only_a.iter().any(|r| r.run_id == run_b),
+        "workspace A filter must exclude run_b (foreign workspace)"
+    );
+    // Round-trip workspace_id on the StuckRun struct so a shared worker
+    // can dispatch per-row.
+    let row_a = only_a.iter().find(|r| r.run_id == run_a).unwrap();
+    assert_eq!(row_a.workspace_id, ws_a);
+
+    let only_b = crud::find_stuck_runs(&db, 30, Some(ws_b)).await.unwrap();
+    assert!(only_b.iter().any(|r| r.run_id == run_b));
+    assert!(!only_b.iter().any(|r| r.run_id == run_a));
+
+    // `None` returns both — the cloud latency worker's discovery probe.
+    let all = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(all.iter().any(|r| r.run_id == run_a));
+    assert!(all.iter().any(|r| r.run_id == run_b));
+}
+
+/// A freshly-seeded Global run (scheduler tick / run-now) has zero
+/// events and a `queued scope_owned=false` queue entry. Startup's
+/// `cleanup_stale_runs` used to force-fail it as "server restarted: run
+/// never started" — wrong, because it's valid pending work waiting for
+/// the latency worker to pick it up. Closes the bug observed in
+/// production: schedules fired via UI ended up with rows like
+///   error_message='server restarted: run never started'
+///   task_status='failed'
+/// while their queue entries remained `queued` forever.
+#[tokio::test(flavor = "multi_thread")]
+async fn cleanup_stale_runs_preserves_pending_global_seed() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let run_id = format!("pending-global-{}", uuid::Uuid::new_v4());
+    crud::insert_run(&db, &run_id, "Q", None, "workflow", None, uuid::Uuid::nil())
+        .await
+        .unwrap();
+    // Simulate the scheduler / run-now seed: queue entry queued,
+    // scope_owned=false, no events on the run yet.
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &TaskSpec::Workflow {
+            workflow_ref: "dummy.workflow.yml".into(),
+            variables: None,
+            retry_from_run_id: None,
+            cache_enabled: false,
+            body: None,
+            initial_render_context: None,
+        },
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .unwrap();
+
+    // Pre-condition: queue row is `queued`, scope_owned=false.
+    let q = crud::get_queue_entry(&db, &run_id)
+        .await
+        .unwrap()
+        .expect("queue entry must exist");
+    assert_eq!(q.queue_status, "queued");
+    assert!(!q.scope_owned);
+
+    // Run the startup cleanup. The run has zero events + parent_run_id is
+    // None, so the old code would force-fail it. The fix: it sees the
+    // queued queue entry and leaves the run alone.
+    crud::cleanup_stale_runs(&db).await.unwrap();
+
+    let r = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(
+        r.task_status.as_deref(),
+        Some("running"),
+        "fresh Global seed must NOT be force-failed by cleanup_stale_runs; \
+         got task_status={:?} error_message={:?}",
+        r.task_status,
+        r.error_message,
+    );
+    assert!(
+        r.error_message.is_none(),
+        "no error message should be stamped on a pending Global seed; got {:?}",
+        r.error_message
+    );
+
+    // The latency worker's predicate must surface this row so the worker
+    // can drive it on its next tick.
+    let pending = crud::find_pending_global_runs(&db, Some(uuid::Uuid::nil()))
+        .await
+        .unwrap();
+    assert!(
+        pending.iter().any(|r| r.run_id == run_id),
+        "find_pending_global_runs must include the pending Global seed"
+    );
 }

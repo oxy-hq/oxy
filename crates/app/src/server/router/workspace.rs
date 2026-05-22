@@ -15,8 +15,8 @@ use agentic_http::{AgenticState, airway_router, router as agentic_router, workfl
 use crate::api::{
     agent, api_keys, app, artifacts, chart, data, data_repo, database, execution_analytics,
     exported_chart, file, integration, local_setup, message, metrics, modeling, onboarding,
-    result_files, run, semantic, task, test_file, test_project_run, test_run, thread, traces,
-    workspace_members, workspaces,
+    result_files, run, schedules, semantic, task, test_file, test_project_run, test_run, thread,
+    traces, workspace_members, workspaces,
 };
 
 use super::AppState;
@@ -114,7 +114,11 @@ pub(super) fn build_workspace_routes(
         // New agentic-workflow surface — coexists with the legacy `/workflows`
         // routes during migration. Will subsume them in the cleanup task.
         .nest("/agentic-workflows", workflow_router(agentic_state.clone()))
-        .nest("/agentic-airway", airway_router(agentic_state))
+        .nest("/agentic-airway", airway_router(agentic_state.clone()))
+        // Relocated from agentic-http (§12 FU4b): the schedule handlers
+        // need WorkspaceAdmin from app/role_guards which agentic-http
+        // cannot depend on.
+        .nest("/agentic-schedules", build_schedule_routes(agentic_state))
         .nest("/modeling", modeling::build_modeling_routes());
 
     if include_git_features {
@@ -201,6 +205,24 @@ fn build_api_key_routes() -> Router<AppState> {
         .route("/", post(api_keys::create_api_key))
         .route("/{id}", get(api_keys::get_api_key))
         .route("/{id}", delete(api_keys::delete_api_key))
+}
+
+/// Schedule CRUD + run-now (§12 FU4b). Lives in the app crate so the
+/// handlers can use `WorkspaceAdmin` from `role_guards` (agentic-http is
+/// a lower layer and must not depend on `app`). AgenticState is attached
+/// as an Extension here so the handlers can extract it.
+fn build_schedule_routes(agentic_state: Arc<AgenticState>) -> Router<AppState> {
+    use axum::Extension;
+    Router::new()
+        .route("/", get(schedules::list).post(schedules::create))
+        .route(
+            "/{id}",
+            get(schedules::get)
+                .patch(schedules::update)
+                .delete(schedules::delete),
+        )
+        .route("/{id}/run-now", post(schedules::run_now))
+        .layer(Extension(agentic_state))
 }
 
 fn build_file_routes(include_git_features: bool) -> Router<AppState> {

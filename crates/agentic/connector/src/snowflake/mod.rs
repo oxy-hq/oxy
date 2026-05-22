@@ -27,7 +27,7 @@ use agentic_core::result::{
 use crate::config::{SnowflakeAuth, SsoUrlCallback};
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary, SchemaInfo,
-    SqlDialect, normalize_sql,
+    SqlDialect, is_returning_statement, normalize_sql, plan_sql_script,
 };
 
 use conversion::{arrow_to_cell, json_value_to_cell};
@@ -171,8 +171,29 @@ impl DatabaseConnector for SnowflakeConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
-        let sql = normalize_sql(sql);
+        // Snowflake `exec` runs one statement; the per-column stats step
+        // below also wraps the SQL in `({sql})`. Run any leading
+        // statements for their side effects, then sample only the final
+        // statement.
+        let script = plan_sql_script(sql);
         let api = self.connect().await?;
+
+        for stmt in &script.prefix {
+            api.exec(stmt)
+                .await
+                .map_err(|e| ConnectorError::query_failed(stmt.clone(), e.to_string()))?;
+        }
+
+        let sql = normalize_sql(&script.final_stmt);
+
+        if !is_returning_statement(sql) {
+            if !sql.is_empty() {
+                api.exec(sql)
+                    .await
+                    .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
+            }
+            return Ok(ExecutionResult::empty());
+        }
 
         let sf_result = api
             .exec(sql)

@@ -1392,9 +1392,9 @@ fn chunks_tool_call(id: &str, name: &str) -> Vec<crate::llm::Chunk> {
 #[tokio::test]
 async fn interpret_impl_max_tool_rounds_stores_suspension_data() {
     let captured = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
-    // max_rounds defaults to 2; provide 3 rounds of tool calls so the
-    // limit is hit on round index 2.
-    let rounds: Vec<Vec<crate::llm::Chunk>> = (0..=2)
+    // max_rounds defaults to 5 for interpreting; provide 6 rounds of
+    // tool calls so the limit is hit on round index 5.
+    let rounds: Vec<Vec<crate::llm::Chunk>> = (0..=5)
         .map(|i| chunks_tool_call(&format!("tc{i}"), "render_chart"))
         .collect();
     let provider = ScriptedProvider::new(rounds, captured);

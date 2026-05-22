@@ -23,6 +23,13 @@ impl MigratorTrait for RuntimeMigrator {
             Box::new(CreateTaskQueueTable),
             Box::new(RationalizeStatusModel),
             Box::new(AddTaskQueueNotifyTrigger),
+            Box::new(AddScopeOwnedAndDriverLease),
+            Box::new(CreateSchedulesTable),
+            Box::new(AddScheduleLastError),
+            Box::new(AddRunCancelRequested),
+            Box::new(AddScheduleWorkspaceId),
+            Box::new(AddRunWorkspaceId),
+            Box::new(AddScheduleMissedRuns),
         ]
     }
 
@@ -1026,6 +1033,583 @@ impl MigrationTrait for AddTaskQueueNotifyTrigger {
         .await?;
         db.execute_unprepared("DROP FUNCTION IF EXISTS agentic_task_queue_notify_fn();")
             .await?;
+        Ok(())
+    }
+}
+
+// ── Migration 12: scope_owned + driver lease (cron scheduler Phase 1) ──────────
+//
+// Two-layer ownership model for the standalone/global driver:
+//
+//   Layer 1 — `agentic_task_queue.scope_owned`: set in the row's only INSERT.
+//     A co-located scoped coordinator stamps `true`; scheduler-seeded / orphan
+//     rows stay `false`. The global claim path filters `scope_owned = false`,
+//     so it can never poach an interactive run's tasks. `reap_stale_tasks`
+//     only flips `queue_status` and preserves this column, which is correct.
+//
+//   Layer 2 — `agentic_runs.driver_id` / `driver_heartbeat_at`: a CAS-acquired
+//     lease that gates recovery *selection* so a periodic recovery loop cannot
+//     double-drive an already-driven run.
+//
+// All three columns are nullable / defaulted so existing rows behave exactly
+// as before (the feature is inert until the Phase 2 scheduler / global loop
+// produces `scope_owned = false` work).
+
+struct AddScopeOwnedAndDriverLease;
+
+impl MigrationName for AddScopeOwnedAndDriverLease {
+    fn name(&self) -> &str {
+        "m20260519_000001_add_scope_owned_and_driver_lease"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddScopeOwnedAndDriverLease {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_task_queue", "scope_owned").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticTaskQueue::Table)
+                        .add_column(
+                            ColumnDef::new(Alias::new("scope_owned"))
+                                .boolean()
+                                .not_null()
+                                .default(false),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+        }
+
+        if !column_exists(manager, "agentic_runs", "driver_id").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .add_column(ColumnDef::new(Alias::new("driver_id")).text().null())
+                        .to_owned(),
+                )
+                .await?;
+        }
+
+        if !column_exists(manager, "agentic_runs", "driver_heartbeat_at").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .add_column(
+                            ColumnDef::new(Alias::new("driver_heartbeat_at"))
+                                .timestamp_with_time_zone()
+                                .null(),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_runs", "driver_heartbeat_at").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .drop_column(Alias::new("driver_heartbeat_at"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+
+        if column_exists(manager, "agentic_runs", "driver_id").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .drop_column(Alias::new("driver_id"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+
+        if column_exists(manager, "agentic_task_queue", "scope_owned").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticTaskQueue::Table)
+                        .drop_column(Alias::new("scope_owned"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+}
+
+// ── Migration 13: agentic_schedules (cron scheduler Phase 2) ──────────────────
+//
+// User-defined cron schedules for workflows / airway pipelines. The tick
+// (gated behind OXY_INPROC_GLOBAL_WORKER) selects `enabled AND next_run_at
+// <= now()`, CAS-advances `next_run_at`, and fires the seed fn with
+// TaskScope::Global so the Phase-1 consumer drives it. `project_id` /
+// `branch_id` are carried for future multi-workspace scoping but the first
+// cut operates single-workspace.
+
+#[derive(Iden)]
+enum AgenticSchedule {
+    #[iden = "agentic_schedules"]
+    Table,
+    Id,
+    ProjectId,
+    BranchId,
+    Name,
+    TargetKind,
+    TargetRef,
+    Variables,
+    CronExpr,
+    Timezone,
+    Enabled,
+    NextRunAt,
+    LastFiredAt,
+    LastRunId,
+    CreatedAt,
+    UpdatedAt,
+}
+
+struct CreateSchedulesTable;
+
+impl MigrationName for CreateSchedulesTable {
+    fn name(&self) -> &str {
+        "m20260519_000002_create_agentic_schedules"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for CreateSchedulesTable {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if table_exists(manager, "agentic_schedules").await? {
+            return Ok(());
+        }
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(AgenticSchedule::Table)
+                    .col(
+                        ColumnDef::new(AgenticSchedule::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(AgenticSchedule::ProjectId).string().null())
+                    .col(ColumnDef::new(AgenticSchedule::BranchId).string().null())
+                    .col(ColumnDef::new(AgenticSchedule::Name).string().not_null())
+                    .col(
+                        ColumnDef::new(AgenticSchedule::TargetKind)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AgenticSchedule::TargetRef)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AgenticSchedule::Variables)
+                            .json_binary()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(AgenticSchedule::CronExpr)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AgenticSchedule::Timezone)
+                            .string()
+                            .not_null()
+                            .default("UTC"),
+                    )
+                    .col(
+                        ColumnDef::new(AgenticSchedule::Enabled)
+                            .boolean()
+                            .not_null()
+                            .default(true),
+                    )
+                    .col(
+                        ColumnDef::new(AgenticSchedule::NextRunAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AgenticSchedule::LastFiredAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
+                    .col(ColumnDef::new(AgenticSchedule::LastRunId).string().null())
+                    .col(
+                        ColumnDef::new(AgenticSchedule::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AgenticSchedule::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // Due-selection index: the tick filters `enabled AND next_run_at
+        // <= now()` every cycle.
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_agentic_schedules_due")
+                    .table(AgenticSchedule::Table)
+                    .col(AgenticSchedule::Enabled)
+                    .col(AgenticSchedule::NextRunAt)
+                    .to_owned(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(Table::drop().table(AgenticSchedule::Table).to_owned())
+            .await?;
+        Ok(())
+    }
+}
+
+// ── Migration 14: agentic_schedules.last_error (scheduler observability) ──────
+//
+// Records the most recent fire/seed failure (bad cron, missing target,
+// seed error) so the UI can surface it instead of it living only in
+// `tracing::warn`. Cleared on a successful fire.
+
+struct AddScheduleLastError;
+
+impl MigrationName for AddScheduleLastError {
+    fn name(&self) -> &str {
+        "m20260519_000003_add_schedule_last_error"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddScheduleLastError {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_schedules", "last_error").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticSchedule::Table)
+                        .add_column(ColumnDef::new(Alias::new("last_error")).text().null())
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_schedules", "last_error").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticSchedule::Table)
+                        .drop_column(Alias::new("last_error"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+// ── Migration 15: agentic_runs.cancel_requested_at (§12 FU4a) ─────────────────
+//
+// DB-observable cancel signal. The in-memory watch channel only reaches a
+// coordinator in the same process; a recovered / Global run driven by the
+// periodic loop (or a future standalone worker) needs a durable,
+// cross-process flag. HTTP cancel sets it; the driver's cancel forwarder
+// polls it and tears down the subtree.
+
+struct AddRunCancelRequested;
+
+impl MigrationName for AddRunCancelRequested {
+    fn name(&self) -> &str {
+        "m20260519_000004_add_run_cancel_requested"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddRunCancelRequested {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_runs", "cancel_requested_at").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .add_column(
+                            ColumnDef::new(Alias::new("cancel_requested_at"))
+                                .timestamp_with_time_zone()
+                                .null(),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_runs", "cancel_requested_at").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .drop_column(Alias::new("cancel_requested_at"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+// ── Migration 16: agentic_schedules.workspace_id (§12 FU4b) ───────────────────
+//
+// Multi-tenant scoping. Plain UUID column, NO foreign key to
+// `workspaces.id`: that table lives in the central migrator and per the
+// agentic boundary rules (`crates/agentic/CLAUDE.md`) cross-domain
+// references are loose — app-level lifecycle (workspace delete) handles
+// cleanup. Backfilled to the nil UUID for any existing rows (the feature
+// is inert until the multi-tenant tick lands, so this only affects dev
+// DBs); new rows MUST set it via the CRUD handlers.
+
+struct AddScheduleWorkspaceId;
+
+impl MigrationName for AddScheduleWorkspaceId {
+    fn name(&self) -> &str {
+        "m20260520_000001_add_schedule_workspace_id"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddScheduleWorkspaceId {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_schedules", "workspace_id").await? {
+            // Add NOT NULL with the nil UUID as a backfill default; future
+            // inserts always pass a real value via the handlers.
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticSchedule::Table)
+                        .add_column(
+                            ColumnDef::new(Alias::new("workspace_id"))
+                                .uuid()
+                                .not_null()
+                                .default("00000000-0000-0000-0000-000000000000"),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+            // Index for the per-workspace due-selection query.
+            manager
+                .create_index(
+                    Index::create()
+                        .name("idx_agentic_schedules_workspace_due")
+                        .table(AgenticSchedule::Table)
+                        .col(Alias::new("workspace_id"))
+                        .col(AgenticSchedule::Enabled)
+                        .col(AgenticSchedule::NextRunAt)
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_schedules", "workspace_id").await? {
+            manager
+                .drop_index(
+                    Index::drop()
+                        .name("idx_agentic_schedules_workspace_due")
+                        .table(AgenticSchedule::Table)
+                        .to_owned(),
+                )
+                .await
+                .ok();
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticSchedule::Table)
+                        .drop_column(Alias::new("workspace_id"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+// ── Migration 17: agentic_runs.workspace_id ──────────────────────────────────
+//
+// Closes the cloud-mode routing gap: without this column the periodic
+// recovery loop and the latency worker can't tell which workspace's
+// `PlatformContext` (project files, DB connectors, secrets) a row they
+// pick up belongs to — they'd be forced to either iterate one row at a
+// time across every workspace's context or run one worker per workspace
+// (the §12.3 follow-up). With it, a single shared worker selects pending
+// rows and routes each one to the right cached context via `ws_cache`.
+//
+// Same shape as `agentic_schedules.workspace_id` (FU4b): plain UUID, no
+// foreign key to `workspaces.id` (cross-domain reference per
+// `crates/agentic/CLAUDE.md`), NOT NULL with the nil UUID as backfill so
+// the column lands without rewriting historical rows. `start_*_run`
+// paths stamp it at insert from here on; the nil UUID functions as the
+// implicit `LOCAL_WORKSPACE_ID` for the local serve mode.
+
+struct AddRunWorkspaceId;
+
+impl MigrationName for AddRunWorkspaceId {
+    fn name(&self) -> &str {
+        "m20260520_000002_add_run_workspace_id"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddRunWorkspaceId {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_runs", "workspace_id").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .add_column(
+                            ColumnDef::new(Alias::new("workspace_id"))
+                                .uuid()
+                                .not_null()
+                                .default("00000000-0000-0000-0000-000000000000"),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+            // Index for per-workspace selection by the recovery loop +
+            // latency worker. Composite over `(workspace_id, task_status)`
+            // because every workspace-scoped SELECT also narrows by
+            // non-terminal task_status; keeps the planner happy without a
+            // second, wider index.
+            manager
+                .create_index(
+                    Index::create()
+                        .name("idx_agentic_runs_workspace_status")
+                        .table(AgenticRun::Table)
+                        .col(Alias::new("workspace_id"))
+                        .col(AgenticRun::TaskStatus)
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_runs", "workspace_id").await? {
+            manager
+                .drop_index(
+                    Index::drop()
+                        .name("idx_agentic_runs_workspace_status")
+                        .table(AgenticRun::Table)
+                        .to_owned(),
+                )
+                .await
+                .ok();
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .drop_column(Alias::new("workspace_id"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+// ── Migration 18: agentic_schedules.missed_runs + last_missed_at ────────────
+//
+// Reports catch-up fires after the server was down: the run-once-then-resume
+// policy in the tick (`scheduler.rs`) fires ONE catch-up and silently skips
+// the rest. These two columns let the UI surface "N occurrences were missed"
+// without changing that policy. Both are stamped by the tick when it detects
+// > 0 occurrences in (prev_next_run_at, now] beyond the one being fired.
+
+struct AddScheduleMissedRuns;
+
+impl MigrationName for AddScheduleMissedRuns {
+    fn name(&self) -> &str {
+        "m20260520_000003_add_schedule_missed_runs"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddScheduleMissedRuns {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_schedules", "missed_runs").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticSchedule::Table)
+                        .add_column(
+                            ColumnDef::new(Alias::new("missed_runs"))
+                                .integer()
+                                .not_null()
+                                .default(0),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+        }
+        if !column_exists(manager, "agentic_schedules", "last_missed_at").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticSchedule::Table)
+                        .add_column(
+                            ColumnDef::new(Alias::new("last_missed_at"))
+                                .timestamp_with_time_zone()
+                                .null(),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        for col in ["missed_runs", "last_missed_at"] {
+            if column_exists(manager, "agentic_schedules", col).await? {
+                manager
+                    .alter_table(
+                        Table::alter()
+                            .table(AgenticSchedule::Table)
+                            .drop_column(Alias::new(col))
+                            .to_owned(),
+                    )
+                    .await?;
+            }
+        }
         Ok(())
     }
 }

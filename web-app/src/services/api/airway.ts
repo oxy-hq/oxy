@@ -32,6 +32,12 @@ export type AirwayRunSummary = {
   updated_at: string;
 };
 
+/** `.airway.yml` file ref (parity with `WorkflowFile`). */
+export type AirwayFile = {
+  path: string;
+  path_b64: string;
+};
+
 /**
  * Frontend mirror of `agentic_airway::AirwayEvent`. The backend tags
  * with `event_type` (snake_case) and the runtime splits that into the
@@ -224,6 +230,11 @@ export class AirwayService {
     const { data } = await apiClient.get(`${AirwayService.base(projectId)}/runs`, {
       params: { pipeline_ref: pipelineRef, limit }
     });
+    return data;
+  }
+
+  static async listFiles(projectId: string): Promise<AirwayFile[]> {
+    const { data } = await apiClient.get(`${AirwayService.base(projectId)}/files`);
     return data;
   }
 

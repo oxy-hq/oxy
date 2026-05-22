@@ -6,6 +6,7 @@
 
 #[doc(hidden)]
 pub mod airlayer_compat;
+pub mod brief;
 mod catalog;
 pub mod config;
 pub(crate) mod context_budget;
@@ -59,6 +60,7 @@ pub use agentic_core::subrun::{SubrunError, SubrunOutput, SubrunRef, SubrunRunne
 
 // ── Pipeline facade ─────────────────────────────────────────────────────────
 
+pub use brief::{is_brief_agent, start_brief_pipeline};
 pub use pipeline::{PipelineParams, resume_pipeline, start_pipeline};
 
 // ── Metric sink port ────────────────────────────────────────────────────────

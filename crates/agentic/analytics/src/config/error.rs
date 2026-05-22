@@ -30,6 +30,10 @@ pub enum ConfigError {
     /// A `${VAR}` placeholder in the config references an environment variable
     /// that is not set.  Fail fast rather than sending an empty credential.
     MissingEnvVar(String),
+    /// The brief one-shot path was selected but no `LlmClient` could be
+    /// resolved — neither `llm.api_key` + `llm.model` on the agent YAML
+    /// nor a project-resolved model from `config.yml`.
+    MissingLlmConfig,
 }
 
 impl std::fmt::Display for ConfigError {
@@ -59,6 +63,11 @@ impl std::fmt::Display for ConfigError {
                      set it before starting the server"
                 )
             }
+            ConfigError::MissingLlmConfig => write!(
+                f,
+                "no LLM model resolvable for the brief agent path — set `llm.ref:` in the \
+                 agent YAML or define a default model in config.yml"
+            ),
         }
     }
 }

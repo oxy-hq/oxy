@@ -24,7 +24,8 @@ use agentic_core::result::{
 
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails,
-    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect,
+    is_returning_statement, normalize_sql, plan_sql_script,
 };
 use crate::postgres_typed::{decode_row, pg_typname_to_typed, select_expr_for_pg_type};
 
@@ -195,7 +196,14 @@ impl DatabaseConnector for PostgresConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
-        let sql = normalize_sql(sql);
+        // The temp-table wrap below (`CREATE TEMP TABLE _t AS (sql)`) is
+        // only valid for one SELECT-family statement. A multi-statement
+        // DDL/DML script (workflow `execute_sql` setup files, Airhouse
+        // bootstrap, etc.) substituted into the parens would fail with
+        // `syntax error at or near "CREATE"`. Run leading statements for
+        // their side effects, then sample only the final statement.
+        // (Airhouse routes through this Postgres connector.)
+        let script = plan_sql_script(sql);
         let mut guard = self.client.lock().await;
         ensure_client_connected(
             &self.config,
@@ -206,6 +214,28 @@ impl DatabaseConnector for PostgresConnector {
         .await?;
         let client = guard.as_ref().unwrap();
 
+        for stmt in &script.prefix {
+            client
+                .batch_execute(stmt)
+                .await
+                .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(stmt, &e)))?;
+        }
+
+        let sql = normalize_sql(&script.final_stmt);
+
+        // Non-returning final statement (trailing DDL/DML): run it for the
+        // side effect and return an empty result rather than wrapping
+        // non-returning SQL in the sampling subquery.
+        if !is_returning_statement(sql) {
+            if !sql.is_empty() {
+                client
+                    .batch_execute(sql)
+                    .await
+                    .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))?;
+            }
+            return Ok(ExecutionResult::empty());
+        }
+
         let tmp = "_agentic_tmp";
 
         // 1. Drop any leftover temp table from a previous (failed) execution.
@@ -214,7 +244,7 @@ impl DatabaseConnector for PostgresConnector {
             .await
             .ok();
 
-        // 2. Materialise the user query into a temp table.
+        // 2. Materialise the final query into a temp table.
         let create_sql = format!("CREATE TEMP TABLE {tmp} AS ({sql})");
         client
             .execute(&create_sql, &[])

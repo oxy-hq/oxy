@@ -31,6 +31,11 @@ pub struct Model {
     pub claim_count: i32,
     /// Maximum number of claims before the task is dead-lettered.
     pub max_claims: i32,
+    /// `true` when a co-located scoped coordinator owns this task's tree
+    /// (stamped at INSERT). The global/recovery claim path filters
+    /// `scope_owned = false` so it never poaches interactive runs. Preserved
+    /// across `claimed -> queued` reaping.
+    pub scope_owned: bool,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

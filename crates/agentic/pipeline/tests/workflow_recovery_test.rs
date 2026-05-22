@@ -108,9 +108,17 @@ async fn test_workflow_decision_executor_arm_returns_done() {
     let run_id = format!("wf-decision-{}", uuid::Uuid::new_v4());
 
     // Insert a parent workflow run so the executor can load state from DB.
-    crud::insert_run(&db, &run_id, "test decision task", None, "workflow", None)
-        .await
-        .expect("insert run");
+    crud::insert_run(
+        &db,
+        &run_id,
+        "test decision task",
+        None,
+        "workflow",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert run");
 
     // Insert minimal workflow state so load_workflow_state doesn't 404.
     let minimal_workflow = agentic_workflow::WorkflowConfig {
@@ -212,9 +220,17 @@ async fn test_decision_version_advances_after_decide() {
 
     let run_id = format!("version-{}", uuid::Uuid::new_v4());
 
-    crud::insert_run(&db, &run_id, "test version", None, "workflow", None)
-        .await
-        .expect("insert run");
+    crud::insert_run(
+        &db,
+        &run_id,
+        "test version",
+        None,
+        "workflow",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert run");
 
     // Workflow with 1 task — the decider will return DelegateStep (not Complete).
     let workflow = agentic_workflow::WorkflowConfig {
@@ -415,6 +431,7 @@ async fn seed_crashed_workflow(db: &DatabaseConnection) -> (String, String) {
         None,
         "workflow",
         Some(json!({ "original_spec": workflow_spec })),
+        uuid::Uuid::nil(),
     )
     .await
     .expect("insert parent");
@@ -491,6 +508,7 @@ async fn seed_crashed_workflow(db: &DatabaseConnection) -> (String, String) {
         None,
         "workflow_step",
         Some(json!({ "original_spec": child_spec })),
+        uuid::Uuid::nil(),
     )
     .await
     .expect("insert child");
@@ -782,9 +800,17 @@ async fn seed_agent_delegates_to_workflow(db: &DatabaseConnection) -> (String, S
     let step_id = format!("{}.1", wf_id);
 
     // Root: analytics run, was delegating
-    crud::insert_run(db, &root_id, "test Q", None, "analytics", None)
-        .await
-        .expect("insert root");
+    crud::insert_run(
+        db,
+        &root_id,
+        "test Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert root");
     crud::update_task_status(
         db,
         &root_id,
@@ -831,9 +857,18 @@ async fn seed_agent_delegates_to_workflow(db: &DatabaseConnection) -> (String, S
         consistency_model: None,
     };
 
-    crud::insert_run_with_parent(db, &wf_id, &root_id, "run workflow", "workflow", None, 0)
-        .await
-        .expect("insert workflow");
+    crud::insert_run_with_parent(
+        db,
+        &wf_id,
+        &root_id,
+        "run workflow",
+        "workflow",
+        None,
+        0,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert workflow");
     crud::update_task_status(db, &wf_id, "needs_resume", None)
         .await
         .expect("set workflow needs_resume");
@@ -886,9 +921,18 @@ async fn seed_agent_delegates_to_workflow(db: &DatabaseConnection) -> (String, S
         .expect("insert workflow state");
 
     // Step grandchild: done
-    crud::insert_run_with_parent(db, &step_id, &wf_id, "step0", "workflow_step", None, 0)
-        .await
-        .expect("insert step");
+    crud::insert_run_with_parent(
+        db,
+        &step_id,
+        &wf_id,
+        "step0",
+        "workflow_step",
+        None,
+        0,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert step");
     crud::update_task_status(db, &step_id, "done", None)
         .await
         .expect("set step done");
@@ -924,9 +968,17 @@ async fn test_happy_path_analytics_workflow_step_done() {
     let root_id = format!("happy-{}", uuid::Uuid::new_v4());
 
     // Insert root analytics run.
-    crud::insert_run(&db, &root_id, "test Q", None, "analytics", None)
-        .await
-        .expect("insert root");
+    crud::insert_run(
+        &db,
+        &root_id,
+        "test Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("insert root");
 
     let state = Arc::new(RuntimeState::new());
     let transport = DurableTransport::new(db.clone());
@@ -1265,6 +1317,7 @@ async fn test_recovery_processes_stuck_needs_resume_analytics_run() {
         None,
         "analytics",
         Some(json!({ "agent_id": "analytics" })),
+        uuid::Uuid::nil(),
     )
     .await
     .expect("insert run");
@@ -1306,6 +1359,7 @@ async fn test_recovery_processes_stuck_needs_resume_analytics_run() {
         None,
         None,
         Arc::new(agentic_runtime::router::NoopTaskRouter),
+        None,
     )
     .await;
 
@@ -1354,6 +1408,7 @@ async fn test_graceful_shutdown_marks_active_runs_resumable() {
         None,
         "analytics",
         Some(json!({ "agent_id": "analytics" })),
+        uuid::Uuid::nil(),
     )
     .await
     .expect("insert run");
@@ -1393,7 +1448,7 @@ async fn test_graceful_shutdown_marks_active_runs_resumable() {
 
     // Confirm recovery still finds `"shutdown"` rows (so the next server
     // start would resume them).
-    let resumable = agentic_runtime::crud::get_resumable_root_runs(&db)
+    let resumable = agentic_runtime::crud::get_resumable_root_runs(&db, None)
         .await
         .expect("list resumable");
     assert!(

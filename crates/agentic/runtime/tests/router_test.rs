@@ -236,7 +236,7 @@ async fn listener_recovers_from_terminated_backend() {
     // Now do an enqueue. If reconnection worked, the parked waiter
     // wakes within ~500ms; if not, we'd hit the 5s timeout.
     let run_id = format!("router-reconnect-{}", uuid::Uuid::new_v4());
-    crud::insert_run(&db, &run_id, "test", None, "test", None)
+    crud::insert_run(&db, &run_id, "test", None, "test", None, uuid::Uuid::nil())
         .await
         .expect("insert run");
 
@@ -255,9 +255,17 @@ async fn listener_recovers_from_terminated_backend() {
         question: "after reconnect".into(),
         extra: None,
     };
-    crud::enqueue_task(&db, &run_id, &run_id, None, &spec, None)
-        .await
-        .expect("enqueue task");
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &spec,
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .expect("enqueue task");
 
     let elapsed = waiter.await.expect("waiter panicked");
     assert!(
@@ -417,7 +425,7 @@ async fn listener_keepalive_runs_silently_when_healthy() {
     // If keepalive had killed or detached the connection, the wake
     // would only happen via the 5s backstop.
     let run_id = format!("router-keepalive-{}", uuid::Uuid::new_v4());
-    crud::insert_run(&db, &run_id, "test", None, "test", None)
+    crud::insert_run(&db, &run_id, "test", None, "test", None, uuid::Uuid::nil())
         .await
         .expect("insert run");
 
@@ -436,9 +444,17 @@ async fn listener_keepalive_runs_silently_when_healthy() {
         question: "after keepalive cycles".into(),
         extra: None,
     };
-    crud::enqueue_task(&db, &run_id, &run_id, None, &spec, None)
-        .await
-        .expect("enqueue task");
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &spec,
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .expect("enqueue task");
 
     let elapsed = waiter.await.expect("waiter panicked");
     assert!(
@@ -478,7 +494,7 @@ async fn enqueue_task_wakes_via_trigger() {
 
     // Insert a parent run row first (FK target for the task queue).
     let run_id = format!("router-trigger-{}", uuid::Uuid::new_v4());
-    crud::insert_run(&db, &run_id, "test", None, "test", None)
+    crud::insert_run(&db, &run_id, "test", None, "test", None, uuid::Uuid::nil())
         .await
         .expect("insert run");
 
@@ -489,9 +505,17 @@ async fn enqueue_task_wakes_via_trigger() {
         question: "hello".into(),
         extra: None,
     };
-    crud::enqueue_task(&db, &run_id, &run_id, None, &spec, None)
-        .await
-        .expect("enqueue task");
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &spec,
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .expect("enqueue task");
 
     let elapsed = waiter.await.expect("waiter panicked");
     assert!(

@@ -175,6 +175,34 @@ mod tests {
         );
     }
 
+    /// Regression: agent prompts reference SQL step results as
+    /// `{{ execute_step.col[0] }}` / `{{ execute_step }}`. The
+    /// decider now Jinja-renders the prompt against the parent
+    /// context before dispatching to the agent (without this, the
+    /// LLM receives the raw template syntax and complains the data
+    /// wasn't included). This test pins the column-table access shape
+    /// the demo workflows depend on.
+    #[test]
+    fn jinja_renders_agent_prompt_with_column_table_access() {
+        // Mirror what `to_column_oriented` produces for a SQL step.
+        let ctx = json!({
+            "execute_portfolio_summary": {
+                "views": [1561132i64],
+                "minutes": [6187523i64],
+                "mom_views_perc": [14.3],
+                "mom_minutes_perc": [-7.8],
+                "__row_count__": 1,
+                "__columns__": ["views", "minutes", "mom_views_perc", "mom_minutes_perc"],
+            }
+        });
+        let prompt = "v={{ execute_portfolio_summary.views[0] }} \
+                      m={{ execute_portfolio_summary.minutes[0] }} \
+                      mv={{ execute_portfolio_summary.mom_views_perc[0] }} \
+                      mm={{ execute_portfolio_summary.mom_minutes_perc[0] }}";
+        let rendered = render_jinja_string(prompt, &ctx).unwrap();
+        assert_eq!(rendered, "v=1561132 m=6187523 mv=14.3 mm=-7.8");
+    }
+
     #[test]
     fn jinja_renders_missing_keys_as_empty() {
         // Chainable: `foo.bar` when `foo` is undefined → empty.

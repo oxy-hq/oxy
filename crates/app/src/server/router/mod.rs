@@ -16,6 +16,7 @@ mod public;
 mod recovery;
 mod secrets;
 mod workspace;
+mod workspace_cache;
 
 use crate::server::serve_mode::ServeMode;
 use axum::extract::FromRequestParts;

@@ -143,5 +143,13 @@ where
         // Reuse the domain-agnostic SSE handler.
         .route("/runs/{id}/events", get(routes::stream_events))
         .route("/runs/{id}/cancel", post(routes::cancel_airway_run))
+        // Populates the Schedules UI target picker for airway schedules.
+        .route("/files", get(routes::list_airway_files))
         .layer(axum::Extension(state))
 }
+
+// The schedule routes were relocated to the `app` crate (§12 FU4b):
+// they require `WorkspaceAdmin` from `crate::api::middlewares::role_guards`
+// which lives above agentic-http in the layer stack. See
+// `crates/app/src/server/api/schedules.rs` and
+// `crates/app/src/server/router/workspace.rs::build_schedule_routes`.
