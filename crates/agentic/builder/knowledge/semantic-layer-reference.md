@@ -2,7 +2,7 @@
 source:
   - oxy-hq/skills/skills/oxy-semantic-layer/SKILL.md
   - oxy-hq/skills/skills/oxy-semantic-layer/QUICK-REFERENCE.md
-reconciled-at: f9ebd8af267cfea5b52fa96994763898ab8a0e34
+reconciled-at: 445c5459bf050fc65b323d73933e11538555deb5
 note: |
   Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
   the verbatim YAML templates. Re-condense by hand when source material
@@ -298,7 +298,7 @@ pre_aggregations:
       - status
     time_dimension: order_date       # optional; a date/datetime dimension
     granularity: day                 # required when time_dimension is set
-                                     # day | week | month | quarter | year
+                                     # second|minute|hour|day|week|month|quarter|year
     refresh_key:
       every: 1h                      # rebuild whenever 1 h has elapsed since last build
 
@@ -319,7 +319,7 @@ pre_aggregations:
 | `measures`       | Yes      | One or more measure names to pre-aggregate           |
 | `dimensions`     | No       | Dimension names to group by                          |
 | `time_dimension` | No       | Date/datetime dimension for time-based rollups       |
-| `granularity`    | If `time_dimension` set | `day`, `week`, `month`, `quarter`, `year` |
+| `granularity`    | If `time_dimension` set | `second`, `minute`, `hour`, `day`, `week`, `month`, `quarter`, `year` |
 | `refresh_key`    | Yes (per rollup, or inherited from the view) | See below |
 
 ### refresh_key reference
@@ -385,6 +385,28 @@ by the background worker.
 pre_aggregations_enabled: false   # skip all rollups in this view during oxy build
 ```
 
+### Config: enable the refresh worker
+
+Pre-aggregations need a top-level `pre_aggregations:` block in `config.yml`
+so the background refresh worker actually runs. All fields are optional —
+defaults shown below apply when omitted:
+
+```yaml
+pre_aggregations:
+  schema: AIRLAYER             # warehouse schema for rollup tables (default: AIRLAYER)
+  database: local              # connector for builds (default: each view's datasource)
+  refresh_worker:
+    enabled: true              # set false to disable the worker
+    heartbeat: "30s"           # how often the worker checks staleness
+    renewal_threshold: "120s"  # how long a cached refresh_key result stays valid
+```
+
+### Default rollup (no `pre_aggregations:` block)
+
+A view with no `pre_aggregations:` block still gets **one** default rollup
+covering all dimensions × all measures at `day` granularity. Define
+explicit rollups to control the grain and avoid an oversized default.
+
 ### Build and cache
 
 ```bash
@@ -413,12 +435,22 @@ the warehouse transparently.
 A rollup covers a query when:
 - **Every requested measure** is listed in the rollup's `measures:`.
 - **Every requested dimension** is listed in the rollup's `dimensions:`.
+- **Every filtered dimension** is in `dimensions:` *or* is the rollup's
+  `time_dimension` (filters on the time dimension don't need it duplicated
+  into `dimensions:`).
 - **If a time dimension is requested**, it matches the rollup's
-  `time_dimension` at an equal or coarser `granularity`.
+  `time_dimension` at an equal or coarser `granularity` (a `month` rollup
+  serves `month`/`quarter`/`year`, not `day`).
 
 A query that adds an extra dimension not in the rollup is **not** covered —
 the rollup would need to include that dimension to avoid data loss during
 re-aggregation.
+
+**Non-rollupable measure types.** `custom`, `median`, and bare `number`
+measures are not re-aggregatable. A query touching one falls back to the
+warehouse even when the measure is listed in a rollup. `count`,
+`count_distinct`, `sum`, `average`, `min`, and `max` re-aggregate
+correctly.
 
 ### Common mistakes
 
@@ -426,7 +458,8 @@ re-aggregation.
 | ------- | ------- | --- |
 | Referencing a dimension that doesn't exist | `oxy build` error | Check `dimensions:` list in the view |
 | `time_dimension` set without `granularity` | Schema validation error | Add `granularity: day` (or coarser) |
-| Rollup exists but query still hits warehouse | Query uses a dimension not in the rollup | Add the dimension to the rollup, then `oxy build` |
+| Rollup exists but query still hits warehouse | Query uses a dimension not in the rollup, a filtered dimension absent from `dimensions:`, or a `custom`/`median`/`number` measure | Add the missing member to the rollup (or accept the warehouse fallback for non-rollupable measure types); then `oxy build` |
+| Background worker never builds the rollup | No `pre_aggregations:` block in `config.yml`, or `refresh_worker.enabled: false` | Add the top-level `pre_aggregations:` block (see "Config: enable the refresh worker") |
 | `.airlayer/cache/` missing or stale | No preagg badge in UI | Run `oxy build` |
 | `refresh_key.every` too infrequent | Stale results served from cache | Shorten the interval, or rebuild with `oxy build` |
 | `refresh_key.sql` query fails at runtime | Warning logged, rebuild skipped silently | Run the SQL manually against the source database to verify it returns one row/cell |

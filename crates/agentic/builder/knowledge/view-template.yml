@@ -1,4 +1,4 @@
-# Vendored from oxy-hq/skills @ f9ebd8a
+# Vendored from oxy-hq/skills @ 445c545
 # Source: skills/oxy-semantic-layer/view-template.yml
 # Do not edit by hand — edit the skills repo and re-run scripts/sync-skills.sh.
 
@@ -96,3 +96,22 @@ measures:
         WHEN condition THEN calculation
         ELSE other_calculation
       END
+
+# Pre-aggregations (rollups) — OPTIONAL. Materialized partial aggregates that
+# the engine serves from local Parquet instead of scanning the warehouse.
+# Add for views backing dashboards / frequent KPI queries. Requires a
+# top-level `pre_aggregations:` block in config.yml for the refresh worker.
+#
+# refresh_key:                 # view-level default for all rollups below
+#   every: "1h"                # exactly one of `every` or `sql`
+#
+# pre_aggregations:
+#   - name: rollup_name
+#     dimensions:              # names defined above, never raw columns
+#       - dimension_name
+#     measures:                # count/count_distinct/sum/average/min/max only;
+#       - total_amount         # custom/median/number measures cannot roll up
+#     time_dimension: created_date  # a date/datetime dimension name
+#     granularity: month       # second|minute|hour|day|week|month|quarter|year
+#     refresh_key:             # OPTIONAL per-rollup override of the view-level key
+#       sql: "SELECT MAX(updated_at) FROM schema_name.table_name"
