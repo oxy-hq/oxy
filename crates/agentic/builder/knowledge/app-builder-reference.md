@@ -2,7 +2,7 @@
 source:
   - oxy-hq/skills/skills/oxy-app-builder/SKILL.md
   - oxy-hq/skills/skills/oxy-app-builder/QUICK-REFERENCE.md
-reconciled-at: f9ebd8af267cfea5b52fa96994763898ab8a0e34
+reconciled-at: 6aa77a42934ba5a0902d299679c0a7c0d0a85dda
 note: |
   Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
   the verbatim YAML templates. Re-condense by hand when source material
@@ -25,16 +25,29 @@ title: "Human-Friendly App Title"    # recommended — surfaces in app
 description: |                        # optional, multi-line OK
   What this app shows.
 
+controls:                             # optional, interactive widgets
+  - name: region                      # see "## Interactive controls"
+    type: select
+    options: [All, North, South]
+    default: "All"
+
 tasks:                                # REQUIRED, at least one entry
   - name: task_name                   # unique, snake_case
     type: semantic_query              # or execute_sql | workflow | agent
+    mode: server                      # optional, see "## Task execution mode"
     # ... type-specific fields
 
 display:                              # REQUIRED, at least one entry
   - type: table
     title: "Section Title"            # optional
     data: task_name                   # references a task by name
+
+published: false                      # optional
 ```
+
+`AppConfig` uses `deny_unknown_fields`. The only accepted top-level keys
+are: `name`, `title`, `description`, `controls`, `tasks`, `display`,
+`published`. Anything else fails validation.
 
 ## Task types
 
@@ -203,6 +216,194 @@ Reference the agent's text output in markdown via `{{insights}}`.
   name: company                       # label column
   value: market_share                 # numeric column
 ```
+
+### `row` — side-by-side layout
+
+```yaml
+- type: row
+  columns: 2                          # optional; defaults to len(children). >= 1.
+  children:                            # required, list of display blocks
+    - type: bar_chart
+      data: by_category
+      x: category
+      y: revenue
+    - type: pie_chart
+      data: by_region
+      name: region
+      value: revenue
+```
+
+`children` may contain any display block (charts, tables, markdown, or
+`control` blocks). Use rows to place paired charts or KPI tables next
+to each other.
+
+## Interactive controls
+
+Controls are widgets (dropdown / date picker / on-off toggle) rendered
+as a bar above the dashboard. Changing a control re-runs every task
+whose SQL references it via `{{ controls.<name> }}` Jinja.
+
+### Three widget kinds
+
+| Widget kind | Renders as     | Value type            | Use for                     |
+| ----------- | -------------- | --------------------- | --------------------------- |
+| `select`    | Dropdown       | string                | Pick one option from a list |
+| `date`      | Date picker    | string `YYYY-MM-DD`   | Pick a date                 |
+| `toggle`    | On/off switch  | boolean               | Yes/no filters              |
+
+### Two declaration forms — pick one, do not mix
+
+**Inline `- type: control` inside `display:` (preferred).** The widget
+kind uses the key **`control_type:`**, not `type:` — `type:` is already
+consumed by the display discriminant.
+
+```yaml
+display:
+  - type: control
+    name: region                      # -> {{ controls.region }}
+    control_type: select              # control_type, NOT type
+    label: Region                     # optional, defaults to name
+    options: [All, North, South]
+    default: "All"
+
+  - type: control
+    name: start_date
+    control_type: date
+    default: "2024-01-01"
+
+  - type: control
+    name: holidays_only
+    control_type: toggle
+    default: false
+```
+
+**Top-level `controls:` array (alternative).** Each entry uses plain
+`type:` for the widget kind:
+
+```yaml
+controls:
+  - name: region
+    type: select                      # plain `type:` at top level
+    options: [All, North, South]
+    default: "All"
+```
+
+The two forms are merged at load time — declaring the same control in
+both duplicates the widget.
+
+> **#1 controls mistake.** Inside `- type: control`, writing
+> `type: select` instead of `control_type: select` is invalid. The
+> display-form key is `control_type:`; the top-level-array form key is
+> `type:`. They are not interchangeable.
+
+### Control fields
+
+| Field          | Required | Applies to | Notes                                                            |
+| -------------- | -------- | ---------- | ---------------------------------------------------------------- |
+| `name`         | yes      | all        | snake_case; referenced as `{{ controls.<name> }}`                |
+| `control_type` | yes      | inline     | `select` \| `date` \| `toggle`. Top-level array uses `type:`.    |
+| `label`        | no       | all        | UI label; defaults to `name`.                                    |
+| `default`      | no       | all        | Initial value. Quote strings; toggle uses `true`/`false`. Jinja OK. |
+| `options`      | no       | select     | Static list of dropdown choices.                                 |
+| `source`       | no       | select     | Task name whose first column populates the dropdown.             |
+
+Use `source:` OR `options:`, not both.
+
+### Populating a `select` from data
+
+```yaml
+tasks:
+  - name: store_list                  # feeds the dropdown
+    type: execute_sql
+    database: local
+    sql_query: |
+      SELECT 'All' AS Store
+      UNION ALL
+      SELECT DISTINCT CAST(Store AS VARCHAR) FROM 'sales.csv' ORDER BY Store
+
+display:
+  - type: control
+    name: store
+    control_type: select
+    source: store_list                # use `source:`, NOT `options:`
+    default: "All"
+```
+
+The dropdown can't be empty, so include the `All` sentinel row yourself.
+
+### Referencing controls in SQL
+
+```sql
+SELECT region, SUM(revenue) AS total
+FROM sales
+WHERE sale_date >= {{ controls.start_date | sqlquote }}
+  AND ({{ controls.region | sqlquote }} = 'All'
+       OR region = {{ controls.region | sqlquote }})
+  {% if controls.holidays_only %}AND period = 'Holiday'{% endif %}
+GROUP BY region
+```
+
+Rules — the agent gets these wrong:
+
+1. **Pipe every string/date value through `| sqlquote`.** It wraps in
+   single quotes and escapes embedded quotes (`O'Brien` → `'O''Brien'`).
+2. **Never add your own quotes around a `sqlquote` value.**
+   `'{{ controls.x | sqlquote }}'` produces `''value''` — broken SQL.
+3. **Optional-filter idiom.** A `select` can't be empty, so use the
+   `All` sentinel:
+   `({{ controls.x | sqlquote }} = 'All' OR col = {{ controls.x | sqlquote }})`.
+4. **Toggle filters inside `{% if %}`** —
+   `{% if controls.flag %}AND ...{% endif %}` (no `else` clause).
+5. **Date values are strings.** Compare directly
+   (`col >= {{ controls.d | sqlquote }}`) or `TRY_CAST(... AS DATE)`.
+
+### Client-mode Jinja is intentionally minimal
+
+Client-mode tasks re-run in the browser's DuckDB WASM engine, which
+understands **only these four Jinja forms**:
+
+- `{{ controls.x }}` — raw substitution
+- `{{ controls.x | sqlquote }}` — quoted SQL string literal
+- `{{ controls.x | default('v') }}` — substitution with fallback
+- `{% if controls.x %}...{% endif %}` — truthy-only conditional
+
+Anything else — `{% for %}` loops, `{% if a == b %}` comparisons,
+`{% else %}` / `{% elif %}`, other filters — breaks the live re-run.
+Put comparison logic in SQL (`CASE`, `OR`), not in Jinja.
+
+`default:` and `options:` may use Jinja evaluated once at app load,
+most usefully `now()`:
+
+```yaml
+- type: control
+  name: year
+  control_type: select
+  options: ["All", "{{ now(fmt='%Y') }}", "{{ now(fmt='%Y') | int - 1 }}"]
+  default: "All"
+```
+
+## Task execution mode (`mode`)
+
+Every task takes an optional `mode:` — `client` (default) or `server` —
+that controls how it re-runs when a control changes:
+
+| `mode`             | Re-runs on            | Use when                                                |
+| ------------------ | --------------------- | ------------------------------------------------------- |
+| `client` (default) | Browser DuckDB WASM   | `execute_sql` + inline `sql_query` + `database: local`  |
+| `server`           | Server                | External warehouse, `sql_file:`, workflow/semantic/agent |
+
+```yaml
+- name: revenue
+  type: execute_sql
+  database: clickhouse
+  mode: server                        # external DB -> server mode
+  sql_query: |
+    SELECT ... WHERE store = {{ controls.store | sqlquote }}
+```
+
+Tasks against non-local databases are forced to server mode regardless
+of the YAML, so **when in doubt set `mode: server`** — it always works.
+For local-DuckDB apps with inline SQL, leave `mode` unset.
 
 ## SQL dialect notes
 
@@ -379,11 +580,19 @@ display:
    in some dialects.
 5. **Never add `# yaml-language-server:` schema comments.** Oxy's validator
    treats unknown fields strictly.
+6. **Inline `- type: control` blocks set the widget kind with
+   `control_type:`, not `type:`.** Use one declaration form per app —
+   inline `display:` or top-level `controls:`, never both for the same
+   control.
+7. **Tasks that read controls and run against non-local databases must
+   set `mode: server`.** Client mode only works for local-DuckDB inline
+   `execute_sql`.
 
 ## Validation
 
 - `oxy validate --file=my_app.app.yml` checks YAML structure only — it
-  does **not** execute task SQL.
+  does **not** execute task SQL, verify that `{{ controls.x }}` matches
+  a declared control, or check that `source:` names a real task.
 - Apps render in the Oxy web UI (`oxy start --enterprise`). `oxy run` does
   **not** execute `.app.yml` files.
 - **Pre-test referenced workflows and agents before finalizing the app.**
@@ -391,6 +600,9 @@ display:
   `oxy validate`; SQL errors inside those files won't surface until the
   app runs. Run any referenced `*.workflow.yml` and `*.agent.yml` once
   to confirm they execute clean before opening the app.
+- **After adding controls, smoke-test the app and change each control**
+  to confirm dependent tasks re-run — control wiring fails only at
+  runtime.
 
 ## Smoke-testing the app (do this before declaring done)
 
