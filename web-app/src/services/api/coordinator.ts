@@ -35,6 +35,12 @@ export interface RunHistoryResponse {
   total: number;
 }
 
+export interface RunEventEntry {
+  seq: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+}
+
 export interface TaskTreeNode {
   run_id: string;
   parent_run_id: string | null;
@@ -49,6 +55,7 @@ export interface TaskTreeNode {
   created_at: string;
   updated_at: string;
   outcome_status?: string;
+  event_log?: RunEventEntry[];
 }
 
 export interface TaskTreeResponse {

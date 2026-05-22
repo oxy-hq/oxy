@@ -1,10 +1,17 @@
+import { Zap, ZapOff } from "lucide-react";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/shadcn/hover-card";
 import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupLabel,
-  SidebarMenu
+  SidebarMenu,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem
 } from "@/components/ui/shadcn/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
+import usePreaggStatus from "@/hooks/api/usePreaggStatus";
+import { formatDate, timeAgo } from "@/libs/utils/date";
+import type { PreaggRollupStatus } from "@/services/api/semantic";
 import CollapsibleFieldSection from "../components/SemanticExplorer/CollapsibleFieldSection";
 import DimensionItem from "../components/SemanticExplorer/DimensionItem";
 import MeasureItem from "../components/SemanticExplorer/MeasureItem";
@@ -14,11 +21,85 @@ import {
 } from "../components/SemanticExplorer/useTimeDimensionHandlers";
 import { useViewExplorerContext } from "./contexts/ViewExplorerContext";
 
+const RollupDetail = ({ rollup }: { rollup: PreaggRollupStatus }) => (
+  <div className='space-y-3 text-xs'>
+    <div className='flex items-center gap-1.5'>
+      {rollup.has_parquet ? (
+        <Zap className='h-3.5 w-3.5 shrink-0 text-primary' />
+      ) : (
+        <ZapOff className='h-3.5 w-3.5 shrink-0 text-muted-foreground' />
+      )}
+      <span className={rollup.has_parquet ? "font-medium text-primary" : "text-muted-foreground"}>
+        {rollup.has_parquet ? "Cached" : "Not cached"}
+      </span>
+    </div>
+
+    {rollup.dimensions.length > 0 && (
+      <div className='space-y-1'>
+        <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
+          Dimensions
+        </p>
+        <div className='flex flex-wrap gap-1'>
+          {rollup.dimensions.map((d) => (
+            <span key={d} className='rounded bg-muted px-1.5 py-0.5 font-mono text-foreground'>
+              {d}
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {rollup.measures.length > 0 && (
+      <div className='space-y-1'>
+        <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
+          Measures
+        </p>
+        <div className='flex flex-wrap gap-1'>
+          {rollup.measures.map((m) => (
+            <span key={m.name} className='rounded bg-muted px-1.5 py-0.5 font-mono text-foreground'>
+              {m.name}
+              {m.measure_type && (
+                <span className='ml-1 text-muted-foreground'>({m.measure_type})</span>
+              )}
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {rollup.time_dimension && (
+      <div className='space-y-1'>
+        <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
+          Time dimension
+        </p>
+        <span className='font-mono text-foreground'>
+          {rollup.time_dimension}
+          {rollup.granularity && (
+            <span className='ml-1 text-muted-foreground'>/ {rollup.granularity}</span>
+          )}
+        </span>
+      </div>
+    )}
+
+    {rollup.refresh_key_checked_at && (
+      <div className='space-y-0.5'>
+        <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
+          Built
+        </p>
+        <p className='text-foreground'>{formatDate(rollup.refresh_key_checked_at)}</p>
+        <p className='text-muted-foreground'>{timeAgo(rollup.refresh_key_checked_at)}</p>
+      </div>
+    )}
+  </div>
+);
+
 const FieldsSelectionPanel = () => {
   const {
     viewData,
     selectedDimensions,
+    setSelectedDimensions,
     selectedMeasures,
+    setSelectedMeasures,
     toggleDimension,
     toggleMeasure,
     timeDimensions,
@@ -34,7 +115,11 @@ const FieldsSelectionPanel = () => {
     onRemoveTimeDimension
   );
 
+  const { data: preaggStatus } = usePreaggStatus();
+
   if (!viewData) return null;
+
+  const viewRollups = preaggStatus?.rollups.filter((r) => r.view_name === viewData.name) ?? [];
 
   const dimensions = viewData.dimensions.map((dimension) => ({
     name: dimension.name,
@@ -108,6 +193,41 @@ const FieldsSelectionPanel = () => {
                 />
               ))}
             </CollapsibleFieldSection>
+
+            {viewRollups.length > 0 && (
+              <CollapsibleFieldSection
+                title='Pre-aggregations'
+                count={viewRollups.length}
+                defaultOpen={false}
+              >
+                {viewRollups.map((rollup: PreaggRollupStatus) => {
+                  const applyRollup = () => {
+                    setSelectedDimensions(rollup.dimensions.map((d) => `${viewData.name}.${d}`));
+                    setSelectedMeasures(rollup.measures.map((m) => `${viewData.name}.${m.name}`));
+                  };
+                  return (
+                    <SidebarMenuSubItem key={rollup.rollup_name}>
+                      <HoverCard openDelay={300} closeDelay={100}>
+                        <HoverCardTrigger asChild>
+                          <SidebarMenuSubButton onClick={applyRollup}>
+                            {rollup.has_parquet ? (
+                              <Zap className='h-3 w-3 shrink-0 text-primary' />
+                            ) : (
+                              <ZapOff className='h-3 w-3 shrink-0 text-muted-foreground' />
+                            )}
+                            <span className='truncate'>{rollup.rollup_name}</span>
+                          </SidebarMenuSubButton>
+                        </HoverCardTrigger>
+                        <HoverCardContent side='right' align='start' className='w-64 p-3'>
+                          <p className='mb-2 font-semibold text-sm'>{rollup.rollup_name}</p>
+                          <RollupDetail rollup={rollup} />
+                        </HoverCardContent>
+                      </HoverCard>
+                    </SidebarMenuSubItem>
+                  );
+                })}
+              </CollapsibleFieldSection>
+            )}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

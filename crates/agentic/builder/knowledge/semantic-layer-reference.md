@@ -276,6 +276,162 @@ needed — `expr: <col>` is enough.
 | `TYPE_MISMATCH` at filter | Date dimension declared `type: number` / `string` over a non-Date column; semantic layer compiles a date literal that the column type rejects | Sample one row, switch to `type: date` (or `datetime`), wrap `expr` with the appropriate cast function from the table above |
 | Unknown field on parse   | Schema-comment or typo                           | Remove `# yaml-language-server:` and fix casing  |
 
+## Pre-aggregations
+
+Pre-aggregations let Oxy cache heavy aggregations as local Parquet files so
+that repeated semantic queries skip the warehouse entirely and run in
+milliseconds against an in-memory DuckDB instance.
+
+### Declaring a pre-aggregation
+
+Add a `pre_aggregations:` block inside a `*.view.yml`. A `refresh_key` is
+required on every rollup (or set once at the view level — see below).
+
+```yaml
+pre_aggregations:
+  - name: orders_by_customer_daily   # snake_case, unique within the view
+    measures:
+      - total_orders                 # measure names from this view's measures:
+      - total_revenue
+    dimensions:
+      - customer_id                  # dimension names from this view's dimensions:
+      - status
+    time_dimension: order_date       # optional; a date/datetime dimension
+    granularity: day                 # required when time_dimension is set
+                                     # day | week | month | quarter | year
+    refresh_key:
+      every: 1h                      # rebuild whenever 1 h has elapsed since last build
+
+  - name: orders_summary
+    measures:
+      - total_orders
+    dimensions:
+      - status
+    refresh_key:
+      sql: "SELECT MAX(updated_at) FROM orders"   # rebuild when the result changes
+```
+
+**Field summary:**
+
+| Field            | Required | Description                                          |
+| ---------------- | -------- | ---------------------------------------------------- |
+| `name`           | Yes      | Unique rollup identifier (snake_case)                |
+| `measures`       | Yes      | One or more measure names to pre-aggregate           |
+| `dimensions`     | No       | Dimension names to group by                          |
+| `time_dimension` | No       | Date/datetime dimension for time-based rollups       |
+| `granularity`    | If `time_dimension` set | `day`, `week`, `month`, `quarter`, `year` |
+| `refresh_key`    | Yes (per rollup, or inherited from the view) | See below |
+
+### refresh_key reference
+
+A `refresh_key` tells Oxy when a cached rollup is stale and must be rebuilt.
+There are two mutually exclusive forms:
+
+**`every:` (interval-based)**
+```yaml
+refresh_key:
+  every: 1h        # rebuild after this interval regardless of data changes
+                   # examples: 30m  1h  6h  24h
+```
+Oxy compares the time elapsed since the last successful build against the
+interval. If enough time has passed the rollup is queued for rebuild. The
+result is cached in-process for `renewal_threshold` (default 120 s) so the
+interval is not checked on every single query.
+
+**`sql:` (change-detection)**
+```yaml
+refresh_key:
+  sql: "SELECT MAX(updated_at) FROM orders"
+```
+Oxy runs the SQL against the rollup's source database and compares the
+first cell of the first row against the value stored in `manifest.json`
+from the last build. If the values differ, the rollup is stale and rebuilt.
+Use any single-value query that advances with new data — `MAX(updated_at)`,
+`COUNT(*)`, a checksum, etc. If the SQL fails (network error, bad query),
+Oxy logs a warning and skips the rebuild rather than crashing.
+
+**View-level `refresh_key` (default for all rollups)**
+
+Set `refresh_key:` at the top of the view (outside `pre_aggregations:`) to
+apply the same key to every rollup that does not declare its own:
+
+```yaml
+name: orders
+datasource: warehouse
+table: "public.orders"
+refresh_key:              # default for all rollups in this view
+  every: 1h
+
+pre_aggregations:
+  - name: by_status
+    measures: [total_orders]
+    dimensions: [status]
+    # inherits refresh_key: every: 1h from the view
+
+  - name: by_customer
+    measures: [total_orders]
+    dimensions: [customer_id]
+    refresh_key:          # overrides the view-level key for this rollup only
+      sql: "SELECT MAX(updated_at) FROM orders"
+```
+
+Rollup-level `refresh_key` always takes precedence over the view-level one.
+A rollup with no `refresh_key` and no view-level default will be skipped
+by the background worker.
+
+**Disabling pre-aggregations for a view**
+
+```yaml
+pre_aggregations_enabled: false   # skip all rollups in this view during oxy build
+```
+
+### Build and cache
+
+```bash
+oxy build          # compiles semantic layer and builds all pre-aggregation Parquet files
+```
+
+Parquet files land in `.airlayer/cache/` (next to `config.yml`). A
+`manifest.json` in that directory records which rollup covers which query
+shape. The directory is created automatically by `oxy build` — do not
+create or edit it by hand.
+
+### Runtime behaviour
+
+When a semantic query arrives (agentic analytics pipeline, IDE semantic
+explorer, or procedure step), Oxy checks `manifest.json` for a rollup
+that covers the requested dimensions and measures. If one exists **and**
+the Parquet file is present on disk, the query executes against the local
+cache — no warehouse round-trip. The ⚡ badge appears in the UI whenever
+preagg served the result.
+
+If no rollup covers the query, or the file is missing, Oxy falls back to
+the warehouse transparently.
+
+### Coverage rules (when does a rollup cover a query?)
+
+A rollup covers a query when:
+- **Every requested measure** is listed in the rollup's `measures:`.
+- **Every requested dimension** is listed in the rollup's `dimensions:`.
+- **If a time dimension is requested**, it matches the rollup's
+  `time_dimension` at an equal or coarser `granularity`.
+
+A query that adds an extra dimension not in the rollup is **not** covered —
+the rollup would need to include that dimension to avoid data loss during
+re-aggregation.
+
+### Common mistakes
+
+| Mistake | Symptom | Fix |
+| ------- | ------- | --- |
+| Referencing a dimension that doesn't exist | `oxy build` error | Check `dimensions:` list in the view |
+| `time_dimension` set without `granularity` | Schema validation error | Add `granularity: day` (or coarser) |
+| Rollup exists but query still hits warehouse | Query uses a dimension not in the rollup | Add the dimension to the rollup, then `oxy build` |
+| `.airlayer/cache/` missing or stale | No preagg badge in UI | Run `oxy build` |
+| `refresh_key.every` too infrequent | Stale results served from cache | Shorten the interval, or rebuild with `oxy build` |
+| `refresh_key.sql` query fails at runtime | Warning logged, rebuild skipped silently | Run the SQL manually against the source database to verify it returns one row/cell |
+| Rollup has no `refresh_key` and no view-level default | Background worker skips the rollup | Add `refresh_key:` to the rollup or set a view-level default |
+
 ## Validation workflow
 
 1. `oxy build` — **mandatory final step.** Compiles the semantic layer;

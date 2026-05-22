@@ -37,6 +37,38 @@ mod duckdb;
 mod variables;
 mod workflow;
 
+/// Configuration for the background pre-aggregation refresh worker.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Default)]
+pub struct RefreshWorkerConfig {
+    /// Set to `false` to disable the background worker entirely.
+    #[serde(default = "default_true", skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// How often the worker wakes up to check staleness (e.g. "30s", "5m").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heartbeat: Option<String>,
+    /// How long a cached refresh_key result is valid before re-evaluating (e.g. "120s").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_threshold: Option<String>,
+}
+
+fn default_true() -> Option<bool> {
+    Some(true)
+}
+
+/// Top-level `pre_aggregations:` block in `config.yml`.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Default)]
+pub struct PreaggConfig {
+    /// Warehouse schema where pre-agg tables are created. Defaults to `"AIRLAYER"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
+    /// Database connector used for pre-agg builds. Defaults to each view's own `datasource`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+    /// Background refresh worker settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_worker: Option<RefreshWorkerConfig>,
+}
+
 /// Configuration for the built-in builder copilot agent.
 ///
 /// Supports two forms for backward compatibility:
@@ -130,6 +162,11 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "data_repos")]
     #[garde(skip)]
     pub repositories: Vec<Repository>,
+
+    /// Pre-aggregation configuration (schema, database, background worker).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[garde(skip)]
+    pub pre_aggregations: Option<PreaggConfig>,
 
     /// Deprecated: admin configuration is now set via the `OXY_OWNER` environment variable.
     /// Kept for backward compatibility so existing configs don't silently break.

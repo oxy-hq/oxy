@@ -32,6 +32,7 @@ members = [
   "crates/agentic/http",
   "crates/agentic/pipeline",
   "crates/agentic/runtime",
+  "crates/agentic/semantic",
   "crates/agentic/workflow",
   "crates/airform",
   "crates/airhouse",
@@ -66,6 +67,7 @@ agentic-http = { path = "crates/agentic/http" }
 agentic-llm = { path = "crates/agentic/llm" }
 agentic-pipeline = { path = "crates/agentic/pipeline" }
 agentic-runtime = { path = "crates/agentic/runtime" }
+agentic-semantic = { path = "crates/agentic/semantic" }
 agentic-workflow = { path = "crates/agentic/workflow" }
 airhouse = { path = "crates/airhouse" }
 entity = { path = "crates/entity" }
@@ -127,7 +129,7 @@ tracing = {version = "0.1.44"}
 uuid = { version = "1.23", features = ["serde", "v4"] }
 aes-gcm = "0.10.3"
 aho-corasick = "1.1"
-airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "b8c734d" }
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "a1ed469e004ad0c0047346e7cac94a2ca35bc786" }
 anyhow = "1.0.102"
 apalis = "0.7.4"
 apalis-core = "0.7.4"
@@ -296,3 +298,6 @@ sqlx-postgres = {opt-level = 0}
 debug = false # reduces compilation time and resource usage by omitting debug symbols.
 inherits = "dev"
 strip = true # reduces memory usage during linking
+
+[profile.dev]
+split-debuginfo = "shallow"

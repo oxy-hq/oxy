@@ -11,10 +11,14 @@ use crate::server::service::app::{
     AppResultTableDisplay, AppService, DisplayWithError, GetAppResultResponse, TaskKind,
     TaskOutput, TaskResult, get_app_displays, render_control_default,
 };
+use axum::Extension;
 use axum::body::Body;
 use axum::extract::{self, Path};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
+use std::sync::Arc;
+
+use crate::agentic_wiring::OxyProjectContext;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use entity::workspace_members::WorkspaceRole;
@@ -366,6 +370,7 @@ fn extract_sql_source_files(sql: &str) -> Vec<String> {
 pub async fn get_displays(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
 ) -> Result<extract::Json<GetDisplaysResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
@@ -380,7 +385,7 @@ pub async fn get_displays(
     // Collect SQL templates for execute_sql tasks so the frontend can run them
     // client-side in DuckDB WASM without a server round-trip on control changes.
     let databases = workspace_manager.config_manager.list_databases();
-    let app_service = AppService::new(workspace_manager.clone());
+    let app_service = AppService::new(workspace_manager.clone(), project_ctx);
     let tasks: HashMap<String, TaskClientInfo> = app_service
         .get_config(&path)
         .await
@@ -462,10 +467,11 @@ pub async fn get_displays(
 pub async fn get_app_data(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let mut app_service = AppService::new(workspace_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone(), project_ctx);
 
     let app_tasks = match app_service.get_tasks(&path).await {
         Ok(tasks) => tasks,
@@ -651,12 +657,13 @@ pub struct RunAppBody {
 pub async fn run_app(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
     body: Option<extract::Json<RunAppBody>>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
     let params = body.map(|b| b.0.params).unwrap_or_default();
 
-    let mut app_service = AppService::new(workspace_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone(), project_ctx);
     let data = match app_service.run(&path, params).await {
         Ok(data) => data,
         Err(e) => {
@@ -712,6 +719,7 @@ pub async fn get_app_result(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Query(query): extract::Query<AppResultQuery>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
 ) -> (StatusCode, extract::Json<GetAppResultResponse>) {
     let path = match decode_path(&pathb64) {
         Ok(p) => p,
@@ -735,7 +743,7 @@ pub async fn get_app_result(
     }
 
     // Execute the app to get task results
-    let mut app_service = AppService::new(workspace_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone(), project_ctx);
 
     // Get task names first (needed for response even if execution fails)
     let task_configs = match app_service.get_tasks(&path).await {

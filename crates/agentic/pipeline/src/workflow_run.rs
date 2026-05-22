@@ -897,7 +897,8 @@ async fn run_delegated_step(
         }
         TaskSpec::Resume { .. }
         | TaskSpec::WorkflowDecision { .. }
-        | TaskSpec::Airway { .. } => Err(WorkflowRunError::Inline(format!(
+        | TaskSpec::Airway { .. }
+        | TaskSpec::Custom { .. } => Err(WorkflowRunError::Inline(format!(
             "TaskSpec::{spec:?} cannot run inline; only WorkflowStep, Agent and Workflow are supported"
         ))),
     }

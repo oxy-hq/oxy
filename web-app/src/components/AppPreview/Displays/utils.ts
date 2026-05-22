@@ -68,8 +68,19 @@ export const getArrowValueWithType = (
   }
   if (DataType.isDecimal(type)) {
     const scale = (type as { scale: number }).scale;
-    const numValue = Number(value) / 10 ** scale;
-    return formatNumber(numValue);
+    // BigNum.valueOf() / Number(bigNum) throws "is not safe to convert to a number"
+    // when the internal 128-bit integer exceeds Number.MAX_SAFE_INTEGER.
+    // Call .toString() directly (which invokes bigNumToString, not bigNumToNumber)
+    // to get the raw integer digits, then manually insert the decimal point.
+    const rawStr = (value as { toString(): string }).toString();
+    const isNeg = rawStr.startsWith("-");
+    const digits = isNeg ? rawStr.slice(1) : rawStr;
+    if (!scale) return formatNumber(parseFloat(isNeg ? `-${digits}` : digits));
+    const padded = digits.padStart(scale + 1, "0");
+    const intPart = padded.slice(0, padded.length - scale);
+    const fracPart = padded.slice(-scale).replace(/0+$/, "");
+    const decimalStr = `${isNeg ? "-" : ""}${intPart}${fracPart ? `.${fracPart}` : ""}`;
+    return formatNumber(parseFloat(decimalStr));
   }
   return getArrowValue(value);
 };

@@ -121,6 +121,7 @@ impl A2aConfig {
             base_branch: None,
             repositories: vec![],
             admins: vec![],
+            pre_aggregations: None,
         };
         let context = ValidationContext {
             config: dummy_config,
@@ -306,6 +307,7 @@ mod tests {
             protected_branches: None,
             base_branch: None,
             admins: Vec::new(),
+            pre_aggregations: None,
         };
         let context = ValidationContext {
             config: dummy_config,
@@ -350,6 +352,7 @@ mod tests {
             protected_branches: None,
             base_branch: None,
             admins: Vec::new(),
+            pre_aggregations: None,
         };
         let context = ValidationContext {
             config: dummy_config,

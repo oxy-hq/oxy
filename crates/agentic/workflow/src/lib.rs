@@ -5,10 +5,10 @@ pub mod event_bridge;
 pub mod export;
 pub mod extension;
 pub mod hash;
+pub mod preagg_event;
 pub(crate) mod render;
 pub mod resolve;
 pub mod runner;
-pub mod semantic;
 pub mod semantic_bridge;
 pub mod step_decider;
 pub mod step_executor;
@@ -16,6 +16,14 @@ pub mod step_hash;
 pub mod step_orchestrator;
 pub mod variables;
 pub mod workspace;
+
+// Re-export the shared semantic helpers so existing call sites
+// (`agentic_workflow::semantic::*`, `agentic_workflow::preagg::*`,
+// `agentic_workflow::refresh_key_cache::*`) keep working after the
+// extraction into `agentic-semantic`.
+pub use agentic_semantic::compile as semantic;
+pub use agentic_semantic::preagg;
+pub use agentic_semantic::refresh_key_cache;
 
 pub use completion_policy::{WorkflowCompletionPolicy, WorkflowDelegationResolver};
 pub use config::{TaskType, WorkflowConfig};

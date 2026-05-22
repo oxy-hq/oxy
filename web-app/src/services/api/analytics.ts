@@ -215,6 +215,7 @@ type QueryExecutedBlock = {
     columns: string[];
     rows: string[][];
     source?: "semantic" | "llm" | "vendor";
+    is_preagg?: boolean;
     sub_spec_index?: number | null;
     semantic_query?: SemanticQueryPayload;
   };
@@ -306,6 +307,8 @@ type SubrunStepCompletedBlock = {
     step: string;
     success: boolean;
     error?: string;
+    /** True when the step result was served from local pre-aggregation Parquet. */
+    is_preagg?: boolean;
   };
 };
 

@@ -153,6 +153,8 @@ mod tests {
             internal: false,
             mode: ServeMode::Local,
             observability: None,
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: None,
             startup_cwd,
         }
     }

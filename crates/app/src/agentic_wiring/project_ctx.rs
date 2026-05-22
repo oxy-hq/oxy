@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use agentic_analytics::config::{LlmVendor, ResolvedModelInfo};
 use agentic_connector::{
@@ -41,7 +41,22 @@ pub struct OxyProjectContext {
     /// role any minted credential carries (Owner→admin, Admin→writer,
     /// Member/Viewer→reader). `None` outside HTTP-handled paths.
     role: Option<WorkspaceRole>,
-    connectors: tokio::sync::OnceCell<HashMap<String, Arc<dyn DatabaseConnector>>>,
+    /// Per-database lazy connector cache. Each name maps to its own
+    /// `OnceCell` so building a slow connector (Snowflake handshake,
+    /// BigQuery auth, …) does not block requests that only need an
+    /// unrelated database. Concurrent `get_connector(name)` callers for
+    /// the same name share the in-flight build.
+    connectors:
+        tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::OnceCell<Arc<dyn DatabaseConnector>>>>>,
+    /// Shared Layer-1 refresh-key cache. The same Arc is held by the
+    /// background preagg worker so both layers observe each other's writes.
+    /// `None` in CLI, tests, and builder contexts (no background worker).
+    preagg_cache: Option<Arc<RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>>,
+    /// Renewal threshold (seconds) for the preagg refresh-key freshness
+    /// check on the query read-path. Mirrors the worker's
+    /// `pre_aggregations.refresh_worker.renewal_threshold` so operators who
+    /// change one see the matching read-side behaviour.
+    preagg_renewal_threshold_secs: u64,
 }
 
 impl OxyProjectContext {
@@ -50,7 +65,9 @@ impl OxyProjectContext {
             workspace_manager,
             subject: None,
             role: None,
-            connectors: tokio::sync::OnceCell::new(),
+            connectors: tokio::sync::Mutex::new(HashMap::new()),
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: 120,
         }
     }
 
@@ -68,6 +85,24 @@ impl OxyProjectContext {
     /// admin via `mint_for_system`).
     pub fn with_role(mut self, role: WorkspaceRole) -> Self {
         self.role = Some(role);
+        self
+    }
+
+    /// Attach the shared preagg refresh-key cache. Both the HTTP middleware
+    /// and the background worker must use the same Arc so Layer 1 and Layer 2
+    /// observe each other's inserts and invalidations.
+    pub fn with_preagg_cache(
+        mut self,
+        cache: Arc<RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
+    ) -> Self {
+        self.preagg_cache = Some(cache);
+        self
+    }
+
+    /// Attach the preagg renewal threshold (seconds). Must match the
+    /// background worker's `refresh_worker.renewal_threshold`.
+    pub fn with_preagg_renewal_threshold_secs(mut self, secs: u64) -> Self {
+        self.preagg_renewal_threshold_secs = secs;
         self
     }
 
@@ -146,40 +181,41 @@ impl OxyProjectContext {
         }
     }
 
-    /// Build connectors from workspace database configs. Called once lazily
-    /// on first `WorkspaceContext::get_connector` invocation.
-    async fn built_connectors(&self) -> &HashMap<String, Arc<dyn DatabaseConnector>> {
-        self.connectors
-            .get_or_init(|| async {
-                let db_names: Vec<String> = self
-                    .workspace_manager
-                    .config_manager
-                    .list_databases()
-                    .iter()
-                    .map(|db| db.name.clone())
-                    .collect();
-                let resolved =
-                    agentic_pipeline::platform::resolve_connectors(&db_names, self).await;
-                let mut map = HashMap::new();
-                for (name, cfg) in resolved.configs {
-                    match agentic_connector::build_connector_async(cfg).await {
-                        Ok(connector) => {
-                            map.insert(name, Arc::from(connector));
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                target: "workspace_context",
-                                db = %name,
-                                error = %e,
-                                "failed to build connector"
-                            );
-                        }
-                    }
-                }
-                map.extend(resolved.pre_built);
-                map
-            })
-            .await
+    /// Build (and cache) a single connector by name. Other databases in
+    /// the workspace config are not touched, so a slow Snowflake handshake
+    /// no longer delays a request that only needs `local` (DuckDB).
+    async fn build_connector_lazy(&self, name: &str) -> Result<Arc<dyn DatabaseConnector>, String> {
+        let cell = {
+            let mut guard = self.connectors.lock().await;
+            guard
+                .entry(name.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::OnceCell::new()))
+                .clone()
+        };
+
+        cell.get_or_try_init(|| async {
+            if let Some(conn) = self.resolve_pre_built_connector(name).await {
+                return Ok(conn);
+            }
+            let cfg = self
+                .resolve_connector(name)
+                .await
+                .ok_or_else(|| format!("database '{name}' not found in workspace config"))?;
+            agentic_connector::build_connector_async(cfg)
+                .await
+                .map(Arc::from)
+                .map_err(|e| {
+                    tracing::warn!(
+                        target: "workspace_context",
+                        db = %name,
+                        error = %e,
+                        "failed to build connector"
+                    );
+                    format!("failed to build connector for '{name}': {e}")
+                })
+        })
+        .await
+        .cloned()
     }
 }
 
@@ -310,6 +346,16 @@ impl WorkspaceContext for OxyProjectContext {
         self.workspace_manager.config_manager.workspace_path()
     }
 
+    fn refresh_key_cache(
+        &self,
+    ) -> Option<Arc<RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>> {
+        self.preagg_cache.clone()
+    }
+
+    fn preagg_renewal_threshold_secs(&self) -> u64 {
+        self.preagg_renewal_threshold_secs
+    }
+
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
         self.workspace_manager
             .config_manager
@@ -323,11 +369,7 @@ impl WorkspaceContext for OxyProjectContext {
     }
 
     async fn get_connector(&self, name: &str) -> Result<Arc<dyn DatabaseConnector>, String> {
-        let connectors = self.built_connectors().await;
-        connectors.get(name).cloned().ok_or_else(|| {
-            let available: Vec<&str> = connectors.keys().map(|k| k.as_str()).collect();
-            format!("database '{}' not found. Available: {:?}", name, available)
-        })
+        self.build_connector_lazy(name).await
     }
 
     async fn get_integration(&self, name: &str) -> Result<IntegrationConfig, String> {

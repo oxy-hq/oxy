@@ -104,7 +104,7 @@ export interface TopicDetailsResponse {
 
 export type ExecuteSemanticQueryResponse =
   | string[][] // JSON format - returns array directly
-  | { file_name: string }; // Parquet format - returns object with file_name
+  | { file_name: string; is_preagg: boolean; execution_time_ms: number }; // Parquet format
 
 export class SemanticService {
   static async executeSemanticQuery(
@@ -171,4 +171,39 @@ export class SemanticService {
       throw error;
     }
   }
+}
+
+// ── Preagg status ─────────────────────────────────────────────────────────────
+
+export type PreaggMeasure = {
+  name: string;
+  measure_type: string;
+};
+
+export type PreaggRollupStatus = {
+  view_name: string;
+  rollup_name: string;
+  has_parquet: boolean;
+  dimensions: string[];
+  measures: PreaggMeasure[];
+  time_dimension: string | null;
+  granularity: string | null;
+  build_date: string | null;
+  refresh_key_checked_at: string | null;
+};
+
+export type PreaggStatusResponse = {
+  rollups: PreaggRollupStatus[];
+};
+
+export async function getPreaggStatus(
+  workspaceId: string,
+  branchName?: string
+): Promise<PreaggStatusResponse> {
+  const params = branchName ? { branch: branchName } : {};
+  const { data } = await apiClient.get<PreaggStatusResponse>(
+    `/${workspaceId}/semantic/preagg-status`,
+    { params }
+  );
+  return data;
 }

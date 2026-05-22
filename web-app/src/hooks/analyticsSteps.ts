@@ -37,6 +37,8 @@ export type SqlItem = {
   error?: string;
   /** Which code path produced the SQL. "semantic" = compiled by airlayer. "verified_sql" = pre-written SQL file. */
   source?: "semantic" | "llm" | "vendor" | "verified_sql";
+  /** True when the query was served from local pre-aggregation Parquet. */
+  is_preagg?: boolean;
   /** Structured semantic query attached when source === "semantic". */
   semanticQuery?: import("@/services/api/analytics").SemanticQueryPayload;
   isStreaming: boolean;
@@ -557,6 +559,7 @@ function buildDomainItem(ev: UiBlock, nextId: (prefix: string) => string): Trace
         error: ev.payload.success ? undefined : (ev.payload.error ?? "unknown error"),
         result: [ev.payload.columns].concat(ev.payload.rows ?? []),
         source: ev.payload.source,
+        is_preagg: ev.payload.is_preagg ?? false,
         semanticQuery: ev.payload.semantic_query
       };
 

@@ -42,6 +42,7 @@ impl ConfigBuilder {
             base_branch: None,
             repositories: vec![],
             admins: vec![],
+            pre_aggregations: None,
         };
 
         Self::write_config_file(&config, repo_path)

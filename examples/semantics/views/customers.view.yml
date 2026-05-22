@@ -2,6 +2,21 @@ name: customers
 description: Customer data for fruit sales analysis
 datasource: local
 table: customer.csv
+
+refresh_key:
+  every: "1h"
+
+pre_aggregations:
+  # covers: top_customers task — customer_name dimension joined with orders measures
+  - name: customers_by_name
+    dimensions:
+      - customer_id
+      - customer_name
+    measures:
+      - total_customers
+    refresh_key:
+      every: 1h
+
 entities:
 - name: customer
   type: primary

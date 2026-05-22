@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use agentic_workflow::config::SemanticQueryConfig;
-use agentic_workflow::semantic_bridge::resolve_and_compile;
+use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
+use agentic_semantic::config::SemanticQueryConfig;
 use oxy::adapters::session_filters::SessionFilters;
 use oxy::config::model::ConnectionOverrides;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
@@ -35,7 +35,7 @@ use crate::server::api::data::{
     agentic_error_response, run_via_agentic_connector,
 };
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerExtractor,
 };
 
 #[derive(Serialize, ToSchema)]
@@ -262,6 +262,173 @@ pub async fn get_topic_details(
     }))
 }
 
+// ── Preagg status ─────────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize, Serialize, Clone)]
+pub struct ManifestMeasure {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub measure_type: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ManifestRollupEntry {
+    view_name: String,
+    rollup_name: String,
+    file: String,
+    #[serde(default)]
+    dimensions: Vec<String>,
+    #[serde(default)]
+    measures: Vec<ManifestMeasure>,
+    time_dimension: Option<String>,
+    granularity: Option<String>,
+    build_date: Option<String>,
+    refresh_key_checked_at: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct LocalManifestJson {
+    rollups: Vec<ManifestRollupEntry>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct PreaggRollupStatus {
+    pub view_name: String,
+    pub rollup_name: String,
+    pub has_parquet: bool,
+    pub dimensions: Vec<String>,
+    pub measures: Vec<ManifestMeasure>,
+    pub time_dimension: Option<String>,
+    pub granularity: Option<String>,
+    pub build_date: Option<String>,
+    pub refresh_key_checked_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PreaggStatusResponse {
+    pub rollups: Vec<PreaggRollupStatus>,
+}
+
+/// Read the manifest and check parquet file presence on disk.
+/// Extracted as a pure function for unit testability.
+pub(crate) fn build_preagg_status(cache_dir: &std::path::Path) -> PreaggStatusResponse {
+    let manifest_path = cache_dir.join("manifest.json");
+    let rollups = std::fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<LocalManifestJson>(&s).ok())
+        .map(|manifest| {
+            manifest
+                .rollups
+                .into_iter()
+                .map(|entry| {
+                    let parquet_path = cache_dir.join(&entry.file);
+                    PreaggRollupStatus {
+                        view_name: entry.view_name,
+                        rollup_name: entry.rollup_name,
+                        has_parquet: parquet_path.is_file(),
+                        dimensions: entry.dimensions,
+                        measures: entry.measures,
+                        time_dimension: entry.time_dimension,
+                        granularity: entry.granularity,
+                        build_date: entry.build_date,
+                        refresh_key_checked_at: entry.refresh_key_checked_at,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    PreaggStatusResponse { rollups }
+}
+
+/// `GET /{workspace_id}/semantic/preagg-status`
+///
+/// Returns the pre-aggregation cache status by reading `.airlayer/cache/manifest.json`.
+/// Missing or unparsable manifest returns an empty rollup list — no error.
+pub async fn get_preagg_status(
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
+) -> extract::Json<PreaggStatusResponse> {
+    let workspace_path = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+    let cache_dir = oxy::state_dir::get_airlayer_cache_dir(&workspace_path);
+    extract::Json(build_preagg_status(&cache_dir))
+}
+
+#[cfg(test)]
+mod preagg_tests {
+    use super::*;
+
+    #[test]
+    fn manifest_with_existing_parquet_returns_has_parquet_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_dir = dir.path().join(".airlayer").join("cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let manifest_json = serde_json::json!({
+            "pulled_at": "2026-05-11T00:00:00Z",
+            "source_database": "test",
+            "rollups": [{
+                "view_name": "orders",
+                "rollup_name": "by_month",
+                "rollup_hash": "aabbccdd",
+                "file": "orders__aabbccdd.parquet",
+                "dimensions": [],
+                "measures": [],
+                "time_dimension": null,
+                "granularity": null,
+                "build_date": "2026-05-11"
+            }]
+        });
+        std::fs::write(cache_dir.join("manifest.json"), manifest_json.to_string()).unwrap();
+        std::fs::write(cache_dir.join("orders__aabbccdd.parquet"), b"").unwrap();
+
+        let status = build_preagg_status(&cache_dir);
+        assert_eq!(status.rollups.len(), 1);
+        assert_eq!(status.rollups[0].view_name, "orders");
+        assert!(status.rollups[0].has_parquet);
+    }
+
+    #[test]
+    fn missing_parquet_returns_has_parquet_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_dir = dir.path().join(".airlayer").join("cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let manifest_json = serde_json::json!({
+            "pulled_at": "2026-05-11T00:00:00Z",
+            "source_database": "test",
+            "rollups": [{
+                "view_name": "orders",
+                "rollup_name": "by_month",
+                "rollup_hash": "aabbccdd",
+                "file": "orders__aabbccdd.parquet",
+                "dimensions": [],
+                "measures": [],
+                "time_dimension": null,
+                "granularity": null,
+                "build_date": "2026-05-11"
+            }]
+        });
+        std::fs::write(cache_dir.join("manifest.json"), manifest_json.to_string()).unwrap();
+
+        let status = build_preagg_status(&cache_dir);
+        assert_eq!(status.rollups.len(), 1);
+        assert!(!status.rollups[0].has_parquet);
+    }
+
+    #[test]
+    fn missing_manifest_returns_empty_rollups() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_dir = dir.path().join(".airlayer").join("cache");
+        let status = build_preagg_status(&cache_dir);
+        assert!(status.rollups.is_empty());
+    }
+}
+
 /// Serialize anything to a `Vec<serde_json::Value>`, treating a
 /// non-array serialization as empty. Lets the response shape stay
 /// `Vec<Object>` regardless of whether the semantic model exposes the
@@ -312,30 +479,34 @@ pub async fn compile_semantic_query(
         })
         .collect();
 
-    let (sql, _database_name) =
-        tokio::task::spawn_blocking(move || resolve_and_compile(&scan_path, &databases, &query))
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    extract::Json(ErrorResponse {
-                        message: format!("compile task panicked: {e}"),
-                    }),
-                )
-            })?
-            .map_err(|e| {
-                // airlayer surfaces both "schema/validation" errors (bad
-                // dimension name, missing topic, …) and "internal" ones with the
-                // same shape. The FE renders the message inline, so 400 is the
-                // friendlier default — the user typed something the layer
-                // rejected, not the server falling over.
-                (
-                    StatusCode::BAD_REQUEST,
-                    extract::Json(ErrorResponse {
-                        message: e.to_string(),
-                    }),
-                )
-            })?;
+    let compiled = tokio::task::spawn_blocking(move || {
+        // Compile to warehouse SQL only (no preagg cache) — IDE preview
+        // should always show the human-readable warehouse SQL, not the
+        // local-Parquet rewrite.
+        resolve_and_compile(&scan_path, &databases, &query, None, 0)
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            extract::Json(ErrorResponse {
+                message: format!("compile task panicked: {e}"),
+            }),
+        )
+    })?
+    .map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    let sql = match compiled {
+        CompiledQuery::Warehouse { sql, .. } => sql,
+        CompiledQuery::Preaggregation { preagg_sql, .. } => preagg_sql,
+    };
 
     Ok(extract::Json(SemanticQueryCompileResponse { sql }))
 }
@@ -381,6 +552,10 @@ pub async fn execute_semantic_query(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    PreaggCacheCtx {
+        cache: preagg_cache,
+        renewal_threshold_secs,
+    }: PreaggCacheCtx,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SemanticQueryExecuteRequest>,
 ) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<SqlErrorResponse>)> {
@@ -396,50 +571,179 @@ pub async fn execute_semantic_query(
         .collect();
 
     let query = payload.query;
-    let (sql, database) =
-        tokio::task::spawn_blocking(move || resolve_and_compile(&scan_path, &databases, &query))
-            .await
-            .map_err(|e| {
-                // Task panic — distinct from a compile error, but the
-                // FE only renders `message`, so a 500 is fine.
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    extract::Json(SqlErrorResponse {
-                        message: format!("compile task panicked: {e}"),
-                        code: None,
-                        detail: None,
-                        hint: None,
-                        position: None,
-                        sql: None,
-                    }),
-                )
-            })?
-            .map_err(|e| {
-                // Bad topic / unknown dimension / etc. → 400. Same
-                // reasoning as `/semantic/compile`'s error mapping.
-                (
-                    StatusCode::BAD_REQUEST,
-                    extract::Json(SqlErrorResponse {
-                        message: e.to_string(),
-                        code: None,
-                        detail: None,
-                        hint: None,
-                        position: None,
-                        sql: None,
-                    }),
-                )
-            })?;
+    // Compile through the same preagg-aware path the workflow runtime
+    // and analytics solver use. When a preagg cache is attached and a
+    // rollup covers the request, `compiled` will be `LocalParquet` and
+    // we serve from the on-disk Parquet via DuckDB instead of round-
+    // tripping to the warehouse.
+    let cache_for_compile = preagg_cache.clone();
+    let threshold = renewal_threshold_secs.unwrap_or(0);
+    let scan_path_for_compile = scan_path.clone();
+    let compiled = tokio::task::spawn_blocking(move || {
+        resolve_and_compile(
+            &scan_path_for_compile,
+            &databases,
+            &query,
+            cache_for_compile,
+            threshold,
+        )
+    })
+    .await
+    .map_err(|e| sql_error_500(format!("compile task panicked: {e}")))?
+    .map_err(|e| sql_error_400(e.to_string()))?;
 
-    let sql_payload = SQLParams {
-        sql,
-        database,
-        filters: payload.session_filters,
-        connections: payload.connections,
-        result_format: payload.result_format,
-    };
+    match compiled {
+        CompiledQuery::Warehouse { sql, database_name } => {
+            let sql_payload = SQLParams {
+                sql,
+                database: database_name,
+                filters: payload.session_filters,
+                connections: payload.connections,
+                result_format: payload.result_format,
+            };
+            run_via_agentic_connector(&workspace_manager, user.id, role, &sql_payload)
+                .await
+                .map(extract::Json)
+                .map_err(|e: SqlExecuteError| agentic_error_response(&sql_payload, e))
+        }
+        CompiledQuery::Preaggregation {
+            preagg_sql,
+            parquet_path,
+            ..
+        } => {
+            let started = std::time::Instant::now();
+            let want_parquet = matches!(payload.result_format, Some(ResultFormat::Parquet));
+            if want_parquet {
+                // The IDE Run button always requests Parquet — write the
+                // DuckDB reagg result to a file in the workspace results
+                // dir and return its handle so the FE can fetch it the
+                // same way it does for warehouse queries.
+                let results_dir = workspace_manager
+                    .config_manager
+                    .get_results_dir()
+                    .await
+                    .map_err(|e| sql_error_500(format!("results dir: {e}")))?;
+                tokio::fs::create_dir_all(&results_dir)
+                    .await
+                    .map_err(|e| sql_error_500(format!("mkdir results dir: {e}")))?;
+                let file_name = format!("{}.parquet", uuid::Uuid::new_v4());
+                let dest_path = results_dir.join(&file_name);
 
-    run_via_agentic_connector(&workspace_manager, user.id, role, &sql_payload)
-        .await
-        .map(extract::Json)
-        .map_err(|e: SqlExecuteError| agentic_error_response(&sql_payload, e))
+                tokio::task::spawn_blocking(move || {
+                    write_preagg_parquet(&preagg_sql, &parquet_path, &dest_path)
+                })
+                .await
+                .map_err(|e| sql_error_500(format!("preagg task panicked: {e}")))?
+                .map_err(sql_error_500)?;
+
+                Ok(extract::Json(SemanticQueryResponse::Parquet {
+                    file_name,
+                    is_preagg: true,
+                    execution_time_ms: started.elapsed().as_millis() as u64,
+                }))
+            } else {
+                let result = tokio::task::spawn_blocking(move || {
+                    agentic_semantic::preagg::execute_preagg_sql(&preagg_sql, &parquet_path)
+                })
+                .await
+                .map_err(|e| sql_error_500(format!("preagg task panicked: {e}")))?
+                .map_err(|e| sql_error_500(e.to_string()))?;
+
+                Ok(extract::Json(preagg_json_to_response(result)))
+            }
+        }
+    }
+}
+
+/// Write the result of `preagg_sql` (which `read_parquet(...)`s from the
+/// local rollup cache) into `dest_path` as a Parquet file via DuckDB's
+/// `COPY ... TO ... (FORMAT PARQUET)`. Keeps every byte inside DuckDB so
+/// we never round-trip rows through Rust just to serialize them again.
+fn write_preagg_parquet(
+    preagg_sql: &str,
+    rollup_parquet: &std::path::Path,
+    dest_path: &std::path::Path,
+) -> Result<(), String> {
+    if !rollup_parquet.is_file() {
+        return Err(format!(
+            "rollup parquet not found: {}",
+            rollup_parquet.display()
+        ));
+    }
+    let conn = agentic_semantic::preagg::pooled_duckdb_connection()
+        .map_err(|e| format!("preagg duckdb pool: {e}"))?;
+    let dest = dest_path
+        .to_str()
+        .ok_or_else(|| "non-UTF8 dest path".to_string())?
+        .replace('\'', "''");
+    let trimmed = preagg_sql.trim().trim_end_matches(';');
+    let sql = format!("COPY ({trimmed}) TO '{dest}' (FORMAT PARQUET)");
+    conn.execute_batch(&sql)
+        .map_err(|e| format!("DuckDB parquet write failed: {e}"))?;
+    Ok(())
+}
+
+/// Convert the JSON blob produced by `execute_preagg_sql` (shape:
+/// `{columns: [..], rows: [{col: val, ...}], row_count, truncated}`) into
+/// the `SemanticQueryResponse::Json(Vec<Vec<String>>)` shape the IDE
+/// frontend already renders for warehouse results.
+fn preagg_json_to_response(value: serde_json::Value) -> SemanticQueryResponse {
+    let columns: Vec<String> = value
+        .get("columns")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|v| v.as_str().unwrap_or("").to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    // Mirror `typed_stream_to_json_array`: row 0 is the column header,
+    // subsequent rows are stringified cell values in column order. The
+    // IDE result table reads the header from `data[0]` — omitting it
+    // makes the table render "No results to display" even when the
+    // payload contains rows.
+    let mut out: Vec<Vec<String>> = vec![columns.clone()];
+    if let Some(arr) = value.get("rows").and_then(|r| r.as_array()) {
+        for row in arr {
+            out.push(
+                columns
+                    .iter()
+                    .map(|col| match row.get(col) {
+                        Some(serde_json::Value::Null) | None => String::new(),
+                        Some(serde_json::Value::String(s)) => s.clone(),
+                        Some(other) => other.to_string(),
+                    })
+                    .collect(),
+            );
+        }
+    }
+    SemanticQueryResponse::Json(out)
+}
+
+fn sql_error_400(message: String) -> (StatusCode, extract::Json<SqlErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        extract::Json(SqlErrorResponse {
+            message,
+            code: None,
+            detail: None,
+            hint: None,
+            position: None,
+            sql: None,
+        }),
+    )
+}
+
+fn sql_error_500(message: String) -> (StatusCode, extract::Json<SqlErrorResponse>) {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        extract::Json(SqlErrorResponse {
+            message,
+            code: None,
+            detail: None,
+            hint: None,
+            position: None,
+            sql: None,
+        }),
+    )
 }

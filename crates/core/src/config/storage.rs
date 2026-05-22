@@ -251,6 +251,7 @@ impl ConfigStorage for LocalSource {
             base_branch: None,
             repositories: vec![],
             admins: vec![],
+            pre_aggregations: None,
         });
         config.workspace_path = self.project_path.clone();
         config

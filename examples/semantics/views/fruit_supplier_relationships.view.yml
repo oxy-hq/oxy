@@ -2,6 +2,22 @@ name: fruit_supplier_relationships
 description: Relationship between fruits and their suppliers with pricing
 datasource: local
 table: fruit_supplier_relationships.csv
+
+refresh_key:
+  every: "1h"
+
+pre_aggregations:
+  # covers: supplier_scorecard task — relationship measures grouped by supplier_id
+  - name: scorecard_by_supplier
+    dimensions:
+      - supplier_id
+    measures:
+      - total_relationships
+      - avg_wholesale_price
+      - avg_lead_time
+    refresh_key:
+      every: 1h
+
 entities:
 - name: fruit_supplier_relationship
   type: primary

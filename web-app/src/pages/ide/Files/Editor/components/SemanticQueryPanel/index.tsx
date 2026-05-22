@@ -55,7 +55,9 @@ const SemanticQueryPanel = ({
     selectedDimensions,
     selectedMeasures,
     limit,
-    onLimitChange
+    onLimitChange,
+    isPreagg,
+    executionTime
   } = useSemanticExplorerContext();
   const availableFields = useMemo(() => {
     return [...availableDimensions, ...availableMeasures];
@@ -153,6 +155,8 @@ const SemanticQueryPanel = ({
             executionError={executionError}
             loading={executeLoading}
             loadingIndicator={executeLoadingIndicator}
+            isPreagg={isPreagg}
+            executionTime={executionTime}
           />
         </TabsContent>
       </div>

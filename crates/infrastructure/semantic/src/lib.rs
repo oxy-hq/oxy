@@ -63,6 +63,10 @@ struct ViewShim {
     measures: Option<Vec<airlayer::Measure>>,
     #[serde(default)]
     segments: Vec<airlayer::schema::models::Segment>,
+    #[serde(default)]
+    refresh_key: Option<airlayer::schema::models::RefreshKey>,
+    #[serde(default)]
+    pre_aggregations: Option<Vec<airlayer::schema::models::PreAggregation>>,
 }
 
 /// Intermediate topic representation for oxy YAML files.
@@ -102,7 +106,8 @@ pub fn parse_view_yaml(yaml: &str) -> Result<airlayer::View, SemanticError> {
         dimensions: shim.dimensions,
         measures: shim.measures,
         segments: shim.segments,
-        pre_aggregations: None,
+        pre_aggregations: shim.pre_aggregations,
+        refresh_key: shim.refresh_key,
         meta: None,
     })
 }

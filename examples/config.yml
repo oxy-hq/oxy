@@ -1,5 +1,13 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/config.json
 
+pre_aggregations:
+  schema: AIRLAYER
+  database: local
+  refresh_worker:
+    enabled: true
+    heartbeat: "30s"
+    renewal_threshold: "120s"
+
 databases:
   - name: primary_database
     type: bigquery
@@ -139,7 +147,7 @@ models:
 
 defaults:
   database: local
-  agent: default.agent.yml
+  agent: _analytics.agentic.yml
 
 builder_agent:
   model: claude-sonnet-4-6

@@ -127,10 +127,44 @@ export const registerAuthenticatedParquetFile = async (
     // Register the Parquet data as a file in DuckDB's virtual filesystem
     await db.registerFileBuffer(`${tableName}.parquet`, fileData);
 
-    // Create a table from the Parquet file
+    // Phase 1: CREATE TABLE as a DDL statement — DuckDB returns a row-count
+    // result (a single INTEGER), never materializing any actual column data.
+    // This avoids Arrow Int64 → JS BigInt conversion for large BIGINT values
+    // that would throw "is not safe to convert to a number".
     await conn.query(
       `CREATE TABLE "${tableName}" AS SELECT * FROM parquet_scan('${tableName}.parquet')`
     );
+
+    // Phase 2: Query information_schema.columns — all result columns are
+    // VARCHAR/INTEGER, completely safe from BigInt overflow.
+    const escapedName = tableName.replace(/'/g, "''");
+    const colTypesResult = await conn.query(
+      `SELECT column_name, data_type
+       FROM information_schema.columns
+       WHERE table_name = '${escapedName}' AND table_schema = 'main'
+       ORDER BY ordinal_position`
+    );
+    const colTypes = colTypesResult.toArray() as Array<{
+      column_name: string;
+      data_type: string;
+    }>;
+
+    // Phase 3: If any BIGINT-family columns exist, recreate the table with
+    // those columns cast to VARCHAR so JS never sees an unsafe Int64 value.
+    const bigintTypes = new Set(["BIGINT", "UBIGINT", "HUGEINT", "INT8"]);
+    const hasBigInt = colTypes.some(({ data_type }) => bigintTypes.has(data_type));
+    if (hasBigInt) {
+      const selectExprs = colTypes.map(({ column_name, data_type }) => {
+        const escaped = column_name.replace(/"/g, '""');
+        return bigintTypes.has(data_type)
+          ? `"${escaped}"::VARCHAR AS "${escaped}"`
+          : `"${escaped}"`;
+      });
+      await conn.query(`DROP TABLE "${tableName}"`);
+      await conn.query(
+        `CREATE TABLE "${tableName}" AS SELECT ${selectExprs.join(", ")} FROM parquet_scan('${tableName}.parquet')`
+      );
+    }
 
     // Verify the table was created
     await conn.query(`SELECT COUNT(*) as cnt FROM "${tableName}"`);

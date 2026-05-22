@@ -14,7 +14,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
@@ -79,7 +79,7 @@ use conversion::{
 use schema::{describe_query, describe_table, detect_join_keys, parse_summarize_cell};
 
 pub struct DuckDbConnector {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
     /// Tables / views registered during construction.
     loaded_tables: Vec<TableInfo>,
 }
@@ -91,7 +91,7 @@ impl DuckDbConnector {
     pub fn new(conn: Connection) -> Self {
         ensure_icu(&conn);
         Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             loaded_tables: Vec::new(),
         }
     }
@@ -249,7 +249,7 @@ impl DuckDbConnector {
         }
 
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             loaded_tables,
         })
     }
@@ -500,6 +500,25 @@ impl DatabaseConnector for DuckDbConnector {
                 columns: col_stats,
             },
         })
+    }
+
+    async fn execute_statement(&self, sql: &str) -> Result<(), ConnectorError> {
+        let sql = normalize_sql(sql);
+        // Move the synchronous lock + `execute_batch` off the Tokio worker:
+        // long warehouse CTAS calls flowing through here (e.g. preagg
+        // build-plan rebuilds) would otherwise starve the runtime thread
+        // that parked this task.
+        let conn = self.conn.clone();
+        let sql_owned = sql.to_string();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn
+                .lock()
+                .map_err(|e| ConnectorError::ConnectionError(format!("mutex poisoned: {e}")))?;
+            conn.execute_batch(&sql_owned)
+                .map_err(|e| ConnectorError::query_failed(sql_owned.clone(), e.to_string()))
+        })
+        .await
+        .map_err(|e| ConnectorError::ConnectionError(format!("blocking task panicked: {e}")))?
     }
 
     async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {

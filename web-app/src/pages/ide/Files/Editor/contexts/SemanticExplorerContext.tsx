@@ -20,6 +20,8 @@ type SemanticExplorerContextType = {
   selectedMeasures: string[];
   toggleDimension: (dimension: string) => void;
   toggleMeasure: (measure: string) => void;
+  setSelectedDimensions: (dimensions: string[]) => void;
+  setSelectedMeasures: (measures: string[]) => void;
 
   // Query results
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,6 +68,8 @@ type SemanticExplorerContextType = {
   setSqlError: (error: string | null) => void;
   canExecuteQuery: boolean;
   resultFile?: string;
+  isPreagg: boolean;
+  executionTime: number | null;
 };
 
 export const SemanticExplorerContext = createContext<SemanticExplorerContextType | null>(null);
@@ -99,8 +103,12 @@ export const SemanticExplorerProvider = ({
     setResult,
     resultFile,
     setResultFile,
+    isPreagg,
+    setIsPreagg,
     selectedDimensions,
+    setSelectedDimensions,
     selectedMeasures,
+    setSelectedMeasures,
     filters,
     orders,
     variables,
@@ -126,7 +134,9 @@ export const SemanticExplorerProvider = ({
     updateTimeDimension,
     removeTimeDimension,
     toggleDimension,
-    toggleMeasure
+    toggleMeasure,
+    executionTime,
+    setExecutionTime
   } = useSemanticQueryState();
 
   const { mutate: executeSemanticQuery, isPending: isExecuting } = useExecuteSemanticQuery();
@@ -196,15 +206,30 @@ export const SemanticExplorerProvider = ({
       timeDimensions
     });
 
+    const startTime = Date.now();
+    setExecutionTime(null);
+
     executeSemanticQuery(request, {
       onSuccess: (data) => {
-        setResultFile((data as { file_name: string }).file_name);
+        if (data && typeof data === "object" && "file_name" in data) {
+          setExecutionTime(data.execution_time_ms);
+        } else {
+          setExecutionTime(Date.now() - startTime);
+        }
+        if (data && typeof data === "object" && "file_name" in data) {
+          setResultFile(data.file_name);
+          setIsPreagg(data.is_preagg ?? false);
+        } else {
+          setIsPreagg(false);
+        }
         setResult([]);
         setExecutionError(null);
       },
       onError: (error) => {
+        setExecutionTime(Date.now() - startTime);
         setResult([]);
         setResultFile(undefined);
+        setIsPreagg(false);
         setExecutionError(error.message);
       }
     });
@@ -220,7 +245,9 @@ export const SemanticExplorerProvider = ({
     executeSemanticQuery,
     setResult,
     setResultFile,
-    setExecutionError
+    setIsPreagg,
+    setExecutionError,
+    setExecutionTime
   ]);
 
   const addFilter = useCallback(() => {
@@ -248,7 +275,9 @@ export const SemanticExplorerProvider = ({
       executeLoading,
       refetchData,
       selectedDimensions,
+      setSelectedDimensions,
       selectedMeasures,
+      setSelectedMeasures,
       toggleDimension,
       toggleMeasure,
       result,
@@ -281,7 +310,9 @@ export const SemanticExplorerProvider = ({
       availableMeasures,
       setResult,
       resultFile,
-      setResultFile
+      setResultFile,
+      isPreagg,
+      executionTime
     }),
     [
       dataLoading,
@@ -291,7 +322,9 @@ export const SemanticExplorerProvider = ({
       executeLoading,
       refetchData,
       selectedDimensions,
+      setSelectedDimensions,
       selectedMeasures,
+      setSelectedMeasures,
       toggleDimension,
       toggleMeasure,
       result,
@@ -305,6 +338,7 @@ export const SemanticExplorerProvider = ({
       variables,
       timeDimensions,
       addFilter,
+      isPreagg,
       updateFilter,
       removeFilter,
       addOrder,
@@ -324,7 +358,8 @@ export const SemanticExplorerProvider = ({
       availableMeasures,
       setResult,
       resultFile,
-      setResultFile
+      setResultFile,
+      executionTime
     ]
   );
 

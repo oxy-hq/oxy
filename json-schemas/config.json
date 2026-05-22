@@ -75,6 +75,17 @@
         "$ref": "#/definitions/Model"
       }
     },
+    "pre_aggregations": {
+      "description": "Pre-aggregation configuration (schema, database, background worker).",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PreaggConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "protected_branches": {
       "description": "Branches that are protected: saving a file while on one of these branches will auto-create a new feature branch instead of writing directly. Defaults to [default_branch] (usually \"main\") when not set.\n\nExample config.yml: protected_branches: - main - develop",
       "type": [
@@ -1288,6 +1299,65 @@
         },
         "name": {
           "type": "string"
+        }
+      }
+    },
+    "PreaggConfig": {
+      "description": "Top-level `pre_aggregations:` block in `config.yml`.",
+      "type": "object",
+      "properties": {
+        "database": {
+          "description": "Database connector used for pre-agg builds. Defaults to each view's own `datasource`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refresh_worker": {
+          "description": "Background refresh worker settings.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RefreshWorkerConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema": {
+          "description": "Warehouse schema where pre-agg tables are created. Defaults to `\"AIRLAYER\"`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "RefreshWorkerConfig": {
+      "description": "Configuration for the background pre-aggregation refresh worker.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Set to `false` to disable the background worker entirely.",
+          "default": true,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "heartbeat": {
+          "description": "How often the worker wakes up to check staleness (e.g. \"30s\", \"5m\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "renewal_threshold": {
+          "description": "How long a cached refresh_key result is valid before re-evaluating (e.g. \"120s\").",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

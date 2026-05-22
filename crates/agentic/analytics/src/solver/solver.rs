@@ -103,6 +103,25 @@ pub struct AnalyticsSolver {
     /// runs a `LIMIT 0` smoke check first. Procedure delegation is
     /// rejected with an explicit error in this mode.
     pub(crate) sql_generation_mode: bool,
+    /// Layer-1 preagg refresh-key cache, shared with the background worker.
+    ///
+    /// When set together with `semantic_scan_path`, the Specifying stage
+    /// consults the local Parquet manifest after a successful airlayer
+    /// compile and swaps `SolutionPayload::Sql` for
+    /// `SolutionPayload::Preaggregation` whenever a covering rollup exists.
+    /// `None` (CLI, tests, runs with no preagg worker) always routes to the
+    /// warehouse.
+    pub(crate) preagg_cache: Option<
+        std::sync::Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
+    >,
+    /// Renewal threshold (seconds) for the preagg refresh-key cache. Must
+    /// match the background worker's `renewal_threshold`. Defaults to 0 so
+    /// any cached value is treated as stale, which still serves the Parquet
+    /// but tells the background worker to refresh on the next heartbeat.
+    pub(crate) preagg_renewal_threshold_secs: u64,
+    /// Root directory the semantic layer was loaded from. Used to locate
+    /// the airlayer cache directory (`<scan>/.airlayer/cache/manifest.json`).
+    pub(crate) semantic_scan_path: Option<std::path::PathBuf>,
 }
 
 impl AnalyticsSolver {
@@ -139,6 +158,9 @@ impl AnalyticsSolver {
             question: String::new(),
             metric_sink: None,
             sql_generation_mode: false,
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: 0,
+            semantic_scan_path: None,
         }
     }
 
@@ -174,6 +196,9 @@ impl AnalyticsSolver {
             question: String::new(),
             metric_sink: None,
             sql_generation_mode: false,
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: 0,
+            semantic_scan_path: None,
         }
     }
 
@@ -302,6 +327,62 @@ impl AnalyticsSolver {
     pub fn with_engine(mut self, engine: Arc<dyn SemanticEngine>) -> Self {
         self.engine = Some(engine);
         self
+    }
+
+    /// Wire the Layer-1 preagg refresh-key cache and the scan path used to
+    /// locate the airlayer cache directory. Both are required for the
+    /// Specifying stage to consider local Parquet — passing `None` for
+    /// either field reverts the solver to warehouse-only execution.
+    pub fn with_preagg(
+        mut self,
+        cache: Option<
+            std::sync::Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
+        >,
+        renewal_threshold_secs: u64,
+        semantic_scan_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        self.preagg_cache = cache;
+        self.preagg_renewal_threshold_secs = renewal_threshold_secs;
+        self.semantic_scan_path = semantic_scan_path;
+        self
+    }
+
+    /// Wrap compiled warehouse SQL into the appropriate `SolutionPayload`:
+    /// `LocalParquet` when a fresh local rollup covers the request, otherwise
+    /// raw `Sql`. Single source of truth — every pipeline stage that builds a
+    /// semantic-layer solution payload must go through this method so the
+    /// preagg short-circuit is applied consistently.
+    pub(crate) fn build_semantic_payload(
+        &self,
+        sql: String,
+        request: &airlayer::engine::query::QueryRequest,
+    ) -> crate::types::SolutionPayload {
+        use crate::types::SolutionPayload;
+        match (self.preagg_cache.as_ref(), self.semantic_scan_path.as_ref()) {
+            (Some(cache), Some(scan_path)) => {
+                match agentic_semantic::compile::try_resolve_local_parquet(
+                    scan_path,
+                    request,
+                    cache,
+                    self.preagg_renewal_threshold_secs,
+                    &sql,
+                    "",
+                ) {
+                    Some(agentic_semantic::compile::CompiledQuery::Preaggregation {
+                        preagg_sql,
+                        parquet_path,
+                        warehouse_sql,
+                        ..
+                    }) => SolutionPayload::Preaggregation {
+                        preagg_sql,
+                        parquet_path,
+                        warehouse_sql,
+                    },
+                    _ => SolutionPayload::Sql(sql),
+                }
+            }
+            _ => SolutionPayload::Sql(sql),
+        }
     }
 
     /// Day-only date hint that is appended to the system prompt as a

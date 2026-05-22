@@ -19,6 +19,7 @@ use agentic_http::{AgenticState, cleanup_stale_runs};
 use oxy_auth::middleware::internal_auth_middleware;
 use oxy_shared::errors::OxyError;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 use crate::agentic_wiring::builder_bridges::OxyBuilderAppRunner;
 use crate::api::middlewares::timeout::timeout_middleware;
@@ -39,16 +40,104 @@ pub async fn api_router(
     startup_cwd: std::path::PathBuf,
     shutdown_token: CancellationToken,
 ) -> Result<Router, OxyError> {
+    // Create AgenticState first — the preagg worker needs its db + runtime.
+    let agentic_state = new_agentic_state(shutdown_token, true).await?;
+
+    // Spawn the background pre-aggregation refresh worker (Layer 2 freshness).
+    // Only when the workspace path is non-empty (i.e. `oxy serve`, not the internal API).
+    // The cache Arc is shared with per-request WorkspaceContext via AppState so that
+    // Layer 1 (per-query) and Layer 2 (background worker) observe the same entries.
+    let (preagg_cache, preagg_renewal_threshold_secs) = if !startup_cwd.as_os_str().is_empty() {
+        use crate::agentic_wiring::OxyProjectContext;
+        use crate::server::preagg_worker::{PreaggWorkerConfig, spawn_preagg_worker};
+        use agentic_semantic::refresh_key_cache::RefreshKeyCache;
+        use oxy::adapters::workspace::builder::WorkspaceBuilder;
+
+        // Read pre_aggregations config from config.yml so schema/database/worker
+        // settings are driven by the project, not hardcoded defaults.
+        let preagg_cfg: Option<oxy::config::model::PreaggConfig> =
+            match oxy::config::ConfigBuilder::new().with_workspace_path(&startup_cwd) {
+                Ok(b) => b
+                    .build_with_fallback_config()
+                    .await
+                    .ok()
+                    .and_then(|cm| cm.get_config().pre_aggregations.clone()),
+                Err(_) => None,
+            };
+
+        let worker_cfg = preagg_cfg.as_ref().and_then(|p| p.refresh_worker.as_ref());
+
+        let enabled = worker_cfg.and_then(|w| w.enabled).unwrap_or(true);
+
+        if enabled {
+            let heartbeat = worker_cfg
+                .and_then(|w| w.heartbeat.as_deref())
+                .and_then(|s| airlayer::preagg::parse_interval(s).ok())
+                .unwrap_or(std::time::Duration::from_secs(30));
+
+            let renewal_threshold = worker_cfg
+                .and_then(|w| w.renewal_threshold.as_deref())
+                .and_then(|s| airlayer::preagg::parse_interval(s).ok())
+                .unwrap_or(std::time::Duration::from_secs(120));
+
+            let schema = preagg_cfg
+                .as_ref()
+                .and_then(|p| p.schema.clone())
+                .unwrap_or_else(|| "AIRLAYER".into());
+
+            let database = preagg_cfg.as_ref().and_then(|p| p.database.clone());
+
+            // Build OxyProjectContext once at startup — shared across all heartbeat ticks.
+            let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
+                .with_workspace_path_and_fallback_config(&startup_cwd)
+                .await
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!("preagg: workspace builder init failed: {e}"))
+                })?
+                .build()
+                .await
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!("preagg: workspace build failed: {e}"))
+                })?;
+
+            let cache = std::sync::Arc::new(std::sync::RwLock::new(RefreshKeyCache::new()));
+            spawn_preagg_worker(
+                PreaggWorkerConfig {
+                    workspace_path: startup_cwd.clone(),
+                    heartbeat,
+                    renewal_threshold,
+                    schema,
+                    database,
+                    db: agentic_state.db.clone(),
+                    state: agentic_state.runtime.clone(),
+                    ctx: std::sync::Arc::new(
+                        OxyProjectContext::new(workspace_manager)
+                            .with_preagg_renewal_threshold_secs(renewal_threshold.as_secs()),
+                    ),
+                    manifest_write_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+                },
+                cache.clone(),
+            );
+            (Some(cache), Some(renewal_threshold.as_secs()))
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+
+    spawn_recovery(agentic_state.clone(), mode);
+    spawn_shutdown_hook(agentic_state.clone());
+
     let app_state = AppState {
         enterprise,
         internal: false,
         mode,
         observability,
         startup_cwd,
+        preagg_cache,
+        preagg_renewal_threshold_secs,
     };
-    let agentic_state = new_agentic_state(shutdown_token, true).await?;
-    spawn_recovery(agentic_state.clone(), mode);
-    spawn_shutdown_hook(agentic_state.clone());
 
     let protected_routes = match mode {
         ServeMode::Cloud => {
@@ -109,6 +198,8 @@ pub async fn internal_api_router(
         mode: ServeMode::Cloud,
         observability,
         startup_cwd: std::path::PathBuf::new(),
+        preagg_cache: None,
+        preagg_renewal_threshold_secs: None,
     };
     // `api_router` owns startup cleanup + recovery for the whole process;
     // the internal router shares the same database state, so it skips both

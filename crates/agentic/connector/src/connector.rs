@@ -619,6 +619,18 @@ pub trait DatabaseConnector: Send + Sync {
         None
     }
 
+    /// Execute a statement and discard any result rows.
+    ///
+    /// Used for DDL (`CREATE SCHEMA`, `CREATE TABLE`, `INSERT`, etc.) that must
+    /// **not** be wrapped in `CREATE TEMP TABLE AS (...)`.  The default
+    /// implementation calls [`execute_query`] with `sample_limit = 0` and
+    /// discards the result, which works for SELECT-safe connectors. Connectors
+    /// that use a temp-table wrapper (e.g. DuckDB) **must** override this to
+    /// execute the statement directly.
+    async fn execute_statement(&self, sql: &str) -> Result<(), ConnectorError> {
+        self.execute_query(sql, 0).await.map(|_| ())
+    }
+
     /// Prepare for schema introspection.
     ///
     /// Connectors with lazy connections (e.g. Postgres) override this to open

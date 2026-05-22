@@ -1,6 +1,9 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import EmptyState from "@/components/ui/EmptyState";
+import TablePagination from "@/components/ui/TablePagination";
 import { VirtualizedTable } from "@/components/ui/VirtualizedTable";
+
+const PAGE_SIZE = 100;
 
 interface ResultsProps {
   result?: string[][];
@@ -49,6 +52,21 @@ const ArrayBasedTable = ({ result }: { result: string[][] }) => {
     startWidth: number;
   } | null>(null);
 
+  const totalRows = Math.max(result.length - 1, 0);
+  const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+  const [currentPage, setCurrentPage] = useState(1);
+  const safePage = Math.min(currentPage, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pageRows = useMemo(
+    () => result.slice(1 + pageStart, 1 + pageStart + PAGE_SIZE),
+    [result, pageStart]
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedCell(null);
+  }, []);
+
   // Compute column widths: use custom width if available, otherwise default
   const columnWidths = useMemo(() => {
     if (result.length === 0) return [];
@@ -62,7 +80,8 @@ const ArrayBasedTable = ({ result }: { result: string[][] }) => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "c" && selectedCell) {
-        const value = result[selectedCell.row][selectedCell.col];
+        const value = result[selectedCell.row]?.[selectedCell.col];
+        if (value === undefined) return;
         navigator.clipboard.writeText(value).catch((err) => {
           console.error("Failed to copy:", err);
         });
@@ -149,59 +168,78 @@ const ArrayBasedTable = ({ result }: { result: string[][] }) => {
   };
 
   return (
-    <div className='scrollbar-gutter-auto flex h-full min-h-0 flex-col overflow-auto font-mono text-xs'>
-      <div className='flex min-w-fit flex-col'>
-        {/* Fixed Header */}
-        <div
-          className='sticky top-0 z-10 grid flex-shrink-0 border-b bg-muted'
-          style={{ gridTemplateColumns }}
-        >
-          {/* Row number header */}
-          <div className='flex h-8 items-center justify-center border-r bg-muted/80 px-3 font-semibold uppercase' />
+    <div className='flex h-full min-h-0 flex-col font-mono text-xs'>
+      <div className='scrollbar-gutter-auto min-h-0 flex-1 overflow-auto'>
+        <div className='flex min-w-fit flex-col'>
+          {/* Fixed Header */}
+          <div
+            className='sticky top-0 z-10 grid flex-shrink-0 border-b bg-muted'
+            style={{ gridTemplateColumns }}
+          >
+            {/* Row number header */}
+            <div className='flex h-8 items-center justify-center border-r bg-muted/80 px-3 font-semibold uppercase' />
 
-          {result[0].map((cell, idx) => (
-            <div
-              key={idx}
-              className={`relative flex h-8 cursor-pointer items-center overflow-hidden border-r px-3 font-semibold uppercase last:border-r-0 ${
-                selectedCell?.row === 0 && selectedCell?.col === idx
-                  ? "bg-primary/20 ring-2 ring-primary ring-inset"
-                  : "hover:bg-muted-foreground/10"
-              }`}
-              onClick={() => setSelectedCell({ row: 0, col: idx })}
-              title={cell}
-            >
-              <span className='truncate'>{cell}</span>
+            {result[0].map((cell, idx) => (
               <div
-                className='absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 active:bg-primary'
-                onMouseDown={(e) => handleResizeStart(idx, e)}
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Scrollable Body */}
-        <div className='flex flex-col'>
-          {result.slice(1).map((row, rowIdx) => (
-            <div key={rowIdx} className='grid border-b' style={{ gridTemplateColumns }}>
-              {/* Row number */}
-              <div className='flex h-7 items-center justify-center border-r bg-muted/30 px-3 py-1 text-muted-foreground'>
-                {rowIdx + 1}
-              </div>
-
-              {row.map((cell, cellIdx) => (
-                <DataCell
-                  key={cellIdx}
-                  cell={cell}
-                  rowIdx={rowIdx}
-                  cellIdx={cellIdx}
-                  isSelected={selectedCell?.row === rowIdx + 1 && selectedCell?.col === cellIdx}
-                  onClick={() => setSelectedCell({ row: rowIdx + 1, col: cellIdx })}
+                key={idx}
+                className={`relative flex h-8 cursor-pointer items-center overflow-hidden border-r px-3 font-semibold uppercase last:border-r-0 ${
+                  selectedCell?.row === 0 && selectedCell?.col === idx
+                    ? "bg-primary/20 ring-2 ring-primary ring-inset"
+                    : "hover:bg-muted-foreground/10"
+                }`}
+                onClick={() => setSelectedCell({ row: 0, col: idx })}
+                title={cell}
+              >
+                <span className='truncate'>{cell}</span>
+                <div
+                  className='absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 active:bg-primary'
+                  onMouseDown={(e) => handleResizeStart(idx, e)}
                 />
-              ))}
-            </div>
-          ))}
+              </div>
+            ))}
+          </div>
+
+          {/* Scrollable Body (paged) */}
+          <div className='flex flex-col'>
+            {pageRows.map((row, rowIdx) => {
+              const absoluteRow = pageStart + rowIdx + 1;
+              return (
+                <div key={absoluteRow} className='grid border-b' style={{ gridTemplateColumns }}>
+                  {/* Row number */}
+                  <div className='flex h-7 items-center justify-center border-r bg-muted/30 px-3 py-1 text-muted-foreground'>
+                    {absoluteRow}
+                  </div>
+
+                  {row.map((cell, cellIdx) => (
+                    <DataCell
+                      key={cellIdx}
+                      cell={cell}
+                      rowIdx={absoluteRow}
+                      cellIdx={cellIdx}
+                      isSelected={
+                        selectedCell?.row === absoluteRow && selectedCell?.col === cellIdx
+                      }
+                      onClick={() => setSelectedCell({ row: absoluteRow, col: cellIdx })}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
+      {totalPages > 1 && (
+        <div className='border-t px-4 py-2'>
+          <TablePagination
+            currentPage={safePage}
+            totalPages={totalPages}
+            totalItems={totalRows}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+            itemLabel='rows'
+          />
+        </div>
+      )}
     </div>
   );
 };

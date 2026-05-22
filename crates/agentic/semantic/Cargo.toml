@@ -1,0 +1,26 @@
+[package]
+name = "agentic-semantic"
+description = "Shared semantic-query compile and preagg helpers for the agentic framework"
+version.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+agentic-connector = { workspace = true, features = ["duckdb"] }
+agentic-core = { workspace = true }
+airlayer = { workspace = true }
+chrono = { workspace = true }
+chrono-english = { workspace = true }
+duckdb = { workspace = true }
+oxy-shared = { workspace = true }
+oxy-airlayer-compat = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

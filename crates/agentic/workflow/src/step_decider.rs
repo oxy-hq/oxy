@@ -112,6 +112,10 @@ impl WorkflowDecider {
             let step_name = child.step_name.clone();
             let answer_value = serde_json::from_str::<Value>(&child.answer)
                 .unwrap_or_else(|_| json!({"text": child.answer}));
+            let is_preagg = answer_value
+                .get("is_preagg")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             // Loop steps need two extra fold-time invariants beyond the
             // simple `state.results.insert(step, answer)` path:
             // 1. Pre-seeded reusable entries (from per-iteration cache hits
@@ -130,18 +134,6 @@ impl WorkflowDecider {
                 state.results.get(&step_name),
             );
             state.results.insert(step_name.clone(), folded);
-            // `_folded_iters` was previously used to emit
-            // `subrun_step_iteration_completed` events here, but the
-            // coordinator aggregates *all* child completions before
-            // calling `decide()` (`resume_parent` only fires once per
-            // fan-out), so the events arrived in a single batch when the
-            // loop finished — defeating the live progress bar's whole
-            // point. The coordinator now emits one event per child as
-            // each `record_child_result` lands (see
-            // `runtime::coordinator::fanout::emit_iteration_completed`),
-            // which produces real incremental updates. Keeping the
-            // helper return so test assertions still validate the fold
-            // accounting; just don't re-emit here.
 
             // Remove this child from pending_children.
             if let Some(siblings) = state.pending_children.get_mut(&step_key) {
@@ -180,7 +172,8 @@ impl WorkflowDecider {
             // The completion event must carry `error` for failed children so
             // the frontend can surface it. `child.answer` doubles as the
             // error message when `child.status != "done"`.
-            let mut completion = json!({ "step": step_name, "success": success });
+            let mut completion =
+                json!({ "step": step_name, "success": success, "is_preagg": is_preagg });
             if !success {
                 completion["error"] = Value::String(child.answer.clone());
                 if let Some(obj) = completion.as_object_mut() {

@@ -270,6 +270,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         base_branch: None,
         repositories: vec![],
         admins: vec![],
+        pre_aggregations: None,
     };
     serde_yaml::to_writer(
         std::fs::File::create(setup.output_dir.join("config.yml"))?,

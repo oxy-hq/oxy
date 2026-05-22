@@ -5,9 +5,11 @@
 //! The pipeline layer implements this trait for `oxy::WorkspaceManager`.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use agentic_connector::DatabaseConnector;
+
+use crate::refresh_key_cache::RefreshKeyCache;
 
 /// Resolved integration credentials ready for use.
 ///
@@ -47,6 +49,20 @@ pub trait WorkspaceContext: Send + Sync {
 
     /// Read the raw YAML content of a workflow file.
     async fn resolve_workflow_yaml(&self, workflow_ref: &str) -> Result<String, String>;
+
+    /// Return the shared in-process refresh key cache, if the server has one configured.
+    ///
+    /// Returns `None` in contexts without a long-lived cache (e.g. CLI, tests).
+    fn refresh_key_cache(&self) -> Option<Arc<RwLock<RefreshKeyCache>>> {
+        None
+    }
+
+    /// Renewal threshold (seconds) used on the query read-path to decide
+    /// whether a cached refresh-key is still fresh. Must match the worker's
+    /// `pre_aggregations.refresh_worker.renewal_threshold`. Defaults to 120s.
+    fn preagg_renewal_threshold_secs(&self) -> u64 {
+        120
+    }
 
     /// List all `.airway.yml` pipeline files in the workspace. Default
     /// returns empty so existing impls (test fakes) need no change; the

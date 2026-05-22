@@ -443,6 +443,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         base_branch: None,
         repositories: vec![],
         admins: vec![],
+        pre_aggregations: None,
     };
 
     let yaml =

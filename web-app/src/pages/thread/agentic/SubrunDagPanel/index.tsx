@@ -1,7 +1,8 @@
-import { CheckCircle2, Circle, Repeat, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Repeat, XCircle, Zap } from "lucide-react";
 import { useMemo } from "react";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import type { SseEvent } from "@/hooks/useAnalyticsRun";
 import { cn } from "@/libs/shadcn/utils";
 
@@ -14,6 +15,7 @@ type StepState = {
   taskType: string;
   subStepsStarted: number;
   subStepsCompleted: number;
+  isPreagg: boolean;
 };
 
 // ── Status derivation ─────────────────────────────────────────────────────────
@@ -34,7 +36,8 @@ function deriveStepStatuses(
       status: "idle",
       taskType: s.task_type,
       subStepsStarted: 0,
-      subStepsCompleted: 0
+      subStepsCompleted: 0,
+      isPreagg: false
     };
   }
   let activeLoopStep: string | null = null;
@@ -50,9 +53,14 @@ function deriveStepStatuses(
         statuses[activeLoopStep].subStepsStarted++;
       }
     } else if (ev.type === "subrun_step_completed") {
-      const { step, success } = ev.data as { step: string; success: boolean };
+      const { step, success, is_preagg } = ev.data as {
+        step: string;
+        success: boolean;
+        is_preagg?: boolean;
+      };
       if (topLevelNames.has(step)) {
         statuses[step].status = success ? "done" : "failed";
+        if (is_preagg) statuses[step].isPreagg = true;
         if (step === activeLoopStep) {
           activeLoopStep = null;
         }
@@ -144,7 +152,8 @@ const SubrunDagPanel = ({
               status: "idle",
               taskType: step.task_type,
               subStepsStarted: 0,
-              subStepsCompleted: 0
+              subStepsCompleted: 0,
+              isPreagg: false
             };
             const status = state.status;
             const isHighlighted = status === "running";
@@ -178,13 +187,25 @@ const SubrunDagPanel = ({
 
                   {/* Label */}
                   <div className='min-w-0 flex-1'>
-                    <div
-                      className={cn(
-                        "truncate font-mono text-[10px]",
-                        status === "idle" ? "text-muted-foreground" : "text-foreground"
+                    <div className='flex items-center gap-1'>
+                      <div
+                        className={cn(
+                          "truncate font-mono text-[10px]",
+                          status === "idle" ? "text-muted-foreground" : "text-foreground"
+                        )}
+                      >
+                        {step.name}
+                      </div>
+                      {state.isPreagg && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Zap className='h-2.5 w-2.5 shrink-0 text-primary' />
+                          </TooltipTrigger>
+                          <TooltipContent side='top'>
+                            Served from pre-aggregation cache
+                          </TooltipContent>
+                        </Tooltip>
                       )}
-                    >
-                      {step.name}
                     </div>
                     {STATUS_LABEL[status] && (
                       <div className='mt-0.5 text-[10px] text-muted-foreground'>

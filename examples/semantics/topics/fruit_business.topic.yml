@@ -8,5 +8,6 @@ views:
 - shipping_addresses
 - fruit_suppliers
 - fruit_supplier_relationships
+- supplier_scorecard
 - order_shipments
 - order_returns

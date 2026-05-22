@@ -1,10 +1,8 @@
 llm:
   ref: claude
-  # model: claude-sonnet-4-6
-  # max_tokens: 8000
   thinking: disabled
   extended_thinking:
-    model: claude-opus-4-6
+    model: claude-sonnet-4-6
     thinking: adaptive
 context:
   - ./sales_semantics/**/*

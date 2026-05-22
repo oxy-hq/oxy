@@ -121,6 +121,7 @@ impl A2aConfig {
             base_branch: None,
             repositories: vec![],
             admins: vec![],
+            pre_aggregations: None,
         };
         let context = ValidationContext {
             config: dummy_config,

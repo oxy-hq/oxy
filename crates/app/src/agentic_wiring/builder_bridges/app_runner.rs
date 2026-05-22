@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use agentic_builder::BuilderAppRunner;
 use async_trait::async_trait;
@@ -20,6 +21,7 @@ use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::execute::types::{Data, DataContainer};
 use serde_json::{Value, json};
 
+use crate::agentic_wiring::OxyProjectContext;
 use crate::server::service::app::AppService;
 
 const MAX_SAMPLE_ROWS: usize = 10;
@@ -47,7 +49,8 @@ impl BuilderAppRunner for OxyBuilderAppRunner {
             .map_err(|e| e.to_string())?;
 
         let app_path = workspace_root.join(app_file);
-        let mut app_service = AppService::new(workspace_manager);
+        let project_ctx = Arc::new(OxyProjectContext::new(workspace_manager.clone()));
+        let mut app_service = AppService::new(workspace_manager, project_ctx);
         let data = app_service
             .run(&app_path, params)
             .await

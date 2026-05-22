@@ -2,6 +2,22 @@ name: order_shipments
 description: Shipment tracking for order line items (demonstrates foreign reference to composite key)
 datasource: local
 table: order_shipments.csv
+
+refresh_key:
+  every: "1h"
+
+pre_aggregations:
+  # covers: shipments_by_status task
+  - name: shipments_by_status
+    dimensions:
+      - shipment_status
+    measures:
+      - total_shipments
+      - delivered_shipments
+      - on_time_shipments
+    refresh_key:
+      every: 1h
+
 entities:
   - name: shipment
     type: primary

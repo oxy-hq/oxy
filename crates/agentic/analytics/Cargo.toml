@@ -19,6 +19,7 @@ agentic-core = { workspace = true }
 agentic-connector = { workspace = true }
 agentic-llm = { workspace = true }
 agentic-runtime = { workspace = true }
+agentic-semantic = { workspace = true }
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }
 duckdb = { workspace = true, optional = true }
@@ -39,6 +40,7 @@ tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 airlayer = { workspace = true }
+oxy-shared = { workspace = true }
 oxy-airlayer-compat = { workspace = true }
 strsim = { workspace = true }
 chrono = { workspace = true }

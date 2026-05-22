@@ -2,6 +2,33 @@ name: fruit_suppliers
 description: Suppliers who provide fruits to the business
 datasource: local
 table: fruit_suppliers.csv
+
+refresh_key:
+  every: "1h"
+
+pre_aggregations:
+  # covers: suppliers_by_country task (country + total_suppliers + avg_supplier_rating)
+  - name: suppliers_by_country
+    dimensions:
+      - country
+    measures:
+      - total_suppliers
+      - avg_supplier_rating
+    refresh_key:
+      every: 1h
+
+  # covers: supplier_scorecard task — supplier-level detail with name, country, rating
+  - name: supplier_detail
+    dimensions:
+      - supplier_id
+      - supplier_name
+      - country
+      - rating
+    measures:
+      - total_suppliers
+    refresh_key:
+      every: 1h
+
 entities:
 - name: supplier
   type: primary

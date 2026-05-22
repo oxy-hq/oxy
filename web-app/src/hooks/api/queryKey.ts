@@ -336,6 +336,12 @@ const featureFlagKeys = {
   list: () => [...featureFlagKeys.all, "list"] as const
 };
 
+const preaggKeys = {
+  all: ["preagg-status"] as const,
+  status: (projectId: string, branchName?: string) =>
+    [...preaggKeys.all, projectId, branchName ?? ""] as const
+};
+
 const authConfigKeys = {
   all: ["authConfig"] as const,
   current: () => [...authConfigKeys.all] as const
@@ -389,7 +395,8 @@ const queryKeys = {
   testRun: testRunKeys,
   humanVerdict: humanVerdictKeys,
   modeling: modelingKeys,
-  github: githubKeys
+  github: githubKeys,
+  preagg: preaggKeys
 };
 
 export default queryKeys;

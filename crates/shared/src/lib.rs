@@ -14,7 +14,10 @@ pub mod errors;
 pub mod infrastructure;
 pub mod key_validation;
 pub mod openai_config;
+pub mod state_dir;
 pub mod utils;
+
+pub use utils::sql::substitute_params;
 
 // Re-export commonly used items
 pub use errors::OxyError;

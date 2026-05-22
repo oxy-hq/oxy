@@ -441,8 +441,20 @@ impl AnalyticsFanoutWorker {
             }
         };
 
-        let sql = match &solution.payload {
-            SolutionPayload::Sql(sql) => sql.clone(),
+        // Determine the SQL the warehouse would have run (used for the
+        // visible event payload and the metric sink) and whether the
+        // payload should execute via DuckDB against a local Parquet cache
+        // instead of round-tripping to the warehouse.
+        let (sql_for_event, exec_via_preagg) = match &solution.payload {
+            SolutionPayload::Sql(sql) => (sql.clone(), None),
+            SolutionPayload::Preaggregation {
+                preagg_sql,
+                parquet_path,
+                warehouse_sql,
+            } => (
+                warehouse_sql.clone(),
+                Some((preagg_sql.clone(), parquet_path.clone())),
+            ),
             SolutionPayload::Vendor(_) => {
                 // Vendor path is not supported in fan-out; fall through to error.
                 return Err((
@@ -453,6 +465,7 @@ impl AnalyticsFanoutWorker {
                 ));
             }
         };
+        let is_preagg = exec_via_preagg.is_some();
 
         let connector = self
             .connectors
@@ -467,7 +480,11 @@ impl AnalyticsFanoutWorker {
         // Parent is pinned to `self.run_span` so the span's `trace_id`
         // always inherits `analytics.run`'s, independent of whatever the
         // current tokio worker thread's span stack happens to look like.
-        let (execution_type, is_verified) = execution_type_for(&solution.solution_source);
+        let (execution_type, is_verified) = if is_preagg {
+            ("semantic_query_preagg", true)
+        } else {
+            execution_type_for(&solution.solution_source)
+        };
         let tool_span = tracing::info_span!(
             parent: &self.run_span,
             "analytics.tool_call",
@@ -478,10 +495,23 @@ impl AnalyticsFanoutWorker {
             connector = %solution.connector_name,
             sub_spec_index = sub_spec_index.unwrap_or(usize::MAX) as i64,
         );
-        let exec_result = connector
-            .execute_query(&sql, DEFAULT_SAMPLE_LIMIT)
-            .instrument(tool_span.clone())
-            .await;
+        let exec_result: Result<agentic_connector::ExecutionResult, String> = match exec_via_preagg
+        {
+            Some((preagg_sql, parquet_path)) => {
+                crate::preagg_exec::execute_local_parquet(
+                    preagg_sql,
+                    parquet_path,
+                    DEFAULT_SAMPLE_LIMIT,
+                )
+                .instrument(tool_span.clone())
+                .await
+            }
+            None => connector
+                .execute_query(&sql_for_event, DEFAULT_SAMPLE_LIMIT)
+                .instrument(tool_span.clone())
+                .await
+                .map_err(|e| e.to_string()),
+        };
         match exec_result {
             Ok(exec) => {
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -523,14 +553,14 @@ impl AnalyticsFanoutWorker {
                             &self.question,
                             &q.measures,
                             &q.dimensions,
-                            &sql,
+                            &sql_for_event,
                         );
                     }
                 });
                 super::emit_domain(
                     &self.event_tx,
                     AnalyticsEvent::QueryExecuted {
-                        query: sql.clone(),
+                        query: sql_for_event.clone(),
                         row_count: exec.result.rows.len(),
                         duration_ms,
                         success: true,
@@ -538,6 +568,7 @@ impl AnalyticsFanoutWorker {
                         columns,
                         rows,
                         source: query_source,
+                        is_preagg,
                         sub_spec_index,
                         semantic_query: solution.semantic_query.clone(),
                     },
@@ -558,14 +589,15 @@ impl AnalyticsFanoutWorker {
                 super::emit_domain(
                     &self.event_tx,
                     AnalyticsEvent::QueryExecuted {
-                        query: sql.clone(),
+                        query: sql_for_event.clone(),
                         row_count: 0,
                         duration_ms,
                         success: false,
-                        error: Some(e.to_string()),
+                        error: Some(e.clone()),
                         columns: vec![],
                         rows: vec![],
                         source: query_source,
+                        is_preagg,
                         sub_spec_index,
                         semantic_query: solution.semantic_query.clone(),
                     },
@@ -573,8 +605,8 @@ impl AnalyticsFanoutWorker {
                 .await;
                 Err((
                     AnalyticsError::SyntaxError {
-                        query: sql,
-                        message: e.to_string(),
+                        query: sql_for_event,
+                        message: e,
                     },
                     BackTarget::Execute(solution.clone(), Default::default()),
                 ))

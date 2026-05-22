@@ -114,6 +114,10 @@ impl TaskExecutor for PipelineTaskExecutor {
                     .await
             }
 
+            TaskSpec::Custom { kind, .. } => Err(format!(
+                "PipelineTaskExecutor does not handle Custom tasks (kind: {kind})"
+            )),
+
             TaskSpec::Airway {
                 pipeline_ref,
                 variables,

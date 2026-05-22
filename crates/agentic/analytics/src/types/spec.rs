@@ -178,6 +178,17 @@ pub enum SolutionPayload {
     Sql(String),
     /// Vendor-native query, executed via [`SemanticEngine::execute`][crate::engine::SemanticEngine].
     Vendor(crate::engine::VendorQuery),
+    /// Local Parquet hit: the preagg cache covers the request. `preagg_sql`
+    /// is intended for an in-memory DuckDB and reads from `parquet_path`
+    /// via `read_parquet('...')`; warehouse connectors must not be invoked.
+    /// `warehouse_sql` is the SQL the warehouse-side compile produced —
+    /// kept for trace / metric_sink continuity so per-query observability
+    /// still surfaces the logical query, not the local rewrite.
+    Preaggregation {
+        preagg_sql: String,
+        parquet_path: PathBuf,
+        warehouse_sql: String,
+    },
 }
 
 impl SolutionPayload {
@@ -185,7 +196,7 @@ impl SolutionPayload {
     pub fn sql(&self) -> Option<&str> {
         match self {
             SolutionPayload::Sql(s) => Some(s),
-            SolutionPayload::Vendor(_) => None,
+            SolutionPayload::Vendor(_) | SolutionPayload::Preaggregation { .. } => None,
         }
     }
 
@@ -197,6 +208,9 @@ impl SolutionPayload {
             SolutionPayload::Sql(s) => s,
             SolutionPayload::Vendor(_) => {
                 panic!("expected SolutionPayload::Sql but got Vendor")
+            }
+            SolutionPayload::Preaggregation { .. } => {
+                panic!("expected SolutionPayload::Sql but got LocalParquet")
             }
         }
     }

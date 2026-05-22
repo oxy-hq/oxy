@@ -238,6 +238,7 @@ impl AnalyticsSolver {
                                 columns,
                                 rows,
                                 source: query_source,
+                                is_preagg: false,
                                 sub_spec_index: None,
                                 semantic_query: solution.semantic_query.clone(),
                             },
@@ -279,6 +280,7 @@ impl AnalyticsSolver {
                                 columns: vec![],
                                 rows: vec![],
                                 source: query_source,
+                                is_preagg: false,
                                 sub_spec_index: None,
                                 semantic_query: solution.semantic_query.clone(),
                             },
@@ -364,6 +366,7 @@ impl AnalyticsSolver {
                                 columns,
                                 rows,
                                 source: query_source,
+                                is_preagg: false,
                                 sub_spec_index: None,
                                 semantic_query: solution.semantic_query.clone(),
                             },
@@ -393,6 +396,7 @@ impl AnalyticsSolver {
                                 columns: vec![],
                                 rows: vec![],
                                 source: query_source,
+                                is_preagg: false,
                                 sub_spec_index: None,
                                 semantic_query: solution.semantic_query.clone(),
                             },
@@ -415,6 +419,156 @@ impl AnalyticsSolver {
                         };
                         Err((
                             analytics_err,
+                            BackTarget::Execute(solution, Default::default()),
+                        ))
+                    }
+                }
+            }
+
+            SolutionPayload::Preaggregation {
+                preagg_sql,
+                parquet_path,
+                warehouse_sql,
+            } => {
+                let preagg_sql = preagg_sql.clone();
+                let parquet_path = parquet_path.clone();
+                let warehouse_sql = warehouse_sql.clone();
+                tracing::debug!(
+                    parquet_path = %parquet_path.display(),
+                    "executing preagg LocalParquet via DuckDB"
+                );
+
+                // Emit the warehouse SQL as `query.input` so traces and the
+                // execution-analytics tab still surface the logical query,
+                // not the DuckDB `read_parquet(...)` rewrite.
+                tracing::info!(
+                    name: "query.input",
+                    is_visible = true,
+                    sql = %warehouse_sql,
+                    connector = %solution.connector_name,
+                    source = "SemanticLayer (preagg)",
+                );
+
+                let (execution_type, _is_verified) = ("semantic_query_preagg", true);
+                let tool_span = tracing::info_span!(
+                    "analytics.tool_call",
+                    oxy.name = "analytics.tool_call",
+                    oxy.span_type = "tool_call",
+                    oxy.execution_type = execution_type,
+                    oxy.is_verified = true,
+                    connector = %solution.connector_name,
+                );
+
+                let exec_result = crate::preagg_exec::execute_local_parquet(
+                    preagg_sql.clone(),
+                    parquet_path,
+                    DEFAULT_SAMPLE_LIMIT,
+                )
+                .instrument(tool_span.clone())
+                .await;
+
+                match exec_result {
+                    Ok(exec) => {
+                        let duration_ms = start.elapsed().as_millis() as u64;
+                        let columns = exec.result.columns.clone();
+                        let rows: Vec<Vec<serde_json::Value>> = exec
+                            .result
+                            .rows
+                            .iter()
+                            .map(|row| {
+                                row.0
+                                    .iter()
+                                    .map(|cell| match cell {
+                                        CellValue::Text(s) => serde_json::Value::String(s.clone()),
+                                        CellValue::Number(n) => serde_json::json!(n),
+                                        CellValue::Null => serde_json::Value::Null,
+                                    })
+                                    .collect()
+                            })
+                            .collect();
+
+                        tool_span.in_scope(|| {
+                            tracing::info!(
+                                name: "tool_call.output",
+                                status = "success",
+                                row_count = exec.result.rows.len(),
+                                duration_ms = duration_ms,
+                            );
+                            if let (Some(sink), Some(q)) =
+                                (self.metric_sink.as_ref(), &solution.semantic_query)
+                            {
+                                sink.record_analytics_query(
+                                    &self.agent_id,
+                                    &self.question,
+                                    &q.measures,
+                                    &q.dimensions,
+                                    &warehouse_sql,
+                                );
+                            }
+                        });
+
+                        tracing::info!(
+                            name: "query.result",
+                            is_visible = true,
+                            row_count = exec.result.rows.len(),
+                            columns = %serde_json::to_string(&columns).unwrap_or_default(),
+                            duration_ms = duration_ms,
+                            is_preagg = true,
+                        );
+
+                        emit_domain(
+                            &self.event_tx,
+                            AnalyticsEvent::QueryExecuted {
+                                query: warehouse_sql,
+                                row_count: exec.result.rows.len(),
+                                duration_ms,
+                                success: true,
+                                error: None,
+                                columns,
+                                rows,
+                                source: query_source,
+                                is_preagg: true,
+                                sub_spec_index: None,
+                                semantic_query: solution.semantic_query.clone(),
+                            },
+                        )
+                        .await;
+                        span.record("row_count", exec.result.rows.len());
+                        span.record("duration_ms", duration_ms);
+                        Ok(AnalyticsResult::single(exec.result, Some(exec.summary)))
+                    }
+                    Err(e) => {
+                        let duration_ms = start.elapsed().as_millis() as u64;
+                        tool_span.in_scope(|| {
+                            tracing::info!(
+                                name: "tool_call.output",
+                                status = "error",
+                                "error.message" = %e,
+                                duration_ms = duration_ms,
+                            );
+                        });
+                        emit_domain(
+                            &self.event_tx,
+                            AnalyticsEvent::QueryExecuted {
+                                query: warehouse_sql,
+                                row_count: 0,
+                                duration_ms,
+                                success: false,
+                                error: Some(e.clone()),
+                                columns: vec![],
+                                rows: vec![],
+                                source: query_source,
+                                is_preagg: true,
+                                sub_spec_index: None,
+                                semantic_query: solution.semantic_query.clone(),
+                            },
+                        )
+                        .await;
+                        Err((
+                            AnalyticsError::SyntaxError {
+                                query: preagg_sql,
+                                message: e,
+                            },
                             BackTarget::Execute(solution, Default::default()),
                         ))
                     }
@@ -490,6 +644,12 @@ impl AnalyticsSolver {
 
         let sql = match &solution.payload {
             SolutionPayload::Sql(s) => s.clone(),
+            // Preagg short-circuit produces a DuckDB `read_parquet(...)`
+            // statement that's useless to a downstream workflow step
+            // configured for `output: { mode: sql }`. Hand back the
+            // warehouse-side SQL we stashed alongside it so the cached
+            // file remains portable.
+            SolutionPayload::Preaggregation { warehouse_sql, .. } => warehouse_sql.clone(),
             SolutionPayload::Vendor(_) => {
                 // Already filtered above; defense in depth.
                 return SqlGenOutcome::IncompatiblePath {

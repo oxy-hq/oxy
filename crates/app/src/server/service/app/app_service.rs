@@ -43,14 +43,16 @@ pub fn render_control_default(val: JsonValue) -> JsonValue {
 
 pub struct AppService {
     workspace_manager: WorkspaceManager,
+    project_ctx: Arc<OxyProjectContext>,
     cache: AppCache,
 }
 
 impl AppService {
-    pub fn new(workspace_manager: WorkspaceManager) -> Self {
+    pub fn new(workspace_manager: WorkspaceManager, project_ctx: Arc<OxyProjectContext>) -> Self {
         let config_manager = workspace_manager.config_manager.clone();
         Self {
             workspace_manager,
+            project_ctx,
             cache: AppCache::new(config_manager),
         }
     }
@@ -147,10 +149,8 @@ impl AppService {
 
         let agent_runner =
             crate::agentic_wiring::OxyInlineAgentRunner::new(self.workspace_manager.clone());
-        let project_ctx = Arc::new(OxyProjectContext::new(self.workspace_manager.clone()));
-        let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
         let results = agentic_pipeline::workflow_run::run_inline_workflow_with(
-            workspace.as_ref(),
+            self.project_ctx.as_ref(),
             workflow_config,
             None,
             Some(&agent_runner),
@@ -207,16 +207,7 @@ impl AppService {
     }
 
     pub async fn read_yaml_file(&self, path: &PathBuf) -> AppResult<String> {
-        let config_manager = &self.workspace_manager.config_manager;
-        let full_path = config_manager.resolve_file(path).await.map_err(|e| {
-            tracing::debug!("Failed to resolve file: {:?} {}", path, e);
-            OxyError::ConfigurationError(format!("Failed to resolve file: {e}"))
-        })?;
-
-        std::fs::read_to_string(&full_path).map_err(|e| {
-            tracing::info!("Failed to read file: {:?}", e);
-            OxyError::ConfigurationError(format!("Failed to read file: {e}"))
-        })
+        read_app_yaml_file(&self.workspace_manager, path).await
     }
 
     fn parse_yaml_to_mapping(&self, yaml_content: &str) -> AppResult<serde_yaml::Mapping> {
@@ -230,6 +221,22 @@ impl AppService {
             )),
         }
     }
+}
+
+pub async fn read_app_yaml_file(
+    workspace_manager: &WorkspaceManager,
+    path: &PathBuf,
+) -> AppResult<String> {
+    let config_manager = &workspace_manager.config_manager;
+    let full_path = config_manager.resolve_file(path).await.map_err(|e| {
+        tracing::debug!("Failed to resolve file: {:?} {}", path, e);
+        OxyError::ConfigurationError(format!("Failed to resolve file: {e}"))
+    })?;
+
+    std::fs::read_to_string(&full_path).map_err(|e| {
+        tracing::info!("Failed to read file: {:?}", e);
+        OxyError::ConfigurationError(format!("Failed to read file: {e}"))
+    })
 }
 
 /// Convert an inline-workflow task result into a [`Data`] suitable for
@@ -255,24 +262,33 @@ fn workflow_task_to_data(task_name: &str, value: &JsonValue) -> Data {
     }
 }
 
-/// Re-shape a `{columns: [...], rows: [[...]]}` step result as an
-/// `[{col: val, ...}, ...]` array-of-objects, matching the shape the
-/// frontend's DuckDB-WASM `read_json_auto` ingest expects. Returns
-/// `None` when the value isn't tabular.
+/// Re-shape a step result into `[{col: val, ...}, ...]` — the shape the
+/// frontend's DuckDB-WASM `read_json_auto` ingest expects.
+///
+/// Accepts either row shape produced upstream:
+/// - Warehouse path (`query_result_to_json`) emits `rows: [[val, val], ...]`
+///   (array of arrays, column-positional).
+/// - Preagg path (`execute_preagg_sql`) emits `rows: [{col: val, ...}, ...]`
+///   (array of objects). Used as-is.
+///
+/// Returns `None` when the value isn't tabular.
 fn tabular_to_records(value: &JsonValue) -> Option<Vec<JsonValue>> {
     let columns = value.get("columns")?.as_array()?;
     let rows = value.get("rows")?.as_array()?;
     let col_names: Vec<&str> = columns.iter().filter_map(|v| v.as_str()).collect();
     let records = rows
         .iter()
-        .filter_map(|row| {
-            let cells = row.as_array()?;
-            let mut obj = serde_json::Map::with_capacity(col_names.len());
-            for (i, name) in col_names.iter().enumerate() {
-                let cell = cells.get(i).cloned().unwrap_or(JsonValue::Null);
-                obj.insert((*name).to_string(), cell);
+        .filter_map(|row| match row {
+            JsonValue::Array(cells) => {
+                let mut obj = serde_json::Map::with_capacity(col_names.len());
+                for (i, name) in col_names.iter().enumerate() {
+                    let cell = cells.get(i).cloned().unwrap_or(JsonValue::Null);
+                    obj.insert((*name).to_string(), cell);
+                }
+                Some(JsonValue::Object(obj))
             }
-            Some(JsonValue::Object(obj))
+            JsonValue::Object(_) => Some(row.clone()),
+            _ => None,
         })
         .collect();
     Some(records)
@@ -297,6 +313,25 @@ mod tests {
                 json!({"month": "2010-02", "total": 42.0}),
                 json!({"month": "2010-03", "total": 31.5}),
             ]
+        );
+    }
+
+    #[test]
+    fn tabular_value_accepts_object_rows() {
+        // Reagg / preagg path emits rows as `[{col: val}]` rather than
+        // `[[val]]`; we must accept both so preagg-served tasks don't
+        // render as empty tables.
+        let v = json!({
+            "columns": ["a", "b"],
+            "rows": [
+                {"a": 1, "b": "x"},
+                {"a": 2, "b": "y"},
+            ],
+        });
+        let records = tabular_to_records(&v).unwrap();
+        assert_eq!(
+            records,
+            vec![json!({"a": 1, "b": "x"}), json!({"a": 2, "b": "y"})]
         );
     }
 

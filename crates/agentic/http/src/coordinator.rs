@@ -223,6 +223,13 @@ pub struct RunIdPath {
 }
 
 #[derive(Serialize)]
+pub struct RunEventEntry {
+    pub seq: i64,
+    pub event_type: String,
+    pub payload: serde_json::Value,
+}
+
+#[derive(Serialize)]
 pub struct TaskTreeNode {
     pub run_id: String,
     pub parent_run_id: Option<String>,
@@ -238,6 +245,9 @@ pub struct TaskTreeNode {
     pub updated_at: String,
     /// Outcome as recorded by the parent coordinator (from agentic_task_outcomes).
     pub outcome_status: Option<String>,
+    /// Per-event log for supported source types (e.g. preagg_cycle).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub event_log: Vec<RunEventEntry>,
 }
 
 #[derive(Serialize)]
@@ -273,7 +283,7 @@ pub async fn get_run_tree(
         }
     }
 
-    let nodes: Vec<TaskTreeNode> = runs
+    let mut nodes: Vec<TaskTreeNode> = runs
         .into_iter()
         .map(|r| {
             let live_status = state
@@ -302,9 +312,27 @@ pub async fn get_run_tree(
                 task_status: r.task_status,
                 created_at: r.created_at.to_rfc3339(),
                 updated_at: r.updated_at.to_rfc3339(),
+                event_log: Vec::new(),
             }
         })
         .collect();
+
+    // Enrich preagg_cycle nodes with their per-rollup event log.
+    for node in &mut nodes {
+        if node.source_type == "preagg_cycle" {
+            if let Ok(events) = db::get_all_events(&db, &node.run_id).await {
+                node.event_log = events
+                    .into_iter()
+                    .filter(|e| e.event_type.starts_with("preagg_rollup"))
+                    .map(|e| RunEventEntry {
+                        seq: e.seq,
+                        event_type: e.event_type,
+                        payload: e.payload,
+                    })
+                    .collect();
+            }
+        }
+    }
 
     Json(TaskTreeResponse {
         root_id: run_id,

@@ -1,6 +1,7 @@
 use crate::server::router::AppState;
 use crate::server::service::retrieval::EnumIndexManager;
 use crate::server::service::secret_manager::SecretManagerService;
+use agentic_semantic::refresh_key_cache::RefreshKeyCache;
 use axum::extract::{FromRequestParts, OptionalFromRequestParts, Path};
 use axum::extract::{Query, State};
 use axum::http::request::Parts;
@@ -100,6 +101,35 @@ where
     }
 }
 
+/// Layer-1 preagg cache + renewal threshold, attached by the workspace
+/// middleware so handlers can compile semantic queries through the same
+/// preagg-aware path the background worker uses. Both fields are `None`
+/// when no preagg worker is running (CLI, tests, internal API router).
+#[derive(Clone, Default)]
+pub struct PreaggCacheCtx {
+    pub cache: Option<std::sync::Arc<std::sync::RwLock<RefreshKeyCache>>>,
+    pub renewal_threshold_secs: Option<u64>,
+}
+
+impl<S> FromRequestParts<S> for PreaggCacheCtx
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let ctx = parts
+            .extensions
+            .get::<PreaggCacheCtx>()
+            .cloned()
+            .unwrap_or_default();
+        async move { Ok(ctx) }
+    }
+}
+
 /// The caller's org membership, inserted by workspace_middleware when the workspace belongs to an org.
 #[derive(Clone)]
 pub struct OrgMembershipExtractor(pub entity::org_members::Model);
@@ -136,7 +166,7 @@ pub struct BranchQuery {
 }
 
 pub async fn workspace_middleware(
-    State(_app_state): State<AppState>,
+    State(app_state): State<AppState>,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     Query(query): Query<BranchQuery>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -158,6 +188,8 @@ pub async fn workspace_middleware(
                 workspace_id,
                 branch_id,
                 user.id,
+                app_state.preagg_cache,
+                app_state.preagg_renewal_threshold_secs,
                 &mut request,
             )
             .await?;
@@ -311,6 +343,8 @@ async fn try_attach_workspace_manager(
     workspace_id: Uuid,
     branch_id: Uuid,
     user_id: Uuid,
+    preagg_cache: Option<std::sync::Arc<std::sync::RwLock<RefreshKeyCache>>>,
+    preagg_renewal_threshold_secs: Option<u64>,
     request: &mut Request<axum::body::Body>,
 ) -> Result<(), StatusCode> {
     // Branch name is validated inside `effective_workspace_path`. The helper
@@ -396,12 +430,28 @@ async fn try_attach_workspace_manager(
     {
         ctx = ctx.with_role(role.clone());
     }
+    // Share the same cache Arc with the background preagg worker so Layer 1
+    // (per-query freshness) and Layer 2 (background rebuild) use the same state.
+    if let Some(cache) = preagg_cache.clone() {
+        ctx = ctx.with_preagg_cache(cache);
+    }
+    if let Some(secs) = preagg_renewal_threshold_secs {
+        ctx = ctx.with_preagg_renewal_threshold_secs(secs);
+    }
+    // Also expose the cache + threshold directly to handlers via a typed
+    // extension so endpoints like POST /semantic can resolve preagg without
+    // routing through OxyProjectContext.
+    request.extensions_mut().insert(PreaggCacheCtx {
+        cache: preagg_cache,
+        renewal_threshold_secs: preagg_renewal_threshold_secs,
+    });
     let project_ctx = std::sync::Arc::new(ctx);
     let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
         project_ctx.clone();
-    let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx);
+    let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx.clone());
     request.extensions_mut().insert(workspace_manager);
     request.extensions_mut().insert(platform);
+    request.extensions_mut().insert(project_ctx);
     request.extensions_mut().insert(bridges);
     Ok(())
 }

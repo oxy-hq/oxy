@@ -755,6 +755,8 @@ impl AnalyticsSolver {
                         &self.default_connector,
                     );
 
+                    let payload = self.build_semantic_payload(sql, &query_request);
+
                     specs.push(QuerySpec {
                         intent: intent.clone(),
                         resolved_metrics: query_request.measures.clone(),
@@ -767,7 +769,7 @@ impl AnalyticsSolver {
                         ),
                         assumptions: item.assumptions.clone(),
                         solution_source: SolutionSource::SemanticLayer,
-                        precomputed: Some(SolutionPayload::Sql(sql)),
+                        precomputed: Some(payload),
                         context: None,
                         connector_name,
                         query_request_item: Some(item.clone()),

@@ -30,6 +30,10 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
+once_cell = { workspace = true }
+home = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 
 # HTTP/API

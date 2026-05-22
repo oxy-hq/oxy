@@ -21,7 +21,11 @@ pub enum ResultFormat {
 #[serde(untagged)]
 pub enum SemanticQueryResponse {
     Json(Vec<Vec<String>>),
-    Parquet { file_name: String },
+    Parquet {
+        file_name: String,
+        is_preagg: bool,
+        execution_time_ms: u64,
+    },
 }
 use crate::server::service::retrieval::{ReindexInput, reindex};
 use agentic_connector::{ConnectorError, QueryFailedDetails};
@@ -205,10 +209,12 @@ pub(crate) async fn run_via_agentic_connector(
         .with_role(role);
     let connector = ctx.build_connector_for(&payload.database).await?;
 
+    let query_start = std::time::Instant::now();
     let stream = connector
         .execute_query_full(&payload.sql)
         .await
         .map_err(SqlExecuteError::Connector)?;
+    let execution_time_ms = query_start.elapsed().as_millis() as u64;
 
     let result_format = payload
         .result_format
@@ -224,7 +230,11 @@ pub(crate) async fn run_via_agentic_connector(
                 // frontend shows an empty table instead of a broken Parquet read.
                 Ok(SemanticQueryResponse::Json(vec![]))
             } else {
-                Ok(SemanticQueryResponse::Parquet { file_name })
+                Ok(SemanticQueryResponse::Parquet {
+                    file_name,
+                    is_preagg: false,
+                    execution_time_ms,
+                })
             }
         }
         ResultFormat::Json => {

@@ -7,7 +7,9 @@
 //! `internal-docs/semantic-validation-standardization.md`.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use airlayer::engine::query::{
     FilterOperator, OrderBy, QueryFilter, QueryRequest, TimeDimensionQuery,
@@ -16,8 +18,41 @@ use airlayer::schema::models::TopicFilterType;
 use chrono::{Local, NaiveDate};
 use serde_json::Value as JsonValue;
 
+use oxy_shared::substitute_params;
+
 use crate::config::{SemanticFilterType, SemanticQueryConfig, TimeGranularity};
-use crate::error::WorkflowError;
+use crate::error::SemanticError;
+use crate::refresh_key_cache::RefreshKeyCache;
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/// Result of compiling a semantic query.
+///
+/// - `Warehouse` — run the SQL against the named warehouse connector.
+/// - `Preaggregation` — run `preagg_sql` against an in-memory DuckDB that reads the local pre-aggregated Parquet file.
+#[derive(Debug)]
+pub enum CompiledQuery {
+    Warehouse {
+        sql: String,
+        database_name: String,
+    },
+    Preaggregation {
+        /// DuckDB rewrite that reads the local Parquet cache.
+        preagg_sql: String,
+        /// Path to the cached Parquet file backing `preagg_sql`.
+        parquet_path: PathBuf,
+        /// Warehouse SQL that would have been executed without the preagg
+        /// short-circuit. Surfaced to users/agents so they see the logical
+        /// query, not the DuckDB rewrite.
+        warehouse_sql: String,
+        /// Logical warehouse the query targets (from the view datasource).
+        /// Surfaced for display even when execution short-circuits to
+        /// local DuckDB.
+        warehouse_database: String,
+    },
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -25,21 +60,24 @@ use crate::error::WorkflowError;
 
 /// Resolve a semantic query against the semantic layer and compile to SQL.
 ///
-/// Returns `(sql, database_name)`.
+/// `cache` is the optional Layer-1 in-process refresh key cache. When `None`
+/// (CLI, tests), local Parquet is served without freshness validation.
 pub fn resolve_and_compile(
     scan_path: &Path,
     databases: &[airlayer::DatabaseConfig],
     task: &SemanticQueryConfig,
-) -> Result<(String, String), WorkflowError> {
+    cache: Option<Arc<RwLock<RefreshKeyCache>>>,
+    renewal_threshold_secs: u64,
+) -> Result<CompiledQuery, SemanticError> {
     let dialects = airlayer::DatasourceDialectMap::from_config_databases(databases);
 
     // Canonical shim-based discovery + parse (honors the `data_source`
     // alias), then build the dialect-aware engine — identical to how
     // analytics constructs its engine.
     let layer = oxy_airlayer_compat::load_layer_from_dir(scan_path)
-        .map_err(|e| WorkflowError::Runtime(format!("semantic engine error: {e}")))?;
+        .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?;
     let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects)
-        .map_err(|e| WorkflowError::Runtime(format!("semantic engine error: {e}")))?;
+        .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?;
 
     let semantic_layer = engine.semantic_layer();
 
@@ -57,7 +95,7 @@ pub fn resolve_and_compile(
         .iter()
         .find_map(|v| v.datasource.clone())
         .ok_or_else(|| {
-            WorkflowError::Validation(format!("No datasource found for topic '{}'", topic.name))
+            SemanticError::Validation(format!("No datasource found for topic '{}'", topic.name))
         })?;
 
     // Build date fields for filter normalization.
@@ -75,10 +113,99 @@ pub fn resolve_and_compile(
     // Compile to SQL.
     let result = engine
         .compile_query(&request)
-        .map_err(|e| WorkflowError::Runtime(format!("query compilation error: {e}")))?;
+        .map_err(|e| SemanticError::Runtime(format!("query compilation error: {e}")))?;
 
     let sql = substitute_params(&result.sql, &result.params);
-    Ok((sql, database_name))
+
+    // Check local Parquet cache with freshness validation (Layer 1).
+    // Only attempt this path when a cache (and therefore a background worker) is present.
+    // Without a running worker there is no guarantee the local Parquet is up-to-date,
+    // so CLI, tests, and the builder context always compile to warehouse SQL.
+    if let Some(ref cache_arc) = cache
+        && let Some(local) = try_resolve_local_parquet(
+            scan_path,
+            &request,
+            cache_arc,
+            renewal_threshold_secs,
+            &sql,
+            &database_name,
+        )
+    {
+        return Ok(local);
+    }
+
+    Ok(CompiledQuery::Warehouse { sql, database_name })
+}
+
+/// Look up the local-Parquet manifest, check coverage + freshness, and
+/// return a `CompiledQuery::Preaggregation` if all conditions are met.
+///
+/// Extracted so the analytics solver can reuse the freshness/seed dance
+/// without duplicating the manifest-loading code.
+pub fn try_resolve_local_parquet(
+    scan_path: &Path,
+    request: &QueryRequest,
+    cache: &Arc<RwLock<RefreshKeyCache>>,
+    renewal_threshold_secs: u64,
+    warehouse_sql: &str,
+    warehouse_database: &str,
+) -> Option<CompiledQuery> {
+    let cache_dir = oxy_shared::state_dir::get_airlayer_cache_dir(scan_path);
+    let manifest_path = cache_dir.join("manifest.json");
+    let content = std::fs::read_to_string(&manifest_path).ok()?;
+    let manifest: airlayer::preagg::LocalManifest = serde_json::from_str(&content).ok()?;
+
+    let covering_entry = airlayer::preagg::check_coverage(request, &manifest.rollups)?;
+    let rollup_hash = covering_entry.rollup_hash.clone();
+    let manifest_value = covering_entry.refresh_key_value.clone();
+    let is_fresh = check_and_seed_freshness(
+        cache,
+        &rollup_hash,
+        manifest_value.as_deref(),
+        renewal_threshold_secs,
+    );
+
+    let resolution = airlayer::preagg::resolve_local(request, &manifest, &cache_dir)?;
+    if let airlayer::preagg::PreaggResolution::LocalParquet {
+        reagg_sql: preagg_sql,
+        parquet_path,
+    } = resolution
+    {
+        if !is_fresh {
+            tracing::debug!(
+                rollup_hash = %rollup_hash,
+                "preagg: serving stale Parquet, background rebuild pending"
+            );
+        }
+        return Some(CompiledQuery::Preaggregation {
+            preagg_sql,
+            parquet_path: PathBuf::from(parquet_path),
+            warehouse_sql: warehouse_sql.to_string(),
+            warehouse_database: warehouse_database.to_string(),
+        });
+    }
+    None
+}
+
+/// Decide whether the cached refresh-key entry is still fresh against the
+/// manifest's stored value. On a cache miss, seeds the cache from the
+/// manifest and reports stale so the background worker picks it up next
+/// heartbeat.
+pub fn check_and_seed_freshness(
+    cache: &Arc<RwLock<RefreshKeyCache>>,
+    rollup_hash: &str,
+    manifest_value: Option<&str>,
+    renewal_threshold_secs: u64,
+) -> bool {
+    let threshold = Duration::from_secs(renewal_threshold_secs);
+    let guard = cache.read().expect("preagg cache lock poisoned");
+    if let Some(entry) = guard.get(rollup_hash, threshold) {
+        return entry.value.as_deref() == manifest_value;
+    }
+    drop(guard);
+    let mut wguard = cache.write().expect("preagg cache lock poisoned");
+    wguard.insert(rollup_hash.to_string(), manifest_value.map(String::from));
+    false
 }
 
 /// Get the database (datasource) name from the first view that has one.
@@ -93,7 +220,7 @@ pub fn get_database_from_views(views: &[airlayer::View]) -> Option<String> {
 fn resolve_topic(
     semantic_layer: &airlayer::SemanticLayer,
     task: &SemanticQueryConfig,
-) -> Result<airlayer::Topic, WorkflowError> {
+) -> Result<airlayer::Topic, SemanticError> {
     let empty = Vec::new();
     let topics = semantic_layer.topics.as_ref().unwrap_or(&empty);
 
@@ -104,7 +231,7 @@ fn resolve_topic(
             .cloned()
             .ok_or_else(|| {
                 let available: Vec<_> = topics.iter().map(|t| t.name.clone()).collect();
-                WorkflowError::Validation(format!(
+                SemanticError::Validation(format!(
                     "Topic '{}' not found. Available: {:?}",
                     topic_name, available
                 ))
@@ -127,7 +254,7 @@ fn resolve_topic(
             }
         }
         if view_names.is_empty() {
-            return Err(WorkflowError::Validation(
+            return Err(SemanticError::Validation(
                 "No dimensions or measures specified".to_string(),
             ));
         }
@@ -163,13 +290,13 @@ fn collect_date_fields(views: &[&airlayer::View]) -> HashSet<String> {
     date_fields
 }
 
-fn normalize_date_value(date: &str) -> Result<String, WorkflowError> {
+fn normalize_date_value(date: &str) -> Result<String, SemanticError> {
     if NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok() {
         return Ok(date.to_string());
     }
     let result = chrono_english::parse_date_string(date, Local::now(), chrono_english::Dialect::Us)
         .map_err(|e| {
-            WorkflowError::Runtime(format!(
+            SemanticError::Runtime(format!(
                 "Failed to parse date '{}': {}. Expected YYYY-MM-DD or relative expression.",
                 date, e
             ))
@@ -187,7 +314,7 @@ fn build_query_request(
     base_view: Option<&String>,
     default_filters: Option<&Vec<airlayer::schema::models::TopicFilter>>,
     date_fields: &HashSet<String>,
-) -> Result<QueryRequest, WorkflowError> {
+) -> Result<QueryRequest, SemanticError> {
     let mut filters = Vec::new();
 
     if let Some(defaults) = default_filters {
@@ -284,7 +411,7 @@ fn convert_topic_filter_type(
     ft: &TopicFilterType,
     field: &str,
     date_fields: &HashSet<String>,
-) -> Result<(FilterOperator, Vec<String>), WorkflowError> {
+) -> Result<(FilterOperator, Vec<String>), SemanticError> {
     match ft {
         TopicFilterType::Eq(f) => Ok((
             FilterOperator::Equals,
@@ -347,7 +474,7 @@ fn convert_semantic_filter_type(
     ft: &SemanticFilterType,
     field: &str,
     date_fields: &HashSet<String>,
-) -> Result<(FilterOperator, Vec<String>), WorkflowError> {
+) -> Result<(FilterOperator, Vec<String>), SemanticError> {
     match ft {
         SemanticFilterType::Eq(f) => Ok((
             FilterOperator::Equals,
@@ -411,13 +538,13 @@ fn jv2s(
     value: &JsonValue,
     field: &str,
     date_fields: &HashSet<String>,
-) -> Result<String, WorkflowError> {
+) -> Result<String, SemanticError> {
     let s = match value {
         JsonValue::String(s) => s.clone(),
         JsonValue::Number(n) => n.to_string(),
         JsonValue::Bool(b) => b.to_string(),
         JsonValue::Null => {
-            return Err(WorkflowError::Runtime(format!(
+            return Err(SemanticError::Runtime(format!(
                 "NULL filter value for '{field}'"
             )));
         }
@@ -430,60 +557,12 @@ fn jv2s(
 }
 
 // ---------------------------------------------------------------------------
-// Internal: parameter substitution
-// ---------------------------------------------------------------------------
-
-fn substitute_params(sql: &str, params: &[String]) -> String {
-    if params.is_empty() {
-        return sql.to_string();
-    }
-    let uses_positional = (0..params.len())
-        .any(|i| sql.contains(&format!("${}", i + 1)) || sql.contains(&format!("@p{}", i)));
-    let mut result = sql.to_string();
-    if uses_positional {
-        for (i, param) in params.iter().enumerate().rev() {
-            let lit = format!("'{}'", param.replace('\'', "''"));
-            result = result.replace(&format!("${}", i + 1), &lit);
-            result = result.replace(&format!("@p{}", i), &lit);
-        }
-    } else {
-        let mut idx = 0;
-        while result.contains('?') && idx < params.len() {
-            let lit = format!("'{}'", params[idx].replace('\'', "''"));
-            result = result.replacen('?', &lit, 1);
-            idx += 1;
-        }
-    }
-    result
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_substitute_params_positional() {
-        let sql = "SELECT * FROM t WHERE a = $1 AND b = $2";
-        let params = vec!["hello".into(), "world".into()];
-        assert_eq!(
-            substitute_params(sql, &params),
-            "SELECT * FROM t WHERE a = 'hello' AND b = 'world'"
-        );
-    }
-
-    #[test]
-    fn test_substitute_params_question_mark() {
-        let sql = "SELECT * FROM t WHERE a = ? AND b = ?";
-        let params = vec!["hello".into(), "world".into()];
-        assert_eq!(
-            substitute_params(sql, &params),
-            "SELECT * FROM t WHERE a = 'hello' AND b = 'world'"
-        );
-    }
 
     #[test]
     fn test_qualify_field() {
@@ -507,6 +586,7 @@ mod tests {
                 measures: None,
                 segments: vec![],
                 pre_aggregations: None,
+                refresh_key: None,
                 meta: None,
             },
             airlayer::View {
@@ -522,6 +602,7 @@ mod tests {
                 measures: None,
                 segments: vec![],
                 pre_aggregations: None,
+                refresh_key: None,
                 meta: None,
             },
         ];

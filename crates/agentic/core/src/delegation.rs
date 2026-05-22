@@ -229,6 +229,12 @@ pub enum TaskSpec {
         #[serde(skip_serializing_if = "Option::is_none")]
         pending_child_answer: Option<ChildCompletion>,
     },
+    /// Generic escape hatch for background job types (e.g. `"preagg_cycle"`).
+    /// The `kind` field becomes the run's `source_type` in the DB.
+    Custom {
+        kind: String,
+        payload: serde_json::Value,
+    },
     /// Run an airway ELT pipeline end-to-end (extract → normalize → load).
     ///
     /// Unlike [`TaskSpec::Workflow`], airway runs are atomic from the queue's

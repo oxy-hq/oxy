@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import { BadgeCheck } from "lucide-react";
+import { BadgeCheck, Zap } from "lucide-react";
 import SqlArtifactPanel from "@/components/ArtifactPanel/ArtifactsContent/sql";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
 import ErrorAlert from "@/components/ui/ErrorAlert";
@@ -115,6 +115,14 @@ const AnalyticsArtifactSidebar = ({
               <BadgeCheck className='h-4 w-4 shrink-0 text-oxy-blue-600 dark:text-oxy-blue-500' />
             </TooltipTrigger>
             <TooltipContent side='bottom'>{verifiedTooltip}</TooltipContent>
+          </Tooltip>
+        )}
+        {item.is_preagg && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Zap className='h-4 w-4 shrink-0 text-primary' />
+            </TooltipTrigger>
+            <TooltipContent side='bottom'>Served from pre-aggregation cache</TooltipContent>
           </Tooltip>
         )}
       </div>

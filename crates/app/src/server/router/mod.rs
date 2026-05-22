@@ -39,6 +39,17 @@ pub struct AppState {
     /// target for `POST /{workspace_id}/setup/*`. In cloud/internal mode,
     /// unused — populated with `PathBuf::new()`.
     pub startup_cwd: std::path::PathBuf,
+    /// Shared Layer-1 preagg refresh-key cache. Set when a background preagg
+    /// worker is running (i.e. `startup_cwd` is non-empty). `None` in the
+    /// internal API router and when no workspace path is configured.
+    pub preagg_cache: Option<
+        std::sync::Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
+    >,
+    /// Renewal threshold (seconds) for the preagg refresh-key cache.
+    /// Mirrors the worker's `pre_aggregations.refresh_worker.renewal_threshold`
+    /// so the query read-path uses the operator-configured value, not a
+    /// hardcoded default. `None` when no worker is running.
+    pub preagg_renewal_threshold_secs: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -85,6 +96,8 @@ mod app_state_tests {
             mode: ServeMode::Local,
             observability: None,
             startup_cwd: std::path::PathBuf::from("/tmp"),
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: None,
         };
         let cloud = AppState {
             enterprise: false,
@@ -92,6 +105,8 @@ mod app_state_tests {
             mode: ServeMode::Cloud,
             observability: None,
             startup_cwd: std::path::PathBuf::new(),
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: None,
         };
         assert!(local.mode.is_local());
         assert!(!cloud.mode.is_local());

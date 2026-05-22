@@ -194,7 +194,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
                         className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
                       >
                         {Icon && <Icon />}
-                        <span>{getObjectName(file)}</span>
+                        <span className='flex-1 truncate'>{getObjectName(file)}</span>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
                   );

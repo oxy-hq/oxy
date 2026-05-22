@@ -303,7 +303,11 @@ export const LookerExplorerProvider = ({
       canExecuteQuery: selectedFields.length > 0,
       limit,
       onLimitChange: setLimit,
-      resultFile
+      resultFile,
+      setSelectedDimensions: () => {},
+      setSelectedMeasures: () => {},
+      isPreagg: false,
+      executionTime: null
     }),
     [
       isLoading,

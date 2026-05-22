@@ -44,8 +44,9 @@ agentic-core = { workspace = true }
 agentic-http = { workspace = true }
 agentic-pipeline = { workspace = true }
 agentic-runtime = { workspace = true }
+agentic-semantic = { workspace = true }
 agentic-workflow = { workspace = true }
-airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "b8c734d" }
+airlayer = { workspace = true }
 oxy-agent = { workspace = true }
 oxy-airlayer-compat = { workspace = true }
 oxy-auth = { workspace = true }

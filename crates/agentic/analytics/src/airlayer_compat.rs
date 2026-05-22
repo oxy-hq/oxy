@@ -27,8 +27,14 @@ pub use oxy_airlayer_compat::{build_layer, parse_topic_yaml, parse_view_yaml};
 ///
 /// Returns `None` for unknown / `Other` dialects that airlayer does not support.
 pub fn convert_dialect(dialect: agentic_connector::SqlDialect) -> Option<airlayer::Dialect> {
-    // Use airlayer's own from_str which handles aliases like "pg", "duck", etc.
-    airlayer::Dialect::from_str(dialect.as_str())
+    let result = airlayer::Dialect::from_str(dialect.as_str());
+    if result.is_none() {
+        tracing::warn!(
+            connector_dialect = %dialect.as_str(),
+            "convert_dialect: unrecognized dialect, skipping connector in dialect map"
+        );
+    }
+    result
 }
 
 /// Build an [`airlayer::DatasourceDialectMap`] from the solver's connector map.
@@ -53,8 +59,12 @@ pub fn build_dialect_map(
         if let Some(dialect) = convert_dialect(connector.dialect()) {
             map.set_default(dialect);
         }
-    } else if let Some((_name, connector)) = connectors.iter().next() {
-        // Fallback: use the first connector if default is not found.
+    } else if let Some((fallback_name, connector)) = connectors.iter().next() {
+        tracing::warn!(
+            missing = default,
+            chosen = %fallback_name,
+            "build_dialect_map: named default connector not found, using first available as fallback"
+        );
         if let Some(dialect) = convert_dialect(connector.dialect()) {
             map.set_default(dialect);
         }
@@ -65,42 +75,4 @@ pub fn build_dialect_map(
 
 // ── Parameter substitution ───────────────────────────────────────────────────
 
-/// Substitute positional parameter placeholders (`$1`, `$2`, ... and `@p0`,
-/// `@p1`, ...) or `?` placeholders with escaped string literals.
-///
-/// Airlayer returns parameterised SQL but the agentic connector trait sends
-/// raw SQL with no separate parameter binding.
-///
-/// Copied from `crates/workflow/src/semantic_builder.rs`.
-pub fn substitute_params(sql: &str, params: &[String]) -> String {
-    if params.is_empty() {
-        return sql.to_string();
-    }
-
-    let uses_positional = (0..params.len())
-        .any(|i| sql.contains(&format!("${}", i + 1)) || sql.contains(&format!("@p{}", i)));
-
-    let mut result = sql.to_string();
-
-    if uses_positional {
-        // Replace $1, $2, ... and @p0, @p1, ... (right-to-left to avoid prefix
-        // collision, e.g. $1 inside $10).
-        for (i, param) in params.iter().enumerate().rev() {
-            let escaped = param.replace('\'', "''");
-            let literal = format!("'{}'", escaped);
-            result = result.replace(&format!("${}", i + 1), &literal);
-            result = result.replace(&format!("@p{}", i), &literal);
-        }
-    } else {
-        // Replace ? placeholders left-to-right (MySQL/Snowflake/SQLite).
-        let mut param_index = 0;
-        while result.contains('?') && param_index < params.len() {
-            let escaped = params[param_index].replace('\'', "''");
-            let literal = format!("'{}'", escaped);
-            result = result.replacen('?', &literal, 1);
-            param_index += 1;
-        }
-    }
-
-    result
-}
+pub use oxy_shared::substitute_params;

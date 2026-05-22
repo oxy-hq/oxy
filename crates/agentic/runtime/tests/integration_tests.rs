@@ -671,8 +671,8 @@ mod coordinator_tests {
                         answer: "step done".into(),
                         metadata: None,
                     },
-                    TaskSpec::WorkflowDecision { .. } => {
-                        unreachable!("WorkflowDecision not used in runtime tests")
+                    _ => {
+                        unreachable!("WorkflowDecision/Custom not used in runtime tests")
                     }
                     TaskSpec::Airway { .. } => {
                         unreachable!("Airway not used in runtime tests")
@@ -1097,9 +1097,9 @@ mod coordinator_tests {
                                 })
                                 .await;
                         }
-                        TaskSpec::WorkflowDecision { .. } => {
+                        _ => {
                             drop(event_tx);
-                            unreachable!("WorkflowDecision not used in runtime tests");
+                            unreachable!("WorkflowDecision/Custom not used in runtime tests");
                         }
                         TaskSpec::Airway { .. } => {
                             drop(event_tx);
@@ -2074,8 +2074,8 @@ mod task_tree_tests {
                             answer: "step done".into(),
                             metadata: None,
                         },
-                        TaskSpec::WorkflowDecision { .. } => {
-                            unreachable!("WorkflowDecision not used in runtime tests")
+                        _ => {
+                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -2225,8 +2225,8 @@ mod fanout_tests {
                         answer: "step done".into(),
                         metadata: None,
                     },
-                    TaskSpec::WorkflowDecision { .. } => {
-                        unreachable!("WorkflowDecision not used in runtime tests")
+                    _ => {
+                        unreachable!("WorkflowDecision/Custom not used in runtime tests")
                     }
                     TaskSpec::Airway { .. } => {
                         unreachable!("Airway not used in runtime tests")
@@ -2311,8 +2311,8 @@ mod fanout_tests {
                         answer: "step done".into(),
                         metadata: None,
                     },
-                    TaskSpec::WorkflowDecision { .. } => {
-                        unreachable!("WorkflowDecision not used in runtime tests")
+                    _ => {
+                        unreachable!("WorkflowDecision/Custom not used in runtime tests")
                     }
                     TaskSpec::Airway { .. } => {
                         unreachable!("Airway not used in runtime tests")
@@ -2653,8 +2653,8 @@ mod retry_tests {
                         answer: "step done".into(),
                         metadata: None,
                     },
-                    TaskSpec::WorkflowDecision { .. } => {
-                        unreachable!("WorkflowDecision not used in runtime tests")
+                    _ => {
+                        unreachable!("WorkflowDecision/Custom not used in runtime tests")
                     }
                     TaskSpec::Airway { .. } => {
                         unreachable!("Airway not used in runtime tests")
@@ -2823,8 +2823,8 @@ mod retry_tests {
                             answer: "step done".into(),
                             metadata: None,
                         },
-                        TaskSpec::WorkflowDecision { .. } => {
-                            unreachable!("WorkflowDecision not used in runtime tests")
+                        _ => {
+                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -2978,8 +2978,8 @@ mod retry_tests {
                             answer: "step done".into(),
                             metadata: None,
                         },
-                        TaskSpec::WorkflowDecision { .. } => {
-                            unreachable!("WorkflowDecision not used in runtime tests")
+                        _ => {
+                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -3687,8 +3687,8 @@ mod crash_recovery_tests {
                             answer: "step done".into(),
                             metadata: None,
                         },
-                        TaskSpec::WorkflowDecision { .. } => {
-                            unreachable!("WorkflowDecision not used in runtime tests")
+                        _ => {
+                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -3827,8 +3827,8 @@ mod crash_recovery_tests {
                             answer: "step done".into(),
                             metadata: None,
                         },
-                        TaskSpec::WorkflowDecision { .. } => {
-                            unreachable!("WorkflowDecision not used in runtime tests")
+                        _ => {
+                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -4075,8 +4075,8 @@ mod answer_channel_tests {
                         answers: None,
                     })
                 }
-                TaskSpec::WorkflowDecision { .. } => {
-                    unreachable!("WorkflowDecision not used in runtime tests")
+                _ => {
+                    unreachable!("WorkflowDecision/Custom not used in runtime tests")
                 }
                 TaskSpec::Airway { .. } => {
                     unreachable!("Airway not used in runtime tests")

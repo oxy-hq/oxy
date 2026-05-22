@@ -100,6 +100,7 @@ pub(super) fn build_workspace_routes(
             "/semantic/view/{file_path_b64}",
             get(semantic::get_view_details),
         )
+        .route("/semantic/preagg-status", get(semantic::get_preagg_status))
         .route("/semantic/compile", post(semantic::compile_semantic_query))
         .route("/semantic", post(semantic::execute_semantic_query))
         .route(
@@ -374,6 +375,8 @@ mod tests {
             mode: ServeMode::Local,
             observability: None,
             startup_cwd: std::path::PathBuf::new(),
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: None,
         }
     }
 

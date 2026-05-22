@@ -273,111 +273,21 @@ pub struct ConditionBranch {
     pub tasks: Vec<TaskConfig>,
 }
 
-// ── Semantic query config (used by semantic.rs) ─────────────────────────────
+// ── Semantic query config (re-exported from agentic-semantic) ──────────────
+//
+// These types now live in `agentic_semantic::config` so the analytics
+// domain can construct them without taking a dep on `agentic-workflow`.
+// Re-exported here to keep existing call sites working.
 
-/// Semantic query parameters — the subset of fields that the semantic compiler
-/// needs. Mirrors `oxy::types::SemanticQueryParams` but self-contained.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemanticQueryConfig {
-    pub topic: Option<String>,
-    #[serde(default)]
-    pub measures: Vec<String>,
-    #[serde(default)]
-    pub dimensions: Vec<String>,
-    #[serde(default)]
-    pub time_dimensions: Vec<TimeDimensionConfig>,
-    #[serde(default)]
-    pub filters: Vec<SemanticFilter>,
-    #[serde(default, alias = "order")]
-    pub orders: Vec<SemanticOrder>,
-    pub limit: Option<u64>,
-    pub offset: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimeDimensionConfig {
-    pub dimension: String,
-    pub granularity: Option<TimeGranularity>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemanticFilter {
-    pub field: String,
-    #[serde(flatten)]
-    pub filter_type: SemanticFilterType,
-}
-
-/// Filter operators for semantic queries. Mirrors `oxy::config::model::SemanticFilterType`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "op")]
-pub enum SemanticFilterType {
-    #[serde(rename = "eq")]
-    Eq(ScalarFilter),
-    #[serde(rename = "neq")]
-    Neq(ScalarFilter),
-    #[serde(rename = "gt")]
-    Gt(ScalarFilter),
-    #[serde(rename = "gte")]
-    Gte(ScalarFilter),
-    #[serde(rename = "lt")]
-    Lt(ScalarFilter),
-    #[serde(rename = "lte")]
-    Lte(ScalarFilter),
-    #[serde(rename = "in")]
-    In(ArrayFilter),
-    #[serde(rename = "not_in")]
-    NotIn(ArrayFilter),
-    #[serde(rename = "in_date_range")]
-    InDateRange(DateRangeFilter),
-    #[serde(rename = "not_in_date_range")]
-    NotInDateRange(DateRangeFilter),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScalarFilter {
-    pub value: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArrayFilter {
-    pub values: Vec<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DateRangeFilter {
-    pub from: Value,
-    pub to: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemanticOrder {
-    pub field: String,
-    #[serde(default = "default_asc")]
-    pub direction: String,
-}
-
-/// Time granularity for semantic time dimensions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TimeGranularity {
-    Year,
-    Quarter,
-    Month,
-    Week,
-    Day,
-    Hour,
-    Minute,
-    Second,
-}
+pub use agentic_semantic::config::{
+    ArrayFilter, DateRangeFilter, ScalarFilter, SemanticFilter, SemanticFilterType, SemanticOrder,
+    SemanticQueryConfig, TimeDimensionConfig, TimeGranularity,
+};
 
 // ── Defaults ────────────────────────────────────────────────────────────────
 
 fn default_one() -> usize {
     1
-}
-
-fn default_asc() -> String {
-    "asc".to_string()
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

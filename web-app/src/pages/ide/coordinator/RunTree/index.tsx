@@ -1,9 +1,12 @@
 import {
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
   GitBranch,
+  Loader2,
   RefreshCw,
+  ShieldCheck,
   Square,
   XCircle
 } from "lucide-react";
@@ -14,7 +17,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import useRunTree from "@/hooks/api/coordinator/useRunTree";
 import { cn } from "@/libs/shadcn/utils";
-import type { TaskTreeNode } from "@/services/api/coordinator";
+import type { RunEventEntry, TaskTreeNode } from "@/services/api/coordinator";
 
 // ── Tree construction ───────────────────────────────────────────────────────
 
@@ -81,6 +84,97 @@ function formatDuration(created: string, updated: string): string {
   if (mins < 60) return `${mins}m ${secs % 60}s`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
+
+// ── Event log ───────────────────────────────────────────────────────────────
+
+const FailedRollupRow: React.FC<{ label: string; error?: string }> = ({ label, error }) => {
+  const [expanded, setExpanded] = useState(false);
+  const summary = error
+    ? (error.includes(" SQL:") ? error.slice(0, error.indexOf(" SQL:")) : error).slice(0, 160)
+    : undefined;
+  const hasMore = error && error.length > (summary?.length ?? 0);
+
+  return (
+    <div className='space-y-0.5'>
+      <div className='flex items-center gap-1.5 text-destructive text-xs'>
+        <XCircle className='h-3 w-3 shrink-0' />
+        <span>{label}</span>
+      </div>
+      {summary && (
+        <div className='space-y-0.5 pl-[18px]'>
+          <p className='text-muted-foreground text-xs leading-relaxed'>
+            {expanded ? error : summary}
+            {hasMore && !expanded && <span>…</span>}
+          </p>
+          {hasMore && (
+            <button
+              type='button'
+              onClick={() => setExpanded((v) => !v)}
+              className='text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground'
+            >
+              {expanded ? "show less" : "show more"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const EventLog: React.FC<{ events: RunEventEntry[] }> = ({ events }) => {
+  if (events.length === 0) return null;
+
+  const settled = new Set(
+    events
+      .filter(
+        (e) => e.event_type === "preagg_rollup_done" || e.event_type === "preagg_rollup_failed"
+      )
+      .map((e) => `${e.payload.view}.${e.payload.rollup}`)
+  );
+
+  return (
+    <div className='space-y-0.5'>
+      {events.map((ev) => {
+        const view = String(ev.payload.view ?? "");
+        const rollup = String(ev.payload.rollup ?? "");
+        const error = ev.payload.error as string | undefined;
+        const label = view && rollup ? `${view}.${rollup}` : ev.event_type;
+
+        if (ev.event_type === "preagg_rollup_fresh") {
+          return (
+            <div key={ev.seq} className='flex items-center gap-1.5 text-muted-foreground text-xs'>
+              <ShieldCheck className='h-3 w-3 shrink-0' />
+              <span>{label}</span>
+              <span className='opacity-60'>— up to date</span>
+            </div>
+          );
+        }
+        if (ev.event_type === "preagg_rollup_started") {
+          if (settled.has(label)) return null;
+          return (
+            <div key={ev.seq} className='flex items-center gap-1.5 text-muted-foreground text-xs'>
+              <Loader2 className='h-3 w-3 shrink-0 animate-spin' />
+              <span>{label}</span>
+            </div>
+          );
+        }
+        if (ev.event_type === "preagg_rollup_done") {
+          return (
+            <div key={ev.seq} className='flex items-center gap-1.5 text-emerald-500 text-xs'>
+              <CheckCircle2 className='h-3 w-3 shrink-0' />
+              <span>{label}</span>
+            </div>
+          );
+        }
+        if (ev.event_type === "preagg_rollup_skipped_no_refresh_key") {
+          return null;
+        }
+        // preagg_rollup_failed
+        return <FailedRollupRow key={ev.seq} label={label} error={error} />;
+      })}
+    </div>
+  );
+};
 
 // ── Tree node component ─────────────────────────────────────────────────────
 
@@ -161,14 +255,15 @@ const TreeNodeRow: React.FC<{ node: TreeNode }> = ({ node }) => {
         </div>
       </div>
 
-      {/* Detail panel: show answer/error when leaf or done/failed */}
-      {expanded && (node.answer || node.error_message) && (
+      {/* Detail panel: show answer/error/event log */}
+      {expanded && (node.answer || node.error_message || (node.event_log?.length ?? 0) > 0) && (
         <div
-          className='border-border border-b bg-muted/20 px-3 py-2'
+          className='space-y-1.5 border-border border-b bg-muted/20 px-3 py-2'
           style={{ paddingLeft: `${node.depth * 24 + 48}px` }}
         >
+          {node.event_log && node.event_log.length > 0 && <EventLog events={node.event_log} />}
           {node.error_message && (
-            <div className='mb-1'>
+            <div>
               <span className='font-medium text-destructive text-xs'>Error: </span>
               <span className='text-xs'>{node.error_message}</span>
             </div>

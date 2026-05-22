@@ -151,18 +151,47 @@ async fn execute_semantic_query(
 
     let scan_path = workspace.workspace_path();
     let databases = workspace.database_configs();
+    let cache = workspace.refresh_key_cache();
 
-    let (sql, database_name) =
-        crate::semantic::resolve_and_compile(scan_path, &databases, &query_config)
-            .map_err(|e| format!("semantic compilation failed: {e}"))?;
+    let renewal_threshold_secs = workspace.preagg_renewal_threshold_secs();
+    let compiled = crate::semantic::resolve_and_compile(
+        scan_path,
+        &databases,
+        &query_config,
+        cache,
+        renewal_threshold_secs,
+    )
+    .map_err(|e| format!("semantic compilation failed: {e}"))?;
 
-    let connector = workspace.get_connector(&database_name).await?;
-    let exec_result = connector
-        .execute_query(&sql, DEFAULT_SAMPLE_LIMIT)
-        .await
-        .map_err(|e| format!("semantic query execution failed: {e}"))?;
-
-    Ok(attach_sql(query_result_to_json(&exec_result.result), &sql))
+    match compiled {
+        crate::semantic::CompiledQuery::Warehouse { sql, database_name } => {
+            let connector = workspace.get_connector(&database_name).await?;
+            let exec_result = connector
+                .execute_query(&sql, DEFAULT_SAMPLE_LIMIT)
+                .await
+                .map_err(|e| format!("semantic query execution failed: {e}"))?;
+            let mut result = attach_sql(query_result_to_json(&exec_result.result), &sql);
+            result["is_preagg"] = serde_json::json!(false);
+            Ok(result)
+        }
+        crate::semantic::CompiledQuery::Preaggregation {
+            preagg_sql,
+            parquet_path,
+            ..
+        } => {
+            let sql_for_exec = preagg_sql.clone();
+            let path_for_exec = parquet_path.clone();
+            let mut result = tokio::task::spawn_blocking(move || {
+                crate::preagg::execute_preagg_sql(&sql_for_exec, &path_for_exec)
+            })
+            .await
+            .map_err(|e| format!("local Parquet execution task panicked: {e}"))?
+            .map_err(|e| format!("local Parquet execution failed: {e}"))?;
+            result = attach_sql(result, &preagg_sql);
+            result["is_preagg"] = serde_json::json!(true);
+            Ok(result)
+        }
+    }
 }
 
 /// Add the executed SQL string to a query-result JSON object so the export

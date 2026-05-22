@@ -16,6 +16,7 @@ pub mod extension;
 mod llm;
 pub mod metric_sink;
 pub mod pipeline;
+mod preagg_exec;
 mod schemas;
 mod semantic;
 mod solver;

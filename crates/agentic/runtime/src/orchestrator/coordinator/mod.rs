@@ -327,21 +327,22 @@ pub(super) enum RetryAction {
 /// Crate-visible so the worker can stamp `spec_kind` on lifecycle events
 /// (`worker_task_claimed`, `task_failed`) without re-implementing the
 /// mapping.
-pub(crate) fn source_type_for_spec(spec: &TaskSpec) -> &'static str {
+pub(crate) fn source_type_for_spec(spec: &TaskSpec) -> String {
     match spec {
         TaskSpec::Agent { agent_id, .. } => {
             if agent_id == "__builder__" {
-                "builder"
+                "builder".to_string()
             } else {
-                "analytics"
+                "analytics".to_string()
             }
         }
-        TaskSpec::Workflow { .. } => "workflow",
-        TaskSpec::WorkflowStep { .. } => "workflow_step",
-        TaskSpec::WorkflowDecision { .. } => "workflow",
-        TaskSpec::Resume { .. } => "analytics", // resume inherits parent type
+        TaskSpec::Workflow { .. } => "workflow".to_string(),
+        TaskSpec::WorkflowStep { .. } => "workflow_step".to_string(),
+        TaskSpec::WorkflowDecision { .. } => "workflow".to_string(),
+        TaskSpec::Resume { .. } => "analytics".to_string(),
         // Match agentic_airway::SOURCE_TYPE — inlined here to keep the
         // runtime free of a dep on the airway domain crate.
-        TaskSpec::Airway { .. } => "airway",
+        TaskSpec::Airway { .. } => "airway".to_string(),
+        TaskSpec::Custom { kind, .. } => kind.clone(),
     }
 }

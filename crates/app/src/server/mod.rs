@@ -3,6 +3,9 @@
 pub mod api;
 pub mod builder_test_runner;
 pub mod feature_flags;
+pub mod preagg_executor;
+pub(super) mod preagg_rebuild;
+pub mod preagg_worker;
 pub mod router;
 pub mod serve_mode;
 pub mod service;

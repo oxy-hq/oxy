@@ -331,6 +331,7 @@ mod tests {
                 protected_branches: None,
                 base_branch: None,
                 admins: vec![],
+                pre_aggregations: None,
             },
             metadata: None,
         }

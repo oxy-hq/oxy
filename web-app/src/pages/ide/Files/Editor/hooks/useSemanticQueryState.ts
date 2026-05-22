@@ -6,6 +6,7 @@ import type { Filter, Order } from "../types";
 export const useSemanticQueryState = () => {
   const [result, setResult] = useState<string[][]>([]);
   const [resultFile, setResultFile] = useState<string | undefined>(undefined);
+  const [isPreagg, setIsPreagg] = useState(false);
   const [selectedDimensions, setSelectedDimensions] = useState<string[]>([]);
   const [selectedMeasures, setSelectedMeasures] = useState<string[]>([]);
   const [filters, setFilters] = useState<Filter[]>([]);
@@ -16,6 +17,7 @@ export const useSemanticQueryState = () => {
   const [generatedSql, setGeneratedSql] = useState("");
   const [sqlError, setSqlError] = useState<string | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  const [executionTime, setExecutionTime] = useState<number | null>(null);
 
   const addFilter = (initialField: string) => {
     setFilters([
@@ -122,6 +124,8 @@ export const useSemanticQueryState = () => {
     setResult,
     resultFile,
     setResultFile,
+    isPreagg,
+    setIsPreagg,
     selectedDimensions,
     setSelectedDimensions,
     selectedMeasures,
@@ -142,6 +146,8 @@ export const useSemanticQueryState = () => {
     setSqlError,
     executionError,
     setExecutionError,
+    executionTime,
+    setExecutionTime,
     addFilter,
     updateFilter,
     removeFilter,

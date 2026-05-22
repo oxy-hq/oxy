@@ -337,7 +337,7 @@ impl AnalyticsSolver {
                         .unwrap_or_else(|| self.default_connector.clone());
 
                     return Ok(ClarifyOutcome::SemanticShortcut(AnalyticsSolution {
-                        payload: SolutionPayload::Sql(sql),
+                        payload: self.build_semantic_payload(sql, &query_request),
                         solution_source: SolutionSource::SemanticLayer,
                         connector_name,
                         semantic_query: Some(semantic_query.clone()),

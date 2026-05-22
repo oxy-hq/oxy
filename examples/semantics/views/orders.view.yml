@@ -2,6 +2,68 @@ name: orders
 description: Customer orders with shipping and payment information
 datasource: local
 table: "orders.csv"
+
+refresh_key:
+  every: "1h"
+
+pre_aggregations:
+  # covers: kpis_orders task — all 5 KPI measures with order_date filterable
+  # via the monthly time dimension. customer_id ends up in the rollup
+  # GROUP BY because of distinct_customers_with_orders, so the rollup is
+  # at (month, customer_id) grain — re-aggregation collapses it back to
+  # the requested grain.
+  - name: orders_kpis_by_month
+    measures:
+      - total_orders
+      - total_order_value
+      - avg_order_value
+      - distinct_customers_with_orders
+      - total_shipping_costs
+    time_dimension: order_date
+    granularity: month
+    refresh_key:
+      every: 1h
+
+  - name: orders_by_month
+    dimensions:
+      - order_status
+    measures:
+      - total_orders
+      - total_order_value
+      - total_shipping_costs
+    time_dimension: order_date
+    granularity: month
+    refresh_key:
+      every: 1h
+
+  - name: orders_by_customer
+    dimensions:
+      - customer_id
+      - order_status
+    measures:
+      - total_orders
+      - total_order_value
+    refresh_key:
+      every: 1h
+
+  - name: orders_summary
+    measures:
+      - total_orders
+      - total_order_value
+      - avg_order_value
+      - distinct_customers_with_orders
+      - total_shipping_costs
+    refresh_key:
+      every: 1h
+
+  - name: orders_by_status
+    dimensions:
+      - order_status
+    measures:
+      - total_orders
+      - total_order_value
+    refresh_key:
+      every: 1h
 entities:
 - name: order
   type: primary
@@ -72,14 +134,3 @@ measures:
   type: count_distinct
   description: Number of distinct customers with orders
   expr: customer_id
-- name: total_order_item_quantity
-  type: sum
-  description: Total quantity from all order items
-  expr: "{{order_item.quantity}}"
-- name: items_count
-  description: Total number of items in the order
-  type: count
-- name: quantity_per_item
-  type: average
-  description: Average quantity of each item in the order
-  expr: "{{order_item.quantity}}"

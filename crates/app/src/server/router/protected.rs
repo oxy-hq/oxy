@@ -66,8 +66,9 @@ pub(super) fn build_local_protected_routes(
         .merge(airhouse::api::router::<AppState>())
         .nest(
             "/{workspace_id}",
-            build_workspace_routes(app_state, agentic_state, false, true)
-                .route_layer(middleware::from_fn(local_context_middleware)),
+            build_workspace_routes(app_state.clone(), agentic_state, false, true).route_layer(
+                middleware::from_fn_with_state(app_state, local_context_middleware),
+            ),
         )
 }
 

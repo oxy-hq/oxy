@@ -29,7 +29,8 @@ import {
   TextSearch,
   Trash2,
   Wrench,
-  X
+  X,
+  Zap
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
@@ -145,6 +146,7 @@ interface ArtifactPillProps {
   label: string;
   verified?: boolean;
   verifiedTooltip?: string;
+  isPreagg?: boolean;
   onClick: () => void;
   variant?: "default" | "builder";
 }
@@ -154,6 +156,7 @@ const ArtifactPill = ({
   label,
   verified,
   verifiedTooltip = VERIFIED_TOOLTIP,
+  isPreagg,
   onClick,
   variant = "default"
 }: ArtifactPillProps) => {
@@ -178,13 +181,22 @@ const ArtifactPill = ({
       {verified && (
         <BadgeCheck className='h-3.5 w-3.5 shrink-0 text-oxy-blue-600 dark:text-oxy-blue-500' />
       )}
+      {isPreagg && <Zap className='h-3 w-3 shrink-0 text-primary' />}
     </button>
   );
-  if (!verified) return pill;
+  if (!verified && !isPreagg) return pill;
+  if (verified && !isPreagg) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{pill}</TooltipTrigger>
+        <TooltipContent side='top'>{verifiedTooltip}</TooltipContent>
+      </Tooltip>
+    );
+  }
   return (
     <Tooltip>
       <TooltipTrigger asChild>{pill}</TooltipTrigger>
-      <TooltipContent side='top'>{verifiedTooltip}</TooltipContent>
+      <TooltipContent side='top'>Served from pre-aggregation cache</TooltipContent>
     </Tooltip>
   );
 };
@@ -746,6 +758,14 @@ const SqlChild = ({
           <TooltipContent side='top'>{verifiedTooltip}</TooltipContent>
         </Tooltip>
       )}
+      {item.is_preagg && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Zap className='h-3.5 w-3.5 shrink-0 text-primary' />
+          </TooltipTrigger>
+          <TooltipContent side='top'>Served from pre-aggregation cache</TooltipContent>
+        </Tooltip>
+      )}
       {item.isStreaming && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
       {!item.isStreaming && item.error && (
         <span className='shrink-0 text-destructive text-xs'>Failed: {item.error}</span>
@@ -798,6 +818,7 @@ type PillInfo = {
   label: string;
   verified?: boolean;
   verifiedTooltip?: string;
+  isPreagg?: boolean;
   item: SelectableItem;
   variant?: "default" | "builder";
 };
@@ -818,7 +839,15 @@ function collectPills(items: TraceItem[]): PillInfo[] {
           ? "Verified Query"
           : "SQL Query";
       const verifiedTooltip = isVerifiedSqlFile ? VERIFIED_SQL_FILE_TOOLTIP : VERIFIED_TOOLTIP;
-      pills.push({ id: item.id, icon: Database, label, verified, verifiedTooltip, item });
+      pills.push({
+        id: item.id,
+        icon: Database,
+        label,
+        verified,
+        verifiedTooltip,
+        isPreagg: item.is_preagg ?? false,
+        item
+      });
     } else if (item.kind === "procedure") {
       pills.push({ id: item.id, icon: GitBranch, label: item.procedureName, item });
     } else if (item.kind === "builder_delegation") {
@@ -915,6 +944,7 @@ const AnalyticsStepRow = ({ step, onSelectArtifact, flat = false }: AnalyticsSte
                   label={pill.label}
                   verified={pill.verified}
                   verifiedTooltip={pill.verifiedTooltip}
+                  isPreagg={pill.isPreagg}
                   onClick={() => onSelectArtifact(pill.item)}
                   variant={pill.variant}
                 />

@@ -205,7 +205,7 @@ impl Coordinator {
                     &child_run_id,
                     &run_id_for_child,
                     &request_for_child,
-                    child_source_type,
+                    &child_source_type,
                     self.attempt,
                     child_task_metadata,
                 )
@@ -390,7 +390,7 @@ impl Coordinator {
                         child_id,
                         &run_id,
                         &child_requests[i],
-                        child_source_type,
+                        &child_source_type,
                         self.attempt,
                         child_meta,
                     )

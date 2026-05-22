@@ -131,6 +131,8 @@ pub enum AnalyticsEvent {
         /// Which code path produced the SQL — used by the UI to badge
         /// semantic-layer-verified queries.
         source: QuerySource,
+        /// True when the query was served from local pre-aggregation Parquet.
+        is_preagg: bool,
         /// When inside a concurrent fan-out, identifies which sub-spec emitted
         /// this event.  `None` outside fan-out.
         #[serde(skip_serializing_if = "Option::is_none")]

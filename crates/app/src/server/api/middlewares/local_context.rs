@@ -16,10 +16,13 @@
 //! handler that calls `OrgMembershipExtractor` must not be mounted on the
 //! local router.
 
-use crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole;
+use crate::server::api::middlewares::workspace_context::{EffectiveWorkspaceRole, PreaggCacheCtx};
+use crate::server::router::AppState;
 use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
 use crate::server::service::retrieval::EnumIndexManager;
 use crate::server::service::secret_manager::SecretManagerService;
+use agentic_semantic::refresh_key_cache::RefreshKeyCache;
+use axum::extract::State;
 use axum::{
     http::{Request, StatusCode},
     middleware::Next,
@@ -36,6 +39,7 @@ use oxy::config::resolve_local_workspace_path;
 use uuid::Uuid;
 
 pub async fn local_context_middleware(
+    State(app_state): State<AppState>,
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
@@ -77,8 +81,22 @@ pub async fn local_context_middleware(
 
     let user_id = local_user_id(&request);
     if resolved_path.is_some() {
-        attach_workspace_manager(&mut request, &workspace, user_id).await?;
+        attach_workspace_manager(
+            &mut request,
+            &workspace,
+            user_id,
+            app_state.preagg_cache.clone(),
+            app_state.preagg_renewal_threshold_secs,
+        )
+        .await?;
     }
+    // Always expose the preagg cache + threshold to handlers via a typed
+    // extension so endpoints like POST /semantic can resolve preagg without
+    // routing through OxyProjectContext. Mirrors the cloud-mode middleware.
+    request.extensions_mut().insert(PreaggCacheCtx {
+        cache: app_state.preagg_cache,
+        renewal_threshold_secs: app_state.preagg_renewal_threshold_secs,
+    });
     Ok(next.run(request).await)
 }
 
@@ -100,6 +118,8 @@ async fn attach_workspace_manager(
     request: &mut Request<axum::body::Body>,
     workspace_row: &WorkspaceModel,
     user_id: Option<Uuid>,
+    preagg_cache: Option<std::sync::Arc<std::sync::RwLock<RefreshKeyCache>>>,
+    preagg_renewal_threshold_secs: Option<u64>,
 ) -> Result<(), StatusCode> {
     let effective_path = effective_workspace_path(workspace_row, None)
         .await
@@ -170,12 +190,19 @@ async fn attach_workspace_manager(
     // roles in local mode. Setting `Owner` here lets `airhouse_managed`
     // mints carry `admin` role for local queries.
     ctx = ctx.with_role(WorkspaceRole::Owner);
+    if let Some(cache) = preagg_cache {
+        ctx = ctx.with_preagg_cache(cache);
+    }
+    if let Some(secs) = preagg_renewal_threshold_secs {
+        ctx = ctx.with_preagg_renewal_threshold_secs(secs);
+    }
     let project_ctx = std::sync::Arc::new(ctx);
     let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
         project_ctx.clone();
-    let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx);
+    let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx.clone());
     request.extensions_mut().insert(workspace_manager);
     request.extensions_mut().insert(platform);
+    request.extensions_mut().insert(project_ctx);
     request.extensions_mut().insert(bridges);
     Ok(())
 }
@@ -203,6 +230,16 @@ mod tests {
         let captured: Arc<Mutex<Option<WorkspaceModel>>> = Arc::new(Mutex::new(None));
         let captured_clone = captured.clone();
 
+        let app_state = AppState {
+            enterprise: false,
+            internal: false,
+            mode: crate::server::serve_mode::ServeMode::Local,
+            observability: None,
+            startup_cwd: std::path::PathBuf::new(),
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: None,
+        };
+
         let app = Router::new()
             .route(
                 "/probe",
@@ -219,7 +256,10 @@ mod tests {
                     }
                 }),
             )
-            .layer(axum::middleware::from_fn(local_context_middleware));
+            .layer(axum::middleware::from_fn_with_state(
+                app_state,
+                local_context_middleware,
+            ));
 
         let resp = app
             .oneshot(
