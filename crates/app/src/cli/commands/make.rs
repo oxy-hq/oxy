@@ -1,24 +1,14 @@
-use ::oxy::config::model::AgentContext;
-use ::oxy::config::model::AgentContextType;
-use ::oxy::config::model::AgentToolsConfig;
-use ::oxy::config::model::AgentType;
 use ::oxy::config::model::Database;
 use ::oxy::config::model::DatabaseType;
-use ::oxy::config::model::DefaultAgent;
 use ::oxy::config::model::Defaults;
 use ::oxy::config::model::DuckDB;
-use ::oxy::config::model::ExecuteSQLTool;
-use ::oxy::config::model::FileContext;
 use ::oxy::config::model::Model;
-use ::oxy::config::model::SemanticModelContext;
 use ::oxy::config::model::SemanticModels;
-use ::oxy::config::model::ToolType;
 use ::oxy::config::model::{AnthropicModelConfig, GeminiModelConfig, OpenAIModelConfig};
 use ::oxy::config::*;
 use ::oxy::theme::*;
 use ::oxy::utils::extract_csv_dimensions;
 use ::oxy::utils::get_relative_path;
-use model::AgentConfig;
 use model::Config;
 use std::env::current_dir;
 use std::path::PathBuf;
@@ -157,62 +147,6 @@ fn create_semantic_models(
     })
 }
 
-async fn create_agent_file(
-    setup: &ProjectSetup,
-    model_name: String,
-    semantic_file_path: PathBuf,
-    sql_file_path: PathBuf,
-) -> anyhow::Result<()> {
-    let agents_dir = setup.output_dir.join("agents");
-    create_dir(agents_dir.clone()).await?;
-    let agent_file = agents_dir.join(format!("{}.agent.yml", setup.file_name_without_ext));
-
-    let agent_content = AgentConfig {
-        name: setup.file_name_without_ext.clone(),
-        model: model_name,
-        public: true,
-        max_iterations: 15,
-        context: Some(vec![
-            AgentContext {
-                name: "semantic_model".to_string(),
-                context_type: AgentContextType::SemanticModel(SemanticModelContext {
-                    src: get_relative_path(semantic_file_path, setup.output_dir.clone())?,
-                }),
-            },
-            AgentContext {
-                name: "sql".to_string(),
-                context_type: AgentContextType::File(FileContext {
-                    src: vec![get_relative_path(sql_file_path, setup.output_dir.clone())?],
-                }),
-            },
-        ]),
-        r#type: AgentType::Default(DefaultAgent {
-            system_instructions: include_str!("../../templates/agent_instructions.txt").to_string(),
-            tools_config: AgentToolsConfig {
-                max_tool_calls: 5,
-                max_tool_concurrency: 1,
-                tools: vec![ToolType::ExecuteSQL(ExecuteSQLTool {
-                    name: "execute_sql".to_string(),
-                    description: "".to_string(),
-                    database: "local".to_string(),
-                    dry_run_limit: None,
-                    variables: None,
-                    sql: None,
-                })],
-            },
-        }),
-        tests: vec![],
-        description: "".to_string(),
-        retrieval: Default::default(),
-        reasoning: None,
-        variables: None,
-    };
-
-    serde_yaml::to_writer(std::fs::File::create(&agent_file)?, &agent_content)?;
-    println!("Created agent file: {}", agent_file.display());
-    Ok(())
-}
-
 pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
     let setup = setup_project(make_args.file.clone())?;
     let (db_dir, data_dir) = setup_directories(&setup).await?;
@@ -256,7 +190,6 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
             }),
         }],
         defaults: Some(Defaults {
-            agent: None,
             database: Some("local".to_string()),
         }),
         models: vec![model.clone()],
@@ -265,7 +198,6 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         integrations: vec![],
         slack_legacy: None,
         mcp: None,
-        a2a: None,
         protected_branches: None,
         base_branch: None,
         repositories: vec![],
@@ -277,8 +209,9 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         &config_content,
     )?;
 
-    // Create agent file
-    create_agent_file(&setup, model_name, semantic_file_path, sql_file_path).await?;
+    let _ = model_name;
+    let _ = semantic_file_path;
+    let _ = sql_file_path;
 
     println!("{}", "Make command completed successfully".success());
     Ok(())

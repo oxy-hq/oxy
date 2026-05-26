@@ -17,7 +17,6 @@ use super::executor::ToolExecutor;
 // Constants
 // =============================================================================
 
-pub const AGENT_TOOL_PREFIX: &str = "agent-";
 pub const WORKFLOW_TOOL_PREFIX: &str = "workflow-";
 pub const SEMANTIC_TOOL_PREFIX: &str = "semantic-";
 pub const SQL_TOOL_PREFIX: &str = "sql-";
@@ -30,7 +29,6 @@ pub const EVENT_CHANNEL_SIZE: usize = 100;
 
 #[derive(Debug, Clone)]
 pub enum ToolType {
-    Agent,
     Workflow,
     SemanticTopic,
     SqlFile,
@@ -40,7 +38,6 @@ impl ToolType {
     /// Returns the executor for this tool type
     pub fn executor(&self) -> Arc<dyn ToolExecutor> {
         match self {
-            ToolType::Agent => Arc::new(super::executor::AgentExecutor),
             ToolType::Workflow => Arc::new(super::executor::WorkflowExecutor),
             ToolType::SemanticTopic => Arc::new(super::executor::SemanticExecutor),
             ToolType::SqlFile => Arc::new(super::executor::SqlExecutor),
@@ -64,13 +61,6 @@ pub struct OxyMcpServer {
 // =============================================================================
 // Input Schemas
 // =============================================================================
-
-/// Input schema for agent tools
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct AgentToolInput {
-    /// Question to ask the agent
-    pub question: String,
-}
 
 /// Input schema for SQL file tools
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

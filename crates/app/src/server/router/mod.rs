@@ -120,8 +120,20 @@ mod router_split_tests {
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
+    /// `api_router()` wires database-backed middleware during construction.
+    /// Skip the inline router tests when `OXY_DATABASE_URL` is unset so CI
+    /// without a Postgres doesn't flag a config gap as a code regression.
+    /// (The DB-gated integration tests in `crates/app/tests/` follow the
+    /// same convention.)
+    fn db_unavailable() -> bool {
+        std::env::var("OXY_DATABASE_URL").is_err()
+    }
+
     #[tokio::test]
     async fn local_router_does_not_expose_organizations() {
+        if db_unavailable() {
+            return;
+        }
         let router = api_router(
             ServeMode::Local,
             false,
@@ -142,6 +154,9 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn local_router_serves_health() {
+        if db_unavailable() {
+            return;
+        }
         let router = api_router(
             ServeMode::Local,
             false,
@@ -160,6 +175,9 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn local_router_mounts_workspace_routes_under_nil_uuid() {
+        if db_unavailable() {
+            return;
+        }
         use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
         let router = api_router(
             ServeMode::Local,
@@ -184,6 +202,9 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn cloud_router_still_has_organizations_mounted() {
+        if db_unavailable() {
+            return;
+        }
         let router = api_router(
             ServeMode::Cloud,
             false,

@@ -23,7 +23,7 @@ pub fn run_app_def() -> ToolDef {
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "Path to a .app.yml file, relative to the project root (e.g. 'examples/sales.app.yml')."
+                    "description": "Path to a .app.yml file, relative to the project root (e.g. 'apps/sales.app.yml')."
                 },
                 "params_json": {
                     "type": ["string", "null"],

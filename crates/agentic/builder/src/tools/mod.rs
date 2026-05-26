@@ -8,7 +8,7 @@
 //! - `delete_file`           — delete an existing file (HITL-gated)
 //! - `manage_directory`      — create, delete, or rename a directory with user confirmation
 //! - `validate_project`      — validate project files against schema using the oxy config validator
-//! - `lookup_reference`      — load a domain reference card (semantic-layer/app-builder/agent-builder/agentic-builder)
+//! - `lookup_reference`      — load a domain reference card (semantic-layer/app-builder/agentic-builder)
 //! - `run_tests`             — run one or more `.test.yml` files using the oxy eval pipeline
 //! - `run_app`               — execute every task in a `.app.yml` end-to-end with optional control params (smoke test, bypasses cache)
 //! - `execute_sql`           — run a SQL query against a configured database

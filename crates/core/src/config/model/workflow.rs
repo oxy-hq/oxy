@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use super::{EvalConfig, RouteRetrievalConfig, Task};
+use super::{RouteRetrievalConfig, Task};
 
 #[derive(Deserialize, Debug)]
 pub struct WorkflowWithRawVariables {
@@ -11,8 +11,6 @@ pub struct WorkflowWithRawVariables {
     #[serde(default)]
     pub name: String,
     pub tasks: Vec<Task>,
-    #[serde(default)]
-    pub tests: Vec<EvalConfig>,
     pub variables: Option<HashMap<String, serde_json::Value>>,
     #[serde(default)]
     pub description: String,

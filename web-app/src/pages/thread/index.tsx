@@ -1,13 +1,9 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { useParams } from "react-router-dom";
 import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
-import queryKeys from "@/hooks/api/queryKey";
 import useThread from "@/hooks/api/threads/useThread";
-import AgentThread from "./agent";
 import AgenticThread from "./agentic";
 import AnalyticsThread from "./analytics";
-import TaskThread from "./task";
 import WorkflowThread from "./workflow";
 
 const ThreadNotFound = () => (
@@ -29,7 +25,6 @@ const ThreadNotFound = () => (
 
 const Thread = ({ projectId }: { projectId?: string }) => {
   const { threadId } = useParams();
-  const queryClient = useQueryClient();
   const {
     data: thread,
     isPending,
@@ -45,27 +40,16 @@ const Thread = ({ projectId }: { projectId?: string }) => {
     return <ThreadNotFound />;
   }
 
-  const refetchThread = () => {
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.thread.all
-    });
-    refetch();
-  };
-
   if (isSuccess && thread) {
     switch (thread.source_type) {
       case "workflow":
-        return <WorkflowThread thread={thread} refetchThread={refetchThread} />;
-      case "agent":
-        return <AgentThread thread={thread} refetchThread={refetchThread} />;
-      case "task":
-        return <TaskThread thread={thread} refetchThread={refetchThread} />;
+        return <WorkflowThread thread={thread} refetchThread={() => refetch()} />;
       case "agentic":
         return <AgenticThread key={thread.id} thread={thread} />;
       case "analytics":
         return <AnalyticsThread key={thread.id} thread={thread} />;
       default:
-        return <AgentThread thread={thread} refetchThread={refetchThread} />;
+        return <ThreadNotFound />;
     }
   }
 

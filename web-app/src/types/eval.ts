@@ -51,6 +51,11 @@ export interface RunStats {
   answered: number;
 }
 
+export interface TestResult {
+  errors: string[];
+  metrics: MetricValue[];
+}
+
 export enum MetricKind {
   Similarity = "Similarity",
   Recall = "Recall",

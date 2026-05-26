@@ -16,10 +16,6 @@ use ::oxy::sentry_config;
 use ::oxy::utils::print_colored_sql;
 use oxy_shared::errors::OxyError;
 
-use crate::server::service::agent::{
-    AgentCLIHandler, ExecutionSource, run_agent, run_agentic_workflow,
-};
-
 type Variable = (String, String);
 
 fn parse_variable(env: &str) -> Result<Variable, OxyError> {
@@ -34,7 +30,7 @@ fn parse_variable(env: &str) -> Result<Variable, OxyError> {
 
 #[derive(Parser, Debug)]
 pub struct RunArgs {
-    /// Path to the file to execute (.sql, .procedure.yml, .workflow.yml, .automation.yml, .agent.yml, or .aw.yml)
+    /// Path to the file to execute (.sql, .procedure.yml, .workflow.yml, or .automation.yml)
     pub(super) file: String,
 
     /// Database connection to use for SQL execution
@@ -51,10 +47,7 @@ pub struct RunArgs {
     #[clap(long, short = 'v', value_parser=ValueParser::new(parse_variable), num_args = 1..)]
     pub(super) variables: Vec<(String, String)>,
 
-    /// Question to ask when running agent files
-    ///
-    /// Required when executing .agent.yml files to provide context
-    /// for the AI agent's analysis or response.
+    /// Reserved for future agentic CLI integration.
     pub(super) question: Option<String>,
 
     /// Retry failed operations automatically
@@ -112,7 +105,6 @@ impl RunArgs {
 
 pub enum RunResult {
     Workflow,
-    Agent,
     Sql(String),
 }
 
@@ -143,16 +135,8 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
             handle_workflow_file(&file_path, run_args.retry, run_args.retry_from).await?;
             Ok(RunResult::Workflow)
         }
-        (Some("yml") | Some("yaml"), Some("agent")) => {
-            handle_agent_file(&file_path, run_args.question).await?;
-            Ok(RunResult::Agent)
-        }
-        (Some("yml") | Some("yaml"), Some("aw")) => {
-            handle_agentic_workflow_file(&file_path, run_args.question).await?;
-            Ok(RunResult::Agent)
-        }
         (Some("yml") | Some("yaml"), _) => Err(OxyError::ArgumentError(
-            "Invalid YAML file. Must be either *.procedure.yml, *.workflow.yml, *.automation.yml, *.agent.yml, or *.aw.yml".into(),
+            "Invalid YAML file. Must be either *.procedure.yml, *.workflow.yml, or *.automation.yml".into(),
         )),
         (Some("sql"), _) => {
             let config = ConfigBuilder::new()
@@ -179,7 +163,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
             Ok(RunResult::Sql(sql_result))
         }
         _ => Err(OxyError::ArgumentError(
-            "Invalid file extension. Must be .procedure.yml, .workflow.yml, .automation.yml, .agent.yml, .aw.yml, or .sql"
+            "Invalid file extension. Must be .procedure.yml, .workflow.yml, .automation.yml, or .sql"
                 .into(),
         )),
     }
@@ -221,7 +205,6 @@ async fn handle_workflow_file(
     let workflow: agentic_workflow::WorkflowConfig = serde_yaml::from_str(&yaml)
         .map_err(|e| OxyError::RuntimeError(format!("parse workflow YAML: {e}")))?;
 
-    let agent_runner = crate::agentic_wiring::OxyInlineAgentRunner::new(workspace_manager.clone());
     let project_ctx = Arc::new(OxyProjectContext::new(workspace_manager));
     let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
 
@@ -229,7 +212,7 @@ async fn handle_workflow_file(
         workspace.as_ref(),
         workflow,
         None,
-        Some(&agent_runner),
+        None,
     )
     .await
     .map_err(|e| OxyError::RuntimeError(format!("inline workflow: {e}")))?;
@@ -248,85 +231,6 @@ async fn handle_workflow_file(
             }
         }
     }
-    Ok(())
-}
-
-/// Shared setup for agent and agentic-workflow CLI handlers:
-/// registers Sentry context, validates the question is present, and builds a noop project manager.
-async fn setup_agent_run(
-    file_path: &PathBuf,
-    question: Option<String>,
-    question_required_msg: &str,
-) -> Result<
-    (
-        String,
-        ::oxy::adapters::workspace::manager::WorkspaceManager,
-    ),
-    OxyError,
-> {
-    let agent_name = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
-    sentry_config::add_agent_context(agent_name, question.as_deref());
-
-    let question =
-        question.ok_or_else(|| OxyError::ArgumentError(question_required_msg.to_string()))?;
-    let workspace_path = resolve_local_workspace_path()?;
-
-    let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-        .with_workspace_path(&workspace_path)
-        .await?
-        .with_runs_manager(RunsManager::noop())
-        .build()
-        .await
-        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
-
-    Ok((question, workspace_manager))
-}
-
-async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Result<(), OxyError> {
-    let (question, workspace_manager) =
-        setup_agent_run(file_path, question, "Question is required for agent files").await?;
-
-    let _ = run_agent(
-        workspace_manager,
-        file_path,
-        question,
-        AgentCLIHandler::default(),
-        vec![],
-        None,
-        None,
-        None, // No variables from CLI (yet)
-        Some(ExecutionSource::Cli),
-        None, // No sandbox info from CLI
-        None, // No data_app_file_path from CLI
-        None, // CLI has no per-user role context — airhouse_managed defaults to Reader
-    )
-    .await?;
-    Ok(())
-}
-
-async fn handle_agentic_workflow_file(
-    file_path: &PathBuf,
-    question: Option<String>,
-) -> Result<(), OxyError> {
-    let (question, workspace_manager) = setup_agent_run(
-        file_path,
-        question,
-        "Question is required for agentic workflow files",
-    )
-    .await?;
-
-    run_agentic_workflow(
-        workspace_manager,
-        file_path,
-        question,
-        AgentCLIHandler::default(),
-        vec![],
-        None, // CLI has no per-user role context — airhouse_managed defaults to Reader
-    )
-    .await?;
     Ok(())
 }
 

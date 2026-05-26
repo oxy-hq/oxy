@@ -2,18 +2,20 @@ use std::sync::{Arc, Mutex};
 
 use itertools::Itertools;
 
+use agentic_analytics::AnalyticsEvent;
+use agentic_core::events::{CoreEvent, Event as AgenticEvent};
 use oxy::execute::{
     Executable, ExecutionContext, execute_with_handler,
     types::{
         Event, EventKind, Output, OutputContainer, OutputGetter, RelevantContextGetter,
-        TargetOutput,
+        TargetOutput, Usage,
     },
     writer::EventHandler,
 };
-use oxy_agent::AgentLauncherExecutable;
 use oxy_shared::errors::OxyError;
+use tokio::sync::mpsc;
 
-use super::types::EvalTarget;
+use super::types::AgenticInput;
 
 // Accumulates token usage from EventKind::Usage events, forwarding all events to the inner handler.
 struct UsageAccumulatorHandler<H> {
@@ -43,100 +45,83 @@ impl<H: EventHandler + Send + 'static> EventHandler for UsageAccumulatorHandler<
     }
 }
 
-// Dispatches EvalTarget to the appropriate launcher executable.
-struct EvalTargetWrapper;
+// Runs an agentic eval target via the agentic pipeline.
+struct AgenticTargetWrapper;
 
 #[async_trait::async_trait]
-impl Executable<EvalTarget> for EvalTargetWrapper {
+impl Executable<AgenticInput> for AgenticTargetWrapper {
     type Response = OutputContainer;
 
     async fn execute(
         &mut self,
         ctx: &ExecutionContext,
-        input: EvalTarget,
+        input: AgenticInput,
     ) -> Result<Self::Response, OxyError> {
-        match input {
-            EvalTarget::Workflow(w) => {
-                // Drive the workflow synchronously through the inline
-                // runner, then wrap the per-step JSON results in an
-                // OutputContainer::Map so the eval scoring layer (which
-                // expects an OutputContainer to project task refs from)
-                // can consume it unchanged.
-                let resolved = ctx
-                    .workspace
-                    .config_manager
-                    .resolve_file(&w.workflow_ref)
-                    .await
-                    .map_err(|e| {
-                        OxyError::ConfigurationError(format!(
-                            "Failed to resolve workflow path '{}': {e}",
-                            w.workflow_ref
-                        ))
-                    })?;
-                let yaml = tokio::fs::read_to_string(&resolved)
-                    .await
-                    .map_err(|e| OxyError::RuntimeError(format!("read {resolved}: {e}")))?;
-                let workflow: agentic_workflow::WorkflowConfig = serde_yaml::from_str(&yaml)
-                    .map_err(|e| OxyError::RuntimeError(format!("parse workflow YAML: {e}")))?;
+        // Resolve the config path to absolute via the project manager so
+        // AgentConfig::from_file reads from the right location regardless
+        // of the process CWD.
+        let resolved = ctx
+            .workspace
+            .config_manager
+            .resolve_file(&input.config_path)
+            .await
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!(
+                    "Failed to resolve agentic config path '{}': {e}",
+                    input.config_path
+                ))
+            })?;
+        let project_ctx = std::sync::Arc::new(crate::agentic_wiring::OxyProjectContext::new(
+            ctx.workspace.clone(),
+        ));
+        let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> = project_ctx;
 
-                let agent_runner =
-                    crate::agentic_wiring::OxyInlineAgentRunner::new(ctx.workspace.clone());
-                let project_ctx = std::sync::Arc::new(
-                    crate::agentic_wiring::OxyProjectContext::new(ctx.workspace.clone()),
-                );
-                let workspace: std::sync::Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
-
-                let variables = w.variables.map(|vars| {
-                    let map: serde_json::Map<String, serde_json::Value> =
-                        vars.into_iter().collect();
-                    serde_json::Value::Object(map)
-                });
-                let results = agentic_pipeline::workflow_run::run_inline_workflow_with(
-                    workspace.as_ref(),
-                    workflow,
-                    variables,
-                    Some(&agent_runner),
-                )
-                .await
-                .map_err(|e| OxyError::RuntimeError(format!("inline workflow: {e}")))?;
-
-                let mut out = indexmap::IndexMap::with_capacity(results.len());
-                for (k, v) in results {
-                    out.insert(k, OutputContainer::Variable(v));
+        // Capture token usage from CoreEvent::LlmStart / LlmEnd as the
+        // pipeline runs so the Test Dashboard's per-case "in / out
+        // tokens" columns don't report 0 for every agentic test case.
+        // Single Usage event is emitted via the writer at the end so
+        // `UsageAccumulatorHandler` (wrapping `ctx.writer`) sees the
+        // total and forwards it onto the Record.
+        let (event_tx, mut event_rx) = mpsc::channel::<AgenticEvent<AnalyticsEvent>>(256);
+        let usage_consumer = tokio::spawn(async move {
+            let mut input_tokens: i32 = 0;
+            let mut output_tokens: i32 = 0;
+            while let Some(ev) = event_rx.recv().await {
+                if let AgenticEvent::Core(core) = ev {
+                    match core {
+                        CoreEvent::LlmStart { prompt_tokens, .. } => {
+                            input_tokens = input_tokens.saturating_add(prompt_tokens as i32);
+                        }
+                        CoreEvent::LlmEnd {
+                            output_tokens: out, ..
+                        } => {
+                            output_tokens = output_tokens.saturating_add(out as i32);
+                        }
+                        _ => {}
+                    }
                 }
-                Ok(OutputContainer::Map(out))
             }
-            EvalTarget::Agent(a) => AgentLauncherExecutable.execute(ctx, a).await,
-            EvalTarget::Agentic(agentic_input) => {
-                // Resolve the config path to absolute via the project manager so
-                // AgentConfig::from_file reads from the right location regardless
-                // of the process CWD.
-                let resolved = ctx
-                    .workspace
-                    .config_manager
-                    .resolve_file(&agentic_input.config_path)
-                    .await
-                    .map_err(|e| {
-                        OxyError::ConfigurationError(format!(
-                            "Failed to resolve agentic config path '{}': {e}",
-                            agentic_input.config_path
-                        ))
-                    })?;
-                let project_ctx = std::sync::Arc::new(
-                    crate::agentic_wiring::OxyProjectContext::new(ctx.workspace.clone()),
-                );
-                let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
-                    project_ctx;
-                let answer_text = agentic_pipeline::run_agentic_eval(
-                    platform,
-                    std::path::Path::new(&resolved),
-                    agentic_input.prompt,
-                )
-                .await
-                .map_err(OxyError::RuntimeError)?;
-                Ok(OutputContainer::Single(Output::Text(answer_text)))
-            }
-        }
+            (input_tokens, output_tokens)
+        });
+
+        let answer_text = agentic_pipeline::run_agentic_streaming(
+            platform,
+            std::path::Path::new(&resolved),
+            input.prompt,
+            event_tx,
+        )
+        .await
+        .map_err(OxyError::RuntimeError)?;
+
+        let (input_tokens, output_tokens) = usage_consumer
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("usage consumer: {e}")))?;
+        ctx.write_kind(EventKind::Usage {
+            usage: Usage::new(input_tokens, output_tokens),
+        })
+        .await?;
+
+        Ok(OutputContainer::Single(Output::Text(answer_text)))
     }
 }
 
@@ -156,13 +141,13 @@ impl TargetExecutable {
 }
 
 #[async_trait::async_trait]
-impl Executable<EvalTarget> for TargetExecutable {
+impl Executable<AgenticInput> for TargetExecutable {
     type Response = Vec<TargetOutput>;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: EvalTarget,
+        input: AgenticInput,
     ) -> Result<Self::Response, OxyError> {
         let start = std::time::Instant::now();
 
@@ -171,7 +156,7 @@ impl Executable<EvalTarget> for TargetExecutable {
         let usage_out = handler.usage_out.clone();
 
         let output_container =
-            execute_with_handler(EvalTargetWrapper, execution_context, input, handler).await?;
+            execute_with_handler(AgenticTargetWrapper, execution_context, input, handler).await?;
 
         let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
         let input_tokens = *usage_in.lock().unwrap();

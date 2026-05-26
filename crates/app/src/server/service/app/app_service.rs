@@ -147,13 +147,13 @@ impl AppService {
                 OxyError::RuntimeError(format!("convert app tasks → WorkflowConfig: {e}"))
             })?;
 
-        let agent_runner =
-            crate::agentic_wiring::OxyInlineAgentRunner::new(self.workspace_manager.clone());
+        let project_ctx = Arc::new(OxyProjectContext::new(self.workspace_manager.clone()));
+        let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
         let results = agentic_pipeline::workflow_run::run_inline_workflow_with(
             self.project_ctx.as_ref(),
             workflow_config,
             None,
-            Some(&agent_runner),
+            None,
         )
         .await
         .map_err(|e| OxyError::RuntimeError(format!("app inline workflow: {e}")))?;

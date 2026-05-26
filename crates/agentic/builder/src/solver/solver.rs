@@ -167,19 +167,17 @@ modify these files.
 
 ## Project file types
 
-- config.yml — Main config: database connections, LLM models, default settings, integrations (Slack, MCP, A2A)
-- <name>.agent.yml — LLM agent: model, system_instructions, tools (execute_sql, visualize, retrieval, workflow, semantic_search), context files, tests.
-- <name>.procedure.yml / <name>.workflow.yml / <name>.automation.yml — Multi-step workflow: variables (JSON Schema), tasks (execute_sql, agent, formatter, loop_sequential…), tests.
-- <name>.aw.yml — FSM-based agentic workflow: model, start/end states, transitions (query, semantic_query, visualize, insight, save_automation), optional routing.
+- config.yml — Main config: database connections, LLM models, default settings, integrations (Slack, MCP).
+- <name>.agentic.yml — Agentic agent (FSM-based): start state, transitions, LLM model, tools.
+- <name>.procedure.yml / <name>.workflow.yml / <name>.automation.yml — Multi-step workflow: variables (JSON Schema), tasks (execute_sql, agent, formatter, loop_sequential…).
 - <name>.app.yml — Data app / dashboard: query tasks + display components (table, bar_chart, line_chart, pie_chart, markdown).
 - <name>.topic.yml — Semantic topic: groups related views into a domain. Lives in semantics/.
 - <name>.view.yml — Semantic view: maps a database table to typed dimensions (attributes) and measures (aggregations); entities declare primary/foreign keys for joins. Lives in semantics/.
 - *.sql — SQL query files referenced by agents or workflows.
-- <name>.test.yml — Test suite for an agent or agentic workflow: target file, settings (runs, judge_model), and test cases (prompt, expected, tags).
 
 ## Available tools
 
-- search_files(pattern): find files by glob pattern (e.g. "agents/*.agent.yml", "**/*.view.yml", "**/*.test.yml")
+- search_files(pattern): find files by glob pattern (e.g. "**/*.agentic.yml", "**/*.view.yml", "**/*.test.yml")
 - read_file(file_path, offset?, limit?): read file content; offset is the 1-indexed line to start from, limit is the max number of lines to return
 - search_text(pattern, glob?, output_mode?): grep-like text search; output_mode is "content" (default, file:line:text), "files_with_matches", or "count"
 - write_file(file_path, content, description): create a new file or fully overwrite an existing one. Use for new files or when replacing the entire content. HITL-gated.
@@ -187,8 +185,8 @@ modify these files.
 - delete_file(file_path, description): delete an existing file. HITL-gated.
 - manage_directory(operation, path, description, new_path?): create, delete, or rename a directory and ask the user for confirmation. operation must be "create", "delete", or "rename". new_path is required for "rename". delete removes the directory and all its contents recursively.
 - validate_project(file_path?): validate all project files (or a single file) against the Oxy schema; returns any errors
-- lookup_reference(card_name): load a domain reference card with the rules and file shape for a given YAML type. Card names: `semantic-layer` (.view.yml + .topic.yml), `app-builder` (.app.yml), `agent-builder` (classic .agent.yml), `agentic-builder` (.agentic.yml). Call this before authoring or modifying any of those file types if you have not already loaded the card in this conversation.
-- lookup_schema(object_name): look up the JSON schema for any Oxy object type — semantic (Dimension, Measure, View, Topic…), agent (AgentConfig, AgentType, ToolType…), FSM workflow (AgenticConfig), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), test (TestFileConfig, TestSettings, TestCase), or config (Config, Database, DatabaseType)
+- lookup_reference(card_name): load a domain reference card with the rules and file shape for a given YAML type. Card names: `semantic-layer` (.view.yml + .topic.yml), `app-builder` (.app.yml), `agentic-builder` (.agentic.yml). Call this before authoring or modifying any of those file types if you have not already loaded the card in this conversation.
+- lookup_schema(object_name): look up the JSON schema for any Oxy object type — semantic (Dimension, Measure, View, Topic…), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), or config (Config, Database, DatabaseType).
 - run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxy eval pipeline; returns pass rate and any errors
 - run_app(file_path, params?): execute a .app.yml data app and return per-task results (success, row count, sample rows, error). Always runs fresh — bypasses the result cache. Use after editing an app file to verify all tasks execute without error.
 - execute_sql(sql, database?): execute a SQL query against a configured database (defaults to the first); returns columns, rows (up to 100), and row count. Use to verify SQL before proposing file changes.
@@ -394,9 +392,6 @@ When raw CSV columns change or cleaning logic is updated:
 - After a change is accepted, run validate_project on the modified file to confirm it is schema-valid
 - Use execute_sql to test SQL queries before embedding them in workflow or agent files
 - Use semantic_query to verify semantic layer definitions (views, topics, dimensions, measures) before proposing changes to .view.yml or .topic.yml files
-- Test files (.test.yml) must reference a valid target (an .agent.yml or .aw.yml file path relative to the project root)
-- Use lookup_schema(TestFileConfig) to see the full test file schema before writing tests
-- After writing a test file, use run_tests to execute it and report the results to the user
 - After writing or editing a .app.yml file, use run_app to verify all tasks execute without error
 - After making change on dbt project, compile and run the tests to confirm nothing is broken.
 

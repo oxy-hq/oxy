@@ -1,7 +1,6 @@
 pub mod completion_policy;
 pub mod config;
 pub mod error;
-pub mod event_bridge;
 pub mod export;
 pub mod extension;
 pub mod hash;
@@ -28,7 +27,6 @@ pub use agentic_semantic::refresh_key_cache;
 pub use completion_policy::{WorkflowCompletionPolicy, WorkflowDelegationResolver};
 pub use config::{TaskType, WorkflowConfig};
 pub use error::WorkflowError;
-pub use event_bridge::WorkflowEventBridge;
 pub use extension::WorkflowMigrator;
 pub use resolve::{build_subrun_steps, resolve_subworkflows};
 pub use runner::OxyProcedureRunner;

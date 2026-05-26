@@ -16,7 +16,7 @@ pub fn lookup_reference_def() -> ToolDef {
         description: "Load a domain reference card for a given Oxygen YAML file type. \
              Returns the full reference body (rules, file shape, examples) plus any \
              associated verbatim templates. Call this before authoring or modifying \
-             a `.view.yml`, `.topic.yml`, `.app.yml`, `.agent.yml`, or `.agentic.yml` \
+             a `.view.yml`, `.topic.yml`, `.app.yml`, or `.agentic.yml` \
              file when the relevant card has not already been loaded in this conversation.",
         parameters: json!({
             "type": "object",
@@ -26,13 +26,11 @@ pub fn lookup_reference_def() -> ToolDef {
                     "enum": [
                         "semantic-layer",
                         "app-builder",
-                        "agent-builder",
                         "agentic-builder"
                     ],
                     "description": "Which reference card to load. \
                         `semantic-layer` covers .view.yml + .topic.yml; \
                         `app-builder` covers .app.yml; \
-                        `agent-builder` covers classic .agent.yml; \
                         `agentic-builder` covers .agentic.yml."
                 }
             },
@@ -107,11 +105,6 @@ mod tests {
         let out = execute_lookup_reference(&json!({"card_name": "app-builder"})).unwrap();
         let content = out["content"].as_str().unwrap();
         assert!(content.contains("Data app reference"));
-
-        // agent-builder is card-only.
-        let out = execute_lookup_reference(&json!({"card_name": "agent-builder"})).unwrap();
-        let content = out["content"].as_str().unwrap();
-        assert!(content.contains("Agent reference"));
     }
 
     #[test]

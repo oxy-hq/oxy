@@ -105,7 +105,7 @@ const Home = () => {
     isPending: setupPending,
     isError: setupError
   } = useGithubSetup(wsMatch);
-  const { data: agents = [], isPending: agentsPending, isError: agentsError } = useAgents(wsMatch);
+  const { data: agents = [], isPending: agentsPending, isError: agentsError } = useAgents();
   const {
     data: databases = [],
     isPending: databasesPending,

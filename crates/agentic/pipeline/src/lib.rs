@@ -1626,7 +1626,17 @@ fn render_history_answer(
     }
 }
 
-// ── Headless eval entry-point ───────────────────────────────────────────────
+// ── Headless eval entry-points ──────────────────────────────────────────────
+
+/// What to do with each `Event<AnalyticsEvent>` the pipeline emits during a
+/// headless run. `Drain` discards them (eval / fire-and-forget); `Forward`
+/// forwards them to a caller-owned sink without ever blocking the solver.
+enum EventDestination {
+    Drain,
+    Forward(
+        tokio::sync::mpsc::Sender<agentic_core::events::Event<agentic_analytics::AnalyticsEvent>>,
+    ),
+}
 
 /// Run an agentic analytics pipeline headlessly for evaluation purposes.
 ///
@@ -1637,6 +1647,47 @@ pub async fn run_agentic_eval(
     platform: Arc<dyn PlatformContext>,
     config_path: &std::path::Path,
     prompt: String,
+) -> Result<String, String> {
+    run_agentic_headless(platform, config_path, prompt, EventDestination::Drain).await
+}
+
+/// Variant of [`run_agentic_eval`] that forwards each
+/// `Event<AnalyticsEvent>` to `event_sink` as it arrives, in addition to
+/// returning the final answer text.
+///
+/// Used by surfaces that want to render intermediate events (Slack SQL
+/// artifact capture, chart uploads, etc.) instead of only the final text.
+/// Forwarding uses `try_send` so a closed / full caller sink never stalls
+/// the solver — events are dropped (with a warn log) on full, which is the
+/// right tradeoff for unfanout-able surfaces like Slack where chart render
+/// latency can dwarf typical event burst rates.
+pub async fn run_agentic_streaming(
+    platform: Arc<dyn PlatformContext>,
+    config_path: &std::path::Path,
+    prompt: String,
+    event_sink: tokio::sync::mpsc::Sender<
+        agentic_core::events::Event<agentic_analytics::AnalyticsEvent>,
+    >,
+) -> Result<String, String> {
+    run_agentic_headless(
+        platform,
+        config_path,
+        prompt,
+        EventDestination::Forward(event_sink),
+    )
+    .await
+}
+
+/// Shared body of [`run_agentic_eval`] and [`run_agentic_streaming`].
+/// Loads the config, resolves connectors, builds the solver, spawns the
+/// event drain matching `destination`, then runs the orchestrator and
+/// maps `OrchestratorError` into a flat error string the caller can lift
+/// back into their own error type.
+async fn run_agentic_headless(
+    platform: Arc<dyn PlatformContext>,
+    config_path: &std::path::Path,
+    prompt: String,
+    destination: EventDestination,
 ) -> Result<String, String> {
     use agentic_analytics::{
         AnalyticsEvent, AnalyticsIntent, QuestionType, build_analytics_handlers,
@@ -1683,7 +1734,26 @@ pub async fn run_agentic_eval(
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<Event<AnalyticsEvent>>(256);
     let event_stream: EventStream<AnalyticsEvent> = event_tx;
-    tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
+    tokio::spawn(async move {
+        match destination {
+            EventDestination::Drain => while event_rx.recv().await.is_some() {},
+            EventDestination::Forward(sink) => {
+                while let Some(ev) = event_rx.recv().await {
+                    // `try_send` so a slow / closed consumer never stalls
+                    // the solver. Full / closed channels drop the event;
+                    // a closed sink also breaks the loop so we don't burn
+                    // CPU forwarding into the void.
+                    match sink.try_send(ev) {
+                        Ok(()) => {}
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                            tracing::warn!("agentic event sink full; dropping event");
+                        }
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => break,
+                    }
+                }
+            }
+        }
+    });
 
     let solver = solver.with_events(event_stream.clone());
     // Same rule as the two PipelineBuilder sites: only inject a
@@ -1730,7 +1800,7 @@ pub async fn run_agentic_eval(
                 };
                 let prompts: Vec<_> = questions.iter().map(|q| q.prompt.as_str()).collect();
                 format!(
-                    "agentic pipeline asked a clarifying question during eval: {}",
+                    "agentic pipeline asked a clarifying question: {}",
                     prompts.join("; ")
                 )
             }

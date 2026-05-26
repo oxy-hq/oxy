@@ -271,10 +271,13 @@ pub async fn read_workspace_agents(workspace_id: Uuid) -> Result<WorkspaceAgents
         .build()
         .await?;
 
-    let default = wm.config_manager.default_agent_ref().cloned();
     let workspace_path = wm.config_manager.workspace_path().to_path_buf();
-    let absolute_agents = wm.config_manager.list_agents().await.unwrap_or_default();
-    let agents = absolute_agents
+    let absolute_agents = wm
+        .config_manager
+        .list_analytics_agents()
+        .await
+        .unwrap_or_default();
+    let agents: Vec<String> = absolute_agents
         .iter()
         .map(|abs| {
             abs.strip_prefix(&workspace_path)
@@ -283,6 +286,10 @@ pub async fn read_workspace_agents(workspace_id: Uuid) -> Result<WorkspaceAgents
                 .to_string()
         })
         .collect();
+    // Classic .agent.yml had a `default_agent` config field. Agentic
+    // agents don't; the picker falls back to the alphabetically first
+    // agentic file so first-time users land on a working selection.
+    let default = agents.first().cloned();
 
     Ok(WorkspaceAgents { agents, default })
 }

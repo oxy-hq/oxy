@@ -409,7 +409,9 @@ export default function OnboardingThread({
           {state.step === "complete" &&
             (() => {
               const files = state.createdFiles ?? [];
-              const agentFile = files.find((f) => f.endsWith(".agent.yml"));
+              const agentFile = files.find(
+                (f) => f.endsWith(".agentic.yml") || f.endsWith(".agentic.yaml")
+              );
               const questions = state.sampleQuestions ?? [];
               return (
                 <CompletionCard

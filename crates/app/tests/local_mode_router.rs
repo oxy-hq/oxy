@@ -1,7 +1,10 @@
 //! Integration coverage for `api_router(ServeMode::Local)`.
 //!
-//! We drive the router via `tower::ServiceExt::oneshot` — no HTTP listener,
-//! and the requests exercised below do not reach the DB.
+//! Drives the router via `tower::ServiceExt::oneshot` — no HTTP listener.
+//! The requests exercised below don't reach the DB at runtime, but
+//! `api_router()` itself wires database-backed middleware during build, so
+//! the tests skip when `OXY_DATABASE_URL` is unset to avoid flagging
+//! environment-config failures as code regressions.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -9,8 +12,15 @@ use oxy_app::server::router::api_router;
 use oxy_app::server::serve_mode::ServeMode;
 use tower::ServiceExt;
 
+fn db_unavailable() -> bool {
+    std::env::var("OXY_DATABASE_URL").is_err()
+}
+
 #[tokio::test]
 async fn local_router_returns_404_for_organization_routes() {
+    if db_unavailable() {
+        return;
+    }
     let router = api_router(
         ServeMode::Local,
         false,
@@ -44,6 +54,9 @@ async fn local_router_returns_404_for_organization_routes() {
 
 #[tokio::test]
 async fn local_router_returns_404_for_github_namespace_routes() {
+    if db_unavailable() {
+        return;
+    }
     let router = api_router(
         ServeMode::Local,
         false,
@@ -74,6 +87,9 @@ async fn local_router_has_public_liveness_route() {
     // Use /live instead of /health: /health returns 503 when DB is unreachable
     // (which is the case in unit tests); /live is the unconditional liveness
     // endpoint and always returns 200.
+    if db_unavailable() {
+        return;
+    }
     let router = api_router(
         ServeMode::Local,
         false,

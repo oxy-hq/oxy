@@ -10,7 +10,7 @@ pub fn search_files_def() -> ToolDef {
     ToolDef {
         name: "search_files",
         description: "Search for files in the project using a glob pattern \
-            (e.g. '**/*.sql', 'agents/*.agent.yml'). \
+            (e.g. '**/*.sql', '**/*.agentic.yml'). \
             Returns matching file paths sorted by modification time (newest first).",
         parameters: json!({
             "type": "object",
@@ -22,7 +22,7 @@ pub fn search_files_def() -> ToolDef {
                         (e.g. 'generated/**/*' for all files under generated/, \
                         'src/**/*.rs' for Rust files). \
                         Use '*' for a single directory level \
-                        (e.g. 'agents/*.agent.yml'). \
+                        (e.g. 'semantics/*.view.yml'). \
                         NOTE: a bare trailing '**' like 'generated/**' does NOT match files \
                         — always append '/*' for recursive file search."
                 }

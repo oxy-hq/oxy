@@ -8,16 +8,12 @@ import {
   Download,
   FileText,
   Folder,
-  GitBranch,
   Globe,
   Hash,
-  Play,
   Plug,
-  RefreshCw,
   Rocket,
   RotateCw,
   Search,
-  Settings,
   Target,
   Workflow,
   Wrench,
@@ -127,28 +123,7 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
     return <Workflow className={className} />;
   }
 
-  // Agent operations - specific agents first
-  if (spanName.includes("routing_agent")) {
-    return <GitBranch className={className} />;
-  }
-  if (spanName.includes("fallback_agent")) {
-    return <RefreshCw className={className} />;
-  }
-  if (spanName.includes("default_agent")) {
-    return <Target className={className} />;
-  }
-  if (spanName === "agent.run_agent") {
-    return <Bot className={className} />;
-  }
-  if (spanName === "agent.get_global_context") {
-    return <Globe className={className} />;
-  }
-  if (spanName === "agent.load_config") {
-    return <Settings className={className} />;
-  }
-  if (spanName === "agent.execute") {
-    return <Play className={className} />;
-  }
+  // Agent operations
   if (spanName.startsWith("agent.")) {
     return <Bot className={className} />;
   }

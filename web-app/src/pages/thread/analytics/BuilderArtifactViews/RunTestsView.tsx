@@ -1,8 +1,7 @@
 import type { ArtifactItem } from "@/hooks/analyticsSteps";
-import Result from "@/pages/ide/Files/Editor/Agent/Tests/TestItem/Result";
-import type { TestResult } from "@/stores/useTests";
-import { MetricKind } from "@/types/eval";
+import { MetricKind, type TestResult } from "@/types/eval";
 import { parseToolJson } from "../analyticsArtifactHelpers";
+import Result from "./Result";
 
 type RunTestsSuiteSummary = {
   score?: number | null;

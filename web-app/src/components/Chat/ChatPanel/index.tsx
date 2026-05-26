@@ -8,8 +8,6 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
-import useAskAgent from "@/hooks/messaging/agent";
-import useAskTask from "@/hooks/messaging/task";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { useMentionHighlight } from "@/hooks/useMentionHighlight";
@@ -43,10 +41,6 @@ const ChatPanel = ({
   const projectId = project.id;
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
-  const { sendMessage } = useAskAgent();
-
-  const { sendMessage: sendTaskMessage } = useAskTask();
-
   const { run: runWorkflow } = useRunWorkflowThread();
 
   const [agent, setAgent] = useState<Agent | null>(null);
@@ -56,19 +50,12 @@ const ChatPanel = ({
   const {
     isAvailable: isBuilderAvailable,
     isLoading: isCheckingBuilder,
-    isAgentic,
     isBuiltin,
     builderPath
   } = useBuilderAvailable();
 
   const { mutate: createThread, isPending } = useThreadMutation((data) => {
     switch (data.source_type) {
-      case "agent":
-        sendMessage(data.input, data.id);
-        break;
-      case "task":
-        sendTaskMessage(data.input, data.id);
-        break;
       case "agentic":
         sendAgenticMessage({
           prompt: data.input,
@@ -245,7 +232,7 @@ const ChatPanel = ({
         createThread({
           title: title,
           source: agent.id,
-          source_type: agent.isAnalytics ? "analytics" : agent.isAgentic ? "agentic" : "agent",
+          source_type: agent.isAnalytics ? "analytics" : "agent",
           input
         });
         break;
@@ -262,7 +249,7 @@ const ChatPanel = ({
             createThread({
               title: title,
               source: builderPath,
-              source_type: isAgentic ? "agentic" : "task",
+              source_type: "task",
               input
             });
           }

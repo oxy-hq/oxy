@@ -10,7 +10,6 @@
 //! through the entity layer:
 //!
 //! - `oxy-workflow` → `entity::threads` (writes execution results)
-//! - `oxy-agent` → `entity::threads` (writes agent outputs)
 //! - `oxy-thread` → `entity::threads` (domain models and operations)
 //!
 //! This keeps the thread crate focused on thread lifecycle management

@@ -50,8 +50,8 @@ pub(super) fn build_workspace_routes(
             "/members/{user_id}",
             delete(workspace_members::remove_workspace_role_override),
         )
-        .nest("/tests", build_test_file_routes())
         .nest("/apps", build_app_routes())
+        .nest("/tests", build_test_file_routes())
         .nest("/traces", traces::traces_routes())
         .nest("/metrics", metrics::metrics_routes())
         .nest(
@@ -181,23 +181,15 @@ fn build_thread_routes() -> Router<AppState> {
         .route("/bulk-delete", post(thread::bulk_delete_threads))
         .route("/{id}", get(thread::get_thread))
         .route("/{id}", delete(thread::delete_thread))
-        .route("/{id}/task", post(task::ask_task))
-        .route("/{id}/agentic", post(task::ask_agentic))
         // Thread-bound legacy `/workflow` and `/workflow-sync` routes were
         // retired with `oxy-workflow`. Use the agentic-pipeline workflow
         // surface (`/agentic-workflows/runs`) instead.
         .route("/{id}/messages", get(message::get_messages_by_thread))
-        .route("/{id}/agent", post(agent::ask_agent))
         .route("/{id}/stop", post(thread::stop_thread))
 }
 
 fn build_agent_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(agent::get_agents))
-        .route("/{pathb64}", get(agent::get_agent))
-        .route("/{pathb64}/ask", post(agent::ask_agent_preview))
-        .route("/{pathb64}/ask-sync", post(agent::ask_agent_sync))
-        .route("/{pathb64}/tests/{test_index}", post(agent::run_test))
+    Router::new().route("/", get(agent::get_agents))
 }
 
 fn build_api_key_routes() -> Router<AppState> {
@@ -306,6 +298,21 @@ fn build_integration_routes() -> Router<AppState> {
         .route("/looker/query/sql", post(integration::compile_looker_query))
 }
 
+fn build_app_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(app::list_apps))
+        .route("/{pathb64}", get(app::get_app_data))
+        .route("/{pathb64}/run", post(app::run_app))
+        .route("/{pathb64}/result", post(app::get_app_result))
+        .route("/{pathb64}/displays", get(app::get_displays))
+        .route("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
+        .route("/{pathb64}/publish", post(app::publish_app))
+        .route("/{pathb64}/unpublish", post(app::unpublish_app))
+        .route("/file/{pathb64}", get(app::get_data))
+        .route("/source/{pathb64}", get(app::get_source_file))
+        .route("/save-from-run/{run_id}", post(app::save_app_builder_run))
+}
+
 fn build_test_file_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(test_file::list_test_files))
@@ -338,21 +345,6 @@ fn build_test_file_routes() -> Router<AppState> {
             "/{pathb64}/runs/{run_index}/cases/{case_index}/human-verdict",
             put(test_run::set_human_verdict),
         )
-}
-
-fn build_app_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(app::list_apps))
-        .route("/{pathb64}", get(app::get_app_data))
-        .route("/{pathb64}/run", post(app::run_app))
-        .route("/{pathb64}/result", post(app::get_app_result))
-        .route("/{pathb64}/displays", get(app::get_displays))
-        .route("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
-        .route("/{pathb64}/publish", post(app::publish_app))
-        .route("/{pathb64}/unpublish", post(app::unpublish_app))
-        .route("/file/{pathb64}", get(app::get_data))
-        .route("/source/{pathb64}", get(app::get_source_file))
-        .route("/save-from-run/{run_id}", post(app::save_app_builder_run))
 }
 
 #[cfg(test)]

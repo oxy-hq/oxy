@@ -1,6 +1,6 @@
 use crate::config::model::AppConfig;
 
-use super::model::{AgentConfig, Config, ExportFormat, TaskExport, TaskType};
+use super::model::{Config, ExportFormat, TaskExport, TaskType};
 use std::{env, fmt::Display, path::PathBuf};
 
 const FILE_NOT_FOUND_ERROR: &str = "File does not exist";
@@ -9,7 +9,6 @@ const DIR_NOT_FOUND_ERROR: &str = "Directory does not exist";
 const ENV_VAR_NOT_FOUND_ERROR: &str = "Env var not set";
 const SQL_FILE_NOT_FOUND_ERROR: &str = "Sql file not found";
 const DATABASE_NOT_FOUND_ERROR: &str = "Database not found";
-const AGENT_NOT_FOUND_ERROR: &str = "Agent not found";
 const INVALID_EXPORT_FORMAT_ERROR: &str = "Invalid export format";
 
 fn format_error_message(error_message: &str, value: impl Display) -> garde::Error {
@@ -93,11 +92,6 @@ pub struct ValidationContext {
     pub metadata: Option<ValidationContextMetadata>,
 }
 
-pub struct AgentValidationContext {
-    pub agent_config: AgentConfig,
-    pub config: Config,
-}
-
 pub fn validate_database_exists(database_name: &str, context: &ValidationContext) -> garde::Result {
     let database = context.config.find_database(database_name);
     match database {
@@ -114,17 +108,6 @@ pub fn validate_sql_file(sql_file: &str, context: &ValidationContext) -> garde::
     if !path.exists() {
         return Err(format_error_message(
             SQL_FILE_NOT_FOUND_ERROR,
-            path.as_path().to_string_lossy(),
-        ));
-    }
-    Ok(())
-}
-
-pub fn validate_agent_exists(agent: &str, context: &ValidationContext) -> garde::Result {
-    let path = &context.config.workspace_path.join(agent);
-    if !path.exists() {
-        return Err(format_error_message(
-            AGENT_NOT_FOUND_ERROR,
             path.as_path().to_string_lossy(),
         ));
     }
@@ -231,38 +214,6 @@ fn validate_export(
     Ok(())
 }
 
-pub fn validate_model(
-    model_name: &String,
-    validation_text: &AgentValidationContext,
-) -> garde::Result {
-    let _ = validation_text.config.find_model(model_name).map_err(|_| {
-        garde::Error::new(format!(
-            "Model not found: {}",
-            validation_text.agent_config.model
-        ))
-    })?;
-    Ok(())
-}
-
-use super::model::ToolType;
-
-pub fn validate_no_duplicate_tool_names(
-    tools: &Vec<ToolType>,
-    _ctx: &AgentValidationContext,
-) -> garde::Result {
-    let mut seen_names = std::collections::HashSet::new();
-    for tool in tools {
-        let name = tool.name();
-        if !seen_names.insert(name) {
-            return Err(garde::Error::new(format!(
-                "Duplicate tool name: '{}'. Each tool must have a unique name.",
-                name
-            )));
-        }
-    }
-    Ok(())
-}
-
 pub fn validate_task_data_reference(data_ref: &String, ctx: &ValidationContext) -> garde::Result {
     if let Some(ValidationContextMetadata::DataApp(data_app_ctx)) = &ctx.metadata {
         let task_names: std::collections::HashSet<String> = data_app_ctx
@@ -327,7 +278,6 @@ mod tests {
                 integrations: vec![],
                 slack_legacy: None,
                 mcp: None,
-                a2a: None,
                 protected_branches: None,
                 base_branch: None,
                 admins: vec![],
@@ -652,33 +602,6 @@ mod tests {
             assert!(result.is_err());
             let err = result.unwrap_err();
             assert!(err.to_string().contains("File does not exist"));
-        }
-    }
-
-    mod validate_agent_exists_tests {
-        use super::*;
-
-        #[test]
-        fn test_existing_agent_succeeds() {
-            let temp_dir = TempDir::new().unwrap();
-            let agent_path = temp_dir.path().join("agent.yaml");
-            std::fs::write(&agent_path, "name: test_agent").unwrap();
-
-            let context = create_test_context(temp_dir.path().to_path_buf());
-
-            let result = validate_agent_exists("agent.yaml", &context);
-            assert!(result.is_ok());
-        }
-
-        #[test]
-        fn test_non_existing_agent_fails() {
-            let temp_dir = TempDir::new().unwrap();
-            let context = create_test_context(temp_dir.path().to_path_buf());
-
-            let result = validate_agent_exists("missing_agent.yaml", &context);
-            assert!(result.is_err());
-            let err = result.unwrap_err();
-            assert!(err.to_string().contains("Agent not found"));
         }
     }
 }

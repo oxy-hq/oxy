@@ -10,7 +10,6 @@ Oxy is a Rust workspace with a web frontend. The CLI binary lives in the `app` c
 crates/
   app/                      # (oxy-app / oxy binary) CLI + HTTP server, default workspace member
   core/                     # (oxy) Core platform library, published as "oxy"
-  agent/                    # (oxy-agent) Agent execution engine
   auth/                     # (oxy-auth) Authentication and authorization
   entity/                   # (entity) Sea-ORM database entity models
   migration/                # (migration) Sea-ORM database migrations

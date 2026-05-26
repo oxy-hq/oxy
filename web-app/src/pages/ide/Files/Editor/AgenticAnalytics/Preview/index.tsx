@@ -17,7 +17,12 @@ import { decodeBase64 } from "@/libs/encoding";
 import AnalyticsReasoningTrace from "@/pages/thread/analytics/AnalyticsReasoningTrace";
 import SuspensionPrompt from "@/pages/thread/analytics/SuspensionPrompt";
 import type { UiBlock } from "@/services/api/analytics";
-import { getThreadIdFromPath } from "@/stores/useAgentThread";
+
+/// Build a unique thread ID for the agent-preview surface from the
+/// project/branch/path triple. Inlined here after the classic
+/// `useAgentThread` store was removed.
+const getThreadIdFromPath = (projectId: string, branchName: string, pathb64: string): string =>
+  `${projectId}::${branchName}::${pathb64}`;
 
 /**
  * Returns the agent_id for the analytics API from a file path.

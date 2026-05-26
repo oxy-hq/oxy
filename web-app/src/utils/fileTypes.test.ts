@@ -17,18 +17,6 @@ describe("detectFileType", () => {
   });
 
   describe("no regression on existing types", () => {
-    it("still detects .agent.yml as AGENT", () => {
-      expect(detectFileType("default.agent.yml")).toBe(FileType.AGENT);
-    });
-
-    it("still detects .agent.yaml as AGENT", () => {
-      expect(detectFileType("semantic.agent.yaml")).toBe(FileType.AGENT);
-    });
-
-    it("still detects .aw.yml as AGENTIC_WORKFLOW", () => {
-      expect(detectFileType("demo.aw.yml")).toBe(FileType.AGENTIC_WORKFLOW);
-    });
-
     it("still detects .workflow.yml as WORKFLOW", () => {
       expect(detectFileType("etl.workflow.yml")).toBe(FileType.WORKFLOW);
     });
@@ -39,6 +27,10 @@ describe("detectFileType", () => {
 
     it("returns DEFAULT for unknown extension", () => {
       expect(detectFileType("README.md")).toBe(FileType.DEFAULT);
+    });
+
+    it("returns DEFAULT for retired .agent.yml extension", () => {
+      expect(detectFileType("default.agent.yml")).toBe(FileType.DEFAULT);
     });
   });
 });

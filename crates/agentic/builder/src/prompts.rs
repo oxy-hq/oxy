@@ -27,11 +27,6 @@ pub(crate) const TOPIC_TEMPLATE: &str = include_str!("../knowledge/topic-templat
 pub(crate) const APP_BUILDER_REFERENCE: &str =
     include_str!("../knowledge/app-builder-reference.md");
 
-/// Reference for authoring classic `.agent.yml` files — tool hierarchy,
-/// system-instruction patterns, context pre-loading.
-pub(crate) const AGENT_BUILDER_REFERENCE: &str =
-    include_str!("../knowledge/agent-builder-reference.md");
-
 /// Reference for authoring `.agentic.yml` files — multi-step FSM agents,
 /// per-state overrides, validation rules, semantic engine wiring.
 pub(crate) const AGENTIC_BUILDER_REFERENCE: &str =
@@ -51,7 +46,6 @@ pub(crate) const AGENTIC_TEMPLATE: &str = include_str!("../knowledge/agentic-tem
 pub enum KnowledgeCard {
     SemanticLayer,
     AppBuilder,
-    AgentBuilder,
     AgenticBuilder,
 }
 
@@ -62,7 +56,6 @@ impl KnowledgeCard {
         match self {
             KnowledgeCard::SemanticLayer => "semantic-layer",
             KnowledgeCard::AppBuilder => "app-builder",
-            KnowledgeCard::AgentBuilder => "agent-builder",
             KnowledgeCard::AgenticBuilder => "agentic-builder",
         }
     }
@@ -73,18 +66,16 @@ impl KnowledgeCard {
         match s {
             "semantic-layer" => Some(KnowledgeCard::SemanticLayer),
             "app-builder" => Some(KnowledgeCard::AppBuilder),
-            "agent-builder" => Some(KnowledgeCard::AgentBuilder),
             "agentic-builder" => Some(KnowledgeCard::AgenticBuilder),
             _ => None,
         }
     }
 
     /// Every variant, in canonical order.
-    pub fn all() -> [KnowledgeCard; 4] {
+    pub fn all() -> [KnowledgeCard; 3] {
         [
             KnowledgeCard::SemanticLayer,
             KnowledgeCard::AppBuilder,
-            KnowledgeCard::AgentBuilder,
             KnowledgeCard::AgenticBuilder,
         ]
     }
@@ -95,7 +86,6 @@ impl KnowledgeCard {
         match self {
             KnowledgeCard::SemanticLayer => "## Semantic layer reference",
             KnowledgeCard::AppBuilder => "## Data app reference",
-            KnowledgeCard::AgentBuilder => "## Agent reference",
             KnowledgeCard::AgenticBuilder => "## Agentic agent reference",
         }
     }
@@ -121,11 +111,6 @@ impl KnowledgeCard {
                 header = self.section_header(),
                 card = strip_vendoring_header(APP_BUILDER_REFERENCE),
             ),
-            KnowledgeCard::AgentBuilder => format!(
-                "{header}\n\n{card}",
-                header = self.section_header(),
-                card = strip_vendoring_header(AGENT_BUILDER_REFERENCE),
-            ),
             KnowledgeCard::AgenticBuilder => format!(
                 "{header}\n\n{card}\n\n\
                  ### Agentic template (`*.agentic.yml`)\n\n\
@@ -138,7 +123,7 @@ impl KnowledgeCard {
     }
 }
 
-/// Always-on index of the available reference cards.  Lists the four
+/// Always-on index of the available reference cards.  Lists the three
 /// cards by slug so the model knows which name to pass to
 /// `lookup_reference`.  Hand-authored — kept short on purpose.
 pub(crate) const CARD_INDEX: &str = "## Reference cards
@@ -152,8 +137,6 @@ file you have not already loaded the schema for in this conversation.
 - `app-builder` — for `*.app.yml`.  Tasks (`semantic_query` / \
   `execute_sql`), displays (table / chart / markdown), `view__field` \
   column refs, dialect-specific SQL.
-- `agent-builder` — for classic `*.agent.yml`.  Single-turn \
-  tool-calling agent with `semantic_query` / `execute_sql` tools.
 - `agentic-builder` — for `*.agentic.yml`.  Multi-step FSM analytics \
   agent: clarifying / specifying / solving / executing / interpreting.";
 
@@ -292,7 +275,6 @@ mod tests {
         assert!(!VIEW_TEMPLATE.is_empty());
         assert!(!TOPIC_TEMPLATE.is_empty());
         assert!(!APP_BUILDER_REFERENCE.is_empty());
-        assert!(!AGENT_BUILDER_REFERENCE.is_empty());
         assert!(!AGENTIC_BUILDER_REFERENCE.is_empty());
         assert!(!AGENTIC_TEMPLATE.is_empty());
 
@@ -403,7 +385,6 @@ mod tests {
         assert!(out.contains("View template"));
         assert!(out.contains("Topic template"));
         assert!(out.contains("Data app reference"));
-        assert!(out.contains("Agent reference"));
         assert!(out.contains("Agentic agent reference"));
         assert!(out.contains("Agentic template"));
         // Structural content survives.
@@ -515,7 +496,6 @@ mod tests {
             vec![],
             vec![KnowledgeCard::SemanticLayer],
             vec![KnowledgeCard::AppBuilder],
-            vec![KnowledgeCard::AgentBuilder],
             vec![KnowledgeCard::AgenticBuilder],
             KnowledgeCard::all().to_vec(),
         ] {

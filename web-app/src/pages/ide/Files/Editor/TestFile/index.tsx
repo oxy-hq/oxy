@@ -3,21 +3,21 @@ import YAML from "yaml";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
-import ViewModeToggle from "../Agent/components/ViewModeToggle";
-import { AgentViewMode } from "../Agent/types";
 import EditorPageWrapper from "../components/EditorPageWrapper";
 import { useEditorContext } from "../contexts/useEditorContext";
+import ViewModeToggle from "./components/ViewModeToggle";
 import RunSection from "./RunSection";
 import TestFileForm, { type TestFileFormData } from "./TestFileForm";
+import { TestFileViewMode } from "./types";
 
 const TestFileEditor = () => {
   const { pathb64, gitEnabled } = useEditorContext();
   const { filesSubViewMode } = useFilesContext();
 
   const defaultViewMode =
-    filesSubViewMode === FilesSubViewMode.OBJECTS ? AgentViewMode.Form : AgentViewMode.Editor;
+    filesSubViewMode === FilesSubViewMode.OBJECTS ? TestFileViewMode.Form : TestFileViewMode.Editor;
 
-  const [viewMode, setViewMode] = useState<AgentViewMode>(defaultViewMode);
+  const [viewMode, setViewMode] = useState<TestFileViewMode>(defaultViewMode);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const validateContent = (value: string) => {
@@ -41,9 +41,9 @@ const TestFileEditor = () => {
       }
       pathb64={pathb64}
       git={gitEnabled}
-      customEditor={viewMode === AgentViewMode.Form ? <TestFileFormWrapper /> : undefined}
+      customEditor={viewMode === TestFileViewMode.Form ? <TestFileFormWrapper /> : undefined}
       onChanged={(value) => {
-        if (viewMode === AgentViewMode.Editor) {
+        if (viewMode === TestFileViewMode.Editor) {
           validateContent(value);
         }
       }}

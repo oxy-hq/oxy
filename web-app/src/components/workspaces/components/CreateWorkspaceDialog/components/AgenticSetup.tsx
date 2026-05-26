@@ -1366,7 +1366,6 @@ function inferArtifactType(filePath: string): GeneratedArtifact["type"] {
   if (filePath.endsWith(".app.yml")) return "app";
   if (filePath.endsWith(".topic.yml")) return "topic";
   if (filePath.endsWith(".agentic.yml") || filePath.endsWith(".agentic.yaml")) return "agentic";
-  if (filePath.endsWith(".agent.yml")) return "agent";
   return "config";
 }
 

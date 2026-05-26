@@ -1,7 +1,6 @@
 import {
   AppWindow,
   BookOpen,
-  Bot,
   ChartBar,
   Eye,
   FlaskConical,
@@ -42,7 +41,7 @@ import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
-type ObjectType = "agent" | "agentic" | "workflow" | "view" | "topic" | "app" | "test";
+type ObjectType = "agentic" | "workflow" | "view" | "topic" | "app" | "test";
 
 interface ObjectTypeConfig {
   type: ObjectType;
@@ -53,20 +52,6 @@ interface ObjectTypeConfig {
 }
 
 const OBJECT_TYPE_CONFIGS: ObjectTypeConfig[] = [
-  {
-    type: "agent",
-    label: "Agent",
-    icon: Bot,
-    extension: ".agent.yml",
-    defaultContent: `model: ""
-description: ""
-
-system_instructions: |
-  You are a helpful assistant.
-
-tools: []
-`
-  },
   {
     type: "agentic",
     label: "Analytics Agent",

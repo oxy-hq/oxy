@@ -1,0 +1,5 @@
+.databases/
+.checkpoint/
+.oxy_state/
+output/
+db.duckdb

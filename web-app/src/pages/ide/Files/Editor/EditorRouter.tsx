@@ -1,6 +1,5 @@
 import { memo } from "react";
 import { FileType } from "@/utils/fileTypes";
-import AgentEditor from "./Agent";
 import AgenticAnalyticsEditor from "./AgenticAnalytics";
 import AirwayEditor from "./Airway";
 import AppEditor from "./App";
@@ -21,8 +20,6 @@ const EditorRouterComponent = () => {
     case FileType.WORKFLOW:
     case FileType.AUTOMATION:
       return <WorkflowEditor />;
-    case FileType.AGENT:
-      return <AgentEditor />;
     case FileType.ANALYTICS_AGENT:
       return <AgenticAnalyticsEditor />;
     case FileType.PIPELINE:
@@ -35,10 +32,10 @@ const EditorRouterComponent = () => {
       return <ViewEditor />;
     case FileType.TOPIC:
       return <TopicEditor />;
-    case FileType.TEST:
-      return <TestFileEditor />;
     case FileType.MARKDOWN:
       return <MarkdownEditor />;
+    case FileType.TEST:
+      return <TestFileEditor />;
     default:
       return <DefaultEditor />;
   }

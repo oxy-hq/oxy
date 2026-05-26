@@ -64,6 +64,39 @@ pub async fn cached_chart_png_path(
     Ok(cache_dir.join(png_name))
 }
 
+/// Write `json` to the workspace's chart directory under `filename`.
+/// Used by the agentic bridge to materialize charts emitted as
+/// `AnalyticsEvent::ChartRendered` so the existing PNG render + upload
+/// pipeline (which reads from disk) keeps working unchanged.
+///
+/// Idempotent: if the file already exists with identical bytes the
+/// disk write is skipped, so concurrent agent runs that emit the same
+/// chart hash don't race on the same file.
+pub async fn write_chart_json(
+    workspace_id: Uuid,
+    filename: &str,
+    json: &serde_json::Value,
+) -> Result<PathBuf, OxyError> {
+    let config_manager = build_config_manager(workspace_id).await?;
+    let charts_dir = config_manager.get_charts_dir().await?;
+    tokio::fs::create_dir_all(&charts_dir).await.map_err(|e| {
+        OxyError::RuntimeError(format!(
+            "failed to create charts dir {}: {e}",
+            charts_dir.display()
+        ))
+    })?;
+    let path = charts_dir.join(filename);
+    let bytes = serde_json::to_vec(json)
+        .map_err(|e| OxyError::RuntimeError(format!("serializing chart json: {e}")))?;
+    tokio::fs::write(&path, &bytes).await.map_err(|e| {
+        OxyError::RuntimeError(format!(
+            "failed to write chart json {}: {e}",
+            path.display()
+        ))
+    })?;
+    Ok(path)
+}
+
 /// Resolve the on-disk JSON path for a chart inside a workspace. Returns
 /// `None` (not an error) when the file is missing — the caller maps that
 /// to a 404.

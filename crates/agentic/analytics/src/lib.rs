@@ -45,7 +45,7 @@ pub use semantic::SemanticCatalog;
 // ── Events ──────────────────────────────────────────────────────────────────
 
 pub use agentic_core::subrun::SubrunStep;
-pub use events::AnalyticsEvent;
+pub use events::{AnalyticsEvent, QuerySource};
 
 // LLM types used only by internal code and tests.
 #[doc(hidden)]

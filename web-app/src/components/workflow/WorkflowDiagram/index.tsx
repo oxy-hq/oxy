@@ -15,7 +15,6 @@ const nodeTypes: Record<NodeType, typeof DiagramNode> = {
   semantic_query: DiagramNode,
   loop_sequential: DiagramNode,
   formatter: DiagramNode,
-  agent: DiagramNode,
   workflow: DiagramNode,
   conditional: DiagramNode,
   "conditional-else": DiagramNode,

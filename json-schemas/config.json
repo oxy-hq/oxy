@@ -7,17 +7,6 @@
     "models"
   ],
   "properties": {
-    "a2a": {
-      "description": "Optional A2A configuration for exposing agents via A2A protocol If not specified or empty, no agents are exposed via A2A",
-      "anyOf": [
-        {
-          "$ref": "#/definitions/A2aConfig"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "base_branch": {
       "description": "Branch that new worktrees fork from when saving on a protected branch. Defaults to the currently checked-out branch (usually the default branch) when not set.  Use this when Oxy serves from a \"deployment\" branch but new work should fork from an \"integration\" branch (e.g. serve from `deploy`, fork new work from `main`).\n\nExample config.yml: base_branch: main",
       "type": [
@@ -106,47 +95,11 @@
   },
   "additionalProperties": false,
   "definitions": {
-    "A2aAgentConfig": {
-      "description": "Configuration for a single A2A-exposed agent",
-      "type": "object",
-      "required": [
-        "name",
-        "ref"
-      ],
-      "properties": {
-        "name": {
-          "description": "A2A agent name used in URL paths\n\nThis name will be used in the A2A endpoint URLs: - JSON-RPC: `/a2a/agents/{name}/v1/jsonrpc` - HTTP: `/a2a/agents/{name}/v1` - Agent Card: `/a2a/agents/{name}/.well-known/agent-card.json`\n\nMust be a valid URL path segment (alphanumeric, hyphens, underscores only)",
-          "type": "string"
-        },
-        "ref": {
-          "description": "Path to the Oxy agent configuration file (relative to project root)\n\nExample: `agents/sales-assistant.agent.yml`",
-          "type": "string"
-        }
-      }
-    },
-    "A2aConfig": {
-      "description": "A2A configuration from config.yml\n\nThis configures which Oxy agents are exposed via the A2A protocol. If this section is absent or empty, no agents are exposed.",
-      "type": "object",
-      "properties": {
-        "agents": {
-          "description": "List of agents to expose via A2A protocol",
-          "default": [],
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/A2aAgentConfig"
-          }
-        }
-      }
-    },
     "BuilderAgentConfig": {
-      "description": "Configuration for the built-in builder copilot agent.\n\nSupports two forms for backward compatibility: - **Path** (legacy): a string pointing to an `.agent.yml` file, e.g. `builder_agent: builder.agent.yml` - **Builtin** (new): just a model name, e.g. `builder_agent: { model: \"claude-sonnet-4-6\" }`",
+      "description": "Configuration for the built-in builder copilot agent.\n\nExample: `builder_agent: { model: \"claude-sonnet-4-6\" }`",
       "anyOf": [
         {
-          "description": "Legacy: path to an external agent YAML file.",
-          "type": "string"
-        },
-        {
-          "description": "New: built-in copilot configured only with a model name.",
+          "description": "Built-in copilot configured only with a model name.",
           "type": "object",
           "required": [
             "model"
@@ -858,13 +811,6 @@
     "Defaults": {
       "type": "object",
       "properties": {
-        "agent": {
-          "description": "Default agent path (relative to the workspace root) used by callers that need to pick \"the\" agent without ambiguity — most notably the Slack integration when it has to dispatch a question against a workspace. When unset, the Slack handler falls back to the alphabetically-first agent.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "database": {
           "type": [
             "string",

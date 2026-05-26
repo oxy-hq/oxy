@@ -1,5 +1,19 @@
-import { STEP_MAP } from "@/types/agent";
 import type { Artifact } from "@/types/artifact";
+
+/// Display labels for the step kinds emitted by the legacy streaming
+/// message processor. Kept here (inlined from the deleted `@/types/agent`)
+/// because the processor is still consumed by the agentic-thread surface
+/// for shared message shapes.
+const STEP_MAP: Record<string, string> = {
+  execute_sql: "Executing SQL",
+  semantic_query: "Running semantic query",
+  visualize: "Generating visualization",
+  retrieve: "Retrieving data",
+  agent: "Generating answer",
+  workflow: "Running procedure",
+  save_automation: "Saving procedure"
+};
+
 import type {
   Answer,
   ArtifactDoneContent,

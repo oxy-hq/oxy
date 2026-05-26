@@ -1,27 +1,4 @@
-use crate::config;
-use oxy_semantic::{self, SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
-use oxy_shared::errors::OxyError;
-
-/// Get enhanced description for semantic query tool with semantic layer metadata
-pub fn get_semantic_query_description(
-    semantic_tool: &crate::config::model::SemanticQueryTool,
-    config_manager: &config::ConfigManager,
-) -> Result<String, OxyError> {
-    let semantic_layer = load_semantic_layer(config_manager)?;
-
-    let mut description = String::new();
-    description.push_str(&semantic_tool.description);
-    description.push_str("\n\n**Semantic layer:**\n");
-
-    get_topics_metadata(
-        &mut description,
-        &semantic_layer,
-        semantic_tool.topic.as_deref(),
-    )?;
-
-    tracing::info!("Semantic layer description: {}", description);
-    Ok(description)
-}
+use oxy_semantic::{self, SemanticLayer, Topic, View};
 
 /// Build semantic layer description for a specific topic.
 /// Used by MCP tools and other contexts where we have a Topic directly.
@@ -48,85 +25,7 @@ pub fn build_semantic_topic_description(topic: &Topic, semantic_layer: &Semantic
     out
 }
 
-fn load_semantic_layer(config_manager: &config::ConfigManager) -> Result<SemanticLayer, OxyError> {
-    let scan_path = config_manager.semantics_scan_path();
-
-    let parse_result = parse_semantic_layer_from_dir(&scan_path).map_err(|e| {
-        OxyError::ConfigurationError(format!(
-            "No semantic layer metadata found. Please ensure you have .view.yml or .view.yaml files in your project. Error: {}",
-            e
-        ))
-    })?;
-
-    Ok(parse_result.semantic_layer)
-}
-
-fn get_topics_metadata(
-    description: &mut String,
-    semantic_layer: &SemanticLayer,
-    specified_topic: Option<&str>,
-) -> Result<(), OxyError> {
-    let Some(topics) = &semantic_layer.topics else {
-        return Err(OxyError::ConfigurationError(
-            "No topics found in the semantic layer.".to_string(),
-        ));
-    };
-
-    if topics.is_empty() {
-        return Err(OxyError::ConfigurationError(
-            "No topics available in the semantic layer.".to_string(),
-        ));
-    }
-
-    let filtered_topics = filter_topics(topics, specified_topic);
-
-    if filtered_topics.is_empty() {
-        return Err(build_no_topics_error(specified_topic));
-    }
-
-    for topic in filtered_topics {
-        build_topic_metadata(description, topic, semantic_layer);
-    }
-
-    Ok(())
-}
-
-fn filter_topics<'a>(topics: &'a [Topic], specified_topic: Option<&str>) -> Vec<&'a Topic> {
-    match specified_topic {
-        Some(topic_name) => topics
-            .iter()
-            .filter(|topic| topic.name == topic_name)
-            .collect(),
-        None => topics.iter().collect(),
-    }
-}
-
-fn build_no_topics_error(specified_topic: Option<&str>) -> OxyError {
-    match specified_topic {
-        Some(topic_name) => OxyError::ConfigurationError(format!(
-            "Specified topic '{}' not found in the semantic layer.",
-            topic_name
-        )),
-        None => {
-            OxyError::ConfigurationError("No topics available in the semantic layer.".to_string())
-        }
-    }
-}
-
-fn build_topic_metadata(description: &mut String, topic: &Topic, semantic_layer: &SemanticLayer) {
-    description.push_str(&format!("\n# Topic: {}\n", topic.name));
-    if let Some(base_view) = &topic.base_view {
-        description.push_str(&format!("\nBase view: {}\n", base_view));
-    }
-    if let Some(ref desc) = topic.description {
-        description.push_str(&format!("{}\n", desc));
-    }
-    build_topic_views(description, topic, semantic_layer);
-}
-
 /// Append the view/measure/dimension blocks for a topic, without the topic header or description.
-/// Used by both `build_topic_metadata` (multi-topic listing) and `build_semantic_topic_description`
-/// (single-topic MCP context where description leads the output).
 fn build_topic_views(description: &mut String, topic: &Topic, semantic_layer: &SemanticLayer) {
     let topic_views = get_topic_views(topic, semantic_layer);
     for view in &topic_views {

@@ -5,16 +5,14 @@ use crate::constants::UNPUBLISH_APP_DIR;
 use crate::state_dir::resolve_state_dir_with_fallback;
 use oxy_shared::errors::OxyError;
 
-use super::agent_config::AgenticConfig;
-use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVariables};
+use super::model::{AppConfig, Config, Workflow, WorkflowWithRawVariables};
 use super::test_config::TestFileConfig;
 
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
 const WORKFLOW_EXTENSION: &str = ".workflow";
 const AUTOMATION_EXTENSION: &str = ".automation";
 const PROCEDURE_EXTENSION: &str = ".procedure";
-const AGENT_EXTENSION: &str = ".agent";
-const AGENTIC_WORKFLOW_EXTENSION: &str = ".aw";
+#[allow(dead_code)]
 const TEST_EXTENSION: &str = ".test";
 
 #[enum_dispatch::enum_dispatch]
@@ -22,14 +20,6 @@ pub(super) trait ConfigStorage {
     async fn load_config(&self) -> Result<Config, OxyError>;
     async fn load_config_with_fallback(&self) -> Config;
     async fn write_config(&self, config: &Config) -> Result<(), OxyError>;
-    async fn load_agent_config<P: AsRef<Path>>(
-        &self,
-        agent_ref: P,
-    ) -> Result<AgentConfig, OxyError>;
-    async fn load_agentic_workflow_config<P: AsRef<Path>>(
-        &self,
-        agent_ref: P,
-    ) -> Result<AgenticConfig, OxyError>;
     async fn load_workflow_config<P: AsRef<Path>>(
         &self,
         workflow_ref: P,
@@ -41,8 +31,6 @@ pub(super) trait ConfigStorage {
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError>;
     async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError>;
     async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError>;
-    async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError>;
-    async fn list_agentic_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_analytics_agents(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError>;
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
@@ -246,7 +234,6 @@ impl ConfigStorage for LocalSource {
             integrations: vec![],
             slack_legacy: None,
             mcp: None,
-            a2a: None,
             protected_branches: None,
             base_branch: None,
             repositories: vec![],
@@ -269,44 +256,6 @@ impl ConfigStorage for LocalSource {
             ))
         })?;
         Ok(())
-    }
-
-    async fn load_agent_config<P: AsRef<Path>>(
-        &self,
-        agent_ref: P,
-    ) -> Result<AgentConfig, OxyError> {
-        let resolved_path = self.validate_path_within_project(agent_ref)?;
-        let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
-        })?;
-        let mut agent_config: AgentConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
-            OxyError::ConfigurationError(format!(
-                "Failed to deserialize agent {} config: {e}",
-                resolved_path.display()
-            ))
-        })?;
-        if agent_config.name.is_empty() {
-            agent_config.name = self.get_stem_by_extension(&resolved_path, AGENT_EXTENSION)?;
-        }
-        Ok(agent_config)
-    }
-
-    async fn load_agentic_workflow_config<P: AsRef<Path>>(
-        &self,
-        agent_ref: P,
-    ) -> Result<AgenticConfig, OxyError> {
-        let resolved_path = PathBuf::from(&self.project_path).join(agent_ref);
-        let agent_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to read agent config from file: {e}"))
-        })?;
-        let mut agent_config: AgenticConfig = serde_yaml::from_str(&agent_yml).map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to deserialize agent config: {e}"))
-        })?;
-        if agent_config.name.is_empty() {
-            agent_config.name =
-                self.get_stem_by_extension(&resolved_path, AGENTIC_WORKFLOW_EXTENSION)?;
-        }
-        Ok(agent_config)
     }
 
     async fn load_workflow_config<P: AsRef<Path>>(
@@ -384,14 +333,6 @@ impl ConfigStorage for LocalSource {
             .filter(|entry| entry.is_file())
             .map(|entry| entry.display().to_string())
             .collect())
-    }
-
-    async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
-        Ok(self.list_by_sub_extension(None, "agent"))
-    }
-
-    async fn list_agentic_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
-        Ok(self.list_by_sub_extension(None, "aw"))
     }
 
     async fn list_analytics_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
@@ -476,19 +417,17 @@ impl ConfigStorage for LocalSource {
                 resolved_path.display()
             ))
         })?;
-        // Infer target from filename if not specified
+        // Infer target from filename if not specified, e.g.
+        // "sales.agentic.test.yml" -> "sales.agentic.yml".
         if test_config.target.is_none() {
             let file_name = resolved_path
                 .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or_default();
-            // e.g. "sales.agent.test.yml" -> "sales.agent.yml"
             if let Some(base) = file_name.strip_suffix(".test.yml") {
                 let target_name = format!("{base}.yml");
-                // Resolve relative to the test file's directory
                 if let Some(parent) = resolved_path.parent() {
                     let target_path = parent.join(&target_name);
-                    // Store as relative path from project root
                     if let Ok(relative) = target_path.strip_prefix(&self.project_path) {
                         test_config.target = Some(relative.display().to_string());
                     } else {
@@ -504,7 +443,6 @@ impl ConfigStorage for LocalSource {
 
     async fn list_tests(&self) -> Result<Vec<PathBuf>, OxyError> {
         let candidates = self.list_by_sub_extension(None, "test");
-        // Filter to only files that parse as TestFileConfig (skip old dataset files)
         let mut test_files = Vec::new();
         for path in candidates {
             let content = match tokio::fs::read_to_string(&path).await {

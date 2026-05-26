@@ -325,7 +325,7 @@ name: agent_step
 tasks:
   - name: analyze
     type: agent
-    agent_ref: agents/default.agent.yml
+    agent_ref: agents/default.agentic.yml
     prompt: "Analyze the data"
     consistency_run: 3
 "#;
@@ -333,7 +333,7 @@ tasks:
         let TaskType::Agent(agent) = &config.tasks[0].task_type else {
             panic!("expected Agent");
         };
-        assert_eq!(agent.agent_ref, "agents/default.agent.yml");
+        assert_eq!(agent.agent_ref, "agents/default.agentic.yml");
         assert_eq!(agent.prompt, "Analyze the data");
         assert_eq!(agent.consistency_run, 3);
     }
@@ -403,7 +403,7 @@ name: test
 tasks:
   - name: sql
     type: agent
-    agent_ref: agents/sql.agent.yml
+    agent_ref: agents/sql.agentic.yml
     prompt: "generate SQL"
     cache:
       enabled: true

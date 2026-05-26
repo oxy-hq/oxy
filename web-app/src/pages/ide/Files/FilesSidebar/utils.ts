@@ -6,7 +6,6 @@ import {
   Database,
   Eye,
   FileCode,
-  Network,
   ShieldCheck,
   Table,
   Workflow
@@ -28,7 +27,7 @@ export const getObjectName = (file: FileTreeModel): string => {
   return fileName
     .replace(/\.test\.(yml|yaml)$/, "")
     .replace(/\.agentic\.(yml|yaml)$/, "")
-    .replace(/\.(procedure|workflow|automation|agent|aw|app|view|topic)\.(yml|yaml)$/, "")
+    .replace(/\.(procedure|workflow|automation|app|view|topic)\.(yml|yaml)$/, "")
     .replace(/\.(yml|yaml)$/, "");
 };
 
@@ -39,11 +38,8 @@ export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
     case FileType.WORKFLOW:
     case FileType.AUTOMATION:
       return Workflow;
-    case FileType.AGENT:
     case FileType.ANALYTICS_AGENT:
       return Bot;
-    case FileType.AGENTIC_WORKFLOW:
-      return Network;
     case FileType.PIPELINE:
       return Database;
     case FileType.APP:
@@ -95,13 +91,11 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
       case FileType.PROCEDURE:
       case FileType.WORKFLOW:
       case FileType.AUTOMATION:
-      case FileType.AGENTIC_WORKFLOW:
         groups.procedures.push(file);
         break;
       case FileType.PIPELINE:
         groups.pipelines.push(file);
         break;
-      case FileType.AGENT:
       case FileType.ANALYTICS_AGENT:
         groups.agents.push(file);
         break;

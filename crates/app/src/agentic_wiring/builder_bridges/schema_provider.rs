@@ -18,31 +18,19 @@ const SUPPORTED_TYPES: &[&str] = &[
     "Topic",
     "Entity",
     "SemanticLayer",
-    // Agent
-    "AgentConfig",
-    "AgentType",
-    "AgentToolsConfig",
-    "AgentContext",
-    "AgentContextType",
-    "RouteRetrievalConfig",
-    "ReasoningConfig",
-    "ToolType",
-    // Agentic/FSM
-    "AgenticConfig",
     // Workflow.
     //
     // `VisualizeTask` and `EvalConfig` are intentionally absent: the
     // agentic runner does not execute `type: visualize` steps (the
     // legacy chart-from-data task type is retired; charts come from
     // the chat agent's `visualize` tool now) and inline workflow
-    // `tests:` blocks are replaced by standalone `*.agent.test.yml` /
-    // `*.aw.test.yml` files. Surfacing them in the builder copilot's
+    // `tests:` blocks are replaced by standalone `*.agent.test.yml`
+    // files. Surfacing them in the builder copilot's
     // schema palette would let it suggest options that fail at parse
     // time.
     "Workflow",
     "Task",
     "TaskType",
-    "AgentTask",
     "ExecuteSQLTask",
     "SemanticQueryTask",
     "FormatterTask",
@@ -66,10 +54,6 @@ const SUPPORTED_TYPES: &[&str] = &[
     "Config",
     "Database",
     "DatabaseType",
-    // Test
-    "TestFileConfig",
-    "TestSettings",
-    "TestCase",
 ];
 
 /// Schema provider that uses embedded JSON for semantic types and runtime
@@ -108,28 +92,13 @@ impl BuilderSchemaProvider for OxyBuilderSchemaProvider {
         }
 
         // Non-semantic types — generated at runtime from oxy config types.
-        use oxy::config::agent_config as aw;
         use oxy::config::model as cfg;
 
         let schema = match object_name {
-            // Agent
-            "AgentConfig" => serde_json::to_value(schema_for!(cfg::AgentConfig)),
-            "AgentType" => serde_json::to_value(schema_for!(cfg::AgentType)),
-            "AgentToolsConfig" => serde_json::to_value(schema_for!(cfg::AgentToolsConfig)),
-            "AgentContext" => serde_json::to_value(schema_for!(cfg::AgentContext)),
-            "AgentContextType" => serde_json::to_value(schema_for!(cfg::AgentContextType)),
-            "RouteRetrievalConfig" => serde_json::to_value(schema_for!(cfg::RouteRetrievalConfig)),
-            "ReasoningConfig" => serde_json::to_value(schema_for!(cfg::ReasoningConfig)),
-            "ToolType" => serde_json::to_value(schema_for!(cfg::ToolType)),
-
-            // Agentic/FSM
-            "AgenticConfig" => serde_json::to_value(schema_for!(aw::AgenticConfig)),
-
             // Workflow
             "Workflow" => serde_json::to_value(schema_for!(cfg::Workflow)),
             "Task" => serde_json::to_value(schema_for!(cfg::Task)),
             "TaskType" => serde_json::to_value(schema_for!(cfg::TaskType)),
-            "AgentTask" => serde_json::to_value(schema_for!(cfg::AgentTask)),
             "ExecuteSQLTask" => serde_json::to_value(schema_for!(cfg::ExecuteSQLTask)),
             "SemanticQueryTask" => serde_json::to_value(schema_for!(cfg::SemanticQueryTask)),
             "FormatterTask" => serde_json::to_value(schema_for!(cfg::FormatterTask)),
@@ -151,15 +120,6 @@ impl BuilderSchemaProvider for OxyBuilderSchemaProvider {
             "Config" => serde_json::to_value(schema_for!(cfg::Config)),
             "Database" => serde_json::to_value(schema_for!(cfg::Database)),
             "DatabaseType" => serde_json::to_value(schema_for!(cfg::DatabaseType)),
-
-            // Test
-            "TestFileConfig" => {
-                serde_json::to_value(schema_for!(oxy::config::test_config::TestFileConfig))
-            }
-            "TestSettings" => {
-                serde_json::to_value(schema_for!(oxy::config::test_config::TestSettings))
-            }
-            "TestCase" => serde_json::to_value(schema_for!(oxy::config::test_config::TestCase)),
 
             _ => return None,
         };

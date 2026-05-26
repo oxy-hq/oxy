@@ -17,6 +17,7 @@ use types::{EvalInput, EvalResult};
 mod correctness_solver;
 mod eval;
 mod generator;
+mod one_shot;
 mod solver;
 mod target;
 pub mod types;

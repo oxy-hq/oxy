@@ -508,9 +508,10 @@ fn is_auth_env_var(name: &str) -> bool {
 /// Always shown in the secrets panel so users know what the app needs, even when they
 /// haven't yet referenced these vars in config.yml or .env.
 const BUILT_IN_VARS: &[(&str, &str)] = &[
-    // Routing agent hardcodes OPENAI_API_KEY_VAR for embedding (routing.rs).
-    // RetrievalConfig also defaults key_var to OPENAI_API_KEY_VAR.
-    (OPENAI_API_KEY_VAR, "routing-agent"),
+    // Read directly (not via config.yml) by intent classification
+    // (crates/core/src/intent/types.rs) and Tier 2 metrics extraction
+    // (crates/core/src/metrics/{context,extractor}.rs).
+    (OPENAI_API_KEY_VAR, "intent + metrics extraction"),
     // Defaults for LLM model configs when created without a custom key_var.
     (ANTHROPIC_API_KEY_VAR, "models (Anthropic default)"),
     (GEMINI_API_KEY_VAR, "models (Google default)"),
@@ -534,7 +535,7 @@ pub struct EnvSecretInfo {
     /// The environment variable name (e.g. "SLACK_BOT_TOKEN")
     pub env_var: String,
     /// Where Oxy references this variable: a config.yml field path
-    /// (e.g. "slack.bot_token_var") or built-in label (e.g. "routing-agent").
+    /// (e.g. "models[0].key_var") or built-in label (e.g. "embeddings").
     /// None if the variable appears only in .env and is not referenced by config.
     pub referenced_by: Option<String>,
     /// Where the secret value is currently set.

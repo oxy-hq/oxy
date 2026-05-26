@@ -40,30 +40,6 @@ pub trait ToolExecutor: Send + Sync {
     ) -> Result<CallToolResult, rmcp::ErrorData>;
 }
 
-/// Agent tool executor
-pub struct AgentExecutor;
-
-#[async_trait]
-impl ToolExecutor for AgentExecutor {
-    async fn execute(
-        &self,
-        workspace_manager: &WorkspaceManager,
-        tool_name: String,
-        arguments: Option<Map<String, Value>>,
-        context: ToolExecutionContext,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        super::tools::run_agent_tool(
-            workspace_manager,
-            tool_name,
-            arguments,
-            context.session_filters,
-            context.connection_overrides,
-            context.meta_variables,
-        )
-        .await
-    }
-}
-
 /// Workflow tool executor
 pub struct WorkflowExecutor;
 

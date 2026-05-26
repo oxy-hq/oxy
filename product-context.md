@@ -47,7 +47,7 @@ Oxy supports three deployment modes:
   - **Readonly mode** — `oxy serve --readonly` disables all file modifications via API (405 responses), reflected in UI.
 - **Unified Settings Dialog** — A Notion-style modal that replaces the older split between the org settings modal and `/ide/settings/*` pages. Groups organization-level settings (members, billing, security) and workspace-level settings (data sources, secrets, observability, repo linking) under one grouped sidebar. In local mode, organization-only sections are hidden so the sidebar shows only what applies to a single-workspace deployment. Entry points are wired from the app sidebar footer, the IDE Settings tab, database sidebar "Add database" links, and home-page setup gaps.
 - **Agent Testing** (`/tests`) — Test dashboard for managing and executing agent test suites:
-  - **Test files** (`*.agent.test.yml` / `*.aw.test.yml`) with LLM-as-judge correctness evaluation
+  - **Test files** (`*.agent.test.yml`) with LLM-as-judge correctness evaluation
   - Run individual tests or all tests project-wide with tag filtering and accuracy thresholds
   - **Human verdicts** — reviewers submit Pass/Fail on individual test case results
   - Pass rate history, consistency metrics, and per-run detail views
@@ -62,8 +62,7 @@ Oxy supports three deployment modes:
 ## Key Components / Concepts
 
 - **Chat Panel** — The central Q&A widget on the Home page. Contains: question textarea, Agent Selector (dropdown of available agents), mode toggle (Ask / Build / Workflow), Submit button, and Stop button during streaming.
-- **Agent (classic)** — A named AI assistant defined by a `.agent.yml` file. Agents have tools (primarily `execute_sql`), a system prompt, and a target model. Built-in agents include `duckdb`, `_routing`, and optionally `semantic`.
-- **Agentic Agent** — A newer agent type defined in `.agentic.yml` files that runs a multi-step reasoning pipeline (FSM-based) rather than a single LLM call. Two kinds:
+- **Agentic Agent** — The Oxy agent type, defined in `.agentic.yml` files that runs a multi-step reasoning pipeline (FSM-based) rather than a single LLM call. Two kinds:
   - **Analytics agent** — Clarify → specify metrics/dimensions → generate SQL → execute → interpret results. Supports extended thinking toggle, per-state model overrides, time-aware queries, and verified query badges for semantic layer queries.
   - **App builder agent** — Generates a complete `.app.yml` Data App from natural language description.
   - Both support **human-in-the-loop suspension**: the agent pauses mid-pipeline to ask the user a clarifying question, then resumes via `POST /analytics/runs/:id/answer`.
@@ -85,13 +84,13 @@ Oxy supports three deployment modes:
 - **Developer Portal (IDE)** — Monaco editor + file browser + SQL IDE + Git workflow. Sidebar tabs: Files, Objects, Database, Settings, Observability. Save button appears only when there are unsaved changes. Supports readonly mode (`--readonly` flag). Git flow includes auto-init, protected main branch (edits auto-redirect to new branch), merge conflict resolution, and branch-aware file CRUD.
 - **SQL IDE** — Multi-tab Monaco SQL editor within the Dev Portal. Schema browser, Cmd/Ctrl+Enter execution, Parquet-backed result tables with sorting/paging. Database connections managed centrally with manual refresh.
 - **Authentication** — Magic link (passwordless) via AWS SES. Endpoints: `/auth/magic-link/request` and `/auth/magic-link/verify`. Domain restrictions configurable. Local dev mode writes HTML to temp file. Legacy password auth removed.
-- **Agent Testing** — `*.agent.test.yml` / `*.aw.test.yml` files with LLM-as-judge evaluation. `oxy test` CLI with tag filtering and accuracy thresholds. Human verdicts for manual review. Project-wide test runs with pass rate tracking.
+- **Agent Testing** — `*.agent.test.yml` files with LLM-as-judge evaluation. `oxy test` CLI with tag filtering and accuracy thresholds. Human verdicts for manual review. Project-wide test runs with pass rate tracking.
 - **Context Graph** — Node/edge graph visualizing relationships between Oxy entities.
 - **Streaming** — Agent responses are delivered as a server-sent event stream. A loading spinner shows while streaming; a Stop button cancels in-flight requests, which results in an "Operation cancelled" message. Agentic agents stream reasoning trace events with suspension support.
 - **YAML Validation** — Strict validation with `deny_unknown_fields` on Config, Workflow, AppConfig, Semantics. `oxy validate --file` for single-file validation; `oxy validate` also recognizes `.agentic.yml` files, with IDE schema validation highlighting issues on save. Catches common typos like `steps:` vs `tasks:`.
 - **Observability Backends** — Oxy can route tracing and performance data to a configurable backend: DuckDB (default for local), PostgreSQL, ClickHouse, or Airhouse. `OXY_OBSERVABILITY_BACKEND=airhouse` routes spans, intent classifications, intent clusters, and metric usage to an Airhouse instance over the pgwire protocol (tables namespaced with an `oxy_obs_` prefix). TLS is the default via `tokio-postgres-rustls`; `OXY_AIRHOUSE_OBS_INSECURE=true` opts into plaintext for localhost only. Env-var credentials (`OXY_AIRHOUSE_OBS_USER`, `OXY_AIRHOUSE_OBS_PASSWORD`, `OXY_AIRHOUSE_OBS_DATABASE`) are the configuration surface for Airhouse-observability. Configured via the IDE's Observability tab or server environment; a banner appears in the UI when the backend is not yet set up. The DuckDB backend runs periodic 5-minute WAL checkpoints, autocheckpoints at 32 MB, and explicitly checkpoints on graceful shutdown to bound WAL growth.
 - **Oxygen Design System** — A three-layer design token system (raw palette → semantic tokens → component variables) drives the entire web app. Light, Dark, and System theme modes are available; Light is the default. The full Oxy-Blue palette (50–950) plus secondary hues (purple, pink, red, amber, orange, green, sky, indigo) are exposed as semantic tokens, with brand-blue chart ramps automatically inverted in dark mode for legibility. Inter ships bundled (no CDN fetch) with a typography scale: `.t-display`, `.t-h1`–`.t-h3`, `.t-body`, `.t-small`, `.t-button`, `.t-label`, `.t-code`.
-- **`oxy init` Starter Project** — `oxy init` ships a focused single-story template (one classic agent, one agentic agent, the oxymart sales semantics, three example SQL queries, two procedures, one Data App) so new users land in a minimal, easy-to-explore workspace. The full multi-domain demo (training/fitness, airhouse astronauts, v0/builder) is a separate internal showcase package used only for the deployed capability demo.
+- **`oxy init` Starter Project** — `oxy init` ships a focused single-story template (one agentic agent, the oxymart sales semantics, three example SQL queries, two procedures, one Data App) so new users land in a minimal, easy-to-explore workspace. The full multi-domain demo (training/fitness, airhouse astronauts, v0/builder) is a separate internal showcase package used only for the deployed capability demo.
 - **CLI without a database** — `oxy run` no longer requires a database connection. Run history and checkpoints fall back to a no-op storage implementation when no database is configured, so workflows, agents, and SQL files can execute locally without setup.
 - **Billing Feature Flag** — The backend `/auth/config` response exposes `billing_enabled` so the UI can stay in sync with deployment configuration. The "Billing" tab in organization settings is hidden when billing is disabled; the admin billing queue surfaces a clear "Billing is disabled" notice instead of an empty state.
 
@@ -211,14 +210,11 @@ Oxy supports three deployment modes:
 
 | Extension | Type | Description |
 | --- | --- | --- |
-| `.agent.yml` | Classic Agent | Single LLM call with tools |
 | `.agentic.yml` | Agentic Agent | Multi-step FSM pipeline (analytics or app builder) |
 | `.procedure.yml` | Procedure | Multi-step automation (also `.workflow.yml`, `.automation.yml`) |
 | `.app.yml` | Data App | Dashboard with tasks and display blocks |
 | `.view.yml` | Semantic View | Semantic layer entity definition |
 | `.topic.yml` | Semantic Topic | Semantic layer topic definition |
-| `.agent.test.yml` | Agent Test | Test suite for classic agents |
-| `.aw.test.yml` | Agentic Test | Test suite for agentic workflows |
 | `.sql` | Verified Query | Pre-written SQL auto-discovered by the analytics agent; executed as-is when matched to a question, surfaced as a Verified result |
 | `oxy.yml` (under `modeling/<project>/`) | Modeling Project Config | Maps dbt profile targets to Oxy database connections for an Airform-managed dbt project |
 | `.airway.yml` | Airway ELT Pipeline | Streaming ELT pipeline spec (source + destination + minijinja variables); never holds credentials directly |

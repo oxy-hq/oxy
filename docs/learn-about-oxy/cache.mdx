@@ -43,7 +43,7 @@ steps:
     prompt: |
       Generate a detail {{schedules.value}} report using {{metrics.value}} metrics:
       {{table}}. Retain the Jinja but treat it as if they are strings, so '{{ }}'.
-    agent_ref: agents/local.agent.yml
+    agent_ref: agents/local.agentic.yml
     cache:
       path: output/agent.sql
 

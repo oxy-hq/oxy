@@ -14,14 +14,13 @@ use oxy::{
         types::EventKind,
     },
 };
-use oxy_agent::types::AgentInput;
 use oxy_shared::errors::OxyError;
 
 use super::{
     EvalInput, EvalResult,
     generator::GeneratorExecutable,
     solver::SolverExecutable,
-    types::{EvalTarget, EvalWorkflowInput, MetricKind, RunStats},
+    types::{AgenticInput, MetricKind, RunStats},
 };
 
 #[derive(Clone, Debug)]
@@ -51,14 +50,14 @@ impl EvalMapper {
 }
 
 #[async_trait::async_trait]
-impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper {
+impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, AgenticInput)>> for EvalMapper {
     async fn map(
         &self,
         execution_context: &ExecutionContext,
         input: EvalInput,
     ) -> Result<
         (
-            Vec<(usize, EvalConfig, EvalTarget)>,
+            Vec<(usize, EvalConfig, AgenticInput)>,
             Option<ExecutionContext>,
         ),
         OxyError,
@@ -69,73 +68,6 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
             tag,
         } = input;
         let mapped_input = match &target_ref {
-            workflow_ref
-                if workflow_ref.ends_with("procedure.yml")
-                    || workflow_ref.ends_with("workflow.yml")
-                    || workflow_ref.ends_with("automation.yml") =>
-            {
-                let config_manager = &execution_context.workspace.config_manager;
-                let workflow = config_manager.resolve_workflow(&target_ref).await?;
-                Ok(workflow
-                    .tests
-                    .iter()
-                    .enumerate()
-                    .filter(|(idx, _)| index.is_none_or(|i| *idx == i))
-                    .map(|(idx, test)| {
-                        let task_ref = test
-                            .task_ref
-                            .clone()
-                            .or_else(|| self.last_task_ref(&workflow.tasks).ok());
-                        (
-                            idx,
-                            EvalConfig {
-                                task_ref,
-                                ..test.clone()
-                            },
-                            EvalTarget::Workflow(EvalWorkflowInput {
-                                workflow_ref: workflow_ref.to_string(),
-                                variables: None,
-                            }),
-                        )
-                    })
-                    .collect())
-            }
-            agent_ref if agent_ref.ends_with("agent.yml") => {
-                let config_manager = &execution_context.workspace.config_manager;
-                let agent = config_manager.resolve_agent(&target_ref).await?;
-                agent
-                    .tests
-                    .iter()
-                    .enumerate()
-                    .filter(|(idx, _)| index.is_none_or(|i| *idx == i))
-                    .map(|(idx, test)| {
-                        Ok((
-                            idx,
-                            test.clone(),
-                            EvalTarget::Agent(AgentInput {
-                                agent_ref: agent_ref.to_string(),
-                                prompt: match &test.kind {
-                                    EvalKind::Consistency(consistency) => {
-                                        consistency.task_description.clone().ok_or(
-                                            OxyError::ConfigurationError(
-                                                "Task description is required for agent consistency evaluation"
-                                                    .to_string(),
-                                            ),
-                                        )?
-                                    }
-                                    _ => "".to_string(),
-                                },
-                                memory: vec![],
-                                variables: None,
-                                a2a_task_id: None,
-                                a2a_thread_id: None,
-                                a2a_context_id: None,
-                                sandbox_info: None,
-                            }),
-                        ))
-                    })
-                    .try_collect()
-            }
             test_ref if test_ref.ends_with("test.yml") => {
                 let config_manager = &execution_context.workspace.config_manager;
                 let test_config = config_manager.resolve_test(&target_ref).await?;
@@ -145,52 +77,22 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                     ))
                 })?;
 
-                // Determine the eval target based on the resolved target file extension
-                let eval_target = if resolved_target.ends_with("agent.yml") {
-                    EvalTarget::Agent(AgentInput {
-                        agent_ref: resolved_target.clone(),
-                        prompt: String::new(),
-                        memory: vec![],
-                        variables: None,
-                        a2a_task_id: None,
-                        a2a_thread_id: None,
-                        a2a_context_id: None,
-                        sandbox_info: None,
-                    })
-                } else if resolved_target.ends_with("aw.yml") {
-                    // Agentic workflows (.aw.yml) are agent-like: they accept a prompt
-                    EvalTarget::Agent(AgentInput {
-                        agent_ref: resolved_target.clone(),
-                        prompt: String::new(),
-                        memory: vec![],
-                        variables: None,
-                        a2a_task_id: None,
-                        a2a_thread_id: None,
-                        a2a_context_id: None,
-                        sandbox_info: None,
-                    })
-                } else if resolved_target.ends_with("agentic.yml")
+                // Only `.agentic.yml` agents are runnable as eval targets. The
+                // classic `.agent.yml` runtime was retired with the oxy-agent
+                // crate; workflows/automations/procedures don't accept prompts
+                // via the test framework.
+                let eval_target = if resolved_target.ends_with("agentic.yml")
                     || resolved_target.ends_with("agentic.yaml")
                 {
-                    // Analytics agentic systems (.agentic.yml) accept a prompt via
-                    // the headless eval path.
-                    EvalTarget::Agentic(super::types::AgenticInput {
+                    AgenticInput {
                         config_path: resolved_target.clone(),
                         prompt: String::new(),
-                    })
-                } else if resolved_target.ends_with("workflow.yml")
-                    || resolved_target.ends_with("automation.yml")
-                    || resolved_target.ends_with("procedure.yml")
-                {
-                    return Err(OxyError::ConfigurationError(format!(
-                        "Unsupported test target: {resolved_target}. \
-                         The testing framework only supports .agent.yml, .aw.yml, and .agentic.yml targets. \
-                         Workflow/automation/procedure files do not accept prompts and cannot be tested with .test.yml files."
-                    )));
+                    }
                 } else {
                     return Err(OxyError::ConfigurationError(format!(
                         "Unsupported test target: {resolved_target}. \
-                         Expected .agent.yml, .aw.yml, or .agentic.yml"
+                         Expected .agentic.yml or .agentic.yaml — the classic \
+                         .agent.yml runtime was removed."
                     )));
                 };
 
@@ -229,7 +131,9 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
             }
             _ => {
                 return Err(OxyError::ConfigurationError(format!(
-                    "Invalid file extension: {target_ref}. Expected .workflow.yml, .automation.yml, .agent.yml, or .test.yml"
+                    "Invalid file extension: {target_ref}. Expected .test.yml \
+                     (the inline workflow.tests / agent.tests entry points were \
+                     removed with classic agent retirement)."
                 )));
             }
         };
@@ -241,13 +145,13 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
 pub struct EvalExecutable;
 
 #[async_trait::async_trait]
-impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
+impl Executable<(usize, EvalConfig, AgenticInput)> for EvalExecutable {
     type Response = EvalResult;
 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        input: (usize, EvalConfig, EvalTarget),
+        input: (usize, EvalConfig, AgenticInput),
     ) -> Result<Self::Response, OxyError> {
         let (idx, eval, target) = input;
         let eval_context =

@@ -11,7 +11,7 @@ The Context Graph feature creates a visual knowledge graph of your entire Oxy pr
 
 - **Data Assets**: Tables, Views, Topics, Entities, SQL Queries
 - **Automation Assets**: Workflows, Apps, Automations
-- **AI Assets**: Agents (both default and routing agents)
+- **AI Assets**: Agents
 
 Each asset appears as a node in an interactive graph, with edges showing how they depend on, reference, or contain each other.
 
@@ -27,7 +27,7 @@ The Context Graph visualizes 9 different types of nodes:
 | `view`       | Semantic views (business data models)              | Color-coded node      |
 | `topic`      | Collections of related views                       | Color-coded node      |
 | `entity`     | Semantic entities (customer, order, product, etc.) | Color-coded node      |
-| `agent`      | AI agents (default or routing types)               | Color-coded node      |
+| `agent`      | AI agents                                          | Color-coded node      |
 | `workflow`   | Workflow automations                               | Color-coded node      |
 | `app`        | Standalone app files (.app.yml)                    | Color-coded node      |
 | `automation` | Automation files (.automation.yml)                 | Color-coded node      |
@@ -43,8 +43,6 @@ Edges represent relationships between nodes:
 | `contains`     | Topic contains views                     |
 | `derived_from` | View derived from source table           |
 | `references`   | Reference relationships between entities |
-| `routes to`    | Routing agent routes to another agent    |
-| `fallback`     | Fallback routing for routing agents      |
 
 ## Semantic Layer Foundation
 
@@ -147,7 +145,6 @@ The Context Graph helps with AI agent development:
 
 - **Agent Understanding**: Agents use the context graph to understand available data
 - **Semantic Context**: Topics provide semantic context for natural language queries
-- **Routing**: Routing agents can intelligently route between topics and workflows
 
 ## Development Workflow
 
@@ -212,7 +209,7 @@ Imagine you have a customer analytics agent. Using the Context Graph, you can tr
 1. **Database Table**: `customers` table in your database
 2. **View**: `customer_view.view.yaml` derived from `customers` table
 3. **Topic**: `customer_analytics.topic.yaml` contains `customer_view`
-4. **Agent**: `customer_agent.agent.yml` has access to `customer_analytics` topic
+4. **Agent**: `customer_agent.agentic.yml` has access to `customer_analytics` topic
 
 This visual trace helps you understand exactly where your agent's data comes from.
 

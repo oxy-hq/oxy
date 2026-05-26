@@ -90,13 +90,13 @@ mod tests {
     async fn creates_new_file_on_accept() {
         let dir = test_dir().await;
         let params = json!({
-            "file_path": "new.agent.yml",
+            "file_path": "new.agentic.yml",
             "content": "name: test\nmodel: gpt-4o\n",
             "description": "create test agent"
         });
         let result = execute_write_file(&dir, &params, &AutoAcceptInputProvider).await;
         assert!(result.is_ok());
-        let written = tokio::fs::read_to_string(dir.join("new.agent.yml"))
+        let written = tokio::fs::read_to_string(dir.join("new.agentic.yml"))
             .await
             .unwrap();
         assert_eq!(written, "name: test\nmodel: gpt-4o\n");

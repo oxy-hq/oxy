@@ -280,7 +280,7 @@ Topics are used in three main ways:
 
 ### 1. In Agents
 
-```yaml agents/analytics.agent.yml
+```yaml agents/analytics.agentic.yml
 tools:
   - name: semantic_query
     type: semantic_query
@@ -298,15 +298,6 @@ tasks:
       - orders.order_date
     measures:
       - orders.total_revenue
-```
-
-### 3. In Routing Agents
-
-```yaml agents/_routing.agent.yml
-routes:
-  - "semantics/topics/sales.topic.yml"
-  - "semantics/topics/marketing.topic.yml"
-  - "semantics/topics/*.topic.yml" # Include all topics
 ```
 
 See [Using the Semantic Layer](/learn-about-oxy/semantic-layer/usage) for detailed examples.

@@ -150,43 +150,6 @@ Looker uses its own filter syntax, **not** SQL expressions. When writing overlay
 | String matching     | `"value"`, `"%partial%"`                          |
 | Numeric comparisons | `">=100"`, `"[10,20]"`                            |
 
-## Using Looker in Agentic Workflows
-
-An agentic workflow (`.aw.yml`) lets an LLM autonomously plan and execute Looker queries. Add a `looker_query` transition to wire up the Looker explore:
-
-```yaml
-model: openai-5.2
-
-start:
-  mode: plan
-  instruction: |
-    ## Role
-    You are a Looker analytics assistant.
-
-    ## Goal
-    Use the available Looker explore to answer the user's question with a query result.
-
-    ## Available Actions
-    - **looker_query**: Run a Looker query against the configured integration/model/explore
-
-    ## Guidelines
-    - Prefer the `looker_query` action to retrieve data.
-    - Apply filters and limits when needed.
-    - End after returning a clear answer from the query result.
-  next: [looker_query]
-
-end:
-  mode: synthesize
-
-transitions:
-  - type: looker_query
-    integration: my_looker
-    model: ecommerce
-    explore: orders
-```
-
-The agent will automatically receive explore metadata as context, generate the appropriate query parameters (fields, filters, sorts), execute the query via the Looker API, and synthesize the results into a response.
-
 ## Using Looker in Procedures
 
 Add a Looker query task to your procedure:

@@ -18,144 +18,121 @@
         ]
       },
       {
-        "group": "Getting Started with Agents",
+        "group": "Core Concepts",
         "pages": [
-        "getting-started-agents/set-up-project",
-        "getting-started-agents/creating-your-first-agent",
-        "getting-started-agents/providing-context",
-        "getting-started-agents/test-your-agent"
-      ]
-    },
-    {
-      "group": "Core Concepts",
-      "pages": [
-        "learn-about-oxy/agents",
-        "learn-about-oxy/agentic-workflows",
-        "learn-about-oxy/cache",
-        "learn-about-oxy/config",
-        "learn-about-oxy/context",
-        "learn-about-oxy/data-apps",
-        "learn-about-oxy/debugging",
-        "learn-about-oxy/context-graph",
-        "learn-about-oxy/observability",
-        "learn-about-oxy/semantic-model",
-        "learn-about-oxy/testing",
-        "learn-about-oxy/modeling",
-        "learn-about-oxy/workflows",
-        "learn-about-oxy/routing-agents"
-      ]
-    },
-    {
-      "group": "Semantic Layer",
-      "pages": [
-        "learn-about-oxy/semantic-layer",
-        "learn-about-oxy/semantic-layer/views",
-        "learn-about-oxy/semantic-layer/entities",
-        "learn-about-oxy/semantic-layer/dimensions",
-        "learn-about-oxy/semantic-layer/measures",
-        "learn-about-oxy/semantic-layer/topics",
-        "learn-about-oxy/semantic-layer/usage"
-      ]
-    },
-    {
-      "group": "Deployment",
-      "pages": [
-        "deployment/overview",
-        "deployment/cloud-mode",
-        "deployment/github-app",
-        "deployment/create-machine",
-        "deployment/install-oxy",
-        "deployment/workspace-setup",
-        "deployment/environment",
-        "deployment/container-runtimes",
-        "deployment/docker",
-        "deployment/kubernetes-helm",
-        "deployment/kubernetes-raw"
-      ]
-    },
-    {
-      "group": "AWS Deployment",
-      "pages": [
-        "deployment/reference-architecture/aws/architecture",
-        "deployment/reference-architecture/aws/ec2-architecture",
-        "deployment/reference-architecture/aws/ecs-architecture",
-        "deployment/reference-architecture/aws/step-by-step/ec2",
-        "deployment/reference-architecture/aws/step-by-step/ecs",
-        "deployment/hands-on/aws"
-      ]
-    },
-    {
-      "group": "Authentication",
-      "pages": [
-        "authentication/overview",
-        "authentication/magic-link",
-        "authentication/google",
-        "authentication/okta",
-        "api-keys/API-Keys"
-      ]
-    },
-    {
-      "group": "Data Sources",
-      "pages": [
-        "integrations/overview",
-        "integrations/data-sources/bigquery",
-        "integrations/data-sources/clickhouse",
-        "integrations/data-sources/domo",
-        "integrations/data-sources/duckdb",
-        "integrations/data-sources/motherduck",
-        "integrations/data-sources/mysql",
-        "integrations/data-sources/postgres",
-        "integrations/data-sources/redshift",
-        "integrations/data-sources/snowflake",
-        "integrations/a2a/overview",
-        "integrations/v0/overview"
-      ]
-    },
-    {
-      "group": "Models",
-      "pages": [
-        "integrations/models/ollama",
-        "integrations/models/openai",
-        "integrations/models/gemini",
-        "integrations/models/anthropic"
-      ]
-    },
-    {
-      "group": "Analytics",
-      "pages": [
-        "integrations/analytics/looker"
-      ]
-    },
-    {
-      "group": "Apps",
-      "pages": [
-        "integrations/apps/slack"
-      ]
-    },
-    {
-      "group": "Reference",
-      "pages": [
-        "reference/oxy-commands",
-        "reference/oxy-start",
-        "reference/readonly-mode",
-        "reference/branch-configuration",
-        "reference/database-sync",
-        "reference/environment-variables",
-        "reference/semantic-layer-reference"
-      ]
-    },
-    {
-      "group": "MCP Server",
-      "pages": [
-        "mcp-server/mcp-usage"
-      ]
-    },
-    {
-      "group": "Migration",
-      "pages": [
-        "migration/migration-guide"
-      ]
-    }
+          "learn-about-oxy/cache",
+          "learn-about-oxy/config",
+          "learn-about-oxy/data-apps",
+          "learn-about-oxy/debugging",
+          "learn-about-oxy/context-graph",
+          "learn-about-oxy/observability",
+          "learn-about-oxy/semantic-model",
+          "learn-about-oxy/modeling",
+          "learn-about-oxy/workflows"
+        ]
+      },
+      {
+        "group": "Semantic Layer",
+        "pages": [
+          "learn-about-oxy/semantic-layer",
+          "learn-about-oxy/semantic-layer/views",
+          "learn-about-oxy/semantic-layer/entities",
+          "learn-about-oxy/semantic-layer/dimensions",
+          "learn-about-oxy/semantic-layer/measures",
+          "learn-about-oxy/semantic-layer/topics"
+        ]
+      },
+      {
+        "group": "Deployment",
+        "pages": [
+          "deployment/overview",
+          "deployment/cloud-mode",
+          "deployment/github-app",
+          "deployment/create-machine",
+          "deployment/install-oxy",
+          "deployment/workspace-setup",
+          "deployment/environment",
+          "deployment/container-runtimes",
+          "deployment/docker",
+          "deployment/kubernetes-helm",
+          "deployment/kubernetes-raw"
+        ]
+      },
+      {
+        "group": "AWS Deployment",
+        "pages": [
+          "deployment/reference-architecture/aws/architecture",
+          "deployment/reference-architecture/aws/ec2-architecture",
+          "deployment/reference-architecture/aws/ecs-architecture",
+          "deployment/reference-architecture/aws/step-by-step/ec2",
+          "deployment/reference-architecture/aws/step-by-step/ecs",
+          "deployment/hands-on/aws"
+        ]
+      },
+      {
+        "group": "Authentication",
+        "pages": [
+          "authentication/overview",
+          "authentication/magic-link",
+          "authentication/google",
+          "authentication/okta",
+          "api-keys/API-Keys"
+        ]
+      },
+      {
+        "group": "Data Sources",
+        "pages": [
+          "integrations/overview",
+          "integrations/data-sources/bigquery",
+          "integrations/data-sources/clickhouse",
+          "integrations/data-sources/domo",
+          "integrations/data-sources/duckdb",
+          "integrations/data-sources/motherduck",
+          "integrations/data-sources/mysql",
+          "integrations/data-sources/postgres",
+          "integrations/data-sources/redshift",
+          "integrations/data-sources/snowflake"
+        ]
+      },
+      {
+        "group": "Models",
+        "pages": [
+          "integrations/models/ollama",
+          "integrations/models/openai",
+          "integrations/models/gemini",
+          "integrations/models/anthropic"
+        ]
+      },
+      {
+        "group": "Analytics",
+        "pages": [
+          "integrations/analytics/looker"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/oxy-commands",
+          "reference/oxy-start",
+          "reference/readonly-mode",
+          "reference/branch-configuration",
+          "reference/database-sync",
+          "reference/environment-variables",
+          "reference/semantic-layer-reference"
+        ]
+      },
+      {
+        "group": "MCP Server",
+        "pages": [
+          "mcp-server/mcp-usage"
+        ]
+      },
+      {
+        "group": "Migration",
+        "pages": [
+          "migration/migration-guide"
+        ]
+      }
     ]
   }
 }

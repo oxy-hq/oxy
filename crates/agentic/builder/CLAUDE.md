@@ -22,7 +22,7 @@ The solver runs a single LLM tool loop in the Solving phase. Tools let the LLM r
 | `delete_file` | Delete a file — **suspends for user confirmation** |
 | `manage_directory` | Create / delete / rename a directory — **suspends for user confirmation** |
 | `validate_project` | Validate against Oxy YAML schemas |
-| `lookup_reference` | Load a domain reference card (semantic-layer / app-builder / agent-builder / agentic-builder) |
+| `lookup_reference` | Load a domain reference card (semantic-layer / app-builder / agentic-builder) |
 | `lookup_schema` | Retrieve JSON schema for any Oxy object type |
 | `run_tests` | Execute `.test.yml` evaluation files |
 | `run_app` | Execute every task in a `.app.yml` end-to-end (smoke test, optional control params) |

@@ -48,12 +48,4 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/slack/link/confirm",
             post(crate::integrations::slack::linking::landing::confirm),
         )
-    // NOTE: A public `/slack/charts/{ws}/{stem}.png` endpoint was
-    // considered for inline Slack image blocks, but Slack's CDN can't
-    // reach `localhost` from a developer machine without an external
-    // tunnel (cloudflared/ngrok). Until that infrastructure is in
-    // place, the Slack renderer surfaces the on-disk PNG path in a
-    // footer context block instead — see
-    // `crate::integrations::slack::render::on_chart` and the
-    // documentation on `crate::integrations::slack::chart_render`.
 }

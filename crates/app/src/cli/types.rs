@@ -2,29 +2,6 @@
 
 use clap::Parser;
 
-#[derive(Parser, Debug)]
-pub struct A2aArgs {
-    /// Port number for the A2A server
-    ///
-    /// Specify which port to bind the A2A protocol server.
-    /// Default is 8080 if not specified in configuration.
-    #[clap(long)]
-    pub port: Option<u16>,
-    /// Host address to bind the A2A server
-    ///
-    /// Specify which host address to bind the A2A server.
-    /// Default is 0.0.0.0 to listen on all interfaces.
-    #[clap(long)]
-    pub host: Option<String>,
-    /// Base URL for constructing agent card endpoint URLs
-    ///
-    /// The base URL that external agents will use to reach this server.
-    /// Used in agent cards to construct endpoint URLs.
-    /// Example: https://api.example.com
-    #[clap(long)]
-    pub base_url: Option<String>,
-}
-
 /// Arguments for the `oxy serve` command (web server only, no Docker)
 #[derive(Parser, Debug, Clone)]
 pub struct ServeArgs {

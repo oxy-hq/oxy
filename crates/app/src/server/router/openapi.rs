@@ -21,8 +21,6 @@ pub async fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(healthcheck::version_info))
         // Agent routes
         .routes(routes!(agent::get_agents))
-        .routes(routes!(agent::ask_agent_preview))
-        .routes(routes!(agent::ask_agent_sync))
         // API Keys routes
         .routes(routes!(api_keys::create_api_key))
         .routes(routes!(api_keys::list_api_keys))

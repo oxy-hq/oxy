@@ -10,13 +10,9 @@ use oxy::{
     },
     utils::asyncify,
 };
-use oxy_agent::types::AgentInput;
 use oxy_shared::errors::OxyError;
 
-use super::{
-    target::TargetExecutable,
-    types::{EvalTarget, EvalWorkflowInput},
-};
+use super::{target::TargetExecutable, types::AgenticInput};
 
 #[derive(Clone, Debug)]
 pub(super) struct GeneratorExecutable {
@@ -30,7 +26,7 @@ impl GeneratorExecutable {
 }
 
 #[async_trait::async_trait]
-impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable {
+impl Executable<(EvalKind, AgenticInput, Option<String>)> for GeneratorExecutable {
     /// (successful pairs, errored pairs: (error_message, expected_output))
     type Response = (
         Vec<(TargetOutput, TargetOutput)>,
@@ -40,7 +36,7 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
     async fn execute(
         &mut self,
         execution_context: &ExecutionContext,
-        (eval_kind, eval_target, task_ref): (EvalKind, EvalTarget, Option<String>),
+        (eval_kind, eval_target, task_ref): (EvalKind, AgenticInput, Option<String>),
     ) -> Result<Self::Response, OxyError> {
         match &eval_kind {
             EvalKind::Consistency(consistency) => {
@@ -98,7 +94,7 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                     .executable(TargetExecutable::new(task_ref, relevant_context_getter));
                 let inputs = records
                     .iter()
-                    .map(|record| record.as_target(&eval_target, &custom.workflow_variable_name))
+                    .map(|record| record.as_target(&eval_target))
                     .collect::<Vec<_>>();
                 let results = target_executable
                     .execute(execution_context, inputs)
@@ -152,31 +148,10 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                     };
 
                     for _ in 0..runs {
-                        let target = match &eval_target {
-                            EvalTarget::Agent(agent_input) => EvalTarget::Agent(AgentInput {
-                                agent_ref: agent_input.agent_ref.clone(),
-                                prompt: case.prompt.clone(),
-                                memory: vec![],
-                                variables: None,
-                                a2a_task_id: None,
-                                a2a_thread_id: None,
-                                a2a_context_id: None,
-                                sandbox_info: None,
-                            }),
-                            EvalTarget::Workflow(workflow_input) => {
-                                EvalTarget::Workflow(EvalWorkflowInput {
-                                    workflow_ref: workflow_input.workflow_ref.clone(),
-                                    variables: None,
-                                })
-                            }
-                            EvalTarget::Agentic(agentic_input) => {
-                                EvalTarget::Agentic(super::types::AgenticInput {
-                                    config_path: agentic_input.config_path.clone(),
-                                    prompt: case.prompt.clone(),
-                                })
-                            }
-                        };
-                        all_targets.push(target);
+                        all_targets.push(AgenticInput {
+                            config_path: eval_target.config_path.clone(),
+                            prompt: case.prompt.clone(),
+                        });
                         expected_outputs.push(expected.clone());
                     }
                 }

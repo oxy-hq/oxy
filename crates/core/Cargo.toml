@@ -9,26 +9,21 @@ edition.workspace = true
 rust-version.workspace = true
 # Override workspace exclude to prevent rebuilds from runtime-generated files
 exclude = [
-  "examples/",
   # Runtime-generated directories that should not trigger rebuilds
   "demo_project/.db/",
   "demo_project/.databases/",
-  "demo_project/.lancedb/",
   "demo_project/.checkpoint/",
   "demo_project/.oxy_state/",
   "demo_project/consistency-test-results.json",
   "internal_demo/.db/",
   "internal_demo/.databases/",
-  "internal_demo/.lancedb/",
   "internal_demo/.checkpoint/",
   "internal_demo/.oxy_state/",
   "internal_demo/consistency-test-results.json",
   ".db-*/",
   ".databases/",
-  ".lancedb/",
   ".checkpoint/",
   ".oxy_state/",
-  ".fastembed_cache/",
   "output/",
   "*.log",
   "postgres_data/",
@@ -41,7 +36,6 @@ arrow = { workspace = true, features = [
   "json",
   "ipc",
 ] } # arrow version has to comply with duckdb version
-arrow57 = { package = "arrow", version = "=57.3.0", default-features = false } # used for lancedb interface (lancedb 0.27.x requires arrow 57)
 assert_cmd = { workspace = true }
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
 aws-credential-types = { workspace = true }
@@ -93,9 +87,9 @@ oxy-openai = { workspace = true }
 oxy-semantic = { workspace = true }
 oxy-shared = { workspace = true }
 oxy-platform = { workspace = true }
-# Cannot add oxy-agent or other higher-level crates here due to circular
-# dependency: they depend on oxy, so oxy cannot depend on them. Use them
-# via the CLI crate instead.
+# Cannot add higher-level crates (e.g. agentic-* domain crates) here
+# due to circular dependency: they depend on oxy, so oxy cannot depend
+# on them. Use them via the CLI crate instead.
 oxy-auth = { workspace = true }
 airhouse = { workspace = true, features = ["admin"] }
 enum_dispatch = { workspace = true }
@@ -107,7 +101,6 @@ humantime = { workspace = true }
 indoc = { workspace = true }
 itertools = { workspace = true }
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
-lancedb = { workspace = true }
 lazy_static = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
@@ -173,7 +166,6 @@ tracing-subscriber = { workspace = true, features = [
   "json",
 ] }
 tracing-log = { workspace = true }
-ndarray = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }

@@ -113,7 +113,6 @@
       "!**/styled-system",
       "!**/crates",
       "!**/docs",
-      "!**/examples",
       "!**/target",
       "!**/.claude",
       "!**/json-schemas",

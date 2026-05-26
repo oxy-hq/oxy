@@ -72,24 +72,6 @@ impl BuilderProjectValidator for OxyBuilderProjectValidator {
             }
         }
 
-        for path in cfg.list_agents(&cfg.workspace_path) {
-            let rel = path
-                .strip_prefix(&project_path)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .to_string();
-            match cfg
-                .load_agent_config(Some(&path))
-                .and_then(|(agent, name)| cfg.validate_agent(&agent, name).map_err(Into::into))
-            {
-                Ok(()) => valid_count += 1,
-                Err(e) => errors.push(ValidatedFile {
-                    relative_path: rel,
-                    error: Some(e.to_string()),
-                }),
-            }
-        }
-
         for path in cfg.list_apps(&cfg.workspace_path) {
             let rel = path
                 .strip_prefix(&project_path)
@@ -143,11 +125,6 @@ fn validate_single_file(
             .load_workflow(&abs.to_path_buf())
             .map_err(|e| e.to_string())?;
         cfg.validate_workflow(&w).map_err(|e| e.to_string())
-    } else if file_name.ends_with(".agent.yml") {
-        let (agent, name) = cfg
-            .load_agent_config(Some(&abs.to_path_buf()))
-            .map_err(|e| e.to_string())?;
-        cfg.validate_agent(&agent, name).map_err(|e| e.to_string())
     } else if file_name.ends_with(".app.yml") {
         let app = cfg
             .load_app(&abs.to_path_buf())
@@ -158,7 +135,7 @@ fn validate_single_file(
     } else {
         Err(format!(
             "unsupported file type: {file_name}. Expected .workflow.yml, .procedure.yml, \
-             .automation.yml, .agent.yml, .app.yml, .view.yml, or .topic.yml"
+             .automation.yml, .app.yml, .view.yml, or .topic.yml"
         ))
     }
 }

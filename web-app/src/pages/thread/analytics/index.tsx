@@ -445,7 +445,6 @@ const AnalyticsThread = ({ thread }: Props) => {
     // based on which file types were actually modified.
     if (liveAcceptedChangesRef.current.length > 0) {
       const paths = liveAcceptedChangesRef.current.map((c) => c.filePath);
-      const hasAgent = paths.some((p) => p.endsWith(".agent.yml"));
       const hasWorkflow = paths.some(
         (p) => p.endsWith(".workflow.yml") || p.endsWith(".procedure.yml")
       );
@@ -458,9 +457,6 @@ const AnalyticsThread = ({ thread }: Props) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.revisionInfo(project.id, branchName)
       });
-      if (hasAgent) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.agent.list(project.id, branchName) });
-      }
       if (hasWorkflow) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.workflow.list(project.id, branchName)

@@ -44,8 +44,6 @@ reqwest = { workspace = true, features = ["json"] }
 async-openai = { workspace = true, features = ["byot", "_api"] }
 secrecy = { workspace = true }
 
-# Vector store
-lancedb = { workspace = true }
 serde_arrow = { workspace = true, features = ["arrow-58"] }
 
 # Semantic layer

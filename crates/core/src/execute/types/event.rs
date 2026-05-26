@@ -211,17 +211,6 @@ pub enum EventKind {
     Error {
         message: String,
     },
-    // Agentic workflow events
-    AgenticStarted {
-        agent_id: String,
-        run_id: String,
-        agent_config: serde_json::Value,
-    },
-    AgenticFinished {
-        agent_id: String,
-        run_id: String,
-        error: Option<String>,
-    },
     StepStarted {
         step: Step,
     },

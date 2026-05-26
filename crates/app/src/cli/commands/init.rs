@@ -430,7 +430,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         databases: databases.clone(),
         models,
         defaults: Some(Defaults {
-            agent: None,
             database: Some(default_database),
         }),
         workspace_path: PathBuf::new(),
@@ -438,7 +437,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         integrations: vec![],
         slack_legacy: None,
         mcp: None,
-        a2a: None,
         protected_branches: None,
         base_branch: None,
         repositories: vec![],

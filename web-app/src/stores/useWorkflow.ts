@@ -23,7 +23,6 @@ export enum TaskType {
   LOOKER_QUERY = "looker_query",
   OMNI_QUERY = "omni_query",
   FORMATTER = "formatter",
-  AGENT = "agent",
   LOOP_SEQUENTIAL = "loop_sequential",
   WORKFLOW = "workflow",
   CONDITIONAL = "conditional",
@@ -54,12 +53,6 @@ type ExportConfig = {
 type FormatterTaskConfig = BaseTaskConfig & {
   type: TaskType.FORMATTER;
   template: string;
-};
-
-type AgentTaskConfig = BaseTaskConfig & {
-  type: TaskType.AGENT;
-  prompt: string;
-  agent_ref: string;
 };
 
 export type WorkflowTaskConfig = BaseTaskConfig & {
@@ -173,7 +166,6 @@ export type TaskConfig =
   | LookerQueryTaskConfig
   | OmniQueryTaskConfig
   | FormatterTaskConfig
-  | AgentTaskConfig
   | LoopSequentialTaskConfig
   | ConditionalTaskConfig
   | WorkflowTaskConfig
@@ -185,7 +177,6 @@ export type TaskConfigWithId = (
   | LookerQueryTaskConfig
   | OmniQueryTaskConfig
   | FormatterTaskConfig
-  | AgentTaskConfig
   | LoopSequentialTaskConfigWithId
   | WorkflowTaskConfigWithId
   | ConditionalTaskConfigWithId

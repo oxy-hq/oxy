@@ -3,11 +3,10 @@
   "npm.packageManager": "pnpm",
   "cSpell.words": ["utoipa"],
   "search.exclude": {
-    "examples/.db/large.csv": true,
-    "examples/.databases/**": true
+    "tests/fixtures/oxy_example/.databases/**": true
   },
   "files.exclude": {
-    "examples/.databases": true
+    "tests/fixtures/oxy_example/.databases": true
   },
   "editor.defaultFormatter": "biomejs.biome",
   "editor.formatOnSave": true,

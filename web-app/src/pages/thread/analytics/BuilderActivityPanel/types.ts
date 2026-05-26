@@ -67,26 +67,6 @@ export type WorkflowConfig = {
   tasks?: WorkflowTask[];
 };
 
-type AgentTool = {
-  type: string;
-  name?: string;
-  database?: string;
-};
-
-type AgentContext = {
-  name: string;
-  type: string;
-};
-
-export type AgentConfig = {
-  name?: string;
-  model?: string;
-  description?: string;
-  agent_type?: string;
-  tools?: AgentTool[];
-  context?: AgentContext[];
-};
-
 export type TopicConfig = {
   name?: string;
   description?: string;
@@ -185,22 +165,6 @@ export function tryParseWorkflow(content: string): WorkflowConfig | null {
     const parsed = parseYaml(content);
     if (parsed && typeof parsed === "object" && Array.isArray(parsed.tasks)) {
       return parsed as WorkflowConfig;
-    }
-  } catch {
-    // not valid YAML
-  }
-  return null;
-}
-
-export function tryParseAgent(content: string): AgentConfig | null {
-  try {
-    const parsed = parseYaml(content);
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      (parsed.tools !== undefined || parsed.agent_type !== undefined || parsed.model !== undefined)
-    ) {
-      return parsed as AgentConfig;
     }
   } catch {
     // not valid YAML
@@ -503,97 +467,6 @@ export function diffWorkflowTasks(
         title: t.name
       });
   }
-  return result;
-}
-
-export function diffAgentItems(oldAgent: AgentConfig | null, newAgent: AgentConfig): AppItemDiff[] {
-  const result: AppItemDiff[] = [];
-  const toolKey = (t: AgentTool) => t.name ?? t.type;
-
-  const oldTools = oldAgent?.tools ?? [];
-  const newTools = newAgent.tools ?? [];
-  const oldToolMap = new Map(oldTools.map((t) => [toolKey(t), t]));
-  const newToolMap = new Map(newTools.map((t) => [toolKey(t), t]));
-
-  for (const t of newTools) {
-    const key = toolKey(t);
-    const old = oldToolMap.get(key);
-    if (!old) {
-      result.push({
-        key: `tool:${key}`,
-        status: "added",
-        kind: "tool",
-        label: "Tool",
-        title: key,
-        subtitle: t.database ? `db: ${t.database}` : undefined
-      });
-    } else {
-      const changes: string[] = [];
-      if (old.database !== t.database)
-        changes.push(`db: ${old.database ?? "–"} → ${t.database ?? "–"}`);
-      result.push({
-        key: `tool:${key}`,
-        status: changes.length > 0 ? "modified" : "unchanged",
-        kind: "tool",
-        label: "Tool",
-        title: key,
-        subtitle: t.database ? `db: ${t.database}` : undefined,
-        changes: changes.length > 0 ? changes : undefined
-      });
-    }
-  }
-  for (const t of oldTools) {
-    const key = toolKey(t);
-    if (!newToolMap.has(key))
-      result.push({
-        key: `tool:${key}`,
-        status: "removed",
-        kind: "tool",
-        label: "Tool",
-        title: key
-      });
-  }
-
-  const oldCtx = oldAgent?.context ?? [];
-  const newCtx = newAgent.context ?? [];
-  const oldCtxMap = new Map(oldCtx.map((c) => [c.name, c]));
-  const newCtxMap = new Map(newCtx.map((c) => [c.name, c]));
-
-  for (const c of newCtx) {
-    const old = oldCtxMap.get(c.name);
-    if (!old) {
-      result.push({
-        key: `ctx:${c.name}`,
-        status: "added",
-        kind: "context",
-        label: "Context",
-        title: c.name,
-        subtitle: c.type
-      });
-    } else {
-      const changed = JSON.stringify(old) !== JSON.stringify(c);
-      result.push({
-        key: `ctx:${c.name}`,
-        status: changed ? "modified" : "unchanged",
-        kind: "context",
-        label: "Context",
-        title: c.name,
-        subtitle: c.type,
-        changes: changed ? ["updated"] : undefined
-      });
-    }
-  }
-  for (const c of oldCtx) {
-    if (!newCtxMap.has(c.name))
-      result.push({
-        key: `ctx:${c.name}`,
-        status: "removed",
-        kind: "context",
-        label: "Context",
-        title: c.name
-      });
-  }
-
   return result;
 }
 

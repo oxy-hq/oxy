@@ -5,4 +5,4 @@ pub mod render;
 pub mod types;
 
 pub use commands::cli;
-pub use types::{A2aArgs, ServeArgs, StartArgs};
+pub use types::{ServeArgs, StartArgs};

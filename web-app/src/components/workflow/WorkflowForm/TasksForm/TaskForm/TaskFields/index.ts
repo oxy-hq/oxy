@@ -1,4 +1,3 @@
-export { AgentTaskFields } from "./AgentTaskFields";
 export { ConditionalTaskFields } from "./ConditionalTaskFields";
 export { ExecuteSqlTaskFields } from "./ExecuteSqlTaskFields";
 export { FormatterTaskFields } from "./FormatterTaskFields";

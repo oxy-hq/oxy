@@ -565,6 +565,14 @@ mod tests {
         // handler returns at the "unknown team" warn before reaching
         // the cache-miss branch — which still proves the no-panic
         // contract on a well-formed UUID.
+        //
+        // Requires OXY_DATABASE_URL because tenant_resolver::resolve queries
+        // the slack_installations table. Without a DB the `?` propagates the
+        // connection error and the assertion fails — skip in that case so
+        // CI doesn't flag a config-only failure as a code regression.
+        if std::env::var("OXY_DATABASE_URL").is_err() {
+            return;
+        }
         let action = InteractivityAction {
             action_id: "slack_view_sql_artifacts".into(),
             value: Some(uuid::Uuid::new_v4().to_string()),

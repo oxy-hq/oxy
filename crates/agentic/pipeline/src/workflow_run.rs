@@ -788,9 +788,8 @@ async fn run_loop_iteration_inline(
     // Thread the per-iteration render context the decider built (parent's
     // results + `loop_step.value`/`loop_step.index` for this item). Without
     // this, the inner sub-workflow starts with an empty context and any
-    // `{{ schedules.value }}` / `{{ metrics.value }}` reference renders as
-    // undefined — which is what was breaking `survey_responses` and other
-    // nested-loop procedures.
+    // `{{ outer.value }}` / `{{ inner.value }}` reference in a nested loop
+    // renders as undefined.
     //
     // Pass `agent_runner` through too: nested loops with agent steps
     // (e.g. an inner `metrics` loop whose tasks include `type: agent`)

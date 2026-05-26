@@ -22,7 +22,7 @@
 //! context:
 //!   - ./semantics/*.view.yml
 //!   - ./semantics/*.topic.yml
-//!   - ./examples/*.sql
+//!   - ./example_sql/*.sql
 //!   - ./docs/*.md
 //!   - ./procedures/**/*.procedure.yml
 //!

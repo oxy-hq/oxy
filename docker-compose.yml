@@ -14,8 +14,8 @@ services:
   #     - "3000:3000"
   #   volumes:
   #     - oxy-data:/var/lib/oxy/data
-  #     # Mount the examples folder as the working directory
-  #     - ./examples:/app:rw
+  #     # Mount the test fixture folder as the working directory
+  #     - ./tests/fixtures/oxy_example:/app:rw
   #   env_file:
   #     - .env
   #   environment:

@@ -40,10 +40,6 @@ export const configureMonaco = (monaco: Monaco) => {
         uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/app.json"
       },
       {
-        fileMatch: ["**/*.agent.yml", "**/*.agent.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/agent.json"
-      },
-      {
         fileMatch: ["**/*.workflow.yml", "**/*.workflow.yaml"],
         uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/workflow.json"
       },

@@ -224,7 +224,7 @@ async fn resolves_from_user_preferences_when_set() {
     add_workspace_member(ws2, user_id).await;
 
     // Store a preference: user prefers ws1 with a specific agent.
-    let preferred_agent = "agents/my-agent.agent.yml".to_string();
+    let preferred_agent = "agents/my-agent.agentic.yml".to_string();
     let conn = establish_connection().await.expect("db connect");
     slack_user_preferences::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),

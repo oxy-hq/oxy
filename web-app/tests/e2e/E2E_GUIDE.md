@@ -6,7 +6,7 @@
 # start the backend manually
 
 docker-compose up -d # start postgres
-cd examples
+cd tests/fixtures/oxy_example
 export OXY_DATABASE_URL=postgresql://admin:password@localhost:5432/default
 cargo run -- serve --enterprise
 

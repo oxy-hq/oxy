@@ -7,7 +7,7 @@ services:
     working_dir: /workspace
     volumes:
       # Project directory - users can edit files from outside Docker
-      - ./examples:/workspace
+      - ./demo_project:/workspace
       # State directory - persists oxy data
       - oxy-state:/var/lib/oxy/data
     environment:

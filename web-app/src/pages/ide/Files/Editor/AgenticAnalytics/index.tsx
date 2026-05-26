@@ -7,19 +7,20 @@ import {
   yamlToForm
 } from "@/components/agentic/AgenticAnalyticsForm";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
+import ViewModeToggle, { type FileEditorViewMode } from "@/components/FileEditor/ViewModeToggle";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
-import ViewModeToggle from "../Agent/components/ViewModeToggle";
-import type { AgentViewMode } from "../Agent/types";
 import EditorPageWrapper from "../components/EditorPageWrapper";
 import { useEditorContext } from "../contexts/useEditorContext";
 import { usePreviewRefresh } from "../usePreviewRefresh";
 import PreviewSection from "./PreviewSection";
 import { AgenticViewMode } from "./types";
 
-// AgenticViewMode and AgentViewMode share identical string values — cast is safe.
-const toAgentViewMode = (m: AgenticViewMode): AgentViewMode => m as unknown as AgentViewMode;
-const toAgenticViewMode = (m: AgentViewMode): AgenticViewMode => m as unknown as AgenticViewMode;
+// AgenticViewMode and FileEditorViewMode share identical string values — cast is safe.
+const toEditorViewMode = (m: AgenticViewMode): FileEditorViewMode =>
+  m as unknown as FileEditorViewMode;
+const toAgenticViewMode = (m: FileEditorViewMode): AgenticViewMode =>
+  m as unknown as AgenticViewMode;
 
 const AgenticAnalyticsEditor = () => {
   const { pathb64, gitEnabled } = useEditorContext();
@@ -45,7 +46,7 @@ const AgenticAnalyticsEditor = () => {
     <EditorPageWrapper
       headerPrefixAction={
         <ViewModeToggle
-          viewMode={toAgentViewMode(viewMode)}
+          viewMode={toEditorViewMode(viewMode)}
           onViewModeChange={(m) => setViewMode(toAgenticViewMode(m))}
           validationError={validationError}
         />

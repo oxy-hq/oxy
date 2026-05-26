@@ -14,11 +14,11 @@ use oxy::{
         types::TargetOutput,
     },
 };
-use oxy_agent::agent::openai::{OneShotInput, SimpleMapper, build_openai_executable};
 use oxy_shared::errors::OxyError;
 
 use super::{
     correctness_solver::{CorrectnessSolverMapper, parse_correctness_record},
+    one_shot::{OneShotInput, SimpleMapper, build_openai_executable},
     types::{Correctness, MetricKind, RecallRecord, Record},
 };
 
@@ -121,14 +121,7 @@ impl
                 let model = config_manager.resolve_model(model_ref)?;
                 let client =
                     OpenAIClient::with_config(model.into_openai_config(secret_manager).await?);
-                let agent = build_openai_executable(
-                    client,
-                    model.model_name().to_string(),
-                    vec![],
-                    None,
-                    None,
-                    false,
-                );
+                let agent = build_openai_executable(client, model.model_name().to_string());
                 let mut eval_executable = ExecutableBuilder::new()
                     .concurrency(self.concurrency)
                     .map(LLMSolverMapper {
@@ -203,14 +196,7 @@ impl
                 let model = config_manager.resolve_model(model_ref)?;
                 let client =
                     OpenAIClient::with_config(model.into_openai_config(secret_manager).await?);
-                let agent = build_openai_executable(
-                    client,
-                    model.model_name().to_string(),
-                    vec![],
-                    None,
-                    None,
-                    false,
-                );
+                let agent = build_openai_executable(client, model.model_name().to_string());
                 // Capture context from both actual and expected TargetOutputs
                 let run_context: Vec<_> = outputs
                     .iter()

@@ -16,7 +16,6 @@ exists to vendor that knowledge into the builder binary.
 | `view-template.yml`             | `skills/oxy-semantic-layer/view-template.yml`                                     | verbatim |
 | `topic-template.yml`            | `skills/oxy-semantic-layer/topic-template.yml`                                    | verbatim |
 | `app-builder-reference.md`      | Authored from `skills/oxy-app-builder/SKILL.md` + `QUICK-REFERENCE.md`            | authored |
-| `agent-builder-reference.md`    | Authored from `skills/oxy-workflow-builder/SKILL.md` (agent section)              | authored |
 | `agentic-builder-reference.md`  | Authored from `skills/oxy-agentic-builder/SKILL.md` + `QUICK-REFERENCE.md`        | authored |
 | `agentic-template.yml`          | `skills/oxy-agentic-builder/agentic-template.yml`                                 | verbatim |
 

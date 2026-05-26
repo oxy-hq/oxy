@@ -6,7 +6,6 @@ import {
   Eye,
   File,
   FileCode,
-  Network,
   Table,
   Workflow
 } from "lucide-react";
@@ -22,10 +21,8 @@ const getFileIcon = (filePath: string) => {
     case FileType.WORKFLOW:
     case FileType.AUTOMATION:
       return Workflow;
-    case FileType.AGENT:
+    case FileType.ANALYTICS_AGENT:
       return Bot;
-    case FileType.AGENTIC_WORKFLOW:
-      return Network;
     case FileType.APP:
       return AppWindow;
     case FileType.VIEW:

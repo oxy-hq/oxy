@@ -150,7 +150,6 @@ pub async fn run_workflow_tool(
         Some(Value::Object(merged))
     };
 
-    let agent_runner = crate::agentic_wiring::OxyInlineAgentRunner::new(workspace_manager.clone());
     let project_ctx = std::sync::Arc::new(crate::agentic_wiring::OxyProjectContext::new(
         workspace_manager.clone(),
     ));
@@ -159,7 +158,7 @@ pub async fn run_workflow_tool(
         workspace.as_ref(),
         workflow,
         variables,
-        Some(&agent_runner),
+        None,
     )
     .await
     .map_err(|e| rmcp::ErrorData::internal_error(format!("inline workflow: {e}"), None))?;

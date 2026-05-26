@@ -22,7 +22,6 @@ import {
 import { Switch } from "@/components/ui/shadcn/switch";
 import type { WorkflowFormData } from "..";
 import {
-  AgentTaskFields,
   ConditionalTaskFields,
   ExecuteSqlTaskFields,
   FormatterTaskFields,
@@ -105,9 +104,6 @@ export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = 
 
   const renderTaskSpecificFields = () => {
     switch (taskType) {
-      case "agent":
-        return <AgentTaskFields index={index} basePath={basePath} />;
-
       case "execute_sql":
         return <ExecuteSqlTaskFields index={index} basePath={basePath} />;
 

@@ -1,4 +1,4 @@
-import { BarChart3, Bot, CodeXml, FileText, GitBranch, Globe, Pencil } from "lucide-react";
+import { BarChart3, CodeXml, FileText, GitBranch, Globe, Pencil } from "lucide-react";
 import type { ElementType } from "react";
 import { useNavigate } from "react-router-dom";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
@@ -14,7 +14,6 @@ import type { AutomationGenerated } from "../BlockMessage";
 const NODE_ICONS: Record<string, ElementType> = {
   [TaskType.SEMANTIC_QUERY]: Globe,
   [TaskType.EXECUTE_SQL]: CodeXml,
-  [TaskType.AGENT]: Bot,
   [TaskType.FORMATTER]: FileText,
   [TaskType.VISUALIZE]: BarChart3,
   [TaskType.WORKFLOW]: GitBranch
@@ -23,7 +22,6 @@ const NODE_ICONS: Record<string, ElementType> = {
 const NODE_LABELS: Record<string, string> = {
   [TaskType.SEMANTIC_QUERY]: "Semantic Query",
   [TaskType.EXECUTE_SQL]: "Execute SQL",
-  [TaskType.AGENT]: "Agent",
   [TaskType.FORMATTER]: "Formatter",
   [TaskType.VISUALIZE]: "Visualize",
   [TaskType.WORKFLOW]: "Sub-procedure"

@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     adapters::runs::Mergeable,
     config::{
-        agent_config::AgenticConfig,
         constants::{
             ARTIFACT_SOURCE, CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE,
         },
@@ -55,16 +54,6 @@ pub enum EventKind {
     },
     Usage {
         usage: Usage,
-    },
-    AgenticStarted {
-        agent_id: String,
-        run_id: String,
-        agent_config: AgenticConfig,
-    },
-    AgenticFinished {
-        agent_id: String,
-        run_id: String,
-        error: Option<String>,
     },
     StepStarted {
         #[serde(flatten)]
@@ -271,26 +260,6 @@ impl TryFrom<Event> for EventKind {
                 ExecuteEventKind::StepFinished { step_id, error } => {
                     Ok(EventKind::StepFinished { step_id, error })
                 }
-                ExecuteEventKind::AgenticStarted {
-                    agent_id,
-                    run_id,
-                    agent_config,
-                } => Ok(EventKind::AgenticStarted {
-                    agent_id,
-                    run_id,
-                    agent_config: serde_json::from_value(agent_config).map_err(|e| {
-                        OxyError::RuntimeError(format!("Failed to deserialize agentic config: {e}"))
-                    })?,
-                }),
-                ExecuteEventKind::AgenticFinished {
-                    agent_id,
-                    run_id,
-                    error,
-                } => Ok(EventKind::AgenticFinished {
-                    agent_id,
-                    run_id,
-                    error,
-                }),
                 ExecuteEventKind::Usage { usage } => Ok(EventKind::Usage { usage }),
                 ExecuteEventKind::Updated { chunk } => match chunk.delta.clone() {
                     Output::SQL(sql) => Ok(EventKind::ContentDone {

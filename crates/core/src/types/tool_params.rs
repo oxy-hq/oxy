@@ -41,32 +41,3 @@ impl Hash for OmniQueryParams {
         }
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct RetrievalParams {
-    pub query: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct SQLParams {
-    pub query: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct AgentParams {
-    pub agent_name: String,
-    pub query: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct EmptySQLParams {}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct SaveAutomationParams {
-    #[schemars(description = "A descriptive name for the automation being saved")]
-    pub name: String,
-    #[schemars(description = "A description of what this automation does")]
-    pub description: String,
-}

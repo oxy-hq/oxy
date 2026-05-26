@@ -15,7 +15,7 @@
         }
       },
       "args": ["serve"],
-      "cwd": "${workspaceFolder}/examples"
+      "cwd": "${workspaceFolder}/tests/fixtures/oxy_example"
     },
     {
       "type": "lldb",

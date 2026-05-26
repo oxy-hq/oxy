@@ -7,7 +7,6 @@ export interface TraceChartsProps {
 
 export interface TimeBucket {
   time: string;
-  agentCount: number;
   workflowCount: number;
   analyticsCount: number;
   tokens: number;
@@ -19,7 +18,6 @@ export interface DurationBucket {
 }
 
 export interface TraceStats {
-  agentRuns: number;
   workflowRuns: number;
   analyticsRuns: number;
   avgDuration: string;

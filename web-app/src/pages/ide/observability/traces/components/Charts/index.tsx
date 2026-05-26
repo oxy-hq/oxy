@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import ChartCard from "./ChartCard";
 import type { TraceChartsProps } from "./types";
 import {
-  useAgentRunsChartOptions,
   useAnalyticsRunsChartOptions,
   useDurationChartOptions,
   useTokensChartOptions,
@@ -17,7 +16,6 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
 
   const stats = useMemo(() => calculateStats(traces), [traces]);
 
-  const agentRunsChartOptions = useAgentRunsChartOptions(timeBuckets);
   const workflowRunsChartOptions = useWorkflowRunsChartOptions(timeBuckets);
   const analyticsRunsChartOptions = useAnalyticsRunsChartOptions(timeBuckets);
   const durationChartOptions = useDurationChartOptions(durationBuckets);
@@ -25,14 +23,6 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
 
   return (
     <div className='mb-4 grid grid-cols-4 gap-4'>
-      <ChartCard
-        title='Agent Runs'
-        value={`${stats.agentRuns} Agent Runs`}
-        subtitle=''
-        options={agentRunsChartOptions}
-        isLoading={isLoading}
-      />
-
       <ChartCard
         title='Workflow Runs'
         value={`${stats.workflowRuns} Workflow Runs`}

@@ -1,25 +1,12 @@
 use std::collections::HashMap;
 
-use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use oxy::{
     execute::types::{Output, ReferenceKind, TargetOutput},
     theme::StyledText,
 };
-use oxy_agent::types::AgentInput;
 use oxy_shared::errors::OxyError;
-
-/// Inputs for an eval target that points at a workflow file.
-///
-/// Workflow execution flows through
-/// `agentic_pipeline::workflow_run::start_workflow_run`; this struct is
-/// the eval-system-specific shape of those inputs.
-#[derive(Clone, Debug)]
-pub struct EvalWorkflowInput {
-    pub workflow_ref: String,
-    pub variables: Option<IndexMap<String, serde_json::Value>>,
-}
 
 pub struct EvalInput {
     pub index: Option<usize>,
@@ -33,20 +20,9 @@ pub(super) struct AgenticInput {
     pub prompt: String,
 }
 
-#[derive(Clone, Debug)]
-pub(super) enum EvalTarget {
-    Workflow(EvalWorkflowInput),
-    Agent(AgentInput),
-    Agentic(AgenticInput),
-}
-
-impl std::fmt::Display for EvalTarget {
+impl std::fmt::Display for AgenticInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EvalTarget::Workflow(workflow_input) => write!(f, "{}", workflow_input.workflow_ref),
-            EvalTarget::Agent(agent_input) => write!(f, "{}", agent_input.agent_ref),
-            EvalTarget::Agentic(agentic_input) => write!(f, "{}", agentic_input.config_path),
-        }
+        write!(f, "{}", self.config_path)
     }
 }
 
@@ -72,33 +48,10 @@ impl From<EvalRecord> for TargetOutput {
 }
 
 impl EvalRecord {
-    pub(super) fn as_target(
-        &self,
-        target: &EvalTarget,
-        workflow_variable_name: &Option<String>,
-    ) -> EvalTarget {
-        match target {
-            EvalTarget::Workflow(workflow_input) => EvalTarget::Workflow(EvalWorkflowInput {
-                workflow_ref: workflow_input.workflow_ref.clone(),
-                variables: Some(IndexMap::from_iter([(
-                    workflow_variable_name.clone().unwrap_or_default(),
-                    serde_json::to_value(&self.query).unwrap(),
-                )])),
-            }),
-            EvalTarget::Agent(agent_input) => EvalTarget::Agent(AgentInput {
-                agent_ref: agent_input.agent_ref.clone(),
-                prompt: self.query.clone(),
-                memory: vec![],
-                variables: None,
-                a2a_task_id: agent_input.a2a_task_id.clone(),
-                a2a_thread_id: agent_input.a2a_thread_id.clone(),
-                a2a_context_id: agent_input.a2a_context_id.clone(),
-                sandbox_info: agent_input.sandbox_info.clone(),
-            }),
-            EvalTarget::Agentic(agentic_input) => EvalTarget::Agentic(AgenticInput {
-                config_path: agentic_input.config_path.clone(),
-                prompt: self.query.clone(),
-            }),
+    pub(super) fn as_target(&self, target: &AgenticInput) -> AgenticInput {
+        AgenticInput {
+            config_path: target.config_path.clone(),
+            prompt: self.query.clone(),
         }
     }
 }
@@ -438,7 +391,11 @@ impl std::fmt::Display for EvalResult {
 impl FromIterator<Record> for MetricKind {
     fn from_iter<T: IntoIterator<Item = Record>>(iter: T) -> Self {
         let records = iter.into_iter().collect::<Vec<_>>();
-        let score = records.iter().map(|r| r.score).sum::<f32>() / records.len() as f32;
+        let score = if records.is_empty() {
+            0.0
+        } else {
+            records.iter().map(|r| r.score).sum::<f32>() / records.len() as f32
+        };
         MetricKind::Similarity(Similarity { score, records })
     }
 }
@@ -446,7 +403,11 @@ impl FromIterator<Record> for MetricKind {
 impl FromIterator<RecallRecord> for MetricKind {
     fn from_iter<T: IntoIterator<Item = RecallRecord>>(iter: T) -> Self {
         let records = iter.into_iter().collect::<Vec<_>>();
-        let score = records.iter().map(|r| r.score).sum::<f32>() / records.len() as f32;
+        let score = if records.is_empty() {
+            0.0
+        } else {
+            records.iter().map(|r| r.score).sum::<f32>() / records.len() as f32
+        };
         MetricKind::Recall(Recall { score, records })
     }
 }

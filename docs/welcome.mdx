@@ -19,9 +19,9 @@ With Oxygen, organizations can build a digital twin of their operations and depl
 
 Specifically, this process is implemented as follows:
 
-- **Agent Configuration**: Define agents using `.agent.yml` files that specify their instructions. Agents are provided tools to generate SQL, execute semantic queries, and execute procedures. We recommend using a routing agent as the first layer, which can deterministically execute procedures, with a SQL-generation agent as a fallback. This ensures that vetted procedures run with high determinism against their attached inclusions, while the SQL generation fallback provides broad coverage for ad-hoc questions.
+- **Agent Configuration**: Define agents using `.agentic.yml` files that specify their instructions. Agents are provided tools to generate SQL, execute semantic queries, and execute procedures.
 - **Procedure Development**: Create `.procedure.yml` files to orchestrate multi-step processes. Use `retrieve: include` and `exclude` to control how these procedures are retrieved by agents that have access to them.
-- **Testing Framework**: Add test cases directly to `.agent.yml` or `.procedure.yml` files. Execute tests using the `oxy test` command.
+- **Testing Framework**: Add test cases directly to `.agentic.yml` or `.procedure.yml` files. Execute tests using the `oxy test` command.
 
 You can interact with all components — agents, procedures, and data — through the web interface launched by `oxy start`. Oxygen is also CLI-native, so every operation can be run from the terminal, making it easy to integrate with coding tools like [Claude Code](https://github.com/oxy-hq/skills) and CI/CD pipelines.
 
@@ -35,13 +35,8 @@ The documentation is split into two audiences:
   <Card title="Quickstart" icon="rocket" href="/quickstart">
     Install Oxy and run your first query in minutes
   </Card>
-
-  <Card title="Getting Started with Agents" icon="robot" href="/getting-started-agents/set-up-project">
-    Create and test your first AI data agent
-  </Card>
-
-  <Card title="Core Concepts" icon="book" href="/learn-about-oxy/agents">
-    Agents, workflows, semantic layer, data apps
+  <Card title="Core Concepts" icon="book" href="/learn-about-oxy/agentic-workflows">
+    Agentic workflows, semantic layer, data apps
   </Card>
 
   <Card title="Basic Oxy commands" icon="terminal" href="/reference/oxy-commands">

@@ -71,7 +71,6 @@ export function BuilderDialog() {
   const {
     isAvailable,
     isLoading: isCheckingBuilder,
-    isAgentic,
     isBuiltin,
     builderModel,
     builderPath
@@ -283,7 +282,7 @@ export function BuilderDialog() {
       createThread({
         title,
         source: builderPath,
-        source_type: isAgentic ? "agentic" : "task",
+        source_type: "task",
         input
       });
     }

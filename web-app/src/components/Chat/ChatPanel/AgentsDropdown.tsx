@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, Route } from "lucide-react";
+import { Bot, ChevronDown } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -16,7 +16,6 @@ import type { ThinkingMode } from "@/services/api/analytics";
 
 export type Agent = {
   id: string;
-  isAgentic: boolean;
   isAnalytics: boolean;
   name: string;
 };
@@ -47,7 +46,6 @@ const AgentsDropdown = ({
         ?.filter((agent) => agent.public)
         ?.map((agent) => ({
           id: agent.path,
-          isAgentic: agent.path.endsWith(".aw.yaml") || agent.path.endsWith(".aw.yml"),
           isAnalytics: agent.path.endsWith(".agentic.yml") || agent.path.endsWith(".agentic.yaml"),
           name: agent.name ?? getAgentNameFromPath(agent.path)
         }))
@@ -78,11 +76,7 @@ const AgentsDropdown = ({
             <Spinner />
           ) : (
             <>
-              {agentSelected?.name.includes("routing") ? (
-                <Route className='size-4 shrink-0' />
-              ) : (
-                <Bot className='size-4 shrink-0' />
-              )}
+              <Bot className='size-4 shrink-0' />
               <span className='truncate'>{agentSelected?.name ?? "Select agent"}</span>
               {thinkingMode === "extended_thinking" && (
                 <span className='hidden text-muted-foreground text-xs md:inline'>Extended</span>
@@ -100,11 +94,7 @@ const AgentsDropdown = ({
             onClick={() => onSelect(item)}
             data-highlighted={agentSelected?.id === item.id}
           >
-            {item.name.includes("routing") ? (
-              <Route className='size-4' />
-            ) : (
-              <Bot className='size-4' />
-            )}
+            <Bot className='size-4' />
             {item.name}
           </DropdownMenuItem>
         ))}

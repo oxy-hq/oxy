@@ -42,12 +42,6 @@ export function formatSpanLabel(spanName: string): string {
     // Sub-workflow
     "workflow.task.sub_workflow.execute": "Execute Sub-Workflow",
 
-    // Agent operations
-    "agent.run_agent": "Agent",
-    "agent.get_global_context": "Get Global Context",
-    "agent.load_config": "Load Agent Config",
-    "agent.execute": "Execute Agent",
-
     // LLM calls
     "llm.call": "LLM Call",
     "llm.openai.call": "OpenAI Call",

@@ -181,7 +181,7 @@ const TestFileForm: React.FC<TestFileFormProps> = ({ data, onChange }) => {
             </div>
             <div className='space-y-2'>
               <Label htmlFor='target'>Target</Label>
-              <Input id='target' placeholder='e.g. sales.agent.yml' {...register("target")} />
+              <Input id='target' placeholder='e.g. sales.agentic.yml' {...register("target")} />
             </div>
             <div className='grid grid-cols-2 gap-4'>
               <div className='space-y-2'>

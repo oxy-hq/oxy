@@ -1,6 +1,5 @@
 import {
   BarChart3,
-  Bot,
   CircleAlert,
   CircleHelp,
   Code,
@@ -37,7 +36,6 @@ const nodeNameMap: Record<NodeType, string> = {
   omni_query: "Omni Query",
   loop_sequential: "Loop sequential",
   formatter: "Formatter",
-  agent: "Agent",
   workflow: "Subworkflow",
   conditional: "Conditional",
   "conditional-else": "Else",
@@ -49,7 +47,6 @@ const nodeIconMap: Record<NodeType, ReactElement> = {
   execute_sql: <Code size={14} />,
   loop_sequential: <RefreshCcw size={14} />,
   formatter: <FileText size={14} />,
-  agent: <Bot size={14} />,
   workflow: <GitBranch size={14} />,
   conditional: <Split size={14} />,
   "conditional-else": <CircleAlert size={14} />,

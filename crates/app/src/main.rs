@@ -242,26 +242,6 @@ fn main() {
             // backend and spawn the bridge task.
             init_tracing_logging(observability_enabled);
 
-            // Workflow execution is now driven directly by the agentic
-            // pipeline coordinator (see `agentic_pipeline::workflow_run`),
-            // so no `oxy-workflow` tool executor registration happens here.
-            if let Err(e) = oxy_agent::tool_executor::register_agent_executor().await {
-                tracing::error!(error = %e, "Failed to register agent tool executor");
-                eprintln!(
-                    "{}",
-                    format!("Failed to register agent tool executor: {e}").error()
-                );
-                exit(1);
-            }
-            if let Err(e) = oxy_airform::tool::register_dbt_executor().await {
-                tracing::error!(error = %e, "Failed to register dbt tool executor");
-                eprintln!(
-                    "{}",
-                    format!("Failed to register dbt tool executor: {e}").error()
-                );
-                exit(1);
-            }
-
             let exit_code = match cli().await {
                 Ok(_) => 0,
                 Err(e) => {

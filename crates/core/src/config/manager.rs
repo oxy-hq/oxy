@@ -3,16 +3,12 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::{
-    config::{agent_config::AgenticConfig, constants::DATABASE_SEMANTIC_PATH},
-    observability::events,
-};
+use crate::config::constants::DATABASE_SEMANTIC_PATH;
 use oxy_shared::errors::OxyError;
 
 use super::{
     model::{
-        AgentConfig, AppConfig, BuilderAgentConfig, Config, Database, Model, Workflow,
-        WorkflowWithRawVariables,
+        AppConfig, BuilderAgentConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables,
     },
     storage::{ConfigSource, ConfigStorage},
     test_config::TestFileConfig,
@@ -90,15 +86,6 @@ impl ConfigManager {
         self.config.defaults.as_ref().map(|d| d.database.as_ref())?
     }
 
-    /// Path of the agent the workspace's `defaults.agent` points to
-    /// (relative to workspace root), when configured. Callers that need to
-    /// pick "the" agent without enumerating — primarily the Slack
-    /// integration — read this and fall back to alphabetical-first when
-    /// it's `None`.
-    pub fn default_agent_ref(&self) -> Option<&String> {
-        self.config.defaults.as_ref().and_then(|d| d.agent.as_ref())
-    }
-
     /// Returns the configured protected branches, if any.
     pub fn protected_branches(&self) -> Option<&[String]> {
         self.config.protected_branches.as_deref()
@@ -137,28 +124,6 @@ impl ConfigManager {
             .await
     }
 
-    #[tracing::instrument(skip_all, err, fields(
-        oxy.name = events::agent::load_agent_config::NAME,
-        oxy.span_type = events::agent::load_agent_config::TYPE,
-    ))]
-    pub async fn resolve_agent<P: AsRef<Path>>(
-        &self,
-        agent_name: P,
-    ) -> Result<AgentConfig, OxyError> {
-        let agent_name_str = agent_name.as_ref().display().to_string();
-        events::agent::load_agent_config::input(&agent_name_str);
-        let output = self.storage.load_agent_config(agent_name).await?;
-        events::agent::load_agent_config::output(&output);
-        Ok(output)
-    }
-
-    pub async fn resolve_agentic_workflow<P: AsRef<Path>>(
-        &self,
-        agent_name: P,
-    ) -> Result<AgenticConfig, OxyError> {
-        self.storage.load_agentic_workflow_config(agent_name).await
-    }
-
     /// Returns all databases: static config entries plus any runtime-registered ones.
     /// Runtime entries with the same name as a static entry take precedence (appear first).
     pub fn list_databases(&self) -> Vec<Database> {
@@ -188,30 +153,8 @@ impl ConfigManager {
             .collect()
     }
 
-    pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
-        let agents = self.storage.list_agents().await?;
-        tracing::info!("Agents: {:?}", agents);
-        tracing::debug!("Builder: {:?}", self.config.builder_agent);
-        if let Some(BuilderAgentConfig::Path(ref path)) = self.config.builder_agent {
-            // hide the legacy path-based builder agent from the list
-            let builder_agent_full_path = self.storage.fs_link(path).await.map_err(|_| {
-                OxyError::ConfigurationError("Failed to resolve agent path".to_string())
-            })?;
-            Ok(agents
-                .iter()
-                .filter(|agent| agent.display().to_string() != builder_agent_full_path)
-                .cloned()
-                .collect())
-        } else {
-            Ok(agents)
-        }
-    }
-
     pub async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_apps().await
-    }
-    pub async fn list_agentic_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
-        self.storage.list_agentic_workflows().await
     }
     pub async fn list_analytics_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_analytics_agents().await
@@ -238,28 +181,11 @@ impl ConfigManager {
         self.storage.list_tests().await
     }
 
-    pub async fn get_build_agent(&self) -> Result<AgentConfig, OxyError> {
-        match &self.config.builder_agent {
-            Some(BuilderAgentConfig::Path(path)) => self.resolve_agent(path).await,
-            Some(BuilderAgentConfig::Builtin { .. }) => Err(OxyError::ConfigurationError(
-                "Built-in builder agent does not use an agent file. Use get_builder_config() instead.".to_string(),
-            )),
-            None => Err(OxyError::ConfigurationError(
-                "No builder agent specified in config".to_string(),
-            )),
-        }
-    }
-
     pub async fn get_builder_agent_path(&self) -> Result<PathBuf, OxyError> {
-        match &self.config.builder_agent {
-            Some(BuilderAgentConfig::Path(path)) => Ok(path.to_owned()),
-            Some(BuilderAgentConfig::Builtin { .. }) => Err(OxyError::ConfigurationError(
-                "Built-in builder agent does not have a file path".to_string(),
-            )),
-            None => Err(OxyError::ConfigurationError(
-                "No builder agent specified in config".to_string(),
-            )),
-        }
+        // Builder is always built-in now; no on-disk path exists.
+        Err(OxyError::ConfigurationError(
+            "Built-in builder agent does not have a file path".to_string(),
+        ))
     }
 
     /// Returns the full builder agent config, if any.

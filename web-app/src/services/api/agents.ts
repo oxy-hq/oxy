@@ -1,59 +1,26 @@
-import type { AgentConfig, AgentInfo } from "@/types/agent";
-import type { Answer } from "@/types/chat";
-import type { TestStreamMessage } from "@/types/eval";
-import { apiBaseURL } from "../env";
 import { apiClient } from "./axios";
-import fetchSSE from "./fetchSSE";
 
-export class AgentService {
-  static async listAgents(projectId: string, branchName: string): Promise<AgentInfo[]> {
-    const response = await apiClient.get(`/${projectId}/agents`, {
-      params: { branch: branchName }
-    });
-    return response.data;
-  }
+/// Lightweight listing entry returned by `GET /{workspaceId}/agents`.
+///
+/// The classic `.agent.yml` execution surface has been removed; this
+/// endpoint now only returns agentic (`.agentic.yml`) + analytics-workflow
+/// (`.aw.yml`) agents — the chat panel's selector is the only consumer.
+export type AgentInfo = {
+  /// Display name (parsed from the file or `llm.ref` snippet).
+  name: string;
+  /// Workspace-relative path to the agent file.
+  path: string;
+  /// Whether the agent is exposed publicly. Always `true` for agentic agents.
+  public: boolean;
+  /// Model ref this agent resolves through.
+  model?: string;
+};
 
-  static async getAgent(
-    projectId: string,
-    branchName: string,
-    pathb64: string
-  ): Promise<AgentConfig> {
-    const response = await apiClient.get(`/${projectId}/agents/${encodeURIComponent(pathb64)}`, {
-      params: { branch: branchName }
-    });
-    return response.data;
+export const AgentService = {
+  async listAgents(projectId: string, branchName?: string): Promise<AgentInfo[]> {
+    const params: Record<string, string> = {};
+    if (branchName) params.branch = branchName;
+    const res = await apiClient.get<AgentInfo[]>(`/${projectId}/agents`, { params });
+    return res.data;
   }
-
-  static async runTestAgent(
-    projectId: string,
-    branchName: string,
-    pathb64: string,
-    testIndex: number,
-    onReadStream: (event: TestStreamMessage) => void
-  ): Promise<void> {
-    const searchParams = new URLSearchParams({
-      branch: branchName
-    });
-    const url = `${apiBaseURL}/${projectId}/agents/${encodeURIComponent(pathb64)}/tests/${testIndex}?${searchParams.toString()}`;
-    await fetchSSE(url, {
-      onMessage: onReadStream
-    });
-  }
-
-  static async askAgentPreview(
-    projectId: string,
-    branchName: string,
-    agentPathb64: string,
-    question: string,
-    onReadStream: (answer: Answer) => void
-  ): Promise<void> {
-    const searchParams = new URLSearchParams({
-      branch: branchName
-    });
-    const url = `${apiBaseURL}/${projectId}/agents/${encodeURIComponent(agentPathb64)}/ask?${searchParams.toString()}`;
-    await fetchSSE(url, {
-      body: { question },
-      onMessage: onReadStream
-    });
-  }
-}
+};

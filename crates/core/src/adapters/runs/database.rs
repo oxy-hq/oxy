@@ -185,12 +185,6 @@ impl RunsStorage for RunsDatabaseStorage {
                         OxyError::RuntimeError("Invalid run index format".to_string())
                     })?),
                 ),
-                GroupId::Agentic { agent_id, run_id } => (
-                    agent_id,
-                    Some(run_id.parse::<i32>().map_err(|_| {
-                        OxyError::RuntimeError("Invalid run index format".to_string())
-                    })?),
-                ),
                 GroupId::Artifact { artifact_id } => {
                     (artifact_id, None) // Artifact runs don't have a run index
                 }

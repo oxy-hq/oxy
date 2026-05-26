@@ -1,7 +1,7 @@
 //! Oxy Application - CLI and HTTP Server
 //!
 //! This crate provides both command-line interface and HTTP server functionality
-//! for Oxy, integrating domain crates (oxy-agent, oxy-auth, oxy-workflow, etc.)
+//! for Oxy, integrating domain crates (oxy-auth, agentic-*, oxy-workflow, etc.)
 
 pub mod agentic_wiring;
 pub mod cli;

@@ -455,25 +455,6 @@ impl Handler for GroupBlockHandler {
                 // Handle workflow finish
                 self.end_group(format!("{workflow_id}::{run_id}"), error.clone());
             }
-            EventKind::AgenticStarted {
-                agent_id,
-                run_id,
-                agent_config,
-            } => {
-                self.start_group(GroupKind::Agentic {
-                    agent_id: agent_id.clone(),
-                    run_id: run_id.clone(),
-                    agent_config: agent_config.clone(),
-                });
-            }
-            EventKind::AgenticFinished {
-                agent_id,
-                run_id,
-                error,
-            } => {
-                // Handle agentic finish
-                self.end_group(format!("{agent_id}::{run_id}"), error.clone());
-            }
             EventKind::ArtifactStarted {
                 artifact_id,
                 artifact_name,

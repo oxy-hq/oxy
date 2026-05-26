@@ -1,18 +1,10 @@
 use assert_cmd::assert::OutputAssertExt;
-use std::path::PathBuf;
 use std::process::Command;
 
 fn setup_command() -> Command {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let workspace_dir = PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-
     let mut cmd = Command::new(oxy_test_utils::get_oxy_binary());
-    cmd.current_dir(workspace_dir.join("examples")).arg("run");
+    cmd.current_dir(oxy_test_utils::oxy_example_fixture_dir())
+        .arg("run");
     cmd
 }
 
@@ -84,64 +76,12 @@ fn run_example_workflow_ok() {
     assert!(output.contains("weekly"));
 }
 
-#[test]
-fn run_workflow_with_anonymization_ok() {
-    // Skip test if OPENAI_API_KEY is not set
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        println!("Skipping test: OPENAI_API_KEY not set");
-        return;
-    }
-
-    let mut cmd = setup_command();
-    let result = cmd
-        .arg("procedures/anonymize.procedure.yml")
-        .assert()
-        .success();
-    let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-    assert!(output.contains("✓ anonymize.procedure.yml"));
-}
-
-#[test]
-fn run_workflow_with_loop_ok() {
-    // Skip test if ANTHROPIC_API_KEY is not set (workflow uses claude-sonnet-4-6)
-    if std::env::var("ANTHROPIC_API_KEY").is_err() {
-        println!("Skipping test: ANTHROPIC_API_KEY not set");
-        return;
-    }
-
-    let mut cmd = setup_command();
-    let result = cmd
-        .arg("procedures/survey_responses.procedure.yml")
-        .assert()
-        .success();
-    let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-    assert!(output.contains("✓ survey_responses.procedure.yml"));
-}
-
-#[test]
-fn run_agent_ok() {
-    // Skip test if OPENAI_API_KEY is not set
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        println!("Skipping test: OPENAI_API_KEY not set");
-        return;
-    }
-
-    let mut cmd = setup_command();
-    let result = cmd
-        .arg("agents/default.agent.yml")
-        .arg("how many people are there")
-        .assert()
-        .success();
-    let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
-
-    // The agent queries dim_users table in BigQuery which has ~2873 users
-    // Accept the number with or without comma formatting since LLM responses vary
-    // Examples: "2873", "2,873", "2 873"
-    let has_count = output.contains("2873") || output.contains("2,873") || output.contains("2 873");
-
-    assert!(
-        has_count,
-        "Expected output to contain user count '2873' (with or without formatting), but got:\n{}",
-        output
-    );
-}
+// Tests that exercised inline `type: agent` steps inside procedures
+// (`run_workflow_with_anonymization_ok`, `run_workflow_with_loop_ok`) were
+// retired alongside the `.agent.yml` fixtures and the classic
+// `InlineAgentRunner`. The fixtures that drove them
+// (`anonymize.procedure.yml`, `survey_responses.procedure.yml`, etc.)
+// were removed in the same cleanup. `loop_sequential` coverage now
+// lives in `run_example_workflow_ok` via `table_values.automation.yml`.
+// CLI agent-execution coverage lives under `crates/agentic/pipeline/tests/`;
+// `tests/fixtures/oxy_example/` carries no `.agentic.yml` fixture today.

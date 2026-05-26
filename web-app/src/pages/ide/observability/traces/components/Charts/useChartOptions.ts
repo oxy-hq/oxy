@@ -16,37 +16,6 @@ function createTooltipFormatter(
   };
 }
 
-export function useAgentRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOption {
-  return useMemo(
-    () => ({
-      tooltip: {
-        trigger: "axis",
-        formatter: createTooltipFormatter("Agent Runs")
-      },
-      grid: CHART_GRID,
-      xAxis: {
-        type: "category",
-        data: timeBuckets.map((b) => b.time),
-        ...AXIS_STYLE,
-        axisLabel: getAxisLabelStyle()
-      },
-      yAxis: {
-        type: "value",
-        ...AXIS_STYLE
-      },
-      series: [
-        {
-          type: "bar",
-          data: timeBuckets.map((b) => b.agentCount),
-          itemStyle: { color: getChartColors().success },
-          barMaxWidth: 20
-        }
-      ]
-    }),
-    [timeBuckets]
-  );
-}
-
 export function useWorkflowRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOption {
   return useMemo(
     () => ({

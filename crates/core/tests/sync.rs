@@ -1,19 +1,12 @@
 use assert_cmd::assert::OutputAssertExt;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 fn setup_command() -> Command {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let workspace_dir = PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-
     let mut cmd = Command::new(oxy_test_utils::get_oxy_binary());
-    cmd.current_dir(workspace_dir.join("examples")).arg("sync");
+    cmd.current_dir(oxy_test_utils::oxy_example_fixture_dir())
+        .arg("sync");
     cmd
 }
 
@@ -33,14 +26,7 @@ fn test_sync_database_creates_expected_files() {
         .assert()
         .success();
 
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let workspace_dir = PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let examples_dir = workspace_dir.join("examples");
+    let examples_dir = oxy_test_utils::oxy_example_fixture_dir();
     let sql_file = examples_dir.join(".databases/primary_database/dbt_prod_metrics.sql");
     let models_dir = examples_dir.join(".databases/primary_database/dbt_prod_metrics/models");
 
@@ -116,14 +102,7 @@ fn test_sync_database_with_overwrite_flag() {
         .assert()
         .success();
 
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let workspace_dir = PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let examples_dir = workspace_dir.join("examples");
+    let examples_dir = oxy_test_utils::oxy_example_fixture_dir();
     let sql_file = examples_dir.join(".databases/primary_database/dbt_prod_metrics.sql");
     let models_dir = examples_dir.join(".databases/primary_database/dbt_prod_metrics/models");
 
@@ -173,14 +152,7 @@ fn test_sync_entire_database_with_overwrite_flag() {
     let mut cmd = setup_command();
     cmd.arg("local").assert().success();
 
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let workspace_dir = PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let examples_dir = workspace_dir.join("examples");
+    let examples_dir = oxy_test_utils::oxy_example_fixture_dir();
     let database_dir = examples_dir.join(".databases/local");
 
     assert!(database_dir.exists(), "Database directory was not created");

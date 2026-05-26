@@ -23,7 +23,6 @@ export default function useBuilderAvailable() {
   const builderPath = data?.builder_path ?? "";
   const isBuiltin = data?.builtin ?? false;
   const builderModel = data?.model;
-  const isAgentic = builderPath.endsWith(".aw.yaml") || builderPath.endsWith(".aw.yml");
 
-  return { isAvailable, isAgentic, isLoading, builderPath, isBuiltin, builderModel };
+  return { isAvailable, isLoading, builderPath, isBuiltin, builderModel };
 }

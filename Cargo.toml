@@ -1,8 +1,6 @@
 [workspace]
 members = [
-  "crates/a2a",
   "crates/billing",
-  "crates/agent",
   "crates/app",
   "crates/auth",
   "crates/core",
@@ -41,7 +39,6 @@ members = [
 ]
 
 exclude = [
-  "examples",
   "docs",
   "tests",
   "scripts",
@@ -57,7 +54,6 @@ resolver = "2"
 
 [workspace.dependencies]
 # Internal workspace crates
-a2a = { path = "crates/a2a" }
 agentic-airway = { path = "crates/agentic/airway" }
 agentic-analytics = { path = "crates/agentic/analytics" }
 agentic-builder = { path = "crates/agentic/builder" }
@@ -74,7 +70,6 @@ entity = { path = "crates/entity" }
 migration = { path = "crates/migration" }
 omni = { path = "crates/integration/omni" }
 oxy = { path = "crates/core" }
-oxy-agent = { path = "crates/agent" }
 oxy-airlayer-compat = { path = "crates/infrastructure/semantic" }
 oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }
 oxy-auth = { path = "crates/auth" }
@@ -185,7 +180,6 @@ indoc = "2.0.7"
 itertools = "0.14.0"
 jsonschema = "0.33.0"
 jsonwebtoken = "10"
-lancedb = "0.27.2"
 lazy_static = "1.5.0"
 lettre = "0.11.21"
 libc = "0.2"
@@ -275,7 +269,7 @@ authors = ["oxy engineers"]
 description = "Oxy"
 documentation = "https://oxy.tech/docs"
 edition = "2024"
-exclude = ["examples/"]
+exclude = []
 publish = false
 rust-version = "1.95.0"
 

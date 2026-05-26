@@ -7,7 +7,7 @@ use utoipa::{
 };
 
 use crate::{
-    config::{agent_config::AgenticConfig, model::Workflow},
+    config::model::Workflow,
     execute::types::{
         VizParams,
         event::{ArtifactKind, DataApp, SandboxAppKind, Step},
@@ -106,7 +106,6 @@ pub struct Group {
 pub enum GroupId {
     Workflow { workflow_id: String, run_id: String },
     Artifact { artifact_id: String },
-    Agentic { agent_id: String, run_id: String },
 }
 
 impl Group {
@@ -149,12 +148,6 @@ pub enum GroupKind {
         #[schema(schema_with = any_schema)]
         workflow_config: Workflow,
     },
-    Agentic {
-        agent_id: String,
-        run_id: String,
-        #[schema(schema_with = any_schema)]
-        agent_config: AgenticConfig,
-    },
     Artifact {
         artifact_id: String,
         artifact_name: String,
@@ -175,11 +168,6 @@ impl GroupKind {
                 run_id,
                 ..
             } => format!("{workflow_id}::{run_id}"),
-            GroupKind::Agentic {
-                agent_id, run_id, ..
-            } => {
-                format!("{agent_id}::{run_id}")
-            }
             GroupKind::Artifact { artifact_id, .. } => artifact_id.to_string(),
         }
     }
@@ -191,12 +179,6 @@ impl GroupKind {
                 ..
             } => GroupId::Workflow {
                 workflow_id: workflow_id.clone(),
-                run_id: run_id.clone(),
-            },
-            GroupKind::Agentic {
-                agent_id, run_id, ..
-            } => GroupId::Agentic {
-                agent_id: agent_id.clone(),
                 run_id: run_id.clone(),
             },
             GroupKind::Artifact { artifact_id, .. } => GroupId::Artifact {

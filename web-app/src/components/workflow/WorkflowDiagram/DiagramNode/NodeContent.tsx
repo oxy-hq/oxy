@@ -5,7 +5,6 @@ import {
   type TaskConfigWithId,
   TaskType
 } from "@/stores/useWorkflow";
-import { AgentNode } from "./nodes/AgentNode";
 import { ConditionalElseNode } from "./nodes/ConditionalElseNode";
 import { ConditionalIfNode } from "./nodes/ConditionalIfNode";
 import ConditionalNode from "./nodes/ConditionalNode";
@@ -45,9 +44,6 @@ export function NodeContent({ parentId, task, type, data, ...props }: Props) {
   }
   if (task.type === "formatter") {
     return <FormatterNode task={task} />;
-  }
-  if (task.type === "agent") {
-    return <AgentNode task={task} />;
   }
 
   if (task.type === "workflow") {

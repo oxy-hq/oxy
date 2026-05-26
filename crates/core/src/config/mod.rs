@@ -1,6 +1,4 @@
 use std::path::PathBuf;
-pub mod a2a_config;
-pub mod agent_config;
 pub mod auth;
 pub mod model;
 mod parser;
@@ -15,13 +13,11 @@ pub mod oxy;
 mod storage;
 
 use anyhow;
-use model::{AgentConfig, AppConfig, Config, Database, Model, SemanticModels, Workflow};
+use model::{AppConfig, Config, Database, Model, SemanticModels, Workflow};
 
-use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_config};
+use parser::{parse_semantic_model_config, parse_workflow_config};
 use std::{fs, io};
-use validate::{
-    AgentValidationContext, DataAppValidationContext, ValidationContext, ValidationContextMetadata,
-};
+use validate::{DataAppValidationContext, ValidationContext, ValidationContextMetadata};
 
 use oxy_shared::errors::OxyError;
 
@@ -40,11 +36,6 @@ impl Config {
             )));
         }
 
-        // Validate A2A configuration with additional checks
-        if let Some(a2a_config) = &self.a2a {
-            a2a_config.validate_config(Some(&self.workspace_path))?;
-        }
-
         Ok(())
     }
 
@@ -58,19 +49,6 @@ impl Config {
             Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
                 "Invalid workflow: {} \n{}",
                 workflow.name, e
-            ))),
-        }
-    }
-
-    pub fn validate_agent(&self, agent: &AgentConfig, path: String) -> anyhow::Result<()> {
-        let context = AgentValidationContext {
-            config: self.clone(),
-            agent_config: agent.clone(),
-        };
-        match agent.validate_with(&context) {
-            Ok(_) => Ok(()),
-            Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
-                "Invalid agent: {path} \n{e}"
             ))),
         }
     }
@@ -101,39 +79,12 @@ impl Config {
         Ok(())
     }
 
-    pub fn validate_agents(&self) -> anyhow::Result<()> {
-        for agent in self.list_agents(&self.workspace_path) {
-            let agent = self.load_agent_config(Some(&agent))?;
-            self.validate_agent(&agent.0, agent.1)?;
-        }
-        Ok(())
-    }
-
     pub fn validate_apps(&self) -> anyhow::Result<()> {
         for app_file in self.list_apps(&self.workspace_path) {
             let app = self.load_app(&app_file)?;
             self.validate_app(&app)?;
         }
         Ok(())
-    }
-
-    pub fn load_agent_config(
-        &self,
-        agent_file: Option<&PathBuf>,
-    ) -> Result<(AgentConfig, String), OxyError> {
-        let agent_file = agent_file.unwrap();
-        if !agent_file.exists() {
-            return Err(OxyError::ConfigurationError(format!(
-                "Agent configuration file not found: {agent_file:?}"
-            )));
-        }
-
-        let agent_config = parse_agent_config(&agent_file.to_string_lossy())?;
-
-        let agent_name = agent_file.file_stem().unwrap().to_str().unwrap();
-        let agent_name = agent_name.strip_suffix(".agent").unwrap_or(agent_name);
-
-        Ok((agent_config, agent_name.to_owned()))
     }
 
     pub fn load_app(&self, app_file: &PathBuf) -> Result<AppConfig, OxyError> {
@@ -187,10 +138,6 @@ impl Config {
         }
 
         files
-    }
-
-    pub fn list_agents(&self, dir: &PathBuf) -> Vec<PathBuf> {
-        self.list_by_sub_extension(dir, "agent")
     }
 
     pub fn list_workflows(&self, dir: &PathBuf) -> Vec<PathBuf> {

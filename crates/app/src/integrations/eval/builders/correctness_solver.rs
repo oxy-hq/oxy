@@ -5,10 +5,9 @@ use oxy::execute::{
     builders::map::ParamMapper,
     types::{Output, TargetOutput},
 };
-use oxy_agent::agent::openai::OneShotInput;
 use oxy_shared::errors::OxyError;
 
-use super::types::Record;
+use super::{one_shot::OneShotInput, types::Record};
 
 #[derive(Clone, Debug)]
 pub(super) struct CorrectnessSolverMapper {
