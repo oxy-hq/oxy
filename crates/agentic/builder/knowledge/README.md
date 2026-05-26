@@ -20,7 +20,7 @@ exists to vendor that knowledge into the builder binary.
 | `agentic-builder-reference.md`  | Authored from `skills/oxy-agentic-builder/SKILL.md` + `QUICK-REFERENCE.md`        | authored |
 | `agentic-template.yml`          | `skills/oxy-agentic-builder/agentic-template.yml`                                 | verbatim |
 
-Last synced: skills@445c5459bf050fc65b323d73933e11538555deb5
+Last synced: skills@95c64756ee5b3cf9dc0781fde0e13489c94a1b2d
 
 ## Provenance frontmatter on authored cards
 

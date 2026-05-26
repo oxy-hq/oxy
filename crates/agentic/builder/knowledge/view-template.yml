@@ -1,4 +1,4 @@
-# Vendored from oxy-hq/skills @ 445c545
+# Vendored from oxy-hq/skills @ 95c6475
 # Source: skills/oxy-semantic-layer/view-template.yml
 # Do not edit by hand — edit the skills repo and re-run scripts/sync-skills.sh.
 
@@ -79,15 +79,22 @@ measures:
     expr: amount_column
     synonyms: ["avg amount", "mean"]
 
-  # Filtered measures
+  # Filtered measures — "aggregate X where Y" (conditional aggregation).
+  # The filter `expr` is a raw SQL condition over the table's columns, exactly
+  # like a WHERE clause. NEVER wrap a column in {{ }}: a {{col}} placeholder is
+  # not substituted — it leaks into the compiled SQL and fails with
+  # `syntax error at or near "{"`. Prefer this over a custom CASE WHEN.
   - name: filtered_total
     type: sum
-    description: "Sum of amounts for specific condition"
+    description: "Sum of amounts for a subset of rows"
     expr: amount_column
     filters:
-      - expr: "{{status}} = 'completed'"
+      - expr: "status = 'completed'"
 
-  # Custom measures
+  # Custom measures — only for metrics a filtered measure can't express
+  # (ratios, correlations, cross-period math). Write bare column names; no {{ }}.
+  # NOT re-aggregatable by pre-aggregations (a query touching one always hits
+  # the warehouse), so don't use custom for plain conditional aggregation.
   - name: custom_calculation
     type: custom
     description: "Custom SQL calculation"

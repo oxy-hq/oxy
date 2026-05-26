@@ -2,7 +2,7 @@
 source:
   - oxy-hq/skills/skills/oxy-semantic-layer/SKILL.md
   - oxy-hq/skills/skills/oxy-semantic-layer/QUICK-REFERENCE.md
-reconciled-at: 445c5459bf050fc65b323d73933e11538555deb5
+reconciled-at: 95c64756ee5b3cf9dc0781fde0e13489c94a1b2d
 note: |
   Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
   the verbatim YAML templates. Re-condense by hand when source material
@@ -64,7 +64,7 @@ measures:
   - name: active_count
     type: count
     filters:
-      - expr: "{{status}} = 'active'"   # filtered measure
+      - expr: "status = 'active'"       # raw column SQL, never {{ }}
 ```
 
 ## Critical rules
@@ -166,21 +166,45 @@ measures:
   samples: ["Low", "Medium", "High"]
 ```
 
-**Filtered measures** (using `{{dim_name}}` placeholders that reference
-dimensions of the same view):
+**Filtered measures — "aggregate X where Y" (conditional aggregation).**
+Write a typed measure (`sum`, `average`, `count`, …) with `expr` plus a
+`filters:` list. Each filter `expr` is a **raw SQL boolean condition over
+the table's columns** — exactly what you'd put in a `WHERE` clause. This
+is the correct, re-aggregatable pattern; do **not** express it as a
+`type: custom` `CASE WHEN`.
 
 ```yaml
 - name: completed_revenue
   type: sum
   expr: amount
   filters:
-    - expr: "{{status}} = 'completed'"
+    - expr: "status = 'completed'"       # raw column condition (WHERE-style)
 
 - name: high_value_orders
   type: count
   filters:
-    - expr: "{{amount}} >= 1000"
+    - expr: "amount >= 1000"
 ```
+
+> **Never wrap a column in `{{ }}` inside a measure or filter `expr`.** A
+> `{{column}}` placeholder is **not** substituted there — it leaks into
+> the compiled SQL literally (e.g. `{{"view"."col"}}`) and the warehouse
+> rejects the query with `syntax error at or near "{"`. This applies to
+> filter `expr` **and** `custom` measure `expr` alike. Always write bare
+> column SQL — `fuel_price > 3.5`, never `{{fuel_price}} > 3.5`. A
+> filter `expr` references the **underlying columns** (same as a SQL
+> `WHERE`), not dimension names. (Brace references like
+> `{{entity.field}}` exist only for advanced cross-view measures and
+> have no place in ordinary same-view filters or aggregations.)
+
+**When to reach for `type: custom`.** Reserve it for metrics a typed
+measure + `filters` **cannot** express — ratios, correlations,
+cross-period math. For plain "aggregate X where Y", use a filtered
+measure (above), not a `custom` `CASE WHEN`: the filtered form is
+clearer and re-aggregates through pre-aggregations, whereas `custom`
+(like `median` and bare `number`) always falls back to the warehouse.
+Inside a `custom` `expr`, write **bare column names** — the same
+no-`{{ }}` rule as filters.
 
 ## Topic file shape
 
