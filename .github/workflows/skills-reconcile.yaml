@@ -170,6 +170,10 @@ jobs:
           # `../skills` which doesn't fit the Actions checkout layout.
           SKILLS_DIR: ${{ github.workspace }}/skills-upstream
         with:
+          # The skills-updated repository_dispatch is fired by the Argo App, so the
+          # actor is `oxyhelper[bot]`; allow it past claude-code-action's bot gate.
+          # Matched with a trailing `[bot]` stripped, so `oxyhelper` is enough.
+          allowed_bots: "oxyhelper"
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: >-
             --allowedTools
