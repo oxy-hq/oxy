@@ -298,10 +298,18 @@ const githubKeys = {
 
 const coordinatorKeys = {
   all: ["coordinator"] as const,
-  activeRuns: (projectId: string) => [...coordinatorKeys.all, "activeRuns", projectId] as const,
+  activeRuns: (projectId: string, includeSystem: boolean) =>
+    [...coordinatorKeys.all, "activeRuns", projectId, { includeSystem }] as const,
   runHistory: (
     projectId: string,
-    params: { limit: number; offset: number; status?: string; source_type?: string }
+    params: {
+      limit: number;
+      offset: number;
+      status?: string;
+      source_type?: string;
+      schedule_id?: string;
+      include_system?: boolean;
+    }
   ) => [...coordinatorKeys.all, "runHistory", projectId, params] as const,
   runTree: (projectId: string, runId: string) =>
     [...coordinatorKeys.all, "runTree", projectId, runId] as const,

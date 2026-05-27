@@ -27,7 +27,7 @@ export const getObjectName = (file: FileTreeModel): string => {
   return fileName
     .replace(/\.test\.(yml|yaml)$/, "")
     .replace(/\.agentic\.(yml|yaml)$/, "")
-    .replace(/\.(procedure|workflow|automation|app|view|topic)\.(yml|yaml)$/, "")
+    .replace(/\.(procedure|workflow|automation|app|view|topic|airway)\.(yml|yaml)$/, "")
     .replace(/\.(yml|yaml)$/, "");
 };
 

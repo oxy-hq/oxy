@@ -81,6 +81,41 @@ pub fn count_occurrences_between(
     Ok(count)
 }
 
+/// Enumerate cron occurrences in the half-open range `(after, until]`,
+/// returning each occurrence as UTC.
+///
+/// The list form of [`count_occurrences_between`] — same iteration and the
+/// same `max` cap, but returns the actual instants so a backfill can seed
+/// one run per occurrence and stamp the cron-scheduled time as the logical
+/// date.
+pub fn occurrences_between(
+    expr: &str,
+    timezone: &str,
+    after: DateTime<Utc>,
+    until: DateTime<Utc>,
+    max: usize,
+) -> Result<Vec<DateTime<Utc>>, String> {
+    if until <= after || max == 0 {
+        return Ok(Vec::new());
+    }
+    let tz = parse_tz(timezone)?;
+    let cron = parse_cron(expr)?;
+    let mut cursor_tz = after.with_timezone(&tz);
+    let until_tz = until.with_timezone(&tz);
+    let mut out = Vec::new();
+    while out.len() < max {
+        let next = cron
+            .find_next_occurrence(&cursor_tz, false)
+            .map_err(|e| format!("listing occurrences for {expr:?} in {timezone:?}: {e}"))?;
+        if next > until_tz {
+            break;
+        }
+        out.push(next.with_timezone(&Utc));
+        cursor_tz = next;
+    }
+    Ok(out)
+}
+
 fn parse_tz(timezone: &str) -> Result<Tz, String> {
     timezone
         .parse::<Tz>()

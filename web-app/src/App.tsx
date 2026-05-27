@@ -69,18 +69,18 @@ const LookerExplorerPage = React.lazy(() => import("./pages/ide/Files/Editor/Loo
 const DatabaseLayout = React.lazy(() => import("./pages/ide/Database"));
 const QueryWorkspacePage = React.lazy(() => import("./pages/ide/Database/QueryWorkspace"));
 const ModelingPage = React.lazy(() => import("./pages/ide/modeling"));
-const PipelinesPage = React.lazy(() => import("./pages/ide/pipelines"));
 const TestsLayout = React.lazy(() => import("./pages/ide/tests"));
 const TestsDashboardPage = React.lazy(() => import("./pages/ide/tests/TestsDashboardPage"));
 const TestsRunsPage = React.lazy(() => import("./pages/ide/tests/TestsRunsPage"));
 const TestFileDetailPage = React.lazy(() => import("./pages/ide/tests/TestFileDetailPage"));
 const CoordinatorLayout = React.lazy(() => import("./pages/ide/coordinator"));
-const ActiveRunsPage = React.lazy(() => import("./pages/ide/coordinator/ActiveRuns"));
-const RunHistoryPage = React.lazy(() => import("./pages/ide/coordinator/RunHistory"));
+const OverviewPage = React.lazy(() => import("./pages/ide/coordinator/Overview"));
+const JobsPage = React.lazy(() => import("./pages/ide/coordinator/Jobs"));
+const JobDetailPage = React.lazy(() => import("./pages/ide/coordinator/Jobs/JobDetail"));
+const RunsPage = React.lazy(() => import("./pages/ide/coordinator/Runs"));
+const RunDetailPage = React.lazy(() => import("./pages/ide/coordinator/Runs/RunDetail"));
 const RecoveryPage = React.lazy(() => import("./pages/ide/coordinator/Recovery"));
 const QueueHealthPage = React.lazy(() => import("./pages/ide/coordinator/QueueHealth"));
-const RunTreePage = React.lazy(() => import("./pages/ide/coordinator/RunTree"));
-const SchedulesPage = React.lazy(() => import("./pages/ide/coordinator/Schedules"));
 const ObservabilityLayout = React.lazy(() => import("./pages/ide/observability"));
 const ExecutionAnalytics = React.lazy(
   () => import("./pages/ide/observability/execution-analytics")
@@ -310,9 +310,6 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           {/* Data Modeling routes */}
           <Route path='modeling' element={<ModelingPage />} />
 
-          {/* Airway pipeline routes */}
-          <Route path='pipelines' element={<PipelinesPage />} />
-
           {/* Tests routes */}
           <Route path='tests' element={<TestsLayout />}>
             <Route index element={<TestsDashboardPage />} />
@@ -322,13 +319,14 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
 
           {/* Coordinator routes */}
           <Route path='coordinator' element={<CoordinatorLayout />}>
-            <Route path='active-runs' element={<ActiveRunsPage />} />
-            <Route path='run-history' element={<RunHistoryPage />} />
-            <Route path='schedules' element={<SchedulesPage />} />
+            <Route path='overview' element={<OverviewPage />} />
+            <Route path='jobs' element={<JobsPage />} />
+            <Route path='jobs/:scheduleId' element={<JobDetailPage />} />
+            <Route path='runs' element={<RunsPage />} />
+            <Route path='runs/:runId' element={<RunDetailPage />} />
             <Route path='recovery' element={<RecoveryPage />} />
             <Route path='queue' element={<QueueHealthPage />} />
-            <Route path='runs/:runId/tree' element={<RunTreePage />} />
-            <Route index element={<Navigate to='active-runs' replace />} />
+            <Route index element={<Navigate to='overview' replace />} />
           </Route>
 
           {/* Observability routes (enterprise only) */}

@@ -13,7 +13,9 @@
 //!   after now* ([`agentic_runtime::cron::next_occurrence_after`]), so
 //!   missed slots during an outage collapse to one catch-up run.
 
-use agentic_runtime::cron::{count_occurrences_between, next_occurrence_after, validate_cron};
+use agentic_runtime::cron::{
+    count_occurrences_between, next_occurrence_after, occurrences_between, validate_cron,
+};
 use agentic_runtime::entity::schedule;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
@@ -22,6 +24,7 @@ use sea_orm::{
 };
 use serde::Deserialize;
 
+use crate::agent_run::{StartAgentRequest, start_agent_run};
 use crate::airway_run::{StartAirwayRequest, start_airway_run};
 use crate::workflow_run::{StartWorkflowRequest, start_workflow_run};
 
@@ -29,10 +32,14 @@ use crate::workflow_run::{StartWorkflowRequest, start_workflow_run};
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScheduleInput {
     pub name: String,
-    /// `"workflow"` | `"airway"`.
+    /// `"workflow"` | `"airway"` | `"agent"`.
     pub target_kind: String,
-    /// `workflow_ref` / `pipeline_ref`, workspace-relative.
+    /// `workflow_ref` / `pipeline_ref` / `agent_id`, workspace-relative.
     pub target_ref: String,
+    /// Free-text question — required when `target_kind = "agent"`,
+    /// ignored otherwise. Stored on `agentic_schedules.question`.
+    #[serde(default)]
+    pub question: Option<String>,
     #[serde(default)]
     pub variables: Option<serde_json::Value>,
     pub cron_expr: String,
@@ -78,15 +85,27 @@ fn validate_input(input: &ScheduleInput) -> Result<(), ScheduleError> {
     if input.name.trim().is_empty() {
         return Err(ScheduleError::Invalid("name must not be empty".into()));
     }
-    if !matches!(input.target_kind.as_str(), "workflow" | "airway") {
+    if !matches!(input.target_kind.as_str(), "workflow" | "airway" | "agent") {
         return Err(ScheduleError::Invalid(format!(
-            "target_kind must be 'workflow' or 'airway', got {:?}",
+            "target_kind must be 'workflow', 'airway', or 'agent', got {:?}",
             input.target_kind
         )));
     }
     if input.target_ref.trim().is_empty() {
         return Err(ScheduleError::Invalid(
             "target_ref must not be empty".into(),
+        ));
+    }
+    if input.target_kind == "agent"
+        && input
+            .question
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+    {
+        return Err(ScheduleError::Invalid(
+            "question must not be empty for agent schedules".into(),
         ));
     }
     validate_cron(&input.cron_expr, &input.timezone).map_err(ScheduleError::Invalid)
@@ -131,6 +150,14 @@ pub async fn create_schedule(
     let next = next_occurrence_after(&input.cron_expr, &input.timezone, chrono::Utc::now())
         .map_err(ScheduleError::Invalid)?
         .fixed_offset();
+    // Only persist a question for agent schedules; workflow / airway
+    // rows ignore it. Trim before storing so accidental whitespace
+    // doesn't slip through.
+    let question = if input.target_kind == "agent" {
+        input.question.as_deref().map(|q| q.trim().to_string())
+    } else {
+        None
+    };
     let model = schedule::ActiveModel {
         id: Set(uuid::Uuid::new_v4().to_string()),
         workspace_id: Set(workspace_id),
@@ -139,6 +166,7 @@ pub async fn create_schedule(
         name: Set(input.name),
         target_kind: Set(input.target_kind),
         target_ref: Set(input.target_ref),
+        question: Set(question),
         variables: Set(input.variables),
         cron_expr: Set(input.cron_expr),
         timezone: Set(input.timezone),
@@ -176,6 +204,11 @@ pub async fn update_schedule(
     } else {
         existing.next_run_at
     };
+    let question = if input.target_kind == "agent" {
+        input.question.as_deref().map(|q| q.trim().to_string())
+    } else {
+        None
+    };
     let model = schedule::ActiveModel {
         id: Set(existing.id),
         workspace_id: Set(existing.workspace_id),
@@ -184,6 +217,7 @@ pub async fn update_schedule(
         name: Set(input.name),
         target_kind: Set(input.target_kind),
         target_ref: Set(input.target_ref),
+        question: Set(question),
         variables: Set(input.variables),
         cron_expr: Set(input.cron_expr),
         timezone: Set(input.timezone),
@@ -227,7 +261,9 @@ pub async fn run_schedule_now(
     id: &str,
 ) -> Result<String, ScheduleError> {
     let s = get_schedule(db, workspace_id, id).await?;
-    match fire_schedule(db, workspace, &s).await {
+    // `manual` distinguishes operator-fired runs from `scheduled` (the tick)
+    // and `backfill` (out-of-band replay) in the run log.
+    match fire_schedule(db, workspace, &s, "manual").await {
         Ok(run_id) => {
             record_fire_success(db, &s.id, &run_id).await;
             Ok(run_id)
@@ -349,7 +385,7 @@ pub async fn tick_schedules(
             );
         }
 
-        match fire_schedule(db, workspace, &s).await {
+        match fire_schedule(db, workspace, &s, "scheduled").await {
             Ok(rid) => {
                 fired += 1;
                 tracing::info!(
@@ -381,11 +417,14 @@ pub async fn tick_schedules(
 
 // ── Shared firing ───────────────────────────────────────────────────────────
 
-/// Seed a `TaskScope::Global` run for `s`. Shared by the tick and run-now.
+/// Seed a `TaskScope::Global` run for `s`. Shared by the tick and run-now;
+/// caller picks the trigger label so the run log can distinguish
+/// `scheduled` / `manual` / `backfill` at a glance.
 async fn fire_schedule(
     db: &DatabaseConnection,
     workspace: &dyn crate::WorkflowWorkspaceContext,
     s: &schedule::Model,
+    trigger: &str,
 ) -> Result<String, String> {
     match s.target_kind.as_str() {
         "workflow" => {
@@ -397,6 +436,10 @@ async fn fire_schedule(
                 invalidate_steps: None,
                 invalidate_iterations: None,
                 thread_id: None,
+                schedule_id: Some(s.id.clone()),
+                trigger: Some(trigger.to_string()),
+                logical_date: None,
+                retry_of: None,
             };
             start_workflow_run(
                 db,
@@ -412,10 +455,39 @@ async fn fire_schedule(
                 pipeline_ref: s.target_ref.clone(),
                 variables: s.variables.clone(),
                 thread_id: None,
+                schedule_id: Some(s.id.clone()),
+                trigger: Some(trigger.to_string()),
+                logical_date: None,
+                retry_of: None,
             };
             start_airway_run(
                 db,
                 workspace,
+                req,
+                agentic_runtime::crud::TaskScope::Global,
+                s.workspace_id,
+            )
+            .await
+            .map_err(|e| e.to_string())
+        }
+        "agent" => {
+            // validate_input guarantees `question` is present + non-empty
+            // for agent schedules, but an old row could legally have NULL
+            // — surface a clear error rather than panicking.
+            let question = s.question.clone().ok_or_else(|| {
+                "agent schedule has no question stored — re-save the schedule".to_string()
+            })?;
+            let req = StartAgentRequest {
+                agent_id: s.target_ref.clone(),
+                question,
+                thread_id: None,
+                schedule_id: Some(s.id.clone()),
+                trigger: Some(trigger.to_string()),
+                logical_date: None,
+                retry_of: None,
+            };
+            start_agent_run(
+                db,
                 req,
                 agentic_runtime::crud::TaskScope::Global,
                 s.workspace_id,
@@ -440,6 +512,222 @@ async fn record_fire_success(db: &DatabaseConnection, schedule_id: &str, run_id:
         .await
     {
         tracing::warn!(target: "scheduler", %schedule_id, error = %e, "record fire success failed");
+    }
+}
+
+/// Merge run-provenance fields (trigger source, logical date, retry-of)
+/// into a run's `metadata` JSONB.
+///
+/// Called from both seed paths so the same convention applies whether the
+/// run was scheduled, manually triggered, backfilled, or retried.
+/// `metadata` is mutated in place — the surrounding seed builds the rest
+/// of the JSON object first; this just stamps the well-known keys when
+/// each field is set.
+pub(crate) fn stamp_trigger_metadata(
+    metadata: &mut serde_json::Value,
+    trigger: &Option<String>,
+    logical_date: &Option<chrono::DateTime<chrono::Utc>>,
+    retry_of: &Option<String>,
+) {
+    let serde_json::Value::Object(map) = metadata else {
+        return;
+    };
+    if let Some(t) = trigger {
+        map.insert("trigger".to_string(), serde_json::Value::String(t.clone()));
+    }
+    if let Some(ld) = logical_date {
+        map.insert(
+            "logical_date".to_string(),
+            serde_json::Value::String(ld.to_rfc3339()),
+        );
+    }
+    if let Some(r) = retry_of {
+        map.insert("retry_of".to_string(), serde_json::Value::String(r.clone()));
+    }
+}
+
+// ── Backfill ────────────────────────────────────────────────────────────────
+//
+// Fill in runs for cron slots the operator wants to replay — typically
+// the missing-slot gaps the dashboard surfaces. Each seeded run carries:
+//
+//   * `schedule_id` — first-class column linking it to the originating job,
+//   * `metadata.trigger = "backfill"` — distinguishes it from `scheduled` /
+//     `manual` runs in the run log,
+//   * `metadata.logical_date` — the cron-scheduled time being replayed,
+//     so date-aware downstream logic can use the intended fire time
+//     rather than `now()`.
+
+/// Inputs for [`backfill_schedule`]. Body of the backfill HTTP endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BackfillRequest {
+    /// Inclusive lower bound of the range to backfill (UTC).
+    pub from: chrono::DateTime<chrono::Utc>,
+    /// Inclusive upper bound; must be strictly greater than `from`.
+    pub to: chrono::DateTime<chrono::Utc>,
+    /// Execution-side throttle hint: `"sequential"` | `"<N>"` | `"all"`.
+    /// Currently advisory — recorded on each run's metadata for a future
+    /// executor that honors per-schedule throttling. Seeding itself is
+    /// sequential.
+    #[serde(default)]
+    pub concurrency: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BackfillResult {
+    /// The runs that were successfully seeded into the queue.
+    pub run_ids: Vec<String>,
+    /// Total cron occurrences enumerated in the requested window. May
+    /// exceed `run_ids.len()` if some seed calls failed.
+    pub planned: usize,
+}
+
+/// Maximum number of slots a single backfill request may seed. Bounds the
+/// blast radius — if an operator requested a year of a 1-minute cron we'd
+/// otherwise enqueue 525,600 runs in one call.
+const BACKFILL_MAX_OCCURRENCES: usize = 500;
+
+/// Seed one run per cron occurrence in `[from, to]`, tagged as backfill.
+/// Returns the seeded `run_id`s. Sequential v1 — see [`BackfillRequest`].
+pub async fn backfill_schedule(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    workspace: &dyn crate::WorkflowWorkspaceContext,
+    schedule_id: &str,
+    request: BackfillRequest,
+) -> Result<BackfillResult, ScheduleError> {
+    let s = get_schedule(db, workspace_id, schedule_id).await?;
+    if request.to <= request.from {
+        return Err(ScheduleError::Invalid(
+            "backfill `to` must be after `from`".into(),
+        ));
+    }
+
+    // The cron evaluator's range is half-open (after, until], so step
+    // back one second on the lower bound so the very first occurrence at
+    // `from` is included — operators expect the inclusive range they typed
+    // in the dialog.
+    let after = request.from - chrono::Duration::seconds(1);
+    let occurrences = occurrences_between(
+        &s.cron_expr,
+        &s.timezone,
+        after,
+        request.to,
+        BACKFILL_MAX_OCCURRENCES,
+    )
+    .map_err(ScheduleError::Invalid)?;
+
+    let planned = occurrences.len();
+    if planned == 0 {
+        return Ok(BackfillResult {
+            run_ids: Vec::new(),
+            planned: 0,
+        });
+    }
+
+    let mut run_ids = Vec::with_capacity(planned);
+    for occurrence in occurrences {
+        let run_id =
+            match seed_backfill_occurrence(db, workspace, &s, occurrence, &request.concurrency)
+                .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "scheduler",
+                        schedule_id = %s.id,
+                        logical_date = %occurrence,
+                        error = %e,
+                        "backfill: seed failed; stopping at first error",
+                    );
+                    if run_ids.is_empty() {
+                        return Err(ScheduleError::Invalid(e));
+                    }
+                    // Partial success: return what we have so the operator
+                    // can act on it rather than losing the seeded runs.
+                    return Ok(BackfillResult { run_ids, planned });
+                }
+            };
+        run_ids.push(run_id);
+    }
+
+    Ok(BackfillResult { run_ids, planned })
+}
+
+async fn seed_backfill_occurrence(
+    db: &DatabaseConnection,
+    workspace: &dyn crate::WorkflowWorkspaceContext,
+    s: &schedule::Model,
+    occurrence: chrono::DateTime<chrono::Utc>,
+    _concurrency: &Option<String>,
+) -> Result<String, String> {
+    match s.target_kind.as_str() {
+        "workflow" => {
+            let req = StartWorkflowRequest {
+                workflow_ref: s.target_ref.clone(),
+                variables: s.variables.clone(),
+                retry_from_run_id: None,
+                cache_enabled: false,
+                invalidate_steps: None,
+                invalidate_iterations: None,
+                thread_id: None,
+                schedule_id: Some(s.id.clone()),
+                trigger: Some("backfill".to_string()),
+                logical_date: Some(occurrence),
+                retry_of: None,
+            };
+            start_workflow_run(
+                db,
+                req,
+                agentic_runtime::crud::TaskScope::Global,
+                s.workspace_id,
+            )
+            .await
+            .map_err(|e| e.to_string())
+        }
+        "airway" => {
+            let req = StartAirwayRequest {
+                pipeline_ref: s.target_ref.clone(),
+                variables: s.variables.clone(),
+                thread_id: None,
+                schedule_id: Some(s.id.clone()),
+                trigger: Some("backfill".to_string()),
+                logical_date: Some(occurrence),
+                retry_of: None,
+            };
+            start_airway_run(
+                db,
+                workspace,
+                req,
+                agentic_runtime::crud::TaskScope::Global,
+                s.workspace_id,
+            )
+            .await
+            .map_err(|e| e.to_string())
+        }
+        "agent" => {
+            let question = s.question.clone().ok_or_else(|| {
+                "agent schedule has no question stored — re-save the schedule".to_string()
+            })?;
+            let req = StartAgentRequest {
+                agent_id: s.target_ref.clone(),
+                question,
+                thread_id: None,
+                schedule_id: Some(s.id.clone()),
+                trigger: Some("backfill".to_string()),
+                logical_date: Some(occurrence),
+                retry_of: None,
+            };
+            start_agent_run(
+                db,
+                req,
+                agentic_runtime::crud::TaskScope::Global,
+                s.workspace_id,
+            )
+            .await
+            .map_err(|e| e.to_string())
+        }
+        other => Err(format!("unknown target_kind {other:?}")),
     }
 }
 

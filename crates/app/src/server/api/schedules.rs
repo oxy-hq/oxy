@@ -23,8 +23,9 @@ use agentic_http::AgenticState;
 use agentic_pipeline::WorkflowWorkspaceContext;
 use agentic_pipeline::platform::PlatformContext;
 use agentic_pipeline::scheduler::{
-    ScheduleError, ScheduleInput, create_schedule, delete_schedule, get_schedule, list_schedules,
-    run_schedule_now, update_schedule,
+    BackfillRequest, BackfillResult, ScheduleError, ScheduleInput, backfill_schedule,
+    create_schedule, delete_schedule, get_schedule, list_schedules, run_schedule_now,
+    update_schedule,
 };
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
@@ -116,6 +117,39 @@ pub async fn run_now(
     let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
     match run_schedule_now(&state.db, workspace_id, workspace.as_ref(), &id).await {
         Ok(run_id) => Json(RunNowResponse { run_id }).into_response(),
+        Err(e) => map_err(e),
+    }
+}
+
+#[derive(Serialize)]
+pub struct BackfillResponse {
+    pub run_ids: Vec<String>,
+    pub planned: usize,
+}
+
+impl From<BackfillResult> for BackfillResponse {
+    fn from(r: BackfillResult) -> Self {
+        Self {
+            run_ids: r.run_ids,
+            planned: r.planned,
+        }
+    }
+}
+
+/// Seed one run per cron occurrence in the requested window, tagged as
+/// backfill. Workspace-admin only — like `run_now`, this fires runs
+/// out-of-band of the normal cadence.
+pub async fn backfill(
+    _: WorkspaceAdmin,
+    Extension(state): Extension<Arc<AgenticState>>,
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Path((workspace_id, id)): Path<(Uuid, String)>,
+    Json(body): Json<BackfillRequest>,
+) -> Response {
+    let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
+    match backfill_schedule(&state.db, workspace_id, workspace.as_ref(), &id, body).await {
+        Ok(result) => Json(BackfillResponse::from(result)).into_response(),
         Err(e) => map_err(e),
     }
 }

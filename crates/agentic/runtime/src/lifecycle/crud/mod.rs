@@ -21,14 +21,18 @@ pub use events::{
     get_max_seq, insert_event,
 };
 pub use queries::{
-    ThreadHistoryTurn, ToolExchangeRow, get_effective_run_state, get_run, get_run_by_thread,
+    AirwayTableSummary, LlmTokenSummary, LlmTokenSummaryByRun, ScheduleDurationBaseline,
+    ThreadHistoryTurn, ToolExchangeRow, WorkflowStepSummary, airway_table_summary_for_run,
+    fetch_duration_baselines, get_effective_run_state, get_run, get_run_by_thread,
     get_runs_by_thread, get_thread_history, get_thread_history_with_events, list_active_runs,
-    list_recent_runs, list_runs_filtered,
+    list_recent_runs, list_runs_filtered, llm_usage_for_run, llm_usage_for_runs, runs_in_workspace,
+    workflow_step_summary_for_run,
 };
 pub use runs::{
-    heartbeat_driver, insert_run, insert_run_with_parent, is_cancel_requested, load_task_tree,
-    release_driver, request_cancel, try_acquire_driver, update_run_done, update_run_failed,
-    update_run_running, update_run_suspended, update_run_terminal_from_events, update_task_status,
+    heartbeat_driver, insert_run, insert_run_with_parent, insert_run_with_schedule,
+    is_cancel_requested, load_task_tree, load_task_tree_in_workspace, release_driver,
+    request_cancel, try_acquire_driver, update_run_done, update_run_failed, update_run_running,
+    update_run_suspended, update_run_terminal_from_events, update_task_status,
 };
 pub use suspension::{get_suspension, upsert_suspension};
 

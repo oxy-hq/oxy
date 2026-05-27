@@ -16,6 +16,12 @@ pub struct Model {
     pub metadata: Option<serde_json::Value>,
     /// Self-referential FK for task tree: the parent run that delegated to this one.
     pub parent_run_id: Option<String>,
+    /// Soft FK → `agentic_schedules.id`. Stamped when a scheduler tick (or
+    /// `run_now`) seeds this run; null for runs that came from any other
+    /// path. Lets per-job history queries filter on a single column and
+    /// lets the dashboard timeline match actual runs back to the schedule
+    /// that produced them.
+    pub schedule_id: Option<String>,
     /// Single source of truth for run lifecycle:
     /// `running`, `awaiting_input`, `delegating`, `done`, `failed`, `cancelled`, `timed_out`
     pub task_status: Option<String>,

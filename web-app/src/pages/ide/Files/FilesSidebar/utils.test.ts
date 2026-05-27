@@ -29,6 +29,12 @@ describe("getObjectName", () => {
   it("strips .app.yml (no regression)", () => {
     expect(getObjectName(makeFile("dashboard.app.yml", "dashboard.app.yml"))).toBe("dashboard");
   });
+
+  it("strips .airway.yml", () => {
+    expect(getObjectName(makeFile("orders_etl.airway.yml", "orders_etl.airway.yml"))).toBe(
+      "orders_etl"
+    );
+  });
 });
 
 describe("groupObjectsByType", () => {

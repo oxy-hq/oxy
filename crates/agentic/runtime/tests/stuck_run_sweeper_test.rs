@@ -494,3 +494,160 @@ async fn cleanup_stale_runs_preserves_pending_global_seed() {
         "find_pending_global_runs must include the pending Global seed"
     );
 }
+
+// ── find_pending_global_runs source-type coverage ────────────────────────────
+//
+// Regression: an earlier version of `find_pending_global_runs` hard-coded
+// `source_type IN ('workflow', 'airway')`. When scheduled agent support
+// landed, the seed function correctly enqueued a `TaskSpec::Agent` with
+// `TaskScope::Global` (source_type="analytics") — but the latency worker's
+// SQL silently filtered it out, so the queue row sat `queued` forever and
+// the run stuck on the dashboard. The contract is: this predicate must be
+// type-agnostic, because by construction the queued+!scope_owned row means
+// no worker has claimed the spec yet (no "double-drive an LLM" risk that
+// would justify a type filter, unlike `find_stuck_runs`).
+
+/// Helper: seed an `agentic_runs` row + `queued scope_owned=false`
+/// queue entry for a given source_type, mirroring what `start_*_run`
+/// produces. Returns the run id.
+async fn seed_pending_global(db: &DatabaseConnection, source_type: &str) -> String {
+    let run_id = format!("pending-{source_type}-{}", uuid::Uuid::new_v4());
+    crud::insert_run(db, &run_id, "Q", None, source_type, None, uuid::Uuid::nil())
+        .await
+        .unwrap();
+    // The spec body is irrelevant to find_pending_global_runs (it reads
+    // `queue_status` + `scope_owned` + `source_type` from the run row);
+    // we only need *some* queued+!scope_owned row at task_id=run_id.
+    let spec = match source_type {
+        "workflow" => TaskSpec::Workflow {
+            workflow_ref: "dummy.workflow.yml".into(),
+            variables: None,
+            retry_from_run_id: None,
+            cache_enabled: false,
+            body: None,
+            initial_render_context: None,
+        },
+        "airway" => TaskSpec::Airway {
+            pipeline_ref: "dummy.airway.yml".into(),
+            variables: None,
+        },
+        "analytics" => TaskSpec::Agent {
+            agent_id: "agents/dummy.agentic.yml".into(),
+            question: "Q".into(),
+            extra: None,
+        },
+        other => panic!("unsupported source_type {other:?}"),
+    };
+    crud::enqueue_task(
+        db,
+        &run_id,
+        &run_id,
+        None,
+        &spec,
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .unwrap();
+    run_id
+}
+
+/// The contract: the latency-worker selection must be type-agnostic.
+/// Workflow, airway, AND analytics (agent) freshly-seeded Global runs
+/// must all be picked up. Failing this test means one source type sits
+/// `queued` forever and the dashboard shows it stuck.
+#[tokio::test(flavor = "multi_thread")]
+async fn find_pending_global_runs_picks_up_all_source_types() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+
+    let workflow = seed_pending_global(&db, "workflow").await;
+    let airway = seed_pending_global(&db, "airway").await;
+    let analytics = seed_pending_global(&db, "analytics").await;
+
+    let pending = crud::find_pending_global_runs(&db, Some(uuid::Uuid::nil()))
+        .await
+        .unwrap();
+
+    // Assert each individually so a failure tells you *which* source type
+    // regressed rather than a vague "missing some rows".
+    for (label, run_id) in [
+        ("workflow", &workflow),
+        ("airway", &airway),
+        ("analytics", &analytics),
+    ] {
+        assert!(
+            pending.iter().any(|r| &r.run_id == run_id),
+            "find_pending_global_runs must include the {label} pending Global \
+             seed (run_id={run_id}); excluding this source type means \
+             scheduled {label} runs sit queued forever",
+        );
+    }
+}
+
+/// Sanity bookend: a `queued scope_owned=true` row (interactive run's
+/// not-yet-claimed task) must NOT be returned even for an analytics
+/// source. The latency worker is the Global / scheduler path; the
+/// scoped path has its own co-located coordinator. Without this guard
+/// the worker would race the per-request coordinator and double-drive.
+#[tokio::test(flavor = "multi_thread")]
+async fn find_pending_global_runs_excludes_scope_owned_for_all_source_types() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+
+    for source_type in ["workflow", "airway", "analytics"] {
+        let run_id = format!("scoped-{source_type}-{}", uuid::Uuid::new_v4());
+        crud::insert_run(
+            &db,
+            &run_id,
+            "Q",
+            None,
+            source_type,
+            None,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .unwrap();
+        let spec = match source_type {
+            "workflow" => TaskSpec::Workflow {
+                workflow_ref: "dummy.workflow.yml".into(),
+                variables: None,
+                retry_from_run_id: None,
+                cache_enabled: false,
+                body: None,
+                initial_render_context: None,
+            },
+            "airway" => TaskSpec::Airway {
+                pipeline_ref: "dummy.airway.yml".into(),
+                variables: None,
+            },
+            _ => TaskSpec::Agent {
+                agent_id: "agents/dummy.agentic.yml".into(),
+                question: "Q".into(),
+                extra: None,
+            },
+        };
+        crud::enqueue_task(
+            &db,
+            &run_id,
+            &run_id,
+            None,
+            &spec,
+            None,
+            crud::TaskScope::Scoped,
+        )
+        .await
+        .unwrap();
+
+        let pending = crud::find_pending_global_runs(&db, Some(uuid::Uuid::nil()))
+            .await
+            .unwrap();
+        assert!(
+            !pending.iter().any(|r| r.run_id == run_id),
+            "find_pending_global_runs must NOT return scoped ({source_type}) \
+             queue rows; that race would poach a live coordinator's task",
+        );
+    }
+}

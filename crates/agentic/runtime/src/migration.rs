@@ -30,6 +30,8 @@ impl MigratorTrait for RuntimeMigrator {
             Box::new(AddScheduleWorkspaceId),
             Box::new(AddRunWorkspaceId),
             Box::new(AddScheduleMissedRuns),
+            Box::new(AddRunScheduleId),
+            Box::new(AddScheduleQuestion),
         ]
     }
 
@@ -1609,6 +1611,127 @@ impl MigrationTrait for AddScheduleMissedRuns {
                     )
                     .await?;
             }
+        }
+        Ok(())
+    }
+}
+
+// ── m20260524_000001 — link runs to the schedule that produced them ─────────
+//
+// Soft FK from `agentic_runs.schedule_id` → `agentic_schedules.id`. Both
+// tables live in this runtime crate (not a domain), so this link is
+// structural — the same flavor as `parent_run_id` — rather than a
+// domain-specific column leaking onto the generic run row.
+//
+// Set by the scheduler at fire time (and by `run_now`) so:
+//   * per-job run history queries can do `WHERE schedule_id = $1` with an
+//     index instead of scanning all of `agentic_runs`,
+//   * the dashboard timeline can match actual runs back to the schedule
+//     that fired them and surface missed slots.
+//
+// Soft FK (no constraint) — consistent with `parent_run_id` / `workspace_id`.
+// Index covers the dominant access pattern: newest runs for a given schedule.
+
+struct AddRunScheduleId;
+
+impl MigrationName for AddRunScheduleId {
+    fn name(&self) -> &str {
+        "m20260524_000001_add_run_schedule_id"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddRunScheduleId {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_runs", "schedule_id").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .add_column(ColumnDef::new(Alias::new("schedule_id")).string().null())
+                        .to_owned(),
+                )
+                .await?;
+        }
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_agentic_runs_schedule_id_created_at")
+                    .table(AgenticRun::Table)
+                    .col(Alias::new("schedule_id"))
+                    .col((Alias::new("created_at"), IndexOrder::Desc))
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_agentic_runs_schedule_id_created_at")
+                    .table(AgenticRun::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        if column_exists(manager, "agentic_runs", "schedule_id").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticRun::Table)
+                        .drop_column(Alias::new("schedule_id"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+// ── Migration 20: agentic_schedules.question (agent target kind) ──────────────
+//
+// Free-text question stored on the schedule row. Required when
+// `target_kind = 'agent'` — each fire seeds an analytics run with this
+// question; ignored for workflow / airway schedules. NULL allowed so
+// existing rows back-fill cleanly.
+
+struct AddScheduleQuestion;
+
+impl MigrationName for AddScheduleQuestion {
+    fn name(&self) -> &str {
+        "m20260526_000001_add_schedule_question"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddScheduleQuestion {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_schedules", "question").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticSchedule::Table)
+                        .add_column(ColumnDef::new(Alias::new("question")).text().null())
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_schedules", "question").await? {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(AgenticSchedule::Table)
+                        .drop_column(Alias::new("question"))
+                        .to_owned(),
+                )
+                .await?;
         }
         Ok(())
     }

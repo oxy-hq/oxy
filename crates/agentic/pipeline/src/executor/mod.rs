@@ -51,17 +51,23 @@ impl TaskExecutor for PipelineTaskExecutor {
                 question,
                 extra,
             } => {
-                self.execute_agent(
-                    agent_id,
-                    question,
-                    if is_child {
-                        Some(assignment.run_id.clone())
-                    } else {
-                        None
-                    },
-                    extra.as_ref(),
-                )
-                .await
+                // Top-level scheduled agent runs pre-seed the run row in
+                // `start_agent_run` (mirrors the workflow / airway
+                // pattern). Detect that case by checking the DB and pass
+                // `existing_run_id` so the analytics builder doesn't try
+                // to insert a duplicate row.
+                let pre_seeded = !is_child
+                    && agentic_runtime::crud::get_run(&self.db, &assignment.run_id)
+                        .await
+                        .map_err(|e| format!("failed to load run: {e}"))?
+                        .is_some();
+                let existing_run_id = if is_child || pre_seeded {
+                    Some(assignment.run_id.clone())
+                } else {
+                    None
+                };
+                self.execute_agent(agent_id, question, existing_run_id, extra.as_ref())
+                    .await
             }
 
             TaskSpec::Workflow {

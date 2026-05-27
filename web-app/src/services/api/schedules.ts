@@ -1,4 +1,10 @@
-import type { RunNowResponse, Schedule, ScheduleInput } from "@/types/schedule";
+import type {
+  BackfillInput,
+  BackfillResponse,
+  RunNowResponse,
+  Schedule,
+  ScheduleInput
+} from "@/types/schedule";
 import { apiClient } from "./axios";
 
 /** Client for the `/agentic-schedules` HTTP surface (mounted per workspace). */
@@ -33,6 +39,18 @@ export class ScheduleService {
 
   static async runNow(projectId: string, id: string): Promise<RunNowResponse> {
     const { data } = await apiClient.post(`${ScheduleService.base(projectId)}/${id}/run-now`);
+    return data;
+  }
+
+  static async backfill(
+    projectId: string,
+    id: string,
+    body: BackfillInput
+  ): Promise<BackfillResponse> {
+    const { data } = await apiClient.post(
+      `${ScheduleService.base(projectId)}/${id}/backfill`,
+      body
+    );
     return data;
   }
 }

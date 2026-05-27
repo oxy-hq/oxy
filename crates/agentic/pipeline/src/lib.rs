@@ -4,13 +4,16 @@
 //! solver building, and pipeline startup. Both the HTTP layer and the CLI
 //! use this crate — no domain logic is duplicated.
 
+pub mod agent_run;
 pub mod airway_run;
 pub mod executor;
 pub mod pipeline_ref;
 pub mod platform;
 pub mod recovery;
+pub mod retry;
 pub mod revert;
 pub mod scheduler;
+pub mod usage;
 pub mod workflow_run;
 
 use std::collections::HashMap;

@@ -342,7 +342,14 @@ pub struct QueueStats {
     pub dead_tasks: Vec<QueueTaskRow>,
 }
 
-pub async fn get_queue_stats(db: &DatabaseConnection) -> Result<QueueStats, DbErr> {
+/// **Workspace-scoped** by joining `agentic_task_queue.run_id` →
+/// `agentic_runs.workspace_id`. The queue table itself doesn't carry a
+/// `workspace_id` column today; the JOIN keeps the dashboard
+/// tenant-correct without a schema change.
+pub async fn get_queue_stats(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+) -> Result<QueueStats, DbErr> {
     use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
 
     // Count by status in a single query.
@@ -352,10 +359,14 @@ pub async fn get_queue_stats(db: &DatabaseConnection) -> Result<QueueStats, DbEr
         cnt: i64,
     }
 
-    let rows = StatusCount::find_by_statement(Statement::from_string(
+    let rows = StatusCount::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT queue_status, COUNT(*) as cnt FROM agentic_task_queue GROUP BY queue_status"
-            .to_string(),
+        "SELECT q.queue_status, COUNT(*) as cnt \
+         FROM agentic_task_queue q \
+         INNER JOIN agentic_runs r ON r.id = q.run_id \
+         WHERE r.workspace_id = $1 \
+         GROUP BY q.queue_status",
+        [workspace_id.into()],
     ))
     .all(db)
     .await?;
@@ -385,14 +396,16 @@ pub async fn get_queue_stats(db: &DatabaseConnection) -> Result<QueueStats, DbEr
     }
 
     // Fetch stale tasks (claimed but heartbeat expired).
-    stats.stale_tasks = task_queue::Model::find_by_statement(Statement::from_string(
+    stats.stale_tasks = task_queue::Model::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT * FROM agentic_task_queue \
-         WHERE queue_status = 'claimed' \
-           AND last_heartbeat < now() - (visibility_timeout_secs || ' seconds')::interval \
-         ORDER BY last_heartbeat \
-         LIMIT 50"
-            .to_string(),
+        "SELECT q.* FROM agentic_task_queue q \
+         INNER JOIN agentic_runs r ON r.id = q.run_id \
+         WHERE r.workspace_id = $1 \
+           AND q.queue_status = 'claimed' \
+           AND q.last_heartbeat < now() - (q.visibility_timeout_secs || ' seconds')::interval \
+         ORDER BY q.last_heartbeat \
+         LIMIT 50",
+        [workspace_id.into()],
     ))
     .all(db)
     .await?
@@ -401,14 +414,19 @@ pub async fn get_queue_stats(db: &DatabaseConnection) -> Result<QueueStats, DbEr
     .collect();
 
     // Fetch dead-lettered tasks (most recent first).
-    stats.dead_tasks = task_queue::Entity::find()
-        .filter(task_queue::Column::QueueStatus.eq("dead"))
-        .order_by_desc(task_queue::Column::UpdatedAt)
-        .all(db)
-        .await?
-        .into_iter()
-        .map(QueueTaskRow::from)
-        .collect();
+    stats.dead_tasks = task_queue::Model::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT q.* FROM agentic_task_queue q \
+         INNER JOIN agentic_runs r ON r.id = q.run_id \
+         WHERE r.workspace_id = $1 AND q.queue_status = 'dead' \
+         ORDER BY q.updated_at DESC",
+        [workspace_id.into()],
+    ))
+    .all(db)
+    .await?
+    .into_iter()
+    .map(QueueTaskRow::from)
+    .collect();
 
     Ok(stats)
 }

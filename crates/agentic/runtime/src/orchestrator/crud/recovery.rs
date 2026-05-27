@@ -387,6 +387,16 @@ pub async fn find_stuck_runs(
 /// freshly-seeded Global runs at claim-time (cron / `run-now`) so the
 /// periodic loop's grace window doesn't gate them.
 ///
+/// **Source-type policy:** this query is type-agnostic on purpose. The
+/// "freshly seeded, never claimed" precondition (`queue_status='queued'`
+/// + `scope_owned=false`) means no worker has yet executed the spec, so
+/// the LLM-double-spend concern that justifies `find_stuck_runs`'s
+/// `('workflow', 'airway')` filter does not apply here. Any new top-level
+/// source type (analytics agents, future kinds) must be picked up by
+/// this latency worker — otherwise scheduled / run-now runs sit
+/// `queued` forever. Tests in `latency_worker_picks_up_all_source_types`
+/// enforce this contract.
+///
 /// `workspace_id` — when `Some`, only return pending rows owned by that
 /// workspace. When `None`, returns every workspace's pending rows; the
 /// caller (e.g. the cloud-mode latency worker) is responsible for
@@ -416,8 +426,7 @@ pub async fn find_pending_global_runs(
         "\
         SELECT r.id, r.task_status, r.workspace_id \
         FROM agentic_runs r \
-        WHERE r.source_type IN ('workflow', 'airway') \
-          AND r.parent_run_id IS NULL \
+        WHERE r.parent_run_id IS NULL \
           AND r.task_status IN ('running', 'delegating', 'waiting_on_child', 'waiting_on_children', 'needs_resume', 'shutdown') \
           AND (r.driver_id IS NULL \
                OR r.driver_heartbeat_at IS NULL \

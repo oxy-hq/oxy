@@ -236,6 +236,7 @@ pub async fn insert_child_run(
         source_type: Set(Some(source_type.to_string())),
         metadata: Set(None),
         parent_run_id: Set(Some(parent_run_id.to_string())),
+        schedule_id: Set(None),
         task_status: Set(Some("running".to_string())),
         task_metadata: Set(task_metadata),
         attempt: Set(attempt),

@@ -114,6 +114,7 @@ fn input(name: &str, target_ref: &str, cron_expr: &str) -> ScheduleInput {
         name: name.to_string(),
         target_kind: "workflow".to_string(),
         target_ref: target_ref.to_string(),
+        question: None,
         variables: None,
         cron_expr: cron_expr.to_string(),
         timezone: "UTC".to_string(),
@@ -389,4 +390,205 @@ async fn multi_tenant_tick_isolation() {
     assert!(list_a.iter().any(|s| s.id == s_a.id));
     assert!(!list_a.iter().any(|s| s.id == s_b.id));
     assert!(list_b.iter().any(|s| s.id == s_b.id));
+}
+
+// ── Agent target kind ────────────────────────────────────────────────────────
+
+fn agent_input(name: &str, agent_ref: &str, question: &str, cron_expr: &str) -> ScheduleInput {
+    ScheduleInput {
+        name: name.to_string(),
+        target_kind: "agent".to_string(),
+        target_ref: agent_ref.to_string(),
+        question: Some(question.to_string()),
+        variables: None,
+        cron_expr: cron_expr.to_string(),
+        timezone: "UTC".to_string(),
+        enabled: true,
+    }
+}
+
+/// `target_kind="agent"` requires a non-empty `question`. Empty / missing
+/// surfaces as `Invalid` from `create_schedule` before any DB write.
+#[tokio::test]
+async fn agent_schedule_requires_question() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    // Missing question entirely.
+    let mut no_q = agent_input("nq", "agents/foo", "", "0 9 * * *");
+    no_q.question = None;
+    assert!(matches!(
+        create_schedule(&db, ws, no_q).await,
+        Err(ScheduleError::Invalid(_))
+    ));
+
+    // Whitespace-only question.
+    assert!(matches!(
+        create_schedule(&db, ws, agent_input("ws", "agents/foo", "   ", "0 9 * * *")).await,
+        Err(ScheduleError::Invalid(_))
+    ));
+
+    // Workflow / airway schedules MAY omit `question`.
+    let mut wf = input("wf", &uniq_ref(), "0 9 * * *");
+    wf.question = None;
+    create_schedule(&db, ws, wf)
+        .await
+        .expect("workflow schedule must not require question");
+}
+
+/// `run_schedule_now` for an `agent` schedule seeds an analytics run:
+/// `agentic_runs` row with `source_type="analytics"`, `schedule_id`
+/// linked back to the schedule, metadata stamped with `agent_id` +
+/// `question`, and an `analytics_run_extensions` row with the
+/// `agent_id`. The queue row is `Global` (driverless) like the
+/// workflow/airway paths.
+#[tokio::test]
+async fn agent_run_now_seeds_analytics_run() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+    // Use a unique agent_id so we can isolate this run from sibling tests
+    // running against the shared testcontainer.
+    let agent_id = format!("agents/sched-{}.agentic.yml", uuid::Uuid::new_v4());
+    let question = "What is yesterday's revenue?";
+
+    let s = create_schedule(
+        &db,
+        ws,
+        agent_input("agent-nightly", &agent_id, question, "0 9 * * *"),
+    )
+    .await
+    .unwrap();
+    let before_next = s.next_run_at;
+
+    let run_id = run_schedule_now(&db, ws, &FakeWorkspace, &s.id)
+        .await
+        .expect("run_now succeeds");
+
+    // The agentic_runs row: analytics source, linked to the schedule,
+    // question stored verbatim, metadata.agent_id populated.
+    #[derive(FromQueryResult)]
+    struct RunRow {
+        source_type: Option<String>,
+        schedule_id: Option<String>,
+        question: String,
+        metadata: Option<serde_json::Value>,
+    }
+    let row = RunRow::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT source_type, schedule_id, question, metadata \
+         FROM agentic_runs WHERE id = $1",
+        [run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("run row exists for the seeded agent run");
+    assert_eq!(row.source_type.as_deref(), Some("analytics"));
+    assert_eq!(row.schedule_id.as_deref(), Some(s.id.as_str()));
+    assert_eq!(row.question, question);
+    let meta = row.metadata.expect("metadata stamped");
+    assert_eq!(
+        meta.get("agent_id").and_then(|v| v.as_str()),
+        Some(agent_id.as_str())
+    );
+    assert_eq!(
+        meta.get("question").and_then(|v| v.as_str()),
+        Some(question)
+    );
+    // `run_now` stamps trigger="manual" (vs "scheduled" / "backfill").
+    assert_eq!(meta.get("trigger").and_then(|v| v.as_str()), Some("manual"));
+
+    // analytics_run_extensions row: agent_id matches what start_agent_run
+    // wrote, no spec_hint yet (the run hasn't executed).
+    #[derive(FromQueryResult)]
+    struct Ext {
+        agent_id: String,
+    }
+    let ext = Ext::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT agent_id FROM analytics_run_extensions WHERE run_id = $1",
+        [run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("analytics extension row exists");
+    assert_eq!(ext.agent_id, agent_id);
+
+    // Queue row: Global (scope_owned=false), queued — driven by the
+    // standalone consumer, not a co-located coordinator.
+    #[derive(FromQueryResult)]
+    struct Q {
+        scope_owned: bool,
+        queue_status: String,
+    }
+    let q = Q::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT scope_owned, queue_status FROM agentic_task_queue WHERE task_id = $1",
+        [run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("queue row for the seeded run");
+    assert!(!q.scope_owned, "agent run-now seeds a Global task");
+    assert_eq!(q.queue_status, "queued");
+
+    // Cadence is untouched — `run_now` is out-of-band — and `last_run_id`
+    // points at the freshly seeded run.
+    let after = get_schedule(&db, ws, &s.id).await.unwrap();
+    assert_eq!(
+        after.next_run_at, before_next,
+        "agent run-now must not advance next_run_at"
+    );
+    assert_eq!(after.last_run_id.as_deref(), Some(run_id.as_str()));
+}
+
+/// Scheduler tick for a due agent schedule fires `start_agent_run` and
+/// links the seeded run back via `schedule_id`. Confirms the agent arm
+/// of `fire_schedule` participates in the CAS / cadence-advance flow.
+#[tokio::test]
+async fn agent_schedule_tick_fires_once() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+    let agent_id = format!("agents/tick-{}.agentic.yml", uuid::Uuid::new_v4());
+
+    let s = create_schedule(
+        &db,
+        ws,
+        agent_input("agent-tick", &agent_id, "Daily standup", "0 9 * * *"),
+    )
+    .await
+    .unwrap();
+    force_due(&db, &s.id, 3600).await;
+
+    let fired = tick_schedules(&db, ws, &FakeWorkspace).await;
+    assert!(fired >= 1, "tick fired at least one schedule");
+
+    // Exactly one analytics run linked to this schedule.
+    #[derive(FromQueryResult)]
+    struct Row {
+        id: String,
+        source_type: Option<String>,
+        trigger: Option<String>,
+    }
+    let runs = Row::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT id, source_type, metadata->>'trigger' AS trigger \
+         FROM agentic_runs WHERE schedule_id = $1",
+        [s.id.clone().into()],
+    ))
+    .all(&db)
+    .await
+    .unwrap();
+    assert_eq!(runs.len(), 1, "exactly one run seeded for this schedule");
+    assert_eq!(runs[0].source_type.as_deref(), Some("analytics"));
+    // Tick stamps trigger="scheduled" (vs "manual" / "backfill").
+    assert_eq!(runs[0].trigger.as_deref(), Some("scheduled"));
+
+    // Cadence advanced past now.
+    let after = get_schedule(&db, ws, &s.id).await.unwrap();
+    assert!(after.next_run_at > agentic_runtime::crud::now());
+    assert!(after.last_fired_at.is_some());
+    assert_eq!(after.last_run_id.as_deref(), Some(runs[0].id.as_str()));
 }

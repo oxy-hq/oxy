@@ -108,6 +108,10 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
         pipeline_ref: args.pipeline_ref.clone(),
         variables: None,
         thread_id: None,
+        schedule_id: None,
+        trigger: None,
+        logical_date: None,
+        retry_of: None,
     };
 
     // Single-process CLI: a co-located scoped coordinator drives this run.

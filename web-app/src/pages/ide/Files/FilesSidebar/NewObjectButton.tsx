@@ -2,6 +2,7 @@ import {
   AppWindow,
   BookOpen,
   ChartBar,
+  Database,
   Eye,
   FlaskConical,
   Layers2,
@@ -38,6 +39,7 @@ import useSaveFile from "@/hooks/api/files/useSaveFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import NewPipelineDialog from "@/pages/ide/pipelines/components/NewPipelineDialog";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
@@ -134,6 +136,25 @@ views: []
   }
 ];
 
+/** Recursive walk that gathers existing pipeline names (the basename of
+ *  every `*.airway.yml` in the tree, with the suffix stripped). The
+ *  pipeline create dialog uses these for collision detection so a user
+ *  can't shadow an existing pipeline. */
+const PIPELINE_SUFFIX = /\.airway\.(yml|yaml)$/;
+const collectPipelineNames = (nodes: FileTreeModel[]): string[] => {
+  const out: string[] = [];
+  const walk = (items: FileTreeModel[]): void => {
+    for (const item of items) {
+      if (!item.is_dir && PIPELINE_SUFFIX.test(item.name)) {
+        out.push(item.name.replace(PIPELINE_SUFFIX, ""));
+      }
+      if (item.children?.length) walk(item.children);
+    }
+  };
+  walk(nodes);
+  return out;
+};
+
 interface NewObjectButtonProps {
   disabled?: boolean;
 }
@@ -144,6 +165,11 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  // Pipelines (`.airway.yml`) use a richer source → destination →
+  // details wizard rather than the generic name-prompt dialog, so
+  // they get their own dialog open state controlled from this same
+  // dropdown.
+  const [pipelineDialogOpen, setPipelineDialogOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: fileTree, refetch } = useFileTree();
@@ -293,8 +319,22 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
               ))}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          {/* Pipelines use a richer wizard (source → destination → details)
+              instead of the generic name-prompt — opens its dedicated
+              dialog rather than the shared one below. */}
+          <DropdownMenuItem className='cursor-pointer' onClick={() => setPipelineDialogOpen(true)}>
+            <Database className='mr-2 h-4 w-4' />
+            Pipeline
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <NewPipelineDialog
+        open={pipelineDialogOpen}
+        onOpenChange={setPipelineDialogOpen}
+        existingNames={collectPipelineNames(fileTree?.primary ?? [])}
+        onCreated={refetch}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className='sm:max-w-md'>

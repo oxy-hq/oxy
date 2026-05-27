@@ -312,10 +312,17 @@ async fn cmd_run(args: RunArgs) -> Result<(), OxyError> {
 async fn cmd_list(args: ListArgs) -> Result<(), OxyError> {
     let db = connect_db().await?;
 
-    // List recent runs (all runs, not just by thread).
-    let runs = crud::list_recent_runs(&db, args.limit)
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("db error: {e}")))?;
+    // List recent runs (all runs, not just by thread). CLI is local-mode
+    // only, so the workspace id is fixed to `LOCAL_WORKSPACE_ID` —
+    // matches what `start_workflow_run` / `start_airway_run` seed with
+    // from the CLI entry points.
+    let runs = crud::list_recent_runs(
+        &db,
+        crate::server::serve_mode::LOCAL_WORKSPACE_ID,
+        args.limit,
+    )
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("db error: {e}")))?;
 
     if args.json {
         let items: Vec<Value> = runs
@@ -613,7 +620,9 @@ async fn cmd_status(args: StatusArgs) -> Result<(), OxyError> {
         let runs = if args.active {
             get_active_runs(&db).await?
         } else {
-            crud::list_recent_runs(&db, 20).await.map_err(db_err)?
+            crud::list_recent_runs(&db, crate::server::serve_mode::LOCAL_WORKSPACE_ID, 20)
+                .await
+                .map_err(db_err)?
         };
 
         if args.json {

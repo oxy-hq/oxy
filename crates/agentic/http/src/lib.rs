@@ -84,6 +84,7 @@ where
             "/coordinator/runs/{id}/tree",
             get(coordinator::get_run_tree),
         )
+        .route("/coordinator/runs/{id}/retry", post(coordinator::retry_run))
         .route(
             "/coordinator/recovery",
             get(coordinator::get_recovery_stats),

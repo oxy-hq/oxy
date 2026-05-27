@@ -1,0 +1,80 @@
+import { AlertTriangle, CheckCircle2, History } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { Button } from "@/components/ui/shadcn/button";
+import { cn } from "@/libs/shadcn/utils";
+import type { Schedule } from "@/types/schedule";
+import { BackfillDialog } from "../../../components/BackfillDialog";
+import { formatTimestamp } from "../../../components/utils";
+
+/**
+ * The reliability side of a job — last error, missed-run coverage, and the
+ * backfill entry point. A missing run is silent; this card makes the gap as
+ * visible as a failure.
+ */
+export const JobHealthCard: React.FC<{ schedule: Schedule; canManage: boolean }> = ({
+  schedule,
+  canManage
+}) => {
+  const [backfillOpen, setBackfillOpen] = useState(false);
+
+  return (
+    <div className='rounded-xl border border-border bg-card'>
+      <div className='flex items-center justify-between border-border border-b px-3 py-2'>
+        <h3 className='font-semibold text-sm'>Health &amp; coverage</h3>
+        {canManage && (
+          <Button
+            size='sm'
+            variant='outline'
+            data-testid='coordinator-backfill-button'
+            onClick={() => setBackfillOpen(true)}
+          >
+            <History className='h-4 w-4' />
+            Backfill
+          </Button>
+        )}
+      </div>
+      <div className='flex flex-col gap-3 p-3'>
+        {schedule.last_error ? (
+          <div className='flex gap-2 rounded-md bg-destructive/10 px-3 py-2'>
+            <AlertTriangle className='mt-0.5 h-4 w-4 shrink-0 text-destructive' />
+            <div className='min-w-0'>
+              <p className='font-medium text-destructive text-sm'>Last fire failed</p>
+              <p className='break-words text-muted-foreground text-xs'>{schedule.last_error}</p>
+            </div>
+          </div>
+        ) : (
+          <div className='flex items-center gap-2 text-sm'>
+            <CheckCircle2 className='h-4 w-4 text-success' />
+            <span>No fire errors — the scheduler is firing this job cleanly.</span>
+          </div>
+        )}
+
+        <div className='rounded-md border border-border px-3 py-2'>
+          <div className='flex items-baseline justify-between'>
+            <span className='text-muted-foreground text-xs uppercase tracking-wide'>
+              Missed occurrences
+            </span>
+            <span
+              className={cn(
+                "font-semibold text-lg tabular-nums",
+                schedule.missed_runs > 0 ? "text-warning" : "text-foreground"
+              )}
+            >
+              {schedule.missed_runs}
+            </span>
+          </div>
+          <p className='mt-1 text-muted-foreground text-xs'>
+            {schedule.missed_runs > 0
+              ? `Slots skipped during scheduler downtime (last detected ${formatTimestamp(
+                  schedule.last_missed_at
+                )}). Policy is run-once-then-resume — only the first missed slot fires automatically; backfill the rest.`
+              : "Every scheduled slot has fired on time."}
+          </p>
+        </div>
+      </div>
+
+      <BackfillDialog open={backfillOpen} onOpenChange={setBackfillOpen} schedule={schedule} />
+    </div>
+  );
+};

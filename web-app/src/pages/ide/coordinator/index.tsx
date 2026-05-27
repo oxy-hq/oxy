@@ -1,131 +1,126 @@
-import { CalendarClock, ChevronsRight, HeartPulse, Inbox, List, Radio } from "lucide-react";
+import { HeartPulse, Inbox, Radar, Settings2 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { Button } from "@/components/ui/shadcn/button";
 import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup
-} from "@/components/ui/shadcn/resizable";
-import {
-  SidebarContent,
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem
-} from "@/components/ui/shadcn/sidebar";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@/components/ui/shadcn/dropdown-menu";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
-import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 
-const CoordinatorSidebar: React.FC<{
-  setSidebarOpen: (open: boolean) => void;
-}> = ({ setSidebarOpen }) => {
-  const location = useLocation();
-  const { project } = useCurrentProjectBranch();
-  const projectId = project.id;
-  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
-  const ws = ROUTES.ORG(orgSlug).WORKSPACE(projectId);
+/**
+ * Coordinator → Orchestrator dashboard shell.
+ *
+ * Three domain tabs (Overview / Jobs / Runs). Job-detail and run-detail are
+ * drill-down pages reached by clicking through, never tabs. Recovery and
+ * Queue Health are operator internals — tucked behind a System menu so the
+ * primary nav stays focused on the three questions the tabs answer.
+ */
 
-  return (
-    <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
-      <SidebarHeader title='Coordinator' onCollapse={() => setSidebarOpen(false)} />
-      <SidebarContent className='h-full flex-1 overflow-y-auto'>
-        <SidebarGroup className='px-1 pt-2'>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={location.pathname.includes("/coordinator/active-runs")}
-              >
-                <Link to={ws.IDE.COORDINATOR.ACTIVE_RUNS}>
-                  <Radio className='h-4 w-4' />
-                  <span>Active Runs</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={location.pathname.includes("/coordinator/run-history")}
-              >
-                <Link to={ws.IDE.COORDINATOR.RUN_HISTORY}>
-                  <List className='h-4 w-4' />
-                  <span>Run History</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={location.pathname.includes("/coordinator/schedules")}
-              >
-                <Link to={ws.IDE.COORDINATOR.SCHEDULES}>
-                  <CalendarClock className='h-4 w-4' />
-                  <span>Schedules</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={location.pathname.includes("/coordinator/recovery")}
-              >
-                <Link to={ws.IDE.COORDINATOR.RECOVERY}>
-                  <HeartPulse className='h-4 w-4' />
-                  <span>Recovery</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={location.pathname.includes("/coordinator/queue")}
-              >
-                <Link to={ws.IDE.COORDINATOR.QUEUE}>
-                  <Inbox className='h-4 w-4' />
-                  <span>Queue Health</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-      </SidebarContent>
-    </div>
-  );
-};
+interface TabDef {
+  label: string;
+  to: string;
+  /** Pathname fragment that keeps this tab lit (incl. its drill-downs). */
+  match: string;
+  /** `data-testid` for agentic browser flows — the load-bearing nav anchor. */
+  testId: string;
+}
+
+const CoordinatorTab: React.FC<{ tab: TabDef; active: boolean }> = ({ tab, active }) => (
+  <Link
+    to={tab.to}
+    data-testid={tab.testId}
+    className={cn(
+      "relative -mb-px border-b-2 px-1 py-2.5 font-medium text-sm transition-colors",
+      active
+        ? "border-primary text-foreground"
+        : "border-transparent text-muted-foreground hover:text-foreground"
+    )}
+  >
+    {tab.label}
+  </Link>
+);
 
 const CoordinatorLayout: React.FC = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const location = useLocation();
+  const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
+  const coord = ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.COORDINATOR;
+
+  const tabs: TabDef[] = [
+    {
+      label: "Overview",
+      to: coord.OVERVIEW,
+      match: "/coordinator/overview",
+      testId: "coordinator-tab-overview"
+    },
+    {
+      label: "Jobs",
+      to: coord.JOBS,
+      match: "/coordinator/jobs",
+      testId: "coordinator-tab-jobs"
+    },
+    {
+      label: "Runs",
+      to: coord.RUNS,
+      match: "/coordinator/runs",
+      testId: "coordinator-tab-runs"
+    }
+  ];
 
   return (
-    <ResizablePanelGroup direction='horizontal' className='flex-1'>
-      {sidebarOpen ? (
-        <>
-          <ResizablePanel defaultSize={20} minSize={10} className='min-w-[200px]'>
-            <CoordinatorSidebar setSidebarOpen={setSidebarOpen} />
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-        </>
-      ) : (
-        <div className='flex items-start border-r bg-sidebar-background px-1 py-2'>
-          <Button
-            variant='ghost'
-            size='icon'
-            onClick={() => setSidebarOpen(true)}
-            tooltip={{ content: "Expand Sidebar", side: "right" }}
-            className='h-8 w-8'
-          >
-            <ChevronsRight className='h-4 w-4' />
-          </Button>
+    <div className='flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background'>
+      <header className='flex shrink-0 items-center gap-6 border-border border-b px-4'>
+        <div className='flex items-center gap-2 py-2.5'>
+          <Radar className='h-4 w-4 text-primary' />
+          <span className='font-semibold text-sm'>Orchestrator</span>
         </div>
-      )}
-      <ResizablePanel defaultSize={sidebarOpen ? 80 : 100} minSize={20}>
+        <nav className='flex items-center gap-5'>
+          {tabs.map((tab) => (
+            <CoordinatorTab key={tab.to} tab={tab} active={location.pathname.includes(tab.match)} />
+          ))}
+        </nav>
+        <div className='ml-auto'>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              data-testid='coordinator-system-menu'
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-muted-foreground text-xs",
+                "hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <Settings2 className='h-3.5 w-3.5' />
+              System
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end'>
+              <DropdownMenuLabel>Operator internals</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to={coord.RECOVERY}>
+                  <HeartPulse className='h-4 w-4' />
+                  Recovery &amp; reliability
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to={coord.QUEUE}>
+                  <Inbox className='h-4 w-4' />
+                  Queue health
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+      <div className='min-h-0 flex-1 overflow-hidden'>
         <Outlet />
-      </ResizablePanel>
-    </ResizablePanelGroup>
+      </div>
+    </div>
   );
 };
 

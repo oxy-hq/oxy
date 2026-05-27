@@ -37,8 +37,10 @@ const useCoordinatorLive = () => {
       },
       onmessage(ev) {
         if (ev.event === "snapshot") {
+          // Prefix invalidation covers every active-runs variant
+          // (include_system=true and =false) without enumerating them.
           queryClient.invalidateQueries({
-            queryKey: queryKeys.coordinator.activeRuns(projectId)
+            queryKey: [...queryKeys.coordinator.all, "activeRuns", projectId]
           });
         }
       },

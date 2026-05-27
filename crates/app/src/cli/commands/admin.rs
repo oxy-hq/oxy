@@ -142,6 +142,10 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
                 invalidate_steps: None,
                 invalidate_iterations: None,
                 thread_id: None,
+                schedule_id: None,
+                trigger: None,
+                logical_date: None,
+                retry_of: None,
             };
             // Global: no co-located coordinator. The standalone global
             // driver loop (OXY_INPROC_GLOBAL_WORKER) must pick it up.
@@ -176,6 +180,10 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
                 pipeline_ref,
                 variables: None,
                 thread_id: None,
+                schedule_id: None,
+                trigger: None,
+                logical_date: None,
+                retry_of: None,
             };
             start_airway_run(
                 &db,

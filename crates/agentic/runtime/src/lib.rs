@@ -61,17 +61,21 @@ pub mod entity {
 /// `agentic_runtime::crud::events::insert_event`.
 pub mod crud {
     pub use crate::lifecycle::crud::{
-        DRIVER_LEASE_TTL_SECS, now, transition_run, user_facing_status,
+        AirwayTableSummary, EventRow, LlmTokenSummary, LlmTokenSummaryByRun,
+        ScheduleDurationBaseline, ThreadHistoryTurn, ToolExchangeRow, WorkflowStepSummary,
+        airway_table_summary_for_run, batch_insert_events, delete_events_from_seq,
+        fetch_duration_baselines, get_all_events, get_effective_run_state, get_events_after,
+        get_max_seq, get_run, get_run_by_thread, get_runs_by_thread, get_suspension,
+        get_thread_history, get_thread_history_with_events, heartbeat_driver, insert_event,
+        insert_run, insert_run_with_parent, insert_run_with_schedule, is_cancel_requested,
+        list_active_runs, list_recent_runs, list_runs_filtered, llm_usage_for_run,
+        llm_usage_for_runs, load_task_tree, load_task_tree_in_workspace, release_driver,
+        request_cancel, runs_in_workspace, try_acquire_driver, update_run_done, update_run_failed,
+        update_run_running, update_run_suspended, update_run_terminal_from_events,
+        update_task_status, upsert_suspension, workflow_step_summary_for_run,
     };
     pub use crate::lifecycle::crud::{
-        EventRow, ThreadHistoryTurn, ToolExchangeRow, batch_insert_events, delete_events_from_seq,
-        get_all_events, get_effective_run_state, get_events_after, get_max_seq, get_run,
-        get_run_by_thread, get_runs_by_thread, get_suspension, get_thread_history,
-        get_thread_history_with_events, heartbeat_driver, insert_event, insert_run,
-        insert_run_with_parent, is_cancel_requested, list_active_runs, list_recent_runs,
-        list_runs_filtered, load_task_tree, release_driver, request_cancel, try_acquire_driver,
-        update_run_done, update_run_failed, update_run_running, update_run_suspended,
-        update_run_terminal_from_events, update_task_status, upsert_suspension,
+        DRIVER_LEASE_TTL_SECS, now, transition_run, user_facing_status,
     };
     pub use crate::lifecycle::crud::{events, queries, runs, suspension};
     pub use crate::orchestrator::crud::{

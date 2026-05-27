@@ -44,6 +44,23 @@ pub struct StartAirwayRequest {
     /// Conversation thread to associate this run with, if any.
     #[serde(default)]
     pub thread_id: Option<Uuid>,
+    /// Soft FK → `agentic_schedules.id`. Internal-only — only the scheduler
+    /// fire path sets this; HTTP/CLI input cannot, so callers can't spoof
+    /// which schedule a run "came from".
+    #[serde(skip_deserializing, default)]
+    pub schedule_id: Option<String>,
+    /// How this run was triggered: `"scheduled"`, `"manual"`, `"backfill"`.
+    /// Internal-only — stamped onto `agentic_runs.metadata.trigger`.
+    #[serde(skip_deserializing, default)]
+    pub trigger: Option<String>,
+    /// The cron-scheduled time this run is replaying (UTC). Set by the
+    /// backfill path; stamped onto `agentic_runs.metadata.logical_date`.
+    #[serde(skip_deserializing, default)]
+    pub logical_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Run id this run is a retry of. Set by `retry_run`; stamped onto
+    /// `agentic_runs.metadata.retry_of`.
+    #[serde(skip_deserializing, default)]
+    pub retry_of: Option<String>,
 }
 
 /// One row in the run-history list for a pipeline.
@@ -109,25 +126,60 @@ pub async fn start_airway_run(
     let spec = AirwayPipelineSpec::from_yaml_with_vars(&yaml, request.variables.as_ref())?;
 
     let run_id = Uuid::new_v4().to_string();
-    let metadata = serde_json::json!({
+    // Lineage labels stamped at run-start so the dashboard can label
+    // the Source / Destination cards even before `pipeline_plan` fires
+    // (or for legacy runs that predated it). `source_kind` is the
+    // connector kind from the YAML (e.g. `"postgres_cdc"` / `"stripe"`).
+    // `destination_label` reads either the referenced database name
+    // (most common — users write `destination: { database: foo, ... }`)
+    // or the inline connector kind (test fixtures / pre-resolved specs).
+    let source_kind = spec.source.kind.clone();
+    let destination_label = match &spec.destination {
+        agentic_airway::config::DestinationSpec::Reference(r) => r.database.clone(),
+        agentic_airway::config::DestinationSpec::Inline(c) => c.kind.clone(),
+    };
+    let mut metadata = serde_json::json!({
         "pipeline_ref": request.pipeline_ref,
         "pipeline_name": spec.name,
         "concurrency": spec.concurrency,
+        "source_kind": source_kind,
+        "destination_label": destination_label,
         // `null` when omitted; the executor passes whatever lands here
         // through to the worker on resume.
         "variables": request.variables,
     });
+    crate::scheduler::stamp_trigger_metadata(
+        &mut metadata,
+        &request.trigger,
+        &request.logical_date,
+        &request.retry_of,
+    );
 
-    crud::insert_run(
-        db,
-        &run_id,
-        &format!("airway: {}", spec.name),
-        request.thread_id,
-        agentic_airway::SOURCE_TYPE,
-        Some(metadata),
-        workspace_id,
-    )
-    .await?;
+    let question = format!("airway: {}", spec.name);
+    if let Some(schedule_id) = request.schedule_id.as_deref() {
+        crud::insert_run_with_schedule(
+            db,
+            &run_id,
+            &question,
+            request.thread_id,
+            agentic_airway::SOURCE_TYPE,
+            Some(metadata),
+            schedule_id,
+            workspace_id,
+        )
+        .await?;
+    } else {
+        crud::insert_run(
+            db,
+            &run_id,
+            &question,
+            request.thread_id,
+            agentic_airway::SOURCE_TYPE,
+            Some(metadata),
+            workspace_id,
+        )
+        .await?;
+    }
 
     run_extension::insert_run_extension(db, &run_id, &spec, Some(&request.pipeline_ref)).await?;
 

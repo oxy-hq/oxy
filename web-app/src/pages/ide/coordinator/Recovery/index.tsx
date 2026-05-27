@@ -84,17 +84,15 @@ const RecoveredRunRow: React.FC<{ run: RecoveredRunEntry; projectId: string }> =
 }) => {
   const navigate = useNavigate();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
-  const runTreeHref = ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.COORDINATOR.RUN_TREE(run.run_id);
+  const runTreeHref = ROUTES.ORG(orgSlug)
+    .WORKSPACE(projectId)
+    .IDE.COORDINATOR.RUN_DETAIL(run.run_id);
 
   return (
-    <div
-      role='button'
-      tabIndex={0}
-      className='flex cursor-pointer items-center gap-4 border-border border-b px-4 py-2 last:border-b-0 hover:bg-muted/50'
+    <button
+      type='button'
+      className='flex w-full cursor-pointer items-center gap-4 border-border border-b px-4 py-2 text-left last:border-b-0 hover:bg-muted/50'
       onClick={() => navigate(runTreeHref)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") navigate(runTreeHref);
-      }}
     >
       <span
         className={cn(
@@ -115,7 +113,7 @@ const RecoveredRunRow: React.FC<{ run: RecoveredRunEntry; projectId: string }> =
       </div>
       <span className='text-warning text-xs'>attempt {run.attempt + 1}</span>
       <span className='font-mono text-muted-foreground text-xs'>{run.run_id.slice(0, 8)}</span>
-    </div>
+    </button>
   );
 };
 

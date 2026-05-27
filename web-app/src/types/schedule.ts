@@ -1,5 +1,5 @@
 /** Mirrors `agentic_schedules` (backend `schedule::Model`, serde snake_case). */
-export type ScheduleTargetKind = "workflow" | "airway";
+export type ScheduleTargetKind = "workflow" | "airway" | "agent";
 
 export interface Schedule {
   id: string;
@@ -7,8 +7,10 @@ export interface Schedule {
   branch_id: string | null;
   name: string;
   target_kind: ScheduleTargetKind;
-  /** workflow_ref / pipeline_ref, workspace-relative. */
+  /** workflow_ref / pipeline_ref / agent_id, workspace-relative. */
   target_ref: string;
+  /** Required when `target_kind === "agent"`, null otherwise. */
+  question: string | null;
   variables: Record<string, unknown> | null;
   cron_expr: string;
   timezone: string;
@@ -41,6 +43,9 @@ export interface ScheduleInput {
   name: string;
   target_kind: ScheduleTargetKind;
   target_ref: string;
+  /** Required when `target_kind === "agent"`. Backend rejects an empty
+   *  question for agent schedules; ignored for workflow / airway. */
+  question?: string | null;
   variables?: Record<string, unknown> | null;
   cron_expr: string;
   /** Defaults to "UTC" server-side. */
@@ -51,4 +56,20 @@ export interface ScheduleInput {
 
 export interface RunNowResponse {
   run_id: string;
+}
+
+/** Body of `POST /agentic-schedules/:id/backfill`. */
+export interface BackfillInput {
+  /** Inclusive lower bound (ISO 8601 / RFC 3339). */
+  from: string;
+  /** Inclusive upper bound (ISO 8601 / RFC 3339); must be > `from`. */
+  to: string;
+  /** Throttle hint: `"sequential"` | `"<N>"` | `"all"`. Advisory in v1. */
+  concurrency?: string;
+}
+
+export interface BackfillResponse {
+  run_ids: string[];
+  /** Cron occurrences enumerated; may exceed `run_ids.length` on partial seed. */
+  planned: number;
 }

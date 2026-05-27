@@ -81,6 +81,28 @@ pub struct StartWorkflowRequest {
     /// blank after a refresh.
     #[serde(default)]
     pub thread_id: Option<String>,
+    /// Soft FK → `agentic_schedules.id`. Internal-only — only the scheduler
+    /// fire path sets this; HTTP/CLI input cannot, so callers can't spoof
+    /// which schedule a run "came from".
+    #[serde(skip_deserializing, default)]
+    pub schedule_id: Option<String>,
+    /// How this run was triggered: `"scheduled"`, `"manual"`, `"backfill"`.
+    /// Internal-only — see `schedule_id` for the same reasoning. Stamped
+    /// onto `agentic_runs.metadata.trigger` so the dashboard can show
+    /// where a run came from.
+    #[serde(skip_deserializing, default)]
+    pub trigger: Option<String>,
+    /// The cron-scheduled time this run is replaying (UTC). Set by the
+    /// backfill path so downstream date-aware logic can use the
+    /// *intended* fire time rather than `now()`. Stamped onto
+    /// `agentic_runs.metadata.logical_date`.
+    #[serde(skip_deserializing, default)]
+    pub logical_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Run id this run is a retry of. Set by `retry_run`; stamped onto
+    /// `agentic_runs.metadata.retry_of` so the UI can link a retry back
+    /// to the run that triggered it.
+    #[serde(skip_deserializing, default)]
+    pub retry_of: Option<String>,
 }
 
 impl StartWorkflowRequest {
@@ -252,7 +274,7 @@ pub async fn start_workflow_run(
     request.validate()?;
 
     let run_id = Uuid::new_v4().to_string();
-    let metadata = serde_json::json!({
+    let mut metadata = serde_json::json!({
         "workflow_ref": request.workflow_ref,
         "cache_enabled": request.cache_enabled,
         "retry_from_run_id": request.retry_from_run_id,
@@ -264,7 +286,16 @@ pub async fn start_workflow_run(
         // stamps onto `agentic_workflow_state.invalidate_iterations` so
         // the decider applies it inline without re-reading metadata.
         "invalidate_iterations": request.invalidate_iterations,
+        // Stamped so `retry_run` can reconstruct a parameterised retry
+        // without re-reading the queue spec.
+        "variables": request.variables,
     });
+    crate::scheduler::stamp_trigger_metadata(
+        &mut metadata,
+        &request.trigger,
+        &request.logical_date,
+        &request.retry_of,
+    );
 
     // `validate()` already confirmed any supplied thread_id parses as UUID,
     // so the unwrap here is infallible — but we route through `parse_str`
@@ -278,16 +309,31 @@ pub async fn start_workflow_run(
         None => None,
     };
 
-    crud::insert_run(
-        db,
-        &run_id,
-        &format!("workflow: {}", request.workflow_ref),
-        thread_uuid,
-        agentic_workflow::SOURCE_TYPE,
-        Some(metadata),
-        workspace_id,
-    )
-    .await?;
+    let question = format!("workflow: {}", request.workflow_ref);
+    if let Some(schedule_id) = request.schedule_id.as_deref() {
+        crud::insert_run_with_schedule(
+            db,
+            &run_id,
+            &question,
+            thread_uuid,
+            agentic_workflow::SOURCE_TYPE,
+            Some(metadata),
+            schedule_id,
+            workspace_id,
+        )
+        .await?;
+    } else {
+        crud::insert_run(
+            db,
+            &run_id,
+            &question,
+            thread_uuid,
+            agentic_workflow::SOURCE_TYPE,
+            Some(metadata),
+            workspace_id,
+        )
+        .await?;
+    }
 
     let spec = TaskSpec::Workflow {
         workflow_ref: request.workflow_ref,
@@ -922,6 +968,10 @@ mod tests {
             invalidate_steps: None,
             invalidate_iterations: None,
             thread_id: None,
+            schedule_id: None,
+            trigger: None,
+            logical_date: None,
+            retry_of: None,
         }
     }
 

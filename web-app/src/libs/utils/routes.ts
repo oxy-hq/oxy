@@ -77,12 +77,13 @@ const ROUTES = {
             },
             COORDINATOR: {
               ROOT: `${wsBase}/ide/coordinator`,
-              ACTIVE_RUNS: `${wsBase}/ide/coordinator/active-runs`,
-              RUN_HISTORY: `${wsBase}/ide/coordinator/run-history`,
-              SCHEDULES: `${wsBase}/ide/coordinator/schedules`,
+              OVERVIEW: `${wsBase}/ide/coordinator/overview`,
+              JOBS: `${wsBase}/ide/coordinator/jobs`,
+              JOB_DETAIL: (scheduleId: string) => `${wsBase}/ide/coordinator/jobs/${scheduleId}`,
+              RUNS: `${wsBase}/ide/coordinator/runs`,
+              RUN_DETAIL: (runId: string) => `${wsBase}/ide/coordinator/runs/${runId}`,
               RECOVERY: `${wsBase}/ide/coordinator/recovery`,
-              QUEUE: `${wsBase}/ide/coordinator/queue`,
-              RUN_TREE: (runId: string) => `${wsBase}/ide/coordinator/runs/${runId}/tree`
+              QUEUE: `${wsBase}/ide/coordinator/queue`
             },
             OBSERVABILITY: {
               ROOT: `${wsBase}/ide/observability`,
@@ -97,9 +98,6 @@ const ROUTES = {
             },
             MODELING: {
               ROOT: `${wsBase}/ide/modeling`
-            },
-            PIPELINES: {
-              ROOT: `${wsBase}/ide/pipelines`
             }
           },
 

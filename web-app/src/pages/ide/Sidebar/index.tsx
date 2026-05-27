@@ -1,4 +1,4 @@
-import { Activity, Cable, Database, Folder, GitBranch, Radio, ShieldCheck } from "lucide-react";
+import { Activity, Database, Folder, GitBranch, Radio, ShieldCheck } from "lucide-react";
 import type React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -15,8 +15,7 @@ enum SidebarViewMode {
   COORDINATOR = "coordinator",
   OBSERVABILITY = "observability",
   DATABASE = "database",
-  MODELING = "modeling",
-  PIPELINES = "pipelines"
+  MODELING = "modeling"
 }
 
 const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMode => {
@@ -38,9 +37,6 @@ const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMo
   if (pathname.includes("/ide/modeling")) {
     return SidebarViewMode.MODELING;
   }
-  if (pathname.includes("/ide/pipelines")) {
-    return SidebarViewMode.PIPELINES;
-  }
   return SidebarViewMode.FILES;
 };
 
@@ -61,7 +57,7 @@ const Sidebar: React.FC = () => {
         navigate(filesRoot);
         break;
       case SidebarViewMode.COORDINATOR:
-        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.COORDINATOR.ACTIVE_RUNS);
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.COORDINATOR.OVERVIEW);
         break;
       case SidebarViewMode.OBSERVABILITY:
         navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.OBSERVABILITY.TRACES);
@@ -74,9 +70,6 @@ const Sidebar: React.FC = () => {
         break;
       case SidebarViewMode.MODELING:
         navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.MODELING.ROOT);
-        break;
-      case SidebarViewMode.PIPELINES:
-        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.PIPELINES.ROOT);
         break;
     }
   };
@@ -174,21 +167,6 @@ const Sidebar: React.FC = () => {
           )}
         >
           <GitBranch className='h-4 w-4' />
-        </Button>
-
-        <Button
-          variant='ghost'
-          size='icon'
-          onClick={() => handleNavigate(SidebarViewMode.PIPELINES)}
-          tooltip={{ content: "Pipelines", side: "right" }}
-          className={cn(
-            "h-8 w-8",
-            currentViewMode === SidebarViewMode.PIPELINES
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "opacity-60 hover:opacity-100"
-          )}
-        >
-          <Cable className='h-4 w-4' />
         </Button>
       </div>
       <div className='mt-auto flex flex-col items-center px-1 py-2'>

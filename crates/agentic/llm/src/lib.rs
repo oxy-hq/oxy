@@ -19,6 +19,8 @@
 mod constants;
 pub use constants::DEFAULT_MODEL;
 
+pub mod pricing;
+
 mod error;
 pub use error::LlmError;
 

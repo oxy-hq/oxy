@@ -215,6 +215,7 @@ fn build_schedule_routes(agentic_state: Arc<AgenticState>) -> Router<AppState> {
                 .delete(schedules::delete),
         )
         .route("/{id}/run-now", post(schedules::run_now))
+        .route("/{id}/backfill", post(schedules::backfill))
         .layer(Extension(agentic_state))
 }
 

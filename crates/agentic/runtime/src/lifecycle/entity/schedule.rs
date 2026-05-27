@@ -21,10 +21,15 @@ pub struct Model {
     pub branch_id: Option<String>,
     /// User-facing label.
     pub name: String,
-    /// `"workflow"` | `"airway"`.
+    /// `"workflow"` | `"airway"` | `"agent"`.
     pub target_kind: String,
-    /// `workflow_ref` / `pipeline_ref`, workspace-relative.
+    /// `workflow_ref` / `pipeline_ref` / `agent_id`, workspace-relative.
     pub target_ref: String,
+    /// Free-text question for agent schedules. Required when
+    /// `target_kind = "agent"`; ignored for workflow / airway. Stored as
+    /// `Option<String>` so existing rows (and the two other target kinds)
+    /// leave it NULL.
+    pub question: Option<String>,
     /// Variables passed to the seed fn (JSON object).
     pub variables: Option<serde_json::Value>,
     /// Standard cron expression.

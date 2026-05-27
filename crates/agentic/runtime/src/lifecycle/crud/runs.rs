@@ -150,6 +150,36 @@ pub async fn insert_run(
         source_type,
         metadata,
         None,
+        None,
+        0,
+        workspace_id,
+    )
+    .await
+}
+
+/// Insert a run seeded by a scheduler fire. The only path that should stamp
+/// `schedule_id`; everything else goes through [`insert_run`]. Lets per-job
+/// run history queries do `WHERE schedule_id = $1` against the new index.
+#[allow(clippy::too_many_arguments)]
+pub async fn insert_run_with_schedule(
+    db: &DatabaseConnection,
+    run_id: &str,
+    question: &str,
+    thread_id: Option<Uuid>,
+    source_type: &str,
+    metadata: Option<Value>,
+    schedule_id: &str,
+    workspace_id: Uuid,
+) -> Result<(), DbErr> {
+    insert_run_inner(
+        db,
+        run_id,
+        question,
+        thread_id,
+        source_type,
+        metadata,
+        None,
+        Some(schedule_id),
         0,
         workspace_id,
     )
@@ -179,6 +209,7 @@ pub async fn insert_run_with_parent(
         source_type,
         metadata,
         Some(parent_run_id),
+        None,
         attempt,
         workspace_id,
     )
@@ -194,6 +225,7 @@ async fn insert_run_inner(
     source_type: &str,
     metadata: Option<Value>,
     parent_run_id: Option<&str>,
+    schedule_id: Option<&str>,
     attempt: i32,
     workspace_id: Uuid,
 ) -> Result<(), DbErr> {
@@ -207,6 +239,7 @@ async fn insert_run_inner(
         source_type: Set(Some(source_type.to_string())),
         metadata: Set(metadata),
         parent_run_id: Set(parent_run_id.map(ToString::to_string)),
+        schedule_id: Set(schedule_id.map(ToString::to_string)),
         task_status: Set(Some("running".to_string())),
         task_metadata: Set(None),
         attempt: Set(attempt),
@@ -262,6 +295,13 @@ pub async fn update_task_status(
 }
 
 /// Load all runs in a task tree (root + descendants) by following `parent_run_id`.
+///
+/// **Trusted/internal use only.** This loader has no workspace gate —
+/// it's used by the runtime recovery loop, which picks up rows it has
+/// already validated from the DB and just needs to reconstruct the
+/// task tree around them. For HTTP request handling use
+/// [`load_task_tree_in_workspace`] instead so a foreign run id can't
+/// probe another tenant's tree.
 pub async fn load_task_tree(
     db: &DatabaseConnection,
     root_run_id: &str,
@@ -275,6 +315,41 @@ pub async fn load_task_tree(
     };
 
     // BFS to collect all descendants.
+    let mut result = vec![root];
+    let mut parent_ids = vec![root_run_id.to_string()];
+
+    while !parent_ids.is_empty() {
+        let children = run::Entity::find()
+            .filter(run::Column::ParentRunId.is_in(&parent_ids))
+            .all(db)
+            .await?;
+        parent_ids = children.iter().map(|c| c.id.clone()).collect();
+        result.extend(children);
+    }
+
+    Ok(result)
+}
+
+/// Workspace-scoped variant of [`load_task_tree`] for HTTP handlers.
+///
+/// Returns an empty Vec if the root run doesn't belong to
+/// `workspace_id`, so a foreign run id can't probe another tenant's
+/// tree by id-guessing. Children inherit the parent's workspace_id at
+/// insert so the BFS doesn't need an additional filter — the root
+/// gate prevents traversal from escaping the workspace.
+pub async fn load_task_tree_in_workspace(
+    db: &DatabaseConnection,
+    workspace_id: Uuid,
+    root_run_id: &str,
+) -> Result<Vec<run::Model>, DbErr> {
+    let root = run::Entity::find_by_id(root_run_id.to_string())
+        .filter(run::Column::WorkspaceId.eq(workspace_id))
+        .one(db)
+        .await?;
+    let Some(root) = root else {
+        return Ok(vec![]);
+    };
+
     let mut result = vec![root];
     let mut parent_ids = vec![root_run_id.to_string()];
 
