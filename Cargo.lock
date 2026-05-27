@@ -253,7 +253,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sqlparser 0.61.0",
- "statrs",
+ "statrs 0.18.0",
  "strsim",
  "tokio",
  "tokio-stream",
@@ -680,8 +680,8 @@ dependencies = [
 
 [[package]]
 name = "airlayer"
-version = "0.1.2"
-source = "git+https://github.com/oxy-hq/airlayer?rev=a1ed469e004ad0c0047346e7cac94a2ca35bc786#a1ed469e004ad0c0047346e7cac94a2ca35bc786"
+version = "0.2.1"
+source = "git+https://github.com/oxy-hq/airlayer?rev=2b240a4cd858f2e300883577675eec655c3f3d87#2b240a4cd858f2e300883577675eec655c3f3d87"
 dependencies = [
  "anyhow",
  "chrono",
@@ -690,6 +690,7 @@ dependencies = [
  "console 0.15.11",
  "convert_case 0.7.1",
  "dialoguer",
+ "getrandom 0.2.17",
  "glob",
  "indicatif 0.17.11",
  "itertools 0.10.5",
@@ -699,6 +700,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "statrs 0.17.1",
  "thiserror 1.0.69",
 ]
 
@@ -7281,6 +7283,24 @@ dependencies = [
 
 [[package]]
 name = "nalgebra"
+version = "0.32.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b5c17de023a86f59ed79891b2e5d5a94c705dbe904a5b5c9c952ea6221b03e4"
+dependencies = [
+ "approx 0.5.1",
+ "matrixmultiply",
+ "nalgebra-macros",
+ "num-complex 0.4.6",
+ "num-rational",
+ "num-traits",
+ "rand 0.8.6",
+ "rand_distr",
+ "simba 0.8.1",
+ "typenum",
+]
+
+[[package]]
+name = "nalgebra"
 version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d43ddcacf343185dfd6de2ee786d9e8b1c2301622afab66b6c73baf9882abfd"
@@ -7292,8 +7312,19 @@ dependencies = [
  "num-traits",
  "rand 0.8.6",
  "rand_distr",
- "simba",
+ "simba 0.9.1",
  "typenum",
+]
+
+[[package]]
+name = "nalgebra-macros"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "254a5372af8fc138e36684761d3c0cdb758a4410e938babcff1c860ce14ddbfc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -11344,6 +11375,19 @@ dependencies = [
 
 [[package]]
 name = "simba"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "061507c94fc6ab4ba1c9a0305018408e312e17c041eb63bef8aa726fa33aceae"
+dependencies = [
+ "approx 0.5.1",
+ "num-complex 0.4.6",
+ "num-traits",
+ "paste",
+ "wide",
+]
+
+[[package]]
+name = "simba"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c99284beb21666094ba2b75bbceda012e610f5479dfcc2d6e2426f53197ffd95"
@@ -11898,12 +11942,24 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "statrs"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f697a07e4606a0a25c044de247e583a330dbb1731d11bc7350b81f48ad567255"
+dependencies = [
+ "approx 0.5.1",
+ "nalgebra 0.32.6",
+ "num-traits",
+ "rand 0.8.6",
+]
+
+[[package]]
+name = "statrs"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a3fe7c28c6512e766b0874335db33c94ad7b8f9054228ae1c2abd47ce7d335e"
 dependencies = [
  "approx 0.5.1",
- "nalgebra",
+ "nalgebra 0.33.3",
  "num-traits",
  "rand 0.8.6",
 ]
