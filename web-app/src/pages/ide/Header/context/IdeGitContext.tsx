@@ -61,7 +61,8 @@ export function IdeGitProvider({
     remoteUrl: status.revisionInfo?.remote_url,
     branch,
     defaultBranch,
-    isOnMain
+    isOnMain,
+    gitSubfolder: status.revisionInfo?.git_subfolder
   });
 
   const refresh = useRefreshGitState(workspaceId, branch);

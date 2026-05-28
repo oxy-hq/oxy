@@ -13,9 +13,28 @@ use crate::cli::{config, run};
 static DEFAULT_BRANCH: std::sync::OnceLock<std::sync::Mutex<HashMap<PathBuf, String>>> =
     std::sync::OnceLock::new();
 
-/// Returns `true` if `workspace_root` contains a `.git` directory or file.
+/// Walks up the directory tree from `path` and returns the first ancestor
+/// (inclusive) that contains a `.git` entry, or `None` if none is found.
+///
+/// This mirrors the discovery behaviour of the `git` binary itself: a
+/// workspace that lives inside a larger repository (i.e. `.git` is in a
+/// parent directory) is still considered part of that repository.
+pub fn find_git_root(path: &Path) -> Option<PathBuf> {
+    let mut dir = path;
+    loop {
+        if dir.join(".git").exists() {
+            return Some(dir.to_path_buf());
+        }
+        dir = dir.parent()?;
+    }
+}
+
+/// Returns `true` if `workspace_root` is inside a git repository.
+///
+/// The `.git` directory may be in any ancestor of `workspace_root`, not
+/// necessarily in `workspace_root` itself.
 pub fn is_git_repo(workspace_root: &Path) -> bool {
-    workspace_root.join(".git").exists()
+    find_git_root(workspace_root).is_some()
 }
 
 /// Initialises a git repository at `workspace_root` if one does not already
@@ -62,21 +81,119 @@ pub async fn has_remote(workspace_root: &Path) -> bool {
 
 /// Resolves the actual git directory for `root`.
 ///
-/// For a regular repo, this is `root/.git/`.
-/// For a git worktree, `root/.git` is a file containing `gitdir: <path>` —
-/// we read that path so callers can find worktree-specific state.
+/// For a regular repo, this is `<git-root>/.git/` where `<git-root>` may be
+/// `root` itself or any ancestor (workspaces in a repo subfolder).
+/// For a git worktree, `<git-root>/.git` is a file containing `gitdir: <path>` —
+/// we follow the pointer so callers find the per-worktree state directory.
+/// This covers both "worktree at root" and "subfolder of a worktree".
 pub(crate) fn resolve_git_dir(root: &Path) -> PathBuf {
-    let dot_git = root.join(".git");
-    if dot_git.is_file()
-        && let Ok(content) = std::fs::read_to_string(&dot_git)
-        && let Some(rel) = content.trim().strip_prefix("gitdir: ")
-    {
-        let resolved = root.join(rel);
-        if let Ok(canonical) = resolved.canonicalize() {
-            return canonical;
+    let Some(git_root) = find_git_root(root) else {
+        return root.join(".git");
+    };
+    let dot_git = git_root.join(".git");
+    follow_dot_git(&git_root, dot_git)
+}
+
+/// Given a `<dir>/.git` path, returns the actual git object directory.
+///
+/// For a linked worktree, `.git` is a file containing `gitdir: <rel>` —
+/// the pointer is followed.  For a regular checkout, `.git` is a directory
+/// and is returned unchanged.
+fn follow_dot_git(dir: &Path, dot_git: PathBuf) -> PathBuf {
+    if dot_git.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&dot_git) {
+            if let Some(rel) = content.trim().strip_prefix("gitdir: ") {
+                let resolved = dir.join(rel);
+                if let Ok(canonical) = resolved.canonicalize() {
+                    return canonical;
+                }
+            }
         }
     }
     dot_git
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn find_git_root_directly_at_path() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        assert_eq!(find_git_root(dir.path()), Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn find_git_root_in_subfolder() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        let sub = dir.path().join("workspace").join("nested");
+        fs::create_dir_all(&sub).unwrap();
+        assert_eq!(find_git_root(&sub), Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn find_git_root_no_repo() {
+        let dir = TempDir::new().unwrap();
+        assert_eq!(find_git_root(dir.path()), None);
+    }
+
+    #[test]
+    fn is_git_repo_in_subfolder() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        let sub = dir.path().join("oxy-workspace");
+        fs::create_dir(&sub).unwrap();
+        assert!(is_git_repo(&sub));
+    }
+
+    #[test]
+    fn is_git_repo_false_outside_repo() {
+        // Parent of a temp dir that has no .git anywhere in the chain
+        // (the temp dir itself has no .git either).
+        let dir = TempDir::new().unwrap();
+        assert!(!is_git_repo(dir.path()));
+    }
+
+    #[test]
+    fn resolve_git_dir_follows_worktree_file_in_subfolder() {
+        // Layout: repo/.git/ (real dir)
+        //         repo/.worktrees/feat/.git → file pointing to real gitdir
+        //         repo/.worktrees/feat/sub/workspace (subfolder of linked worktree)
+        let dir = TempDir::new().unwrap();
+        let real_gitdir = dir.path().join(".git");
+        let worktree_gitdir = real_gitdir.join("worktrees").join("feat");
+        fs::create_dir_all(&worktree_gitdir).unwrap();
+
+        let worktree_root = dir.path().join(".worktrees").join("feat");
+        fs::create_dir_all(&worktree_root).unwrap();
+        // .git file uses a relative path back to the real gitdir
+        let pointer_content = format!(
+            "gitdir: {}",
+            worktree_gitdir
+                .strip_prefix(&worktree_root)
+                .unwrap_or(&worktree_gitdir)
+                .display()
+        );
+        // Use the absolute path for simplicity in the test
+        fs::write(
+            worktree_root.join(".git"),
+            format!("gitdir: {}", worktree_gitdir.display()),
+        )
+        .unwrap();
+        let _ = pointer_content;
+
+        let sub = worktree_root.join("sub").join("workspace");
+        fs::create_dir_all(&sub).unwrap();
+
+        // resolve_git_dir on the subfolder must follow the gitdir pointer,
+        // not return the .git file path directly.
+        let resolved = resolve_git_dir(&sub);
+        assert_eq!(resolved, worktree_gitdir);
+    }
 }
 
 /// Returns the default branch name for `workspace_root`.

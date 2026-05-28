@@ -9,4 +9,5 @@ export interface RevisionInfo {
   is_in_conflict: boolean;
   last_sync_time?: string;
   remote_url?: string;
+  git_subfolder?: string;
 }

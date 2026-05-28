@@ -24,7 +24,7 @@ use oxy::api_types::{
 use oxy::config::ConfigBuilder;
 use oxy::github::{default_git_client, github_token_for_workspace};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
-use oxy_git::{DirtyEntry, GitClient, ResetOutcome};
+use oxy_git::{DirtyEntry, GitClient, ResetOutcome, cli::repo::find_git_root};
 use oxy_shared::errors::OxyError;
 
 use axum::{
@@ -363,6 +363,21 @@ async fn git_revision_info(worktree: &std::path::Path, branch: &str) -> Revision
         .map(|entries| entries.len() as u64)
         .unwrap_or(0);
 
+    let git_subfolder = find_git_root(worktree).and_then(|git_root| {
+        // Canonicalize both paths so symlinks and `..` components don't
+        // cause strip_prefix to return an empty or incorrect result.
+        let canon_worktree = worktree
+            .canonicalize()
+            .unwrap_or_else(|_| worktree.to_path_buf());
+        let canon_root = git_root.canonicalize().unwrap_or(git_root);
+        canon_worktree
+            .strip_prefix(&canon_root)
+            .ok()
+            .and_then(|p| p.to_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.replace('\\', "/"))
+    });
+
     RevisionInfoResponse {
         base_sha: sha.clone(),
         head_sha: sha.clone(),
@@ -376,6 +391,7 @@ async fn git_revision_info(worktree: &std::path::Path, branch: &str) -> Revision
         is_in_conflict,
         last_sync_time: None,
         remote_url,
+        git_subfolder,
     }
 }
 

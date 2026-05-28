@@ -95,6 +95,11 @@ pub struct RevisionInfoResponse {
     pub last_sync_time: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_url: Option<String>,
+    /// Relative path from the git repository root to the workspace directory,
+    /// using forward slashes. `None` when the workspace is at the git root.
+    /// Used by the frontend to construct correct per-subfolder GitHub URLs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_subfolder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
