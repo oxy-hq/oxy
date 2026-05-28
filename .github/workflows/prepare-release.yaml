@@ -106,8 +106,7 @@ jobs:
         with:
           tool: git-cliff
       - name: Generate release notes
-        run: git cliff --tag ${{ steps.version.outputs.version }} --latest -o
-          /tmp/release-notes.md
+        run: git cliff --current -o /tmp/release-notes.md
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:

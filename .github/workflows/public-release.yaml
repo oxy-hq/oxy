@@ -426,8 +426,7 @@ jobs:
 
       - name: Generate release notes (stable only)
         if: needs.determine-build-type.outputs.is_stable == 'true'
-        run: git cliff --tag ${{ needs.determine-build-type.outputs.version }} --latest
-          -o /tmp/release-notes.md
+        run: git cliff --current -o /tmp/release-notes.md
 
       - name: Create stable release
         if: needs.determine-build-type.outputs.is_stable == 'true'
