@@ -171,6 +171,24 @@ function upsertChild(view: AirwayRunView, parent: string, table: string): Resour
  */
 const evTs = (e: AirwayEvent): string | undefined => (e.payload as { ts?: string }).ts;
 
+function markResourceFailed(view: AirwayRunView, table: string, error: string): void {
+  const row = upsertResource(view, table);
+  row.status = "error";
+  row.error = error;
+  if (!view.failedResources.some((f) => f.table === table)) {
+    view.failedResources.push({ table, error });
+  }
+}
+
+function markRunFailed(view: AirwayRunView, error: string, ts: string | undefined): void {
+  view.status = "failed";
+  view.error = error;
+  view.endedAt ??= ts;
+  for (const r of view.resources) {
+    if (r.status !== "done") r.status = "error";
+  }
+}
+
 /**
  * Fold the (chronologically ordered) event list into the view model.
  *
@@ -293,15 +311,7 @@ export function reduceAirwayEvents(events: AirwayEvent[]): AirwayRunView {
         break;
       }
       case "table_load_failed": {
-        const row = upsertResource(view, ev.payload.table);
-        row.status = "error";
-        row.error = ev.payload.error;
-        if (!view.failedResources.some((f) => f.table === ev.payload.table)) {
-          view.failedResources.push({
-            table: ev.payload.table,
-            error: ev.payload.error
-          });
-        }
+        markResourceFailed(view, ev.payload.table, ev.payload.error);
         break;
       }
       case "table_loaded": {
@@ -330,15 +340,7 @@ export function reduceAirwayEvents(events: AirwayEvent[]): AirwayRunView {
         break;
       }
       case "resource_failed": {
-        const row = upsertResource(view, ev.payload.table);
-        row.status = "error";
-        row.error = ev.payload.error;
-        if (!view.failedResources.some((f) => f.table === ev.payload.table)) {
-          view.failedResources.push({
-            table: ev.payload.table,
-            error: ev.payload.error
-          });
-        }
+        markResourceFailed(view, ev.payload.table, ev.payload.error);
         break;
       }
       case "schema_evolved": {
@@ -346,12 +348,7 @@ export function reduceAirwayEvents(events: AirwayEvent[]): AirwayRunView {
         break;
       }
       case "pipeline_error": {
-        view.status = "failed";
-        view.error = ev.payload.error;
-        view.endedAt ??= evTs(ev);
-        for (const r of view.resources) {
-          if (r.status !== "done") r.status = "error";
-        }
+        markRunFailed(view, ev.payload.error, evTs(ev));
         break;
       }
       case "cancelled": {
@@ -364,12 +361,7 @@ export function reduceAirwayEvents(events: AirwayEvent[]): AirwayRunView {
       // No engine `pipeline_error` is emitted on this path, so without
       // this the run page stays blank on a pre-processing failure.
       case "task_failed": {
-        view.status = "failed";
-        view.error = ev.payload.error;
-        view.endedAt ??= evTs(ev);
-        for (const r of view.resources) {
-          if (r.status !== "done") r.status = "error";
-        }
+        markRunFailed(view, ev.payload.error, evTs(ev));
         break;
       }
     }
