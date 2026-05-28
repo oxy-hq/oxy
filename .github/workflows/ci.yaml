@@ -777,7 +777,7 @@ jobs:
     name: Agentic browser tests
     needs: [ changesets, cargo-check-and-test ]
     if: |
-      (
+      github.repository == 'oxy-hq/oxygen-internal' && (
         inputs.agentic_only == true ||
         needs.changesets.outputs.web-app == 'true' ||
         needs.changesets.outputs.oxy == 'true'
