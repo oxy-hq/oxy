@@ -359,7 +359,19 @@ fn eval_every_refresh_key(
         {
             let built_at_utc = built_at.and_utc();
             let age = chrono::Utc::now().signed_duration_since(built_at_utc);
-            if age < chrono::Duration::from_std(interval).unwrap_or(chrono::Duration::zero()) {
+            let chrono_interval = match chrono::Duration::from_std(interval) {
+                Ok(d) => d,
+                Err(_) => {
+                    tracing::warn!(
+                        interval = %interval_str,
+                        rollup_hash,
+                        "preagg: configured Every interval overflows chrono::Duration; \
+                         treating rollup as always fresh to avoid spurious rebuilds"
+                    );
+                    chrono::Duration::milliseconds(i64::MAX)
+                }
+            };
+            if age < chrono_interval {
                 let mut guard = cache.write().expect("preagg cache lock poisoned");
                 guard.insert(rollup_hash.to_string(), None);
                 return (None, false);
