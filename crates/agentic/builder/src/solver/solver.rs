@@ -514,6 +514,112 @@ fn change_was_applied(output: &serde_json::Value) -> bool {
         .is_some_and(|a| a.to_lowercase().contains("accept"))
 }
 
+/// Emits a `ToolUsed` event and maps the result to a boxed `ToolOutput`.
+/// Collapses the `if let Ok … emit_domain(ToolUsed) … r.map(Box::new)` scaffold
+/// that almost every non-mutation arm repeats.
+async fn emit_tool_used<T: ToolOutput + 'static>(
+    event_tx: &Option<EventStream<BuilderEvent>>,
+    tool_name: &'static str,
+    result: Result<T, ToolError>,
+    summary_fn: impl FnOnce(&T) -> String,
+) -> Result<Box<dyn ToolOutput>, ToolError> {
+    if let Ok(ref v) = result {
+        emit_domain(
+            event_tx,
+            BuilderEvent::ToolUsed {
+                tool_name: tool_name.into(),
+                summary: summary_fn(v),
+            },
+        )
+        .await;
+    }
+    result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+}
+
+/// How to determine `new_content` for `FileChanged` after a successful
+/// (non-suspended) file mutation.
+enum FileSuccessContent {
+    /// A known literal (e.g. `params["content"]` for `write_file`).
+    Literal(String),
+    /// Re-read from disk after the mutation; `edit_file` applies a
+    /// search/replace and we don't know the final text until it's done.
+    ReadDisk,
+    /// Always empty — the file has been deleted.
+    Empty,
+}
+
+/// Shared scaffold for `write_file`, `edit_file`, and `delete_file`:
+/// snapshot old content → call executor → emit `FileChangePending` on
+/// suspension or `FileChanged` on auto-accept.
+#[allow(clippy::too_many_arguments)]
+async fn handle_file_mutation<F, Fut>(
+    file_path: String,
+    description: String,
+    project_root: &Path,
+    event_tx: &Option<EventStream<BuilderEvent>>,
+    is_deletion: bool,
+    success_content: FileSuccessContent,
+    executor: F,
+) -> Result<Box<dyn ToolOutput>, ToolError>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<serde_json::Value, ToolError>>,
+{
+    let old_content = read_for_change_event(project_root, &file_path).await;
+    let result = executor().await;
+    match &result {
+        Err(ToolError::Suspended { prompt, .. }) => {
+            let (new_content, old_content) =
+                serde_json::from_str::<serde_json::Value>(prompt)
+                    .ok()
+                    .map(|v| {
+                        let new = if is_deletion {
+                            String::new()
+                        } else {
+                            v["new_content"].as_str().unwrap_or("").to_string()
+                        };
+                        let old = v["old_content"].as_str().unwrap_or("").to_string();
+                        (new, old)
+                    })
+                    .unwrap_or_default();
+            emit_domain(
+                event_tx,
+                BuilderEvent::FileChangePending {
+                    file_path,
+                    description,
+                    new_content,
+                    old_content,
+                },
+            )
+            .await;
+        }
+        Ok(v) if change_was_applied(v) => {
+            let new_content = match success_content {
+                FileSuccessContent::Literal(s) => s,
+                FileSuccessContent::ReadDisk => {
+                    read_for_change_event(project_root, &file_path).await
+                }
+                FileSuccessContent::Empty => String::new(),
+            };
+            if is_deletion || new_content != old_content {
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::FileChanged {
+                        file_path,
+                        description,
+                        new_content,
+                        old_content,
+                        is_deletion,
+                    },
+                )
+                .await;
+            }
+        }
+        _ => {}
+    }
+    result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_tool(
     name: &str,
@@ -532,270 +638,120 @@ pub(crate) async fn dispatch_tool(
     match name {
         "search_files" => {
             let r = execute_search_files(project_root, params);
-            if let Ok(ref v) = r {
-                let count = v["count"].as_u64().unwrap_or(0);
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "search_files".into(),
-                        summary: format!(
-                            "Found {count} files matching '{}'",
-                            params["pattern"].as_str().unwrap_or("")
-                        ),
-                    },
+            emit_tool_used(event_tx, "search_files", r, |v| {
+                format!(
+                    "Found {} files matching '{}'",
+                    v["count"].as_u64().unwrap_or(0),
+                    params["pattern"].as_str().unwrap_or("")
                 )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            })
+            .await
         }
         "read_file" => {
             let r = execute_read_file(project_root, params).await;
-            if let Ok(ref v) = r {
-                let lines = v["total_lines"].as_u64().unwrap_or(0);
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "read_file".into(),
-                        summary: format!(
-                            "Read '{}' ({lines} lines)",
-                            params["file_path"].as_str().unwrap_or("")
-                        ),
-                    },
+            emit_tool_used(event_tx, "read_file", r, |v| {
+                format!(
+                    "Read '{}' ({} lines)",
+                    params["file_path"].as_str().unwrap_or(""),
+                    v["total_lines"].as_u64().unwrap_or(0)
                 )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            })
+            .await
         }
         "search_text" => {
             let r = execute_search_text(project_root, params).await;
-            if let Ok(ref v) = r {
-                let count = v["count"].as_u64().unwrap_or(0);
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "search_text".into(),
-                        summary: format!(
-                            "Found {count} matches for '{}'",
-                            params["pattern"].as_str().unwrap_or("")
-                        ),
-                    },
+            emit_tool_used(event_tx, "search_text", r, |v| {
+                format!(
+                    "Found {} matches for '{}'",
+                    v["count"].as_u64().unwrap_or(0),
+                    params["pattern"].as_str().unwrap_or("")
                 )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            })
+            .await
         }
         "validate_project" => {
             let validator = project_validator.ok_or_else(|| {
                 ToolError::Execution("project validator is not configured".into())
             })?;
             let r = execute_validate_project(project_root, params, validator.as_ref()).await;
-            if let Ok(ref v) = r {
-                let summary = if v["valid"].as_bool().unwrap_or(false) {
-                    format!(
-                        "All {} file(s) valid",
-                        v["valid_count"].as_u64().unwrap_or(0)
-                    )
+            emit_tool_used(event_tx, "validate_project", r, |v| {
+                if v["valid"].as_bool().unwrap_or(false) {
+                    format!("All {} file(s) valid", v["valid_count"].as_u64().unwrap_or(0))
                 } else {
-                    let n = v["error_count"].as_u64().unwrap_or(0);
-                    format!("{n} validation error(s) found")
-                };
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "validate_project".into(),
-                        summary,
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+                    format!("{} validation error(s) found", v["error_count"].as_u64().unwrap_or(0))
+                }
+            })
+            .await
         }
         "write_file" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
-            let old_content = read_for_change_event(project_root, &file_path).await;
-            let result = execute_write_file(project_root, params, human_input.as_ref()).await;
-            match &result {
-                Err(ToolError::Suspended { prompt, .. }) => {
-                    let (new_content, old_content) =
-                        serde_json::from_str::<serde_json::Value>(prompt)
-                            .ok()
-                            .map(|v| {
-                                (
-                                    v["new_content"].as_str().unwrap_or("").to_string(),
-                                    v["old_content"].as_str().unwrap_or("").to_string(),
-                                )
-                            })
-                            .unwrap_or_default();
-                    emit_domain(
-                        event_tx,
-                        BuilderEvent::FileChangePending {
-                            file_path,
-                            description,
-                            new_content,
-                            old_content,
-                        },
-                    )
-                    .await;
-                }
-                Ok(v) if change_was_applied(v) => {
-                    let new_content = params["content"].as_str().unwrap_or("").to_string();
-                    if new_content != old_content {
-                        emit_domain(
-                            event_tx,
-                            BuilderEvent::FileChanged {
-                                file_path,
-                                description,
-                                new_content,
-                                old_content,
-                                is_deletion: false,
-                            },
-                        )
-                        .await;
-                    }
-                }
-                _ => {}
-            }
-            result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            let new_content = params["content"].as_str().unwrap_or("").to_string();
+            handle_file_mutation(
+                file_path,
+                description,
+                project_root,
+                event_tx,
+                false,
+                FileSuccessContent::Literal(new_content),
+                || execute_write_file(project_root, params, human_input.as_ref()),
+            )
+            .await
         }
         "edit_file" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
-            let old_content = read_for_change_event(project_root, &file_path).await;
-            let result = execute_edit_file(project_root, params, human_input.as_ref()).await;
-            match &result {
-                Err(ToolError::Suspended { prompt, .. }) => {
-                    let (new_content, old_content) =
-                        serde_json::from_str::<serde_json::Value>(prompt)
-                            .ok()
-                            .map(|v| {
-                                (
-                                    v["new_content"].as_str().unwrap_or("").to_string(),
-                                    v["old_content"].as_str().unwrap_or("").to_string(),
-                                )
-                            })
-                            .unwrap_or_default();
-                    emit_domain(
-                        event_tx,
-                        BuilderEvent::FileChangePending {
-                            file_path,
-                            description,
-                            new_content,
-                            old_content,
-                        },
-                    )
-                    .await;
-                }
-                Ok(v) if change_was_applied(v) => {
-                    // edit_file applies a search/replace; the post-edit
-                    // content is whatever is now on disk.
-                    let new_content = read_for_change_event(project_root, &file_path).await;
-                    if new_content != old_content {
-                        emit_domain(
-                            event_tx,
-                            BuilderEvent::FileChanged {
-                                file_path,
-                                description,
-                                new_content,
-                                old_content,
-                                is_deletion: false,
-                            },
-                        )
-                        .await;
-                    }
-                }
-                _ => {}
-            }
-            result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            handle_file_mutation(
+                file_path,
+                description,
+                project_root,
+                event_tx,
+                false,
+                FileSuccessContent::ReadDisk,
+                || execute_edit_file(project_root, params, human_input.as_ref()),
+            )
+            .await
         }
         "delete_file" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
-            let old_content = read_for_change_event(project_root, &file_path).await;
-            let result = execute_delete_file(project_root, params, human_input.as_ref()).await;
-            match &result {
-                Err(ToolError::Suspended { prompt, .. }) => {
-                    let old_content = serde_json::from_str::<serde_json::Value>(prompt)
-                        .ok()
-                        .and_then(|v| v["old_content"].as_str().map(String::from))
-                        .unwrap_or_default();
-                    emit_domain(
-                        event_tx,
-                        BuilderEvent::FileChangePending {
-                            file_path,
-                            description,
-                            new_content: String::new(),
-                            old_content,
-                        },
-                    )
-                    .await;
-                }
-                Ok(v) if change_was_applied(v) => {
-                    emit_domain(
-                        event_tx,
-                        BuilderEvent::FileChanged {
-                            file_path,
-                            description,
-                            new_content: String::new(),
-                            old_content,
-                            is_deletion: true,
-                        },
-                    )
-                    .await;
-                }
-                _ => {}
-            }
-            result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            handle_file_mutation(
+                file_path,
+                description,
+                project_root,
+                event_tx,
+                true,
+                FileSuccessContent::Empty,
+                || execute_delete_file(project_root, params, human_input.as_ref()),
+            )
+            .await
         }
         "manage_directory" => {
             let path = params["path"].as_str().unwrap_or("").to_string();
             let operation = params["operation"].as_str().unwrap_or("").to_string();
-            let result = execute_manage_directory(project_root, params, human_input.as_ref()).await;
-            if result.is_ok() {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "manage_directory".into(),
-                        summary: format!("{operation} directory '{path}'"),
-                    },
-                )
-                .await;
-            }
-            result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            let r = execute_manage_directory(project_root, params, human_input.as_ref()).await;
+            emit_tool_used(event_tx, "manage_directory", r, |_| {
+                format!("{operation} directory '{path}'")
+            })
+            .await
         }
         "ask_user" => agentic_core::tools::handle_ask_user(params, human_input.as_ref())
             .map(|v| Box::new(v) as Box<dyn ToolOutput>),
         "lookup_reference" => {
             let r = execute_lookup_reference(params);
-            if let Ok(ref v) = r {
-                let card_name = v["card_name"].as_str().unwrap_or("");
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "lookup_reference".into(),
-                        summary: format!("Loaded reference: '{card_name}'"),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "lookup_reference", r, |v| {
+                format!("Loaded reference: '{}'", v["card_name"].as_str().unwrap_or(""))
+            })
+            .await
         }
         "lookup_schema" => {
             let provider = schema_provider
                 .ok_or_else(|| ToolError::Execution("schema provider is not configured".into()))?;
             let r = execute_lookup_schema(params, provider.as_ref());
-            if let Ok(ref v) = r {
-                let object_name = v["object_name"].as_str().unwrap_or("");
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "lookup_schema".into(),
-                        summary: format!("Retrieved schema for '{object_name}'"),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "lookup_schema", r, |v| {
+                format!("Retrieved schema for '{}'", v["object_name"].as_str().unwrap_or(""))
+            })
+            .await
         }
         "run_tests" => match test_runner {
             Some(runner) => {
@@ -804,22 +760,14 @@ pub(crate) async fn dispatch_tool(
                     .unwrap_or("<all tests>")
                     .to_string();
                 let r = execute_run_tests(project_root, params, runner).await;
-                if let Ok(ref v) = r {
-                    let summary = if let Some(n) = v["tests_run"].as_u64() {
+                emit_tool_used(event_tx, "run_tests", r, |v| {
+                    if let Some(n) = v["tests_run"].as_u64() {
                         format!("Ran {n} test file(s)")
                     } else {
                         format!("Ran tests for '{file_label}'")
-                    };
-                    emit_domain(
-                        event_tx,
-                        BuilderEvent::ToolUsed {
-                            tool_name: "run_tests".into(),
-                            summary,
-                        },
-                    )
-                    .await;
-                }
-                r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+                    }
+                })
+                .await
             }
             None => Err(ToolError::Execution(
                 "test runner is not configured for this builder instance".into(),
@@ -830,19 +778,14 @@ pub(crate) async fn dispatch_tool(
                 ToolError::Execution("database provider is not configured".into())
             })?;
             let r = execute_execute_sql(params, provider.as_ref()).await;
-            if let Ok(ref v) = r {
-                let db = v["database"].as_str().unwrap_or("");
-                let rows = v["row_count"].as_u64().unwrap_or(0);
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "execute_sql".into(),
-                        summary: format!("Ran SQL on '{db}' - {rows} row(s)"),
-                    },
+            emit_tool_used(event_tx, "execute_sql", r, |v| {
+                format!(
+                    "Ran SQL on '{}' - {} row(s)",
+                    v["database"].as_str().unwrap_or(""),
+                    v["row_count"].as_u64().unwrap_or(0)
                 )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            })
+            .await
         }
         "semantic_query" => {
             let provider = db_provider.ok_or_else(|| {
@@ -852,274 +795,138 @@ pub(crate) async fn dispatch_tool(
                 ToolError::Execution("semantic compiler is not configured".into())
             })?;
             let r = execute_semantic_query(params, provider.as_ref(), compiler.as_ref()).await;
-            if let Ok(ref v) = r {
-                let topic = params["topic"].as_str().unwrap_or("");
-                let rows = v["row_count"].as_u64().unwrap_or(0);
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "semantic_query".into(),
-                        summary: format!("Ran semantic query on topic '{topic}' - {rows} row(s)"),
-                    },
+            emit_tool_used(event_tx, "semantic_query", r, |v| {
+                format!(
+                    "Ran semantic query on topic '{}' - {} row(s)",
+                    params["topic"].as_str().unwrap_or(""),
+                    v["row_count"].as_u64().unwrap_or(0)
                 )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            })
+            .await
         }
         "list_dbt_projects" => {
             let r = execute_list_dbt_projects(project_root, params);
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "list_dbt_projects".into(),
-                        summary: format!("Found {} dbt project(s)", v.projects.len()),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "list_dbt_projects", r, |v| {
+                format!("Found {} dbt project(s)", v.projects.len())
+            })
+            .await
         }
         "list_dbt_nodes" => {
             let r = execute_list_dbt_nodes(project_root, params);
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "list_dbt_nodes".into(),
-                        summary: format!("Listed {} node(s) in '{}'", v.nodes.len(), v.project),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "list_dbt_nodes", r, |v| {
+                format!("Listed {} node(s) in '{}'", v.nodes.len(), v.project)
+            })
+            .await
         }
         "compile_dbt_model" => {
             let project_name = params["project"].as_str().unwrap_or("");
             if let Some(model) = params["model"].as_str().filter(|s| !s.is_empty()) {
                 let r = execute_compile_dbt_model_single(project_root, project_name, model);
-                if r.is_ok() {
-                    emit_domain(
-                        event_tx,
-                        BuilderEvent::ToolUsed {
-                            tool_name: "compile_dbt_model".into(),
-                            summary: format!("Compiled model '{model}' in '{project_name}'"),
-                        },
-                    )
-                    .await;
-                }
-                r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+                emit_tool_used(event_tx, "compile_dbt_model", r, |_| {
+                    format!("Compiled model '{model}' in '{project_name}'")
+                })
+                .await
             } else {
                 let r = execute_compile_dbt_model_all(project_root, project_name);
-                if let Ok(ref v) = r {
-                    emit_domain(
-                        event_tx,
-                        BuilderEvent::ToolUsed {
-                            tool_name: "compile_dbt_model".into(),
-                            summary: format!(
-                                "Compiled {} model(s) in '{project_name}'",
-                                v.models_compiled
-                            ),
-                        },
-                    )
-                    .await;
-                }
-                r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+                emit_tool_used(event_tx, "compile_dbt_model", r, |v| {
+                    format!("Compiled {} model(s) in '{project_name}'", v.models_compiled)
+                })
+                .await
             }
         }
         "run_dbt_models" => {
             let sm = secrets_provider.map(|p| p.secrets_manager().clone());
             let r = execute_run_dbt_models(project_root, params, sm.as_ref()).await;
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "run_dbt_models".into(),
-                        summary: format!(
-                            "Ran {} model(s) in '{}' — {}",
-                            v.results.len(),
-                            v.project,
-                            v.status
-                        ),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "run_dbt_models", r, |v| {
+                format!("Ran {} model(s) in '{}' — {}", v.results.len(), v.project, v.status)
+            })
+            .await
         }
         "test_dbt_models" => {
             let sm = secrets_provider.map(|p| p.secrets_manager().clone());
             let r = execute_test_dbt_models(project_root, params, sm.as_ref()).await;
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "test_dbt_models".into(),
-                        summary: format!(
-                            "Tests for '{}': {} passed, {} failed",
-                            v.project, v.passed, v.failed
-                        ),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "test_dbt_models", r, |v| {
+                format!("Tests for '{}': {} passed, {} failed", v.project, v.passed, v.failed)
+            })
+            .await
         }
         "get_dbt_lineage" => {
             let r = execute_get_dbt_lineage(project_root, params);
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "get_dbt_lineage".into(),
-                        summary: format!(
-                            "Lineage for '{}': {} nodes, {} edges",
-                            v.project,
-                            v.nodes.len(),
-                            v.edges.len()
-                        ),
-                    },
+            emit_tool_used(event_tx, "get_dbt_lineage", r, |v| {
+                format!(
+                    "Lineage for '{}': {} nodes, {} edges",
+                    v.project,
+                    v.nodes.len(),
+                    v.edges.len()
                 )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            })
+            .await
         }
         "analyze_dbt_project" => {
             let r = execute_analyze_dbt_project(project_root, params).await;
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "analyze_dbt_project".into(),
-                        summary: format!(
-                            "Analyzed {} model(s) in '{}' — {} contract violation(s)",
-                            v.models_analyzed,
-                            v.project,
-                            v.contract_violations.len()
-                        ),
-                    },
+            emit_tool_used(event_tx, "analyze_dbt_project", r, |v| {
+                format!(
+                    "Analyzed {} model(s) in '{}' — {} contract violation(s)",
+                    v.models_analyzed,
+                    v.project,
+                    v.contract_violations.len()
                 )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            })
+            .await
         }
         "get_dbt_column_lineage" => {
             let r = execute_get_dbt_column_lineage(project_root, params);
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "get_dbt_column_lineage".into(),
-                        summary: format!(
-                            "Column lineage for '{}': {} edge(s)",
-                            v.project,
-                            v.edges.len()
-                        ),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "get_dbt_column_lineage", r, |v| {
+                format!("Column lineage for '{}': {} edge(s)", v.project, v.edges.len())
+            })
+            .await
         }
         "parse_dbt_project" => {
             let r = execute_parse_dbt_project(project_root, params);
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "parse_dbt_project".into(),
-                        summary: format!(
-                            "Parsed '{}': {} model(s), {} source(s)",
-                            v.project, v.models, v.sources
-                        ),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "parse_dbt_project", r, |v| {
+                format!("Parsed '{}': {} model(s), {} source(s)", v.project, v.models, v.sources)
+            })
+            .await
         }
         "seed_dbt_project" => {
             let sm = secrets_provider.map(|p| p.secrets_manager().clone());
             let r = execute_seed_dbt_project(project_root, params, sm.as_ref()).await;
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "seed_dbt_project".into(),
-                        summary: format!("Loaded {} seed(s) in '{}'", v.seeds_loaded, v.project),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "seed_dbt_project", r, |v| {
+                format!("Loaded {} seed(s) in '{}'", v.seeds_loaded, v.project)
+            })
+            .await
         }
         "debug_dbt_project" => {
             let r = execute_debug_dbt_project(project_root, params);
-            if let Ok(ref v) = r {
-                let status = if v.all_ok {
-                    "all checks passed"
-                } else {
-                    "issues found"
-                };
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "debug_dbt_project".into(),
-                        summary: format!("Debug '{}': {status}", v.project_name),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "debug_dbt_project", r, |v| {
+                let status = if v.all_ok { "all checks passed" } else { "issues found" };
+                format!("Debug '{}': {status}", v.project_name)
+            })
+            .await
         }
         "clean_dbt_project" => {
             let r = execute_clean_dbt_project(project_root, params);
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "clean_dbt_project".into(),
-                        summary: format!(
-                            "Cleaned {} director(y/ies) in '{}'",
-                            v.cleaned.len(),
-                            v.project
-                        ),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "clean_dbt_project", r, |v| {
+                format!("Cleaned {} director(y/ies) in '{}'", v.cleaned.len(), v.project)
+            })
+            .await
         }
         "docs_generate_dbt" => {
             let r = execute_docs_generate_dbt(project_root, params);
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "docs_generate_dbt".into(),
-                        summary: format!("Generated docs for '{}': {} node(s)", v.project, v.nodes),
-                    },
-                )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            emit_tool_used(event_tx, "docs_generate_dbt", r, |v| {
+                format!("Generated docs for '{}': {} node(s)", v.project, v.nodes)
+            })
+            .await
         }
         "format_dbt_sql" => {
             let r = execute_format_dbt_sql(project_root, params);
-            if let Ok(ref v) = r {
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "format_dbt_sql".into(),
-                        summary: format!(
-                            "Formatted '{}': {}/{} file(s) changed",
-                            v.project, v.files_changed, v.files_checked
-                        ),
-                    },
+            emit_tool_used(event_tx, "format_dbt_sql", r, |v| {
+                format!(
+                    "Formatted '{}': {}/{} file(s) changed",
+                    v.project, v.files_changed, v.files_checked
                 )
-                .await;
-            }
-            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            })
+            .await
         }
         "init_dbt_project" => {
             let name = params["name"].as_str().unwrap_or("").to_string();
@@ -1170,22 +977,15 @@ pub(crate) async fn dispatch_tool(
             Some(runner) => {
                 let file_path = params["file_path"].as_str().unwrap_or("").to_string();
                 let r = execute_run_app(project_root, params, runner.clone()).await;
-                if let Ok(ref v) = r {
-                    let tasks_run = v["tasks_run"].as_u64().unwrap_or(0);
-                    let succeeded = v["tasks_succeeded"].as_u64().unwrap_or(0);
-                    let failed = v["tasks_failed"].as_u64().unwrap_or(0);
-                    emit_domain(
-                        event_tx,
-                        BuilderEvent::ToolUsed {
-                            tool_name: "run_app".into(),
-                            summary: format!(
-                                "Ran app '{file_path}' — {tasks_run} task(s), {succeeded} succeeded, {failed} failed"
-                            ),
-                        },
+                emit_tool_used(event_tx, "run_app", r, |v| {
+                    format!(
+                        "Ran app '{file_path}' — {} task(s), {} succeeded, {} failed",
+                        v["tasks_run"].as_u64().unwrap_or(0),
+                        v["tasks_succeeded"].as_u64().unwrap_or(0),
+                        v["tasks_failed"].as_u64().unwrap_or(0)
                     )
-                    .await;
-                }
-                r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+                })
+                .await
             }
             None => Err(ToolError::Execution(
                 "app runner is not configured for this builder instance".into(),
