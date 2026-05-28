@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.58] - 2026-05-28
+
+### 🚀 Features
+
+- Cron scheduler — Phase 1 consumer + Phase 2 (backend + UI) (#2350)
+- Airlayer build & pull integration for pre-aggregation support (#2334)
+- Coordinator dashboard redesign + workspace-scoped metrics (#2380)
+- Support git repositories with workspaces in subdirectories (#2400)
+
+### 🐛 Bug Fixes
+
+- Add missing example view (#2373)
+- Pass workspace_id to insert_run in preagg worker (#2375)
+- Handle chrono::Duration overflow in preagg Every interval (#2395)
+
+### 💼 Other
+
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 15 updates (#2392)
+- *(deps)* Bump crate-ci/typos from 1.46.2 to 1.46.3 (#2390)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 15 updates (#2393)
+
+### 🚜 Refactor
+
+- Remove agentic workflows routing agents (#2346)
+- Extract error handling logic in airwayReducer (#2398)
+- Consolidate tool event emission and file mutation handling (#2399)
+- Replace expect_sql() with safer sql() method in analytics (#2396)
+
+### 📚 Documentation
+
+- Revise welcome documentation for Oxygen OS
+- Update product-context.md from recent changelogs (#2386)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(skills)* Reconcile knowledge cards with skills@445c5459 (#2374)
+- *(skills)* Reconcile knowledge cards with skills@6aa77a42 (#2376)
+- *(skills)* Reconcile knowledge cards with skills@95c64756 (#2385)
+- *(skills-reconcile)* Allow the oxyhelper bot to trigger reconcile (#2384)
+- Restrict agentic browser tests to internal repository (#2394)
+
 ## [0.5.57] - 2026-05-21
 
 ### 🐛 Bug Fixes
@@ -11,6 +52,10 @@ All notable changes to this project will be documented in this file.
 ### 💼 Other
 
 - *(deps)* Bump crate-ci/typos from 1.46.1 to 1.46.2 (#2362)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.57 (#2370)
 
 ## [0.5.56] - 2026-05-20
 
