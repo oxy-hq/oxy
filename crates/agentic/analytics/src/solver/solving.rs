@@ -527,8 +527,9 @@ pub(super) fn build_solving_handler()
                         Ok(mut solution) => {
                             solution.solution_source = solution_source;
                             if let Some(spec) = &run_ctx.spec
+                                && let Some(sql) = solution.payload.sql()
                                 && let Err(err) = solver.validator.validate_solvable(
-                                    solution.payload.expect_sql(),
+                                    sql,
                                     spec,
                                     &solver.catalog,
                                 )
@@ -538,7 +539,7 @@ pub(super) fn build_solving_handler()
                                     AnalyticsEvent::ValidationFailed {
                                         state: "solving".to_string(),
                                         reason: err.to_string(),
-                                        model_response: solution.payload.expect_sql().to_string(),
+                                        model_response: sql.to_string(),
                                     },
                                 )
                                 .await;

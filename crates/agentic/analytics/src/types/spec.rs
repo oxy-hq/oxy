@@ -200,7 +200,7 @@ impl SolutionPayload {
         }
     }
 
-    /// Return the SQL string, panicking if this is the `Vendor` variant.
+    /// Return the SQL string, panicking if this is not the `Sql` variant.
     ///
     /// Use only in contexts where the payload is statically known to be SQL.
     pub fn expect_sql(&self) -> &str {
@@ -210,7 +210,7 @@ impl SolutionPayload {
                 panic!("expected SolutionPayload::Sql but got Vendor")
             }
             SolutionPayload::Preaggregation { .. } => {
-                panic!("expected SolutionPayload::Sql but got LocalParquet")
+                panic!("expected SolutionPayload::Sql but got Preaggregation")
             }
         }
     }

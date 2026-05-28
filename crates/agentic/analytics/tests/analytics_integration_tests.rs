@@ -206,11 +206,16 @@ impl DomainSolver<AnalyticsDomain> for FullPipelineSolver {
         _ctx: &agentic_core::orchestrator::RunContext<AnalyticsDomain>,
         _memory: &agentic_core::orchestrator::SessionMemory<AnalyticsDomain>,
     ) -> Result<AnalyticsResult, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        match run_query(&self.db, &solution.payload.expect_sql()) {
+        let sql = solution
+            .payload
+            .sql()
+            .expect("test solver only handles Sql payloads")
+            .to_string();
+        match run_query(&self.db, &sql) {
             Ok(data) => Ok(AnalyticsResult::single(data, None)),
             Err(e) => Err((
                 AnalyticsError::SyntaxError {
-                    query: solution.payload.expect_sql().to_string(),
+                    query: sql,
                     message: e,
                 },
                 BackTarget::Execute(solution, Default::default()),
@@ -413,11 +418,16 @@ impl DomainSolver<AnalyticsDomain> for PriorIntentSolver {
         _ctx: &agentic_core::orchestrator::RunContext<AnalyticsDomain>,
         _memory: &agentic_core::orchestrator::SessionMemory<AnalyticsDomain>,
     ) -> Result<AnalyticsResult, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        match run_query(&self.db, &solution.payload.expect_sql()) {
+        let sql = solution
+            .payload
+            .sql()
+            .expect("test solver only handles Sql payloads")
+            .to_string();
+        match run_query(&self.db, &sql) {
             Ok(data) => Ok(AnalyticsResult::single(data, None)),
             Err(e) => Err((
                 AnalyticsError::SyntaxError {
-                    query: solution.payload.expect_sql().to_string(),
+                    query: sql,
                     message: e,
                 },
                 BackTarget::Execute(solution, Default::default()),
@@ -638,11 +648,16 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
         _ctx: &agentic_core::orchestrator::RunContext<AnalyticsDomain>,
         _memory: &agentic_core::orchestrator::SessionMemory<AnalyticsDomain>,
     ) -> Result<AnalyticsResult, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        match run_query(&self.db, &solution.payload.expect_sql()) {
+        let sql = solution
+            .payload
+            .sql()
+            .expect("test solver only handles Sql payloads")
+            .to_string();
+        match run_query(&self.db, &sql) {
             Ok(data) => Ok(AnalyticsResult::single(data, None)),
             Err(e) => Err((
                 AnalyticsError::SyntaxError {
-                    query: solution.payload.expect_sql().to_string(),
+                    query: sql,
                     message: e,
                 },
                 BackTarget::Execute(solution, Default::default()),
