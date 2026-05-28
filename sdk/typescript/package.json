@@ -62,15 +62,15 @@
   },
   "devDependencies": {
     "@duckdb/duckdb-wasm": "^1.32.0",
-    "@types/node": "^25.7.0",
-    "@types/react": "^19.2.14",
-    "@typescript-eslint/eslint-plugin": "^8.59.3",
-    "@typescript-eslint/parser": "^8.59.3",
-    "eslint": "^10.3.0",
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.15",
+    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "@typescript-eslint/parser": "^8.60.0",
+    "eslint": "^10.4.0",
     "react": "^19.2.6",
-    "tsdown": "^0.21.10",
+    "tsdown": "^0.22.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.7"
   },
   "engines": {
     "node": ">=18.0.0"
