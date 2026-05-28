@@ -161,14 +161,18 @@ This exact text is used by `chat-ask` and `threads-list` so they
 resolve to the same `cache_scope: shared` entry. Editing it in one
 flow without editing the other forces a cold record on first run.
 
+The demo project ships a single agent — `analytics` (analytics.agentic.yml),
+selected by default — since #2346 removed the classic `default` agent, so the
+prelude no longer opens the agent picker.
+
 ```yaml
 - act: |
     Submit "What were the total weekly sales by store?" to the
-    'default' agent on the home page:
-    1. browser_click [data-testid=agent-selector-button].
-    2. From the dropdown, click `role=menuitem[name='default']`.
-    3. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
-    4. browser_click [data-testid=chat-panel-submit-button].
+    analytics agent on the home page. The demo project ships a single
+    agent (`analytics`, analytics.agentic.yml) selected by default, so
+    no agent-picker step is needed:
+    1. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
+    2. browser_click [data-testid=chat-panel-submit-button].
     End the turn once the URL changes to /threads/<id>.
   cache_scope: shared
 ```

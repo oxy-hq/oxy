@@ -39,7 +39,7 @@ const ResultsView = ({
 
   if (executionError) {
     return (
-      <div className='h-full overflow-auto p-4'>
+      <div className='h-full overflow-auto p-4' data-testid='semantic-query-error'>
         <ErrorAlert>
           <div className='whitespace-pre-wrap font-mono text-xs'>{executionError}</div>
         </ErrorAlert>
@@ -65,14 +65,17 @@ const ResultsView = ({
             </Tooltip>
           )}
           {executionTime != null && (
-            <span className='flex items-center gap-1 text-muted-foreground text-xs'>
+            <span
+              className='flex items-center gap-1 text-muted-foreground text-xs'
+              data-testid='semantic-query-execution-time'
+            >
               <Clock className='h-3 w-3' />
               {formatDuration(executionTime)}
             </span>
           )}
         </div>
       )}
-      <div className='min-h-0 flex-1'>
+      <div className='min-h-0 flex-1' data-testid='semantic-query-results'>
         <SqlResultsTable result={result} resultFile={resultFile} />
       </div>
     </div>

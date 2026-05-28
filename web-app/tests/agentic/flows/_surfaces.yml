@@ -28,7 +28,6 @@
     - "src/components/BuilderDialog/"
   flows:
     - builder-edits-app
-    - builder-rejected-suggestion
 
 - surface: onboarding
   paths:

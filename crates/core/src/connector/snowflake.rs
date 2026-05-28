@@ -437,14 +437,23 @@ impl Engine for Snowflake {
                     "📊 Snowflake: Received Arrow result with {} batches",
                     batches.len()
                 );
-                record_batches = Interchange::from_arrow_58(batches)
-                    .map_err(|err| {
-                        OxyError::DBError(format!("Failed to convert Arrow batches: {err}"))
-                    })?
-                    .to_arrow_58()
-                    .map_err(|err| {
-                        OxyError::DBError(format!("Failed to convert Arrow batches: {err}"))
-                    })?;
+                if batches.is_empty() {
+                    // `Interchange::from_arrow_58` panics on an empty
+                    // chunk vec — fall through to the existing
+                    // `record_batches.is_empty()` check below which
+                    // returns a clean `"No record batches returned"`
+                    // error instead.
+                    record_batches = Vec::new();
+                } else {
+                    record_batches = Interchange::from_arrow_58(batches)
+                        .map_err(|err| {
+                            OxyError::DBError(format!("Failed to convert Arrow batches: {err}"))
+                        })?
+                        .to_arrow_58()
+                        .map_err(|err| {
+                            OxyError::DBError(format!("Failed to convert Arrow batches: {err}"))
+                        })?;
+                }
             }
             QueryResult::Json(json) => {
                 tracing::debug!("📄 Snowflake: Received JSON result, converting to Arrow...");

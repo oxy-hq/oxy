@@ -98,10 +98,41 @@ async fn run_preagg_task(
     }
 
     let mut stale_work: Vec<StaleWork> = Vec::new();
+    // Counts only rollups past both skip gates (configured datasource + has
+    // a refresh_key). The "N of total" outcome therefore excludes skipped
+    // rollups; skip_suffix reports those counts separately.
     let mut total_rollups: usize = 0;
     let mut skipped_no_key: usize = 0;
+    let mut skipped_no_datasource: usize = 0;
     for (view, database_name) in &views {
         let rollups = airlayer::preagg::resolve_rollups(view);
+
+        // A fresh multi-tenant workspace may not have every datasource the
+        // seed/demo views reference. Skip those views rather than let each
+        // rollup hard-fail on `get_connector` and fail the whole cycle.
+        if !ctx.is_database_configured(database_name) {
+            skipped_no_datasource += rollups.len();
+            tracing::debug!(
+                view = %view.name,
+                database = %database_name,
+                rollups = rollups.len(),
+                "preagg: skipping view; datasource not configured in this workspace"
+            );
+            for rollup in &rollups {
+                let _ = event_tx
+                    .send(
+                        PreaggEvent::RollupSkippedNoDatasource {
+                            view: view.name.clone(),
+                            rollup: rollup.name.clone(),
+                            database: database_name.clone(),
+                        }
+                        .to_wire(),
+                    )
+                    .await;
+            }
+            continue;
+        }
+
         for rollup in rollups {
             let Some(rk) = rollup_refresh_key(&rollup, view) else {
                 skipped_no_key += 1;
@@ -153,11 +184,10 @@ async fn run_preagg_task(
     }
 
     if stale_work.is_empty() {
-        let answer = if skipped_no_key > 0 {
-            format!("all rollups are up to date ({skipped_no_key} skipped: no refresh_key)")
-        } else {
-            "all rollups are up to date".into()
-        };
+        let answer = format!(
+            "all rollups are up to date{}",
+            skip_suffix(skipped_no_key, skipped_no_datasource)
+        );
         let _ = outcome_tx
             .send(TaskOutcome::Done {
                 answer,
@@ -257,11 +287,7 @@ async fn run_preagg_task(
         }
     }
 
-    let skipped_suffix = if skipped_no_key > 0 {
-        format!(" ({skipped_no_key} skipped: no refresh_key)")
-    } else {
-        String::new()
-    };
+    let skipped_suffix = skip_suffix(skipped_no_key, skipped_no_datasource);
     let outcome = if failed == 0 {
         TaskOutcome::Done {
             answer: format!("rebuilt {succeeded} of {total} rollups{skipped_suffix}"),
@@ -276,6 +302,23 @@ async fn run_preagg_task(
 }
 
 // ── Helpers (moved from preagg_worker.rs) ────────────────────────────────────
+
+/// Build the human-readable "(N skipped: …)" suffix for a cycle outcome
+/// message. Returns an empty string when nothing was skipped.
+fn skip_suffix(skipped_no_key: usize, skipped_no_datasource: usize) -> String {
+    let total = skipped_no_key + skipped_no_datasource;
+    if total == 0 {
+        return String::new();
+    }
+    let mut parts = Vec::new();
+    if skipped_no_key > 0 {
+        parts.push(format!("{skipped_no_key} no refresh_key"));
+    }
+    if skipped_no_datasource > 0 {
+        parts.push(format!("{skipped_no_datasource} datasource not configured"));
+    }
+    format!(" ({total} skipped: {})", parts.join(", "))
+}
 
 fn rollup_refresh_key<'a>(
     rollup: &'a airlayer::preagg::RollupSpec,

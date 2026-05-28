@@ -615,9 +615,15 @@ pub async fn get_source_file(
         let arrow_stream = stmt.query_arrow([]).map_err(|e| e.to_string())?;
         let duckdb_batches: Vec<_> = arrow_stream.collect();
 
-        let batches = Interchange::from_arrow_58(duckdb_batches)
-            .and_then(|ic| ic.to_arrow_58())
-            .map_err(|e| e.to_string())?;
+        // Empty CSVs / zero-row queries: skip the conversion that would
+        // panic on an empty vec (see duckdb.rs) and emit an empty parquet.
+        let batches = if duckdb_batches.is_empty() {
+            Vec::new()
+        } else {
+            Interchange::from_arrow_58(duckdb_batches)
+                .and_then(|ic| ic.to_arrow_58())
+                .map_err(|e| e.to_string())?
+        };
         let schema = batches
             .first()
             .map(|b| b.schema())

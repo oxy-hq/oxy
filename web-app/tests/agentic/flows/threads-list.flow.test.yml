@@ -21,8 +21,8 @@ settings:
   cache_actions: true
   backend_mode: local
   # 1 chat submit + waits + 1 navigate + 1 click + judge. Pad for the
-  # initial chat-ask iteration (the `default` agent is fast on a single
-  # question).
+  # initial chat-ask iteration plus the agentic analytics run on a single
+  # question.
   max_steps: 25
 
 setup:
@@ -37,11 +37,11 @@ cases:
       # If you change this text, mirror it in chat-ask.flow.test.yml.
       - act: |
           Submit "What were the total weekly sales by store?" to the
-          'default' agent on the home page:
-          1. browser_click [data-testid=agent-selector-button].
-          2. From the dropdown, click `role=menuitem[name='default']`.
-          3. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
-          4. browser_click [data-testid=chat-panel-submit-button].
+          analytics agent on the home page. The demo project ships a single
+          agent (`analytics`, analytics.agentic.yml) selected by default, so
+          no agent-picker step is needed:
+          1. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
+          2. browser_click [data-testid=chat-panel-submit-button].
           End the turn once the URL changes to /threads/<id>.
         cache_scope: shared
 

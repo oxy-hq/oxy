@@ -821,7 +821,7 @@ export const CompileSemanticQueryView = ({ item }: { item: ArtifactItem }) => {
           {(input?.measures?.length ?? 0) > 0 && (
             <div>
               <p className='mb-1.5 font-medium text-muted-foreground text-xs'>Measures</p>
-              <div className='flex flex-wrap gap-1'>
+              <div className='flex flex-wrap gap-1' data-testid='semantic-query-measures'>
                 {(input?.measures ?? []).map((m) => (
                   <span
                     key={m}

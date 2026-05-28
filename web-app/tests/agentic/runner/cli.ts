@@ -65,8 +65,8 @@ interface CliArgs {
   /**
    * Zero or more positional filters. A flow matches if its filename
    * contains ANY of the listed substrings. Used by the CI matrix to
-   * group flows into domain buckets: `pnpm test:agentic builder-edits-app
-   * builder-rejected-suggestion` runs both, nothing else.
+   * group flows into domain buckets: `pnpm test:agentic chat-ask
+   * chat-panel-agent-switch` runs both, nothing else.
    */
   globs: string[];
   tag?: string;

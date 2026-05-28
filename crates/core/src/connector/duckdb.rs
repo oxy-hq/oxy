@@ -333,6 +333,16 @@ impl Engine for DuckDB {
             .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
         let duckdb_chunks: Vec<_> = arrow_stream.collect();
         tracing::debug!("Query results: {:?}", duckdb_chunks);
+        // `Interchange::from_arrow_58` indexes `df[0]` without an empty
+        // guard (df-interchange-0.3.3/src/from_arrow.rs:19), so a
+        // zero-chunk result — zero-row queries, some startup metadata
+        // calls — panics. Return the empty-result shape directly.
+        if duckdb_chunks.is_empty() {
+            return Ok((
+                Vec::new(),
+                std::sync::Arc::new(arrow::datatypes::Schema::empty()),
+            ));
+        }
         let arrow_chunks = Interchange::from_arrow_58(duckdb_chunks)
             .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?
             .to_arrow_58()

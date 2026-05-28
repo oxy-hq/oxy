@@ -46,6 +46,11 @@ pub enum PreaggEvent {
         view: String,
         rollup: String,
     },
+    RollupSkippedNoDatasource {
+        view: String,
+        rollup: String,
+        database: String,
+    },
 }
 
 impl PreaggEvent {
@@ -57,6 +62,7 @@ impl PreaggEvent {
             Self::RollupFailed { .. } => "preagg_rollup_failed",
             Self::RefreshKeyError { .. } => "preagg_refresh_key_error",
             Self::RollupSkippedNoRefreshKey { .. } => "preagg_rollup_skipped_no_refresh_key",
+            Self::RollupSkippedNoDatasource { .. } => "preagg_rollup_skipped_no_datasource",
         }
     }
 
@@ -103,5 +109,19 @@ mod tests {
         let (event_type, payload) = ev.to_wire();
         assert_eq!(event_type, "preagg_refresh_key_error");
         assert_eq!(payload["rollup_hash"], "abc123");
+    }
+
+    #[test]
+    fn skipped_no_datasource_wire_format() {
+        let ev = PreaggEvent::RollupSkippedNoDatasource {
+            view: "orders".into(),
+            rollup: "orders_by_month".into(),
+            database: "local".into(),
+        };
+        let (event_type, payload) = ev.to_wire();
+        assert_eq!(event_type, "preagg_rollup_skipped_no_datasource");
+        assert_eq!(payload["database"], "local");
+        assert_eq!(payload["view"], "orders");
+        assert!(payload.get("type").is_none());
     }
 }

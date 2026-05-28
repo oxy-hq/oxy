@@ -110,15 +110,13 @@ cases:
     tags: [chat, critical]
     steps:
       - act: |
-          Submit a question to the 'default' agent on the home page chat panel:
-          1. Click the agent selector button [data-testid=agent-selector-button].
-          2. From the dropdown, click the menu item labeled 'default'.
-          3. Type 'What were the total weekly sales by store?' into textarea[name=question].
-          4. Click [data-testid=chat-panel-submit-button].
+          Submit a question to the analytics agent on the home page chat panel.
+          The demo ships a single agent (`analytics`), selected by default:
+          1. Type 'What were the total weekly sales by store?' into textarea[name=question].
+          2. Click [data-testid=chat-panel-submit-button].
       - wait_for: streaming_complete
     expect:
-      - assert: "selector [data-testid=agent-artifact] is visible"
-      - judge: "the response includes a coherent answer about weekly sales per store"
+      - judge: "the analytics agent answered with a coherent, data-backed result about weekly sales per store, not an error"
 ```
 
 ### Writing effective `act:` prompts

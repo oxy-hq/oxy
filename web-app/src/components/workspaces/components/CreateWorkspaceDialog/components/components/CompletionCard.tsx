@@ -145,10 +145,11 @@ export default function CompletionCard({
             Try these with your analytics agent
           </p>
           <div className='flex flex-col gap-0.5'>
-            {sampleQuestions.slice(0, 3).map((question) => (
+            {sampleQuestions.slice(0, 3).map((question, index) => (
               <button
                 key={question}
                 type='button'
+                data-testid={`onboarding-sample-prompt-${index}`}
                 onClick={() => {
                   navigate(routes.HOME, {
                     state: {

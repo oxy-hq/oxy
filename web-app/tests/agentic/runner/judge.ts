@@ -135,7 +135,16 @@ async function evaluateJudge(
     .locator("body")
     .innerText()
     .catch(() => "");
-  const domText = fullText.slice(0, 4000);
+  // Chat/analytics threads render the agent's final answer at the BOTTOM of
+  // a long reasoning trace, so a head-only slice truncates exactly the
+  // content most judge claims care about (the answer itself). The screenshot
+  // is `fullPage: false` and can't see below-the-fold content either, so
+  // give the judge the head AND tail of the page text for long pages.
+  const SLICE = 4000;
+  const truncated = fullText.length > SLICE * 2;
+  const domText = truncated
+    ? `${fullText.slice(0, SLICE)}\n…[middle truncated]…\n${fullText.slice(-SLICE)}`
+    : fullText;
 
   // The DOM text may contain attacker-controlled content (e.g. an LLM
   // response rendered in chat). Without a nonce, that content could
@@ -162,7 +171,7 @@ async function evaluateJudge(
           : []),
         {
           type: "text" as const,
-          text: `Visible page text (truncated):\n${domText}\n\nClaim: ${claim}\n\nIs this claim true based on the screenshot and text? Respond with JSON: {"nonce": "${nonce}", "passed": boolean, "rationale": string}.`
+          text: `Page text${truncated ? " (head + tail; middle truncated)" : ""}:\n${domText}\n\nClaim: ${claim}\n\nIs this claim true based on the screenshot and text? Respond with JSON: {"nonce": "${nonce}", "passed": boolean, "rationale": string}.`
         }
       ]
     }

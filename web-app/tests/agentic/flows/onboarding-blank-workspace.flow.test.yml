@@ -157,18 +157,24 @@ cases:
       #      trying to return.
       #   2. App #1 — open from the SIDEBAR.
       - act: |
-          On the completion screen, browser_click the FIRST suggested-
-          prompt button (under "Try these with your analytics agent").
-          URL changes to /threads/<id>; the chat panel auto-submits.
+          On the completion screen, browser_click
+          [data-testid=onboarding-sample-prompt-0] — the first suggested
+          prompt under "Try these with your analytics agent". The button
+          navigates to /threads/<id> and the chat panel auto-submits the
+          prompt (it sets prefillQuestion + autoSubmit on the home route).
 
       - wait_for: streaming_complete
 
       - act: |
           Confirm the assistant response rendered without error (no red
-          banner, no "Operation cancelled" / "I cannot answer"), then
-          open the first dashboard app via the left sidebar. Apps live
-          in a section labeled "Apps"; browser_click the first app
-          button. URL changes to /apps/<base64>.
+          banner, no "Operation cancelled" / "I cannot answer"), then open
+          the first dashboard app from the left sidebar's "Apps" section.
+          browser_click [data-testid^=sidebar-app-link-] — every app link
+          carries a `sidebar-app-link-<name>` testid and the runtime clicks
+          the first match, so this picks the first app WITHOUT depending on
+          its builder-generated name (which varies per run and was the
+          source of recurring Tier-2 selector-heal noise). URL changes to
+          /apps/<base64>.
 
       - wait_for: network_idle
 

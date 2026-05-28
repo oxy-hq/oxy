@@ -28,6 +28,7 @@ const HeaderActions = ({
               disabled={loading || disabled}
               onClick={onExecuteQuery}
               title='Run query'
+              data-testid='semantic-run-query'
             >
               {loading ? <Spinner /> : <Play className='h-4 w-4' />}
             </Button>

@@ -62,6 +62,16 @@ impl Engine for MotherDuck {
 
             let duckdb_chunks: Vec<_> = arrow_stream.collect();
             tracing::debug!("MotherDuck query results: {:?}", duckdb_chunks);
+            // See duckdb.rs — `Interchange::from_arrow_58` panics on an
+            // empty chunk vec because the macro indexes `df[0]` without
+            // a guard. Short-circuit to the same empty-result shape
+            // the function falls back to below.
+            if duckdb_chunks.is_empty() {
+                return Ok((
+                    Vec::new(),
+                    std::sync::Arc::new(arrow::datatypes::Schema::empty()),
+                ));
+            }
             let arrow_chunks = Interchange::from_arrow_58(duckdb_chunks)
                 .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?
                 .to_arrow_58()

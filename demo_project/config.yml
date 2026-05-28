@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/config.json
 defaults:
   database: local
-  agent: default.agent.yml
+  agent: analytics.agentic.yml
 models:
   - vendor: anthropic
     name: claude-sonnet-4-6

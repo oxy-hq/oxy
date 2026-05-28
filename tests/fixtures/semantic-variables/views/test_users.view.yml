@@ -19,7 +19,7 @@ dimensions:
 
   - name: created_date
     expr: "{{variables.date_column}}"
-    type: time
+    type: datetime
 
 measures:
   - name: total_users

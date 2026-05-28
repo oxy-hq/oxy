@@ -1,18 +1,15 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
-# Verify the agent-selector dropdown switches between agents and the
-# active agent is reflected in the selector button. Specifically targets
-# the "user changes their mind about which agent to talk to mid-session"
-# regression class — selector state can desync from the chat input state
-# in some scroll positions.
-#
-# Demo project ships two agents that both appear in the dropdown:
-#   - `default` (default.agent.yml — Oxymart sales analyst, classic agent)
-#   - `analytics` (analytics.agentic.yml — agentic analytics pipeline)
-#
-# We toggle from default → analytics → back to default.
+# Verify the agent-selector dropdown renders and reflects the selected
+# agent. This flow used to switch between two demo agents (a classic
+# `default` + the agentic `analytics`); #2346 removed the classic agent,
+# so the demo now ships a single agent — `analytics` (analytics.agentic.yml).
+# With one agent there is no "switch" to exercise, so this is now a selector
+# smoke check: open the dropdown, confirm the analytics agent is listed and
+# selectable, and the trigger reflects it. (If the demo regains a second
+# agent, restore the switch assertions from git history.)
 
-name: chat panel agent switch
+name: chat panel agent selector
 target: chat
 
 settings:
@@ -20,33 +17,35 @@ settings:
   trace: on-failure
   cache_actions: true
   backend_mode: local
-  max_steps: 25
+  max_steps: 15
 
 setup:
   - "goto:/"
 
 cases:
-  - name: switch from default to analytics agent and back
+  - name: agent selector lists and selects the analytics agent
     tags: [chat, regression]
     steps:
       - wait_for: "selector:[data-testid=agent-selector-button]"
 
       - act: |
           browser_click [data-testid=agent-selector-button] to open the
-          dropdown, then browser_click `role=menuitem[name='analytics']`.
-          Trigger button updates to 'analytics'.
+          agent dropdown.
 
-      - wait_for: "selector:[data-testid=agent-selector-button]"
+      # The dropdown renders one menuitem per available agent. The demo ships
+      # a single agent — `analytics`. Gate on that menuitem so a selector that
+      # fails to load its agents (the known "selector shows undefined/empty"
+      # race) fails here deterministically, instead of slipping past a judge
+      # the initial trigger label already satisfies.
+      - wait_for: "selector:role=menuitem[name='analytics'];timeout_ms=10000"
 
       - act: |
-          browser_click [data-testid=agent-selector-button] again, then
-          browser_click `role=menuitem[name='default']`. Trigger button
-          reverts to 'default'.
+          browser_click `role=menuitem[name='analytics']` to select the
+          agent; the dropdown closes and the trigger button reflects
+          'analytics'.
 
     expect:
       - assert: "selector [data-testid=agent-selector-button] is visible"
       - judge: |
-          The page is on the home/chat surface, the agent selector
-          button is visible, and the selector text reflects the
-          'default' agent (NOT 'analytics' or another agent). No error
-          banner is visible.
+          The home/chat surface is shown, the agent selector button is
+          visible and reads 'analytics', and no error banner is present.

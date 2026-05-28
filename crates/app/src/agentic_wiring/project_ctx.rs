@@ -118,6 +118,18 @@ impl OxyProjectContext {
         self.role.clone()
     }
 
+    /// True if `name` resolves to a database configured in this workspace
+    /// (including runtime-overlay databases registered after a run).
+    pub fn is_database_configured(&self, name: &str) -> bool {
+        // `resolve_database`'s only error is the not-found case (a poisoned
+        // overlay lock falls back to the static-config lookup rather than
+        // erroring), so `is_ok()` here cleanly means "configured".
+        self.workspace_manager
+            .config_manager
+            .resolve_database(name)
+            .is_ok()
+    }
+
     /// Resolve and build a `DatabaseConnector` for `db_name`, surfacing the
     /// real reason on failure (config missing, secret unresolved, host
     /// unreachable, …) instead of collapsing every failure into `None`.

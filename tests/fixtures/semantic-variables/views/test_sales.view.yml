@@ -11,7 +11,7 @@ dimensions:
 
   - name: sale_date
     expr: "{{variables.columns.date}}"
-    type: time
+    type: datetime
 
   - name: region
     expr: "region"

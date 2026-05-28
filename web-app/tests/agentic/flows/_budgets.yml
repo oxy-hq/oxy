@@ -45,12 +45,3 @@
 - flow: ide-compile-error
   cold_usd: 0.30
   warm_usd: 0.005
-
-- flow: builder-rejected-suggestion
-  # Local-mode against demo_project/insights.app.yml: 1 act to open the
-  # builder and submit a prompt with auto-approve OFF, wait for the
-  # propose_change suspension (Reject button), 1 act to click Reject,
-  # then streaming_complete. Builder pipeline reaches its first
-  # propose_change in 30–90s.
-  cold_usd: 0.50
-  warm_usd: 0.01

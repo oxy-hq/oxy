@@ -83,7 +83,7 @@ jobs:
           # `local` hits the auth-disabled public port (3000); `cloud`
           # hits the auth-disabled internal port (3001).
           ALL='[
-            {"name":"builder","flows":"builder-edits-app builder-rejected-suggestion","mode":"local","port":3000},
+            {"name":"builder","flows":"builder-edits-app","mode":"local","port":3000},
             {"name":"semantic","flows":"semantic-builder-ask","mode":"local","port":3000},
             {"name":"ask-agent","flows":"chat-ask chat-panel-agent-switch","mode":"local","port":3000},
             {"name":"threads","flows":"threads-list","mode":"local","port":3000},

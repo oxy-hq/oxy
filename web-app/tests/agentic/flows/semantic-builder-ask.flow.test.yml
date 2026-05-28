@@ -1,81 +1,51 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
-# End-to-end integration: builder writes the semantic layer → semantic
-# layer recompiles → analytics agent picks up the new measure on the
-# next conversation → user inspects the semantic_query artifact and
-# sees the new measure.
+# End-to-end integration: the builder writes a new measure into the
+# semantic layer, then we verify DIRECTLY in the IDE's view explorer that
+# the measure is usable — it compiles to SQL and executes against the
+# warehouse — instead of asking the analytics agent.
 #
-# Phase 1: From /ide (the Developer Portal), open the builder via Cmd+I
-#   and ask it to add a new measure `high_fuel_price_revenue`
-#   (type: sum, expr: Weekly_Sales, filter: Fuel_Price > 3.5) to
-#   `sales_semantics/views/oxymart.view.yml`. With auto-approve ON the
-#   `edit_file` suspension auto-resolves and the file lands on disk.
+# Phase 1: From /ide, open the builder via Cmd+I and ask it to add a new
+#   measure `high_fuel_price_revenue` (sum of Weekly_Sales filtered to
+#   Fuel_Price > 3.5) to `sales_semantics/views/oxymart.view.yml`. Leave
+#   auto-approve OFF and explicitly Accept the proposed edit — the toggle is
+#   unreliable to flip on warm replay (it left the edit_file suspension
+#   unresolved and the measure unwritten), whereas a gated Accept click is
+#   deterministic — so the file reliably lands on disk.
 #
-# Phase 2: Navigate to home, switch to the `analytics` agent
-#   (`analytics.agentic.yml` — the agentic analytics pipeline; the
-#   classic .agent.yml format is being deprecated, so tests should
-#   exercise the agentic path), and ask a question that the new
-#   measure can answer.
+# Phase 2: Open the oxymart view in the IDE's Explorer mode, select the new
+#   measure in the Fields panel, and Run the query. The query compiles to
+#   SQL and executes against the DuckDB warehouse; the execution-time
+#   indicator (and a results table, not an error panel) proves the
+#   builder-created measure is genuinely usable.
 #
-# Why a fuel-price-filtered measure rather than a holiday measure?
-# The demo project already ships `time_analysis.holiday_sales` (sum of
-# Weekly_Sales filtered by Holiday_Flag = 1) with the identical
-# definition we'd otherwise be asking the builder to add. When the
-# analytics agent receives a holiday-sales question it has two
-# equivalent measures to choose from and can pick the pre-existing one
-# without exercising the integration we're trying to test. The "weeks
-# with fuel prices above $3.50" measure has no existing equivalent
-# (the schema has a `fuel_price_range` dimension and an
-# `average_fuel_price` measure but no fuel-price-filtered revenue
-# sum), so when the agent picks a measure for this question, picking
-# the new one is the natural — and arguably only — direct match.
+# Why verify in the IDE explorer rather than via the analytics agent: the
+# agentic analytics agent is a HYBRID (semantic layer + raw-schema
+# fallback). For a question it can answer from base columns it generates
+# SQL directly and never touches the dedicated measure, so "did the agent
+# use the new measure" runs only ~50–85% even when the question names the
+# measure — that's the agent's nature, not a usability signal. The IDE view
+# explorer compiles + runs the selected measure deterministically, which is
+# exactly the "is this measure usable" check this flow exists for. The whole
+# flow is deterministic (no LLM judge).
 #
-# Phase 3: Click into the rendered semantic_query artifact (the
-#   "Semantic Query" reasoning-trace step → an artifact pill inside the
-#   expanded row opens `AnalyticsArtifactSidebar`'s
-#   `CompileSemanticQueryView`). Verify that the Measures section of
-#   the artifact contains `high_fuel_price_revenue`, AND that the
-#   agent's main-thread response includes a plausible numeric answer.
+# Why /ide for Phase 1: the Cmd+I hotkey is registered at WorkspaceLayout
+# level (App.tsx) but react-hotkeys-hook disables hotkeys while a form input
+# is focused; the home page autofocuses the chat textarea and captures `i`.
+# The /ide page has no autofocused input, so Meta+i fires reliably.
 #
-# Why the question explicitly names the measure: the analytics agent
-# can always synthesize an equivalent query from existing measures +
-# filters (e.g., `total_sales` + `fuel_price > 3.5` filter). To bias
-# toward selecting the new measure specifically, the question
-# references it by name — the way a user familiar with their schema
-# would. Both the Phase 1 builder prompt and Phase 2 analytics
-# question are written as plain-language requests; the test reflects
-# realistic usage rather than scaffolded specifications.
-#
-# Why /ide instead of /: the Cmd+I hotkey is registered at the
-# WorkspaceLayout level (`App.tsx:112`) but `react-hotkeys-hook`
-# disables hotkeys when focus is in a form input by default. The home
-# page autofocuses the chat textarea, which captures the `i` key and
-# blocks the hotkey. The /ide page has no autofocused input in its
-# default state, so Meta+i fires reliably.
-#
-# Why the explicit Phase 3 press: the user-visible measure name appears
-# in two places — the propose_semantic_query step preview (a truncated
-# join of the first three measures + dimensions, per
-# `AnalyticsStepRow.tsx:308`) and the artifact sidebar's
-# `CompileSemanticQueryView` Measures section
-# (`AnalyticsArtifactViews.tsx:821`). The first is brittle on truncation;
-# the second is the artifact's actual contract. Pressing into the
-# artifact gives a stronger guarantee that the agent's
-# semantic_query.input.measures actually included the new measure.
-#
-# `restore_demo_file:sales_semantics/views/oxymart.view.yml` reverts
-# the view before each run so the measure doesn't compound across
-# reruns.
+# `restore_demo_file:sales_semantics/views/oxymart.view.yml` reverts the
+# view before each run so the measure doesn't compound across reruns.
 #
 # Preconditions:
 #   * $ANTHROPIC_API_KEY in the runner's environment.
 #   * Docker Desktop running. backend_mode: local — runner spawns
 #     `oxy start --local --enterprise` from `demo_project/` itself.
 #
-# Cold cost: ~$0.40–0.80 (two LLM-heavy chained agent runs + judge).
-# Warm cost: ~$0.008 (judge only).
+# Cold cost: ~$0.30–0.60 (one builder agent run + IDE-driven steps; no
+# analytics agent run and no LLM judge). Warm cost: ~$0.005.
 
-name: builder adds measure, analytics agent uses it
+name: builder adds measure, verify it is usable in the IDE
 target: any
 
 settings:
@@ -92,120 +62,121 @@ setup:
   - "goto:/ide"
 
 cases:
-  - name: builder adds high_fuel_price_revenue, analytics agent uses it in a semantic_query
+  - name: builder adds high_fuel_price_revenue; the IDE view explorer runs it successfully
     tags: [builder, semantic, integration, critical]
     steps:
       # === Phase 1: Builder adds a measure to the semantic layer ===
       - act: |
-          You are on /ide where Cmd+I opens the builder dialog. Open the
-          builder and submit a build prompt in one atomic sequence.
-          Auto-approve starts OFF in a fresh browser context
-          (localStorage empty → autoApprove === false at mount); one
-          unconditional click flips it ON so the edit_file suspension
-          auto-resolves.
+          You are on /ide where Cmd+I opens the builder dialog. Open it and
+          submit a build prompt. Do NOT touch the auto-approve toggle — leave
+          it OFF; we approve the proposed edit explicitly below. (The
+          auto-approve toggle is unreliable to flip on warm replay, which
+          left the edit_file suspension unresolved and the measure unwritten;
+          an explicit Accept click is deterministic.)
 
           1. browser_press_key "Meta+i". [data-testid=builder-dialog-root]
              becomes visible.
-          2. browser_click [data-testid=builder-auto-approve-toggle]
-             EXACTLY ONCE to flip auto-approve ON. Do NOT read the
-             toggle's data-state attribute first — it starts OFF in a
-             clean context.
-          3. browser_click [data-testid=builder-input-textarea] to focus.
-          4. browser_keyboard_type (NOT browser_type) to APPEND the
-             user prompt as a plain-language request — the kind of
-             thing a real user would write at a builder prompt, not a
-             specification with disclaimers:
+          2. browser_click [data-testid=builder-input-textarea] to focus.
+          3. browser_keyboard_type (NOT browser_type) the user prompt as a
+             plain-language request — the kind of thing a real user would
+             write at a builder prompt, not a specification with disclaimers:
 
                "In the oxymart view, add a measure called high_fuel_price_revenue that sums Weekly_Sales for weeks when Fuel_Price is above 3.5."
-          5. browser_press_key "Enter". URL changes to /threads/<id>.
+          4. browser_press_key "Enter". URL changes to /threads/<id> and the
+             builder run starts.
 
-          Do NOT browser_navigate away from /ide or /threads/<id>.
           Do NOT browser_snapshot mid-sequence — the snapshot summarizer
           sometimes reports the Radix-portal dialog as missing.
 
-      # Don't use `streaming_complete` here — the builder run can finish
-      # before the act step's LLM turns conclude, leaving no transient
-      # stream-start signal for the runner to latch onto. Wait directly
-      # for the post-run input state (send button visible) which is the
-      # actual signal we care about. 2-min timeout — typical builder
-      # runs finish in 30–60s; this gives ~2-3x buffer for cold runs
-      # while still catching hangs in a reasonable time.
-      - wait_for: "selector:[data-testid=message-input-send-button];timeout_ms=120000"
+      # With auto-approve OFF the builder proposes the edit and SUSPENDS,
+      # rendering a file-change diff with Accept/Reject buttons in the thread
+      # (FileChangeDiff.tsx). Wait for the Accept button; 4-min timeout covers
+      # the cold builder run (lookup_schema, search_files, validate_project,
+      # edit_file) — it can run long when the machine is loaded; an isolated
+      # CI runner is faster, but the headroom is cheap (a fast run hits the
+      # Accept button well before the ceiling).
+      - wait_for: "selector:[data-testid=file-change-accept];timeout_ms=240000"
 
-      # === Phase 2: Analytics agent uses the new measure ===
       - act: |
-          Navigate to home and ask the analytics agent a question that
-          should be answered using the new measure.
+          The builder proposed the measure edit (auto-approve is OFF).
+          browser_click [data-testid=file-change-accept] to approve it. If the
+          builder proposed more than one file edit, more than one Accept
+          button may appear — click each [data-testid=file-change-accept]
+          until none remain. Accepting resumes the pipeline and writes
+          high_fuel_price_revenue into the view file.
 
-          1. browser_navigate "/". Wait until
-             [data-testid=agent-selector-button] is visible.
-          2. browser_click [data-testid=agent-selector-button] to open
-             the dropdown.
-          3. browser_click `role=menuitem[name='analytics']`. The
-             trigger button updates to 'analytics'.
-          4. browser_click textarea[name=question] to focus.
-          5. browser_type into textarea[name=question]:
-               "What is the value of high_fuel_price_revenue?"
-          6. browser_click [data-testid=chat-panel-submit-button].
+      # The accept applies the edit: the suspension resolves and the measure
+      # is written to the view file. Wait for the Accept button to disappear
+      # — that confirms the edit landed — rather than for the whole builder
+      # run to finish. The post-accept interpret/summarize turn can run long
+      # and isn't needed here: the measure is already on disk once the
+      # suspension resolves. (If the builder proposed more than one edit,
+      # the act above accepts each, so this only fires once all are applied.)
+      - wait_for: "selector_hidden:[data-testid=file-change-accept];timeout_ms=90000"
 
-          End the turn once the URL changes to /threads/<id>.
+      # === Phase 2: Verify the measure is usable in the IDE view explorer ===
+      # Atomic steps, each gated on a signal proving the previous action
+      # landed. Warm replay fires recorded clicks back-to-back, faster than
+      # the UI settles, so a compound "navigate + click + click" step races
+      # an unsettled page (the run click fired while the Run button was still
+      # disabled → no query → the execution-time wait timed out). One action
+      # per step + a gate after each removes that race.
 
-      # Same pattern as Phase 1: agentic analytics runs can finish
-      # quickly enough that `streaming_complete`'s 20s stream-start
-      # window expires before we get there. Wait directly for the post-
-      # run send button.
-      - wait_for: "selector:[data-testid=message-input-send-button];timeout_ms=120000"
-
-      # === Phase 3: Press into the semantic_query artifact ===
-      # The agentic analytics page renders a reasoning trace on the
-      # left with high-level grouped step rows (e.g. "Searching catalog",
-      # "Running query against the database", "Synthesizing results into
-      # an answer"). Each row has artifact pills directly visible
-      # underneath the row label — click a pill to open the right-side
-      # `AnalyticsArtifactSidebar`, where `CompileSemanticQueryView`
-      # renders Measures / Dimensions / Filters / Generated SQL.
       - act: |
-          The analytics run finished. Open the semantic_query
-          artifact panel so the sidebar reveals the measures the
-          agent used.
+          browser_navigate
+          "/ide/files/c2FsZXNfc2VtYW50aWNzL3ZpZXdzL294eW1hcnQudmlldy55bWw="
+          — that path segment is base64 of
+          `sales_semantics/views/oxymart.view.yml`, so this opens the oxymart
+          view editor directly. Navigate by URL rather than clicking through
+          the file tree (the multi-click tree expansion is timing-flaky on
+          warm replay). Do NOT browser_snapshot before it settles.
 
-          1. browser_click [data-testid=reasoning-pill-semantic-query].
-             The right-side artifact panel opens with a "Measures"
-             section listing the measure badges.
+      # The view opens in Editor (YAML) mode; the mode switcher (tabs
+      # aria-labelled "Explorer view" / "Editor view") mounts with the view
+      # editor. Gate on the Explorer tab so the click below can't race the
+      # post-navigation mount.
+      - wait_for: "selector:[aria-label='Explorer view'];timeout_ms=30000"
 
-      # The CompileSemanticQueryView always renders a "Measures" header
-      # when measures are present (see AnalyticsArtifactViews.tsx:823).
-      - wait_for: "selector:text=Measures;timeout_ms=15000"
+      - act: |
+          browser_click `role=tab[name='Explorer view']` to switch the view
+          editor into Explorer mode; the left Fields panel then lists the
+          Dimensions and Measures sections.
+
+      # The just-added measure renders as a clickable item in the Measures
+      # section once the explorer loads the (freshly edited) view.
+      - wait_for: "selector:[data-testid=semantic-field-measure-high_fuel_price_revenue];timeout_ms=30000"
+
+      - act: |
+          Add the measure to the query: if the "Measures" section is
+          collapsed, click its "Measures" header first so the item is visible,
+          then browser_click
+          [data-testid=semantic-field-measure-high_fuel_price_revenue].
+
+      # Selecting the measure marks its sidebar item active (data-active=true)
+      # and enables the Run button — it is disabled until at least one field
+      # is selected (canExecuteQuery). Gate on the active state so the Run
+      # click below cannot fire while the button is still disabled: that was
+      # the warm-replay race that left the query unrun and timed out the
+      # execution-time wait.
+      - wait_for: "selector:[data-testid=semantic-field-measure-high_fuel_price_revenue][data-active=true];timeout_ms=15000"
+
+      - act: |
+          browser_click [data-testid=semantic-run-query] (the Run-query play
+          button) to compile the selected measure to SQL and execute it.
+
+      # On success the execution-time indicator renders (the query compiled
+      # to SQL and executed against DuckDB). On a compile/execution failure
+      # the error panel ([data-testid=semantic-query-error]) renders instead
+      # and this wait times out — which is the correct "not usable" failure.
+      - wait_for: "selector:[data-testid=semantic-query-execution-time];timeout_ms=90000"
 
     expect:
-      # Measure name appears somewhere visible on the page. After
-      # Phase 3 the sidebar is open and the Measures badge renders the
-      # name verbatim; even if the click failed, the step row's
-      # preview also includes it (truncated). `text=` is a substring
-      # match, so this passes whether the agent emitted
-      # `high_fuel_price_revenue` or qualified as
-      # `oxymart.high_fuel_price_revenue`.
-      - assert: 'text "high_fuel_price_revenue" is visible'
-
-      - judge: |
-          Both conditions must hold:
-
-          (a) The opened semantic_query artifact panel (or the
-              propose_semantic_query step row) includes the measure
-              `high_fuel_price_revenue` (possibly qualified
-              as `oxymart.high_fuel_price_revenue`) in its
-              Measures list. This confirms the analytics agent
-              selected the newly added measure rather than
-              synthesizing equivalent SQL from scratch.
-
-          (b) The agent's main-thread response provides a plausible
-              numeric answer for the value of
-              `high_fuel_price_revenue` — a dollar value formatted
-              with $ and digit separators (e.g., a value in the
-              hundreds of millions for a multi-year retail dataset).
-              The response is coherent and is NOT an error message,
-              "I don't know", or "Operation cancelled".
-
-          Additionally: no red error banner is visible, and the agent
-          is no longer streaming (no Stop button beside the chat
-          input).
+      # DETERMINISTIC usability check — no LLM judgment. The builder-created
+      # measure compiled to SQL and executed against the warehouse, so the
+      # execution-time indicator rendered.
+      - assert: 'selector [data-testid=semantic-query-execution-time] is visible'
+      # And it did not error: the error panel replaces the results table on a
+      # compile/execution failure, so it must be absent.
+      - assert: 'selector [data-testid=semantic-query-error] is not visible'
+      # The results table rendered (a result set came back, not an error).
+      - assert: 'selector [data-testid=semantic-query-results] is visible'
