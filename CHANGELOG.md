@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.59] - 2026-05-29
+
+### 🐛 Bug Fixes
+
+- Stabilize agentic browser test suite on main (#2379)
+- Add module type to DuckDB worker initialization (#2404)
+
+### ⚙️ Miscellaneous Tasks
+
+- Simplify git-cliff release notes generation (#2401)
+
 ## [0.5.58] - 2026-05-28
 
 ### 🚀 Features
@@ -42,6 +53,7 @@ All notable changes to this project will be documented in this file.
 - *(skills)* Reconcile knowledge cards with skills@95c64756 (#2385)
 - *(skills-reconcile)* Allow the oxyhelper bot to trigger reconcile (#2384)
 - Restrict agentic browser tests to internal repository (#2394)
+- Release 0.5.58 (#2371)
 
 ## [0.5.57] - 2026-05-21
 
