@@ -41,7 +41,7 @@ const init = async () => {
               mainWorker: eh_worker
             }
           });
-          worker = new Worker(bundle.mainWorker!);
+          worker = new Worker(bundle.mainWorker!, { type: "module" });
         } else {
           // Use CDN bundles for cloud
           const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
