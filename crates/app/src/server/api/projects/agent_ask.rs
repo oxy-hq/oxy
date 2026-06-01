@@ -32,7 +32,6 @@ use axum::response::{IntoResponse, Response};
 use entity::organizations;
 use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, instrument, warn};
 use uuid::Uuid;

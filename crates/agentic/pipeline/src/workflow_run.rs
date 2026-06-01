@@ -966,11 +966,10 @@ async fn run_delegated_step(
             "TaskSpec::{spec:?} cannot run inline; only WorkflowStep, Agent and Workflow are supported"
         ))),
     }
-    .map_err(|e| {
+    .inspect_err(|e| {
         // Surface a hint about which step failed rather than a bare error
         // string — Data Apps log this directly to the user.
         let _ = state;
-        e
     })
 }
 

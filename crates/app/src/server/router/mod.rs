@@ -247,7 +247,7 @@ fn is_allowed_origin_for(headers: &HeaderMap, origins: &CorsOrigins) -> bool {
                 None => true,
                 Some(origin) => {
                     let origin_val = HeaderValue::from_str(&origin).ok();
-                    origin_val.map_or(false, |v| allowed.contains(&v))
+                    origin_val.is_some_and(|v| allowed.contains(&v))
                 }
             }
         }

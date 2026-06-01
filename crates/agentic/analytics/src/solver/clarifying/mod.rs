@@ -22,9 +22,7 @@ use crate::events::AnalyticsEvent;
 use crate::llm::{LlmError, ThinkingConfig, ToolLoopConfig};
 use crate::schemas::triage_response_schema;
 use crate::tools::execute_clarifying_tool;
-use crate::types::{
-    DomainHypothesis, QueryRequestItem, QuestionType, SolutionPayload, SolutionSource,
-};
+use crate::types::{DomainHypothesis, QueryRequestItem, QuestionType, SolutionSource};
 use crate::{AnalyticsAnswer, AnalyticsDomain, AnalyticsError, AnalyticsIntent, AnalyticsSolution};
 
 use super::{

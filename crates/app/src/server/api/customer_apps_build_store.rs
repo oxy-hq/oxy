@@ -49,10 +49,10 @@ fn bucket() -> Option<String> {
 /// data dir under `oxy`. Both `put`/`get`/`delete` resolve through here so
 /// writes and reads always agree.
 fn state_root() -> PathBuf {
-    if let Ok(dir) = std::env::var("OXY_STATE_DIR") {
-        if !dir.trim().is_empty() {
-            return PathBuf::from(dir);
-        }
+    if let Ok(dir) = std::env::var("OXY_STATE_DIR")
+        && !dir.trim().is_empty()
+    {
+        return PathBuf::from(dir);
     }
     dirs::data_local_dir()
         .map(|d| d.join("oxy"))

@@ -8,7 +8,6 @@
 use crate::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use axum::{extract, http::StatusCode};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Serialize)]
 pub struct BuilderAvailabilityResponse {

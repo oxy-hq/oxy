@@ -100,14 +100,13 @@ pub(crate) fn resolve_git_dir(root: &Path) -> PathBuf {
 /// the pointer is followed.  For a regular checkout, `.git` is a directory
 /// and is returned unchanged.
 fn follow_dot_git(dir: &Path, dot_git: PathBuf) -> PathBuf {
-    if dot_git.is_file() {
-        if let Ok(content) = std::fs::read_to_string(&dot_git) {
-            if let Some(rel) = content.trim().strip_prefix("gitdir: ") {
-                let resolved = dir.join(rel);
-                if let Ok(canonical) = resolved.canonicalize() {
-                    return canonical;
-                }
-            }
+    if dot_git.is_file()
+        && let Ok(content) = std::fs::read_to_string(&dot_git)
+        && let Some(rel) = content.trim().strip_prefix("gitdir: ")
+    {
+        let resolved = dir.join(rel);
+        if let Ok(canonical) = resolved.canonicalize() {
+            return canonical;
         }
     }
     dot_git

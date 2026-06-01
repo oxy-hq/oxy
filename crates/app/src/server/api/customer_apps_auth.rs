@@ -41,9 +41,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use tracing::error;
 use uuid::Uuid;
 
-use super::customer_apps_cache::{
-    cached_user, get_fresh, insert_with_sweep, remove_entry, set_cached_user,
-};
+use super::customer_apps_cache::{cached_user, get_fresh, insert_with_sweep, set_cached_user};
 
 // ── Combined per-(user, app) access cache ───────────────────────────────────
 

@@ -146,7 +146,7 @@ pub(super) fn pick_channel_for(
 /// copy, and V0 apps are iframes. Used by the debug endpoint for display.
 pub(super) fn bundle_dir_for(app: &apps::Model) -> Option<PathBuf> {
     match AppSource::from_model(app).ok()? {
-        AppSource::LocalFolder { path } => Some(PathBuf::from(path)),
+        AppSource::LocalFolder { path } => Some(path),
         AppSource::S3 | AppSource::V0 { .. } => None,
     }
 }

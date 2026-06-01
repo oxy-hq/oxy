@@ -969,7 +969,10 @@ pub async fn get_workspace(
 
     let workspace_root = workspace_root(&project).await?;
 
-    let local_path_for_key = app_state.mode.is_local().then(|| workspace_root.as_path());
+    let local_path_for_key = app_state
+        .mode
+        .is_local()
+        .then_some(workspace_root.as_path());
     let storage_key = compute_workspace_storage_key(workspace_id, local_path_for_key);
 
     build_workspace_details_response(

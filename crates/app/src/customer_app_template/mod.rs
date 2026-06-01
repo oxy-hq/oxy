@@ -16,10 +16,7 @@
 
 pub mod registry;
 
-use std::path::Path as StdPath;
-
 use include_dir::Dir;
-use oxy_shared::errors::OxyError;
 
 pub use registry::{Template, TemplateMeta, get_template, templates};
 

@@ -1,8 +1,7 @@
 //! PreaggTaskExecutor: runs preagg_cycle tasks via the agentic Worker infrastructure.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 use agentic_core::delegation::{TaskAssignment, TaskOutcome, TaskSpec};
 use agentic_runtime::worker::{ExecutingTask, TaskExecutor};
@@ -13,7 +12,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use super::preagg_rebuild::{RebuildContext, connector_to_airlayer_dialect, rebuild_rollup};
+use super::preagg_rebuild::{RebuildContext, rebuild_rollup};
 use super::preagg_worker::PreaggWorkerConfig;
 use crate::agentic_wiring::OxyProjectContext;
 
@@ -396,29 +395,28 @@ fn eval_every_refresh_key(
             .map(|r| r.build_date.clone())
     });
 
-    if let Some(build_date_str) = manifest_build_date {
-        if let Ok(built_at) =
+    if let Some(build_date_str) = manifest_build_date
+        && let Ok(built_at) =
             chrono::NaiveDateTime::parse_from_str(&build_date_str, "%Y-%m-%d %H:%M:%S")
-        {
-            let built_at_utc = built_at.and_utc();
-            let age = chrono::Utc::now().signed_duration_since(built_at_utc);
-            let chrono_interval = match chrono::Duration::from_std(interval) {
-                Ok(d) => d,
-                Err(_) => {
-                    tracing::warn!(
-                        interval = %interval_str,
-                        rollup_hash,
-                        "preagg: configured Every interval overflows chrono::Duration; \
-                         treating rollup as always fresh to avoid spurious rebuilds"
-                    );
-                    chrono::Duration::milliseconds(i64::MAX)
-                }
-            };
-            if age < chrono_interval {
-                let mut guard = cache.write().expect("preagg cache lock poisoned");
-                guard.insert(rollup_hash.to_string(), None);
-                return (None, false);
+    {
+        let built_at_utc = built_at.and_utc();
+        let age = chrono::Utc::now().signed_duration_since(built_at_utc);
+        let chrono_interval = match chrono::Duration::from_std(interval) {
+            Ok(d) => d,
+            Err(_) => {
+                tracing::warn!(
+                    interval = %interval_str,
+                    rollup_hash,
+                    "preagg: configured Every interval overflows chrono::Duration; \
+                     treating rollup as always fresh to avoid spurious rebuilds"
+                );
+                chrono::Duration::milliseconds(i64::MAX)
             }
+        };
+        if age < chrono_interval {
+            let mut guard = cache.write().expect("preagg cache lock poisoned");
+            guard.insert(rollup_hash.to_string(), None);
+            return (None, false);
         }
     }
 
@@ -434,7 +432,7 @@ async fn eval_sql_refresh_key(
     sql: &str,
     rollup_hash: &str,
     config: &PreaggWorkerConfig,
-    cache: &Arc<RwLock<RefreshKeyCache>>,
+    _cache: &Arc<RwLock<RefreshKeyCache>>,
     ctx: &OxyProjectContext,
     database_name: &str,
 ) -> (Option<String>, bool, Option<String>) {

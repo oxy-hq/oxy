@@ -65,7 +65,7 @@ pub async fn run_with_renderer(
     // renderer channel. Lives as long as the pipeline runs.
     let translator_tx = answer_tx.clone();
     let translator = tokio::spawn(async move {
-        let mut state = TranslatorState::new(workspace_id);
+        let state = TranslatorState::new(workspace_id);
         while let Some(event) = event_rx.recv().await {
             state.handle(event, &translator_tx).await;
         }

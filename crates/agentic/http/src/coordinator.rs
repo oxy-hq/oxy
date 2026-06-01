@@ -707,19 +707,17 @@ pub async fn get_run_tree(
             Ok(None) => {}
             Err(e) => tracing::warn!(%run_id, error = %e, "usage_report_for_run failed"),
         }
-        if root.source_type == "workflow" {
-            if let Ok(steps) = db::workflow_step_summary_for_run(&db, &run_id).await {
-                if !steps.is_empty() {
-                    root.dag_steps = Some(steps);
-                }
-            }
+        if root.source_type == "workflow"
+            && let Ok(steps) = db::workflow_step_summary_for_run(&db, &run_id).await
+            && !steps.is_empty()
+        {
+            root.dag_steps = Some(steps);
         }
-        if root.source_type == "airway" {
-            if let Ok(tables) = db::airway_table_summary_for_run(&db, &run_id).await {
-                if !tables.is_empty() {
-                    root.elt_tables = Some(tables);
-                }
-            }
+        if root.source_type == "airway"
+            && let Ok(tables) = db::airway_table_summary_for_run(&db, &run_id).await
+            && !tables.is_empty()
+        {
+            root.elt_tables = Some(tables);
         }
     }
 

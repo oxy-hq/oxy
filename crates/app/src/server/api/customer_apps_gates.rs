@@ -239,16 +239,15 @@ pub fn parse_versioned_body<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result
     // declare `v` on every request struct because the existing
     // `QueryRequest` uses `deny_unknown_fields` and we don't want to
     // require it on shipped SDK clients.
-    if let Ok(envelope) = serde_json::from_slice::<VersionEnvelope>(body) {
-        if let Some(v) = envelope.v {
-            if v != 1 {
-                return Err(err_with_code(
-                    StatusCode::BAD_REQUEST,
-                    format!("unsupported body version: {v} (only 1 is supported)"),
-                    "unsupported_version",
-                ));
-            }
-        }
+    if let Ok(envelope) = serde_json::from_slice::<VersionEnvelope>(body)
+        && let Some(v) = envelope.v
+        && v != 1
+    {
+        return Err(err_with_code(
+            StatusCode::BAD_REQUEST,
+            format!("unsupported body version: {v} (only 1 is supported)"),
+            "unsupported_version",
+        ));
     }
 
     // Strip the `v` field before passing to the typed deserializer —
@@ -299,10 +298,10 @@ fn strip_version_field(body: &[u8]) -> Cow<'_, [u8]> {
     let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
         return Cow::Borrowed(body);
     };
-    if let Some(obj) = value.as_object_mut() {
-        if obj.remove("v").is_some() {
-            return Cow::Owned(serde_json::to_vec(&value).unwrap_or_else(|_| body.to_vec()));
-        }
+    if let Some(obj) = value.as_object_mut()
+        && obj.remove("v").is_some()
+    {
+        return Cow::Owned(serde_json::to_vec(&value).unwrap_or_else(|_| body.to_vec()));
     }
     Cow::Borrowed(body)
 }
