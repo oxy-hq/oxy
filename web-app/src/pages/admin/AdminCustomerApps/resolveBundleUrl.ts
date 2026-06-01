@@ -15,7 +15,12 @@ export function resolveBundleUrl(canonicalUrl: string): string {
   try {
     const u = new URL(canonicalUrl, window.location.origin);
     u.protocol = window.location.protocol;
-    u.host = window.location.host;
+    // Set hostname + port separately rather than `host`, so a stray port
+    // baked into `canonicalUrl` (e.g. `http://localhost:5173/...` from an
+    // older server with the localhost default still in place) is explicitly
+    // cleared. `window.location.port` is "" for the scheme's default port.
+    u.hostname = window.location.hostname;
+    u.port = window.location.port;
     return u.toString();
   } catch {
     return canonicalUrl;
