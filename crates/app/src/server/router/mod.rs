@@ -219,6 +219,26 @@ pub(crate) fn is_allowed_origin(headers: &HeaderMap) -> bool {
 
 /// Pure inner implementation; accepts a pre-resolved `CorsOrigins` so unit
 /// tests can exercise all branches without mutating the process environment.
+/// Return `true` when `origin` (e.g. `https://app.oxy.tech`) targets the
+/// same host as the incoming request. We prefer `X-Forwarded-Host` (set by a
+/// TLS-terminating reverse proxy) and fall back to `Host`; this covers both
+/// direct-bind and behind-a-load-balancer deployments without an env var.
+fn is_self_origin(origin: &str, headers: &HeaderMap) -> bool {
+    let origin_host = match origin.split_once("://") {
+        Some((_, rest)) => rest.trim_end_matches('/'),
+        None => return false,
+    };
+    if origin_host.is_empty() {
+        return false;
+    }
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get(header::HOST))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    !host.is_empty() && origin_host == host
+}
+
 fn is_allowed_origin_for(headers: &HeaderMap, origins: &CorsOrigins) -> bool {
     match origins {
         CorsOrigins::Any => true,
@@ -246,6 +266,15 @@ fn is_allowed_origin_for(headers: &HeaderMap, origins: &CorsOrigins) -> bool {
                 // No Origin or Referer → allow non-browser clients.
                 None => true,
                 Some(origin) => {
+                    // Auto-allow self-origin (same domain as the SPA / API).
+                    // Customer-app bundles share the SPA's domain in the
+                    // current model, so the standard same-domain deployment
+                    // works with **no** `OXY_ALLOWED_ORIGINS` set; the env
+                    // var stays as an additive escape hatch for future
+                    // cross-origin deployments (whitelabelling, etc.).
+                    if is_self_origin(&origin, headers) {
+                        return true;
+                    }
                     let origin_val = HeaderValue::from_str(&origin).ok();
                     origin_val.is_some_and(|v| allowed.contains(&v))
                 }
@@ -513,5 +542,42 @@ mod cors_tests {
     fn cors_any_allows_all_origins() {
         let headers = make_headers(&[("origin", "https://attacker.com")]);
         assert!(is_allowed_origin_for(&headers, &CorsOrigins::Any));
+    }
+
+    // ── self-origin auto-allow ────────────────────────────────────────────
+
+    #[test]
+    fn self_origin_via_host_is_allowed_without_env() {
+        // The standard same-domain deployment: bundle calls the SPA's API
+        // from the SPA's own origin. No OXY_ALLOWED_ORIGINS entry needed.
+        let headers = make_headers(&[
+            ("origin", "https://app-dev.oxygen-hq.com"),
+            ("host", "app-dev.oxygen-hq.com"),
+        ]);
+        // Allowlist intentionally missing the request origin.
+        let cors = explicit(&["http://localhost:5173"]);
+        assert!(is_allowed_origin_for(&headers, &cors));
+    }
+
+    #[test]
+    fn self_origin_via_x_forwarded_host_is_allowed() {
+        // Behind a TLS-terminating reverse proxy, `Host` is the internal
+        // address; the public hostname comes in on `X-Forwarded-Host`.
+        let headers = make_headers(&[
+            ("origin", "https://app.oxy.tech"),
+            ("host", "oxy-internal.svc.cluster.local"),
+            ("x-forwarded-host", "app.oxy.tech"),
+        ]);
+        let cors = explicit(&[]);
+        assert!(is_allowed_origin_for(&headers, &cors));
+    }
+
+    #[test]
+    fn cross_origin_still_rejected_when_not_in_allowlist() {
+        // A genuine cross-origin request is still gated by the allowlist
+        // even with self-origin enabled — that's the defence-in-depth value.
+        let headers = make_headers(&[("origin", "https://attacker.com"), ("host", "app.oxy.tech")]);
+        let cors = explicit(&["https://app.oxy.tech"]);
+        assert!(!is_allowed_origin_for(&headers, &cors));
     }
 }
