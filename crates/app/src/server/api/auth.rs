@@ -14,9 +14,7 @@ use handlebars::Handlebars;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use once_cell::sync::Lazy;
 use oxy::config::auth::MagicLinkAuth;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use url::Url;
@@ -50,7 +48,194 @@ use oxy::{
     config::constants::AUTHENTICATION_SECRET_KEY,
     database::{client::establish_connection, filters::UserQueryFilterExt},
 };
+use oxy_auth::constants::SESSION_COOKIE_NAME;
 use oxy_shared::errors::OxyError;
+
+/// Cookie lifetime — matches the JWT exp window in `create_auth_token`. If
+/// the JWT lifetime ever changes, change both together.
+const SESSION_COOKIE_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
+
+/// Build the `Set-Cookie` header value for the session cookie that wraps
+/// the existing JWT. Carrying the JWT in a `.oxy.tech`-scoped cookie lets
+/// the external auth proxy (`/api/auth/check`) authenticate browser
+/// traffic on `<app>.oxy.tech` subdomains using the same credential the
+/// web-app already uses on the `Authorization` header.
+///
+/// `Domain` is configurable via the `OXY_SESSION_COOKIE_DOMAIN` env var
+/// (set to `.oxy.tech` in prod). When unset, the cookie is host-only —
+/// fine for local dev where there are no subdomains to gate.
+pub fn build_session_cookie(jwt: &str, secure: bool) -> String {
+    let mut parts = vec![
+        format!("{SESSION_COOKIE_NAME}={jwt}"),
+        "Path=/".to_string(),
+        format!("Max-Age={SESSION_COOKIE_MAX_AGE_SECS}"),
+        "HttpOnly".to_string(),
+        "SameSite=Lax".to_string(),
+    ];
+    if secure {
+        parts.push("Secure".to_string());
+    }
+    if let Ok(domain) = std::env::var("OXY_SESSION_COOKIE_DOMAIN") {
+        let domain = domain.trim();
+        if !domain.is_empty() {
+            parts.push(format!("Domain={domain}"));
+        }
+    }
+    parts.join("; ")
+}
+
+/// Build the `Set-Cookie` header that clears the session cookie. Sent on
+/// logout. Must mirror the same `Domain` and `Path` as `build_session_cookie`
+/// so the browser actually overwrites the existing cookie.
+pub fn clear_session_cookie() -> String {
+    let mut parts = vec![
+        format!("{SESSION_COOKIE_NAME}="),
+        "Path=/".to_string(),
+        "Max-Age=0".to_string(),
+        "HttpOnly".to_string(),
+        "SameSite=Lax".to_string(),
+    ];
+    if let Ok(domain) = std::env::var("OXY_SESSION_COOKIE_DOMAIN") {
+        let domain = domain.trim();
+        if !domain.is_empty() {
+            parts.push(format!("Domain={domain}"));
+        }
+    }
+    parts.join("; ")
+}
+
+/// Returns true if the cookie should carry the `Secure` attribute.
+///
+/// Three signals are consulted, in priority order:
+///
+/// 1. `OXY_SESSION_COOKIE_FORCE_SECURE=1` env var — explicit override.
+/// 2. `OXY_SESSION_COOKIE_DOMAIN` set to a non-localhost value — if you're
+///    scoping to a real domain (e.g. `.oxy.tech`) the cookie must be Secure;
+///    browsers ignore domain-scoped cookies on plain HTTP anyway.
+/// 3. The `X-Forwarded-Proto` request header (set by the ingress) — `https`
+///    means the original client request was HTTPS.
+///
+/// In local dev none of these are set so we default to `false`, allowing the
+/// cookie to work on `http://localhost`.
+fn is_request_secure(headers: &HeaderMap) -> bool {
+    if std::env::var("OXY_SESSION_COOKIE_FORCE_SECURE")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    // Auto-enable Secure when a real domain scope is configured.
+    if let Ok(domain) = std::env::var("OXY_SESSION_COOKIE_DOMAIN") {
+        let domain = domain.trim().to_ascii_lowercase();
+        if !domain.is_empty() && !domain.contains("localhost") && !domain.contains("127.0.0.1") {
+            return true;
+        }
+    }
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
+}
+
+/// Parse a `return_to` URL into its lowercase scheme and host. Rejects any
+/// scheme other than http/https (mailto:, javascript:, file:, …) and
+/// anything malformed. http:// is allowed at parse time so local dev
+/// (`http://localhost:3000/customer-apps/...`) works; production gating still
+/// happens via [`host_in_session_zone`] which only matches the configured
+/// cookie zone.
+fn parse_return_to_host(url: &str) -> Option<(String, String)> {
+    let parsed = Url::parse(url).ok()?;
+    let scheme = parsed.scheme().to_ascii_lowercase();
+    if scheme != "https" && scheme != "http" {
+        return None;
+    }
+    let host = parsed.host_str().map(|h| h.to_ascii_lowercase())?;
+    Some((scheme, host))
+}
+
+/// Static check: is `host` inside the configured session-cookie zone? The
+/// session-cookie domain doubles as the trust boundary — anything that
+/// shares the cookie also shares the trust.
+fn host_in_session_zone(host: &str) -> bool {
+    let Ok(zone) = std::env::var("OXY_SESSION_COOKIE_DOMAIN") else {
+        return false;
+    };
+    let zone = zone.trim().trim_start_matches('.').to_ascii_lowercase();
+    if zone.is_empty() {
+        return false;
+    }
+    host == zone || host.ends_with(&format!(".{zone}"))
+}
+
+/// Check used by the magic-link request flow and by the standalone
+/// validator endpoint. Allows any URL on a subdomain of the configured
+/// session-cookie zone. A localhost escape hatch exists for local dev but
+/// is *explicitly opt-in* via `OXY_AUTH_ALLOW_LOCALHOST_RETURN=1` — it
+/// must NOT silently activate just because `OXY_SESSION_COOKIE_DOMAIN`
+/// happens to be unset on a misconfigured production deploy, since that
+/// would turn `?return_to=http://localhost/...` into an open redirect.
+fn validate_return_to_url(url: &str) -> bool {
+    let Some((scheme, host)) = parse_return_to_host(url) else {
+        return false;
+    };
+    if host_in_session_zone(&host) {
+        return true;
+    }
+    if (host == "localhost" || host == "127.0.0.1")
+        && (scheme == "http" || scheme == "https")
+        && allow_localhost_return()
+    {
+        return true;
+    }
+    false
+}
+
+fn allow_localhost_return() -> bool {
+    std::env::var("OXY_AUTH_ALLOW_LOCALHOST_RETURN")
+        .map(|v| {
+            let v = v.trim();
+            v == "1" || v.eq_ignore_ascii_case("true")
+        })
+        .unwrap_or(false)
+}
+
+#[derive(Deserialize)]
+pub struct ValidateReturnToQuery {
+    pub url: String,
+}
+
+/// `GET /auth/return-to/validate?url=...` — public endpoint the web-app
+/// calls before performing a post-login redirect. Returns 200 if the URL is
+/// safe to follow, 403 otherwise. No body — status code is the result.
+pub async fn validate_return_to(
+    extract::Query(query): extract::Query<ValidateReturnToQuery>,
+) -> StatusCode {
+    if validate_return_to_url(&query.url) {
+        StatusCode::OK
+    } else {
+        StatusCode::FORBIDDEN
+    }
+}
+
+/// Build the `(HeaderMap, Json<AuthResponse>)` tuple returned by every
+/// successful login finalize. Centralized so all four providers
+/// (Google/GitHub/Okta/magic-link) emit the cookie identically.
+fn login_response(
+    request_headers: &HeaderMap,
+    token: String,
+    user: UserInfo,
+    orgs: Vec<OrgInfo>,
+) -> (HeaderMap, Json<AuthResponse>) {
+    let mut response_headers = HeaderMap::new();
+    let cookie = build_session_cookie(&token, is_request_secure(request_headers));
+    if let Ok(value) = cookie.parse() {
+        response_headers.insert(axum::http::header::SET_COOKIE, value);
+    } else {
+        tracing::error!("Failed to build session cookie header value");
+    }
+    (response_headers, Json(AuthResponse { token, user, orgs }))
+}
 
 #[derive(Deserialize)]
 pub struct GoogleAuthRequest {
@@ -70,6 +255,14 @@ pub struct OktaAuthRequest {
 #[derive(Deserialize)]
 pub struct MagicLinkRequest {
     pub email: String,
+    /// Optional post-login redirect target. Forwarded into the magic-link
+    /// email so the user lands back on the requesting page (an
+    /// `<app>.oxy.tech` subdomain gated by the external auth proxy). The
+    /// web-app, not the server, performs the redirect after `verify`; the
+    /// server validates the target via `validate_return_to` before the
+    /// browser follows it.
+    #[serde(default)]
+    pub return_to: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -93,9 +286,10 @@ pub struct OrgInfo {
 }
 
 /// Global profile fields. Role / admin status are per-org and live on
-/// `OrgInfo` in the login response or on `GET /orgs`. `is_owner` is the
-/// only system-wide flag — it reflects the `OXY_OWNER` allow-list (Oxy
-/// staff) and lets the frontend route owners straight to the admin shell.
+/// `OrgInfo` in the login response or on `GET /orgs`. `is_owner` reflects
+/// the `OXY_OWNER` allow-list (Oxy staff). `is_app_admin` reflects
+/// membership in the `app_admins` table and gates the customer-apps
+/// surface.
 #[derive(Serialize)]
 pub struct UserInfo {
     pub id: String,
@@ -103,6 +297,7 @@ pub struct UserInfo {
     pub name: String,
     pub picture: Option<String>,
     pub is_owner: bool,
+    pub is_app_admin: bool,
 }
 
 #[derive(Serialize)]
@@ -335,7 +530,7 @@ pub async fn create_auth_token(user: users::Model) -> Result<String, StatusCode>
 pub async fn google_auth(
     headers: HeaderMap,
     extract::Json(google_request): extract::Json<GoogleAuthRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
+) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
     verify_oauth_state(&google_request.state)?;
     let base_url = extract_base_url_from_headers(&headers);
     let user_info = exchange_google_code_for_user_info(&google_request.code, &base_url)
@@ -409,17 +604,13 @@ pub async fn google_auth(
     };
 
     let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
-    Ok(Json(AuthResponse {
-        token,
-        user: user_info_payload,
-        orgs,
-    }))
+    Ok(login_response(&headers, token, user_info_payload, orgs))
 }
 
 pub async fn okta_auth(
     headers: HeaderMap,
     extract::Json(okta_request): extract::Json<OktaAuthRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
+) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
     verify_oauth_state(&okta_request.state)?;
     let base_url = extract_base_url_from_headers(&headers);
     let user_info = exchange_okta_code_for_user_info(&okta_request.code, &base_url)
@@ -481,11 +672,7 @@ pub async fn okta_auth(
     };
 
     let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
-    Ok(Json(AuthResponse {
-        token,
-        user: user_info_payload,
-        orgs,
-    }))
+    Ok(login_response(&headers, token, user_info_payload, orgs))
 }
 
 #[derive(Deserialize)]
@@ -498,7 +685,7 @@ pub struct GitHubAuthRequest {
 pub async fn github_auth(
     headers: HeaderMap,
     extract::Json(payload): extract::Json<GitHubAuthRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
+) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
     verify_oauth_state(&payload.state)?;
     let base_url = extract_base_url_from_headers(&headers);
     let user_info = exchange_github_code_for_user_info(&payload.code, &base_url)
@@ -557,11 +744,7 @@ pub async fn github_auth(
     };
 
     let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
-    Ok(Json(AuthResponse {
-        token,
-        user: user_info_payload,
-        orgs,
-    }))
+    Ok(login_response(&headers, token, user_info_payload, orgs))
 }
 
 #[derive(Deserialize)]
@@ -687,15 +870,7 @@ async fn exchange_github_code_for_user_info(
     })
 }
 
-/// Check if a database error is a unique constraint violation.
-/// Uses Sea-ORM's structured `SqlErr` rather than string matching so the check
-/// is portable across DB engines.
-fn is_unique_violation(err: &DbErr) -> bool {
-    matches!(
-        err.sql_err(),
-        Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
-    )
-}
+use oxy::database::errors::is_unique_violation;
 
 /// Insert a new user, handling the race condition where another request may have
 /// created the same user concurrently.
@@ -751,6 +926,10 @@ async fn finalize_login(
         name: user.name.clone(),
         picture: user.picture.clone(),
         is_owner: crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(&user.email),
+        is_app_admin: crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin(
+            &user.email,
+        )
+        .await,
     };
 
     // Query org memberships for this user
@@ -1083,6 +1262,7 @@ pub async fn request_magic_link(
     // code (allowlist check, DB queries, SES) operates on a consistent value.
     let req = MagicLinkRequest {
         email: req.email.to_lowercase(),
+        return_to: req.return_to,
     };
 
     // Validate email format before doing anything else.
@@ -1228,6 +1408,18 @@ async fn request_magic_link_inner(
     // Send email async
     let base_url = extract_base_url_from_headers(&headers);
 
+    // Validate return_to before stuffing it into the email. The web-app
+    // performs the actual redirect, but if the proxy hands us a malicious
+    // URL we don't want to embed it in the outbound link at all.
+    let return_to = match req.return_to.as_deref() {
+        Some(url) if validate_return_to_url(url) => Some(url.to_string()),
+        Some(url) => {
+            tracing::warn!("rejecting return_to URL outside allowlist: {url}");
+            None
+        }
+        None => None,
+    };
+
     // Log the magic link URL at debug level only — the token is a session credential
     // and must not appear in production log aggregators.
     tracing::debug!(
@@ -1240,7 +1432,15 @@ async fn request_magic_link_inner(
     let email_addr = req.email.clone();
     let cfg_clone = magic_link_config.clone();
     tokio::spawn(async move {
-        if let Err(e) = send_magic_link_email(&email_addr, &token, &base_url, &cfg_clone).await {
+        if let Err(e) = send_magic_link_email(
+            &email_addr,
+            &token,
+            &base_url,
+            return_to.as_deref(),
+            &cfg_clone,
+        )
+        .await
+        {
             tracing::error!("Failed to send magic link email: {}", e);
         }
     });
@@ -1251,8 +1451,9 @@ async fn request_magic_link_inner(
 }
 
 pub async fn verify_magic_link(
+    headers: HeaderMap,
     extract::Json(req): extract::Json<MagicLinkVerifyRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
+) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -1287,24 +1488,27 @@ pub async fn verify_magic_link(
     })?;
 
     let (token, user_info, orgs) = finalize_login(user, &connection).await?;
-    Ok(Json(AuthResponse {
-        token,
-        user: user_info,
-        orgs,
-    }))
+    Ok(login_response(&headers, token, user_info, orgs))
 }
 
 async fn send_magic_link_email(
     to_email: &str,
     token: &str,
     base_url: &str,
+    return_to: Option<&str>,
     config: &MagicLinkAuth,
 ) -> Result<(), OxyError> {
     use crate::emails::{
         EmailMessage, EmailProvider, local_test::LocalTestEmailProvider, ses::SesEmailProvider,
     };
 
-    let magic_link_url = format!("{base_url}/auth/magic-link/callback?token={token}");
+    let magic_link_url = match return_to {
+        Some(target) => format!(
+            "{base_url}/auth/magic-link/callback?token={token}&return_to={}",
+            urlencoding::encode(target)
+        ),
+        None => format!("{base_url}/auth/magic-link/callback?token={token}"),
+    };
     let message = EmailMessage {
         subject: "Sign in to Oxygen".to_string(),
         html_body: build_magic_link_email_html(&magic_link_url, to_email)?,

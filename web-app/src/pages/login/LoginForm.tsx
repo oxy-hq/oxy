@@ -1,6 +1,7 @@
 import { Mail } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { FieldError } from "@/components/ui/shadcn/field";
@@ -30,6 +31,11 @@ type View = "form" | "sent";
 const MagicLinkSection = () => {
   const [view, setView] = useState<View>("form");
   const [submittedEmail, setSubmittedEmail] = useState("");
+  const [searchParams] = useSearchParams();
+  // Forwarded into the magic-link request. The server allowlists the value
+  // before embedding it into the email; the verify-callback page validates
+  // again before performing the redirect.
+  const returnTo = searchParams.get("return_to") ?? undefined;
   const { mutateAsync: requestMagicLink, isPending } = useRequestMagicLink();
 
   const {
@@ -40,7 +46,7 @@ const MagicLinkSection = () => {
 
   const onSubmit = async (data: MagicLinkFormData) => {
     try {
-      await requestMagicLink({ email: data.email });
+      await requestMagicLink({ email: data.email, return_to: returnTo });
       setSubmittedEmail(data.email);
       setView("sent");
     } catch (error) {
@@ -54,7 +60,7 @@ const MagicLinkSection = () => {
 
   const handleResend = async () => {
     try {
-      await requestMagicLink({ email: submittedEmail });
+      await requestMagicLink({ email: submittedEmail, return_to: returnTo });
       toast.success("Sign-in link resent.");
     } catch (error) {
       if (isRateLimited(error)) {

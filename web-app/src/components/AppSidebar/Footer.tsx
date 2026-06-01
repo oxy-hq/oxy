@@ -1,4 +1,4 @@
-import { Check, HardDrive, LogOut, Plus, Settings, UserPlus } from "lucide-react";
+import { Check, HardDrive, LogOut, Plus, Settings, Shield, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrgs } from "@/hooks/api/organizations";
+import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
@@ -92,6 +93,11 @@ function CloudFooter() {
   const currentUser = useLocalUserInfo();
   const { org: currentOrg } = useCurrentOrg();
   const { data: orgs } = useOrgs();
+  // Authoritative system-wide flags from GET /user (react-query cached).
+  // `is_owner` = OXY_OWNER, `is_app_admin` = OXY_APP_ADMINS — either one
+  // grants access to the admin surfaces.
+  const { data: profile } = useCurrentUser();
+  const isAdmin = !!(profile?.is_owner || profile?.is_app_admin);
   const [menuOpen, setMenuOpen] = useState(false);
   const openSettingsDialog = useSettingsDialog((s) => s.open);
   const { isMobile, setOpenMobile } = useSidebar();
@@ -239,6 +245,24 @@ function CloudFooter() {
               New organization
             </DropdownMenuItem>
           </DropdownMenuGroup>
+
+          {isAdmin && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className='cursor-pointer'
+                onSelect={(e) => {
+                  // preventDefault skips Radix's auto-close so the menu unmounts
+                  // via navigate — avoids a leaked body pointer-events lock.
+                  e.preventDefault();
+                  navigate(ROUTES.ADMIN.CUSTOMER_APPS);
+                }}
+              >
+                <Shield className='h-4 w-4' />
+                <span>Admin</span>
+              </DropdownMenuItem>
+            </>
+          )}
 
           {showLogout && (
             <>

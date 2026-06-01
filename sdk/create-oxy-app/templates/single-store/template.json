@@ -1,0 +1,5 @@
+{
+  "id": "single-store",
+  "name": "Single-entity deep-dive",
+  "description": "Parameter selector + summary card + recent-activity list. Replace the placeholder SQL with your real queries."
+}

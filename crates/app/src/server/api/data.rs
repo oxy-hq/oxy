@@ -29,7 +29,6 @@ pub enum SemanticQueryResponse {
 }
 use crate::server::service::retrieval::{ReindexInput, reindex};
 use agentic_connector::{ConnectorError, QueryFailedDetails};
-use agentic_pipeline::platform::ProjectContext;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};

@@ -569,19 +569,18 @@ where
     let result = executor().await;
     match &result {
         Err(ToolError::Suspended { prompt, .. }) => {
-            let (new_content, old_content) =
-                serde_json::from_str::<serde_json::Value>(prompt)
-                    .ok()
-                    .map(|v| {
-                        let new = if is_deletion {
-                            String::new()
-                        } else {
-                            v["new_content"].as_str().unwrap_or("").to_string()
-                        };
-                        let old = v["old_content"].as_str().unwrap_or("").to_string();
-                        (new, old)
-                    })
-                    .unwrap_or_default();
+            let (new_content, old_content) = serde_json::from_str::<serde_json::Value>(prompt)
+                .ok()
+                .map(|v| {
+                    let new = if is_deletion {
+                        String::new()
+                    } else {
+                        v["new_content"].as_str().unwrap_or("").to_string()
+                    };
+                    let old = v["old_content"].as_str().unwrap_or("").to_string();
+                    (new, old)
+                })
+                .unwrap_or_default();
             emit_domain(
                 event_tx,
                 BuilderEvent::FileChangePending {
@@ -676,9 +675,15 @@ pub(crate) async fn dispatch_tool(
             let r = execute_validate_project(project_root, params, validator.as_ref()).await;
             emit_tool_used(event_tx, "validate_project", r, |v| {
                 if v["valid"].as_bool().unwrap_or(false) {
-                    format!("All {} file(s) valid", v["valid_count"].as_u64().unwrap_or(0))
+                    format!(
+                        "All {} file(s) valid",
+                        v["valid_count"].as_u64().unwrap_or(0)
+                    )
                 } else {
-                    format!("{} validation error(s) found", v["error_count"].as_u64().unwrap_or(0))
+                    format!(
+                        "{} validation error(s) found",
+                        v["error_count"].as_u64().unwrap_or(0)
+                    )
                 }
             })
             .await
@@ -740,7 +745,10 @@ pub(crate) async fn dispatch_tool(
         "lookup_reference" => {
             let r = execute_lookup_reference(params);
             emit_tool_used(event_tx, "lookup_reference", r, |v| {
-                format!("Loaded reference: '{}'", v["card_name"].as_str().unwrap_or(""))
+                format!(
+                    "Loaded reference: '{}'",
+                    v["card_name"].as_str().unwrap_or("")
+                )
             })
             .await
         }
@@ -749,7 +757,10 @@ pub(crate) async fn dispatch_tool(
                 .ok_or_else(|| ToolError::Execution("schema provider is not configured".into()))?;
             let r = execute_lookup_schema(params, provider.as_ref());
             emit_tool_used(event_tx, "lookup_schema", r, |v| {
-                format!("Retrieved schema for '{}'", v["object_name"].as_str().unwrap_or(""))
+                format!(
+                    "Retrieved schema for '{}'",
+                    v["object_name"].as_str().unwrap_or("")
+                )
             })
             .await
         }
@@ -829,7 +840,10 @@ pub(crate) async fn dispatch_tool(
             } else {
                 let r = execute_compile_dbt_model_all(project_root, project_name);
                 emit_tool_used(event_tx, "compile_dbt_model", r, |v| {
-                    format!("Compiled {} model(s) in '{project_name}'", v.models_compiled)
+                    format!(
+                        "Compiled {} model(s) in '{project_name}'",
+                        v.models_compiled
+                    )
                 })
                 .await
             }
@@ -838,7 +852,12 @@ pub(crate) async fn dispatch_tool(
             let sm = secrets_provider.map(|p| p.secrets_manager().clone());
             let r = execute_run_dbt_models(project_root, params, sm.as_ref()).await;
             emit_tool_used(event_tx, "run_dbt_models", r, |v| {
-                format!("Ran {} model(s) in '{}' — {}", v.results.len(), v.project, v.status)
+                format!(
+                    "Ran {} model(s) in '{}' — {}",
+                    v.results.len(),
+                    v.project,
+                    v.status
+                )
             })
             .await
         }
@@ -846,7 +865,10 @@ pub(crate) async fn dispatch_tool(
             let sm = secrets_provider.map(|p| p.secrets_manager().clone());
             let r = execute_test_dbt_models(project_root, params, sm.as_ref()).await;
             emit_tool_used(event_tx, "test_dbt_models", r, |v| {
-                format!("Tests for '{}': {} passed, {} failed", v.project, v.passed, v.failed)
+                format!(
+                    "Tests for '{}': {} passed, {} failed",
+                    v.project, v.passed, v.failed
+                )
             })
             .await
         }
@@ -877,14 +899,21 @@ pub(crate) async fn dispatch_tool(
         "get_dbt_column_lineage" => {
             let r = execute_get_dbt_column_lineage(project_root, params);
             emit_tool_used(event_tx, "get_dbt_column_lineage", r, |v| {
-                format!("Column lineage for '{}': {} edge(s)", v.project, v.edges.len())
+                format!(
+                    "Column lineage for '{}': {} edge(s)",
+                    v.project,
+                    v.edges.len()
+                )
             })
             .await
         }
         "parse_dbt_project" => {
             let r = execute_parse_dbt_project(project_root, params);
             emit_tool_used(event_tx, "parse_dbt_project", r, |v| {
-                format!("Parsed '{}': {} model(s), {} source(s)", v.project, v.models, v.sources)
+                format!(
+                    "Parsed '{}': {} model(s), {} source(s)",
+                    v.project, v.models, v.sources
+                )
             })
             .await
         }
@@ -899,7 +928,11 @@ pub(crate) async fn dispatch_tool(
         "debug_dbt_project" => {
             let r = execute_debug_dbt_project(project_root, params);
             emit_tool_used(event_tx, "debug_dbt_project", r, |v| {
-                let status = if v.all_ok { "all checks passed" } else { "issues found" };
+                let status = if v.all_ok {
+                    "all checks passed"
+                } else {
+                    "issues found"
+                };
                 format!("Debug '{}': {status}", v.project_name)
             })
             .await
@@ -907,7 +940,11 @@ pub(crate) async fn dispatch_tool(
         "clean_dbt_project" => {
             let r = execute_clean_dbt_project(project_root, params);
             emit_tool_used(event_tx, "clean_dbt_project", r, |v| {
-                format!("Cleaned {} director(y/ies) in '{}'", v.cleaned.len(), v.project)
+                format!(
+                    "Cleaned {} director(y/ies) in '{}'",
+                    v.cleaned.len(),
+                    v.project
+                )
             })
             .await
         }

@@ -43,6 +43,7 @@ import useAuthConfig from "./hooks/auth/useAuthConfig";
 import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
 import { setLastWorkspaceId } from "./libs/utils/lastWorkspace";
 import AppPage from "./pages/app";
+import CliAuth from "./pages/auth/CliAuth";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
@@ -97,6 +98,15 @@ const TracesPage = React.lazy(() => import("./pages/ide/observability/traces"));
 const AdminLayout = React.lazy(() => import("./pages/admin/AdminLayout"));
 const AdminBillingQueue = React.lazy(() => import("./pages/admin/AdminBillingQueue"));
 const AdminFeatureFlags = React.lazy(() => import("./pages/admin/AdminFeatureFlags"));
+// Customer-apps admin surface (new-auth): per-org app admins + the
+// customer-apps registry (Add / Link / Sync / Publish). Lazy-loaded
+// alongside the rest of admin since most users never visit it.
+const AdminAppAdmins = React.lazy(() => import("./pages/admin/AdminAppAdmins"));
+const AdminCustomerApps = React.lazy(() => import("./pages/admin/AdminCustomerApps"));
+// /apps now lands on the customer-apps discovery page (the row a
+// member can navigate to see what's published for their workspace).
+// Individual data apps at /apps/:pathb64 are unaffected.
+const AppsPage = React.lazy(() => import("./pages/apps"));
 const CheckoutSuccessPage = React.lazy(() => import("./pages/billing/CheckoutSuccess"));
 const CheckoutCancelledPage = React.lazy(() => import("./pages/billing/CheckoutCancelled"));
 
@@ -277,6 +287,18 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
             </MainPageWrapper>
           }
         />
+        {/* NOTE: /apps now renders the customer-apps discovery page
+            (new-auth). Pre-existing bookmarks to bare /apps (Data App
+            list) land here instead. Individual Data Apps at
+            /apps/:pathb64 are unaffected. */}
+        <Route
+          path='apps'
+          element={
+            <MainPageWrapper>
+              <AppsPage />
+            </MainPageWrapper>
+          }
+        />
         <Route
           path='apps/:pathb64'
           element={
@@ -407,6 +429,11 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
         {/* Invitation accept — public; the page itself redirects to /login if needed */}
         <Route path='/invite/:token' element={<InvitePage />} />
 
+        {/* `oxy login` browser handoff — public; reads the session token and
+            hands it to the CLI's loopback listener, bouncing through /login
+            first when not yet signed in. */}
+        <Route path='/cli-auth' element={<CliAuth />} />
+
         {/* Auth-gated routes */}
         <Route
           path='/*'
@@ -427,6 +454,14 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
           >
             <Route path='admin/billing/queue' element={<AdminBillingQueue />} />
             <Route path='admin/feature-flags' element={<AdminFeatureFlags />} />
+            <Route path='admin/app-admins' element={<AdminAppAdmins />} />
+            {/* Customer-apps admin is mounted at /admin/apps (canonical
+                ROUTES.ADMIN.CUSTOMER_APPS in libs/utils/routes.ts) with an
+                optional master-detail tail. AdminCustomerApps reads
+                :orgSlug + :appSlug from useParams to pre-select the detail
+                pane; the bare /admin/apps lands on the list-only state. */}
+            <Route path='admin/apps' element={<AdminCustomerApps />} />
+            <Route path='admin/apps/:orgSlug/:appSlug' element={<AdminCustomerApps />} />
           </Route>
 
           {/* User-facing routes — owners get bounced to the admin queue. */}

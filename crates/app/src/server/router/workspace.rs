@@ -16,7 +16,7 @@ use crate::api::{
     agent, api_keys, app, artifacts, chart, data, data_repo, database, execution_analytics,
     exported_chart, file, integration, local_setup, message, metrics, modeling, onboarding,
     result_files, run, schedules, semantic, task, test_file, test_project_run, test_run, thread,
-    traces, workspace_members, workspaces,
+    traces, workspace_custom_apps, workspace_members, workspace_oxy_access, workspaces,
 };
 
 use super::AppState;
@@ -50,6 +50,13 @@ pub(super) fn build_workspace_routes(
             "/members/{user_id}",
             delete(workspace_members::remove_workspace_role_override),
         )
+        .route(
+            "/oxy-access",
+            get(workspace_oxy_access::get_oxy_access)
+                .post(workspace_oxy_access::enable_oxy_access)
+                .delete(workspace_oxy_access::disable_oxy_access),
+        )
+        .route("/custom-apps", get(workspace_custom_apps::list_custom_apps))
         .nest("/apps", build_app_routes())
         .nest("/tests", build_test_file_routes())
         .nest("/traces", traces::traces_routes())
@@ -370,6 +377,7 @@ mod tests {
             startup_cwd: std::path::PathBuf::new(),
             preagg_cache: None,
             preagg_renewal_threshold_secs: None,
+            agentic_state: None,
         }
     }
 

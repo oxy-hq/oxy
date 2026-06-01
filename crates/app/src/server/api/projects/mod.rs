@@ -1,0 +1,16 @@
+//! Project-scoped HTTP endpoints that customer-app bundles call.
+//!
+//! Currently a single route — `POST /api/projects/{project_id}/query` —
+//! which proxies a SQL or semantic-query request to one of the project's
+//! databases. Cookie auth → user → org_member of project's org is the
+//! gate; no per-bundle config.
+//!
+//! Lives in its own module so future additions (project metadata,
+//! generic write endpoint) don't need to be threaded into the router
+//! piecemeal.
+
+pub mod agent_ask;
+pub mod agent_run_stream;
+pub mod procedure_run;
+pub mod query;
+pub mod semantic_query;

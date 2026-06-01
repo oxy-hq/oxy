@@ -16,7 +16,10 @@ const ROUTES = {
   INVITE: (token: string) => `/invite/${token}`,
 
   ADMIN: {
-    BILLING_QUEUE: "/admin/billing/queue"
+    BILLING_QUEUE: "/admin/billing/queue",
+    FEATURE_FLAGS: "/admin/feature-flags",
+    CUSTOMER_APPS: "/admin/apps",
+    APP_ADMINS: "/admin/app-admins"
   },
 
   // Org-scoped routes. Passing an empty `orgSlug` degrades to flat local-mode
@@ -102,6 +105,7 @@ const ROUTES = {
           },
 
           CONTEXT_GRAPH: `${wsBase}/context-graph`,
+          CUSTOMER_APPS: `${wsBase}/apps`,
           ONBOARDING: `${wsBase}/onboarding`
         };
       }

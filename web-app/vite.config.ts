@@ -19,9 +19,6 @@ const dependencies = {
   reactUI: [
     "react-router-dom",
     "react-error-boundary",
-    "react-intersection-observer",
-    "react-textarea-autosize",
-    "react-window",
     "react-resize-detector",
     "react-resizable-panels",
     "react-hotkeys-hook",
@@ -30,7 +27,6 @@ const dependencies = {
 
   // Radix UI components - heavy UI library, separate chunk
   radixUI: [
-    "@radix-ui/primitive",
     "@radix-ui/react-alert-dialog",
     "@radix-ui/react-avatar",
     "@radix-ui/react-checkbox",
@@ -45,7 +41,6 @@ const dependencies = {
     "@radix-ui/react-slot",
     "@radix-ui/react-switch",
     "@radix-ui/react-tabs",
-    "@radix-ui/react-toast",
     "@radix-ui/react-toggle",
     "@radix-ui/react-toggle-group",
     "@radix-ui/react-tooltip",
@@ -53,17 +48,7 @@ const dependencies = {
   ],
 
   // Code editors - large, feature-specific chunk
-  editors: [
-    "@monaco-editor/react",
-    "monaco-editor",
-    "monaco-yaml",
-    "@uiw/react-codemirror",
-    "@uiw/codemirror-themes",
-    "@codemirror/lang-python",
-    "@codemirror/lang-sql",
-    "@codemirror/language",
-    "@lezer/highlight"
-  ],
+  editors: ["@monaco-editor/react", "monaco-editor", "monaco-yaml"],
 
   // Data visualization - large but specific use case
   visualization: ["echarts", "@xyflow/react", "elkjs"],
@@ -76,9 +61,7 @@ const dependencies = {
     "remark-directive",
     "remark-gfm",
     "unist-util-visit",
-    "react-syntax-highlighter",
-    "highlight.js",
-    "prism-react-renderer"
+    "react-syntax-highlighter"
   ],
 
   // Data management - state, queries, tables
@@ -117,10 +100,6 @@ const dependencies = {
   // Small utilities and helpers
   utils: [
     "usehooks-ts",
-    "debounce",
-    "invariant",
-    "uuid",
-    "sort-by",
     "js-cookie" // Browser storage utility
   ],
 
@@ -245,6 +224,20 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:3000",
         changeOrigin: true
+      },
+      // Customer-app bundles live at the same origin as the SPA in
+      // production (e.g. https://app.oxy.tech/customer-apps/<uuid>/). Locally
+      // the SPA is on :5173 and oxy is on :3000, so forward those requests
+      // through to oxy; otherwise vite's catch-all hands back the SPA
+      // index.html and the bundle never renders.
+      //
+      // `xfwd: true` adds X-Forwarded-Host/Proto so oxy's redirect_to_login
+      // in customer_apps_serve.rs can build a return_to URL pointing back at
+      // the SPA host (:5173), not at oxy's own host (:3000).
+      "/customer-apps": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        xfwd: true
       }
     },
     // Enable faster dependency pre-bundling during development

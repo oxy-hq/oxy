@@ -12,3 +12,10 @@ pub const AUTHENTICATION_HEADER_KEY: &str = "authorization";
 
 /// HMAC secret used for signing/verifying built-in JWTs.
 pub const AUTHENTICATION_SECRET_KEY: &str = "authentication_secret";
+
+/// Cookie name carrying the JWT for browser sessions. Set by every login
+/// finalize path (Google/GitHub/Okta/magic-link) so that `*.oxy.tech`
+/// subdomains can be gated by the external auth proxy at
+/// `/api/auth/check`. Read by `BuiltInAuthenticator::extract_token` as a
+/// fallback when the `Authorization` header is absent.
+pub const SESSION_COOKIE_NAME: &str = "oxy_session";

@@ -156,6 +156,7 @@ mod tests {
             preagg_cache: None,
             preagg_renewal_threshold_secs: None,
             startup_cwd,
+            agentic_state: None,
         }
     }
 

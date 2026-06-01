@@ -1,6 +1,8 @@
 packages:
   - web-app
   - sdk/typescript
+  - sdk/vite-plugin
+  - sdk/create-oxy-app
 peerDependencyRules:
   allowedVersions:
     '@typescript-eslint/parser>typescript': '6'

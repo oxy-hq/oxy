@@ -503,6 +503,15 @@ fn load_view_files_sync(
 
     for entry in glob::glob(&pattern).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?;
+        // Skip well-known non-workspace directories (tests, build
+        // artifacts, vendored deps). When `oxy serve` is run from a
+        // repo root, the workspace glob would otherwise pick up
+        // `tests/fixtures/**/*.view.yml` and similar — those parse
+        // errors flood the worker's 30s loop with noise that the
+        // operator can't action.
+        if path_is_excluded(&path, workspace_path) {
+            continue;
+        }
         let content = std::fs::read_to_string(&path)
             .map_err(|e| format!("read {} failed: {e}", path.display()))?;
         match serde_yaml::from_str::<airlayer::View>(&content) {
@@ -517,4 +526,82 @@ fn load_view_files_sync(
         }
     }
     Ok(views)
+}
+
+/// Returns true if the path lives under a directory the preagg
+/// scanner should never enter. Checked relative to `workspace_path`
+/// so a workspace named `tests/` (legal, if unusual) still scans
+/// fine.
+fn path_is_excluded(path: &Path, workspace_path: &Path) -> bool {
+    const EXCLUDED: &[&str] = &[
+        "tests",
+        "target",
+        "node_modules",
+        ".git",
+        "dist",
+        "out",
+        ".semantics",
+    ];
+    let Ok(rel) = path.strip_prefix(workspace_path) else {
+        return false;
+    };
+    rel.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .is_some_and(|s| EXCLUDED.contains(&s))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_is_excluded;
+    use std::path::Path;
+
+    #[test]
+    fn excludes_tests_fixtures_under_repo_root() {
+        let ws = Path::new("/repo");
+        assert!(path_is_excluded(
+            Path::new("/repo/tests/fixtures/foo.view.yml"),
+            ws
+        ));
+        assert!(path_is_excluded(
+            Path::new("/repo/target/build/x.view.yml"),
+            ws
+        ));
+        assert!(path_is_excluded(
+            Path::new("/repo/node_modules/pkg/x.view.yml"),
+            ws
+        ));
+        assert!(path_is_excluded(Path::new("/repo/dist/x.view.yml"), ws));
+        assert!(path_is_excluded(
+            Path::new("/repo/.semantics/x.view.yml"),
+            ws
+        ));
+    }
+
+    #[test]
+    fn allows_real_workspace_views() {
+        let ws = Path::new("/repo");
+        assert!(!path_is_excluded(Path::new("/repo/views/x.view.yml"), ws));
+        assert!(!path_is_excluded(
+            Path::new("/repo/semantic/sales.view.yml"),
+            ws
+        ));
+        // Nested non-excluded dirs are fine.
+        assert!(!path_is_excluded(
+            Path::new("/repo/team/finance/budget.view.yml"),
+            ws
+        ));
+    }
+
+    #[test]
+    fn allows_paths_outside_workspace() {
+        // strip_prefix fails → not excluded (we only filter under
+        // the workspace; a glob match outside it is somebody else's
+        // problem).
+        assert!(!path_is_excluded(
+            Path::new("/other/tests/x.view.yml"),
+            Path::new("/repo")
+        ));
+    }
 }

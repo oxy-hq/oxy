@@ -79,6 +79,11 @@ mod m20260416_000003_drop_branches_and_workspace_repos;
 mod m20260424_000001_create_org_billing;
 mod m20260424_000002_create_stripe_webhook_events;
 mod m20260430_000001_create_feature_flags;
+mod m20260528_000001_create_customer_apps_schema;
+mod m20260528_000002_apps_add_repo_path;
+mod m20260528_000003_create_app_builds;
+mod m20260528_000004_app_builds_add_published_by;
+mod m20260528_000005_apps_add_last_promoted;
 // Legacy single-tenant Slack tables. The original CREATE migrations were
 // deleted when the universal multi-tenant Slack bot replaced them, but
 // dev/prod databases that had already applied them required the files
@@ -183,6 +188,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260424_000001_create_org_billing::Migration),
             Box::new(m20260424_000002_create_stripe_webhook_events::Migration),
             Box::new(m20260430_000001_create_feature_flags::Migration),
+            Box::new(m20260528_000001_create_customer_apps_schema::Migration),
+            Box::new(m20260528_000002_apps_add_repo_path::Migration),
+            Box::new(m20260528_000003_create_app_builds::Migration),
+            Box::new(m20260528_000004_app_builds_add_published_by::Migration),
+            Box::new(m20260528_000005_apps_add_last_promoted::Migration),
             // Legacy single-tenant Slack tables — see module-level comment above.
             Box::new(m20251114_000002_create_slack_channel_bindings_table::Migration),
             Box::new(m20251114_000003_create_slack_user_identities_table::Migration),

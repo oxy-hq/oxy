@@ -4,8 +4,12 @@ pub mod prelude;
 
 pub mod apalis_jobs;
 pub mod api_keys;
+pub mod app_admins;
+pub mod app_builds;
+pub mod apps;
 pub mod artifacts;
 pub mod checkpoints;
+pub mod customer_app_procedure_runs;
 pub mod feature_flag;
 pub mod git_namespaces;
 pub mod github_accounts;
@@ -37,4 +41,5 @@ pub mod test_runs;
 pub mod threads;
 pub mod users;
 pub mod workspace_members;
+pub mod workspace_oxy_access;
 pub mod workspaces;

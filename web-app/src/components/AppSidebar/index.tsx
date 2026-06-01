@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Apps } from "./Apps";
+import { CustomApps } from "./CustomApps";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
 import Threads from "./Threads";
@@ -56,6 +57,13 @@ export function AppSidebar() {
                 <Threads />
                 <Workflows />
                 <Apps />
+                {/* Bespoke JS apps published by Oxy. Renders with the
+                    same item shape as Apps; the small mt-2 inside the
+                    component sets it apart from the workspace-local
+                    `.app.yml` Data Apps without breaking spacing
+                    parity with the rest of the sidebar. Hides itself
+                    when the workspace has no published apps. */}
+                <CustomApps />
               </SidebarMenu>
             </SidebarGroup>
           </div>

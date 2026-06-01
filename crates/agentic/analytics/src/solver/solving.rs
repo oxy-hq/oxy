@@ -528,11 +528,10 @@ pub(super) fn build_solving_handler()
                             solution.solution_source = solution_source;
                             if let Some(spec) = &run_ctx.spec
                                 && let Some(sql) = solution.payload.sql()
-                                && let Err(err) = solver.validator.validate_solvable(
-                                    sql,
-                                    spec,
-                                    &solver.catalog,
-                                )
+                                && let Err(err) =
+                                    solver
+                                        .validator
+                                        .validate_solvable(sql, spec, &solver.catalog)
                             {
                                 emit_domain(
                                     &solver.event_tx,

@@ -176,6 +176,54 @@ pub async fn typed_stream_to_json_array(
     Ok(out)
 }
 
+/// Collect a [`TypedRowStream`] into `Vec<JsonValue>` where each row is a
+/// `{column_name: value}` object with values preserved as native JSON types
+/// (numbers stay numbers, bools stay bools, NULL → JSON null). This is the
+/// shape customer-app producers return — charting libraries inside bundles
+/// expect numeric axes, so we don't stringify everything the way the legacy
+/// `Vec<Vec<String>>` shape does.
+pub async fn typed_stream_to_json_objects(
+    stream: TypedRowStream,
+) -> Result<Vec<serde_json::Value>, OxyError> {
+    let TypedRowStream { columns, mut rows } = stream;
+    let names: Vec<String> = columns.iter().map(|c| c.name.clone()).collect();
+    let mut out: Vec<serde_json::Value> = Vec::new();
+
+    while let Some(row) = rows.next().await {
+        let row = row.map_err(|e| OxyError::DBError(format!("row stream: {e}")))?;
+        let mut obj = serde_json::Map::with_capacity(names.len());
+        for (i, cell) in row.into_iter().enumerate() {
+            let name = names.get(i).cloned().unwrap_or_else(|| format!("col_{i}"));
+            obj.insert(name, typed_value_to_json(cell));
+        }
+        out.push(serde_json::Value::Object(obj));
+    }
+    Ok(out)
+}
+
+/// Sibling of [`typed_value_to_string`] that preserves native JSON types.
+/// Decimals, dates, timestamps, and JSON blobs round-trip as strings (or
+/// nested JSON values for the JSON case) so consumers can re-parse without
+/// guessing the original cell type from a flat string.
+fn typed_value_to_json(v: TypedValue) -> serde_json::Value {
+    use serde_json::Value;
+    match v {
+        TypedValue::Null => Value::Null,
+        TypedValue::Bool(b) => Value::Bool(b),
+        TypedValue::Int32(n) => Value::from(n),
+        TypedValue::Int64(n) => Value::from(n),
+        TypedValue::Float64(f) => serde_json::Number::from_f64(f)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        TypedValue::Text(s) => Value::String(s),
+        TypedValue::Bytes(b) => Value::String(format!("<{} bytes>", b.len())),
+        TypedValue::Date(d) => Value::String(format_date(d)),
+        TypedValue::Timestamp(t) => Value::String(format_timestamp_micros(t)),
+        TypedValue::Decimal(s) => Value::String(s),
+        TypedValue::Json(j) => j,
+    }
+}
+
 // ── Schema construction ─────────────────────────────────────────────────────
 
 fn typed_to_arrow(dt: &TypedDataType) -> DataType {

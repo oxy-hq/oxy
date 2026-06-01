@@ -18,7 +18,8 @@ import ROUTES from "@/libs/utils/routes";
 const MagicLinkCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { mutate: verifyMagicLink, status, error } = useVerifyMagicLink();
+  const returnTo = searchParams.get("return_to") ?? undefined;
+  const { mutate: verifyMagicLink, status, error } = useVerifyMagicLink(returnTo);
 
   useEffect(() => {
     const token = searchParams.get("token");

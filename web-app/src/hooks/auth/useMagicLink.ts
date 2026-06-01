@@ -16,14 +16,34 @@ export const useRequestMagicLink = () => {
   });
 };
 
-export const useVerifyMagicLink = () => {
+/**
+ * Verify a magic link and log the user in.
+ *
+ * If `returnTo` is provided, the hook validates it via the server's
+ * `/auth/return-to/validate` endpoint after a successful login and
+ * navigates to it via `window.location.href` (cross-origin redirect into
+ * a different `*.oxy.tech` subdomain or registered external app host).
+ * If validation fails or no `returnTo` is supplied, falls back to the
+ * normal post-login navigation in `handlePostLoginOrgs`.
+ */
+export const useVerifyMagicLink = (returnTo?: string) => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
   return useMutation<AuthResponse, Error, MagicLinkVerifyRequest>({
     mutationFn: AuthService.verifyMagicLink,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       login(data.token, data.user);
+
+      if (returnTo) {
+        const isAllowed = await AuthService.validateReturnTo(returnTo);
+        if (isAllowed) {
+          window.location.href = returnTo;
+          return;
+        }
+        console.warn("return_to URL rejected by server; falling back to default destination");
+      }
+
       const destination = handlePostLoginOrgs(data.user, data.orgs);
       navigate(destination, { replace: true });
     }

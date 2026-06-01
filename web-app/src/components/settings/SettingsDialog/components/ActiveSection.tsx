@@ -10,6 +10,7 @@ import Airhouse from "../sections/workspace/Airhouse";
 import ApiKeys from "../sections/workspace/ApiKeys";
 import Databases from "../sections/workspace/Databases";
 import WorkspaceMembers from "../sections/workspace/Members";
+import OxyAccess from "../sections/workspace/OxyAccess";
 import Repositories from "../sections/workspace/Repositories";
 import Secrets from "../sections/workspace/Secrets";
 
@@ -57,6 +58,7 @@ export function ActiveSection({
       {workspace && activeSection === "workspace.secrets" && (isLocalMode || isAdmin) && (
         <Secrets />
       )}
+      {workspace && activeSection === "workspace.oxy_access" && isAdmin && <OxyAccess />}
       {workspace && activeSection === "workspace.activity_logs" && <ActivityLogs />}
     </>
   );

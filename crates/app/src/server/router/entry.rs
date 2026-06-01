@@ -128,6 +128,14 @@ pub async fn api_router(
 
     spawn_recovery(agentic_state.clone(), mode);
     spawn_shutdown_hook(agentic_state.clone());
+    // Periodic maintenance for customer-app procedure runs: TTL
+    // sweep + cross-instance cancel reconciliation + stuck-row
+    // recovery. Cheap (delete-many + two update-many every 10 min)
+    // and keeps the table bounded under load.
+    crate::server::api::projects::procedure_run::spawn_periodic_sweep(
+        agentic_state.db.clone(),
+        agentic_state.shutdown_token.clone(),
+    );
 
     let app_state = AppState {
         enterprise,
@@ -137,6 +145,7 @@ pub async fn api_router(
         startup_cwd,
         preagg_cache,
         preagg_renewal_threshold_secs,
+        agentic_state: Some(agentic_state.clone()),
     };
 
     let protected_routes = match mode {
@@ -200,6 +209,9 @@ pub async fn internal_api_router(
         startup_cwd: std::path::PathBuf::new(),
         preagg_cache: None,
         preagg_renewal_threshold_secs: None,
+        // Internal router has no customer-app endpoints; agentic state
+        // not needed and explicitly omitted.
+        agentic_state: None,
     };
     // `api_router` owns startup cleanup + recovery for the whole process;
     // the internal router shares the same database state, so it skips both

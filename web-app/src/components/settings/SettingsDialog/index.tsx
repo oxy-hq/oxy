@@ -9,6 +9,7 @@ import {
   type LucideIcon,
   Plug,
   Settings as SettingsIcon,
+  ShieldCheck,
   Users
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -71,9 +72,17 @@ const CLOUD_NAV: NavGroup[] = [
       },
       { value: "workspace.api_keys", label: "API Keys", icon: Key },
       { value: "workspace.secrets", label: "Secrets", icon: KeyRound, adminOnly: true },
+      {
+        value: "workspace.oxy_access",
+        label: "Oxy access",
+        icon: ShieldCheck,
+        adminOnly: true
+      },
       { value: "workspace.activity_logs", label: "Activity Logs", icon: Activity }
     ]
   }
+  // Customer-apps management used to live here. It now has its own
+  // top-level surface at `/admin/apps`, gated by `is_app_admin`.
 ];
 
 const LOCAL_NAV: NavGroup[] = [

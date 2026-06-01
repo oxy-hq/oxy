@@ -11,7 +11,8 @@ export type SettingsSection =
   | "workspace.airhouse"
   | "workspace.api_keys"
   | "workspace.secrets"
-  | "workspace.activity_logs";
+  | "workspace.activity_logs"
+  | "workspace.oxy_access";
 
 interface SettingsDialogState {
   isOpen: boolean;

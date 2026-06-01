@@ -1,0 +1,309 @@
+// Unit tests for the manifest parser (v2 only) and the SQL param
+// interpolation helper used by useQuery.
+//
+// These tests exercise the validation paths without hitting the network
+// or requiring a browser environment — `validateManifest` is the private
+// function we reach indirectly via `loadCustomerAppManifest`.
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { _resetCustomerAppManifestCacheForTest, loadCustomerAppManifest } from "./manifest";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+// We test the parser indirectly through loadCustomerAppManifest with a
+// mocked fetch because the validation logic lives inside the private
+// `validateManifest` function. The cache must be cleared before each test.
+
+function mockFetchReturning(body: unknown): void {
+  globalThis.fetch = async () =>
+    ({
+      ok: true,
+      status: 200,
+      json: async () => body
+    }) as Response;
+}
+
+function injectRuntime(orgSlug = "test-org", slug = "test-app"): void {
+  const config = {
+    orgSlug,
+    slug,
+    appId: "app-uuid",
+    apiBaseUrl: ""
+  };
+  // readInjectedConfig checks `window.__OXY_APP__`. In the vitest node
+  // environment `window` is not defined, so we shim it here. This is
+  // safe because the shim is reset between tests via _resetCache.
+  (globalThis as Record<string, unknown>).__OXY_APP__ = config;
+  if (typeof window === "undefined") {
+    (globalThis as Record<string, unknown>).window = { __OXY_APP__: config };
+  } else {
+    (window as Record<string, unknown>).__OXY_APP__ = config;
+  }
+}
+
+beforeEach(() => {
+  _resetCustomerAppManifestCacheForTest();
+  injectRuntime();
+});
+
+// ── v1 manifest — now rejected ────────────────────────────────────────────────
+
+describe("parseOxyAppManifest — v1 (rejected)", () => {
+  it("rejects a v1 manifest with schemaVersion 1", async () => {
+    mockFetchReturning({
+      schemaVersion: 1,
+      name: "My App",
+      products: {
+        summary_kpis: {
+          from: { type: "execute_sql", database: "main", sql: "SELECT 1" }
+        }
+      }
+    });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /schemaVersion must be 2.*v1 manifests are no longer supported/i
+    );
+  });
+
+  it("rejects a v1 manifest with optional identity fields", async () => {
+    mockFetchReturning({
+      schemaVersion: 1,
+      slug: "my-app",
+      orgSlug: "acme",
+      projectId: "proj-uuid",
+      products: {
+        kpis: { from: { type: "execute_sql", database: "db", sql: "SELECT 1" } }
+      }
+    });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /schemaVersion must be 2/i
+    );
+  });
+
+  it("rejects a v1 manifest with an empty products object", async () => {
+    mockFetchReturning({ schemaVersion: 1, products: {} });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /schemaVersion must be 2/i
+    );
+  });
+});
+
+// ── v2 manifest ───────────────────────────────────────────────────────────────
+
+describe("parseOxyAppManifest — v2", () => {
+  it("accepts a v2 identity-only manifest and returns schemaVersion 2 with no products", async () => {
+    mockFetchReturning({
+      schemaVersion: 2,
+      name: "Dashboard v2",
+      slug: "dashboard-v2",
+      orgSlug: "acme",
+      projectId: "proj-uuid-2"
+    });
+
+    const resolved = await loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" });
+
+    expect(resolved.manifest.schemaVersion).toBe(2);
+    expect(resolved.productNames).toEqual([]);
+    expect(resolved.projectId).toBe("proj-uuid-2");
+    expect(resolved.manifest.name).toBe("Dashboard v2");
+  });
+
+  it("accepts a minimal v2 manifest with only schemaVersion and slug (no other optional fields)", async () => {
+    mockFetchReturning({ schemaVersion: 2, slug: "my-app" });
+
+    const resolved = await loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" });
+
+    expect(resolved.manifest.schemaVersion).toBe(2);
+    expect(resolved.manifest.slug).toBe("my-app");
+    expect(resolved.productNames).toEqual([]);
+    expect(resolved.projectId).toBeUndefined();
+  });
+
+  it("rejects a v2 manifest that also declares products", async () => {
+    mockFetchReturning({
+      schemaVersion: 2,
+      products: { kpis: { from: { type: "execute_sql", database: "db", sql: "SELECT 1" } } }
+    });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /schemaVersion 2.*identity-only.*products.*writers/i
+    );
+  });
+
+  it("rejects a v2 manifest that also declares writers", async () => {
+    mockFetchReturning({
+      schemaVersion: 2,
+      writers: { my_writer: { table: "annotations" } }
+    });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /schemaVersion 2.*identity-only/i
+    );
+  });
+
+  it("rejects a v2 manifest with a missing slug", async () => {
+    mockFetchReturning({ schemaVersion: 2, name: "No Slug" });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /`slug` is required and must be a non-empty string/
+    );
+  });
+
+  it("rejects a v2 manifest with an empty slug", async () => {
+    mockFetchReturning({ schemaVersion: 2, slug: "" });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /`slug` is required and must be a non-empty string/
+    );
+  });
+
+  it("rejects a v2 manifest with a whitespace-only slug", async () => {
+    mockFetchReturning({ schemaVersion: 2, slug: "   " });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /`slug` is required and must be a non-empty string/
+    );
+  });
+});
+
+// ── unsupported schemaVersion ─────────────────────────────────────────────────
+
+describe("parseOxyAppManifest — unsupported version", () => {
+  it("rejects manifests with schemaVersion 0", async () => {
+    mockFetchReturning({ schemaVersion: 0 });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /schemaVersion must be 2/i
+    );
+  });
+
+  it("rejects manifests with an unknown schemaVersion 99", async () => {
+    mockFetchReturning({ schemaVersion: 99 });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /schemaVersion must be 2.*got 99/i
+    );
+  });
+
+  it("rejects manifests with no schemaVersion", async () => {
+    mockFetchReturning({ name: "No version" });
+
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /schemaVersion must be 2/i
+    );
+  });
+});
+
+// ── v2 manifest accepts identity-only fields (contract lock) ─────────────────
+
+describe("v2 manifest accepts identity-only fields", () => {
+  beforeEach(() => {
+    _resetCustomerAppManifestCacheForTest();
+    delete (globalThis as { __OXY_APP__?: unknown }).__OXY_APP__;
+    if (typeof window !== "undefined") {
+      delete (window as { __OXY_APP__?: unknown }).__OXY_APP__;
+    }
+  });
+
+  it("validates a manifest with just schemaVersion + slug", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          schemaVersion: 2,
+          slug: "minimal"
+        }),
+        { status: 200 }
+      )
+    );
+    try {
+      const resolved = await loadCustomerAppManifest();
+      expect(resolved.manifest.slug).toBe("minimal");
+      expect(resolved.manifest.orgSlug).toBeUndefined();
+      expect(resolved.manifest.projectId).toBeUndefined();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("validates a manifest with just schemaVersion + slug + name", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          schemaVersion: 2,
+          slug: "minimal",
+          name: "Display Name"
+        }),
+        { status: 200 }
+      )
+    );
+    try {
+      const resolved = await loadCustomerAppManifest();
+      expect(resolved.manifest.name).toBe("Display Name");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+});
+
+// ── identity precedence (injection > manifest) ────────────────────────────────
+
+describe("identity precedence (injection > manifest)", () => {
+  beforeEach(() => {
+    _resetCustomerAppManifestCacheForTest();
+    // Clear both the global and the window shim set by the outer injectRuntime()
+    delete (globalThis as { __OXY_APP__?: unknown }).__OXY_APP__;
+    if (typeof window !== "undefined") {
+      delete (window as { __OXY_APP__?: unknown }).__OXY_APP__;
+    }
+  });
+
+  it("uses injected projectId when both injection and manifest are present", async () => {
+    const config = {
+      orgSlug: "acme",
+      slug: "demo",
+      projectId: "11111111-1111-1111-1111-111111111111",
+      apiBaseUrl: ""
+    };
+    (globalThis as { __OXY_APP__?: unknown }).__OXY_APP__ = config;
+    if (typeof window !== "undefined") {
+      (window as { __OXY_APP__?: unknown }).__OXY_APP__ = config;
+    }
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          schemaVersion: 2,
+          slug: "demo",
+          projectId: "22222222-2222-2222-2222-222222222222"
+        }),
+        { status: 200 }
+      )
+    );
+    try {
+      const resolved = await loadCustomerAppManifest();
+      expect(resolved.projectId).toBe("11111111-1111-1111-1111-111111111111");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("falls back to manifest projectId when no injection", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          schemaVersion: 2,
+          slug: "demo",
+          projectId: "33333333-3333-3333-3333-333333333333"
+        }),
+        { status: 200 }
+      )
+    );
+    try {
+      const resolved = await loadCustomerAppManifest();
+      expect(resolved.projectId).toBe("33333333-3333-3333-3333-333333333333");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+});

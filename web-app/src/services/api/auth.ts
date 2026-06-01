@@ -51,4 +51,20 @@ export class AuthService {
     const response = await apiClient.post("/auth/magic-link/verify", request);
     return response.data;
   }
+
+  /**
+   * Ask the server whether `url` is safe to redirect a logged-in user to.
+   * Returns true on 200, false on 403, false on any other response (treat
+   * server errors as not-safe).
+   */
+  static async validateReturnTo(url: string): Promise<boolean> {
+    try {
+      const response = await apiClient.get("/auth/return-to/validate", {
+        params: { url }
+      });
+      return response.status === 200;
+    } catch {
+      return false;
+    }
+  }
 }

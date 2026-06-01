@@ -135,7 +135,6 @@ impl AppService {
         // round-trip the tasks through JSON to land on
         // `agentic_workflow::WorkflowConfig`. Both `Task` types use
         // `#[serde(tag = "type")]` so the shapes line up.
-        let _ = controls; // controls render via `convert_to_data` below
         let workflow_value = serde_json::json!({
             "name": "app-tasks-inline",
             "tasks": serde_json::to_value(&tasks).map_err(|e| {
@@ -147,12 +146,36 @@ impl AppService {
                 OxyError::RuntimeError(format!("convert app tasks → WorkflowConfig: {e}"))
             })?;
 
+        // Seed the workflow runner's render context with `controls.*` so
+        // task SQL templates like `{{ controls.store }}` resolve. The
+        // `variables` parameter lands in `state.variables` only — NOT
+        // in `state.render_context`, which is what `merge_sql_variables`
+        // and `render_jinja_string` actually read. Without the
+        // dedicated render-context entry point, Jinja substituted
+        // empty strings and produced invalid SQL like
+        // `WHERE Store = GROUP BY ...`. Surfaced while wiring the
+        // customer-apps data-products endpoint, where param-driven
+        // dashboards depend on controls hydrating from query-string
+        // params.
+        let render_context = if controls.is_empty() {
+            None
+        } else {
+            Some(serde_json::json!({ "controls": controls }))
+        };
+
+        // `OxyInlineAgentRunner` was removed on main; agent fan-out
+        // tasks inside a Data App workflow now surface a clear error
+        // from the workflow runner instead of executing inline. The
+        // common case (`execute_sql` tasks driven by Data App
+        // controls) doesn't depend on inline-agent execution, so
+        // `None` here is correct for current customer-apps usage.
         let project_ctx = Arc::new(OxyProjectContext::new(self.workspace_manager.clone()));
         let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
-        let results = agentic_pipeline::workflow_run::run_inline_workflow_with(
-            self.project_ctx.as_ref(),
+        let results = agentic_pipeline::workflow_run::run_inline_workflow_with_render_context(
+            workspace.as_ref(),
             workflow_config,
             None,
+            render_context,
             None,
         )
         .await
@@ -179,6 +202,19 @@ impl AppService {
             if let Some(value) = results.get(&task.name) {
                 let data = workflow_task_to_data(&task.name, value);
                 map.insert(task.name.clone(), DataContainer::Single(data));
+            } else {
+                // Workflow runner dropped this task — typically means it
+                // errored mid-run (an inline-workflow step exception clears
+                // the slot before `results` is assembled) or the task name
+                // doesn't match the runner's result key. Log so an operator
+                // can correlate with the bundle-side "task missing from app
+                // response" error.
+                tracing::warn!(
+                    app_path = ?app_path,
+                    task = %task.name,
+                    "task produced no result during inline workflow run; \
+                     omitting from data map"
+                );
             }
         }
         let data_container = DataContainer::Map(map);

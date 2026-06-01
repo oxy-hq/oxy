@@ -13,3 +13,9 @@ results/
 # DuckDB runtime artifacts written next to the seed CSV in .db/.
 .db/*.duckdb
 .db/*.wal
+
+# Demo customer apps now live in the oxy-hq/customer-apps repo under examples/.
+# Ignore any local clones / leftover working copies so they don't get
+# re-tracked here or scanned by oxy-internal CI.
+oxymart-app/
+store-pulse-app/

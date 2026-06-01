@@ -2,6 +2,9 @@
 
 pub use super::apalis_jobs::Entity as ApalisJobs;
 pub use super::api_keys::Entity as ApiKeys;
+pub use super::app_admins::Entity as AppAdmins;
+pub use super::app_builds::Entity as AppBuilds;
+pub use super::apps::Entity as Apps;
 pub use super::artifacts::Entity as Artifacts;
 pub use super::checkpoints::Entity as Checkpoints;
 pub use super::git_namespaces::Entity as GitNamespaces;
@@ -32,4 +35,5 @@ pub use super::test_runs::Entity as TestRuns;
 pub use super::threads::Entity as Threads;
 pub use super::users::Entity as Users;
 pub use super::workspace_members::Entity as WorkspaceMembers;
+pub use super::workspace_oxy_access::Entity as WorkspaceOxyAccess;
 pub use super::workspaces::Entity as Workspaces;

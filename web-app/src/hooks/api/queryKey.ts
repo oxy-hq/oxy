@@ -339,6 +339,39 @@ const adminBillingKeys = {
   pendingCheckout: (orgId: string) => [...adminBillingKeys.all, "pendingCheckout", orgId] as const
 };
 
+const customerAppKeys = {
+  all: () => ["customerApps", "all"] as const,
+  mine: () => ["customerApps", "mine"] as const,
+  manage: () => ["customerApps", "manage"] as const,
+  debug: (orgSlug: string, appSlug: string) => ["customerApps", "debug", orgSlug, appSlug] as const,
+  listdir: (path: string, showHidden: boolean) =>
+    ["customerApps", "listdir", path, showHidden] as const,
+  probe: (path: string) => ["customerApps", "probe", path] as const,
+  builds: (id: string) => ["customerApps", "builds", id] as const,
+  // Key includes a version segment so any cache entry recorded
+  // against the pre-fix URL (`/api/admin/customer-apps/templates`,
+  // which SPA-fell-back to HTML) gets invalidated when this code
+  // ships. Bump again if the response shape changes.
+  templates: () => ["customerApps", "templates", "v2"] as const
+};
+
+const appAdminKeys = {
+  all: ["appAdmins"] as const,
+  list: () => [...appAdminKeys.all, "list"] as const
+};
+
+const oxyAccessKeys = {
+  all: ["oxyAccess"] as const,
+  status: (workspaceId: string) => [...oxyAccessKeys.all, "status", workspaceId] as const,
+  // Platform-wide list of granted workspaces for the admin org/project browser.
+  grants: () => [...oxyAccessKeys.all, "grants"] as const
+};
+
+const customAppKeys = {
+  all: ["customApps"] as const,
+  list: (workspaceId: string) => [...customAppKeys.all, "list", workspaceId] as const
+};
+
 const featureFlagKeys = {
   all: ["admin", "feature-flags"] as const,
   list: () => [...featureFlagKeys.all, "list"] as const
@@ -367,6 +400,10 @@ const queryKeys = {
   airhouse: airhouseKeys,
   billing: billingKeys,
   adminBilling: adminBillingKeys,
+  customerApps: customerAppKeys,
+  appAdmins: appAdminKeys,
+  oxyAccess: oxyAccessKeys,
+  customApps: customAppKeys,
   featureFlags: featureFlagKeys,
   authConfig: authConfigKeys,
   semantic: semanticKeys,

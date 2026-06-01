@@ -1,7 +1,7 @@
 {
   "name": "@oxy-hq/sdk",
-  "version": "0.2.5",
-  "description": "TypeScript SDK for interacting with Oxy data platform",
+  "version": "2.0.0",
+  "description": "React SDK for building customer-app bundles on the Oxy platform",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -28,40 +28,31 @@
     "test:watch": "vitest",
     "prepublishOnly": "pnpm build",
     "publish:beta": "npm publish --tag beta",
-    "publish:latest": "npm publish --tag latest",
-    "demo:react": "cd examples/react-vite-demo && pnpm install --ignore-workspace && pnpm dev",
-    "demo:setup": "cd examples/react-vite-demo && pnpm install --ignore-workspace"
+    "publish:latest": "npm publish --tag latest"
   },
   "keywords": [
     "oxy",
     "data",
     "analytics",
     "sdk",
-    "parquet",
-    "duckdb"
+    "react",
+    "customer-apps"
   ],
   "author": "Oxy Team",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dataframehq/oxygen-internal.git",
+    "url": "https://github.com/oxy-hq/oxygen-internal.git",
     "directory": "sdk/typescript"
   },
   "bugs": {
-    "url": "https://github.com/dataframehq/oxygen-internal/issues"
+    "url": "https://github.com/oxy-hq/oxygen-internal/issues"
   },
   "homepage": "https://oxy.tech",
   "peerDependencies": {
-    "@duckdb/duckdb-wasm": "^1.29.0",
     "react": "^19.0.0"
   },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@duckdb/duckdb-wasm": "^1.32.0",
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@typescript-eslint/eslint-plugin": "^8.60.0",

@@ -1,16 +1,22 @@
-use axum::{http::StatusCode, response::Json};
+use axum::{
+    http::{HeaderMap, StatusCode, header::SET_COOKIE},
+    response::Json,
+};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_auth::types::AuthenticatedUser;
 use oxy_auth::user::UserService;
 use serde::Serialize;
 
+use crate::server::api::auth::clear_session_cookie;
+
 /// Global profile fields returned by `GET /user`. Role and admin status are
 /// per-org, so they are intentionally omitted here — read them from
 /// `OrgInfo` in the login response or from `GET /orgs`. Workspace-scoped
 /// routes receive the resolved role via the `EffectiveWorkspaceRole`
-/// extractor. `is_owner` is the only system-wide flag — it mirrors the
-/// `OXY_OWNER` allow-list and lets the frontend route Oxy staff to the
-/// admin shell.
+/// extractor. `is_owner` mirrors the `OXY_OWNER` allow-list and lets the
+/// frontend route Oxy staff to the admin shell. `is_app_admin` reflects
+/// membership in the `app_admins` table and gates the customer-apps
+/// surface.
 #[derive(Serialize)]
 pub struct UserInfo {
     pub id: String,
@@ -19,6 +25,7 @@ pub struct UserInfo {
     pub picture: Option<String>,
     pub status: String,
     pub is_owner: bool,
+    pub is_app_admin: bool,
 }
 
 #[derive(Serialize)]
@@ -28,32 +35,42 @@ pub struct LogoutResponse {
     pub message: String,
 }
 
-impl From<AuthenticatedUser> for UserInfo {
-    fn from(user: AuthenticatedUser) -> Self {
-        let is_owner = crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(&user.email);
-        Self {
-            id: user.id.to_string(),
-            email: user.email,
-            name: user.name,
-            picture: user.picture,
-            status: user.status.as_str().to_string(),
-            is_owner,
-        }
+/// Build a [`UserInfo`] from the authenticated user. Async because
+/// `is_app_admin` is now a DB-backed check (see `app_admins` table).
+pub async fn user_info_from(user: AuthenticatedUser) -> UserInfo {
+    let is_owner = crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(&user.email);
+    let is_app_admin =
+        crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin(&user.email).await;
+    UserInfo {
+        id: user.id.to_string(),
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+        status: user.status.as_str().to_string(),
+        is_owner,
+        is_app_admin,
     }
 }
 
-pub async fn logout() -> Result<Json<LogoutResponse>, StatusCode> {
-    Ok(Json(LogoutResponse {
-        logout_url: None,
-        success: true,
-        message: "Built-in logout successful".to_string(),
-    }))
+pub async fn logout() -> Result<(HeaderMap, Json<LogoutResponse>), StatusCode> {
+    let mut headers = HeaderMap::new();
+    if let Ok(value) = clear_session_cookie().parse() {
+        headers.insert(SET_COOKIE, value);
+    }
+    Ok((
+        headers,
+        Json(LogoutResponse {
+            logout_url: None,
+            success: true,
+            message: "Built-in logout successful".to_string(),
+        }),
+    ))
 }
 
 pub async fn get_current_user(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<Json<UserInfo>, StatusCode> {
-    Ok(Json(user.into()))
+    Ok(Json(user_info_from(user).await))
 }
 
 /// Public endpoint that returns current user if authenticated, null if not
@@ -74,7 +91,7 @@ pub async fn get_current_user_public(
             // Look up existing user only — do not auto-create. Closes #16.
             // User rows are created by the auth/sign-up flow, not by a public GET.
             match UserService::find_user_by_identity(&identity).await {
-                Ok(Some(user)) => Ok(Json(Some(UserInfo::from(user)))),
+                Ok(Some(user)) => Ok(Json(Some(user_info_from(user).await))),
                 Ok(None) => Ok(Json(None)),
                 Err(e) => {
                     tracing::error!("Failed to lookup user from identity: {}", e);

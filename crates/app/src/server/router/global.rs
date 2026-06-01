@@ -11,7 +11,9 @@ use axum::routing::{delete, get, patch, post};
 use crate::api::billing;
 use crate::api::github::namespaces as github;
 use crate::api::github::{account, callback, installations};
-use crate::api::middlewares::{org_context, oxy_owner_guard, subscription_guard};
+use crate::api::middlewares::{
+    org_context, oxy_app_admin_guard, oxy_owner_guard, subscription_guard,
+};
 use crate::api::{admin, onboarding, organizations, user, workspaces};
 
 use super::AppState;
@@ -21,6 +23,10 @@ pub(super) fn build_global_routes() -> Router<AppState> {
         .route("/logout", get(user::logout))
         .route("/orgs", post(organizations::create_org))
         .route("/orgs", get(organizations::list_orgs))
+        .route(
+            "/apps/mine",
+            get(crate::server::api::admin::apps::handlers::list_my_apps),
+        )
         .route("/invitations/mine", get(organizations::list_my_invitations))
         .route(
             "/invitations/{token}/accept",
@@ -33,6 +39,76 @@ pub(super) fn build_global_routes() -> Router<AppState> {
             admin::router().layer(middleware::from_fn(
                 oxy_owner_guard::oxy_owner_guard_middleware,
             )),
+        )
+        // Parallel customer-apps surface for OXY_APP_ADMINS. Reuses the same
+        // handlers as /admin/apps but gated by a separate role so app admins
+        // can manage customer-app registrations without org/billing access.
+        .nest(
+            "/customer-apps",
+            Router::new()
+                .route(
+                    "/",
+                    post(admin::apps::handlers::create_app).get(admin::apps::handlers::list_apps),
+                )
+                .route(
+                    "/{id}",
+                    get(admin::apps::handlers::get_app)
+                        .patch(admin::apps::handlers::update_app)
+                        .delete(admin::apps::handlers::delete_app),
+                )
+                // Publish / unpublish lives on the app-admin surface too —
+                // shipping an app to the customer is a normal Oxy-engineer
+                // workflow, not an OXY_OWNER-only action.
+                .route(
+                    "/{id}/publish",
+                    post(admin::apps::handlers::publish_app)
+                        .delete(admin::apps::handlers::unpublish_app),
+                )
+                // New-pipeline build lifecycle: list versioned builds and
+                // roll the published channel back to any retained one.
+                // Pointer moves only — bytes already live in S3.
+                .route("/{id}/builds", get(admin::apps::handlers::list_builds))
+                .route("/{id}/rollback", post(admin::apps::handlers::rollback_app))
+                // Preview-draft cookie: flips this staff session into
+                // draft view on the customer URL. Replaces the
+                // (discoverable) `?view=draft` query param so the
+                // customer URL surface stays free of any "press here
+                // to flip" affordance. See `customer_apps_preview`.
+                .route(
+                    "/preview-draft",
+                    post(crate::server::api::customer_apps_preview::enable_preview_draft)
+                        .delete(crate::server::api::customer_apps_preview::disable_preview_draft),
+                )
+                // Server-side folder picker for the "Add customer app"
+                // dialog's local-link / create-new flow. Local-mode only;
+                // returns 404 in cloud. See `admin::apps::fs`.
+                .route("/fs/listdir", get(admin::apps::fs::listdir))
+                // Bundle identity probe: reads oxy-app.json + index.html
+                // for the picked folder so the dialog can lock name/slug
+                // to what the bundle declares.
+                .route("/fs/probe", get(admin::apps::fs::probe))
+                // Template gallery for the Create-new dialog. No
+                // screenshot route yet — re-add when the first PNG
+                // ships (see templates.rs module docstring).
+                .route("/templates", get(admin::apps::templates::list_templates))
+                // Org / project browser: every workspace that granted Oxy
+                // access, flattened with its org + grant metadata. See
+                // `admin::oxy_access`.
+                .route("/oxy-access", get(admin::oxy_access::list_grants))
+                // One-way publish entry point: CI (or local `oxy publish`)
+                // uploads a built bundle tarball; oxy stores it in S3 and
+                // points the draft (or published, with --promote) channel
+                // at the new build. Raised body limit — bundles are a few
+                // MB, well over axum's 2 MB default. See
+                // `customer_apps_publish`.
+                .route(
+                    "/publish",
+                    post(crate::server::api::customer_apps_publish::publish_handler)
+                        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
+                )
+                .layer(middleware::from_fn(
+                    oxy_app_admin_guard::oxy_app_admin_guard_middleware,
+                )),
         )
         .nest("/user/github", build_user_github_routes())
     // NOTE: Slack webhook + OAuth-callback + magic-link routes are NOT

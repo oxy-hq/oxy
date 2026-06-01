@@ -10,6 +10,9 @@ PN = "PN"
 RTO = "RTO"
 # "YoY" is the year-over-year abbreviation used in column names / examples.
 yoy = "yoy"
+# "caf" is the truncated slugifier output for inputs like "Café" — non-ASCII
+# is dropped, not romanised (see crates/shared/src/utils/slug.rs).
+caf = "caf"
 
 [type.md]
 extend-ignore-re = [

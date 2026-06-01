@@ -5,6 +5,7 @@
 
 pub mod agentic_wiring;
 pub mod cli;
+pub mod customer_app_template;
 pub mod emails;
 pub mod integrations;
 pub mod observability_boot;

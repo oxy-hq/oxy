@@ -87,7 +87,9 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     run_database_migrations(args.enterprise).await?;
     println!("serve: migrations done, initializing feature flags");
     init_feature_flags().await?;
-    println!("serve: feature flags initialized, finding available port");
+    println!("serve: feature flags initialized, seeding app admins from env");
+    seed_app_admins_from_env().await?;
+    println!("serve: app admins seeded, finding available port");
 
     // Now that OXY_DATABASE_URL is set (either externally for `oxy serve` or
     // by `oxy start` after booting Postgres), resolve the observability
@@ -101,7 +103,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // present (the providers are ignored in local mode).
     let auth_configured = std::env::var("GOOGLE_CLIENT_ID").is_ok()
         || std::env::var("OKTA_CLIENT_ID").is_ok()
-        || std::env::var("MAGIC_LINK_SECRET").is_ok();
+        || std::env::var("MAGIC_LINK_FROM_EMAIL").is_ok();
 
     // Tell `oxy-auth`'s built-in authenticator whether at least one provider
     // is configured in the parsed OxyConfig. Reads the YAML, not just the env
@@ -271,6 +273,20 @@ async fn init_feature_flags() -> Result<(), OxyError> {
     Ok(())
 }
 
+/// One-shot bootstrap: if `OXY_APP_ADMINS` is set, ensure each email is
+/// present in the `app_admins` table. After this point the env var is
+/// ignored — admins are managed through the OXY_OWNER admin UI. Safe to
+/// re-run on every startup; existing rows are left alone.
+async fn seed_app_admins_from_env() -> Result<(), OxyError> {
+    let db = establish_connection()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
+    crate::server::api::customer_apps_auth::bootstrap_app_admins_from_env(&db)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("app admin seed failed: {}", e)))?;
+    Ok(())
+}
+
 async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
     println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
@@ -408,8 +424,23 @@ async fn create_web_application(
     openapi_doc.servers = Some(vec![Server::new("/api")]);
     let static_service = service_fn(handle_static_files);
 
+    use crate::server::api::customer_apps_serve;
+    use axum::routing::get;
+
     let router = Router::new()
         .nest("/api", api_router)
+        // Customer-app subpath bundle serving. Mounted at the top level (NOT
+        // under /api) because the URL is browser-facing and must redirect to
+        // /login on auth failure rather than return 401. The handler
+        // authenticates inline and serves the bundle from disk.
+        // One wildcard handler dispatches: legacy `/customer-apps/<uuid>/...`
+        // 301s to the canonical pretty URL, while
+        // `/customer-apps/<org_slug>/<app_slug>/...` resolves through the
+        // serve_pretty pipeline. See customer_apps_serve::serve_dispatch.
+        .route(
+            "/customer-apps/{*path}",
+            get(customer_apps_serve::serve_dispatch),
+        )
         .merge(
             SwaggerUi::new("/apidoc")
                 .url("/apidoc/openapi.json", openapi_doc)
@@ -422,6 +453,16 @@ async fn create_web_application(
                 ),
         )
         .fallback_service(static_service)
+        // CORS is applied to the OUTER router so every response —
+        // including 404s from the fallback_service, /customer-apps/
+        // serve handler, and the SwaggerUI tree — carries CORS
+        // headers. Applying it only to api_router (the previous
+        // default inside `finalize_router`) meant a missed /api/
+        // prefix from a bundle SDK produced a CORS-less 404 from the
+        // static fallback, which the browser surfaces as a misleading
+        // "CORS error" instead of the real 404. See
+        // `crates/app/src/server/router/mod.rs::build_cors_layer`.
+        .layer(crate::server::router::build_cors_layer())
         .layer(create_trace_layer());
     Ok(router)
 }

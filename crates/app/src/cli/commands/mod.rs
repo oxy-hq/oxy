@@ -1,14 +1,19 @@
 mod admin;
 mod agentic_cli;
 mod airway;
+mod api;
+mod app_manifest;
+mod apps;
 pub mod clean;
 pub mod export_chart;
 mod init;
 mod intent;
+mod login;
 mod looker;
 mod make;
 mod mcp;
 mod migrate;
+mod publish;
 pub mod run;
 mod seed;
 mod serve;
@@ -256,6 +261,34 @@ enum SubCommand {
     /// not reachable through the user-facing API; reserve them for ops
     /// runbook flows.
     Admin(admin::AdminArgs),
+    /// Manage customer-app registrations (create, list, delete).
+    ///
+    /// Wraps the admin app-registry handlers directly — no HTTP server
+    /// required. Intended for ops and CI scripts.
+    Apps(apps::AppsArgs),
+    /// Make an authenticated request to the oxy HTTP API (`gh api`-style).
+    ///
+    /// Uses the token cached by `oxy login` (or `OXY_TOKEN`) as a bearer, so
+    /// you never hand-manage an `Authorization` / `X-API-Key` header. The
+    /// path is relative to the target's `/api/` surface. Handy for
+    /// vibe-coding against your own workspace's data endpoints.
+    Api(api::ApiArgs),
+    /// Publish a built customer-app bundle to oxy (one-way deploy).
+    ///
+    /// Tars `./dist` (or `--dir`) and POSTs it to
+    /// `<target>/api/customer-apps/publish`. Identity comes from flags,
+    /// then `OXY_*` env vars (`.env.local` is auto-loaded), then the
+    /// `apps/<org>/<app>/` path. Replaces `apps ensure` + `aws s3 sync`
+    /// + the `/sync` callback. Intended for CI and local testing.
+    Publish(publish::PublishArgs),
+    /// Authenticate the CLI against an oxy instance for `oxy publish`.
+    ///
+    /// Opens a browser to log in (loopback flow), caches the token per
+    /// target host, and reports whether you're an app-admin (i.e. whether
+    /// you can publish). Works against local `oxy serve` and the cloud.
+    Login(login::LoginArgs),
+    /// Clear the cached `oxy login` token for a target.
+    Logout(login::LogoutArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -517,6 +550,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Agentic(_) => "agentic",
             SubCommand::Airway(_) => "airway",
             SubCommand::Admin(_) => "admin",
+            SubCommand::Apps(_) => "apps",
+            SubCommand::Api(_) => "api",
+            SubCommand::Publish(_) => "publish",
+            SubCommand::Login(_) => "login",
+            SubCommand::Logout(_) => "logout",
         };
 
         sentry_config::add_breadcrumb(
@@ -847,6 +885,26 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Admin(admin_args)) => {
             admin::handle_admin_command(admin_args).await?;
+        }
+
+        Some(SubCommand::Apps(apps_args)) => {
+            apps::handle_apps_command(apps_args).await?;
+        }
+
+        Some(SubCommand::Api(api_args)) => {
+            api::handle_api_command(api_args).await?;
+        }
+
+        Some(SubCommand::Publish(publish_args)) => {
+            publish::handle_publish_command(publish_args).await?;
+        }
+
+        Some(SubCommand::Login(login_args)) => {
+            login::handle_login_command(login_args).await?;
+        }
+
+        Some(SubCommand::Logout(logout_args)) => {
+            login::handle_logout_command(logout_args).await?;
         }
 
         None => {

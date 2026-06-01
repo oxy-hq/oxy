@@ -65,6 +65,43 @@ tasks:
   dry_run_limit: null
   cache: null
   mode: client
+# Per-store weekly time series. Feeds the bespoke React app's drill-in
+# (sparklines + per-store charts) — the JS app slices this client-side
+# rather than issuing N round-trips per store.
+- name: weekly_sales_per_store
+  type: execute_sql
+  database: local
+  sql_query: SELECT CAST(Store AS VARCHAR) as Store, Date, Weekly_Sales, Holiday_Flag, Temperature, Fuel_Price, CPI, Unemployment FROM oxymart ORDER BY Store, Date
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
+# Per-store scorecard with holiday vs non-holiday breakdown. Used by
+# the Stores tab's leaderboard and the alerts ("stores with shrinking
+# holiday boost", "stores with biggest weekly volatility").
+- name: store_summary
+  type: execute_sql
+  database: local
+  sql_query: |
+    SELECT
+      CAST(Store AS VARCHAR) as Store,
+      SUM(Weekly_Sales) as total_sales,
+      AVG(Weekly_Sales) as avg_weekly_sales,
+      MAX(Weekly_Sales) as best_week,
+      MIN(Weekly_Sales) as worst_week,
+      STDDEV(Weekly_Sales) as volatility,
+      AVG(CASE WHEN Holiday_Flag = 1 THEN Weekly_Sales END) as avg_holiday_sales,
+      AVG(CASE WHEN Holiday_Flag = 0 THEN Weekly_Sales END) as avg_non_holiday_sales,
+      COUNT(*) as weeks_tracked
+    FROM oxymart
+    GROUP BY Store
+    ORDER BY total_sales DESC
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
 display:
 - type: markdown
   content: |-

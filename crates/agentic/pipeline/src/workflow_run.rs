@@ -626,6 +626,25 @@ pub async fn run_inline_workflow_with(
     run_inline_workflow_internal(workspace, workflow, variables, agent_runner, None).await
 }
 
+/// Variant of [`run_inline_workflow_with`] that ALSO seeds
+/// `render_context` so Jinja in task SQL can read caller-supplied
+/// keys (`{{ controls.store }}`, etc.).
+///
+/// `variables` lands in `state.variables` (treated as workflow-level
+/// metadata, not visible to Jinja in the inline path) while
+/// `render_context` is what `merge_sql_variables` and
+/// `render_jinja_string` actually read. Data Apps' `controls` need to
+/// land in the latter; pass them through here.
+pub async fn run_inline_workflow_with_render_context(
+    workspace: &dyn WorkspaceContext,
+    workflow: WorkflowConfig,
+    variables: Option<Value>,
+    render_context: Option<Value>,
+    agent_runner: Option<&dyn InlineAgentRunner>,
+) -> Result<HashMap<String, Value>, WorkflowRunError> {
+    run_inline_workflow_internal(workspace, workflow, variables, agent_runner, render_context).await
+}
+
 /// Internal entry point that lets a loop iteration seed its render context
 /// from the parent's accumulated state (`schedules.value`, etc.). Public
 /// callers go through [`run_inline_workflow`] / [`run_inline_workflow_with`]

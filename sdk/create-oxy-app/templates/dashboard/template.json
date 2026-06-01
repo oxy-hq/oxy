@@ -1,0 +1,5 @@
+{
+  "id": "dashboard",
+  "name": "Multi-metric dashboard",
+  "description": "KPI strip + line chart + leaderboard. Replace the placeholder SQL with your real queries."
+}

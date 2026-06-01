@@ -1,0 +1,44 @@
+import type { AppAdmin, OxyAccessStatus } from "@/types/access";
+import { apiClient } from "./axios";
+
+/**
+ * App-admins (global role) — gated by OXY_OWNER. Mounted at
+ * `/api/admin/app-admins`.
+ */
+export const AppAdminsService = {
+  async list(): Promise<AppAdmin[]> {
+    const response = await apiClient.get("/admin/app-admins");
+    return response.data;
+  },
+
+  async create(email: string): Promise<AppAdmin> {
+    const response = await apiClient.post("/admin/app-admins", { email });
+    return response.data;
+  },
+
+  async remove(id: string): Promise<void> {
+    await apiClient.delete(`/admin/app-admins/${id}`);
+  }
+};
+
+/**
+ * Per-workspace "let Oxy build tailored apps on our data" toggle. Gated
+ * by workspace owner (i.e. org owner). Mounted at
+ * `/api/{workspaceId}/oxy-access` — the workspace-context middleware
+ * handles authorization in one place.
+ */
+export const OxyAccessService = {
+  async get(workspaceId: string): Promise<OxyAccessStatus> {
+    const response = await apiClient.get(`/${workspaceId}/oxy-access`);
+    return response.data;
+  },
+
+  async enable(workspaceId: string): Promise<OxyAccessStatus> {
+    const response = await apiClient.post(`/${workspaceId}/oxy-access`);
+    return response.data;
+  },
+
+  async disable(workspaceId: string): Promise<void> {
+    await apiClient.delete(`/${workspaceId}/oxy-access`);
+  }
+};

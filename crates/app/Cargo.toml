@@ -60,6 +60,7 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 async-stream = { workspace = true }
+dashmap = { workspace = true }
 async-openai = { workspace = true, features = [
     "byot",
     "chat-completion-types",
@@ -147,7 +148,13 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-s3 = { workspace = true }
 aws-sdk-sesv2 = { workspace = true }
+# customer-apps publish pipeline: tarball pack/unpack + bundle LRU cache
+tar = { workspace = true }
+flate2 = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
 governor = { workspace = true }
 base64 = { workspace = true, features = ["std"] }
 regex = { workspace = true }

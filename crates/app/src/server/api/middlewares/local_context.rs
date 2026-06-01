@@ -238,6 +238,7 @@ mod tests {
             startup_cwd: std::path::PathBuf::new(),
             preagg_cache: None,
             preagg_renewal_threshold_secs: None,
+            agentic_state: None,
         };
 
         let app = Router::new()

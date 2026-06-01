@@ -22,6 +22,13 @@ export interface OAuthStateResponse {
 
 export interface MagicLinkRequest {
   email: string;
+  /**
+   * Optional post-login redirect target. The server forwards this through the
+   * magic-link email so the verify-callback page can navigate back to it after
+   * the cookie is set. Validated against the allowlist on both server (when
+   * embedded into the email) and client (before `window.location.href` redirect).
+   */
+  return_to?: string;
 }
 
 export interface MagicLinkVerifyRequest {
@@ -43,10 +50,10 @@ export interface OrgInfo {
 
 /**
  * Global profile fields. Role / admin status are per-org; read from the
- * `orgs` array in the login response or via `GET /orgs`. `is_owner` is the
- * one system-wide flag — it mirrors the backend `OXY_OWNER` allow-list and
- * is used to route Oxy staff to the admin shell. The server still gates
- * `/admin/*` independently, so this field is UX-only.
+ * `orgs` array in the login response or via `GET /orgs`. Two system-wide
+ * flags: `is_owner` mirrors `OXY_OWNER` (Oxy staff, admin shell);
+ * `is_app_admin` mirrors `OXY_APP_ADMINS` (gates the customer-apps surface).
+ * Both are UX-only — the server enforces independently.
  */
 export interface UserInfo {
   id: string;
@@ -55,6 +62,7 @@ export interface UserInfo {
   picture?: string;
   status?: string;
   is_owner: boolean;
+  is_app_admin: boolean;
 }
 
 export interface MessageResponse {
