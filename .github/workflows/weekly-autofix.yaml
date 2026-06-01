@@ -43,6 +43,19 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      # Private cargo git deps live under github.com/oxy-hq/* (airway,
+      # airform, airlayer, snowflake-rs). The checkout token only auths
+      # THIS repo, so a fresh `rev` bump forces an unauthenticated fetch
+      # that fails with "could not read Username" / "revision not found".
+      # Rewrite oxy-hq HTTPS remotes to carry the app token. Scoped to
+      # github.com/oxy-hq/ so public crates are unaffected. Must run
+      # before any cargo step (git-fetch-with-cli is on in .cargo/config).
+      - name: Auth git for private cargo deps
+        run: |
+          git config --global \
+            url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/oxy-hq/".insteadOf \
+            "https://github.com/oxy-hq/"
+
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
 
