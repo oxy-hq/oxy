@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import useActiveRuns from "@/hooks/api/coordinator/useActiveRuns";
 import useRunHistory from "@/hooks/api/coordinator/useRunHistory";
 import { useSchedules } from "@/hooks/api/schedules/useSchedules";
@@ -46,7 +46,9 @@ export const useOverviewModel = (range: TimeRange, typeFilter: JobTypeChoice) =>
   const history = useRunHistory({ limit: 200, offset: 0 });
   const schedules = useSchedules();
 
-  const nowMs = Date.now();
+  // Bucket to minute resolution so these values only change once per minute,
+  // preventing missingSlots from recomputing on every render.
+  const nowMs = Math.floor(Date.now() / 60_000) * 60_000;
   const windowStartMs = nowMs - rangeMs(range);
 
   const runs = useMemo<NormalizedRun[]>(() => {
@@ -57,6 +59,11 @@ export const useOverviewModel = (range: TimeRange, typeFilter: JobTypeChoice) =>
       return true;
     });
   }, [active.data, history.data, windowStartMs, typeFilter]);
+
+  // Cache per-schedule expected occurrences keyed on (id, cron_expr, timezone,
+  // windowStartMs) so a sparse cron (e.g. monthly) doesn't re-walk 528k
+  // iterations when only an unrelated schedule changes.
+  const expectedCacheRef = useRef<Map<string, { key: string; occurrences: number[] }>>(new Map());
 
   const missingSlots = useMemo<MissingSlot[]>(() => {
     const enabled = (schedules.data ?? []).filter((s) => s.enabled);
@@ -73,20 +80,30 @@ export const useOverviewModel = (range: TimeRange, typeFilter: JobTypeChoice) =>
     }
     for (const b of actualsBySched.values()) b.sort((a, b) => a - b);
 
-    const out: MissingSlot[] = [];
+    const cache = expectedCacheRef.current;
     const fromDate = new Date(windowStartMs);
+    const out: MissingSlot[] = [];
+
     for (const s of enabled) {
       const jobType = targetKindToJobType(s.target_kind);
       if (typeFilter !== "all" && jobType !== typeFilter) continue;
-      const expected = cronNextRuns(
-        s.cron_expr,
-        s.timezone,
-        MAX_EXPECTED_PER_SCHEDULE,
-        fromDate
-      ).filter((d) => d.getTime() <= nowMs);
+
+      const cacheKey = `${s.cron_expr}|${s.timezone}|${windowStartMs}`;
+      let cached = cache.get(s.id);
+      if (!cached || cached.key !== cacheKey) {
+        const occurrences = cronNextRuns(
+          s.cron_expr,
+          s.timezone,
+          MAX_EXPECTED_PER_SCHEDULE,
+          fromDate
+        ).map((d) => d.getTime());
+        cached = { key: cacheKey, occurrences };
+        cache.set(s.id, cached);
+      }
+
+      const expected = cached.occurrences.filter((t) => t <= nowMs);
       const bucket = actualsBySched.get(s.id) ?? [];
-      for (const exp of expected) {
-        const target = exp.getTime();
+      for (const target of expected) {
         if (!hasMatchWithin(bucket, target, MATCH_TOLERANCE_MS)) {
           out.push({
             scheduleId: s.id,
