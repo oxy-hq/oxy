@@ -211,15 +211,13 @@ pub struct AppResponse {
 
 /// Build the canonical pretty URL for an app.
 ///
-/// Format: `{OXY_CUSTOMER_APPS_BASE_URL}/customer-apps/<org_slug>/<app_slug>/`.
-/// Defaults to `http://localhost:5173` (the SPA dev server) when the env var
-/// is unset; vite proxies `/customer-apps/*` through to oxy on :3000. In
-/// production set `OXY_CUSTOMER_APPS_BASE_URL=https://app.oxy.tech`.
+/// Returns a **relative** URL (`/customer-apps/<org>/<app>/`); the client
+/// renders it against its own origin. Customer-app bundles share the SPA's
+/// domain in the current model — no whitelabelling yet — so no per-host
+/// prefix is needed. (When whitelabelling lands, the right surface will be
+/// per-app config in the DB, not a global env var.)
 pub(crate) fn build_pretty_url(org_slug: &str, app_slug: &str) -> String {
-    let base = std::env::var("OXY_CUSTOMER_APPS_BASE_URL")
-        .unwrap_or_else(|_| "http://localhost:5173".to_string());
-    let base = base.trim_end_matches('/');
-    format!("{base}/customer-apps/{org_slug}/{app_slug}/")
+    format!("/customer-apps/{org_slug}/{app_slug}/")
 }
 
 impl AppResponse {
@@ -1392,36 +1390,10 @@ mod tests {
     }
 
     #[test]
-    fn build_pretty_url_formats_correctly() {
-        // env::set_var is unsafe under edition 2024 (process-wide mutation
-        // can race with concurrent reads in other threads). nextest runs
-        // tests in separate processes by default so the soundness concern
-        // doesn't bite us here, but we still need the explicit `unsafe`.
-        struct EnvGuard(&'static str, Option<String>);
-        impl Drop for EnvGuard {
-            fn drop(&mut self) {
-                unsafe {
-                    match &self.1 {
-                        Some(v) => std::env::set_var(self.0, v),
-                        None => std::env::remove_var(self.0),
-                    }
-                }
-            }
-        }
-        let prev = std::env::var("OXY_CUSTOMER_APPS_BASE_URL").ok();
-        let _g = EnvGuard("OXY_CUSTOMER_APPS_BASE_URL", prev);
-
-        unsafe { std::env::set_var("OXY_CUSTOMER_APPS_BASE_URL", "https://app.oxy.tech") };
+    fn build_pretty_url_is_relative() {
         assert_eq!(
             build_pretty_url("acme", "analytics"),
-            "https://app.oxy.tech/customer-apps/acme/analytics/"
-        );
-
-        unsafe { std::env::set_var("OXY_CUSTOMER_APPS_BASE_URL", "https://app.oxy.tech/") };
-        assert_eq!(
-            build_pretty_url("acme", "analytics"),
-            "https://app.oxy.tech/customer-apps/acme/analytics/",
-            "trailing slash on base URL is normalised"
+            "/customer-apps/acme/analytics/"
         );
     }
 }
