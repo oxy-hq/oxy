@@ -629,16 +629,9 @@ fn wants_html(headers: &HeaderMap) -> bool {
 /// Derive the public base URL of this oxy instance from request headers,
 /// honoring `X-Forwarded-Proto` / `X-Forwarded-Host` so the redirect target
 /// matches what the *browser* sees (which can differ from how oxy is
-/// configured behind a reverse proxy).
-///
-/// `OXY_CUSTOMER_APPS_BASE_URL` overrides everything as an escape hatch for
-/// odd deployments where the headers can't be trusted.
+/// configured behind a reverse proxy). Falls back to `Host` and finally
+/// `http://localhost:3000` (tests / direct-bind setups).
 fn base_url(headers: &HeaderMap) -> String {
-    if let Ok(env_base) = std::env::var("OXY_CUSTOMER_APPS_BASE_URL")
-        && !env_base.trim().is_empty()
-    {
-        return env_base.trim_end_matches('/').to_string();
-    }
     let scheme = headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())

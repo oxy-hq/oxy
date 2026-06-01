@@ -164,20 +164,10 @@ pub async fn scaffold_pr(
         "Automated PR opened by oxy on app registration. Merge to deploy the app.\n\
          \n\
          - **App ID:** `{}`\n\
-         - **URL after merge + first sync:** {}/customer-apps/{}/{}/\n",
-        app.id,
-        public_base_url(),
-        org.slug,
-        app.slug,
+         - **Path after merge + first sync:** `/customer-apps/{}/{}/` on the oxy deployment\n",
+        app.id, org.slug, app.slug,
     );
     api.open_pr(&branch, "main", &title, &body).await
-}
-
-fn public_base_url() -> String {
-    std::env::var("OXY_CUSTOMER_APPS_BASE_URL")
-        .unwrap_or_else(|_| "http://localhost:5173".to_string())
-        .trim_end_matches('/')
-        .to_string()
 }
 
 /// Cache the installation id we resolve at first use. TTL bounds the

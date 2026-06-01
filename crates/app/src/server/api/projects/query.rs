@@ -5,8 +5,9 @@
 //! workspace identified by `project_id`.
 //!
 //! Security gates applied before execution:
-//!   1. Origin allowlist — `Origin` / `Referer` must match `OXY_ALLOWED_ORIGINS`
-//!      (or be absent, for non-browser clients).
+//!   1. Origin check — `Origin` / `Referer` must match the request's own host
+//!      (same-domain deployment) or be one of the canonical Vite dev origins,
+//!      or be absent for non-browser clients.
 //!   2. SELECT/WITH-only — the first non-comment, non-whitespace token must be
 //!      SELECT or WITH. Rejects DELETE / DROP / INSERT / UPDATE at the proxy.
 //!   3. 10 000-row cap — the query is wrapped in an outer `LIMIT` subquery so
