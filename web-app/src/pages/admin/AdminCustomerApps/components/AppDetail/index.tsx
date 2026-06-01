@@ -34,7 +34,17 @@ export const AppDetail = ({ app }: { app: CustomerApp }) => {
   const tab: DetailTab = TABS.includes(raw as DetailTab) ? (raw as DetailTab) : "preview";
 
   const [device, setDevice] = useState<Device>("desktop");
-  const [channel, setChannel] = useState<ChannelView>("published");
+  // Default to Draft when nothing has been published yet — otherwise the
+  // toolbar visibly selects "Published" (just disabled) and the iframe
+  // requests a published bundle that doesn't exist, hanging the preview.
+  // Keep it in sync when the parent re-uses this instance for a different
+  // app or when the publish state flips.
+  const [channel, setChannel] = useState<ChannelView>(() =>
+    app.published_at ? "published" : "draft"
+  );
+  useEffect(() => {
+    setChannel(app.published_at ? "published" : "draft");
+  }, [app.published_at]);
   const [channelBusy, setChannelBusy] = useState(false);
   const [nonce, setNonce] = useState(0);
 
