@@ -42,11 +42,6 @@ export const formatTimestamp = (iso: string | null | undefined): string => {
   )}`;
 };
 
-export const formatClock = (iso: string | null | undefined): string => {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-};
-
 /** Truncate the leading segment of a run/task id for dense display. */
 export const shortId = (id: string): string => id.slice(0, 8);
 

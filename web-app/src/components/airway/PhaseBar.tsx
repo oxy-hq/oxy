@@ -41,7 +41,7 @@ type Props = {
   loadId?: string;
 };
 
-export const PhaseBar: React.FC<Props> = ({ phase, loadId }) => (
+const PhaseBar: React.FC<Props> = ({ phase, loadId }) => (
   <div className='flex items-center gap-3 px-4 py-3'>
     {PHASES.map(({ key, label }, i) => {
       const state = phase[key];

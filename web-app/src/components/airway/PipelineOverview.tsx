@@ -62,7 +62,7 @@ const RecentRunsStrip: React.FC<{
   );
 };
 
-export const PipelineOverview: React.FC<{
+const PipelineOverview: React.FC<{
   pipelineRef: string;
   onOpenRun: (runId: string) => void;
 }> = ({ pipelineRef, onOpenRun }) => {

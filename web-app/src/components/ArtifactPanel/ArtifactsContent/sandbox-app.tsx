@@ -101,7 +101,7 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
   useEffect(() => {
     const handleAuthRequest = (event: MessageEvent) => {
       // Check if this is an Oxy SDK auth request
-      if (!event.data || event.data.type !== "OXY_AUTH_REQUEST") {
+      if (event.data?.type !== "OXY_AUTH_REQUEST") {
         return;
       }
 

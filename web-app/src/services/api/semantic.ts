@@ -175,7 +175,7 @@ export class SemanticService {
 
 // ── Preagg status ─────────────────────────────────────────────────────────────
 
-export type PreaggMeasure = {
+type PreaggMeasure = {
   name: string;
   measure_type: string;
 };

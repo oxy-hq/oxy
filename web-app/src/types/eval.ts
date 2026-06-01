@@ -1,5 +1,3 @@
-export const EVAL_METRICS_POSTFIX = "metrics";
-
 export enum EvalEventState {
   Started = "Started",
   Progress = "Progress",

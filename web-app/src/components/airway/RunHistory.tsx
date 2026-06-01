@@ -23,7 +23,7 @@ type Props = {
   onSelect: (runId: string) => void;
 };
 
-export const RunHistory: React.FC<Props> = ({ pipelineRef, activeRunId, onSelect }) => {
+const RunHistory: React.FC<Props> = ({ pipelineRef, activeRunId, onSelect }) => {
   const { data: runs, isLoading, isError } = useAirwayRuns(pipelineRef);
 
   if (isLoading) {

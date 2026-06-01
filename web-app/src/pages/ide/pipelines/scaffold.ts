@@ -16,12 +16,7 @@
  */
 
 /** Connector kinds wired in `agentic_airway::source_factory`. */
-export type AirwaySourceKind =
-  | "rest_api"
-  | "filesystem"
-  | "sql_database"
-  | "postgres_cdc"
-  | "toast";
+type AirwaySourceKind = "rest_api" | "filesystem" | "sql_database" | "postgres_cdc" | "toast";
 
 export interface SourceOption {
   /** Selection id — may differ from the airway kind (e.g. "toast"). */
@@ -109,7 +104,7 @@ const SOURCE_CONFIG: Record<string, string> = {
 /** Toast wizard fields. `clientSecretVar` is the secret-manager name
  *  the executor resolves at run time — the secret itself is never
  *  written into the `.airway.yml`. */
-export interface ToastScaffold {
+interface ToastScaffold {
   clientId: string;
   clientSecretVar: string;
   restaurantGuids: string[];

@@ -18,7 +18,7 @@ import type {
 const STORAGE_KEY_PREFIX = "oxy_onboarding_state:";
 export const LEGACY_GLOBAL_KEY = "oxy_onboarding_state";
 /** Pre-`storage_key` local-mode entries were keyed under the nil UUID. */
-export const LEGACY_LOCAL_NIL_UUID_KEY = `${STORAGE_KEY_PREFIX}00000000-0000-0000-0000-000000000000`;
+const LEGACY_LOCAL_NIL_UUID_KEY = `${STORAGE_KEY_PREFIX}00000000-0000-0000-0000-000000000000`;
 
 export function storageKey(storageKeyId: string): string {
   return `${STORAGE_KEY_PREFIX}${storageKeyId}`;
@@ -70,7 +70,7 @@ export function initOnboardingStateForStorageKey(
   }
 }
 
-export function getPersistedStepForStorageKey(storageKeyId: string): OnboardingStep | undefined {
+function getPersistedStepForStorageKey(storageKeyId: string): OnboardingStep | undefined {
   if (!storageKeyId) return undefined;
   try {
     const raw = localStorage.getItem(storageKey(storageKeyId));

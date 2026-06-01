@@ -84,7 +84,7 @@ export function expandSecrets(text: string): string {
  * `text` with `${VAR}`. Used at the recording boundary so cached actions
  * and debug tool args never persist plaintext.
  */
-export function redactSecrets(text: string): string {
+function redactSecrets(text: string): string {
   let result = text;
   for (const { name, value } of getSecretEntries()) {
     if (result.includes(value)) {

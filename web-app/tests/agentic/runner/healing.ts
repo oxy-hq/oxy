@@ -29,7 +29,7 @@ interface HealingStagingFile {
   entries: HealingStagingEntry[];
 }
 
-export interface HealingArtifactEntry {
+interface HealingArtifactEntry {
   flow: string;
   case: string;
   step_index: number;

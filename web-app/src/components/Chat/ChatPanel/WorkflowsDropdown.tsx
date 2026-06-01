@@ -30,7 +30,7 @@ const displayName = (path: string): string => {
 };
 
 /** Pure presentational view of the dropdown. */
-export const WorkflowsDropdownView = ({
+const WorkflowsDropdownView = ({
   options,
   selectedId,
   onChange,

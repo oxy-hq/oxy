@@ -49,7 +49,7 @@ type Props = {
   resources: ResourceRow[];
 };
 
-export const ResourceGrid: React.FC<Props> = ({ resources }) => {
+const ResourceGrid: React.FC<Props> = ({ resources }) => {
   if (resources.length === 0) {
     return (
       <div className='px-4 py-10 text-center text-muted-foreground text-sm'>

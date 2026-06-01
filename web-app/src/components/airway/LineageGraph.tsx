@@ -166,7 +166,7 @@ function buildGraph(view: AirwayRunView): { nodes: Node[]; edges: Edge[] } {
   return { nodes, edges };
 }
 
-export const LineageGraph: React.FC<{ view: AirwayRunView }> = ({ view }) => {
+const LineageGraph: React.FC<{ view: AirwayRunView }> = ({ view }) => {
   const { nodes, edges } = useMemo(() => buildGraph(view), [view]);
 
   if (nodes.length === 0) {

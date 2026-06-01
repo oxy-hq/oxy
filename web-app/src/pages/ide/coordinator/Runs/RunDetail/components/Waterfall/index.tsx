@@ -3,7 +3,7 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/libs/shadcn/utils";
 import type { RunEventEntry } from "@/services/api/coordinator";
-import { formatTokens, formatUsd } from "../../../../components/utils";
+import { formatTokens } from "../../../../components/utils";
 import { buildWaterfall, type ChildSpan, colorsFor, formatMs, type PhaseSpan } from "./model";
 import { SpanPreview } from "./SpanPreview";
 
@@ -189,12 +189,4 @@ const ChildRow: React.FC<{
       </span>
     </button>
   );
-};
-
-/** Total cost rollup chip — displayed in the header strip above the
- *  waterfall when an `llm_usage` summary is available. Kept here so
- *  the unit reads as part of the waterfall package. */
-export const WaterfallCostChip: React.FC<{ costUsd?: number | null }> = ({ costUsd }) => {
-  if (costUsd === null || costUsd === undefined) return null;
-  return <span className='text-muted-foreground text-xs tabular-nums'>~{formatUsd(costUsd)}</span>;
 };

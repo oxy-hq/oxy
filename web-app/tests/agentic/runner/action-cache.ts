@@ -24,7 +24,7 @@ export interface RecordedAction {
   intent?: string;
 }
 
-export interface CacheEntry {
+interface CacheEntry {
   version: number;
   actions: RecordedAction[];
   /** Consecutive replays without LLM redrive. Reset to 0 on cold redrive. */
@@ -37,9 +37,9 @@ export interface CacheFile {
   entries: Record<string, CacheEntry>;
 }
 
-export type CacheScope = "flow" | "shared";
+type CacheScope = "flow" | "shared";
 
-export interface CacheGetResult {
+interface CacheGetResult {
   actions: RecordedAction[];
   hit_streak: number;
 }

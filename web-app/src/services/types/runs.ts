@@ -20,7 +20,7 @@ interface NoRetry {
   variables?: Record<string, unknown>;
 }
 
-export type RetryType = Retry | RetryWithVariables | NoRetry;
+type RetryType = Retry | RetryWithVariables | NoRetry;
 
 export type CreateRunPayload = {
   type: "workflow";
@@ -83,18 +83,4 @@ export type GetBlocksResponse = RunInfo & {
   blocks?: Record<string, Block>;
   children?: string[];
   error?: string;
-};
-
-export type TaskRun = {
-  id: string;
-  name: string;
-  children: string[];
-  isStreaming?: boolean;
-  error?: string;
-  // Optional, only present if the task is a loop item
-  loopIndex?: number;
-  // Optional, only present if the task is a loop
-  loopValue?: unknown[];
-  // Optional, only present if the task is a subworkflow
-  subWorkflowRunId?: number;
 };

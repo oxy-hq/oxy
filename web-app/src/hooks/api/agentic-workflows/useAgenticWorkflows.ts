@@ -22,7 +22,6 @@ import {
   type StartWorkflowRequest,
   type WorkflowEvent,
   type WorkflowFile,
-  type WorkflowFileContent,
   type WorkflowRunSnapshot,
   type WorkflowRunSummary
 } from "@/services/api/agenticWorkflows";
@@ -37,15 +36,6 @@ export const useAgenticWorkflowFiles = (): UseQueryResult<WorkflowFile[]> => {
   return useQuery({
     queryKey: keys.files(project.id),
     queryFn: () => AgenticWorkflowService.listFiles(project.id)
-  });
-};
-
-export const useAgenticWorkflowFile = (pathB64: string): UseQueryResult<WorkflowFileContent> => {
-  const { project } = useCurrentProjectBranch();
-  return useQuery({
-    queryKey: keys.file(project.id, pathB64),
-    queryFn: () => AgenticWorkflowService.getFile(project.id, pathB64),
-    enabled: !!pathB64
   });
 };
 
@@ -94,7 +84,7 @@ export type WorkflowConfigShape = {
 
 // ── Start / cancel ─────────────────────────────────────────────────────────
 
-export const useStartWorkflowRun = (): UseMutationResult<
+const useStartWorkflowRun = (): UseMutationResult<
   { run_id: string },
   Error,
   StartWorkflowRequest
@@ -115,7 +105,7 @@ export const useStartWorkflowRun = (): UseMutationResult<
   });
 };
 
-export const useCancelWorkflowRun = (): UseMutationResult<void, Error, string> => {
+const useCancelWorkflowRun = (): UseMutationResult<void, Error, string> => {
   const { project } = useCurrentProjectBranch();
   return useMutation({
     mutationFn: (runId: string) => AgenticWorkflowService.cancelRun(project.id, runId)
@@ -148,7 +138,7 @@ export const useWorkflowRunsForWorkflow = (
 
 // ── Live run state (SSE + step-by-step status tracking) ────────────────────
 
-export type RunStepStatus = "pending" | "running" | "cached" | "success" | "failed" | "skipped";
+type RunStepStatus = "pending" | "running" | "cached" | "success" | "failed" | "skipped";
 
 /**
  * One iteration of a `loop_sequential` step's fan-out. Populated
@@ -184,7 +174,7 @@ export type RunStepState = {
   iterations?: LiveIteration[];
 };
 
-export type RunPhase = "idle" | "starting" | "running" | "completed" | "failed";
+type RunPhase = "idle" | "starting" | "running" | "completed" | "failed";
 
 export type WorkflowRunStream = {
   phase: RunPhase;
@@ -216,7 +206,7 @@ export type WorkflowRunStreamHandle = WorkflowRunStream & {
  * Cache-hit events flip the step to `"cached"` (greyed-out dot in UI). The
  * stream auto-closes on `subrun_completed`.
  */
-export const useWorkflowRunStream = (runId: string | undefined): WorkflowRunStreamHandle => {
+const useWorkflowRunStream = (runId: string | undefined): WorkflowRunStreamHandle => {
   const { project } = useCurrentProjectBranch();
   const queryClient = useQueryClient();
   const [stream, setStream] = useState<WorkflowRunStream>({

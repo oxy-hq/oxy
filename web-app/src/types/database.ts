@@ -18,7 +18,7 @@ interface SemanticMeasure {
   sql: string;
 }
 
-export interface SemanticModels {
+interface SemanticModels {
   table: string;
   database: string;
   description?: string;

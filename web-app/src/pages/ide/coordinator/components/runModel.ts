@@ -72,10 +72,9 @@ const buildRun = (r: ActiveRunEntry | RunHistoryEntry, errorMessage?: string): N
   };
 };
 
-export const normalizeActiveRun = (r: ActiveRunEntry): NormalizedRun => buildRun(r);
+const normalizeActiveRun = (r: ActiveRunEntry): NormalizedRun => buildRun(r);
 
-export const normalizeHistoryRun = (r: RunHistoryEntry): NormalizedRun =>
-  buildRun(r, r.error_message);
+const normalizeHistoryRun = (r: RunHistoryEntry): NormalizedRun => buildRun(r, r.error_message);
 
 /**
  * Merge active runs and run history into one de-duplicated, newest-first

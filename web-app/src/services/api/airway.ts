@@ -180,7 +180,7 @@ export type AirwayEvent =
       };
     };
 
-export type AirwayEventType = AirwayEvent["type"];
+type AirwayEventType = AirwayEvent["type"];
 
 const KNOWN_EVENTS = new Set<AirwayEventType>([
   "load_started",

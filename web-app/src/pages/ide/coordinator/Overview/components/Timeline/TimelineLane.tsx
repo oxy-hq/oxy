@@ -8,7 +8,7 @@ import type { MissingSlot } from "../../useOverviewModel";
 import { packRows } from "./packRows";
 
 /** Vertical pitch of one packed sub-row, in px (timeline positioning only). */
-export const ROW_H = 24;
+const ROW_H = 24;
 
 /**
  * One swimlane of the timeline — all runs of a single job type, packed into

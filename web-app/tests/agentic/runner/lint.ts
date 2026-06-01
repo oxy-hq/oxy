@@ -13,7 +13,7 @@
 
 import type { FlowTest } from "./types";
 
-export type LintSeverity = "warn" | "info";
+type LintSeverity = "warn" | "info";
 
 export interface LintFinding {
   flow: string;

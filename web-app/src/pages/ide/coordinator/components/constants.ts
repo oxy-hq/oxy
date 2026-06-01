@@ -98,9 +98,6 @@ export const normalizeStatus = (raw: string | null | undefined): RunStatus => {
   }
 };
 
-export const isTerminal = (s: RunStatus): boolean =>
-  s === "done" || s === "failed" || s === "cancelled";
-
 // ── Job type ────────────────────────────────────────────────────────────────
 
 export type JobType = "agent" | "dag" | "elt";
@@ -178,7 +175,7 @@ export const sourceTypeToJobType = (source: string | null | undefined): JobType 
 // for these so operators don't mistake heartbeat noise for their work.
 
 /** Run source_types that are internal daemons, not user-scheduled jobs. */
-export const SYSTEM_SOURCE_TYPES: readonly string[] = ["preagg_cycle"];
+const SYSTEM_SOURCE_TYPES: readonly string[] = ["preagg_cycle"];
 
 export const isSystemSource = (source: string | null | undefined): boolean =>
   !!source && SYSTEM_SOURCE_TYPES.includes(source);

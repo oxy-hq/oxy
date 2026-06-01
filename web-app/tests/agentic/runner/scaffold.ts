@@ -18,7 +18,7 @@ interface SurfaceInfer {
   builderHint: boolean;
 }
 
-export function inferSurface(filePath: string): SurfaceInfer {
+function inferSurface(filePath: string): SurfaceInfer {
   const norm = filePath.replace(/\\/g, "/");
   if (/\/pages\/home\//.test(norm) || /\/components\/Chat\//.test(norm)) {
     return { target: "chat", builderHint: false };
@@ -44,7 +44,7 @@ export function inferSurface(filePath: string): SurfaceInfer {
 
 const TESTID_RE = /data-testid\s*=\s*['"`]([^'"`]+)['"`]|data-testid\s*=\s*\{`([^`]+)`\}/g;
 
-export function discoverTestIds(rootPath: string, depth = 1): string[] {
+function discoverTestIds(rootPath: string, depth = 1): string[] {
   const ids = new Set<string>();
   const walk = (path: string, depthLeft: number) => {
     if (!existsSync(path)) return;

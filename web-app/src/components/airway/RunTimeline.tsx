@@ -47,7 +47,7 @@ const segsOf = (r: ResourceRow): Seg[] => [
   { label: "load", cls: "bg-primary", start: ms(r.loadStartedAt), end: ms(r.loadEndedAt) }
 ];
 
-export const RunTimeline: React.FC<{ view: AirwayRunView }> = ({ view }) => {
+const RunTimeline: React.FC<{ view: AirwayRunView }> = ({ view }) => {
   const rows = view.resources;
 
   // Axis bounds: prefer the run span; fall back to the min/max of any

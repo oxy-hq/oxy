@@ -37,7 +37,7 @@ const displayName = (path: string): string => {
 };
 
 /** Pure presentational view — receives data, renders nothing else. */
-export const WorkflowsListView = ({
+const WorkflowsListView = ({
   files,
   total,
   isPending,

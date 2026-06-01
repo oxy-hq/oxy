@@ -39,7 +39,7 @@ export interface PhaseSpan {
   totalTokens: number;
 }
 
-export type ChildSpanKind = "llm" | "thinking" | "tool" | "subrun" | "query" | "step";
+type ChildSpanKind = "llm" | "thinking" | "tool" | "subrun" | "query" | "step";
 
 export interface ChildSpan {
   kind: ChildSpanKind;
@@ -542,7 +542,7 @@ export const buildWaterfall = (events: RunEventEntry[]): WaterfallModel => {
  *  competed with status colors (emerald already means "done"). A
  *  single-hue ramp keeps progression legible without rainbow-encoding
  *  ordinal information. */
-export const PHASE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+const PHASE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   clarifying: { bg: "bg-primary/30", border: "border-primary/40", text: "text-foreground" },
   specifying: { bg: "bg-primary/45", border: "border-primary/55", text: "text-foreground" },
   solving: { bg: "bg-primary/60", border: "border-primary/70", text: "text-foreground" },
@@ -566,7 +566,7 @@ export const colorsFor = (state: string) =>
  *  table mentioned after FROM, or the first 32 chars of the verb line.
  *  Keeps the executing-phase bar self-describing without exposing the
  *  full query (that lives in the side panel). */
-export const compactSqlLabel = (sql: string): string => {
+const compactSqlLabel = (sql: string): string => {
   const flat = sql.replace(/\s+/g, " ").trim();
   const fromMatch = flat.match(/\bFROM\s+([a-zA-Z0-9_."]+)/i);
   if (fromMatch) return `SELECT … FROM ${fromMatch[1]}`;

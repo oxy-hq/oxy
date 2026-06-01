@@ -16,7 +16,7 @@ import type { TokenUsage } from "./types";
 
 export const PRICING_AS_OF = "2026-05-04";
 
-export interface ModelRates {
+interface ModelRates {
   /** $/1M uncached input tokens. */
   input: number;
   /** $/1M cache-write tokens (typically 1.25× input). */
@@ -42,7 +42,7 @@ const RATES: Record<string, ModelRates> = {
 const warned = new Set<string>();
 
 /** Returns the rates for a model, or null if unknown (and warns once). */
-export function getRates(model: string): ModelRates | null {
+function getRates(model: string): ModelRates | null {
   const direct = RATES[model];
   if (direct) return direct;
   // Strip a trailing -YYYYMMDD date suffix so versioned aliases price correctly.

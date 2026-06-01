@@ -36,11 +36,7 @@ const keys = queryKeys.airway;
 
 // ── Mutations ──────────────────────────────────────────────────────────────
 
-export const useStartAirwayRun = (): UseMutationResult<
-  { run_id: string },
-  Error,
-  StartAirwayRequest
-> => {
+const useStartAirwayRun = (): UseMutationResult<{ run_id: string }, Error, StartAirwayRequest> => {
   const { project } = useCurrentProjectBranch();
   const queryClient = useQueryClient();
   return useMutation({
@@ -53,7 +49,7 @@ export const useStartAirwayRun = (): UseMutationResult<
   });
 };
 
-export const useCancelAirwayRun = (): UseMutationResult<void, Error, string> => {
+const useCancelAirwayRun = (): UseMutationResult<void, Error, string> => {
   const { project } = useCurrentProjectBranch();
   return useMutation({
     mutationFn: (runId: string) => AirwayService.cancelRun(project.id, runId)

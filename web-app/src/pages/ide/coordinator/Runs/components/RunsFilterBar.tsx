@@ -31,7 +31,7 @@ export const DEFAULT_RUN_FILTERS: RunFilters = {
   includeSystem: false
 };
 
-export const isDefaultFilters = (f: RunFilters): boolean =>
+const isDefaultFilters = (f: RunFilters): boolean =>
   f.status === "all" &&
   f.type === "all" &&
   f.source === "all" &&
