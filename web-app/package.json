@@ -119,7 +119,7 @@
     "rollup-plugin-visualizer": "^7.0.1",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14",
+    "vite": "^8.0.5",
     "vite-plugin-node-polyfills": "^0.28.0",
     "vitest": "^4.1.7"
   },
