@@ -10,7 +10,7 @@
 #
 # Required GitHub Environment values (set per-env: dev vs production):
 #   Variables:
-#     OXY_TARGET     — oxy base URL (e.g. https://app-dev.oxy.tech)
+#     OXY_TARGET     — oxy base URL (e.g. https://app-dev.oxygen-hq.com)
 #     OXY_ORG_SLUG   — org these apps belong to
 #     OXY_PROJECT_ID — oxy project (workspace) UUID the app binds to
 #   Secrets:
@@ -63,7 +63,7 @@ jobs:
 
       - name: Install oxy CLI
         # Pin a version for production; this reference uses the installer.
-        run: curl -sSL https://oxy.tech/install | sh
+        run: curl -sSL https://oxygen-hq.com/install | sh
 
       # One call: uploads out/ to oxy → S3, records a versioned build, and
       # points the channel at it. `--promote` only on the production branch

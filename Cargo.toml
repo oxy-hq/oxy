@@ -272,7 +272,7 @@ airform-executor = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e8
 version = "0.5.59"
 authors = ["oxy engineers"]
 description = "Oxy"
-documentation = "https://oxy.tech/docs"
+documentation = "https://oxygen-hq.com/docs"
 edition = "2024"
 exclude = []
 publish = false

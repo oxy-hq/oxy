@@ -2,7 +2,7 @@
 
 <p align="center">
 <a href="#license"><img src="https://img.shields.io/badge/License-Apache--2.0-blue" alt="License"></a>
-<a href="https://oxy.tech/docs" title="Go to project documentation"><img src="https://img.shields.io/badge/view-Documentation-blue?style=for-the-badge" alt="view - Documentation"></a>
+<a href="https://oxygen-hq.com/docs" title="Go to project documentation"><img src="https://img.shields.io/badge/view-Documentation-blue?style=for-the-badge" alt="view - Documentation"></a>
 <a href="https://deepwiki.com/oxy-hq/oxygen" title="DeepWiki"><img src="https://deepwiki.com/badge.svg" alt="DeepWiki"></a>
 </p>
 
@@ -12,7 +12,7 @@ Oxygen OS is the operating system for AI transformation. Oxygen has three compon
 
 With Oxygen, organizations can build a digital twin of their operations and deploy custom applications and agents that power complex workflows and decisions. 
 
-To learn more, read our [docs](https://oxy.tech/docs) or contact us via github issues or [contact form](https://form.typeform.com/to/hQlOTpzW).
+To learn more, read our [docs](https://oxygen-hq.com/docs) or contact us via github issues or [contact form](https://form.typeform.com/to/hQlOTpzW).
 
 ### Quickstart
 

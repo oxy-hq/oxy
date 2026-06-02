@@ -240,7 +240,7 @@ helm install oxy oci://ghcr.io/oxy-hq/helm-charts/oxy-app \
 ```dockerfile
 FROM ubuntu:22.04
 
-RUN curl --proto '=https' --tlsv1.2 -LsSf https://internal.oxy.tech | bash
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://internal.oxygen-hq.com | bash
 
 ENV OXY_STATE_DIR=/data/oxy
 ENV OXY_DATABASE_URL=postgresql://user:pass@db:5432/oxy

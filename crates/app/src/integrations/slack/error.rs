@@ -234,11 +234,11 @@ mod tests {
     #[test]
     fn with_thread_url_attaches_to_internal() {
         let e = SlackError::from(OxyError::RuntimeError("boom".into()))
-            .with_thread_url("https://app.oxy.tech/thread/123");
+            .with_thread_url("https://app.oxygen-hq.com/thread/123");
         if let SlackError::Internal { thread_url, .. } = e {
             assert_eq!(
                 thread_url.as_deref(),
-                Some("https://app.oxy.tech/thread/123")
+                Some("https://app.oxygen-hq.com/thread/123")
             );
         } else {
             panic!("expected Internal variant");

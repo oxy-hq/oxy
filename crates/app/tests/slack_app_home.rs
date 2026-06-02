@@ -10,13 +10,13 @@ use uuid::Uuid;
 
 #[test]
 fn unlinked_view_type_is_home() {
-    let v = unlinked_view("https://app.oxy.tech/slack/link?token=tok123");
+    let v = unlinked_view("https://app.oxygen-hq.com/slack/link?token=tok123");
     assert_eq!(v["type"].as_str(), Some("home"), "type must be 'home'");
 }
 
 #[test]
 fn unlinked_view_has_connect_action() {
-    let connect_url = "https://app.oxy.tech/slack/link?token=tok123";
+    let connect_url = "https://app.oxygen-hq.com/slack/link?token=tok123";
     let v = unlinked_view(connect_url);
     let blocks = v["blocks"].as_array().expect("blocks must be array");
     let found = blocks.iter().any(|b| {
@@ -34,7 +34,7 @@ fn unlinked_view_has_connect_action() {
 
 #[test]
 fn unlinked_view_embeds_connect_url() {
-    let connect_url = "https://app.oxy.tech/slack/link?token=unique_tok";
+    let connect_url = "https://app.oxygen-hq.com/slack/link?token=unique_tok";
     let v = unlinked_view(connect_url);
     let raw = serde_json::to_string(&v).expect("serialize");
     assert!(
@@ -57,7 +57,7 @@ fn linked_view_type_is_home() {
         workspaces: &workspaces,
         default_workspace_id: None,
         default_agent_path: None,
-        app_base_url: "https://app.oxy.tech",
+        app_base_url: "https://app.oxygen-hq.com",
     });
     assert_eq!(v["type"].as_str(), Some("home"), "type must be 'home'");
 }
@@ -71,7 +71,7 @@ fn linked_view_shows_email_and_org() {
         workspaces: &workspaces,
         default_workspace_id: None,
         default_agent_path: None,
-        app_base_url: "https://app.oxy.tech",
+        app_base_url: "https://app.oxygen-hq.com",
     });
     let raw = serde_json::to_string(&v).expect("serialize");
     assert!(raw.contains("bob@example.com"), "email must appear in view");
@@ -87,7 +87,7 @@ fn linked_view_has_disconnect_action() {
         workspaces: &workspaces,
         default_workspace_id: None,
         default_agent_path: None,
-        app_base_url: "https://app.oxy.tech",
+        app_base_url: "https://app.oxygen-hq.com",
     });
     let raw = serde_json::to_string(&v).expect("serialize");
     assert!(
@@ -113,7 +113,7 @@ fn linked_view_has_save_defaults_action() {
         workspaces: &workspaces,
         default_workspace_id: None,
         default_agent_path: None,
-        app_base_url: "https://app.oxy.tech",
+        app_base_url: "https://app.oxygen-hq.com",
     });
     let raw = serde_json::to_string(&v).expect("serialize");
     assert!(
@@ -145,7 +145,7 @@ fn linked_view_with_workspaces_includes_picker() {
         workspaces: &workspaces,
         default_workspace_id: Some(ws_id),
         default_agent_path: None,
-        app_base_url: "https://app.oxy.tech",
+        app_base_url: "https://app.oxygen-hq.com",
     });
     let raw = serde_json::to_string(&v).expect("serialize");
     assert!(
@@ -166,7 +166,7 @@ fn linked_view_with_workspaces_includes_picker() {
 
 #[test]
 fn linked_view_includes_open_oxy_link() {
-    let base_url = "https://app.oxy.tech";
+    let base_url = "https://app.oxygen-hq.com";
     let workspaces = vec![];
     let v = linked_view(LinkedHomeInput {
         email: "frank@example.com",
@@ -185,7 +185,7 @@ fn linked_view_includes_open_oxy_link() {
 
 #[test]
 fn unlinked_view_includes_examples() {
-    let v = unlinked_view("https://app.oxy.tech/slack/link?token=tok123");
+    let v = unlinked_view("https://app.oxygen-hq.com/slack/link?token=tok123");
     let raw = serde_json::to_string(&v).expect("serialize");
     assert!(
         raw.contains("@Oxy"),
@@ -214,7 +214,7 @@ fn linked_view_includes_usage_help() {
         workspaces: &workspaces,
         default_workspace_id: None,
         default_agent_path: None,
-        app_base_url: "https://app.oxy.tech",
+        app_base_url: "https://app.oxygen-hq.com",
     });
     let raw = serde_json::to_string(&v).expect("serialize");
     assert!(
@@ -245,7 +245,7 @@ fn linked_view_has_workspace_and_disconnect() {
         workspaces: &workspaces,
         default_workspace_id: None,
         default_agent_path: None,
-        app_base_url: "https://app.oxy.tech",
+        app_base_url: "https://app.oxygen-hq.com",
     });
     let raw = serde_json::to_string(&v).expect("serialize");
     assert!(

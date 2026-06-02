@@ -204,7 +204,7 @@ jobs:
               Do NOT use HTML comments (`<!-- -->`), they are invalid in MDX.
 
             **Both modes:**
-            - Author: "Luong Vo (luong@oxy.tech)"
+            - Author: "Luong Vo (luong@oxygen-hq.com)"
             - **User-facing only**: focus on features, meaningful bug fixes, and performance
               improvements a data analyst or business user would notice. Skip internal refactors,
               CI/build changes, dependency bumps, test-only changes, and chore tasks.

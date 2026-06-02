@@ -56,13 +56,13 @@ use oxy_shared::errors::OxyError;
 const SESSION_COOKIE_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
 
 /// Build the `Set-Cookie` header value for the session cookie that wraps
-/// the existing JWT. Carrying the JWT in a `.oxy.tech`-scoped cookie lets
+/// the existing JWT. Carrying the JWT in a `.oxygen-hq.com`-scoped cookie lets
 /// the external auth proxy (`/api/auth/check`) authenticate browser
-/// traffic on `<app>.oxy.tech` subdomains using the same credential the
+/// traffic on `<app>.oxygen-hq.com` subdomains using the same credential the
 /// web-app already uses on the `Authorization` header.
 ///
 /// `Domain` is configurable via the `OXY_SESSION_COOKIE_DOMAIN` env var
-/// (set to `.oxy.tech` in prod). When unset, the cookie is host-only —
+/// (set to `.oxygen-hq.com` in prod). When unset, the cookie is host-only —
 /// fine for local dev where there are no subdomains to gate.
 pub fn build_session_cookie(jwt: &str, secure: bool) -> String {
     let mut parts = vec![
@@ -110,7 +110,7 @@ pub fn clear_session_cookie() -> String {
 ///
 /// 1. `OXY_SESSION_COOKIE_FORCE_SECURE=1` env var — explicit override.
 /// 2. `OXY_SESSION_COOKIE_DOMAIN` set to a non-localhost value — if you're
-///    scoping to a real domain (e.g. `.oxy.tech`) the cookie must be Secure;
+///    scoping to a real domain (e.g. `.oxygen-hq.com`) the cookie must be Secure;
 ///    browsers ignore domain-scoped cookies on plain HTTP anyway.
 /// 3. The `X-Forwarded-Proto` request header (set by the ingress) — `https`
 ///    means the original client request was HTTPS.
@@ -257,7 +257,7 @@ pub struct MagicLinkRequest {
     pub email: String,
     /// Optional post-login redirect target. Forwarded into the magic-link
     /// email so the user lands back on the requesting page (an
-    /// `<app>.oxy.tech` subdomain gated by the external auth proxy). The
+    /// `<app>.oxygen-hq.com` subdomain gated by the external auth proxy). The
     /// web-app, not the server, performs the redirect after `verify`; the
     /// server validates the target via `validate_return_to` before the
     /// browser follows it.

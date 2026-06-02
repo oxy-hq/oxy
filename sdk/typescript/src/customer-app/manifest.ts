@@ -1,5 +1,5 @@
 // Manifest loader for customer-app bundles served by oxy at
-// `app.oxy.tech/customer-apps/<org_slug>/<app_slug>/`.
+// `app.oxygen-hq.com/customer-apps/<org_slug>/<app_slug>/`.
 //
 // The bundle commits a `public/oxy-app.json` declaring its identity
 // (slug, orgSlug, projectId). This module:

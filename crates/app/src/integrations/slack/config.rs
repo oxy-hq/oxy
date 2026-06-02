@@ -169,11 +169,11 @@ mod tests {
                 std::env::set_var(OXY_SLACK_CLIENT_ID_VAR, "ci");
                 std::env::set_var(OXY_SLACK_CLIENT_SECRET_VAR, "cs");
                 std::env::set_var(OXY_SLACK_SIGNING_SECRET_VAR, "ss");
-                std::env::set_var(OXY_SLACK_APP_BASE_URL_VAR, "https://app.oxy.tech/");
+                std::env::set_var(OXY_SLACK_APP_BASE_URL_VAR, "https://app.oxygen-hq.com/");
             }
             let cfg = SlackConfig::from_env();
             let runtime = cfg.into_runtime().expect("should be Enabled");
-            assert_eq!(runtime.app_base_url, "https://app.oxy.tech"); // trailing slash trimmed
+            assert_eq!(runtime.app_base_url, "https://app.oxygen-hq.com"); // trailing slash trimmed
             assert_eq!(runtime.app_level_token, None); // no app-level token set
         });
     }
@@ -185,7 +185,7 @@ mod tests {
                 std::env::set_var(OXY_SLACK_CLIENT_ID_VAR, "ci");
                 std::env::set_var(OXY_SLACK_CLIENT_SECRET_VAR, "cs");
                 std::env::set_var(OXY_SLACK_SIGNING_SECRET_VAR, "ss");
-                std::env::set_var(OXY_SLACK_APP_BASE_URL_VAR, "https://app.oxy.tech");
+                std::env::set_var(OXY_SLACK_APP_BASE_URL_VAR, "https://app.oxygen-hq.com");
                 std::env::set_var(OXY_SLACK_APP_LEVEL_TOKEN_VAR, "xapp-1-test-token");
             }
             let cfg = SlackConfig::from_env();

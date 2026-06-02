@@ -34,4 +34,4 @@ The following concepts and capabilities are made available only to customers und
 Use of any enterprise-only feature, whether in source, binary, or containerized form, requires a **separate written agreement** with Oxygen Intelligence.
 No license or right to these features is granted by default.
 
-To obtain an enterprise license or discuss access, please contact **enterprise@oxy.tech**.
+To obtain an enterprise license or discuss access, please contact **enterprise@oxygen-hq.com**.

@@ -206,7 +206,7 @@ mod tests {
             workspaces: &workspaces,
             default_workspace_id: None,
             default_agent_path: None,
-            app_base_url: "https://app.oxy.tech",
+            app_base_url: "https://app.oxygen-hq.com",
         });
         let raw = serde_json::to_string(&v).expect("serialize");
         assert!(
@@ -259,7 +259,7 @@ mod tests {
             workspaces: &workspaces,
             default_workspace_id: None,
             default_agent_path: None,
-            app_base_url: "https://app.oxy.tech",
+            app_base_url: "https://app.oxygen-hq.com",
         });
         // No empty static_select sneaks through.
         assert_no_empty_static_select(&v);
@@ -294,7 +294,7 @@ mod tests {
             workspaces: &workspaces,
             default_workspace_id: None,
             default_agent_path: None,
-            app_base_url: "https://app.oxy.tech",
+            app_base_url: "https://app.oxygen-hq.com",
         });
         let raw = serde_json::to_string(&v).expect("serialize");
         assert!(

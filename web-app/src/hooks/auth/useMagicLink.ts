@@ -22,7 +22,7 @@ export const useRequestMagicLink = () => {
  * If `returnTo` is provided, the hook validates it via the server's
  * `/auth/return-to/validate` endpoint after a successful login and
  * navigates to it via `window.location.href` (cross-origin redirect into
- * a different `*.oxy.tech` subdomain or registered external app host).
+ * a different `*.oxygen-hq.com` subdomain or registered external app host).
  * If validation fails or no `returnTo` is supplied, falls back to the
  * normal post-login navigation in `handlePostLoginOrgs`.
  */

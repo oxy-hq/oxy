@@ -137,7 +137,7 @@ fn is_dev_origin(origin: &str) -> bool {
     matches!(origin, "http://localhost:5173" | "http://localhost:5174")
 }
 
-/// Return `true` when `origin` (e.g. `https://app.oxy.tech`) targets the
+/// Return `true` when `origin` (e.g. `https://app.oxygen-hq.com`) targets the
 /// same host as the incoming request. We prefer `X-Forwarded-Host` (set by a
 /// TLS-terminating reverse proxy) and fall back to `Host`; this covers both
 /// direct-bind and behind-a-load-balancer deployments without an env var.
@@ -390,9 +390,9 @@ mod cors_tests {
         // Behind a TLS-terminating reverse proxy, `Host` is the internal
         // address; the public hostname comes in on `X-Forwarded-Host`.
         let headers = make_headers(&[
-            ("origin", "https://app.oxy.tech"),
+            ("origin", "https://app.oxygen-hq.com"),
             ("host", "oxy-internal.svc.cluster.local"),
-            ("x-forwarded-host", "app.oxy.tech"),
+            ("x-forwarded-host", "app.oxygen-hq.com"),
         ]);
         assert!(is_allowed_origin(&headers));
     }
@@ -400,8 +400,8 @@ mod cors_tests {
     #[test]
     fn referer_scheme_host_used_when_origin_absent() {
         let headers = make_headers(&[
-            ("referer", "https://app.oxy.tech/some/path?q=1"),
-            ("host", "app.oxy.tech"),
+            ("referer", "https://app.oxygen-hq.com/some/path?q=1"),
+            ("host", "app.oxygen-hq.com"),
         ]);
         assert!(is_allowed_origin(&headers));
     }
@@ -411,7 +411,7 @@ mod cors_tests {
         // An origin that isn't a canonical dev host and doesn't match the
         // server's own host is rejected — defence-in-depth carries over from
         // the old env-driven allowlist.
-        let headers = make_headers(&[("origin", "https://attacker.com"), ("host", "app.oxy.tech")]);
+        let headers = make_headers(&[("origin", "https://attacker.com"), ("host", "app.oxygen-hq.com")]);
         assert!(!is_allowed_origin(&headers));
     }
 }

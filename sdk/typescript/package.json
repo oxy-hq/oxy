@@ -57,7 +57,7 @@
   "bugs": {
     "url": "https://github.com/oxy-hq/oxy-internal/issues"
   },
-  "homepage": "https://oxy.tech",
+  "homepage": "https://oxygen-hq.com",
   "peerDependencies": {
     "react": "^19.0.0"
   },

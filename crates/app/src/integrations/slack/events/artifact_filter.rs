@@ -69,7 +69,7 @@ impl ArtifactFilter {
     }
 
     /// Construct a filter that replaces artifacts with an inline placeholder
-    /// linking to the given thread URL (e.g. `https://app.oxy.tech/threads/<id>`).
+    /// linking to the given thread URL (e.g. `https://app.oxygen-hq.com/threads/<id>`).
     pub fn with_thread_url(thread_url: String) -> Self {
         Self {
             thread_url: Some(thread_url),
@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn emits_placeholder_without_per_artifact_link() {
-        let mut f = ArtifactFilter::with_thread_url("https://app.oxy.tech/threads/T1".to_string());
+        let mut f = ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
         let input = "Here it is:\n:::artifact{id=a kind=semantic_query title=Stores by Region is_verified=true}\nsql body\n:::\nmore\n";
         let out = f.feed(input);
         assert!(out.contains("Stores by Region"), "got: {out}");
@@ -515,7 +515,7 @@ mod tests {
             "per-artifact link should be gone: {out}"
         );
         assert!(
-            !out.contains("https://app.oxy.tech/threads/T1"),
+            !out.contains("https://app.oxygen-hq.com/threads/T1"),
             "thread URL must not appear inline: {out}"
         );
         assert!(!out.contains("**"), "no bold expected: {out}");
@@ -593,7 +593,7 @@ mod tests {
 
     #[test]
     fn placeholder_omits_check_for_unverified_artifact() {
-        let mut f = ArtifactFilter::with_thread_url("https://app.oxy.tech/threads/T1".to_string());
+        let mut f = ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
         let out =
             f.feed(":::artifact{id=a kind=k title=Draft query is_verified=false}\nbody\n:::\n");
         assert!(out.contains("Draft query"));
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn no_placeholder_when_title_missing() {
-        let mut f = ArtifactFilter::with_thread_url("https://app.oxy.tech/threads/T1".to_string());
+        let mut f = ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
         let out = f.feed(":::artifact{id=a kind=k}\nbody\n:::\n");
         // No title → fall back to drop (nothing surfaced).
         assert_eq!(out, "");

@@ -14,7 +14,7 @@ usage() {
 	echo "List available Oxy releases."
 	echo ""
 	echo "Usage:"
-	echo "  bash <(curl -sSfL https://release.oxy.tech) [OPTIONS]"
+	echo "  bash <(curl -sSfL https://release.oxygen-hq.com) [OPTIONS]"
 	echo ""
 	echo "Options:"
 	echo "  -c, --channel CHANNEL   Filter by channel: stable, edge, or all (default: all)"
@@ -22,9 +22,9 @@ usage() {
 	echo "  -h, --help              Show this help message"
 	echo ""
 	echo "Examples:"
-	echo "  bash <(curl -sSfL https://release.oxy.tech)"
-	echo "  bash <(curl -sSfL https://release.oxy.tech) --channel stable"
-	echo "  bash <(curl -sSfL https://release.oxy.tech) -c edge -n 20"
+	echo "  bash <(curl -sSfL https://release.oxygen-hq.com)"
+	echo "  bash <(curl -sSfL https://release.oxygen-hq.com) --channel stable"
+	echo "  bash <(curl -sSfL https://release.oxygen-hq.com) -c edge -n 20"
 	exit 0
 }
 
@@ -202,7 +202,7 @@ render_stable() {
 	fi
 
 	echo ""
-	echo "  Install: OXY_VERSION=<version> bash <(curl -sSfL https://get.oxy.tech)"
+	echo "  Install: OXY_VERSION=<version> bash <(curl -sSfL https://get.oxygen-hq.com)"
 }
 
 # ─── Render: Edge ────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ render_edge() {
 	fi
 
 	echo ""
-	echo "  Install: OXY_VERSION=<tag> bash <(curl -sSfL https://nightly.oxy.tech)"
+	echo "  Install: OXY_VERSION=<tag> bash <(curl -sSfL https://nightly.oxygen-hq.com)"
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────────

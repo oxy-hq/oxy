@@ -5,7 +5,7 @@
 // the client; oxy gates the request by your project membership.
 //
 // Auth model: oxy serves this bundle at
-// `app.oxy.tech/customer-apps/<org>/<app>/` after a session-cookie +
+// `app.oxygen-hq.com/customer-apps/<org>/<app>/` after a session-cookie +
 // org-membership check, so /api/* fetches ride the cookie automatically.
 
 import { useQuery } from "@oxy-hq/sdk";

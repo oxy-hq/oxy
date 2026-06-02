@@ -178,10 +178,10 @@ fn main() {
     if _sentry_guard.is_none() {
         setup_panic!(
             Metadata::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-                .authors("Robert Yi <robert@oxy.tech>") // temporarily using Robert email here, TODO: replace by support email
+                .authors("Robert Yi <robert@oxygen-hq.com>") // temporarily using Robert email here, TODO: replace by support email
                 .homepage("github.com/oxy-hq/oxygen")
                 .support(
-                    "- For support, please email robert@oxy.tech or contact us directly via Github."
+                    "- For support, please email robert@oxygen-hq.com or contact us directly via Github."
                 )
         );
     }

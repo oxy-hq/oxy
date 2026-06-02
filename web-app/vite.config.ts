@@ -226,7 +226,7 @@ export default defineConfig({
         changeOrigin: true
       },
       // Customer-app bundles live at the same origin as the SPA in
-      // production (e.g. https://app.oxy.tech/customer-apps/<uuid>/). Locally
+      // production (e.g. https://app.oxygen-hq.com/customer-apps/<uuid>/). Locally
       // the SPA is on :5173 and oxy is on :3000, so forward those requests
       // through to oxy; otherwise vite's catch-all hands back the SPA
       // index.html and the bundle never renders.

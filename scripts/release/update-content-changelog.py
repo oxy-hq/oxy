@@ -98,7 +98,7 @@ def get_writing_guide() -> str:
     return """
 Write user-facing MDX changelogs for Oxy (AI-powered data analytics platform).
 
-Frontmatter fields: title, description, date, author ("Luong Vo (luong@oxy.tech)"), slug, sidebarTitle.
+Frontmatter fields: title, description, date, author ("Luong Vo (luong@oxygen-hq.com)"), slug, sidebarTitle.
 - title: 2-4 comma-separated main features, e.g. "Builder Agent, Workspace Management, and Thinking Budget"
 - slug: kebab-case of title
 - sidebarTitle: 1-3 words max
@@ -248,7 +248,7 @@ When in doubt, ask: "Would a data analyst care about this?" If no, skip it.
 
 ## Output rules
 - Use date {today} in the frontmatter `date` field.
-- Author is always "Luong Vo (luong@oxy.tech)".
+- Author is always "Luong Vo (luong@oxygen-hq.com)".
 - After the closing `---` of the frontmatter, add exactly: `{versions_comment}`
 - Do NOT add image markdown — omit screenshots entirely (human reviewer adds them).
 - Return ONLY the MDX content — no explanation, no code fences."""

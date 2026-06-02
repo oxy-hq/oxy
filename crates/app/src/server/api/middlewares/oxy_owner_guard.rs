@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn forbids_non_owner() {
-        let _g = EnvGuard::set("OXY_OWNER", "owner@oxy.tech");
+        let _g = EnvGuard::set("OXY_OWNER", "owner@oxygen-hq.com");
         assert_eq!(
             require_oxy_owner("intruder@example.com"),
             Err(StatusCode::FORBIDDEN)
@@ -105,8 +105,8 @@ mod tests {
 
     #[test]
     fn allows_owner_case_and_whitespace_insensitive() {
-        let _g = EnvGuard::set("OXY_OWNER", " Owner@Oxy.Tech , other@oxy.tech ");
-        assert_eq!(require_oxy_owner("owner@oxy.tech"), Ok(()));
-        assert_eq!(require_oxy_owner("OTHER@OXY.TECH"), Ok(()));
+        let _g = EnvGuard::set("OXY_OWNER", " Owner@Oxygen-Hq.Com , other@oxygen-hq.com ");
+        assert_eq!(require_oxy_owner("owner@oxygen-hq.com"), Ok(()));
+        assert_eq!(require_oxy_owner("OTHER@OXYGEN-HQ.COM"), Ok(()));
     }
 }

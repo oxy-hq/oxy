@@ -103,7 +103,7 @@ impl BuiltInAuthenticator {
         // Fallback: pull JWT from the session cookie set by /auth/* login
         // endpoints. The cookie carries the same JWT as the bearer header so
         // `validate()` accepts it identically. Used by browser traffic on
-        // `*.oxy.tech` subdomains that the external auth proxy gates.
+        // `*.oxygen-hq.com` subdomains that the external auth proxy gates.
         extract_session_cookie(header).ok_or(OxyError::AuthenticationError(
             "Missing or invalid authentication header".to_string(),
         ))

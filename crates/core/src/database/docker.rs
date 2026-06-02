@@ -103,7 +103,7 @@ async fn get_docker_client() -> Result<Docker, OxyError> {
            - Colima: ~/.colima/default/docker.sock\n\
            - Rancher Desktop: ~/.rd/docker.sock\n\
            - OrbStack: ~/.orbstack/run/docker.sock\n\n\
-         📚 See https://docs.oxy.tech/deployment/container-runtimes for setup instructions"
+         📚 See https://docs.oxygen-hq.com/deployment/container-runtimes for setup instructions"
             .to_string(),
     ))
 }

@@ -1,7 +1,7 @@
 // Customer-app bundle helpers — manifest loading + query execution.
 //
 // Customer apps are static bundles served by oxy at
-// `app.oxy.tech/customer-apps/<org_slug>/<app_slug>/`. They commit a
+// `app.oxygen-hq.com/customer-apps/<org_slug>/<app_slug>/`. They commit a
 // `public/oxy-app.json` declaring their identity (slug, orgSlug,
 // projectId), then call `useQuery` inside React components to run SQL
 // queries against the linked project.

@@ -7,7 +7,7 @@
  * no cookie exists and the operator gets bounced to login).
  *
  * In production where admin UI + bundles share an origin (e.g.
- * `app.oxy.tech`), or where `OXY_SESSION_COOKIE_DOMAIN=.oxy.tech`
+ * `app.oxygen-hq.com`), or where `OXY_SESSION_COOKIE_DOMAIN=.oxygen-hq.com`
  * already scopes the cookie across subdomains, the rewrite is a
  * no-op — both hosts resolve to the same string.
  */
