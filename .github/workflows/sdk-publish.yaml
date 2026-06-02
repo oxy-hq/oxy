@@ -1,4 +1,5 @@
-# Publishes the @oxy-hq SDK packages to GitHub Packages.
+# Publishes the @oxy-hq SDK packages to the public npm registry
+# (registry.npmjs.org) using npm Trusted Publishing (OIDC) — no NPM_TOKEN.
 #
 # Packages handled:
 #   - @oxy-hq/sdk             (sdk/typescript)
@@ -6,16 +7,24 @@
 #   - @oxy-hq/create-oxy-app  (sdk/create-oxy-app)
 #
 # ------------------------------------------------------------------------------
-# ONE-TIME MANUAL STEP AFTER THE FIRST PUBLISH OF EACH PACKAGE
+# ONE-TIME SETUP ON npmjs.com (per package, already-published names required)
 # ------------------------------------------------------------------------------
-# GitHub Packages defaults newly-published npm packages to *private* (org members
-# only) regardless of the `"access": "public"` flag in publishConfig. After the
-# first successful publish, an org admin must open each package on github.com
-# (Repo → Packages tab → <package-name> → Package settings → Danger Zone →
-# "Change package visibility" → Public) and switch visibility to "Public".
-# Without this, consumers will need a GITHUB_TOKEN with `read:packages` scope
-# in their `.npmrc` to install — even though the package is published with
-# `access: public`.
+# Trusted publishing is configured per package on npmjs.com → the package's
+# Settings → "Trusted Publisher" → GitHub Actions, with:
+#     Organization or user : oxy-hq
+#     Repository           : oxy-internal
+#     Workflow filename    : sdk-publish.yaml   (filename only, with extension)
+#     Environment          : (leave blank)
+# Do this for @oxy-hq/sdk, @oxy-hq/vite-plugin, and @oxy-hq/create-oxy-app.
+# All three were seeded with an initial manual publish, so the package pages
+# exist and the Trusted Publisher form is available.
+#
+# Notes:
+#   - Requires npm CLI >= 11.5.1 and Node >= 22.14.0 (enforced below).
+#   - npm publishes provenance attestations automatically under OIDC; no
+#     --provenance flag and no NODE_AUTH_TOKEN are needed.
+#   - pnpm publish does NOT yet support OIDC (pnpm/pnpm#9812), so the publish
+#     step shells out to `npm publish` while build/install stay on pnpm.
 # ------------------------------------------------------------------------------
 
 name: SDK Publish
@@ -41,10 +50,10 @@ on:
 permissions:
   # contents: write — needed to push the version-bump commit and the release tag
   #                   back to the default branch.
-  # packages: write — needed for `pnpm publish` to push to GitHub Packages using
-  #                   the workflow-provided GITHUB_TOKEN.
+  # id-token: write — needed to mint the OIDC token npm exchanges for short-lived
+  #                   publish credentials (trusted publishing). No NPM_TOKEN.
   contents: write
-  packages: write
+  id-token: write
 
 defaults:
   run:
@@ -77,14 +86,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
+          # Node >= 22.14.0 is required for npm OIDC trusted publishing; 24.x
+          # satisfies it. `registry-url` writes a project-local .npmrc pointing
+          # at the public npm registry (the @oxy-hq scope resolves there by
+          # default). No auth token is wired — OIDC supplies credentials.
           node-version: 24.x
           cache: "pnpm"
-          # `registry-url` writes a project-local .npmrc binding the @oxy-hq
-          # scope to GitHub Packages and wires NODE_AUTH_TOKEN as the bearer
-          # token for `npm`/`pnpm publish`.
-          registry-url: "https://npm.pkg.github.com"
-          scope: "@oxy-hq"
-          always-auth: true
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Ensure npm supports trusted publishing
+        # Trusted publishing (OIDC) requires npm CLI >= 11.5.1. Pin to a known
+        # compatible line regardless of the npm bundled with Node 24.x.
+        run: npm install -g npm@latest
 
       - name: Configure git author for version-bump commit
         run: |
@@ -98,10 +111,8 @@ jobs:
 
       - name: Publish selected packages
         env:
-          # Used by `actions/setup-node`'s generated .npmrc as the auth token
-          # the registry expects. GITHUB_TOKEN has `packages: write` because of
-          # the job-level permissions block above.
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No auth token: npm exchanges the GitHub OIDC id-token (id-token:
+          # write above) for short-lived publish credentials at publish time.
           INPUT_PACKAGE: ${{ inputs.package }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
@@ -134,7 +145,7 @@ jobs:
             # Idempotency guard: if the package.json is already at the target
             # version (e.g. a previous run partially succeeded), don't bump or
             # re-commit — but still attempt publish so we can recover from a
-            # failure between bump and publish. `pnpm publish` will exit
+            # failure between bump and publish. `npm publish` will exit
             # non-zero with a clear "cannot publish over previously published
             # version" message if the registry already has this version, which
             # is the correct retry behavior.
@@ -149,10 +160,11 @@ jobs:
             # `dist/` files referenced by main/module/types/bin actually exist).
             (cd "${dir}" && pnpm build)
 
-            # `--no-git-checks` lets pnpm publish from a worktree that has the
-            # uncommitted version-bump applied above. `--access public` is a
+            # Publish via `npm` (NOT pnpm): only the npm CLI performs the OIDC
+            # token exchange for trusted publishing. Provenance attestations are
+            # generated automatically under OIDC. `--access public` is a
             # belt-and-suspenders alongside publishConfig.access.
-            (cd "${dir}" && pnpm publish --no-git-checks --access public)
+            (cd "${dir}" && npm publish --access public)
 
             echo "::endgroup::"
           done
