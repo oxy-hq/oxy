@@ -359,6 +359,6 @@ mod tests {
     fn host_key_separates_envs() {
         assert_eq!(host_key("http://localhost:3000"), "localhost:3000");
         assert_eq!(host_key("https://app.oxy.tech"), "app.oxy.tech");
-        assert_eq!(host_key("https://app.dev.oxy.tech/"), "app.dev.oxy.tech");
+        assert_eq!(host_key("https://app-dev.oxy.tech/"), "app-dev.oxy.tech");
     }
 }

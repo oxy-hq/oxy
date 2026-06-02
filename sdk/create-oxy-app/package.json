@@ -1,5 +1,5 @@
 {
-  "name": "create-oxy-app",
+  "name": "@oxy-hq/create-oxy-app",
   "version": "0.1.0",
   "description": "Scaffold a new Oxy customer app from a curated template.",
   "type": "module",
@@ -11,6 +11,15 @@
     "templates",
     "README.md"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxy-hq/oxy-internal.git",
+    "directory": "sdk/create-oxy-app"
+  },
   "scripts": {
     "build": "tsdown",
     "build:watch": "tsdown --watch",

@@ -1,0 +1,211 @@
+# Publishes the @oxy-hq SDK packages to GitHub Packages.
+#
+# Packages handled:
+#   - @oxy-hq/sdk             (sdk/typescript)
+#   - @oxy-hq/vite-plugin     (sdk/vite-plugin)
+#   - @oxy-hq/create-oxy-app  (sdk/create-oxy-app)
+#
+# ------------------------------------------------------------------------------
+# ONE-TIME MANUAL STEP AFTER THE FIRST PUBLISH OF EACH PACKAGE
+# ------------------------------------------------------------------------------
+# GitHub Packages defaults newly-published npm packages to *private* (org members
+# only) regardless of the `"access": "public"` flag in publishConfig. After the
+# first successful publish, an org admin must open each package on github.com
+# (Repo → Packages tab → <package-name> → Package settings → Danger Zone →
+# "Change package visibility" → Public) and switch visibility to "Public".
+# Without this, consumers will need a GITHUB_TOKEN with `read:packages` scope
+# in their `.npmrc` to install — even though the package is published with
+# `access: public`.
+# ------------------------------------------------------------------------------
+
+name: SDK Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Which SDK package to publish (or 'all')"
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - "@oxy-hq/sdk"
+          - "@oxy-hq/vite-plugin"
+          - "@oxy-hq/create-oxy-app"
+      version:
+        description: "Semver to publish (e.g. 2.0.1). Applied to every selected package."
+        required: true
+        type: string
+
+permissions:
+  # contents: write — needed to push the version-bump commit and the release tag
+  #                   back to the default branch.
+  # packages: write — needed for `pnpm publish` to push to GitHub Packages using
+  #                   the workflow-provided GITHUB_TOKEN.
+  contents: write
+  packages: write
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  # Serialize all publishes so two manual runs cannot race on the version-bump
+  # commit + tag push.
+  group: sdk-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish SDK packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Full history + persisted credentials so the post-publish commit can
+          # be pushed back to the default branch.
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+          # `registry-url` writes a project-local .npmrc binding the @oxy-hq
+          # scope to GitHub Packages and wires NODE_AUTH_TOKEN as the bearer
+          # token for `npm`/`pnpm publish`.
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@oxy-hq"
+          always-auth: true
+
+      - name: Configure git author for version-bump commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install dependencies
+        # Single workspace install — pnpm-workspace.yaml lists all three SDK
+        # packages, so this resolves and links them in one pass.
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish selected packages
+        env:
+          # Used by `actions/setup-node`'s generated .npmrc as the auth token
+          # the registry expects. GITHUB_TOKEN has `packages: write` because of
+          # the job-level permissions block above.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_PACKAGE: ${{ inputs.package }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Map of "package npm name" -> "workspace directory".
+          declare -A PKG_DIRS=(
+            ["@oxy-hq/sdk"]="sdk/typescript"
+            ["@oxy-hq/vite-plugin"]="sdk/vite-plugin"
+            ["@oxy-hq/create-oxy-app"]="sdk/create-oxy-app"
+          )
+
+          if [[ "${INPUT_PACKAGE}" == "all" ]]; then
+            SELECTED=("@oxy-hq/sdk" "@oxy-hq/vite-plugin" "@oxy-hq/create-oxy-app")
+          else
+            SELECTED=("${INPUT_PACKAGE}")
+          fi
+
+          # Track which packages actually got bumped so we know what to commit.
+          BUMPED=()
+
+          for pkg in "${SELECTED[@]}"; do
+            dir="${PKG_DIRS[$pkg]}"
+            echo "::group::Publish ${pkg} (${dir})"
+
+            current="$(node -p "require('./${dir}/package.json').version")"
+            echo "Current version: ${current}"
+            echo "Requested version: ${INPUT_VERSION}"
+
+            # Idempotency guard: if the package.json is already at the target
+            # version (e.g. a previous run partially succeeded), don't bump or
+            # re-commit — but still attempt publish so we can recover from a
+            # failure between bump and publish. `pnpm publish` will exit
+            # non-zero with a clear "cannot publish over previously published
+            # version" message if the registry already has this version, which
+            # is the correct retry behavior.
+            if [[ "${current}" != "${INPUT_VERSION}" ]]; then
+              (cd "${dir}" && pnpm version "${INPUT_VERSION}" --no-git-tag-version)
+              BUMPED+=("${dir}/package.json")
+            else
+              echo "Version already matches; skipping bump."
+            fi
+
+            # Build (every package's build script is `tsdown`; required so the
+            # `dist/` files referenced by main/module/types/bin actually exist).
+            (cd "${dir}" && pnpm build)
+
+            # `--no-git-checks` lets pnpm publish from a worktree that has the
+            # uncommitted version-bump applied above. `--access public` is a
+            # belt-and-suspenders alongside publishConfig.access.
+            (cd "${dir}" && pnpm publish --no-git-checks --access public)
+
+            echo "::endgroup::"
+          done
+
+          # Expose bumped paths to subsequent steps.
+          {
+            echo "bumped_files<<EOF"
+            printf '%s\n' "${BUMPED[@]}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+        id: publish
+
+      - name: Commit + tag + push version bump
+        if: success() && steps.publish.outputs.bumped_files != ''
+        env:
+          INPUT_PACKAGE: ${{ inputs.package }}
+          INPUT_VERSION: ${{ inputs.version }}
+          BUMPED_FILES: ${{ steps.publish.outputs.bumped_files }}
+        run: |
+          set -euo pipefail
+
+          # Stage every package.json that we actually changed.
+          while IFS= read -r f; do
+            [[ -n "${f}" ]] || continue
+            git add "${f}"
+          done <<< "${BUMPED_FILES}"
+
+          # Nothing to commit — possible if every selected package was already
+          # at the requested version. The publish step above may still have
+          # succeeded as a retry; nothing else to do here.
+          if git diff --cached --quiet; then
+            echo "No package.json changes to commit."
+            exit 0
+          fi
+
+          if [[ "${INPUT_PACKAGE}" == "all" ]]; then
+            commit_msg="chore(sdk): publish all @oxy-hq SDK packages @ ${INPUT_VERSION} [skip ci]"
+            tag="sdk/v${INPUT_VERSION}"
+          else
+            # Short tag for single-package publishes: drop the @oxy-hq/ prefix.
+            short_name="${INPUT_PACKAGE#@oxy-hq/}"
+            commit_msg="chore(sdk): publish ${INPUT_PACKAGE}@${INPUT_VERSION} [skip ci]"
+            tag="${short_name}/v${INPUT_VERSION}"
+          fi
+
+          git commit -m "${commit_msg}"
+
+          # Tag the commit so we have a recoverable marker per release.
+          # `-f` would overwrite an existing tag, which we deliberately don't
+          # want — fail loudly instead so the operator can pick a new version.
+          git tag "${tag}"
+
+          # Push to the branch that triggered the workflow (default branch
+          # when run from workflow_dispatch on main).
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "${tag}"

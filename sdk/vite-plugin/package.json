@@ -17,6 +17,15 @@
     "dist",
     "README.md"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxy-hq/oxy-internal.git",
+    "directory": "sdk/vite-plugin"
+  },
   "scripts": {
     "build": "tsdown",
     "build:watch": "tsdown --watch",

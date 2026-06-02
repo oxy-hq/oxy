@@ -18,6 +18,10 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
   "scripts": {
     "build": "tsdown",
     "build:watch": "tsdown --watch",
@@ -42,11 +46,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oxy-hq/oxygen-internal.git",
+    "url": "https://github.com/oxy-hq/oxy-internal.git",
     "directory": "sdk/typescript"
   },
   "bugs": {
-    "url": "https://github.com/oxy-hq/oxygen-internal/issues"
+    "url": "https://github.com/oxy-hq/oxy-internal/issues"
   },
   "homepage": "https://oxy.tech",
   "peerDependencies": {

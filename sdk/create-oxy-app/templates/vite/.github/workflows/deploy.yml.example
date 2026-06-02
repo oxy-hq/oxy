@@ -10,7 +10,7 @@
 #
 # Required GitHub Environment values (set per-env: dev vs production):
 #   Variables:
-#     OXY_TARGET     — oxy base URL (e.g. https://app.dev.oxy.tech)
+#     OXY_TARGET     — oxy base URL (e.g. https://app-dev.oxy.tech)
 #     OXY_ORG_SLUG   — org these apps belong to
 #     OXY_PROJECT_ID — oxy project (workspace) UUID the app binds to
 #   Secrets:
