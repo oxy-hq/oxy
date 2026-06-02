@@ -7,17 +7,25 @@
 #   - @oxy-hq/create-oxy-app  (sdk/create-oxy-app)
 #
 # ------------------------------------------------------------------------------
-# ONE-TIME SETUP ON npmjs.com (per package, already-published names required)
+# RELEASE MODEL — publish-only (main is PR-protected)
 # ------------------------------------------------------------------------------
-# Trusted publishing is configured per package on npmjs.com → the package's
-# Settings → "Trusted Publisher" → GitHub Actions, with:
+# `main` enforces "changes only through a pull request", so this workflow does
+# NOT bump versions or push commits back. Each package is published at whatever
+# version is committed in its package.json. To cut a release:
+#   1. Bump the package's `version` in a normal PR and merge it.
+#   2. Run this workflow (Actions → SDK Publish → Run workflow) for that
+#      package (or "all"). It builds and publishes the committed version.
+# npm refuses to publish over an existing version, so re-running without a bump
+# fails loudly. Packages are versioned independently — there is no shared version.
+#
+# ------------------------------------------------------------------------------
+# TRUSTED PUBLISHING (configured on npmjs.com, per package)
+# ------------------------------------------------------------------------------
+# Each package's Settings → "Trusted Publisher" → GitHub Actions:
 #     Organization or user : oxy-hq
 #     Repository           : oxy-internal
 #     Workflow filename    : sdk-publish.yaml   (filename only, with extension)
 #     Environment          : (leave blank)
-# Do this for @oxy-hq/sdk, @oxy-hq/vite-plugin, and @oxy-hq/create-oxy-app.
-# All three were seeded with an initial manual publish, so the package pages
-# exist and the Trusted Publisher form is available.
 #
 # Notes:
 #   - Requires npm CLI >= 11.5.1 and Node >= 22.14.0 (enforced below).
@@ -33,7 +41,7 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: "Which SDK package to publish (or 'all')"
+        description: "Which SDK package to publish (or 'all'). Each is published at the version committed in its package.json."
         required: true
         type: choice
         default: all
@@ -42,16 +50,12 @@ on:
           - "@oxy-hq/sdk"
           - "@oxy-hq/vite-plugin"
           - "@oxy-hq/create-oxy-app"
-      version:
-        description: "Semver to publish (e.g. 2.0.1). Applied to every selected package."
-        required: true
-        type: string
 
 permissions:
-  # contents: write — needed to push the version-bump commit and the release tag
-  #                   back to the default branch.
-  # id-token: write — needed to mint the OIDC token npm exchanges for short-lived
-  #                   publish credentials (trusted publishing). No NPM_TOKEN.
+  # id-token: write — mint the OIDC token npm exchanges for short-lived publish
+  #                   credentials (trusted publishing). No NPM_TOKEN.
+  # contents: write — create the lightweight release tag (refs/tags/...) via the
+  #                   API. The workflow never pushes to main (PR-protected).
   contents: write
   id-token: write
 
@@ -60,8 +64,7 @@ defaults:
     shell: bash
 
 concurrency:
-  # Serialize all publishes so two manual runs cannot race on the version-bump
-  # commit + tag push.
+  # Serialize publishes so two manual runs can't race on the registry or tags.
   group: sdk-publish
   cancel-in-progress: false
 
@@ -72,11 +75,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          # Full history + persisted credentials so the post-publish commit can
-          # be pushed back to the default branch.
-          fetch-depth: 0
-          persist-credentials: true
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -99,11 +97,6 @@ jobs:
         # compatible line regardless of the npm bundled with Node 24.x.
         run: npm install -g npm@latest
 
-      - name: Configure git author for version-bump commit
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
       - name: Install dependencies
         # Single workspace install — pnpm-workspace.yaml lists all three SDK
         # packages, so this resolves and links them in one pass.
@@ -113,8 +106,9 @@ jobs:
         env:
           # No auth token: npm exchanges the GitHub OIDC id-token (id-token:
           # write above) for short-lived publish credentials at publish time.
+          # GH_TOKEN is used only to create the release tag via the API.
+          GH_TOKEN: ${{ github.token }}
           INPUT_PACKAGE: ${{ inputs.package }}
-          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
 
@@ -131,93 +125,29 @@ jobs:
             SELECTED=("${INPUT_PACKAGE}")
           fi
 
-          # Track which packages actually got bumped so we know what to commit.
-          BUMPED=()
-
           for pkg in "${SELECTED[@]}"; do
             dir="${PKG_DIRS[$pkg]}"
-            echo "::group::Publish ${pkg} (${dir})"
+            version="$(node -p "require('./${dir}/package.json').version")"
+            echo "::group::Publish ${pkg}@${version} (${dir})"
 
-            current="$(node -p "require('./${dir}/package.json').version")"
-            echo "Current version: ${current}"
-            echo "Requested version: ${INPUT_VERSION}"
-
-            # Idempotency guard: if the package.json is already at the target
-            # version (e.g. a previous run partially succeeded), don't bump or
-            # re-commit — but still attempt publish so we can recover from a
-            # failure between bump and publish. `npm publish` will exit
-            # non-zero with a clear "cannot publish over previously published
-            # version" message if the registry already has this version, which
-            # is the correct retry behavior.
-            if [[ "${current}" != "${INPUT_VERSION}" ]]; then
-              (cd "${dir}" && pnpm version "${INPUT_VERSION}" --no-git-tag-version)
-              BUMPED+=("${dir}/package.json")
-            else
-              echo "Version already matches; skipping bump."
-            fi
-
-            # Build (every package's build script is `tsdown`; required so the
-            # `dist/` files referenced by main/module/types/bin actually exist).
+            # Build (tsdown) so the dist/ files referenced by main/module/
+            # types/bin exist, then publish via `npm` (NOT pnpm — only npm
+            # performs the OIDC token exchange). Provenance is automatic.
+            # npm refuses to publish over an existing version, which is the
+            # guard against re-running a stale publish.
             (cd "${dir}" && pnpm build)
-
-            # Publish via `npm` (NOT pnpm): only the npm CLI performs the OIDC
-            # token exchange for trusted publishing. Provenance attestations are
-            # generated automatically under OIDC. `--access public` is a
-            # belt-and-suspenders alongside publishConfig.access.
             (cd "${dir}" && npm publish --access public)
+
+            # Lightweight release tag at the published commit (e.g. sdk/v2.0.1).
+            # Created via the API since main is PR-protected. Non-fatal: the
+            # publish is what matters, and the tag may already exist on a retry.
+            tag="${pkg#@oxy-hq/}/v${version}"
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+                 -f ref="refs/tags/${tag}" -f sha="${GITHUB_SHA}" >/dev/null 2>&1; then
+              echo "Tagged ${tag}"
+            else
+              echo "::warning::could not create tag ${tag} (already exists or tag protection)"
+            fi
 
             echo "::endgroup::"
           done
-
-          # Expose bumped paths to subsequent steps.
-          {
-            echo "bumped_files<<EOF"
-            printf '%s\n' "${BUMPED[@]}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
-        id: publish
-
-      - name: Commit + tag + push version bump
-        if: success() && steps.publish.outputs.bumped_files != ''
-        env:
-          INPUT_PACKAGE: ${{ inputs.package }}
-          INPUT_VERSION: ${{ inputs.version }}
-          BUMPED_FILES: ${{ steps.publish.outputs.bumped_files }}
-        run: |
-          set -euo pipefail
-
-          # Stage every package.json that we actually changed.
-          while IFS= read -r f; do
-            [[ -n "${f}" ]] || continue
-            git add "${f}"
-          done <<< "${BUMPED_FILES}"
-
-          # Nothing to commit — possible if every selected package was already
-          # at the requested version. The publish step above may still have
-          # succeeded as a retry; nothing else to do here.
-          if git diff --cached --quiet; then
-            echo "No package.json changes to commit."
-            exit 0
-          fi
-
-          if [[ "${INPUT_PACKAGE}" == "all" ]]; then
-            commit_msg="chore(sdk): publish all @oxy-hq SDK packages @ ${INPUT_VERSION} [skip ci]"
-            tag="sdk/v${INPUT_VERSION}"
-          else
-            # Short tag for single-package publishes: drop the @oxy-hq/ prefix.
-            short_name="${INPUT_PACKAGE#@oxy-hq/}"
-            commit_msg="chore(sdk): publish ${INPUT_PACKAGE}@${INPUT_VERSION} [skip ci]"
-            tag="${short_name}/v${INPUT_VERSION}"
-          fi
-
-          git commit -m "${commit_msg}"
-
-          # Tag the commit so we have a recoverable marker per release.
-          # `-f` would overwrite an existing tag, which we deliberately don't
-          # want — fail loudly instead so the operator can pick a new version.
-          git tag "${tag}"
-
-          # Push to the branch that triggered the workflow (default branch
-          # when run from workflow_dispatch on main).
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-          git push origin "${tag}"
