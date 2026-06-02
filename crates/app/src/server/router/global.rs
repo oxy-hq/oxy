@@ -95,6 +95,16 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 // access, flattened with its org + grant metadata. See
                 // `admin::oxy_access`.
                 .route("/oxy-access", get(admin::oxy_access::list_grants))
+                // Mint an app-scoped API key. The plaintext key is
+                // returned **once** for the operator to paste into the
+                // bundle's deploy env (e.g. `OXY_API_KEY` in Vercel). The
+                // Vercel-hosted Next.js server-side calls use it to
+                // authenticate back into oxy. See
+                // `customer_apps_api_keys`.
+                .route(
+                    "/{id}/api-keys",
+                    post(crate::server::api::customer_apps_api_keys::mint),
+                )
                 // One-way publish entry point: CI (or local `oxy publish`)
                 // uploads a built bundle tarball; oxy stores it in S3 and
                 // points the draft (or published, with --promote) channel

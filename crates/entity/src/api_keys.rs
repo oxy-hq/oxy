@@ -16,6 +16,10 @@ pub struct Model {
     pub updated_at: DateTimeWithTimeZone,
     pub is_active: bool,
     pub project_id: Uuid,
+    /// When set, this key authenticates as the *customer app* (e.g. a
+    /// Vercel-hosted Next.js bundle's server-side calls back into oxy).
+    /// Nullable so CLI-style user-scoped keys stay unaffected.
+    pub app_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -36,6 +40,14 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Users,
+    #[sea_orm(
+        belongs_to = "super::apps::Entity",
+        from = "Column::AppId",
+        to = "super::apps::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Apps,
 }
 
 impl Related<super::users::Entity> for Entity {

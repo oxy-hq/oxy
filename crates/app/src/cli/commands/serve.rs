@@ -425,21 +425,25 @@ async fn create_web_application(
     let static_service = service_fn(handle_static_files);
 
     use crate::server::api::customer_apps_serve;
-    use axum::routing::get;
+    use axum::routing::any;
 
     let router = Router::new()
         .nest("/api", api_router)
         // Customer-app subpath bundle serving. Mounted at the top level (NOT
         // under /api) because the URL is browser-facing and must redirect to
         // /login on auth failure rather than return 401. The handler
-        // authenticates inline and serves the bundle from disk.
-        // One wildcard handler dispatches: legacy `/customer-apps/<uuid>/...`
-        // 301s to the canonical pretty URL, while
-        // `/customer-apps/<org_slug>/<app_slug>/...` resolves through the
-        // serve_pretty pipeline. See customer_apps_serve::serve_dispatch.
+        // authenticates inline and serves the bundle from disk OR (for
+        // remote-hosted source) reverse-proxies to the upstream — so we
+        // accept every method (POST form submits, Next.js Server Actions,
+        // bundle-internal `/api/*` fetches), not just GET.
+        //
+        // 32 MiB body ceiling to match the proxy's in-handler cap; without
+        // this layer axum's 2 MiB default rejects larger requests long
+        // before the proxy sees them.
         .route(
             "/customer-apps/{*path}",
-            get(customer_apps_serve::serve_dispatch),
+            any(customer_apps_serve::serve_dispatch)
+                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024)),
         )
         .merge(
             SwaggerUi::new("/apidoc")

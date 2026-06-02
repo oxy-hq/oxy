@@ -60,6 +60,11 @@ impl ApiKeyService {
             .map_err(|e| OxyError::DBError(format!("Database error: {}", e)))?
             .ok_or_else(|| OxyError::AuthenticationError("Invalid API key".to_string()))?;
 
+        // TODO(active-and-expiry-check): honour `is_active` and `expires_at`
+        // here. Today a revoked key (`is_active = false`) or an expired
+        // one still authenticates, so `revoke_api_key` is effectively a
+        // no-op at the auth path. Mirror site:
+        // `crates/app/src/server/api/customer_apps_api_keys.rs`.
         Ok(ValidatedApiKey {
             id: api_key.id,
             key: key.to_string(),
@@ -80,7 +85,10 @@ impl ApiKeyService {
         let api_key = ::entity::api_keys::ActiveModel {
             id: Set(uuid::Uuid::new_v4()),
             user_id: Set(params.user_id),
-            key_hash: Set(key.clone()), // In production, hash this properly
+            // TODO(hash-at-rest): store sha256(key) and have validate_api_key
+            // hash the lookup key. Flip in lockstep with the parallel TODO
+            // in `crates/app/src/server/api/customer_apps_api_keys.rs`.
+            key_hash: Set(key.clone()),
             name: Set(params.name.clone()),
             expires_at: Set(params.expires_at.map(|dt| dt.into())),
             created_at: Set(now.into()),
@@ -88,6 +96,10 @@ impl ApiKeyService {
             is_active: Set(true),
             project_id: Set(params.project_id),
             last_used_at: NotSet,
+            // CLI / user-scoped keys aren't bound to a customer-app row.
+            // See `crates/app/src/server/api/customer_apps_api_keys.rs`
+            // for the app-scoped mint path.
+            app_id: NotSet,
         };
 
         let result = api_key

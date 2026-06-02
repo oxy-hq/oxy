@@ -64,7 +64,12 @@ use super::customer_apps_cache::{
 /// Auth lives inside [`serve_resolved`] so the legacy-uuid redirect path
 /// can still bounce anonymous visitors through `/login?return_to=...`
 /// before they ever learn whether a given uuid is a real app.
-pub async fn serve_dispatch(Path(path): Path<String>, headers: HeaderMap, uri: Uri) -> Response {
+pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Request) -> Response {
+    let (parts, body) = request.into_parts();
+    let headers = parts.headers;
+    let uri = parts.uri;
+    let method = parts.method;
+
     // Strip the leading slash that axum hands us for a `{*path}` capture
     // when the URL is `/customer-apps/`. Split lazily into the first two
     // segments + the remainder; an empty path means /customer-apps/ which
@@ -74,9 +79,9 @@ pub async fn serve_dispatch(Path(path): Path<String>, headers: HeaderMap, uri: U
         return StatusCode::NOT_FOUND.into_response();
     }
 
-    let mut parts = trimmed.splitn(2, '/');
-    let first = parts.next().unwrap_or("");
-    let rest_after_first = parts.next().unwrap_or("");
+    let mut path_parts = trimmed.splitn(2, '/');
+    let first = path_parts.next().unwrap_or("");
+    let rest_after_first = path_parts.next().unwrap_or("");
 
     // Legacy uuid form: `/customer-apps/<uuid>/<rest>` → 301 to canonical.
     if let Ok(uuid) = first.parse::<Uuid>() {
@@ -95,15 +100,18 @@ pub async fn serve_dispatch(Path(path): Path<String>, headers: HeaderMap, uri: U
     };
     let rest = rest_parts.next().unwrap_or("").to_string();
 
-    serve_pretty(first, app_slug, rest, headers, uri).await
+    serve_pretty(first, app_slug, rest, method, headers, uri, body).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn serve_pretty(
     org_slug: &str,
     app_slug: &str,
     rest: String,
+    method: axum::http::Method,
     headers: HeaderMap,
     uri: Uri,
+    body: axum::body::Body,
 ) -> Response {
     // 1. Authenticate FIRST so an unauthenticated probe can't distinguish a
     //    real registered (org, app) pair (302 redirect) from a fake one
@@ -227,7 +235,23 @@ async fn serve_pretty(
 
     use super::customer_apps_source::AppSource;
     match source {
-        AppSource::V0 { url } => render_v0_iframe(&url, &app.name).into_response(),
+        AppSource::V0 { url } => {
+            super::customer_apps_proxy::proxy(
+                &url,
+                &rest,
+                method,
+                &uri,
+                &headers,
+                body,
+                super::customer_apps_proxy::ProxyIdentity {
+                    app: &app,
+                    org: &org,
+                    user_id: user.id,
+                    user_email: &user.email,
+                },
+            )
+            .await
+        }
         AppSource::LocalFolder { path } => {
             // LocalFolder has no draft/published split — one directory
             // serves everyone. Publishing for these sources is purely a
@@ -414,42 +438,6 @@ impl AppRuntimeConfig {
     }
 }
 
-/// Render the wrapper HTML for a v0-source app. The browser navigates here
-/// after the auth + membership check passes; the iframe then loads the v0
-/// URL with no further oxy involvement. Because v0 pages are entirely
-/// self-contained (no oxy data fetches), there's no shared-session story to
-/// hand off — the iframe is decorative content.
-fn render_v0_iframe(url: &str, app_name: &str) -> Response {
-    let safe_url = html_escape_attr(url);
-    let safe_title = html_escape_text(app_name);
-    let body = format!(
-        r##"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{safe_title}</title>
-  <style>
-    html, body {{ height: 100%; margin: 0; }}
-    iframe {{ width: 100%; height: 100%; border: 0; display: block; }}
-  </style>
-</head>
-<body>
-  <iframe src="{safe_url}" referrerpolicy="no-referrer" allow="clipboard-write"></iframe>
-</body>
-</html>
-"##
-    );
-    (
-        [
-            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-cache"),
-        ],
-        body,
-    )
-        .into_response()
-}
-
 async fn serve_from_local(
     id: Uuid,
     configured_path: &StdPath,
@@ -533,19 +521,6 @@ async fn serve_from_dir(
         invalidate_cached_canonical_dir(id, channel_key);
     }
     response
-}
-
-fn html_escape_attr(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-fn html_escape_text(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 fn redirect_to_login(headers: &HeaderMap, uri: &Uri) -> Redirect {
