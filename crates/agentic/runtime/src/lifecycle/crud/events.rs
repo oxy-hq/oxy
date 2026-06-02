@@ -1,9 +1,11 @@
 //! CRUD on the `agentic_run_events` table.
 
+use std::collections::HashMap;
+
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ActiveValue::*, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
-    TransactionTrait,
+    ActiveValue::*, ColumnTrait, DatabaseBackend, DatabaseConnection, DbErr, EntityTrait,
+    FromQueryResult, QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
 use serde_json::Value;
 
@@ -128,6 +130,49 @@ pub async fn get_all_events(db: &DatabaseConnection, run_id: &str) -> Result<Vec
             attempt: m.attempt,
         })
         .collect())
+}
+
+/// Batched variant of [`get_all_events`] — one SQL round-trip for an entire
+/// set of run IDs. Returns a map from `run_id` to its ordered event rows.
+/// Run IDs absent from the result had no events.
+pub async fn get_all_events_for_runs(
+    db: &DatabaseConnection,
+    run_ids: &[String],
+) -> Result<HashMap<String, Vec<EventRow>>, DbErr> {
+    if run_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    #[derive(FromQueryResult)]
+    struct RawRow {
+        run_id: String,
+        seq: i64,
+        event_type: String,
+        payload: Value,
+        attempt: i32,
+    }
+
+    let rows = RawRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT run_id, seq, event_type, payload, attempt \
+         FROM agentic_run_events \
+         WHERE run_id = ANY($1) \
+         ORDER BY run_id, seq",
+        [run_ids.to_vec().into()],
+    ))
+    .all(db)
+    .await?;
+
+    let mut map: HashMap<String, Vec<EventRow>> = HashMap::new();
+    for row in rows {
+        map.entry(row.run_id).or_default().push(EventRow {
+            seq: row.seq,
+            event_type: row.event_type,
+            payload: row.payload,
+            attempt: row.attempt,
+        });
+    }
+    Ok(map)
 }
 
 pub async fn delete_events_from_seq(

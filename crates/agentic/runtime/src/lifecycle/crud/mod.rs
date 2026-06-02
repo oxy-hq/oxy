@@ -17,8 +17,8 @@ pub mod runs;
 pub mod suspension;
 
 pub use events::{
-    EventRow, batch_insert_events, delete_events_from_seq, get_all_events, get_events_after,
-    get_max_seq, insert_event,
+    EventRow, batch_insert_events, delete_events_from_seq, get_all_events, get_all_events_for_runs,
+    get_events_after, get_max_seq, insert_event,
 };
 pub use queries::{
     AirwayTableSummary, LlmTokenSummary, LlmTokenSummaryByRun, ScheduleDurationBaseline,

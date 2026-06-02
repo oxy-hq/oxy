@@ -235,6 +235,9 @@ jobs:
           client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          # Fetch-only: this token just lets cargo read private git deps.
+          # Scope to read-only contents so a leaked token can't push.
+          permission-contents: read
           repositories: |
             airlayer
             airform
@@ -267,14 +270,19 @@ jobs:
       # airform, airlayer, snowflake-rs). The default checkout token
       # only auths THIS repo, so a fresh `rev` bump forces an
       # unauthenticated fetch that fails with "revision not found".
-      # Rewrite oxy-hq HTTPS remotes to carry a read-only token. Scoped
-      # to github.com/oxy-hq/ so public crates are unaffected. Must run
-      # before any cargo step (git-fetch-with-cli is on in .cargo/config).
-      - name: Auth git for private cargo deps
+      # `git-fetch-with-cli` is on (.cargo/config.toml), so cargo shells
+      # out to git, which uses gh as its credential helper — no token
+      # baked into a URL rewrite. This mirrors the local flow exactly:
+      # `gh auth login` + `gh auth setup-git`, then cargo fetches private
+      # deps for free. --with-token stores the app token in gh's config
+      # so the helper resolves it on later cargo steps without re-passing
+      # it. Must run before any cargo step.
+      - name: Authenticate gh for private cargo git deps
+        env:
+          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          git config --global \
-            url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/oxy-hq/".insteadOf \
-            "https://github.com/oxy-hq/"
+          echo "$GH_APP_TOKEN" | gh auth login --with-token
+          gh auth setup-git
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -775,7 +783,7 @@ jobs:
   # required inputs.
   agentic-tests:
     name: Agentic browser tests
-    needs: [ changesets, cargo-check-and-test ]
+    needs: [changesets, cargo-check-and-test]
     if: |
       github.repository == 'oxy-hq/oxygen-internal' && (
         inputs.agentic_only == true ||

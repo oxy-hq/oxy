@@ -140,7 +140,7 @@ jobs:
   # ============================================================================
   changesets:
     name: Changesets
-    needs: [ determine-build-type ]
+    needs: [determine-build-type]
     if: needs.determine-build-type.outputs.needs_changesets == 'true'
     uses: ./.github/workflows/changesets.yaml
 
@@ -155,7 +155,7 @@ jobs:
   # ============================================================================
   build-web-app:
     name: Build web-app
-    needs: [ determine-build-type, changesets ]
+    needs: [determine-build-type, changesets]
     if: |
       always() &&
       needs.determine-build-type.result == 'success' &&
@@ -200,7 +200,8 @@ jobs:
           path: |
             web-app/tsconfig.app.tsbuildinfo
             web-app/tsconfig.node.tsbuildinfo
-          key: typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json',
+          key:
+            typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json',
             'web-app/src/**/*.ts', 'web-app/src/**/*.tsx') }}
           restore-keys: |
             typescript-${{ runner.os }}-
@@ -244,7 +245,7 @@ jobs:
   build-cli:
     name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for ${{
       matrix.job.target }}
-    needs: [ determine-build-type, build-web-app ]
+    needs: [determine-build-type, build-web-app]
     if: |
       always() &&
       needs.determine-build-type.result == 'success' &&
@@ -268,6 +269,7 @@ jobs:
           client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          permission-contents: read
           repositories: |
             airlayer
             airform
@@ -308,13 +310,17 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Private cargo git deps live under github.com/oxy-hq/* (airway,
-      # airform, airlayer, snowflake-rs). Rewrite oxy-hq HTTPS remotes to
-      # carry a read-only token so `cargo build` can fetch them.
-      - name: Auth git for private cargo deps
+      # airform, airlayer, snowflake-rs). `git-fetch-with-cli` is on
+      # (.cargo/config.toml), so cargo shells out to git, which uses gh
+      # as its credential helper — no token baked into a URL rewrite.
+      # --with-token stores the app token in gh's config so the helper
+      # resolves it during `cargo build` without re-passing it.
+      - name: Authenticate gh for private cargo git deps
+        env:
+          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          git config --global \
-            url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/oxy-hq/".insteadOf \
-            "https://github.com/oxy-hq/"
+          echo "$GH_APP_TOKEN" | gh auth login --with-token
+          gh auth setup-git
 
       # Install protoc from the OS package manager instead of arduino/setup-protoc
       # to avoid GitHub release rate limits / outages.
@@ -363,7 +369,7 @@ jobs:
   release-cli:
     name: Release ${{ needs.determine-build-type.outputs.channel }} CLI
     runs-on: ubuntu-latest
-    needs: [ determine-build-type, build-cli ]
+    needs: [determine-build-type, build-cli]
     # Concurrency: Lock releases per channel and version/ref; queue (don't cancel)
     # so commits release in push order.
     concurrency:
@@ -477,7 +483,7 @@ jobs:
   build-docker-images:
     name: Build ${{ needs.determine-build-type.outputs.channel }} Docker for ${{
       matrix.arch }}
-    needs: [ determine-build-type, build-cli ]
+    needs: [determine-build-type, build-cli]
     if: |
       always() &&
       needs.build-cli.result == 'success' &&
@@ -566,7 +572,7 @@ jobs:
   # ============================================================================
   trivy-image-scan:
     name: Trivy Docker Image Scan
-    needs: [ determine-build-type, build-docker-images ]
+    needs: [determine-build-type, build-docker-images]
     if: |
       always() &&
       needs.build-docker-images.result == 'success'
@@ -627,7 +633,7 @@ jobs:
   # ============================================================================
   create-manifests:
     name: Create ${{ needs.determine-build-type.outputs.channel }} manifest
-    needs: [ determine-build-type, build-docker-images ]
+    needs: [determine-build-type, build-docker-images]
     concurrency:
       group: manifest-${{ needs.determine-build-type.outputs.channel }}
       cancel-in-progress: false
@@ -672,7 +678,7 @@ jobs:
   # ============================================================================
   deployment-summary:
     name: Create Deployment Summary
-    needs: [ determine-build-type, create-manifests ]
+    needs: [determine-build-type, create-manifests]
     if: |
       always() &&
       needs.create-manifests.result == 'success'

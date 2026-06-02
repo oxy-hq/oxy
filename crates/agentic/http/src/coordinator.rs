@@ -666,33 +666,49 @@ pub async fn get_run_tree(
     // waterfall view needs: state transitions, LLM rounds, tool calls,
     // thinking blocks. Token-level chatter is filtered out so the
     // payload size stays bounded on long runs.
+    //
+    // Fetch all events in one batched query instead of one per node to
+    // avoid N sequential round-trips for large workflow trees.
+    let enriched_run_ids: Vec<String> = nodes
+        .iter()
+        .filter(|n| {
+            matches!(
+                n.source_type.as_str(),
+                "preagg_cycle" | "analytics" | "builder" | "workflow" | "airway"
+            )
+        })
+        .map(|n| n.run_id.clone())
+        .collect();
+    let mut events_by_run = db::get_all_events_for_runs(&db, &enriched_run_ids)
+        .await
+        .unwrap_or_default();
     for node in &mut nodes {
+        let events = match events_by_run.remove(&node.run_id) {
+            Some(e) => e,
+            None => continue,
+        };
         match node.source_type.as_str() {
             "preagg_cycle" => {
-                if let Ok(events) = db::get_all_events(&db, &node.run_id).await {
-                    node.event_log = events
-                        .into_iter()
-                        .filter(|e| e.event_type.starts_with("preagg_rollup"))
-                        .map(|e| RunEventEntry {
-                            seq: e.seq,
-                            event_type: e.event_type,
-                            payload: e.payload,
-                        })
-                        .collect();
-                }
+                node.event_log = events
+                    .into_iter()
+                    .filter(|e| e.event_type.starts_with("preagg_rollup"))
+                    .map(|e| RunEventEntry {
+                        seq: e.seq,
+                        event_type: e.event_type,
+                        payload: e.payload,
+                    })
+                    .collect();
             }
             "analytics" | "builder" | "workflow" | "airway" => {
-                if let Ok(events) = db::get_all_events(&db, &node.run_id).await {
-                    node.event_log = events
-                        .into_iter()
-                        .filter(|e| is_waterfall_event(&e.event_type))
-                        .map(|e| RunEventEntry {
-                            seq: e.seq,
-                            event_type: e.event_type,
-                            payload: e.payload,
-                        })
-                        .collect();
-                }
+                node.event_log = events
+                    .into_iter()
+                    .filter(|e| is_waterfall_event(&e.event_type))
+                    .map(|e| RunEventEntry {
+                        seq: e.seq,
+                        event_type: e.event_type,
+                        payload: e.payload,
+                    })
+                    .collect();
             }
             _ => {}
         }
