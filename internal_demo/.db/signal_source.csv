@@ -1,0 +1,2 @@
+source_id,provider,signal_type,endpoint,license,attribution,fetched_cadence
+1,open_meteo,weather,https://archive-api.open-meteo.com/v1/archive,CC BY 4.0,Weather data by Open-Meteo.com,daily

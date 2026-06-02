@@ -10,6 +10,7 @@ context:
   - ./semantics/**/*
   - ./sales_semantics/**/*
   - ./airhouse_semantics/**/*
+  - ./enrichment_semantics/**/*
   - ./workflows/**/*.procedure.yml
   - ./example_sql/*.sql
 states:

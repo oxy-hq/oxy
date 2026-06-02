@@ -415,43 +415,44 @@ impl PipelineTaskExecutor {
         Ok(worker.execute(spec))
     }
 
-    /// Substitute the Toast source's `*_var` credential references with
-    /// values from the platform secret manager, then strip the `_var`
-    /// keys so the connector factory sees only resolved literals.
-    /// Toast-specific by design — each vendor source opts in explicitly.
+    /// Substitute a source's `*_var` credential references with values from the
+    /// platform secret manager, then strip the `_var` keys so the connector
+    /// factory sees only resolved literals. Each vendor source opts in
+    /// explicitly to the (field, var-key) pairs it manages as secrets.
     async fn resolve_airway_source_secrets(
         &self,
         spec: &mut agentic_airway::AirwayPipelineSpec,
     ) -> Result<(), String> {
-        if spec.source.kind != "toast" {
-            return Ok(());
-        }
+        let kind = spec.source.kind.clone();
+        // (field, var-key) pairs each vendor source supports as managed secrets.
+        let pairs: &[(&str, &str)] = match kind.as_str() {
+            "toast" => &[
+                ("client_secret", "client_secret_var"),
+                ("client_id", "client_id_var"),
+            ],
+            // Open-Meteo commercial API key → routes the connector to the paid
+            // `customer-*` endpoint (the keyless endpoint is non-commercial only).
+            "weather" => &[("api_key", "api_key_var")],
+            _ => return Ok(()),
+        };
         let Some(obj) = spec.source.config.as_object_mut() else {
             return Ok(());
         };
-        // (field, var-key) pairs Toast supports as managed secrets.
-        for (field, var_key) in [
-            ("client_secret", "client_secret_var"),
-            ("client_id", "client_id_var"),
-        ] {
-            let Some(var_val) = obj.get(var_key) else {
+        for (field, var_key) in pairs {
+            let Some(var_val) = obj.get(*var_key) else {
                 continue;
             };
             let var_name = var_val
                 .as_str()
-                .ok_or_else(|| format!("airway toast: `{var_key}` must be a string secret name"))?;
-            let secret = self
-                .platform
-                .resolve_secret(var_name)
-                .await
-                .ok_or_else(|| {
-                    format!(
-                        "airway toast: secret `{var_name}` (referenced by `{var_key}`) \
+                .ok_or_else(|| format!("airway {kind}: `{var_key}` must be a string secret name"))?;
+            let secret = self.platform.resolve_secret(var_name).await.ok_or_else(|| {
+                format!(
+                    "airway {kind}: secret `{var_name}` (referenced by `{var_key}`) \
                      could not be resolved from the secret manager"
-                    )
-                })?;
-            obj.insert(field.to_string(), serde_json::Value::String(secret));
-            obj.remove(var_key);
+                )
+            })?;
+            obj.insert((*field).to_string(), serde_json::Value::String(secret));
+            obj.remove(*var_key);
         }
         Ok(())
     }

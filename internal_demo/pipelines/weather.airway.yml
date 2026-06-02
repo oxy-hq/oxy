@@ -1,0 +1,45 @@
+name: weather
+description: >
+  External-signal enrichment: daily weather per business location from
+  Open-Meteo (keyless, CC BY 4.0). Emits two resources — `weather_daily`
+  (observed/recent, merged on location_id+date) and `weather_daily_forecast`
+  (forecast horizon, appended and versioned by issued_at). This is the
+  production ingestion path for the data-enrichment pattern; see
+  internal-docs/data-enrichment-pattern.md.
+
+source:
+  kind: weather
+  config:
+    provider: open_meteo
+    # COMMERCIAL USE: the keyless endpoint is non-commercial only. For
+    # production, reference an Open-Meteo commercial key from the secret
+    # manager — the executor resolves `api_key_var` → `api_key` and the
+    # connector then calls the paid `customer-*` endpoint. (Self-hosting is
+    # the other licensed path: set `base_url`/`archive_url` to your server.)
+    # api_key_var: OPEN_METEO_API_KEY
+    locations:
+      - { id: 1, latitude: 37.8037, longitude: -122.4368, timezone: America/Los_Angeles }  # SF Marina
+      - { id: 2, latitude: 37.8044, longitude: -122.2712, timezone: America/Los_Angeles }  # Oakland
+      - { id: 3, latitude: 37.3210, longitude: -121.9486, timezone: America/Los_Angeles }  # San Jose
+      - { id: 4, latitude: 38.5689, longitude: -121.4688, timezone: America/Los_Angeles }  # Sacramento
+      - { id: 5, latitude: 47.6253, longitude: -122.3222, timezone: America/Los_Angeles }  # Seattle
+      - { id: 6, latitude: 45.5289, longitude: -122.6839, timezone: America/Los_Angeles }  # Portland
+      - { id: 7, latitude: 30.2500, longitude: -97.7500,  timezone: America/Chicago }      # Austin
+      - { id: 8, latitude: 41.8786, longitude: -87.6251,  timezone: America/Chicago }      # Chicago
+    past_days: 92      # recent observed history for weather_daily (max 92)
+    forecast_days: 16  # forecast horizon for weather_daily_forecast (max 16)
+
+destination:
+  # DEMO destination: in-process `memory` so the pipeline runs live in the
+  # UI (IDE → Pipelines → Run) with no warehouse infra — it fetches real
+  # Open-Meteo data and animates the monitor; the rows are ephemeral.
+  # PRODUCTION points this at a config.yml database instead, e.g.
+  #   database: local-acme   # airhouse_managed
+  #   dataset_name: weather
+  # and the enrichment views' `datasource` is repointed to that warehouse.
+  kind: memory
+  config:
+    dataset_name: weather
+
+# One request per location; bump if backfilling many locations at once.
+concurrency: 4

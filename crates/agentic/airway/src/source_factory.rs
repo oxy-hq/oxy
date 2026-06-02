@@ -20,6 +20,7 @@ use airway::connector::sources::postgres_cdc::PostgresCdcSource;
 use airway::connector::sources::rest_api::{RestApiConfig, RestApiSource};
 use airway::connector::sources::sql_database::{DatabaseBackend, SqlDatabaseSource, TableConfig};
 use airway::connector::sources::toast::ToastSource;
+use airway::connector::sources::weather::{WeatherConfig, weather_source};
 use airway::types::WriteDisposition;
 use serde::Deserialize;
 use serde_json::Value;
@@ -41,6 +42,7 @@ pub fn build_source_connector(
         "sql_database" => build_sql_database(&config.config),
         "postgres_cdc" => build_postgres_cdc(&config.config),
         "toast" => build_toast(&config.config),
+        "weather" => build_weather(&config.config),
         other => Err(AirwayError::Other(format!(
             "unsupported source kind `{other}`. Wire it up in \
              agentic_airway::source_factory::build_source_connector \
@@ -275,6 +277,24 @@ fn build_toast(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
     Ok(Box::new(source))
 }
 
+// ── weather (Open-Meteo) ───────────────────────────────────────────────────────
+
+fn build_weather(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    // airway's `WeatherConfig` derives `Deserialize` and owns its own
+    // defaults/validation, so — unlike toast/sql_database — we reuse it
+    // directly rather than mirroring a params struct here.
+    let config: WeatherConfig = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid weather config: {e}")))?;
+    if config.locations.is_empty() {
+        return Err(AirwayError::Other(
+            "weather config: `locations` must list at least one location".into(),
+        ));
+    }
+    let source = weather_source(config)
+        .map_err(|e| AirwayError::Other(format!("weather source init failed: {e}")))?;
+    Ok(Box::new(source))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,6 +413,28 @@ mod tests {
         .err()
         .expect("expected error");
         assert!(err.to_string().contains("invalid toast config"));
+    }
+
+    #[test]
+    fn weather_builds_with_locations() {
+        let source = build_source_connector(&cfg(
+            "weather",
+            json!({
+                "locations": [
+                    { "id": 1, "latitude": 37.7749, "longitude": -122.4194 }
+                ],
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "weather");
+    }
+
+    #[test]
+    fn weather_rejects_empty_locations() {
+        let err = build_source_connector(&cfg("weather", json!({ "locations": [] })))
+            .err()
+            .expect("expected error");
+        assert!(err.to_string().contains("locations"));
     }
 
     #[test]

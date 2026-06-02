@@ -1,0 +1,9 @@
+location_id,name,brand,city,state,latitude,longitude,timezone
+1,Marina,Oxy Poke Co.,San Francisco,CA,37.8037,-122.4368,America/Los_Angeles
+2,Downtown,Oxy Poke Co.,Oakland,CA,37.8044,-122.2712,America/Los_Angeles
+3,Santana Row,Oxy Poke Co.,San Jose,CA,37.321,-121.9486,America/Los_Angeles
+4,Midtown,Oxy Poke Co.,Sacramento,CA,38.5689,-121.4688,America/Los_Angeles
+5,Capitol Hill,Oxy Poke Co.,Seattle,WA,47.6253,-122.3222,America/Los_Angeles
+6,Pearl District,Oxy Poke Co.,Portland,OR,45.5289,-122.6839,America/Los_Angeles
+7,South Congress,Oxy Poke Co.,Austin,TX,30.25,-97.75,America/Chicago
+8,The Loop,Oxy Poke Co.,Chicago,IL,41.8786,-87.6251,America/Chicago
