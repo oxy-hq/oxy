@@ -173,6 +173,24 @@ pub fn build_layer<P: AsRef<Path>>(paths: &[P]) -> Result<airlayer::SemanticLaye
     Ok(airlayer::SemanticLayer::new(views, topic_opt))
 }
 
+/// Directory names that are never descended into when discovering semantic
+/// files: hidden dirs plus the usual build-output dirs.
+///
+/// The load-bearing entry is `.worktrees/` — a git worktree there holds a
+/// *full* copy of the project (see `oxy_git`'s `get_or_create_worktree`), so a
+/// blind recursive walk re-discovers every `.view.yml` through the worktree
+/// copy and engine construction then fails with "Duplicate view name". This is
+/// branch/prod-only: a workspace that has ever checked out a non-default branch
+/// in the IDE has a worktree on disk, while a fresh local checkout does not.
+/// `.git` / `.repositories` / `.oxy_state` are skipped for the same reason.
+///
+/// Mirrors the skip list in `oxy_semantic`'s parser and the IDE file-tree's
+/// `HIDDEN_DIRS` so every walker over the workspace agrees on what is and isn't
+/// project source.
+fn is_skipped_dir(name: &str) -> bool {
+    name.starts_with('.') || matches!(name, "target" | "node_modules" | "dist" | "build")
+}
+
 /// Recursively collect `.view.yml` / `.topic.yml` files under `root`.
 fn collect_semantic_paths(root: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(root) else {
@@ -181,6 +199,13 @@ fn collect_semantic_paths(root: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(is_skipped_dir)
+            {
+                continue;
+            }
             collect_semantic_paths(&path, out);
         } else if let Some(name) = path.file_name().and_then(|n| n.to_str())
             && (is_view_file(name) || is_topic_file(name))
@@ -484,6 +509,51 @@ mod tests {
         assert_eq!(layer.views.len(), 1);
         assert_eq!(layer.views[0].datasource.as_deref(), Some("warehouse"));
         assert_eq!(layer.topics.as_ref().map(|t| t.len()), Some(1));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_layer_from_dir_skips_worktree_and_state_copies() {
+        // Reproduces the prod "Duplicate view name" failure. A branch worktree
+        // under `.worktrees/` holds a full copy of the project's semantic
+        // files; scanning the workspace root must not re-discover them, or
+        // engine construction fails with duplicate view names. Locally this
+        // dir is empty so the bug never surfaces — hence "works on local,
+        // errors on prod".
+        let dir = std::env::temp_dir().join(format!("alc_wt_{}", std::process::id()));
+        let views = dir.join("semantics/views");
+        std::fs::create_dir_all(&views).unwrap();
+        std::fs::write(
+            views.join("orders.view.yml"),
+            "name: orders\ndata_source: warehouse\ntable: orders\n",
+        )
+        .unwrap();
+
+        // Full copies of the same view in dirs other walkers already skip:
+        // a git worktree checkout and the oxy state dir.
+        for copy in [
+            ".worktrees/feature-x/semantics/views",
+            ".oxy_state/cache/semantics/views",
+        ] {
+            let p = dir.join(copy);
+            std::fs::create_dir_all(&p).unwrap();
+            std::fs::write(
+                p.join("orders.view.yml"),
+                "name: orders\ndata_source: warehouse\ntable: orders\n",
+            )
+            .unwrap();
+        }
+
+        let layer = load_layer_from_dir(&dir).expect("dir load");
+        assert_eq!(
+            layer.views.len(),
+            1,
+            "copies under hidden dirs (.worktrees/, .oxy_state/) must not be re-discovered"
+        );
+        // The real failure was at engine construction — assert it builds clean.
+        airlayer::SemanticEngine::from_semantic_layer(layer, airlayer::DatasourceDialectMap::new())
+            .expect("engine builds without a duplicate-view-name error");
 
         std::fs::remove_dir_all(&dir).ok();
     }
