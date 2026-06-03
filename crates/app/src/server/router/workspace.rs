@@ -13,10 +13,11 @@ use axum::routing::{delete, get, post, put};
 use agentic_http::{AgenticState, airway_router, router as agentic_router, workflow_router};
 
 use crate::api::{
-    agent, api_keys, app, artifacts, chart, data, data_repo, database, execution_analytics,
-    exported_chart, file, integration, local_setup, message, metrics, modeling, onboarding,
-    result_files, run, schedules, semantic, task, test_file, test_project_run, test_run, thread,
-    traces, workspace_custom_apps, workspace_members, workspace_oxy_access, workspaces,
+    agent, api_keys, app, apps, artifacts, chart, data, data_repo, database, execution_analytics,
+    exported_chart, file, foot_traffic, integration, local_setup, message, metrics, modeling,
+    onboarding, result_files, run, schedules, semantic, task, test_file, test_project_run,
+    test_run, thread, traces, video, workspace_custom_apps, workspace_members,
+    workspace_oxy_access, workspaces, world_model,
 };
 
 use super::AppState;
@@ -58,6 +59,7 @@ pub(super) fn build_workspace_routes(
         )
         .route("/custom-apps", get(workspace_custom_apps::list_custom_apps))
         .nest("/apps", build_app_routes())
+        .nest("/app-integrations", build_app_integration_routes())
         .nest("/tests", build_test_file_routes())
         .nest("/traces", traces::traces_routes())
         .nest("/metrics", metrics::metrics_routes())
@@ -111,6 +113,31 @@ pub(super) fn build_workspace_routes(
         .route("/semantic/compile", post(semantic::compile_semantic_query))
         .route("/semantic", post(semantic::execute_semantic_query))
         .route(
+            "/world-model/events",
+            get(world_model::world_model_events_sse),
+        )
+        .route("/world-model/cameras", get(video::list_cameras))
+        .route(
+            "/world-model/objects",
+            get(world_model::world_model_objects),
+        )
+        .route(
+            "/world-model/weather/{layer}/{z}/{x}/{y}",
+            get(video::weather_tile),
+        )
+        .route(
+            "/world-model/weather/current",
+            post(video::weather_current_batch),
+        )
+        .route(
+            "/world-model/foot-traffic/current",
+            post(foot_traffic::foot_traffic_current_batch),
+        )
+        .route(
+            "/world-model/foot-traffic/radar",
+            post(foot_traffic::foot_traffic_radar_batch),
+        )
+        .route(
             "/results/files/{file_id}",
             get(result_files::get_result_file),
         )
@@ -142,6 +169,50 @@ pub(super) fn build_workspace_routes(
     }
 
     router
+}
+
+/// Curated subset of workspace routes for the EXTERNAL API surface
+/// (`/external/api/{workspace_id}/...`): just the query + agent + world-model
+/// endpoints a standalone app needs, WITHOUT the IDE / file / git / admin /
+/// settings surface. Mounted with API-key-only auth + wide-open CORS by
+/// [`super::protected::build_external_api_router`]. Reuses the exact same
+/// handler functions as `build_workspace_routes`, so behavior is identical —
+/// only the auth + CORS wrapper differs.
+pub(super) fn build_external_workspace_routes(
+    agentic_state: Arc<AgenticState>,
+) -> Router<AppState> {
+    Router::new()
+        .route("/sql/query", post(data::execute_sql_query))
+        .route("/semantic", post(semantic::execute_semantic_query))
+        .route("/semantic/compile", post(semantic::compile_semantic_query))
+        .route(
+            "/world-model/events",
+            get(world_model::world_model_events_sse),
+        )
+        .route("/world-model/cameras", get(video::list_cameras))
+        .route(
+            "/world-model/objects",
+            get(world_model::world_model_objects),
+        )
+        .route(
+            "/world-model/weather/{layer}/{z}/{x}/{y}",
+            get(video::weather_tile),
+        )
+        .route(
+            "/world-model/weather/current",
+            post(video::weather_current_batch),
+        )
+        .route(
+            "/world-model/foot-traffic/current",
+            post(foot_traffic::foot_traffic_current_batch),
+        )
+        .route(
+            "/world-model/foot-traffic/radar",
+            post(foot_traffic::foot_traffic_radar_batch),
+        )
+        // Agentic analytics: POST /analytics/runs, the SSE events stream,
+        // /answer, /cancel, /threads/* — the chat surface external apps drive.
+        .nest("/analytics", agentic_router(agentic_state))
 }
 
 /// Git-backed workspace routes: local and remote git operations on the
@@ -353,6 +424,15 @@ fn build_test_file_routes() -> Router<AppState> {
             "/{pathb64}/runs/{run_index}/cases/{case_index}/human-verdict",
             put(test_run::set_human_verdict),
         )
+}
+
+/// World-model "Apps" configuration routes — Toast / OpenWeatherMap /
+/// BestTime integration entries surfaced in the Workspace Settings →
+/// Apps tab. Separate from `build_app_routes` (data apps).
+fn build_app_integration_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(apps::list_apps).post(apps::upsert_app))
+        .route("/{kind}", delete(apps::delete_app))
 }
 
 #[cfg(test)]

@@ -199,6 +199,14 @@ pub enum IntegrationType {
     Omni(OmniIntegration),
     #[serde(rename = "looker")]
     Looker(LookerIntegration),
+    #[serde(rename = "toast")]
+    Toast(ToastIntegration),
+    #[serde(rename = "openweathermap")]
+    OpenWeatherMap(OpenWeatherMapIntegration),
+    #[serde(rename = "besttime")]
+    BestTime(BestTimeIntegration),
+    #[serde(rename = "unifi")]
+    Unifi(UnifiIntegration),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -266,6 +274,59 @@ pub struct LookerExplore {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub description: Option<String>,
+}
+
+/// Toast POS webhook integration.
+///
+/// The webhook receiver at `POST /api/webhooks/toast/orders?project_id=...`
+/// validates incoming payloads with the secret referenced by
+/// `webhook_secret_var` (HMAC-SHA256 over body + timestamp).
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct ToastIntegration {
+    /// Environment variable / workspace secret name containing the
+    /// Toast webhook signing secret.
+    #[garde(custom(validate_env_var))]
+    pub webhook_secret_var: String,
+    /// Restaurant GUIDs this workspace is authorized to receive events
+    /// for. Empty list = accept all (dev convenience).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[garde(skip)]
+    pub restaurant_guids: Vec<String>,
+}
+
+/// OpenWeatherMap weather data integration.
+///
+/// Powers the world-model weather tile proxy and current-weather batch
+/// endpoint. Reads `api_key_var` from workspace secrets.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct OpenWeatherMapIntegration {
+    #[garde(custom(validate_env_var))]
+    pub api_key_var: String,
+}
+
+/// BestTime foot-traffic integration.
+///
+/// Powers the world-model foot-traffic and radar endpoints. Reads
+/// `api_key_var` from workspace secrets.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct BestTimeIntegration {
+    #[garde(custom(validate_env_var))]
+    pub api_key_var: String,
+}
+
+/// UniFi camera integration.
+///
+/// Powers the world-model camera proxy (UniFi Site Manager devices). Reads
+/// `api_key_var` from workspace secrets, mirroring the weather/foot-traffic
+/// integrations instead of reading a raw process env var.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct UnifiIntegration {
+    #[garde(custom(validate_env_var))]
+    pub api_key_var: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]

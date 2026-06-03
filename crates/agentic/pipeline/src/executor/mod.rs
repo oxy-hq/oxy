@@ -442,15 +442,19 @@ impl PipelineTaskExecutor {
             let Some(var_val) = obj.get(*var_key) else {
                 continue;
             };
-            let var_name = var_val
-                .as_str()
-                .ok_or_else(|| format!("airway {kind}: `{var_key}` must be a string secret name"))?;
-            let secret = self.platform.resolve_secret(var_name).await.ok_or_else(|| {
-                format!(
-                    "airway {kind}: secret `{var_name}` (referenced by `{var_key}`) \
-                     could not be resolved from the secret manager"
-                )
+            let var_name = var_val.as_str().ok_or_else(|| {
+                format!("airway {kind}: `{var_key}` must be a string secret name")
             })?;
+            let secret = self
+                .platform
+                .resolve_secret(var_name)
+                .await
+                .ok_or_else(|| {
+                    format!(
+                        "airway {kind}: secret `{var_name}` (referenced by `{var_key}`) \
+                     could not be resolved from the secret manager"
+                    )
+                })?;
             obj.insert((*field).to_string(), serde_json::Value::String(secret));
             obj.remove(*var_key);
         }

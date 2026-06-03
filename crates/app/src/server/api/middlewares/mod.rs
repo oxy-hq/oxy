@@ -1,3 +1,4 @@
+pub mod api_key_query;
 pub mod local_context;
 pub mod org_context;
 pub mod oxy_app_admin_guard;

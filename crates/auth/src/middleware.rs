@@ -119,6 +119,46 @@ pub async fn auth_middleware<T: Authenticator>(
     Ok(next.run(request).await)
 }
 
+/// Authenticate strictly via the `X-API-Key` header — no session cookie, no
+/// bearer token, no guest fallback. Used by the external API surface
+/// (`/external/api/*`), which is served with wide-open CORS. That is safe
+/// precisely *because* this middleware only accepts an API key: an API key is
+/// not an ambient browser credential (unlike the `oxy_session` cookie), so a
+/// malicious cross-origin page cannot read it or have the browser attach it
+/// automatically — there is no CSRF vector. The cookie-accepting
+/// [`auth_middleware`] must never be combined with `*`-origin CORS for the
+/// same reason.
+pub async fn api_key_only_middleware(
+    mut request: Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // CORS preflight carries no credentials and must pass through.
+    if request.method() == Method::OPTIONS {
+        return Ok(next.run(request).await);
+    }
+
+    let identity = crate::api_key_infra::authenticate_header(request.headers())
+        .await
+        .map_err(|err| {
+            tracing::warn!("external API: X-API-Key authentication failed: {err}");
+            StatusCode::UNAUTHORIZED
+        })?;
+
+    let user = UserService::get_or_create_user(&identity)
+        .await
+        .map_err(|e| {
+            tracing::error!("external API: failed to resolve user from API key: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    if user.status != UserStatus::Active {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    request.extensions_mut().insert(user);
+    Ok(next.run(request).await)
+}
+
 /// Middleware for the internal port that auto-authenticates as an internal user.
 /// Uses UserService::get_or_create_user to ensure the user exists in the database,
 /// so that foreign key constraints in downstream handlers work correctly.

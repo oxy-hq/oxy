@@ -33,7 +33,9 @@ async fn missing_cookie_returns_401() {
         return;
     }
     force_auth_configured();
-    let router = api_router(
+    // `api_router` returns (app_router, external_router); these tests exercise
+    // the main app surface (`/projects/...`), so the external router is unused.
+    let (router, _external) = api_router(
         ServeMode::Local,
         false,
         None,
@@ -62,7 +64,9 @@ async fn empty_body_with_no_cookie_returns_401() {
         return;
     }
     force_auth_configured();
-    let router = api_router(
+    // `api_router` returns (app_router, external_router); these tests exercise
+    // the main app surface (`/projects/...`), so the external router is unused.
+    let (router, _external) = api_router(
         ServeMode::Local,
         false,
         None,

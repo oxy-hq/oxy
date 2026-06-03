@@ -393,7 +393,7 @@ async fn create_web_application(
     startup_cwd: std::path::PathBuf,
     shutdown_token: CancellationToken,
 ) -> Result<Router, OxyError> {
-    let api_router = crate::server::router::api_router(
+    let (api_router, external_api_router) = crate::server::router::api_router(
         mode,
         enterprise,
         observability,
@@ -467,7 +467,13 @@ async fn create_web_application(
         // "CORS error" instead of the real 404. See
         // `crates/app/src/server/router/mod.rs::build_cors_layer`.
         .layer(crate::server::router::build_cors_layer())
-        .layer(create_trace_layer());
+        .layer(create_trace_layer())
+        // External API surface — mounted AFTER the global CORS + trace layers
+        // so it is NOT wrapped by them (axum applies a `.layer` only to routes
+        // registered before the call). It carries its OWN wide-open CORS
+        // (`build_external_cors_layer`) and is API-key-only; the locked-down
+        // `/api` surface above is completely unaffected.
+        .nest("/external/api", external_api_router);
     Ok(router)
 }
 

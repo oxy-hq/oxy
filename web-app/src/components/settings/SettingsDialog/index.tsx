@@ -1,6 +1,7 @@
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import {
   Activity,
+  AppWindow,
   CreditCard,
   Database,
   GitBranch,
@@ -72,6 +73,7 @@ const CLOUD_NAV: NavGroup[] = [
       },
       { value: "workspace.api_keys", label: "API Keys", icon: Key },
       { value: "workspace.secrets", label: "Secrets", icon: KeyRound, adminOnly: true },
+      { value: "workspace.apps", label: "Apps", icon: AppWindow, adminOnly: true },
       {
         value: "workspace.oxy_access",
         label: "Oxy access",
@@ -93,6 +95,7 @@ const LOCAL_NAV: NavGroup[] = [
       { value: "workspace.airhouse", label: "Airhouse", icon: AirhouseLogo },
       { value: "workspace.api_keys", label: "API Keys", icon: Key },
       { value: "workspace.secrets", label: "Secrets", icon: KeyRound },
+      { value: "workspace.apps", label: "Apps", icon: AppWindow },
       { value: "workspace.activity_logs", label: "Activity Logs", icon: Activity }
     ]
   }

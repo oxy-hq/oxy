@@ -11,6 +11,7 @@ export type SettingsSection =
   | "workspace.airhouse"
   | "workspace.api_keys"
   | "workspace.secrets"
+  | "workspace.apps"
   | "workspace.activity_logs"
   | "workspace.oxy_access";
 

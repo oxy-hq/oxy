@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 handlebars = { workspace = true }
 df-interchange = { workspace = true, features = ["arrow_56", "arrow_57"] }
+libc = { workspace = true }
 
 # Core functionality
 oxy = { workspace = true }

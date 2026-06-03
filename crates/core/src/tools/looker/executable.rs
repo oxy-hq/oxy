@@ -323,7 +323,7 @@ impl LookerQueryExecutable {
                     msg: "Limit must be greater than 0 or -1 for unlimited".to_string(),
                 });
             }
-            if limit > 0 && limit > 100000 {
+            if limit > 100000 {
                 return Err(OxyError::ToolCallError {
                     call_id: "unknown".to_string(),
                     handle: "looker_query".to_string(),
@@ -446,7 +446,7 @@ impl LookerQueryExecutable {
                         None
                     }
                 }
-                crate::config::model::IntegrationType::Omni(_) => None,
+                _ => None,
             });
 
         match looker_config {

@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use agentic_pipeline::PipelineBuilder;
-use agentic_pipeline::platform::{BuilderBridges, PlatformContext};
+use agentic_pipeline::platform::{BuilderBridges, PlatformContext, ThreadOwnerLookup};
 use agentic_pipeline::{AutoAcceptInputProvider, BuilderLlmMetadata, LlmClient, OpenAiProvider};
 
 use crate::{
@@ -105,7 +105,7 @@ pub async fn create_run(
 
     let db = state.db.clone();
 
-    let thread_id_uuid = body
+    let mut thread_id_uuid = body
         .thread_id
         .as_deref()
         .and_then(|s| Uuid::parse_str(s).ok());
@@ -117,6 +117,32 @@ pub async fn create_run(
     } else {
         body.question.clone()
     };
+
+    // Auto-provision a thread when an interactive run is started without
+    // one. Persisting a real `threads` row (a) satisfies the
+    // `agentic_runs.thread_id` FK and (b) hands the client a stable id it
+    // can reuse for follow-up questions so the agent keeps conversation
+    // context. Onboarding / builder runs manage their own threading, so
+    // they are excluded.
+    if thread_id_uuid.is_none()
+        && body.domain.as_deref() != Some("builder")
+        && body.onboarding_context.is_none()
+    {
+        let title: String = question.chars().take(120).collect();
+        match state
+            .thread_owner
+            .create_thread(platform.workspace_id(), &title)
+            .await
+        {
+            Ok(tid) => thread_id_uuid = Some(tid),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "create_run: failed to auto-create thread; starting run unlinked"
+                );
+            }
+        }
+    }
 
     // Onboarding phases declare which reference cards their prompt
     // needs pre-populated; interactive (no onboarding context) runs
@@ -236,7 +262,9 @@ pub async fn create_run(
 
     Json(CreateRunResponse {
         run_id,
-        thread_id: body.thread_id,
+        // Return the resolved thread id — the one the client supplied, or
+        // the one we just auto-created — so the client can thread follow-ups.
+        thread_id: thread_id_uuid.map(|u| u.to_string()),
     })
     .into_response()
 }

@@ -172,6 +172,54 @@ fn init_tracing_logging(observability_enabled: bool) {
     }
 }
 
+/// Raise the process's open-file-descriptor soft limit at startup.
+///
+/// macOS ships a default soft `RLIMIT_NOFILE` of 256. A busy oxy instance
+/// (the warehouse + LLM HTTP clients, the embedded Postgres pool, and many
+/// concurrent SSE streams from data-app dashboards) blows past that and the
+/// server stops accepting connections with
+/// `axum::serve::listener: accept error: Too many open files (os error 24)`.
+/// We bump the soft limit toward the hard cap (clamped to a sane target that
+/// stays under macOS's `kern.maxfilesperproc`) so the server has headroom
+/// regardless of the shell/launcher it was started from. Best-effort: any
+/// failure is logged and the process continues with the inherited limit.
+#[cfg(unix)]
+fn raise_fd_limit() {
+    // 65536 is ample headroom for a single instance and stays well under the
+    // macOS per-process kernel cap on default systems.
+    const DESIRED: libc::rlim_t = 65_536;
+    // SAFETY: plain libc rlimit syscalls on a zeroed struct; single-threaded
+    // here (before the Tokio runtime is built).
+    unsafe {
+        let mut lim: libc::rlimit = std::mem::zeroed();
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {
+            return;
+        }
+        let target = if lim.rlim_max == libc::RLIM_INFINITY {
+            DESIRED
+        } else {
+            std::cmp::min(DESIRED, lim.rlim_max)
+        };
+        if lim.rlim_cur >= target {
+            return; // already sufficient
+        }
+        let prev = lim.rlim_cur;
+        lim.rlim_cur = target;
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) == 0 {
+            tracing::debug!(from = prev, to = target, "raised RLIMIT_NOFILE soft limit");
+        } else {
+            tracing::warn!(
+                current = prev,
+                "could not raise RLIMIT_NOFILE; if you hit \"Too many open files\", \
+                 raise it manually with `ulimit -n 65536` before starting oxy"
+            );
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn raise_fd_limit() {}
+
 fn main() {
     dotenv().ok();
     let _sentry_guard = sentry_config::init_sentry();
@@ -241,6 +289,11 @@ fn main() {
             // called from `serve.rs` once the DB is ready to resolve the
             // backend and spawn the bridge task.
             init_tracing_logging(observability_enabled);
+
+            // Give the server enough file-descriptor headroom before it binds
+            // listeners / boots the embedded Postgres — macOS defaults to a
+            // soft NOFILE of 256, which busy instances exhaust (EMFILE).
+            raise_fd_limit();
 
             let exit_code = match cli().await {
                 Ok(_) => 0,

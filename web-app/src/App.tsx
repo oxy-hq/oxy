@@ -64,6 +64,7 @@ import type { AuthConfigResponse } from "./types/auth";
 // and the editors vendor chunk (~300-400KB gzipped); users who never visit
 // /ide should not pay for it on initial load.
 const IdePage = React.lazy(() => import("./pages/ide"));
+
 const FilesLayout = React.lazy(() => import("./pages/ide/Files"));
 const EditorPage = React.lazy(() => import("./pages/ide/Files/Editor"));
 const LookerExplorerPage = React.lazy(() => import("./pages/ide/Files/Editor/LookerExplore"));

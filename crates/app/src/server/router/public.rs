@@ -4,7 +4,7 @@
 use axum::Router;
 use axum::routing::{get, post};
 
-use crate::api::{auth, billing, healthcheck, user};
+use crate::api::{auth, billing, healthcheck, user, webhooks};
 use crate::server::api::admin::apps::handlers::get_build_config;
 use crate::server::api::{customer_apps_debug, projects};
 
@@ -26,6 +26,10 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         .route("/auth/return-to/validate", get(auth::validate_return_to))
         .route("/user", get(user::get_current_user_public))
         .route("/webhooks/stripe", post(billing::webhook::stripe_webhook))
+        .route(
+            "/webhooks/toast/orders",
+            post(webhooks::toast::toast_order_webhook),
+        )
         // Slack-originated traffic. None of these carry a user Authorization
         // header; they're either signature-verified (webhooks) or reached
         // via a browser redirect from slack.com (OAuth callback / magic-link

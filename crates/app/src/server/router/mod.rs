@@ -120,6 +120,42 @@ pub(crate) fn build_cors_layer() -> CorsLayer {
         ])
 }
 
+/// Wide-open CORS for the EXTERNAL API surface (`/external/api/*`).
+///
+/// Allows ANY origin so a standalone app on any domain (e.g. a Vercel
+/// dashboard) can call oxy with `X-API-Key`. This is safe ONLY because that
+/// surface is gated by [`oxy_auth::middleware::api_key_only_middleware`] —
+/// API-key auth carries no ambient browser credential, so `*`-origin has no
+/// CSRF vector. Critically we must NOT set `allow_credentials(true)` here: the
+/// CORS spec forbids credentials with a wildcard origin, and there are no
+/// cookies to send anyway. Kept entirely separate from [`build_cors_layer`]
+/// (the locked-down, cookie-credentialed policy for the main `/api` surface).
+pub(crate) fn build_external_cors_layer() -> CorsLayer {
+    use tower_http::cors::Any;
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+            Method::HEAD,
+        ])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::ACCEPT,
+            header::ACCEPT_LANGUAGE,
+            header::ORIGIN,
+            HeaderName::from_static("x-requested-with"),
+            HeaderName::from_static("x-request-id"),
+            HeaderName::from_static("x-api-key"),
+            HeaderName::from_static("last-event-id"),
+        ])
+}
+
 /// Shared predicate body for both `build_cors_layer` (browser CORS preflight)
 /// and [`is_allowed_origin`] (server-side gate). Both auto-allow either a
 /// canonical local-dev origin or the request's own host.
@@ -250,7 +286,7 @@ mod router_split_tests {
         if db_unavailable() {
             return;
         }
-        let router = api_router(
+        let (router, _external_router) = api_router(
             ServeMode::Local,
             false,
             None,
@@ -273,7 +309,7 @@ mod router_split_tests {
         if db_unavailable() {
             return;
         }
-        let router = api_router(
+        let (router, _external_router) = api_router(
             ServeMode::Local,
             false,
             None,
@@ -295,7 +331,7 @@ mod router_split_tests {
             return;
         }
         use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
-        let router = api_router(
+        let (router, _external_router) = api_router(
             ServeMode::Local,
             false,
             None,
@@ -321,7 +357,7 @@ mod router_split_tests {
         if db_unavailable() {
             return;
         }
-        let router = api_router(
+        let (router, _external_router) = api_router(
             ServeMode::Cloud,
             false,
             None,

@@ -13,6 +13,11 @@ yoy = "yoy"
 # "caf" is the truncated slugifier output for inputs like "Café" — non-ASCII
 # is dropped, not romanised (see crates/shared/src/utils/slug.rs).
 caf = "caf"
+# "OT" is the overtime abbreviation used across the world-model labor UI/docs
+# (e.g. "OT hours", the `otHours` ribbon field). Both cases are listed so the
+# fragment from camelCase identifiers (otHours) is accepted too.
+OT = "OT"
+ot = "ot"
 
 [type.md]
 extend-ignore-re = [

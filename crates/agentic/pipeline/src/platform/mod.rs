@@ -122,6 +122,24 @@ pub trait ThreadOwnerLookup: Send + Sync {
         &self,
         thread_id: uuid::Uuid,
     ) -> Result<Option<Option<uuid::Uuid>>, String>;
+
+    /// Create a new conversation thread in `project_id` (the run's
+    /// workspace) titled `title`, returning the new thread id.
+    ///
+    /// Used by the run handler to auto-provision a thread when a client
+    /// starts a run without one — so the run's `thread_id` FK is satisfied
+    /// and the client can reuse the returned id for follow-up questions.
+    ///
+    /// Default impl returns `Err` so fakes that only implement ownership
+    /// lookups (tests, embedded use) compile unchanged; the host adapter
+    /// (`OxyThreadOwnerLookup`) inserts a real `threads` row.
+    async fn create_thread(
+        &self,
+        _project_id: uuid::Uuid,
+        _title: &str,
+    ) -> Result<uuid::Uuid, String> {
+        Err("thread creation not supported by this ThreadOwnerLookup".to_string())
+    }
 }
 
 /// Combined platform handle.

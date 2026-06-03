@@ -416,4 +416,59 @@ impl ConfigManager {
         self.storage.write_config(&updated_config).await?;
         Ok(())
     }
+
+    /// Upserts an integration entry, matching on the variant kind (Toast,
+    /// OpenWeatherMap, BestTime, Omni, Looker). If an integration of the
+    /// same kind already exists, it is replaced — name is preserved from
+    /// the incoming entry. The world-model "Apps" UI treats each kind as
+    /// singleton-per-workspace; the entry-name distinction is reserved
+    /// for cases (Omni/Looker) where multiple instances of the same kind
+    /// can coexist.
+    pub async fn upsert_integration(
+        &self,
+        integration: crate::config::model::Integration,
+    ) -> Result<(), OxyError> {
+        let mut updated_config = (*self.config).clone();
+        let kind = integration_kind(&integration);
+
+        if let Some(slot) = updated_config
+            .integrations
+            .iter_mut()
+            .find(|i| integration_kind(i) == kind)
+        {
+            *slot = integration;
+        } else {
+            updated_config.integrations.push(integration);
+        }
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
+    }
+
+    /// Removes the integration entry matching a kind ("toast",
+    /// "openweathermap", "besttime", "omni", "looker"). Returns
+    /// `Ok(())` when nothing matched — idempotent.
+    pub async fn remove_integration_by_kind(&self, kind: &str) -> Result<(), OxyError> {
+        let mut updated_config = (*self.config).clone();
+        let initial_len = updated_config.integrations.len();
+        updated_config
+            .integrations
+            .retain(|i| integration_kind(i) != kind);
+        if updated_config.integrations.len() == initial_len {
+            return Ok(());
+        }
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
+    }
+}
+
+fn integration_kind(integration: &crate::config::model::Integration) -> &'static str {
+    use crate::config::model::IntegrationType;
+    match &integration.integration_type {
+        IntegrationType::Omni(_) => "omni",
+        IntegrationType::Looker(_) => "looker",
+        IntegrationType::Toast(_) => "toast",
+        IntegrationType::OpenWeatherMap(_) => "openweathermap",
+        IntegrationType::BestTime(_) => "besttime",
+        IntegrationType::Unifi(_) => "unifi",
+    }
 }

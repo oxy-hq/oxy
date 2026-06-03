@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+pub mod apps_helpers;
 pub mod auth;
 pub mod model;
 mod parser;

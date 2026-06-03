@@ -10,17 +10,19 @@ use axum::Router;
 use axum::middleware;
 
 use agentic_http::AgenticState;
-use oxy_auth::middleware::{AuthState, auth_middleware};
+use oxy_auth::middleware::{AuthState, api_key_only_middleware, auth_middleware};
 use oxy_shared::errors::OxyError;
 
+use crate::api::middlewares::api_key_query::api_key_query_middleware;
 use crate::api::middlewares::local_context::local_context_middleware;
 use crate::api::middlewares::subscription_guard::workspace_subscription_guard_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::middlewares::workspace_context::workspace_middleware;
+use crate::server::serve_mode::ServeMode;
 
 use super::AppState;
 use super::global::build_global_routes;
-use super::workspace::build_workspace_routes;
+use super::workspace::{build_external_workspace_routes, build_workspace_routes};
 
 pub(super) fn build_protected_routes(
     app_state: AppState,
@@ -45,7 +47,13 @@ pub(super) fn apply_middleware(
         .layer(middleware::from_fn_with_state(
             AuthState::built_in(),
             auth_middleware,
-        )))
+        ))
+        // Run BEFORE the auth gate so EventSource (SSE) can authenticate
+        // via `?api_key=` query param — browsers can't attach headers to
+        // EventSource requests. axum applies `.layer` from the outside in,
+        // so this declaration places the query-param promoter outermost,
+        // which is what we want.
+        .layer(middleware::from_fn(api_key_query_middleware)))
 }
 
 /// Local-mode protected routes: mount the same `build_workspace_routes` content
@@ -80,5 +88,52 @@ pub(super) fn apply_local_middleware(
         .route_layer(middleware::from_fn_with_state(
             AuthState::guest_only(),
             auth_middleware,
-        )))
+        ))
+        .route_layer(middleware::from_fn(api_key_query_middleware)))
+}
+
+/// Build the EXTERNAL API surface: the curated workspace routes
+/// (`build_external_workspace_routes`) under `/{workspace_id}`, gated by
+/// API-key-ONLY auth and served with wide-open CORS.
+///
+/// This is a fully self-contained `Router` (state applied) intended to be
+/// mounted at the top level (`/external/api`) *outside* the global
+/// `build_cors_layer`, so it carries only its own permissive
+/// `build_external_cors_layer`. It reuses the same workspace-resolution
+/// middleware as the main surface (so the `{workspace_id}` context + handlers
+/// behave identically) but swaps the cookie-accepting `auth_middleware` for
+/// `api_key_only_middleware` — that swap is what makes `*`-origin CORS safe
+/// (no ambient cookie credential ⇒ no CSRF).
+pub(super) fn build_external_api_router(
+    app_state: AppState,
+    agentic_state: Arc<AgenticState>,
+    mode: ServeMode,
+) -> Router {
+    let curated = build_external_workspace_routes(agentic_state);
+
+    // Resolve the `{workspace_id}` context exactly as the main surface does,
+    // per mode. Runs AFTER auth (it needs the authenticated user).
+    let with_context = match mode {
+        ServeMode::Cloud => curated
+            .layer(middleware::from_fn(workspace_subscription_guard_middleware))
+            .layer(middleware::from_fn_with_state(
+                app_state.clone(),
+                workspace_middleware,
+            )),
+        ServeMode::Local => curated.route_layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            local_context_middleware,
+        )),
+    };
+
+    Router::new()
+        .nest("/{workspace_id}", with_context)
+        // Order mirrors `apply_middleware`: api_key_query is OUTERMOST (runs
+        // first) so EventSource's `?api_key=` is promoted to the X-API-Key
+        // header before the API-key-only auth gate reads it.
+        .layer(middleware::from_fn(timeout_middleware))
+        .layer(middleware::from_fn(api_key_only_middleware))
+        .layer(middleware::from_fn(api_key_query_middleware))
+        .layer(super::build_external_cors_layer())
+        .with_state(app_state)
 }

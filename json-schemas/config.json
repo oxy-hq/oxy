@@ -1026,6 +1026,90 @@
               ]
             }
           }
+        },
+        {
+          "description": "Toast POS webhook integration.\n\nThe webhook receiver at `POST /api/webhooks/toast/orders?project_id=...` validates incoming payloads with the secret referenced by `webhook_secret_var` (HMAC-SHA256 over body + timestamp).",
+          "type": "object",
+          "required": [
+            "type",
+            "webhook_secret_var"
+          ],
+          "properties": {
+            "restaurant_guids": {
+              "description": "Restaurant GUIDs this workspace is authorized to receive events for. Empty list = accept all (dev convenience).",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "toast"
+              ]
+            },
+            "webhook_secret_var": {
+              "description": "Environment variable / workspace secret name containing the Toast webhook signing secret.",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "description": "OpenWeatherMap weather data integration.\n\nPowers the world-model weather tile proxy and current-weather batch endpoint. Reads `api_key_var` from workspace secrets.",
+          "type": "object",
+          "required": [
+            "api_key_var",
+            "type"
+          ],
+          "properties": {
+            "api_key_var": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "openweathermap"
+              ]
+            }
+          }
+        },
+        {
+          "description": "BestTime foot-traffic integration.\n\nPowers the world-model foot-traffic and radar endpoints. Reads `api_key_var` from workspace secrets.",
+          "type": "object",
+          "required": [
+            "api_key_var",
+            "type"
+          ],
+          "properties": {
+            "api_key_var": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "besttime"
+              ]
+            }
+          }
+        },
+        {
+          "description": "UniFi camera integration.\n\nPowers the world-model camera proxy (UniFi Site Manager devices). Reads `api_key_var` from workspace secrets, mirroring the weather/foot-traffic integrations instead of reading a raw process env var.",
+          "type": "object",
+          "required": [
+            "api_key_var",
+            "type"
+          ],
+          "properties": {
+            "api_key_var": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "unifi"
+              ]
+            }
+          }
         }
       ],
       "required": [

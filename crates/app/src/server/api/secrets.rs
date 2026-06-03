@@ -625,6 +625,37 @@ pub async fn list_env_secrets(
                     )),
                 ));
             }
+            IntegrationType::Toast(toast) => {
+                seen_vars.insert(toast.webhook_secret_var.clone());
+                env_secrets.push(make_entry(
+                    toast.webhook_secret_var.clone(),
+                    Some(format!(
+                        "integrations.{}.webhook_secret_var",
+                        integration.name
+                    )),
+                ));
+            }
+            IntegrationType::OpenWeatherMap(owm) => {
+                seen_vars.insert(owm.api_key_var.clone());
+                env_secrets.push(make_entry(
+                    owm.api_key_var.clone(),
+                    Some(format!("integrations.{}.api_key_var", integration.name)),
+                ));
+            }
+            IntegrationType::BestTime(bt) => {
+                seen_vars.insert(bt.api_key_var.clone());
+                env_secrets.push(make_entry(
+                    bt.api_key_var.clone(),
+                    Some(format!("integrations.{}.api_key_var", integration.name)),
+                ));
+            }
+            IntegrationType::Unifi(unifi) => {
+                seen_vars.insert(unifi.api_key_var.clone());
+                env_secrets.push(make_entry(
+                    unifi.api_key_var.clone(),
+                    Some(format!("integrations.{}.api_key_var", integration.name)),
+                ));
+            }
         }
     }
 

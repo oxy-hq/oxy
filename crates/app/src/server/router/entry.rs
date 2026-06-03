@@ -27,19 +27,24 @@ use crate::server::builder_test_runner::OxyTestRunner;
 use crate::server::serve_mode::ServeMode;
 
 use super::protected::{
-    apply_local_middleware, apply_middleware, build_local_protected_routes, build_protected_routes,
+    apply_local_middleware, apply_middleware, build_external_api_router,
+    build_local_protected_routes, build_protected_routes,
 };
 use super::public::build_public_routes;
 use super::recovery::{spawn_recovery, spawn_shutdown_hook};
 use super::{AppState, build_cors_layer};
 
+/// Builds the main API router (mounted under `/api`) and, alongside it, the
+/// external API router (`/external/api`). The external one is returned
+/// separately so the caller can mount it OUTSIDE the global CORS layer; see
+/// [`build_external_api_router`].
 pub async fn api_router(
     mode: ServeMode,
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
     startup_cwd: std::path::PathBuf,
     shutdown_token: CancellationToken,
-) -> Result<Router, OxyError> {
+) -> Result<(Router, Router), OxyError> {
     // Create AgenticState first — the preagg worker needs its db + runtime.
     let agentic_state = new_agentic_state(shutdown_token, true).await?;
 
@@ -156,16 +161,26 @@ pub async fn api_router(
             // it tied to server lifetime without adding a separate hook.
             // Disabled for now; will re-enable later.
             // spawn_billing_reconciler().await;
-            apply_middleware(build_protected_routes(app_state.clone(), agentic_state))?
+            apply_middleware(build_protected_routes(
+                app_state.clone(),
+                agentic_state.clone(),
+            ))?
         }
         ServeMode::Local => apply_local_middleware(build_local_protected_routes(
             app_state.clone(),
-            agentic_state,
+            agentic_state.clone(),
         ))?,
     };
     let app_routes = build_public_routes().merge(protected_routes);
 
-    Ok(finalize_router(app_routes, app_state))
+    // External API surface (`/external/api`): curated routes, API-key-only
+    // auth, wide-open CORS. Built from the SAME shared `app_state` +
+    // `agentic_state` (never a second AgenticState) and returned separately so
+    // the caller mounts it OUTSIDE the global `build_cors_layer` — that's what
+    // lets its own permissive CORS govern preflight for these routes.
+    let external_router = build_external_api_router(app_state.clone(), agentic_state, mode);
+
+    Ok((finalize_router(app_routes, app_state), external_router))
 }
 
 /// 6-hour background loop that reconciles Stripe seat quantity for every

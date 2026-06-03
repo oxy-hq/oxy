@@ -388,6 +388,12 @@ const authConfigKeys = {
   current: () => [...authConfigKeys.all] as const
 };
 
+const appIntegrationKeys = {
+  all: ["app-integrations"] as const,
+  list: (projectId: string, branchName: string) =>
+    [...appIntegrationKeys.all, "list", projectId, branchName] as const
+};
+
 const semanticKeys = {
   all: ["semantic"] as const,
   topicDetails: (projectId: string, filePathB64: string | undefined) =>
@@ -426,6 +432,7 @@ const queryKeys = {
   file: fileKeys,
   database: databaseKeys,
   app: appKeys,
+  appIntegrations: appIntegrationKeys,
   onboarding: onboardingKeys,
   settings: settingsKeys,
   repositories: repositoryKeys,

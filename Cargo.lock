@@ -8430,6 +8430,7 @@ dependencies = [
  "itertools 0.14.0",
  "jsonwebtoken 10.4.0",
  "lazy_static",
+ "libc",
  "linfa",
  "linfa-reduction",
  "log",

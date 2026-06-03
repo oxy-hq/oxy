@@ -438,6 +438,17 @@ impl WorkspaceContext for OxyProjectContext {
                     client_secret,
                 })
             }
+            // World-model "Apps" integrations (Toast, OpenWeatherMap, BestTime,
+            // UniFi) are pure HTTP integrations consumed by the world-model
+            // dashboard. They don't participate in the agentic pipeline, so
+            // there's no corresponding `IntegrationConfig` variant — surface a
+            // clear error if a pipeline ever asks for one by name.
+            IntegrationType::Toast(_)
+            | IntegrationType::OpenWeatherMap(_)
+            | IntegrationType::BestTime(_)
+            | IntegrationType::Unifi(_) => Err(format!(
+                "integration '{name}' is a world-model app integration and is not exposed to the agentic pipeline"
+            )),
         }
     }
 

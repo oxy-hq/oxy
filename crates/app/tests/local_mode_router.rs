@@ -21,7 +21,7 @@ async fn local_router_returns_404_for_organization_routes() {
     if db_unavailable() {
         return;
     }
-    let router = api_router(
+    let (router, _external) = api_router(
         ServeMode::Local,
         false,
         None,
@@ -57,7 +57,7 @@ async fn local_router_returns_404_for_github_namespace_routes() {
     if db_unavailable() {
         return;
     }
-    let router = api_router(
+    let (router, _external) = api_router(
         ServeMode::Local,
         false,
         None,
@@ -90,7 +90,7 @@ async fn local_router_has_public_liveness_route() {
     if db_unavailable() {
         return;
     }
-    let router = api_router(
+    let (router, _external) = api_router(
         ServeMode::Local,
         false,
         None,
