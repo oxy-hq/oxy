@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.60] - 2026-06-03
+
+### 🚀 Features
+
+- Customer-apps platform v2 + v0-flow alignment + cross-subdomain SSO (#2312)
+- *(api)* Auto-allow self-origin in the customer-apps gate
+- Weather data-enrichment POC (airway weather source + semantic layer) (#2406)
+- *(customer-apps)* Reverse-proxy backend for remote-hosted bundles (#2428)
+- World model (#2387)
+
+### 🐛 Bug Fixes
+
+- *(api)* Admin app URL is relative; drop OXY_CUSTOMER_APPS_BASE_URL
+- *(web)* ResolveBundleUrl explicitly clears a stray port
+- *(web)* Default channel to draft for unpublished customer apps
+
+### 🚜 Refactor
+
+- Simplify conditionals and remove unused imports across multiple files
+- *(api)* Streamline CORS handling and improve origin checks
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2424)
+
+### ⚡ Performance
+
+- Optimize missingSlots computation with caching and bucketing (#2421)
+- Batch event queries in run tree endpoint (#2420)
+
+### ⚙️ Miscellaneous Tasks
+
+- Add authentication for private cargo dependencies in weekly autofix workflow
+- Monthly dead code cleanup 2026-06-01 (#2418)
+- Publish @oxy-hq SDK packages to GitHub Packages (#2427)
+- *(sdk)* Publish @oxy-hq SDK to public npm + fix package exports (#2429)
+- Update domain from oxy.tech to oxygen-hq.com (#2405)
+- *(sdk)* Make SDK publish workflow publish-only (PR-protected main) (#2430)
+
 ## [0.5.59] - 2026-05-29
 
 ### 🐛 Bug Fixes
@@ -12,6 +51,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Simplify git-cliff release notes generation (#2401)
+- Release 0.5.59 (#2402)
 
 ## [0.5.58] - 2026-05-28
 
