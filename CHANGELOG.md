@@ -2,12 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.62] - 2026-06-03
+
+### 🐛 Bug Fixes
+
+- Skip worktree copies when discovering semantic files (#2437)
+
 ## [0.5.61] - 2026-06-03
 
 ### 🐛 Bug Fixes
 
 - Load config from worktree subdirectory on branch switch (#2434)
 - Get competitor (#2436)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.61 (#2435)
 
 ## [0.5.60] - 2026-06-03
 
