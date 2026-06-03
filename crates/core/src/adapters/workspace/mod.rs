@@ -1,7 +1,7 @@
 pub mod builder;
 pub mod manager;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sea_orm::EntityTrait;
 use uuid::Uuid;
@@ -11,6 +11,7 @@ use crate::database::client::establish_connection;
 use crate::github::default_git_client;
 use crate::state_dir::get_state_dir;
 use oxy_git::GitClient;
+use oxy_git::cli::repo::find_git_root;
 use oxy_shared::errors::OxyError;
 
 /// Canonical on-disk root for a workspace: `<state_dir>/workspaces/<workspace_id>`.
@@ -59,7 +60,31 @@ pub async fn effective_workspace_path(
         return Ok(root);
     }
 
-    Ok(git.get_worktree_path(&root, branch).unwrap_or(root))
+    match git.get_worktree_path(&root, branch) {
+        Some(worktree) => Ok(worktree_project_path(&root, worktree)),
+        None => Ok(root),
+    }
+}
+
+/// Re-apply the workspace's in-repo subdirectory onto a worktree path.
+///
+/// A git worktree is a full checkout of the *repository root*. When a workspace
+/// lives in a subdirectory of the repo (`workspace.path` is `…/<repo>/sub/dir`),
+/// the project — including `config.yml` — lives at `<worktree>/sub/dir`, not at
+/// the worktree root. Without this, branch switching on a subdirectory workspace
+/// resolves config from `<worktree>/config.yml`, which does not exist and fails
+/// with "No such file or directory".
+///
+/// Returns `worktree` unchanged when the workspace is at the repository root (or
+/// no git root can be found), preserving the non-subdirectory behaviour.
+fn worktree_project_path(root: &Path, worktree: PathBuf) -> PathBuf {
+    let Some(git_root) = find_git_root(root) else {
+        return worktree;
+    };
+    match root.strip_prefix(&git_root) {
+        Ok(subdir) if !subdir.as_os_str().is_empty() => worktree.join(subdir),
+        _ => worktree,
+    }
 }
 
 /// Resolve the workspace path for a given workspace ID.
@@ -78,4 +103,52 @@ pub async fn resolve_workspace_path(workspace_id: Uuid) -> Result<PathBuf, OxyEr
         .ok_or_else(|| OxyError::DBError(format!("Workspace {} not found", workspace_id)))?;
 
     effective_workspace_path(&workspace, None).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn worktree_project_path_appends_subdirectory() {
+        // Repo root holds `.git`; the workspace lives in `packages/app`.
+        let repo = TempDir::new().unwrap();
+        fs::create_dir(repo.path().join(".git")).unwrap();
+        let workspace_root = repo.path().join("packages").join("app");
+        fs::create_dir_all(&workspace_root).unwrap();
+
+        let worktree = workspace_root.join(".worktrees").join("feature");
+        let resolved = worktree_project_path(&workspace_root, worktree.clone());
+
+        // Config must resolve under `<worktree>/packages/app`, since a worktree
+        // is a full checkout of the repository root.
+        assert_eq!(resolved, worktree.join("packages").join("app"));
+    }
+
+    #[test]
+    fn worktree_project_path_unchanged_at_repo_root() {
+        // Workspace is the repo root itself — no subdirectory to re-apply.
+        let repo = TempDir::new().unwrap();
+        fs::create_dir(repo.path().join(".git")).unwrap();
+
+        let worktree = repo.path().join(".worktrees").join("feature");
+        let resolved = worktree_project_path(repo.path(), worktree.clone());
+
+        assert_eq!(resolved, worktree);
+    }
+
+    #[test]
+    fn worktree_project_path_unchanged_without_git_root() {
+        // No `.git` anywhere up the tree — fall back to the worktree as-is.
+        let dir = TempDir::new().unwrap();
+        let workspace_root = dir.path().join("sub");
+        fs::create_dir_all(&workspace_root).unwrap();
+
+        let worktree = workspace_root.join(".worktrees").join("feature");
+        let resolved = worktree_project_path(&workspace_root, worktree.clone());
+
+        assert_eq!(resolved, worktree);
+    }
 }
