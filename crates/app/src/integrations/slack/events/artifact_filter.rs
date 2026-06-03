@@ -504,7 +504,8 @@ mod tests {
 
     #[test]
     fn emits_placeholder_without_per_artifact_link() {
-        let mut f = ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
+        let mut f =
+            ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
         let input = "Here it is:\n:::artifact{id=a kind=semantic_query title=Stores by Region is_verified=true}\nsql body\n:::\nmore\n";
         let out = f.feed(input);
         assert!(out.contains("Stores by Region"), "got: {out}");
@@ -593,7 +594,8 @@ mod tests {
 
     #[test]
     fn placeholder_omits_check_for_unverified_artifact() {
-        let mut f = ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
+        let mut f =
+            ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
         let out =
             f.feed(":::artifact{id=a kind=k title=Draft query is_verified=false}\nbody\n:::\n");
         assert!(out.contains("Draft query"));
@@ -603,7 +605,8 @@ mod tests {
 
     #[test]
     fn no_placeholder_when_title_missing() {
-        let mut f = ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
+        let mut f =
+            ArtifactFilter::with_thread_url("https://app.oxygen-hq.com/threads/T1".to_string());
         let out = f.feed(":::artifact{id=a kind=k}\nbody\n:::\n");
         // No title → fall back to drop (nothing surfaced).
         assert_eq!(out, "");

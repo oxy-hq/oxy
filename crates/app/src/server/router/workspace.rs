@@ -13,10 +13,10 @@ use axum::routing::{delete, get, post, put};
 use agentic_http::{AgenticState, airway_router, router as agentic_router, workflow_router};
 
 use crate::api::{
-    agent, api_keys, app, apps, artifacts, chart, data, data_repo, database, execution_analytics,
-    exported_chart, file, foot_traffic, integration, local_setup, message, metrics, modeling,
-    onboarding, result_files, run, schedules, semantic, task, test_file, test_project_run,
-    test_run, thread, traces, video, workspace_custom_apps, workspace_members,
+    agent, api_keys, app, apps, artifacts, chart, competitors, data, data_repo, database,
+    execution_analytics, exported_chart, file, foot_traffic, integration, local_setup, message,
+    metrics, modeling, onboarding, result_files, run, schedules, semantic, task, test_file,
+    test_project_run, test_run, thread, traces, video, workspace_custom_apps, workspace_members,
     workspace_oxy_access, workspaces, world_model,
 };
 
@@ -138,6 +138,10 @@ pub(super) fn build_workspace_routes(
             post(foot_traffic::foot_traffic_radar_batch),
         )
         .route(
+            "/world-model/competitors",
+            post(competitors::get_competitors),
+        )
+        .route(
             "/results/files/{file_id}",
             get(result_files::get_result_file),
         )
@@ -209,6 +213,10 @@ pub(super) fn build_external_workspace_routes(
         .route(
             "/world-model/foot-traffic/radar",
             post(foot_traffic::foot_traffic_radar_batch),
+        )
+        .route(
+            "/world-model/competitors",
+            post(competitors::get_competitors),
         )
         // Agentic analytics: POST /analytics/runs, the SSE events stream,
         // /answer, /cancel, /threads/* — the chat surface external apps drive.

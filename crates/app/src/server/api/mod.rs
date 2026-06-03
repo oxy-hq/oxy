@@ -7,6 +7,7 @@ pub mod artifacts;
 pub mod auth;
 pub mod billing;
 pub mod chart;
+pub mod competitors;
 pub mod customer_apps_api_keys;
 pub mod customer_apps_auth;
 pub mod customer_apps_build_store;

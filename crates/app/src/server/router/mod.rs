@@ -447,7 +447,10 @@ mod cors_tests {
         // An origin that isn't a canonical dev host and doesn't match the
         // server's own host is rejected — defence-in-depth carries over from
         // the old env-driven allowlist.
-        let headers = make_headers(&[("origin", "https://attacker.com"), ("host", "app.oxygen-hq.com")]);
+        let headers = make_headers(&[
+            ("origin", "https://attacker.com"),
+            ("host", "app.oxygen-hq.com"),
+        ]);
         assert!(!is_allowed_origin(&headers));
     }
 }
