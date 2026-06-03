@@ -74,7 +74,10 @@ pub mod run;
 pub mod thread;
 pub mod workflow;
 
-pub use airway::{cancel_airway_run, create_airway_run, list_airway_files, list_runs_for_pipeline};
+pub use airway::{
+    cancel_airway_run, create_airway_run, discover_source_tables, list_airway_files,
+    list_runs_for_pipeline,
+};
 pub use run::{
     RevertFileChangesRequest, UpdateThinkingModeRequest, answer_run, cancel_run, create_run,
     revert_file_changes, stream_events, update_thinking_mode,

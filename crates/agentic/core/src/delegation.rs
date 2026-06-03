@@ -249,6 +249,12 @@ pub enum TaskSpec {
         /// [`TaskSpec::Workflow::variables`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         variables: Option<Value>,
+        /// Explicit subset of resources (tables) to run, overriding the
+        /// spec's `resources`. Used by "retry failed tables" to re-run only
+        /// the streams that failed. Empty = run the whole spec. Old queued
+        /// rows without this key deserialize to empty (backward-compatible).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        resources: Vec<String>,
     },
 }
 

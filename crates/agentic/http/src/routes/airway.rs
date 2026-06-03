@@ -276,3 +276,53 @@ pub async fn list_airway_files(
         .collect();
     Json(files).into_response()
 }
+
+// ── POST /agentic-airway/sources/discover ──────────────────────────────────
+//
+// Connect to a SQL source with the live credentials supplied at wizard
+// time and return its tables (with columns) so the New Pipeline UI can
+// offer a table picker instead of hand-typed table names. Stateless —
+// nothing is persisted. Authed: a caller can already author pipelines
+// that connect anywhere, so this grants no new privilege; the auth gate
+// is kept because the handler makes an outbound connection to a
+// caller-specified host.
+//
+// KNOWN / DEFERRED (intentional, not a review gap): this dials a
+// caller-controlled host/port on the API thread and surfaces the
+// connector error verbatim. It only matters on multi-tier deployments
+// where the API tier's network reach differs from the worker tier.
+// Hardening (reject RFC1918 / link-local / 169.254.169.254 metadata IPs
+// + sanitise the error) is tracked separately, not done here.
+
+#[derive(Deserialize)]
+pub struct DiscoverSourceRequest {
+    /// Source kind — only introspectable kinds (`clickhouse`) are wired.
+    pub kind: String,
+    /// Live connector credentials (e.g. host/port/database/username/
+    /// password/secure for ClickHouse). Not persisted.
+    #[serde(default)]
+    pub config: serde_json::Value,
+}
+
+#[derive(Serialize)]
+pub struct DiscoverSourceResponse {
+    pub tables: Vec<agentic_pipeline::DiscoveredTable>,
+}
+
+pub async fn discover_source_tables(
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Json(req): Json<DiscoverSourceRequest>,
+) -> Response {
+    match agentic_pipeline::airway_run::discover_airway_source_tables(req.kind, req.config).await {
+        Ok(tables) => Json(DiscoverSourceResponse { tables }).into_response(),
+        Err(AirwayRunError::Airway(e)) => {
+            // Bad credentials / unreachable host / unsupported kind —
+            // the caller's input, surfaced verbatim so the wizard can show it.
+            (StatusCode::BAD_GATEWAY, format!("discovery failed: {e}")).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(%e, "discover_source_tables failed");
+            (StatusCode::BAD_REQUEST, format!("discovery: {e}")).into_response()
+        }
+    }
+}

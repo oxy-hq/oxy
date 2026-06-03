@@ -122,6 +122,14 @@ pub struct DestinationRef {
 
     /// Logical dataset/schema the pipeline writes into.
     pub dataset_name: String,
+
+    /// Optional table-name separator (e.g. `___`). When set on an
+    /// airhouse destination, a flat source table named `<schema><sep><table>`
+    /// is written to schema `<schema>` instead of the single `dataset_name`
+    /// root — useful for ClickHouse sources that flatten schema into the
+    /// table name. Omit for the default single-root behaviour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_separator: Option<String>,
 }
 
 /// A concrete destination connector. Either the resolved form of a

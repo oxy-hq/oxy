@@ -22,6 +22,7 @@ import LineageGraph from "@/components/airway/LineageGraph";
 import PhaseBar from "@/components/airway/PhaseBar";
 import PipelineOverview from "@/components/airway/PipelineOverview";
 import ResourceGrid from "@/components/airway/ResourceGrid";
+import RetryFailedTablesButton from "@/components/airway/RetryFailedTablesButton";
 import RunHistory from "@/components/airway/RunHistory";
 import RunTimeline from "@/components/airway/RunTimeline";
 import PageHeader from "@/components/PageHeader";
@@ -255,6 +256,24 @@ export const AirwayRunDetailPage: React.FC<{
               <AlertTriangle className='h-4 w-4 shrink-0' />
               Completed with {view.failedResources.length} skipped resource
               {view.failedResources.length === 1 ? "" : "s"}
+              <div className='ml-auto'>
+                <RetryFailedTablesButton
+                  failedTables={view.failedResources.map((f) => f.table)}
+                  pending={starting}
+                  onConfirm={async (tables) => {
+                    try {
+                      const id = await ctrl.launch({
+                        pipeline_ref: pipelineRef,
+                        resources: tables
+                      });
+                      if (onOpenRun) onOpenRun(id);
+                      else navigate(`../${id}`, { relative: "path" });
+                    } catch (e) {
+                      toast.error(startErrorMessage(e));
+                    }
+                  }}
+                />
+              </div>
             </div>
             <ul className='mt-1 space-y-0.5 text-muted-foreground text-xs'>
               {view.failedResources.map((f) => (

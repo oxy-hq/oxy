@@ -84,6 +84,88 @@ describe("buildPipelineScaffold", () => {
     ).toContain("publication_name: oxy_pub");
   });
 
+  it("scaffolds a clickhouse source with a password var, never a raw secret", () => {
+    const yaml = buildPipelineScaffold({
+      name: "p",
+      sourceId: "clickhouse",
+      destinationDatabase: "wh",
+      datasetName: "p"
+    });
+    expect(yaml).toContain("kind: clickhouse");
+    expect(yaml).toContain("password_var: CLICKHOUSE_PASSWORD");
+    expect(yaml).not.toMatch(/^\s*password:/m);
+  });
+
+  it("scaffolds a clickhouse source from picked credentials and tables", () => {
+    const yaml = buildPipelineScaffold({
+      name: "ch_raw",
+      sourceId: "clickhouse",
+      clickhouse: {
+        host: "h.clickhouse.cloud",
+        port: 8443,
+        database: "analytics",
+        username: "reader",
+        passwordVar: "CH_PW",
+        secure: true,
+        tables: [
+          { name: "events", writeDisposition: "append", cursorField: "created_at" },
+          { name: "users", writeDisposition: "merge", primaryKey: ["id"] },
+          { name: "products", writeDisposition: "replace" }
+        ]
+      },
+      destinationDatabase: "wh",
+      datasetName: "ch_raw",
+      destinationIsAirhouse: true
+    });
+    expect(yaml).toContain("kind: clickhouse");
+    expect(yaml).toContain("host: h.clickhouse.cloud");
+    expect(yaml).toContain("password_var: CH_PW");
+    // Per-table disposition: append+cursor, merge+key, replace.
+    expect(yaml).toContain("- name: events");
+    expect(yaml).toContain("cursor_field: created_at");
+    expect(yaml).toContain("write_disposition: append");
+    expect(yaml).toContain("- name: users");
+    expect(yaml).toContain("primary_key:");
+    expect(yaml).toContain("- id");
+    expect(yaml).toContain("write_disposition: merge");
+    expect(yaml).toContain("- name: products");
+    expect(yaml).toContain("write_disposition: replace");
+    // The raw password is never written into the YAML.
+    expect(yaml).not.toMatch(/^\s*password:/m);
+    // ClickHouse pipelines default to splitting `a___b` into schema.table.
+    expect(yaml).toContain('schema_separator: "___"');
+  });
+
+  it("only adds schema_separator for clickhouse sources", () => {
+    const yaml = buildPipelineScaffold({
+      name: "p",
+      sourceId: "postgres_cdc",
+      destinationDatabase: "wh",
+      datasetName: "p",
+      destinationIsAirhouse: true
+    });
+    expect(yaml).not.toContain("schema_separator");
+  });
+
+  it("omits schema_separator for clickhouse into a non-airhouse destination", () => {
+    const yaml = buildPipelineScaffold({
+      name: "p",
+      sourceId: "clickhouse",
+      clickhouse: {
+        host: "h",
+        database: "d",
+        passwordVar: "CH_PW",
+        tables: [{ name: "events", writeDisposition: "append" }]
+      },
+      destinationDatabase: "pg_wh",
+      datasetName: "p",
+      destinationIsAirhouse: false
+    });
+    expect(yaml).toContain("kind: clickhouse");
+    // schema_separator is airhouse-only; a postgres destination rejects it.
+    expect(yaml).not.toContain("schema_separator");
+  });
+
   it("falls back to the first option for an unknown source id", () => {
     const yaml = buildPipelineScaffold({
       name: "p",

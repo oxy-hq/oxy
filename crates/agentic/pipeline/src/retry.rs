@@ -142,11 +142,24 @@ async fn retry_airway(
         .and_then(|m| m.get("variables"))
         .filter(|v| !v.is_null())
         .cloned();
+    // Reproduce the original run's table scope. Absent on pre-existing runs
+    // (treated as a full-spec run); empty for a run that already targeted the
+    // whole spec.
+    let resources = metadata
+        .and_then(|m| m.get("resources"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     let req = StartAirwayRequest {
         pipeline_ref,
         variables,
         thread_id: None,
+        resources,
         schedule_id: original.schedule_id.clone(),
         trigger: Some("retry".to_string()),
         logical_date: None,

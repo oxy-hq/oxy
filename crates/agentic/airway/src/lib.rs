@@ -1,12 +1,13 @@
 //! Airway ELT runtime — Pattern B subsystem on `agentic-runtime`.
 //!
-//! Stage 1 surface: `SOURCE_TYPE` constant, `event_handler()` for the
-//! runtime's `EventRegistry`, plus stubs (`AirwayEvent`, `AirwayWorker`,
-//! `TaskSpec::Airway` helpers) so the rest of the workspace can compile
-//! against the new variant before stages 2–4 fill in real behaviour.
+//! Wraps the external [airway] engine as a queue-driven ELT pipeline:
+//! `SOURCE_TYPE` + `event_handler()` plug into the runtime's
+//! `EventRegistry`; `AirwayWorker` runs a pipeline spec end-to-end;
+//! `source_factory`/`destination_factory` dispatch the YAML `kind:` to
+//! a concrete airway connector; and the `extension` module owns the
+//! `airway_*` aggregates behind `AirwayMigrator`.
 //!
-//! See [`internal-docs/airway-crate-layout.md`] for the full layout the
-//! later stages will fill in.
+//! [airway]: https://github.com/oxy-hq/airway-internal
 
 pub mod boxed;
 pub mod config;
@@ -26,7 +27,9 @@ pub use destination_factory::build_destination;
 pub use error::AirwayError;
 pub use events::AirwayEvent;
 pub use extension::AirwayMigrator;
-pub use source_factory::build_source_connector;
+pub use source_factory::{
+    DiscoveredColumn, DiscoveredTable, build_source_connector, discover_source_tables,
+};
 pub use state_store::AirwayPgStateStore;
 pub use worker::AirwayWorker;
 

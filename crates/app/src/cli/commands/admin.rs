@@ -180,6 +180,7 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
                 pipeline_ref,
                 variables: None,
                 thread_id: None,
+                resources: Vec::new(),
                 schedule_id: None,
                 trigger: None,
                 logical_date: None,

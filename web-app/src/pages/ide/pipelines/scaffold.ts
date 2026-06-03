@@ -16,7 +16,13 @@
  */
 
 /** Connector kinds wired in `agentic_airway::source_factory`. */
-type AirwaySourceKind = "rest_api" | "filesystem" | "sql_database" | "postgres_cdc" | "toast";
+type AirwaySourceKind =
+  | "rest_api"
+  | "filesystem"
+  | "sql_database"
+  | "clickhouse"
+  | "postgres_cdc"
+  | "toast";
 
 export interface SourceOption {
   /** Selection id — may differ from the airway kind (e.g. "toast"). */
@@ -51,6 +57,12 @@ export const SOURCE_OPTIONS: SourceOption[] = [
     label: "SQL Database",
     description: "Full / query-based extract from a relational DB",
     airwayKind: "sql_database"
+  },
+  {
+    id: "clickhouse",
+    label: "ClickHouse",
+    description: "Extract over the ClickHouse HTTP interface (JSONEachRow)",
+    airwayKind: "clickhouse"
   },
   {
     id: "postgres_cdc",
@@ -93,6 +105,18 @@ const SOURCE_CONFIG: Record<string, string> = {
     tables:
       - name: my_table
         write_disposition: append # append | replace | merge`,
+  clickhouse: `    host: my-host.clickhouse.cloud
+    port: 8443 # HTTP(S) interface port (8123 plaintext / 8443 TLS)
+    database: default
+    username: default
+    # Resolved from the secret manager at run time — the secret value
+    # is never written into the .airway.yml.
+    password_var: CLICKHOUSE_PASSWORD
+    secure: true
+    tables:
+      - name: my_table
+        # cursor_field: created_at # incremental high-watermark column
+        write_disposition: append # append | replace | merge`,
   postgres_cdc: `    connection_string: postgresql://user:pass@host:5432/db
     slot_name: oxy_slot
     publication_name: oxy_pub
@@ -111,6 +135,33 @@ interface ToastScaffold {
   baseUrl?: string;
 }
 
+/** ClickHouse wizard fields. `passwordVar` is the secret-manager name
+ *  the executor resolves at run time — the password itself is never
+ *  written into the `.airway.yml`. `tables` are the names picked from
+ *  the discovery table picker. */
+export type WriteDisposition = "append" | "replace" | "merge";
+
+/** One picked ClickHouse table + how it should be loaded on each run. */
+export interface ClickHouseScaffoldTable {
+  name: string;
+  /** `append` (insert), `replace` (full overwrite), `merge` (upsert). */
+  writeDisposition: WriteDisposition;
+  /** High-water-mark column for incremental `append` (only new rows). */
+  cursorField?: string;
+  /** Upsert key for `merge` (one or more columns). */
+  primaryKey?: string[];
+}
+
+interface ClickHouseScaffold {
+  host: string;
+  port?: number;
+  database: string;
+  username?: string;
+  passwordVar?: string;
+  secure?: boolean;
+  tables: ClickHouseScaffoldTable[];
+}
+
 export interface ScaffoldInput {
   name: string;
   description?: string;
@@ -118,10 +169,16 @@ export interface ScaffoldInput {
   sourceId: string;
   /** Required when `sourceId === "toast"`. */
   toast?: ToastScaffold;
+  /** Required when `sourceId === "clickhouse"`. */
+  clickhouse?: ClickHouseScaffold;
   /** A `config.yml` database name (the resolved destination). */
   destinationDatabase: string;
   /** Logical dataset/schema written into the destination. */
   datasetName: string;
+  /** Whether the chosen destination is airhouse-backed. Gates the
+   *  ClickHouse `schema_separator` default — it's an airhouse-only knob,
+   *  and other destination kinds reject the unknown field at run start. */
+  destinationIsAirhouse?: boolean;
 }
 
 function buildToastConfig(t: ToastScaffold): string {
@@ -138,15 +195,55 @@ function buildToastConfig(t: ToastScaffold): string {
   return lines.join("\n");
 }
 
+function buildClickHouseConfig(c: ClickHouseScaffold): string {
+  const lines = [`    host: ${c.host}`];
+  if (c.port != null) lines.push(`    port: ${c.port}`);
+  lines.push(`    database: ${c.database}`);
+  if (c.username?.trim()) lines.push(`    username: ${c.username.trim()}`);
+  if (c.passwordVar?.trim()) lines.push(`    password_var: ${c.passwordVar.trim()}`);
+  if (c.secure != null) lines.push(`    secure: ${c.secure}`);
+  lines.push("    tables:");
+  if (c.tables.length === 0) {
+    lines.push("      - name: <table-name>");
+    lines.push("        write_disposition: append # append | replace | merge");
+  }
+  for (const t of c.tables) {
+    lines.push(`      - name: ${t.name}`);
+    // append with a cursor = incremental (only rows past the high-water
+    // mark); without one, append re-loads everything each run.
+    if (t.writeDisposition === "append" && t.cursorField) {
+      lines.push(`        cursor_field: ${t.cursorField}`);
+    }
+    if (t.writeDisposition === "merge" && t.primaryKey?.length) {
+      lines.push("        primary_key:");
+      for (const k of t.primaryKey) lines.push(`          - ${k}`);
+    }
+    lines.push(`        write_disposition: ${t.writeDisposition}`);
+  }
+  return lines.join("\n");
+}
+
 /** Build the initial `.airway.yml` body for a freshly-created pipeline. */
 export function buildPipelineScaffold(input: ScaffoldInput): string {
   const option = SOURCE_OPTIONS.find((o) => o.id === input.sourceId) ?? SOURCE_OPTIONS[0];
-  const configBlock =
-    option.id === "toast" && input.toast
-      ? buildToastConfig(input.toast)
-      : (SOURCE_CONFIG[option.id] ?? SOURCE_CONFIG[option.airwayKind]);
+  let configBlock: string;
+  if (option.id === "toast" && input.toast) {
+    configBlock = buildToastConfig(input.toast);
+  } else if (option.id === "clickhouse" && input.clickhouse) {
+    configBlock = buildClickHouseConfig(input.clickhouse);
+  } else {
+    configBlock = SOURCE_CONFIG[option.id] ?? SOURCE_CONFIG[option.airwayKind];
+  }
   const desc = input.description?.trim();
   const descLine = desc ? `description: ${JSON.stringify(desc)}\n` : "";
+  // ClickHouse has no schemas, so tables are commonly flattened as
+  // `<schema>___<table>`. Split that back into real destination schemas
+  // (e.g. analytics___jobs -> analytics.jobs); names without `___` stay
+  // under dataset_name. Remove this line to keep one flat root schema.
+  // Airhouse-only knob — other destination kinds reject the field at run
+  // start, so only emit it when the destination is airhouse-backed.
+  const schemaSepLine =
+    option.id === "clickhouse" && input.destinationIsAirhouse ? '\n  schema_separator: "___"' : "";
   return `name: ${input.name}
 ${descLine}source:
   kind: ${option.airwayKind}
@@ -156,7 +253,7 @@ destination:
   # A database defined in config.yml. Credentials are resolved at run
   # time (airhouse_managed mints an ephemeral per-user credential).
   database: ${input.destinationDatabase}
-  dataset_name: ${input.datasetName}
+  dataset_name: ${input.datasetName}${schemaSepLine}
 
 # Optional: restrict to a subset of the source's resources.
 # resources: []

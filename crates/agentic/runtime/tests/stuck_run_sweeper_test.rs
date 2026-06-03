@@ -530,6 +530,7 @@ async fn seed_pending_global(db: &DatabaseConnection, source_type: &str) -> Stri
         "airway" => TaskSpec::Airway {
             pipeline_ref: "dummy.airway.yml".into(),
             variables: None,
+            resources: Vec::new(),
         },
         "analytics" => TaskSpec::Agent {
             agent_id: "agents/dummy.agentic.yml".into(),
@@ -622,6 +623,7 @@ async fn find_pending_global_runs_excludes_scope_owned_for_all_source_types() {
             "airway" => TaskSpec::Airway {
                 pipeline_ref: "dummy.airway.yml".into(),
                 variables: None,
+                resources: Vec::new(),
             },
             _ => TaskSpec::Agent {
                 agent_id: "agents/dummy.agentic.yml".into(),

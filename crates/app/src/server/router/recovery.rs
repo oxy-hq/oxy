@@ -17,11 +17,13 @@ use agentic_pipeline::platform::{BuilderBridges, PlatformContext};
 use agentic_pipeline::recovery::{recover_active_runs, recover_stranded_runs};
 use agentic_pipeline::{BuilderAppRunnerTrait, BuilderTestRunnerTrait};
 use agentic_runtime::state::RuntimeState;
+use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use sea_orm::{DatabaseConnection, EntityTrait};
 
 use crate::agentic_wiring::{OxyProjectContext, build_builder_bridges};
 use crate::server::serve_mode::{LOCAL_WORKSPACE_ID, ServeMode};
+use crate::server::service::secret_manager::SecretManagerService;
 
 /// Spawn the graceful-shutdown hook. Returns immediately.
 ///
@@ -689,22 +691,11 @@ async fn drive_pending(
 }
 
 async fn build_local_project_ctx(cwd: &std::path::Path) -> Option<Arc<OxyProjectContext>> {
-    let wm = match WorkspaceBuilder::new(LOCAL_WORKSPACE_ID)
+    let mut builder = match WorkspaceBuilder::new(LOCAL_WORKSPACE_ID)
         .with_workspace_path_and_fallback_config(cwd)
         .await
     {
-        Ok(b) => match b.build().await {
-            Ok(wm) => wm,
-            Err(e) => {
-                tracing::warn!(
-                    target: "recovery",
-                    cwd = %cwd.display(),
-                    error = %e,
-                    "local recovery: failed to build WorkspaceManager"
-                );
-                return None;
-            }
-        },
+        Ok(b) => b,
         Err(e) => {
             tracing::warn!(
                 target: "recovery",
@@ -715,35 +706,79 @@ async fn build_local_project_ctx(cwd: &std::path::Path) -> Option<Arc<OxyProject
             return None;
         }
     };
+    // Attach the same DB-first (env-fallback) secrets manager the request
+    // middleware builds — otherwise a resumed run can't resolve workspace
+    // secrets stored in the DB (e.g. a ClickHouse `password_var`) and only
+    // sees process env vars. This is the difference between the resume path
+    // and a direct run.
+    builder = with_db_secrets_manager(builder, LOCAL_WORKSPACE_ID);
+    let wm = match builder.build().await {
+        Ok(wm) => wm,
+        Err(e) => {
+            tracing::warn!(
+                target: "recovery",
+                cwd = %cwd.display(),
+                error = %e,
+                "local recovery: failed to build WorkspaceManager"
+            );
+            return None;
+        }
+    };
     Some(Arc::new(OxyProjectContext::new(wm)))
+}
+
+/// Attach the DB-backed (env-fallback) secrets manager to a workspace
+/// builder, mirroring the request middleware. Best-effort: a failure logs
+/// and leaves the builder's default manager, matching middleware behavior.
+fn with_db_secrets_manager(
+    builder: WorkspaceBuilder,
+    workspace_id: uuid::Uuid,
+) -> WorkspaceBuilder {
+    match SecretsManager::from_database_with_env_fallback(SecretManagerService::new(workspace_id)) {
+        Ok(secrets_manager) => builder.with_secrets_manager(secrets_manager),
+        Err(e) => {
+            tracing::warn!(
+                target: "recovery",
+                %workspace_id,
+                error = %e,
+                "recovery: failed to create DB secrets manager; resumed run may not resolve DB secrets"
+            );
+            builder
+        }
+    }
 }
 
 async fn build_cloud_project_ctx(
     workspace_id: uuid::Uuid,
     path: &str,
 ) -> Option<Arc<OxyProjectContext>> {
-    let wm = match WorkspaceBuilder::new(workspace_id)
+    let mut builder = match WorkspaceBuilder::new(workspace_id)
         .with_workspace_path_and_fallback_config(path)
         .await
     {
-        Ok(b) => match b.build().await {
-            Ok(wm) => wm,
-            Err(e) => {
-                tracing::warn!(
-                    target: "recovery",
-                    %workspace_id,
-                    error = %e,
-                    "cloud recovery: failed to build WorkspaceManager, skipping"
-                );
-                return None;
-            }
-        },
+        Ok(b) => b,
         Err(e) => {
             tracing::warn!(
                 target: "recovery",
                 %workspace_id,
                 error = %e,
                 "cloud recovery: failed to resolve workspace path, skipping"
+            );
+            return None;
+        }
+    };
+    // Same DB-first secrets manager as the request middleware, so a
+    // resumed run resolves this workspace's DB-stored secrets (not just
+    // process env). See `build_local_project_ctx`.
+    builder = with_db_secrets_manager(builder, workspace_id);
+    let wm = match builder.build().await {
+        Ok(wm) => wm,
+        Err(e) => {
+            tracing::warn!(
+                target: "recovery",
+                %workspace_id,
+                error = %e,
+                "cloud recovery: failed to build WorkspaceManager, skipping"
             );
             return None;
         }

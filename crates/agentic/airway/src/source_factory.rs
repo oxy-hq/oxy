@@ -5,8 +5,13 @@
 //! for a new airway source means adding one arm to
 //! [`build_source_connector`]; the YAML surface stays unchanged.
 //!
-//! v1 wires up the four **generic** airway sources (`rest_api`,
-//! `filesystem`, `sql_database`, `postgres_cdc`). The vendor-specific
+//! v1 wires up the generic airway sources (`rest_api`,
+//! `filesystem`, `sql_database`, `clickhouse`, `postgres_cdc`). The
+//! `clickhouse` arm targets ClickHouse's HTTP interface (JSONEachRow)
+//! via airway's `SqlDatabaseSource::clickhouse` convenience
+//! constructor — it carries discrete connection fields rather than a
+//! single connection string, so it gets its own `kind` instead of
+//! riding the `sql_database` backend enum. The vendor-specific
 //! helpers (`shopify`, `github`, `stripe`, …) all build on top of
 //! `RestApiSource` upstream — most can be expressed directly as a
 //! `rest_api` config, so we defer wiring per-vendor sugar until there's
@@ -18,7 +23,12 @@ use airway::connector::SourceConnector;
 use airway::connector::sources::filesystem::{FilesystemSource, SourceFileFormat};
 use airway::connector::sources::postgres_cdc::PostgresCdcSource;
 use airway::connector::sources::rest_api::{RestApiConfig, RestApiSource};
-use airway::connector::sources::sql_database::{DatabaseBackend, SqlDatabaseSource, TableConfig};
+use airway::connector::sources::sql_database::{
+    ClickHouseConn, DatabaseBackend, SqlDatabaseSource, TableConfig,
+};
+// Re-exported so `agentic-pipeline` / `agentic-http` can shape the
+// discovery response without taking a direct `airway` dependency.
+pub use airway::connector::sources::sql_database::{DiscoveredColumn, DiscoveredTable};
 use airway::connector::sources::toast::ToastSource;
 use airway::connector::sources::weather::{WeatherConfig, weather_source};
 use airway::types::WriteDisposition;
@@ -40,6 +50,7 @@ pub fn build_source_connector(
         "rest_api" => build_rest_api(&config.config),
         "filesystem" => build_filesystem(&config.config),
         "sql_database" => build_sql_database(&config.config),
+        "clickhouse" => build_clickhouse(&config.config),
         "postgres_cdc" => build_postgres_cdc(&config.config),
         "toast" => build_toast(&config.config),
         "weather" => build_weather(&config.config),
@@ -202,6 +213,112 @@ fn build_sql_database(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayErr
     Ok(Box::new(source))
 }
 
+// ── clickhouse ───────────────────────────────────────────────────────────────
+
+/// ClickHouse source over the HTTP interface (`FORMAT JSONEachRow`).
+///
+/// Unlike `sql_database` (which takes a single `connection_string`),
+/// ClickHouse carries discrete connection fields. The
+/// `agentic-pipeline` executor substitutes `password_var` ->
+/// `password` from the secret manager before dispatch, so the factory
+/// only ever sees the resolved literal — `password_var` is therefore
+/// not an accepted field here.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClickHouseParams {
+    /// Host without scheme/port (e.g. `my-host.clickhouse.cloud`).
+    host: String,
+    /// HTTP(S) interface port. Defaults to airway's `8123`.
+    #[serde(default)]
+    port: Option<u16>,
+    /// Database/schema to read from.
+    database: String,
+    /// Username. Defaults to airway's `default`.
+    #[serde(default)]
+    username: Option<String>,
+    /// Resolved password literal (executor maps `password_var` -> this).
+    #[serde(default)]
+    password: Option<String>,
+    /// Use HTTPS instead of HTTP. Defaults to airway's `false`.
+    ///
+    /// KNOWN / LOW-PRIORITY footgun for hand-authored YAML: a config with
+    /// `port: 8443` and no `secure:` silently uses plaintext on a TLS port.
+    /// The wizard template always emits `secure` and `port` together, so this
+    /// is only reachable by hand-editing; left as-is deliberately.
+    #[serde(default)]
+    secure: Option<bool>,
+    /// Tables to extract. Reuses the `sql_database` table shape.
+    #[serde(default)]
+    tables: Vec<SqlTableParams>,
+}
+
+/// Build a `ClickHouseConn` from parsed params. All `ClickHouseConn`
+/// fields are public; set them directly so an absent `password` stays
+/// `None` (sending an empty `X-ClickHouse-Key` would differ from
+/// sending no key at all).
+fn clickhouse_conn(params: &ClickHouseParams) -> ClickHouseConn {
+    let mut conn = ClickHouseConn::new(&params.host, &params.database);
+    if let Some(port) = params.port {
+        conn.port = port;
+    }
+    if let Some(username) = &params.username {
+        conn.username = username.clone();
+    }
+    conn.password = params.password.clone();
+    if let Some(secure) = params.secure {
+        conn.secure = secure;
+    }
+    conn
+}
+
+fn build_clickhouse(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    let params: ClickHouseParams = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid clickhouse config: {e}")))?;
+
+    let mut source = SqlDatabaseSource::clickhouse(clickhouse_conn(&params));
+    for table in params.tables {
+        source = source.with_table(TableConfig {
+            name: table.name,
+            schema: table.schema,
+            query: table.query,
+            primary_key: table.primary_key,
+            cursor_field: table.cursor_field,
+            write_disposition: table.write_disposition.into(),
+        });
+    }
+    Ok(Box::new(source))
+}
+
+// ── discovery ────────────────────────────────────────────────────────────────
+
+/// Connect to a source and list its tables (with columns) so a
+/// pipeline-create UI can offer them for selection instead of making
+/// the user hand-type table names. The `config` carries live
+/// credentials supplied at wizard time — nothing is persisted here.
+///
+/// Only sources that support live introspection are wired; today that's
+/// `clickhouse`. Other kinds return an error rather than silently
+/// yielding nothing.
+pub async fn discover_source_tables(
+    config: &SourceConfig,
+) -> Result<Vec<DiscoveredTable>, AirwayError> {
+    match config.kind.as_str() {
+        "clickhouse" => discover_clickhouse_tables(&config.config).await,
+        other => Err(AirwayError::Other(format!(
+            "table discovery is not supported for source kind `{other}`"
+        ))),
+    }
+}
+
+async fn discover_clickhouse_tables(raw: &Value) -> Result<Vec<DiscoveredTable>, AirwayError> {
+    let params: ClickHouseParams = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid clickhouse config: {e}")))?;
+    SqlDatabaseSource::clickhouse(clickhouse_conn(&params))
+        .discover_tables()
+        .await
+        .map_err(|e| AirwayError::Other(format!("clickhouse discovery failed: {e}")))
+}
+
 // ── postgres_cdc ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -348,6 +465,57 @@ mod tests {
         ))
         .expect("build");
         let _ = source.name(); // not asserting exact name; just exercise path
+    }
+
+    #[test]
+    fn clickhouse_builds_minimal() {
+        let source = build_source_connector(&cfg(
+            "clickhouse",
+            json!({
+                "host": "my-host.clickhouse.cloud",
+                "database": "default",
+            }),
+        ))
+        .expect("build");
+        // SqlDatabaseSource reports its connector name.
+        let _ = source.name();
+    }
+
+    #[test]
+    fn clickhouse_builds_with_credentials_and_tables() {
+        let source = build_source_connector(&cfg(
+            "clickhouse",
+            json!({
+                "host": "my-host.clickhouse.cloud",
+                "port": 8443,
+                "database": "analytics",
+                "username": "reader",
+                "password": "resolved-secret",
+                "secure": true,
+                "tables": [
+                    { "name": "events", "cursor_field": "created_at", "write_disposition": "append" }
+                ],
+            }),
+        ))
+        .expect("build");
+        let _ = source.name();
+    }
+
+    #[test]
+    fn clickhouse_rejects_unresolved_password_var() {
+        // `password_var` must be stripped by the executor; if it leaks
+        // through, deny_unknown_fields catches it.
+        let err = build_source_connector(&cfg(
+            "clickhouse",
+            json!({
+                "host": "h",
+                "database": "d",
+                "password_var": "CLICKHOUSE_PASSWORD",
+            }),
+        ))
+        .err()
+        .expect("expected error");
+        assert!(err.to_string().contains("invalid clickhouse config"));
     }
 
     #[test]

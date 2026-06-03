@@ -7,8 +7,9 @@
 //! - [`load_audit`] — `airway_load_audit` per load_id
 //! - [`run_extension`] — `airway_run_extensions` per `agentic_runs.id`
 //!
-//! See [`internal-docs/airway-crate-layout.md`] for the schema
-//! definitions and the aggregate-boundary rationale.
+//! Cross-aggregate refs (e.g. `airway_run_extensions.load_id` ->
+//! `airway_load_audit.load_id`) are loose UUIDs — no DB FK to other
+//! aggregates.
 
 pub mod load_audit;
 pub mod migration;

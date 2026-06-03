@@ -294,15 +294,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler
           protoc --version
-      - name: Wait for Postgres
-        run: |
-          until pg_isready -h localhost -p 5432 -U admin; do
-            echo "Waiting for Postgres..."
-            sleep 2
-          done
-          echo "Postgres is ready!"
-        env:
-          PGPASSWORD: password
 
       # `cargo build` embeds the web-app dist into the oxy binary via
       # `include_dir!` in crates/app/src/cli/commands/serve.rs. The dist

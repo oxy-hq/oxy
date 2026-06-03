@@ -14,6 +14,9 @@ use serde_json::Value;
 pub struct AirwayTaskSpec {
     pub pipeline_ref: String,
     pub variables: Option<Value>,
+    /// Subset of resources to run (empty = whole spec). See
+    /// [`TaskSpec::Airway::resources`].
+    pub resources: Vec<String>,
 }
 
 impl AirwayTaskSpec {
@@ -22,6 +25,7 @@ impl AirwayTaskSpec {
         Self {
             pipeline_ref: pipeline_ref.into(),
             variables: None,
+            resources: Vec::new(),
         }
     }
 
@@ -32,11 +36,18 @@ impl AirwayTaskSpec {
         self
     }
 
+    /// Restrict the run to a subset of resources (e.g. retry failed tables).
+    pub fn with_resources(mut self, resources: Vec<String>) -> Self {
+        self.resources = resources;
+        self
+    }
+
     /// Materialise as a runtime [`TaskSpec`] for the durable queue.
     pub fn into_task_spec(self) -> TaskSpec {
         TaskSpec::Airway {
             pipeline_ref: self.pipeline_ref,
             variables: self.variables,
+            resources: self.resources,
         }
     }
 
@@ -47,9 +58,11 @@ impl AirwayTaskSpec {
             TaskSpec::Airway {
                 pipeline_ref,
                 variables,
+                resources,
             } => Some(Self {
                 pipeline_ref: pipeline_ref.clone(),
                 variables: variables.clone(),
+                resources: resources.clone(),
             }),
             _ => None,
         }

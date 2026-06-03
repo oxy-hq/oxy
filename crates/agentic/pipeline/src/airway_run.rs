@@ -44,6 +44,12 @@ pub struct StartAirwayRequest {
     /// Conversation thread to associate this run with, if any.
     #[serde(default)]
     pub thread_id: Option<Uuid>,
+    /// Explicit subset of resources (tables) to run, overriding the
+    /// spec's `resources`. Caller-settable (HTTP/CLI) — used by "retry
+    /// failed tables" to re-run only the streams that failed. Empty =
+    /// run the whole spec.
+    #[serde(default)]
+    pub resources: Vec<String>,
     /// Soft FK → `agentic_schedules.id`. Internal-only — only the scheduler
     /// fire path sets this; HTTP/CLI input cannot, so callers can't spoof
     /// which schedule a run "came from".
@@ -83,6 +89,20 @@ pub enum AirwayRunError {
     Db(#[from] DbErr),
     #[error("io error reading airway spec: {0}")]
     Io(String),
+}
+
+/// Discover the tables a source exposes, for the pipeline-create UI.
+///
+/// Connects with the live credentials carried in `config` and returns
+/// the tables (with columns) so the wizard can offer a picker instead
+/// of making the user hand-type table names. Stateless: nothing is
+/// persisted, and no DB/platform context is required.
+pub async fn discover_airway_source_tables(
+    kind: String,
+    config: serde_json::Value,
+) -> Result<Vec<agentic_airway::DiscoveredTable>, AirwayRunError> {
+    let source = agentic_airway::config::SourceConfig { kind, config };
+    Ok(agentic_airway::discover_source_tables(&source).await?)
 }
 
 /// Insert an `agentic_runs` row + `airway_run_extensions` row and
@@ -147,6 +167,11 @@ pub async fn start_airway_run(
         // `null` when omitted; the executor passes whatever lands here
         // through to the worker on resume.
         "variables": request.variables,
+        // Subset of tables this run targeted (empty = whole spec). Persisted
+        // so a retry of this run reproduces the same scope instead of
+        // silently widening a "retry failed tables" run back to the full
+        // pipeline — see `retry_airway`.
+        "resources": request.resources.clone(),
     });
     crate::scheduler::stamp_trigger_metadata(
         &mut metadata,
@@ -186,6 +211,7 @@ pub async fn start_airway_run(
     let task_spec = TaskSpec::Airway {
         pipeline_ref: request.pipeline_ref,
         variables: request.variables,
+        resources: request.resources,
     };
     crud::enqueue_task(db, &run_id, &run_id, None, &task_spec, None, scope).await?;
 

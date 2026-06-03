@@ -36,7 +36,8 @@ use crate::platform::{BuilderBridges, PlatformContext, ProjectContext};
 
 pub use crate::revert::{RevertedFile, revert_builder_file_changes};
 pub use agentic_airway::{
-    AirwayMigrator, SOURCE_TYPE as AIRWAY_SOURCE_TYPE, event_handler as airway_event_handler,
+    AirwayMigrator, DiscoveredColumn, DiscoveredTable, SOURCE_TYPE as AIRWAY_SOURCE_TYPE,
+    event_handler as airway_event_handler,
 };
 /// Re-export so HTTP/CLI don't import domain crates directly.
 pub use agentic_analytics::AnalyticsRunMeta;

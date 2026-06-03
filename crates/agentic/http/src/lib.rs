@@ -146,6 +146,8 @@ where
         .route("/runs/{id}/cancel", post(routes::cancel_airway_run))
         // Populates the Schedules UI target picker for airway schedules.
         .route("/files", get(routes::list_airway_files))
+        // Live source introspection for the New Pipeline table picker.
+        .route("/sources/discover", post(routes::discover_source_tables))
         .layer(axum::Extension(state))
 }
 

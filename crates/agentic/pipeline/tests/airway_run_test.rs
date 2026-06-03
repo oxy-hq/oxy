@@ -175,6 +175,7 @@ resources:
         pipeline_ref: "p.airway.yml".to_string(),
         variables: Some(serde_json::json!({ "env": "prod" })),
         thread_id: None,
+        resources: Vec::new(),
         schedule_id: None,
         trigger: None,
         logical_date: None,
@@ -225,6 +226,7 @@ resources:
         TaskSpec::Airway {
             pipeline_ref,
             variables,
+            ..
         } => {
             assert_eq!(pipeline_ref, "p.airway.yml");
             assert_eq!(
@@ -267,6 +269,7 @@ async fn start_airway_run_rejects_missing_pipeline_file() {
         pipeline_ref: "does-not-exist.airway.yml".to_string(),
         variables: None,
         thread_id: None,
+        resources: Vec::new(),
         schedule_id: None,
         trigger: None,
         logical_date: None,

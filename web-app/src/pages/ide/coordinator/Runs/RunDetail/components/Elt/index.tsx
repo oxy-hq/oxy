@@ -1,6 +1,9 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import RetryFailedTablesButton from "@/components/airway/RetryFailedTablesButton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
+import { useStartAirwayRun } from "@/hooks/api/airway/useAirway";
 import type { EltTableSummary, RunEventEntry } from "@/services/api/coordinator";
 import { AgentEventLog } from "../AgentEventLog";
 import { TimeAxis } from "../TimeAxis";
@@ -36,7 +39,12 @@ export const EltBody: React.FC<{
    *  straight on the run row. Surface it as a banner just like the
    *  IDE pipeline page does. */
   runError?: string | null;
-}> = ({ tables, events, pipelineName, sourceKind, destinationLabel, runError }) => {
+  /** Authoring `.airway.yml` ref (`metadata.pipeline_ref`), needed to
+   *  start a "retry failed tables" run. `null` for runs without a YAML
+   *  source — the retry action is hidden then. */
+  pipelineRef?: string | null;
+}> = ({ tables, events, pipelineName, sourceKind, destinationLabel, runError, pipelineRef }) => {
+  const startRun = useStartAirwayRun();
   const model = useMemo(
     () =>
       buildEltModel(tables, events, {
@@ -90,6 +98,26 @@ export const EltBody: React.FC<{
           <TabsTrigger value='graph'>Graph</TabsTrigger>
           <TabsTrigger value='events'>Events</TabsTrigger>
         </TabsList>
+        {pipelineRef && (
+          <RetryFailedTablesButton
+            failedTables={model.tables.filter((t) => t.status === "failed").map((t) => t.name)}
+            pending={startRun.isPending}
+            onConfirm={async (tablesToRetry) => {
+              try {
+                await startRun.mutateAsync({ pipeline_ref: pipelineRef, resources: tablesToRetry });
+                toast.success("Retry started", {
+                  description: `Re-running ${tablesToRetry.length} failed table${
+                    tablesToRetry.length === 1 ? "" : "s"
+                  }. It'll appear in the runs list.`
+                });
+              } catch (e) {
+                toast.error("Couldn't start retry", {
+                  description: e instanceof Error ? e.message : "Please try again."
+                });
+              }
+            }}
+          />
+        )}
       </div>
 
       <TabsContent value='graph' className='mt-0'>

@@ -108,6 +108,7 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
         pipeline_ref: args.pipeline_ref.clone(),
         variables: None,
         thread_id: None,
+        resources: Vec::new(),
         schedule_id: None,
         trigger: None,
         logical_date: None,

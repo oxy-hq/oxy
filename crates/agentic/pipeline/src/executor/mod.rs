@@ -127,7 +127,11 @@ impl TaskExecutor for PipelineTaskExecutor {
             TaskSpec::Airway {
                 pipeline_ref,
                 variables,
-            } => self.execute_airway(pipeline_ref, variables.as_ref()).await,
+                resources,
+            } => {
+                self.execute_airway(pipeline_ref, variables.as_ref(), resources)
+                    .await
+            }
         }
     }
 
@@ -391,6 +395,7 @@ impl PipelineTaskExecutor {
         &self,
         pipeline_ref: &str,
         variables: Option<&serde_json::Value>,
+        resources: &[String],
     ) -> Result<ExecutingTask, String> {
         // Defence-in-depth: `start_airway_run` already contained the
         // ref at submit time, but re-validate at queue-claim too (the
@@ -408,6 +413,13 @@ impl PipelineTaskExecutor {
         let mut spec = agentic_airway::AirwayPipelineSpec::from_yaml_with_vars(&yaml, variables)
             .map_err(|e| format!("airway: parse `{pipeline_ref}`: {e}"))?;
 
+        // Resource override (e.g. "retry failed tables"): restrict the run
+        // to the named subset. The worker filters the source by
+        // `spec.resources`, so this re-runs only those streams.
+        if !resources.is_empty() {
+            spec.resources = resources.to_vec();
+        }
+
         self.resolve_airway_source_secrets(&mut spec).await?;
         self.resolve_airway_destination(&mut spec).await?;
 
@@ -417,19 +429,27 @@ impl PipelineTaskExecutor {
 
     /// Substitute a source's `*_var` credential references with values from the
     /// platform secret manager, then strip the `_var` keys so the connector
-    /// factory sees only resolved literals. Each vendor source opts in
+    /// factory sees only resolved literals. Each source kind opts in
     /// explicitly to the (field, var-key) pairs it manages as secrets.
     async fn resolve_airway_source_secrets(
         &self,
         spec: &mut agentic_airway::AirwayPipelineSpec,
     ) -> Result<(), String> {
         let kind = spec.source.kind.clone();
-        // (field, var-key) pairs each vendor source supports as managed secrets.
+        // (field, var-key) pairs each source kind supports as managed secrets.
+        // Kinds not listed here carry no managed credentials.
+        //
+        // KNOWN / FOLLOW-UP (out of scope here): this table is stringly typed
+        // and has no compile-time link to airway's per-kind source defs (same
+        // for the `kind: String` discovery field in agentic-http). The planned
+        // cleanup is to expose `Source::managed_secrets()` from each Params
+        // struct so this stays in sync automatically.
         let pairs: &[(&str, &str)] = match kind.as_str() {
             "toast" => &[
                 ("client_secret", "client_secret_var"),
                 ("client_id", "client_id_var"),
             ],
+            "clickhouse" => &[("password", "password_var")],
             // Open-Meteo commercial API key → routes the connector to the paid
             // `customer-*` endpoint (the keyless endpoint is non-commercial only).
             "weather" => &[("api_key", "api_key_var")],
@@ -455,7 +475,14 @@ impl PipelineTaskExecutor {
                      could not be resolved from the secret manager"
                     )
                 })?;
-            obj.insert((*field).to_string(), serde_json::Value::String(secret));
+            // A resolved-but-empty secret is treated as "unset": skip the
+            // field insert so an absent credential stays absent (e.g.
+            // ClickHouse must send no `X-ClickHouse-Key`, not an empty one —
+            // see `clickhouse_conn` in agentic-airway). The `var_key` is
+            // still removed so the rendered spec never leaks the indirection.
+            if !secret.is_empty() {
+                obj.insert((*field).to_string(), serde_json::Value::String(secret));
+            }
             obj.remove(*var_key);
         }
         Ok(())
@@ -475,6 +502,7 @@ impl PipelineTaskExecutor {
         };
         let database = ref_.database.clone();
         let dataset_name = ref_.dataset_name.clone();
+        let schema_separator = ref_.schema_separator.clone();
         let resolved = self
             .platform
             .resolve_pipeline_destination(&database)
@@ -486,13 +514,29 @@ impl PipelineTaskExecutor {
                      (postgres or airhouse)"
                 )
             })?;
+        let mut config = serde_json::json!({
+            "connection_string": resolved.connection_string,
+            "dataset_name": dataset_name,
+        });
+        // `schema_separator` is an airhouse-only knob. Gate on the resolved
+        // kind: other destinations (`postgres`, `memory`) deny unknown fields,
+        // so emitting it would surface as an opaque YAML-parse error at run
+        // start. Fail fast with a clear message instead.
+        if let Some(sep) = schema_separator {
+            if resolved.kind != "airhouse" {
+                return Err(format!(
+                    "airway: `schema_separator` only applies to airhouse destinations, \
+                     but `database: {database}` resolves to `{}`. Remove `schema_separator` \
+                     from the pipeline's destination.",
+                    resolved.kind
+                ));
+            }
+            config["schema_separator"] = serde_json::Value::String(sep);
+        }
         spec.destination =
             agentic_airway::DestinationSpec::Inline(agentic_airway::DestinationConfig {
                 kind: resolved.kind,
-                config: serde_json::json!({
-                    "connection_string": resolved.connection_string,
-                    "dataset_name": dataset_name,
-                }),
+                config,
             });
         Ok(())
     }

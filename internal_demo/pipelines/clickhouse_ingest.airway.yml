@@ -1,0 +1,225 @@
+name: clickhouse_ingest
+source:
+  kind: clickhouse
+  config:
+    host: localhost
+    port: 18123
+    database: restaurant_analytics
+    username: oxy
+    password_var: SOURCE_CLICKHOUSE_PASSWORD
+    secure: false
+    tables:
+      - name: quickbooks_financials____dlt_loads
+        write_disposition: replace
+      - name: quickbooks_financials____dlt_pipeline_state
+        write_disposition: replace
+      - name: quickbooks_financials____dlt_version
+        write_disposition: replace
+      - name: quickbooks_financials___accounts
+        write_disposition: replace
+      - name: quickbooks_financials___bills
+        write_disposition: replace
+      - name: quickbooks_financials___bills__line
+        write_disposition: replace
+      - name: quickbooks_financials___bills__line__custom_extensions
+        write_disposition: replace
+      - name: quickbooks_financials___bills__line__custom_extensions__associated_values
+        write_disposition: replace
+      - name: quickbooks_financials___bills__line__linked_txn
+        write_disposition: replace
+      - name: quickbooks_financials___bills__linked_txn
+        write_disposition: replace
+      - name: quickbooks_financials___dlt_sentinel_table
+        write_disposition: replace
+      - name: quickbooks_financials___inventory_adjustments
+        write_disposition: replace
+      - name: quickbooks_financials___inventory_adjustments__line
+        write_disposition: replace
+      - name: quickbooks_financials___invoices
+        write_disposition: replace
+      - name: quickbooks_financials___invoices__line
+        write_disposition: replace
+      - name: quickbooks_financials___invoices__line__custom_extensions
+        write_disposition: replace
+      - name: quickbooks_financials___invoices__line__custom_extensions__associated_values
+        write_disposition: replace
+      - name: quickbooks_financials___invoices__linked_txn
+        write_disposition: replace
+      - name: quickbooks_financials___items
+        write_disposition: replace
+      - name: quickbooks_financials___items__custom_extensions
+        write_disposition: replace
+      - name: quickbooks_financials___items__custom_extensions__associated_values
+        write_disposition: replace
+      - name: quickbooks_financials___profit_and_loss
+        write_disposition: replace
+      - name: quickbooks_financials___purchase_orders
+        write_disposition: replace
+      - name: quickbooks_financials___purchase_orders__line
+        write_disposition: replace
+      - name: quickbooks_financials___purchase_orders__line__custom_extensions
+        write_disposition: replace
+      - name: quickbooks_financials___purchase_orders__line__custom_extensions__associated_values
+        write_disposition: replace
+      - name: quickbooks_financials___purchase_orders__linked_txn
+        write_disposition: replace
+      - name: quickbooks_financials___vendors
+        write_disposition: replace
+      - name: quickbooks_financials_staging____dlt_version
+        write_disposition: replace
+      - name: quickbooks_financials_staging___bills
+        write_disposition: replace
+      - name: quickbooks_financials_staging___bills__line
+        write_disposition: replace
+      - name: quickbooks_financials_staging___bills__line__custom_extensions
+        write_disposition: replace
+      - name: quickbooks_financials_staging___bills__line__custom_extensions__associated_values
+        write_disposition: replace
+      - name: quickbooks_financials_staging___bills__line__linked_txn
+        write_disposition: replace
+      - name: quickbooks_financials_staging___bills__linked_txn
+        write_disposition: replace
+      - name: quickbooks_financials_staging___bills_delete_wx277q
+        write_disposition: replace
+      - name: quickbooks_financials_staging___bills_insert_yqiftg
+        write_disposition: replace
+      - name: quickbooks_financials_staging___dlt_sentinel_table
+        write_disposition: replace
+      - name: quickbooks_financials_staging___inventory_adjustments
+        write_disposition: replace
+      - name: quickbooks_financials_staging___inventory_adjustments__line
+        write_disposition: replace
+      - name: quickbooks_financials_staging___inventory_adjustments_delete_dlvx3a
+        write_disposition: replace
+      - name: quickbooks_financials_staging___inventory_adjustments_insert_mgkeha
+        write_disposition: replace
+      - name: quickbooks_financials_staging___invoices
+        write_disposition: replace
+      - name: quickbooks_financials_staging___invoices__line
+        write_disposition: replace
+      - name: quickbooks_financials_staging___invoices__line__custom_extensions
+        write_disposition: replace
+      - name: quickbooks_financials_staging___invoices__line__custom_extensions__associated_values
+        write_disposition: replace
+      - name: quickbooks_financials_staging___invoices__linked_txn
+        write_disposition: replace
+      - name: quickbooks_financials_staging___invoices_delete_wcbrhw
+        write_disposition: replace
+      - name: quickbooks_financials_staging___invoices_insert_9kjwfq
+        write_disposition: replace
+      - name: quickbooks_financials_staging___profit_and_loss
+        write_disposition: replace
+      - name: quickbooks_financials_staging___profit_and_loss_delete_lvcv8a
+        write_disposition: replace
+      - name: quickbooks_financials_staging___purchase_orders
+        write_disposition: replace
+      - name: quickbooks_financials_staging___purchase_orders__line
+        write_disposition: replace
+      - name: quickbooks_financials_staging___purchase_orders__line__custom_extensions
+        write_disposition: replace
+      - name: quickbooks_financials_staging___purchase_orders__line__custom_extensions__associated_values
+        write_disposition: replace
+      - name: quickbooks_financials_staging___purchase_orders__linked_txn
+        write_disposition: replace
+      - name: quickbooks_financials_staging___purchase_orders_delete_p4l5qg
+        write_disposition: replace
+      - name: quickbooks_financials_staging___purchase_orders_insert_ktemja
+        write_disposition: replace
+      - name: restaurant_analytics____dlt_loads
+        write_disposition: replace
+      - name: restaurant_analytics____dlt_pipeline_state
+        write_disposition: replace
+      - name: restaurant_analytics____dlt_version
+        write_disposition: replace
+      - name: restaurant_analytics___dining_options
+        write_disposition: replace
+      - name: restaurant_analytics___dlt_sentinel_table
+        write_disposition: replace
+      - name: restaurant_analytics___employees
+        write_disposition: replace
+      - name: restaurant_analytics___employees__job_references
+        write_disposition: replace
+      - name: restaurant_analytics___employees__wage_overrides
+        write_disposition: replace
+      - name: restaurant_analytics___jobs
+        write_disposition: replace
+      - name: restaurant_analytics___labor_daily_metrics
+        write_disposition: replace
+      - name: restaurant_analytics___labor_metrics
+        write_disposition: replace
+      - name: restaurant_analytics___order_checks
+        write_disposition: replace
+      - name: restaurant_analytics___order_selections
+        write_disposition: replace
+      - name: restaurant_analytics___orders
+        write_disposition: replace
+      - name: restaurant_analytics___restaurants
+        write_disposition: replace
+      - name: restaurant_analytics___sales_daily_metrics
+        write_disposition: replace
+      - name: restaurant_analytics___sales_metrics
+        write_disposition: replace
+      - name: restaurant_analytics___time_entries
+        write_disposition: replace
+      - name: restaurant_analytics___time_entries__breaks
+        write_disposition: replace
+      - name: restaurant_analytics_staging____dlt_version
+        write_disposition: replace
+      - name: restaurant_analytics_staging___dlt_sentinel_table
+        write_disposition: replace
+      - name: restaurant_analytics_staging___employees
+        write_disposition: replace
+      - name: restaurant_analytics_staging___employees__job_references
+        write_disposition: replace
+      - name: restaurant_analytics_staging___employees__wage_overrides
+        write_disposition: replace
+      - name: restaurant_analytics_staging___employees_delete_ei2y5q
+        write_disposition: replace
+      - name: restaurant_analytics_staging___employees_insert_mzc3mg
+        write_disposition: replace
+      - name: restaurant_analytics_staging___jobs
+        write_disposition: replace
+      - name: restaurant_analytics_staging___jobs_delete_472zya
+        write_disposition: replace
+      - name: restaurant_analytics_staging___order_checks
+        write_disposition: replace
+      - name: restaurant_analytics_staging___order_checks_delete_rwintg
+        write_disposition: replace
+      - name: restaurant_analytics_staging___order_selections
+        write_disposition: replace
+      - name: restaurant_analytics_staging___order_selections_delete_1hfcba
+        write_disposition: replace
+      - name: restaurant_analytics_staging___orders
+        write_disposition: replace
+      - name: restaurant_analytics_staging___orders_delete_l3arya
+        write_disposition: replace
+      - name: restaurant_analytics_staging___restaurants
+        write_disposition: replace
+      - name: restaurant_analytics_staging___restaurants_delete_pdyj9q
+        write_disposition: replace
+      - name: restaurant_analytics_staging___time_entries
+        write_disposition: replace
+      - name: restaurant_analytics_staging___time_entries__breaks
+        write_disposition: replace
+      - name: restaurant_analytics_staging___time_entries_delete_ubvona
+        write_disposition: replace
+      - name: restaurant_analytics_staging___time_entries_insert_hhu8pa
+        write_disposition: replace
+destination:
+  # A database defined in config.yml. Must be an airway-writable type
+  # (postgres or airhouse); `local-acme` is airhouse_managed, so credentials
+  # are resolved at run time (an ephemeral per-user credential is minted).
+  database: local-acme
+  dataset_name: clickhouse_ingest
+  schema_separator: "___"
+
+# Optional: restrict to a subset of the source's resources.
+# resources: []
+
+# In-flight extractions when running resources in parallel (1-16).
+concurrency: 1
+
+# Streaming (concurrent extract->sink, live per-table progress) is on
+# by default for streaming-capable destinations. Uncomment to force
+# the bulk path.
+# streaming: false

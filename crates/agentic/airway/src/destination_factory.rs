@@ -60,15 +60,20 @@ fn build_memory(raw: &Value) -> Result<Box<dyn Destination>, AirwayError> {
 struct AirhouseParams {
     connection_string: String,
     dataset_name: String,
+    /// Optional table-name → schema separator (e.g. `___`). Splits a flat
+    /// source table `<schema><sep><table>` into `<schema>.<table>` at the
+    /// destination instead of one root schema.
+    #[serde(default)]
+    schema_separator: Option<String>,
 }
 
 fn build_airhouse(raw: &Value) -> Result<Box<dyn Destination>, AirwayError> {
     let params: AirhouseParams = serde_json::from_value(raw.clone())
         .map_err(|e| AirwayError::Other(format!("invalid airhouse config: {e}")))?;
-    Ok(Box::new(AirhouseDestination::new(
-        &params.connection_string,
-        &params.dataset_name,
-    )))
+    Ok(Box::new(
+        AirhouseDestination::new(&params.connection_string, &params.dataset_name)
+            .with_schema_separator(params.schema_separator),
+    ))
 }
 
 // ── postgres ─────────────────────────────────────────────────────────────────

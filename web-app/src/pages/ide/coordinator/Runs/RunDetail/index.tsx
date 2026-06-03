@@ -89,6 +89,7 @@ const RunDetailPage: React.FC = () => {
             sourceKind={root.source_kind}
             destinationLabel={root.destination_label}
             runError={root.error_message}
+            pipelineRef={root.source_ref}
           />
         ) : (
           <TaskTree nodes={data.nodes} rootId={data.root_id} />

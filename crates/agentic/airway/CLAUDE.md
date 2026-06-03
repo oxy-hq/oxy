@@ -8,10 +8,11 @@ runtime that wraps the external [airway] engine. Sibling of
 
 ## Status
 
-Stage 1 of the airway integration. The crate skeleton, `TaskSpec::Airway`
-variant, `AirwayEvent` taxonomy, and panicking `AirwayWorker` are in
-place. Source factory, state store, and the real worker land in stages
-2–4. See [`internal-docs/airway-crate-layout.md`](../../../internal-docs/airway-crate-layout.md).
+Shipped. The `TaskSpec::Airway` variant, `AirwayEvent` taxonomy, source
+and destination factories, the `airway_*` state store/aggregates, and
+the real `AirwayWorker` (engine end-to-end, event bridging, load-audit
+finalisation) are all in place and exercised by both the HTTP run path
+and `oxy airway run`.
 
 ## Pipeline
 
@@ -23,7 +24,7 @@ Single queue row per run. No per-step decisions, no fan-out at the
 coordinator. Resource-level fan-out happens inside
 `airway::extract_parallel`.
 
-## Aggregates owned (stages 2+)
+## Aggregates owned
 
 - **PipelineState** (`airway_pipeline_state`) — incremental cursor +
   schema state, keyed by `pipeline_name`.

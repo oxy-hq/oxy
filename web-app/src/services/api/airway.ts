@@ -22,6 +22,9 @@ export type StartAirwayRequest = {
   variables?: Record<string, unknown>;
   /** Optional conversation-thread association. */
   thread_id?: string;
+  /** Explicit subset of resources (tables) to run, overriding the spec's
+   *  `resources` — used by "retry failed tables". Omit to run the whole spec. */
+  resources?: string[];
 };
 
 export type AirwayRunSummary = {
@@ -36,6 +39,27 @@ export type AirwayRunSummary = {
 export type AirwayFile = {
   path: string;
   path_b64: string;
+};
+
+/** A column surfaced by source table discovery. */
+export type DiscoveredColumn = {
+  name: string;
+  /** Native source type (e.g. ClickHouse `Int64`, `Nullable(String)`). */
+  data_type: string;
+};
+
+/** A table surfaced by source table discovery, columns in declaration order. */
+export type DiscoveredTable = {
+  name: string;
+  columns: DiscoveredColumn[];
+};
+
+/** Live credentials for source introspection (not persisted). */
+export type DiscoverSourceRequest = {
+  /** Source kind — only introspectable kinds (`clickhouse`) are wired. */
+  kind: string;
+  /** Connector-specific connection fields. */
+  config: Record<string, unknown>;
 };
 
 /**
@@ -236,6 +260,22 @@ export class AirwayService {
   static async listFiles(projectId: string): Promise<AirwayFile[]> {
     const { data } = await apiClient.get(`${AirwayService.base(projectId)}/files`);
     return data;
+  }
+
+  /**
+   * Connect to a source with the supplied live credentials and list its
+   * tables (with columns), for the New Pipeline table picker. Nothing is
+   * persisted server-side.
+   */
+  static async discoverSourceTables(
+    projectId: string,
+    request: DiscoverSourceRequest
+  ): Promise<DiscoveredTable[]> {
+    const { data } = await apiClient.post(
+      `${AirwayService.base(projectId)}/sources/discover`,
+      request
+    );
+    return data.tables;
   }
 
   /**
