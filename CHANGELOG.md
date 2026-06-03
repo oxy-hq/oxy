@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.61] - 2026-06-03
+
+### 🐛 Bug Fixes
+
+- Load config from worktree subdirectory on branch switch (#2434)
+- Get competitor (#2436)
+
 ## [0.5.60] - 2026-06-03
 
 ### 🚀 Features
@@ -40,6 +47,7 @@ All notable changes to this project will be documented in this file.
 - *(sdk)* Publish @oxy-hq SDK to public npm + fix package exports (#2429)
 - Update domain from oxy.tech to oxygen-hq.com (#2405)
 - *(sdk)* Make SDK publish workflow publish-only (PR-protected main) (#2430)
+- Release 0.5.60 (#2419)
 
 ## [0.5.59] - 2026-05-29
 
