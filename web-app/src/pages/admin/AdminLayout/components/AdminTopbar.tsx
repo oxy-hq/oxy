@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/shadcn/breadcrumb";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
+import { AdminEntitySearch } from "../../components/AdminEntitySearch";
 
 interface AdminTopbarProps {
   title: string;
@@ -26,6 +27,9 @@ export function AdminTopbar({ title }: AdminTopbarProps) {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
+      <div className='ml-auto'>
+        <AdminEntitySearch />
+      </div>
     </header>
   );
 }

@@ -94,7 +94,7 @@ function CloudFooter() {
   const { org: currentOrg } = useCurrentOrg();
   const { data: orgs } = useOrgs();
   // Authoritative system-wide flags from GET /user (react-query cached).
-  // `is_owner` = OXY_OWNER, `is_app_admin` = OXY_APP_ADMINS — either one
+  // `is_owner` = OXY_OWNER, `is_app_admin` = OXY_GLOBAL_ADMINS — either one
   // grants access to the admin surfaces.
   const { data: profile } = useCurrentUser();
   const isAdmin = !!(profile?.is_owner || profile?.is_app_admin);

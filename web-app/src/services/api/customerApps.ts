@@ -12,7 +12,7 @@ import type {
 import { apiClient } from "./axios";
 
 /**
- * Customer-apps registry — gated by OXY_APP_ADMINS on the server. CRUD is
+ * Customer-apps registry — gated by OXY_GLOBAL_ADMINS on the server. CRUD is
  * uuid-keyed (internal callers always know the uuid); sync uses the pretty
  * `<org_slug>/<app_slug>` path because CI calls it without ever seeing the
  * uuid.

@@ -27,6 +27,7 @@ async fn local_router_returns_404_for_organization_routes() {
         None,
         std::path::PathBuf::new(),
         tokio_util::sync::CancellationToken::new(),
+        false,
     )
     .await
     .expect("build router");
@@ -63,6 +64,7 @@ async fn local_router_returns_404_for_github_namespace_routes() {
         None,
         std::path::PathBuf::new(),
         tokio_util::sync::CancellationToken::new(),
+        false,
     )
     .await
     .expect("build router");
@@ -96,6 +98,7 @@ async fn local_router_has_public_liveness_route() {
         None,
         std::path::PathBuf::new(),
         tokio_util::sync::CancellationToken::new(),
+        false,
     )
     .await
     .expect("build router");

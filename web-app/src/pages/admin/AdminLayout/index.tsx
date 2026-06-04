@@ -7,18 +7,35 @@ import { AdminSidebar } from "./components/AdminSidebar";
 import { AdminTopbar } from "./components/AdminTopbar";
 
 const PAGE_TITLES: Record<string, string> = {
-  "/admin/billing/queue": "Billing queue",
-  "/admin/feature-flags": "Feature flags",
-  "/admin/app-admins": "App admins",
-  "/admin/apps": "Customer apps"
+  [ROUTES.ADMIN.BILLING_QUEUE]: "Billing queue",
+  [ROUTES.ADMIN.FEATURE_FLAGS]: "Feature flags",
+  [ROUTES.ADMIN.INTERNAL_JOBS]: "Internal jobs",
+  [ROUTES.ADMIN.APP_ADMINS]: "Global admins",
+  [ROUTES.ADMIN.CUSTOMER_APPS]: "Customer apps",
+  [ROUTES.ADMIN.TENANTS]: "Tenants overview",
+  [ROUTES.ADMIN.ORGS]: "Organizations",
+  [ROUTES.ADMIN.USERS]: "Users",
+  [ROUTES.ADMIN.WORKSPACES]: "Workspaces"
 };
 
-// Per-route access rules. App admins (OXY_APP_ADMINS, not in OXY_OWNER) get
-// access to `/admin/apps` and its sub-routes (the master-detail view uses
-// `/admin/apps/:org/:slug`) but not the owner-only operational pages —
-// without this gate they'd land on a 403'd Billing queue and assume the
-// whole admin surface is broken.
-const APP_ADMIN_ROUTE_PREFIXES = ["/admin/apps"];
+// Routes that Global Admins (members of the `app_admins` table) are
+// allowed to reach. Keep in sync with the per-route guards in
+// `crates/app/src/server/api/admin/mod.rs` — anything NOT in this list is
+// reserved for Global Owner (today: Billing queue + Global admins).
+// Global admins who land on an owner-only route get bounced to Customer
+// apps so they don't hit a 403 page and assume the whole admin surface is
+// broken.
+// Backend identifiers (OXY_OWNER env var, `app_admins` table, the
+// `is_owner` / `is_app_admin` API fields) keep their on-the-wire names.
+const APP_ADMIN_ROUTE_PREFIXES = [
+  ROUTES.ADMIN.CUSTOMER_APPS,
+  ROUTES.ADMIN.INTERNAL_JOBS,
+  ROUTES.ADMIN.FEATURE_FLAGS,
+  ROUTES.ADMIN.TENANTS,
+  ROUTES.ADMIN.ORGS,
+  ROUTES.ADMIN.USERS,
+  ROUTES.ADMIN.WORKSPACES
+];
 
 function isAppAdminRoute(pathname: string): boolean {
   return APP_ADMIN_ROUTE_PREFIXES.some(

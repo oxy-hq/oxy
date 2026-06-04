@@ -30,10 +30,14 @@ import { ProjectsPane } from "./components/OxyAccessPanes/ProjectsPane";
  */
 type View = "apps" | "orgs" | "projects";
 
+// Labels on the Orgs / Projects tabs intentionally call out *access* so
+// they don't get confused with the cross-cutting tenant directory under
+// /admin/orgs and /admin/workspaces. These panes only list orgs and
+// projects that have granted Oxy access for customer-app management.
 const TABS: { view: View; label: string; to: string }[] = [
   { view: "apps", label: "Apps", to: "/admin/apps" },
-  { view: "orgs", label: "Orgs", to: "/admin/apps?view=orgs" },
-  { view: "projects", label: "Projects", to: "/admin/apps?view=projects" }
+  { view: "orgs", label: "Orgs with access", to: "/admin/apps?view=orgs" },
+  { view: "projects", label: "Projects with access", to: "/admin/apps?view=projects" }
 ];
 
 export default function AdminCustomerApps() {
@@ -169,8 +173,8 @@ const ErrorState = ({ error }: { error: unknown }) => (
           </p>
           <p className='mt-2 text-muted-foreground text-xs'>
             Add your email to the oxy backend's{" "}
-            <code className='rounded bg-muted px-1 py-0.5 font-mono'>OXY_APP_ADMINS</code> env var
-            (comma-separated) and restart the server, then refresh.
+            <code className='rounded bg-muted px-1 py-0.5 font-mono'>OXY_GLOBAL_ADMINS</code> env
+            var (comma-separated) and restart the server, then refresh.
           </p>
         </>
       ) : (

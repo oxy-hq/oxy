@@ -16,7 +16,7 @@ export const useCreateAppAdmin = () => {
     mutationFn: (email: string) => AppAdminsService.create(email),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.appAdmins.list() });
-      toast.success("App admin added");
+      toast.success("Global Admin added");
     },
     onError: (err) => {
       const message = isAxiosError(err)
@@ -35,7 +35,7 @@ export const useRemoveAppAdmin = () => {
     mutationFn: (id: string) => AppAdminsService.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.appAdmins.list() });
-      toast.success("App admin removed");
+      toast.success("Global Admin removed");
     },
     onError: (err) => {
       const message = isAxiosError(err)

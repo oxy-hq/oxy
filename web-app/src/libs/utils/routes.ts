@@ -18,8 +18,16 @@ const ROUTES = {
   ADMIN: {
     BILLING_QUEUE: "/admin/billing/queue",
     FEATURE_FLAGS: "/admin/feature-flags",
+    INTERNAL_JOBS: "/admin/internal-jobs",
     CUSTOMER_APPS: "/admin/apps",
-    APP_ADMINS: "/admin/app-admins"
+    APP_ADMINS: "/admin/app-admins",
+    TENANTS: "/admin/tenants",
+    ORGS: "/admin/orgs",
+    ORG_DETAIL: (orgId: string) => `/admin/orgs/${orgId}`,
+    USERS: "/admin/users",
+    USER_DETAIL: (userId: string) => `/admin/users/${userId}`,
+    WORKSPACES: "/admin/workspaces",
+    WORKSPACE_DETAIL: (workspaceId: string) => `/admin/workspaces/${workspaceId}`
   },
 
   // Org-scoped routes. Passing an empty `orgSlug` degrades to flat local-mode

@@ -12,7 +12,8 @@ use crate::api::billing;
 use crate::api::github::namespaces as github;
 use crate::api::github::{account, callback, installations};
 use crate::api::middlewares::{
-    org_context, oxy_app_admin_guard, oxy_owner_guard, subscription_guard,
+    org_context, oxy_app_admin_guard, oxy_owner_guard, oxy_owner_or_app_admin_guard,
+    subscription_guard,
 };
 use crate::api::{admin, onboarding, organizations, user, workspaces};
 
@@ -34,13 +35,27 @@ pub(super) fn build_global_routes() -> Router<AppState> {
         )
         .merge(airhouse::api::router::<AppState>())
         .nest("/orgs/{org_id}", build_org_routes())
+        // `/admin/*` runs under the permissive owner-or-app-admin guard so
+        // app admins can reach feature flags, customer apps, orgs / users /
+        // workspaces management, and internal jobs. The sensitive subset —
+        // billing operations and the `app_admins` table itself — escalates
+        // to strict OXY_OWNER via `route_layer` inside `admin::router()`.
         .nest(
             "/admin",
             admin::router().layer(middleware::from_fn(
-                oxy_owner_guard::oxy_owner_guard_middleware,
+                oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
             )),
         )
-        // Parallel customer-apps surface for OXY_APP_ADMINS. Reuses the same
+        // Internal Jobs is mounted as a sibling nest because its routes
+        // were flattened (no `/internal-jobs/` prefix on each route). The
+        // outer guard mirrors the broader `/admin/*` permissive guard.
+        .nest(
+            "/admin/internal-jobs",
+            admin::internal_jobs::router().layer(middleware::from_fn(
+                oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
+            )),
+        )
+        // Parallel customer-apps surface for OXY_GLOBAL_ADMINS. Reuses the same
         // handlers as /admin/apps but gated by a separate role so app admins
         // can manage customer-app registrations without org/billing access.
         .nest(

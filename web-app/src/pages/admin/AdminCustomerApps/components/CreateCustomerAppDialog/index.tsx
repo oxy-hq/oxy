@@ -815,7 +815,7 @@ type OrgPickerProps = {
 
 /**
  * Searchable org picker with a "paste a UUID instead" escape hatch.
- * App admins can be registering apps for orgs they're not a member
+ * Global Admins can be registering apps for orgs they're not a member
  * of — those won't surface in `useOrgs()` and the only option is
  * to paste the uuid.
  */

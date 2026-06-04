@@ -57,20 +57,68 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
     // 4. Show helpful Docker commands
     print_docker_tips();
 
-    // 5. Set environment variables for the server
-    // Safety: the Tokio runtime is running but no task reads OXY_DATABASE_URL
-    // until `start_server_and_web_app` below. No data race can occur because
-    // the first reader runs strictly after this write on the same task.
+    // 5. Set environment variables for the server + the standalone worker.
+    // Both processes need the same OXY_DATABASE_URL. We also force the
+    // HTTP server into `--no-workers` mode so the standalone worker task
+    // spawned below is the single drain on `agentic_task_queue` — same
+    // operational shape as a cloud deploy where HTTP and worker are
+    // separate replicas, just collapsed into one local process tree.
+    //
+    // Safety: the Tokio runtime is running but no task reads either env
+    // var until the worker spawn / `start_server_and_web_app` below. No
+    // data race can occur because the first readers run strictly after
+    // these writes on the same task.
     unsafe {
         std::env::set_var("OXY_DATABASE_URL", &db_url);
+        std::env::set_var("OXY_DISABLE_INPROCESS_WORKERS", "1");
     }
 
-    // 6. Start the web server (runs on host, not in Docker)
-    println!("{}", "🚀 Starting Oxygen server...".text());
-    start_server_and_web_app(args.serve).await?;
+    // 6. Connection summary — copy-pasteable for psql / OXY_DATABASE_URL
+    print_connection_summary(&db_url);
 
-    // 7. Cleanup on exit (handled by graceful shutdown in serve.rs)
-    Ok(())
+    // 7. Spawn the standalone worker as a background task. Mirrors the
+    // production split (oxy serve --no-workers + oxy worker) without
+    // making the operator juggle multiple terminals locally. Worker
+    // shutdown rides on tokio runtime teardown when serve exits.
+    println!("{}", "🛠  Starting Oxy worker (background task)...".text());
+    let worker_handle = tokio::spawn(async {
+        let worker_args = super::worker::WorkerArgs {
+            // serve already ran migrations; skip them here to avoid the
+            // worker racing the HTTP startup on the migrator.
+            enterprise: false,
+            skip_migrations: true,
+            recovery_interval_secs: None,
+            health_port: None,
+        };
+        if let Err(e) = super::worker::run_worker(worker_args).await {
+            tracing::error!(error = ?e, "background worker exited with error");
+        }
+    });
+
+    // 8. Start the web server (runs on host, not in Docker). Worker and
+    // serve both watch SIGINT/SIGTERM independently. When the operator
+    // Ctrl-C's, each drains on its own (worker waits up to 30s).
+    println!("{}", "🚀 Starting Oxygen server...".text());
+    let serve_result = start_server_and_web_app(args.serve).await;
+
+    // 9. Wait for the worker to finish its own graceful shutdown so the
+    // process doesn't exit mid-drain. Bound the wait so a stuck worker
+    // can't keep `oxy start` hanging.
+    let drain = tokio::time::Duration::from_secs(35);
+    if tokio::time::timeout(drain, worker_handle).await.is_err() {
+        tracing::warn!("background worker did not drain within {drain:?}; abandoning");
+    }
+
+    serve_result
+}
+
+/// Print the Postgres connection URL with username + password so the
+/// operator can copy-paste it into psql / a `.env` / another tool.
+fn print_connection_summary(db_url: &str) {
+    println!("{}", "🔗 Database connection".text());
+    println!("{}", "   OXY_DATABASE_URL:".tertiary());
+    println!("   {}", db_url.text());
+    println!();
 }
 
 /// Start the ClickHouse container for the observability backend and set the

@@ -199,6 +199,7 @@ pub async fn get_threads(
     tag = "Threads"
 )]
 pub async fn get_thread(
+    WorkspaceExtractor(project): WorkspaceExtractor,
     Path((_workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<ThreadItem>, StatusCode> {
@@ -208,8 +209,13 @@ pub async fn get_thread(
     })?;
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
+    // SECURITY: scope by both user_id and project_id (workspace) so a user
+    // can't read threads from a workspace they're not currently scoped to.
+    // The URL workspace_id is enforced via WorkspaceExtractor; project.id is
+    // the authoritative tenant boundary.
     let thread = Threads::find_by_id(thread_id)
         .filter(threads::Column::UserId.eq(Some(user.id)))
+        .filter(threads::Column::ProjectId.eq(project.id))
         .one(&connection)
         .await
         .map_err(|e| {
@@ -323,6 +329,7 @@ pub async fn create_thread(
     tag = "Threads"
 )]
 pub async fn delete_thread(
+    WorkspaceExtractor(project): WorkspaceExtractor,
     Path((_workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
@@ -336,8 +343,11 @@ pub async fn delete_thread(
         StatusCode::BAD_REQUEST
     })?;
 
+    // SECURITY: scope by user_id AND project_id (workspace) to prevent
+    // cross-workspace deletion. See get_thread.
     let thread = Threads::find_by_id(thread_id)
         .filter(threads::Column::UserId.eq(Some(user.id)))
+        .filter(threads::Column::ProjectId.eq(project.id))
         .one(&connection)
         .await
         .map_err(|e| {
@@ -468,18 +478,21 @@ pub async fn delete_all_threads(
     tag = "Threads"
 )]
 pub async fn stop_thread(
+    WorkspaceExtractor(project): WorkspaceExtractor,
     Path((_workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    // Verify the user owns this thread
+    // Verify the user owns this thread AND that it belongs to the workspace
+    // in the URL. See SECURITY comment on get_thread.
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let thread = Threads::find_by_id(thread_id)
         .filter(threads::Column::UserId.eq(Some(user.id)))
+        .filter(threads::Column::ProjectId.eq(project.id))
         .one(&connection)
         .await
         .map_err(|e| {

@@ -9,5 +9,7 @@ pub mod preagg_worker;
 pub mod router;
 pub mod serve_mode;
 pub mod service;
+pub mod worker_health;
+pub mod worker_runtime;
 
 pub use router::{AppState, WorkspaceExtractor, api_router, openapi_router};

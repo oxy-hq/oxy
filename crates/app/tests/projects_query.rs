@@ -41,6 +41,7 @@ async fn missing_cookie_returns_401() {
         None,
         std::path::PathBuf::new(),
         tokio_util::sync::CancellationToken::new(),
+        false,
     )
     .await
     .expect("router built");
@@ -72,6 +73,7 @@ async fn empty_body_with_no_cookie_returns_401() {
         None,
         std::path::PathBuf::new(),
         tokio_util::sync::CancellationToken::new(),
+        false,
     )
     .await
     .expect("router built");

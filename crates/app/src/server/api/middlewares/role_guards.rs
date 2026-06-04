@@ -73,6 +73,69 @@ where
     }
 }
 
+/// Caller is an Org Admin **on this org for real** — Global Owner / Global
+/// Admin synthetic-Owner memberships are explicitly rejected. Use for
+/// surfaces that must never be exposed via the cross-tenant operator
+/// fallback in [`super::org_context`] — billing (Stripe portal, invoices,
+/// checkout), per-org admin-promotion changes, anything else where the
+/// distinction between "Oxy operator" and "tenant officer" matters.
+///
+/// The reasoning is captured in `product-context.md` under
+/// "Roles & permissions": Global Admins are intentionally barred from
+/// billing and from the admin promotion/demotion surface. Most tenant
+/// admin actions remain reachable through `OrgAdmin`.
+#[derive(Debug)]
+pub struct OrgAdminStrict(pub OrgContext);
+
+impl<S> FromRequestParts<S> for OrgAdminStrict
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = match parts.extensions.get::<OrgContext>().cloned() {
+            None => Err(StatusCode::INTERNAL_SERVER_ERROR),
+            Some(ctx) if ctx.is_global_override => Err(StatusCode::FORBIDDEN),
+            Some(ctx) if matches!(ctx.membership.role, OrgRole::Owner | OrgRole::Admin) => {
+                Ok(OrgAdminStrict(ctx))
+            }
+            Some(_) => Err(StatusCode::FORBIDDEN),
+        };
+        async move { result }
+    }
+}
+
+/// Same shape as [`super::org_context::OrgContextExtractor`] but rejects the
+/// synthetic-Owner override path. Use when a member-readable surface must
+/// not be visible across tenants via the operator fallback — currently the
+/// billing-status banner and the checkout-session verifier. Pair with
+/// [`OrgAdminStrict`] for mutating billing routes.
+#[derive(Debug)]
+pub struct OrgMemberStrict(pub OrgContext);
+
+impl<S> FromRequestParts<S> for OrgMemberStrict
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = match parts.extensions.get::<OrgContext>().cloned() {
+            None => Err(StatusCode::INTERNAL_SERVER_ERROR),
+            Some(ctx) if ctx.is_global_override => Err(StatusCode::FORBIDDEN),
+            Some(ctx) => Ok(OrgMemberStrict(ctx)),
+        };
+        async move { result }
+    }
+}
+
 /// Caller's effective workspace role is Owner or Admin.
 /// Use for destructive or settings-changing workspace actions.
 #[derive(Debug)]
@@ -178,6 +241,10 @@ mod tests {
                 created_at: now,
                 updated_at: now,
             },
+            // Tests construct a real membership; the synthetic-Owner fallback
+            // path in `org_context.rs` is exercised separately. Keep `false`
+            // unless a test explicitly wants to assert override semantics.
+            is_global_override: false,
         }
     }
 

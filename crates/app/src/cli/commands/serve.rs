@@ -241,12 +241,19 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     let startup_cwd = std::env::current_dir().map_err(|e| {
         OxyError::RuntimeError(format!("Failed to resolve startup working directory: {e}"))
     })?;
+
+    let disable_inprocess_workers = args.workers_disabled();
+    if disable_inprocess_workers {
+        tracing::info!("serve: in-process workers disabled (run a separate `oxy worker` fleet)");
+    }
+
     let app = create_web_application(
         mode,
         args.enterprise,
         observability.clone(),
         startup_cwd.clone(),
         shutdown_token.clone(),
+        disable_inprocess_workers,
     )
     .await?;
 
@@ -274,7 +281,7 @@ async fn init_feature_flags() -> Result<(), OxyError> {
     Ok(())
 }
 
-/// One-shot bootstrap: if `OXY_APP_ADMINS` is set, ensure each email is
+/// One-shot bootstrap: if `OXY_GLOBAL_ADMINS` is set, ensure each email is
 /// present in the `app_admins` table. After this point the env var is
 /// ignored — admins are managed through the OXY_OWNER admin UI. Safe to
 /// re-run on every startup; existing rows are left alone.
@@ -288,7 +295,7 @@ async fn seed_app_admins_from_env() -> Result<(), OxyError> {
     Ok(())
 }
 
-async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
+pub(crate) async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
     println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
         .await
@@ -413,6 +420,7 @@ async fn create_web_application(
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
     startup_cwd: std::path::PathBuf,
     shutdown_token: CancellationToken,
+    disable_inprocess_workers: bool,
 ) -> Result<Router, OxyError> {
     let (api_router, external_api_router) = crate::server::router::api_router(
         mode,
@@ -420,6 +428,7 @@ async fn create_web_application(
         observability,
         startup_cwd,
         shutdown_token,
+        disable_inprocess_workers,
     )
     .await
     .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;

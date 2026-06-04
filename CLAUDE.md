@@ -178,6 +178,47 @@ The `oxy start` command manages Docker containers programmatically via the `boll
 
 @internal-docs/backend-architecture.md
 
+## Project Claude Skills (backend)
+
+This repo ships two project-specific Claude skills that codify decisions
+captured in `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md`.
+When the work in front of you matches their triggers, **invoke them — do
+not rederive the decision from first principles**.
+
+### `oxy-scaling-design` (`.claude/skills/oxy-scaling-design/SKILL.md`)
+
+Quick-reference index for the multi-instance scaling design — phase status
+(1 done, 1.5 / 2 / 3 / 4 / 5 / 6 / 7 pending or in flight), hard constraints
+(code-first is sacred; git is the source of truth; HTTP is stateless beyond
+the lease; task-claim vs workspace-ownership are TWO leases, not one), the
+A–H architectural refinements that override the original sketch, and the
+rejected-alternatives list (Sourcegraph gitserver, Gitaly, Apalis, etc.).
+
+**Invoke when** the user asks "how do we scale Oxy?", proposes a change
+that touches workspace ownership or worker fleet shape, asks "what phase
+adds X?", or any prompt containing "multi-instance", "worker fleet",
+"lease table", "Envoy ring hash", "gix migration", "smart cloning",
+"durable execution", or "shard workspaces". Ground every scaling decision
+in the cited section/refinement, then read the full design doc before
+implementing.
+
+### `oxy-task-spec-default` (`.claude/skills/oxy-task-spec-default/SKILL.md`)
+
+Codifies refinement H from the scaling doc: **new long-running work
+defaults to a `TaskSpec` enqueued in `agentic_task_queue`, not a
+`tokio::spawn` inside an HTTP handler.** Carries a checklist (>5s?
+periodic? must survive instance death? multi-step?) and the recipe
+for adding a new `TaskSpec` variant + handler.
+
+**Invoke when** writing or reviewing code in `crates/app/src/server/`
+that touches background work — `tokio::spawn`, periodic loops, LLM API
+calls, git clones, embedding builds, anything taking more than a few
+seconds. PRs that add a new `tokio::spawn` in an HTTP handler should be
+challenged through this skill: either justify the exception in writing
+or migrate to a `TaskSpec`. The scope survey at
+`internal-docs/2026-05-28-worker-fleet-scope-survey.md` lists pre-existing
+violations to migrate.
+
 ## Design Docs & Specs
 
 - Save design documents and specs to `internal-docs/`, not `docs/superpowers/specs/`.

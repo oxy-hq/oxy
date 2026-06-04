@@ -483,10 +483,41 @@ const featureFlagKeys = {
   list: () => [...featureFlagKeys.all, "list"] as const
 };
 
+const internalJobsKeys = {
+  all: ["admin", "internal-jobs"] as const,
+  queueStats: () => [...internalJobsKeys.all, "queue-stats"] as const,
+  recentFailures: (limit?: number) =>
+    [...internalJobsKeys.all, "recent-failures", limit ?? 50] as const,
+  deadLetter: (limit?: number, offset?: number) =>
+    [...internalJobsKeys.all, "dead-letter", limit ?? 50, offset ?? 0] as const,
+  workers: () => [...internalJobsKeys.all, "workers"] as const,
+  scheduled: () => [...internalJobsKeys.all, "scheduled"] as const
+};
+
 const preaggKeys = {
   all: ["preagg-status"] as const,
   status: (projectId: string, branchName?: string) =>
     [...preaggKeys.all, projectId, branchName ?? ""] as const
+};
+
+const adminOrgsKeys = {
+  all: ["admin", "orgs"] as const,
+  list: (search?: string) => [...adminOrgsKeys.all, "list", search ?? ""] as const,
+  detail: (orgId: string) => [...adminOrgsKeys.all, "detail", orgId] as const
+};
+
+const adminUsersKeys = {
+  all: ["admin", "users"] as const,
+  list: (search?: string, status?: string) =>
+    [...adminUsersKeys.all, "list", search ?? "", status ?? ""] as const,
+  detail: (userId: string) => [...adminUsersKeys.all, "detail", userId] as const
+};
+
+const adminWorkspacesKeys = {
+  all: ["admin", "workspaces"] as const,
+  list: (search?: string, status?: string, orgId?: string) =>
+    [...adminWorkspacesKeys.all, "list", search ?? "", status ?? "", orgId ?? ""] as const,
+  detail: (workspaceId: string) => [...adminWorkspacesKeys.all, "detail", workspaceId] as const
 };
 
 const authConfigKeys = {
@@ -518,6 +549,10 @@ const queryKeys = {
   oxyAccess: oxyAccessKeys,
   customApps: customAppKeys,
   featureFlags: featureFlagKeys,
+  internalJobs: internalJobsKeys,
+  adminOrgs: adminOrgsKeys,
+  adminUsers: adminUsersKeys,
+  adminWorkspaces: adminWorkspacesKeys,
   authConfig: authConfigKeys,
   semantic: semanticKeys,
   org: orgKeys,

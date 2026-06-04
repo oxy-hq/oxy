@@ -165,11 +165,11 @@ pub async fn handle_login_command(args: LoginArgs) -> Result<(), OxyError> {
         format!("Logged in as {} ({target}).", user.email).success()
     );
     if user.is_app_admin {
-        println!("{}", "App-admin: yes — you can `oxy publish`.".success());
+        println!("{}", "Global admin: yes — you can `oxy publish`.".success());
     } else {
         println!(
             "{}",
-            "App-admin: no — you can't publish yet. Ask #platform to add you to OXY_APP_ADMINS."
+            "Global admin: no — you can't publish yet. Ask #platform to add you to OXY_GLOBAL_ADMINS."
                 .error()
         );
     }

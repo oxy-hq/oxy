@@ -17,9 +17,10 @@ mod migrate;
 mod publish;
 pub mod run;
 mod seed;
-mod serve;
+pub(crate) mod serve;
 mod start;
 mod status;
+mod worker;
 
 use crate::cli::commands::mcp::{start_mcp_sse_server, start_mcp_stdio};
 use crate::cli::commands::migrate::migrate;
@@ -262,6 +263,13 @@ enum SubCommand {
     /// not reachable through the user-facing API; reserve them for ops
     /// runbook flows.
     Admin(admin::AdminArgs),
+    /// Run an agentic worker process standalone (no HTTP server).
+    ///
+    /// Drains the durable task queue (`agentic_task_queue`) from a separate
+    /// process so the worker fleet can scale independently of the HTTP
+    /// frontend. Pair with `oxy serve --no-workers` for fleets where the
+    /// HTTP server is HTTP-only. Requires OXY_DATABASE_URL.
+    Worker(worker::WorkerArgs),
     /// Camera fleet operator commands.
     ///
     /// Hosts deployment-wide actions for the camera fleet (currently:
@@ -556,6 +564,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Agentic(_) => "agentic",
             SubCommand::Airway(_) => "airway",
             SubCommand::Admin(_) => "admin",
+            SubCommand::Worker(_) => "worker",
             SubCommand::Cameras(_) => "cameras",
             SubCommand::Apps(_) => "apps",
             SubCommand::Api(_) => "api",
@@ -807,6 +816,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Serve(serve_args)) => {
             if let Err(e) = start_server_and_web_app(serve_args).await {
                 eprintln!("{}", format!("Server failed: {e}").error());
+                exit(1);
+            }
+        }
+        Some(SubCommand::Worker(worker_args)) => {
+            if let Err(e) = worker::run_worker(worker_args).await {
+                eprintln!("{}", format!("Worker failed: {e}").error());
                 exit(1);
             }
         }

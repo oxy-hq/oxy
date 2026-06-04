@@ -113,11 +113,23 @@ const TracesPage = React.lazy(() => import("./pages/ide/observability/traces"));
 const AdminLayout = React.lazy(() => import("./pages/admin/AdminLayout"));
 const AdminBillingQueue = React.lazy(() => import("./pages/admin/AdminBillingQueue"));
 const AdminFeatureFlags = React.lazy(() => import("./pages/admin/AdminFeatureFlags"));
+const AdminInternalJobs = React.lazy(() => import("./pages/admin/AdminInternalJobs"));
 // Customer-apps admin surface (new-auth): per-org app admins + the
 // customer-apps registry (Add / Link / Sync / Publish). Lazy-loaded
 // alongside the rest of admin since most users never visit it.
 const AdminAppAdmins = React.lazy(() => import("./pages/admin/AdminAppAdmins"));
 const AdminCustomerApps = React.lazy(() => import("./pages/admin/AdminCustomerApps"));
+// Tenant-management admin surfaces (OXY_OWNER-only). Lazy-loaded alongside
+// the rest of admin since most users never visit /admin/* at all.
+const AdminTenants = React.lazy(() => import("./pages/admin/AdminTenants"));
+const AdminOrgs = React.lazy(() => import("./pages/admin/AdminOrgs"));
+const AdminOrgDetail = React.lazy(() => import("./pages/admin/AdminOrgs/AdminOrgDetail"));
+const AdminUsers = React.lazy(() => import("./pages/admin/AdminUsers"));
+const AdminUserDetail = React.lazy(() => import("./pages/admin/AdminUsers/AdminUserDetail"));
+const AdminWorkspaces = React.lazy(() => import("./pages/admin/AdminWorkspaces"));
+const AdminWorkspaceDetail = React.lazy(
+  () => import("./pages/admin/AdminWorkspaces/AdminWorkspaceDetail")
+);
 // /apps now lands on the customer-apps discovery page (the row a
 // member can navigate to see what's published for their workspace).
 // Individual data apps at /apps/:pathb64 are unaffected.
@@ -505,6 +517,8 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
           >
             <Route path='admin/billing/queue' element={<AdminBillingQueue />} />
             <Route path='admin/feature-flags' element={<AdminFeatureFlags />} />
+            <Route path='admin/internal-jobs' element={<AdminInternalJobs />} />
+            {/* ROUTES.ADMIN.INTERNAL_JOBS */}
             <Route path='admin/app-admins' element={<AdminAppAdmins />} />
             {/* Customer-apps admin is mounted at /admin/apps (canonical
                 ROUTES.ADMIN.CUSTOMER_APPS in libs/utils/routes.ts) with an
@@ -513,6 +527,14 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
                 pane; the bare /admin/apps lands on the list-only state. */}
             <Route path='admin/apps' element={<AdminCustomerApps />} />
             <Route path='admin/apps/:orgSlug/:appSlug' element={<AdminCustomerApps />} />
+            {/* Tenant-management surfaces — list + master/detail via :id tail. */}
+            <Route path='admin/tenants' element={<AdminTenants />} />
+            <Route path='admin/orgs' element={<AdminOrgs />} />
+            <Route path='admin/orgs/:orgId' element={<AdminOrgDetail />} />
+            <Route path='admin/users' element={<AdminUsers />} />
+            <Route path='admin/users/:userId' element={<AdminUserDetail />} />
+            <Route path='admin/workspaces' element={<AdminWorkspaces />} />
+            <Route path='admin/workspaces/:workspaceId' element={<AdminWorkspaceDetail />} />
           </Route>
 
           {/* User-facing routes — owners get bounced to the admin queue. */}

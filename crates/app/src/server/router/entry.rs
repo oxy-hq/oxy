@@ -44,6 +44,7 @@ pub async fn api_router(
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
     startup_cwd: std::path::PathBuf,
     shutdown_token: CancellationToken,
+    disable_inprocess_workers: bool,
 ) -> Result<(Router, Router), OxyError> {
     // Create AgenticState first — the preagg worker needs its db + runtime.
     let agentic_state = new_agentic_state(shutdown_token, true).await?;
@@ -131,7 +132,15 @@ pub async fn api_router(
         (None, None)
     };
 
-    spawn_recovery(agentic_state.clone(), mode);
+    if disable_inprocess_workers {
+        tracing::info!(
+            "serve: --no-workers / OXY_DISABLE_INPROCESS_WORKERS active; skipping \
+             startup recovery and global driver loop. A separate `oxy worker` \
+             fleet must drive the agentic_task_queue."
+        );
+    } else {
+        spawn_recovery(agentic_state.clone(), mode);
+    }
     spawn_shutdown_hook(agentic_state.clone());
     // Periodic maintenance for customer-app procedure runs: TTL
     // sweep + cross-instance cancel reconciliation + stuck-row

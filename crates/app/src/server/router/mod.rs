@@ -292,6 +292,7 @@ mod router_split_tests {
             None,
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
+            false,
         )
         .await
         .expect("router built");
@@ -315,6 +316,7 @@ mod router_split_tests {
             None,
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
+            false,
         )
         .await
         .expect("router built");
@@ -337,6 +339,7 @@ mod router_split_tests {
             None,
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
+            false,
         )
         .await
         .expect("router built");
@@ -363,6 +366,7 @@ mod router_split_tests {
             None,
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
+            false,
         )
         .await
         .expect("router built");

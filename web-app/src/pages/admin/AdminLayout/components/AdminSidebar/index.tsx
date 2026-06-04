@@ -1,4 +1,14 @@
-import { AppWindow, Flag, Inbox, ShieldCheck } from "lucide-react";
+import {
+  Activity,
+  AppWindow,
+  Building2,
+  Flag,
+  FolderOpen,
+  Inbox,
+  LayoutDashboard,
+  ShieldCheck,
+  Users
+} from "lucide-react";
 import type { ComponentType } from "react";
 import { Link, useLocation } from "react-router-dom";
 import OxyLogo from "@/components/OxyLogo";
@@ -18,21 +28,85 @@ type AdminNavItem = {
   to: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
-  /** When true, render only for Oxy owners (OXY_OWNER). */
+  /** When true, render only for Global Owners (the OXY_OWNER env-var allow-list). */
   ownerOnly?: boolean;
-  /** When true, render for either OXY_OWNER or members of the app_admins table. */
+  /** When true, render for either Global Owners or Global Admins (`app_admins` table). */
   adminOrAppAdmin?: boolean;
+  /** Logical grouping label shown above the items. */
+  group: "operations" | "tenants";
 };
 
 const ADMIN_NAV: AdminNavItem[] = [
-  { to: ROUTES.ADMIN.BILLING_QUEUE, label: "Billing queue", icon: Inbox, ownerOnly: true },
-  { to: ROUTES.ADMIN.FEATURE_FLAGS, label: "Feature flags", icon: Flag, ownerOnly: true },
-  { to: ROUTES.ADMIN.APP_ADMINS, label: "App admins", icon: ShieldCheck, ownerOnly: true },
+  // Billing queue is strict Global Owner — "billing adjustment" per the
+  // server-side route_layer in admin/mod.rs (OXY_OWNER env-var allow-list).
+  {
+    to: ROUTES.ADMIN.BILLING_QUEUE,
+    label: "Billing queue",
+    icon: Inbox,
+    ownerOnly: true,
+    group: "operations"
+  },
+  {
+    to: ROUTES.ADMIN.FEATURE_FLAGS,
+    label: "Feature flags",
+    icon: Flag,
+    adminOrAppAdmin: true,
+    group: "operations"
+  },
+  {
+    to: ROUTES.ADMIN.INTERNAL_JOBS,
+    label: "Internal jobs",
+    icon: Activity,
+    adminOrAppAdmin: true,
+    group: "operations"
+  },
+  // "Global admins" manages the `app_admins` table itself — "promotion /
+  // demotion of admin", strict Global Owner only.
+  {
+    to: ROUTES.ADMIN.APP_ADMINS,
+    label: "Global admins",
+    icon: ShieldCheck,
+    ownerOnly: true,
+    group: "operations"
+  },
   {
     to: ROUTES.ADMIN.CUSTOMER_APPS,
     label: "Customer apps",
     icon: AppWindow,
-    adminOrAppAdmin: true
+    adminOrAppAdmin: true,
+    group: "operations"
+  },
+  // Tenant management: cross-cutting directory of orgs / users / workspaces.
+  // Open to owner OR app admin — both flavors of operator triage tenants.
+  // Overview hub at the top of the group is the natural landing surface
+  // for tenant ops; the focused list pages remain the place to act.
+  {
+    to: ROUTES.ADMIN.TENANTS,
+    label: "Overview",
+    icon: LayoutDashboard,
+    adminOrAppAdmin: true,
+    group: "tenants"
+  },
+  {
+    to: ROUTES.ADMIN.ORGS,
+    label: "Organizations",
+    icon: Building2,
+    adminOrAppAdmin: true,
+    group: "tenants"
+  },
+  {
+    to: ROUTES.ADMIN.USERS,
+    label: "Users",
+    icon: Users,
+    adminOrAppAdmin: true,
+    group: "tenants"
+  },
+  {
+    to: ROUTES.ADMIN.WORKSPACES,
+    label: "Workspaces",
+    icon: FolderOpen,
+    adminOrAppAdmin: true,
+    group: "tenants"
   }
 ];
 
@@ -67,24 +141,31 @@ export function AdminSidebar() {
       </div>
 
       <div className='min-h-0 flex-1 overflow-auto'>
-        <SidebarGroup className='px-2 pt-2'>
-          <SidebarGroupLabel>Operations</SidebarGroupLabel>
-          <SidebarMenu>
-            {visibleItems.map(({ to, label, icon: Icon }) => {
-              const isActive = location.pathname.startsWith(to);
-              return (
-                <SidebarMenuItem key={to}>
-                  <SidebarMenuButton asChild isActive={isActive}>
-                    <Link to={to}>
-                      <Icon />
-                      <span>{label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })}
-          </SidebarMenu>
-        </SidebarGroup>
+        {(["operations", "tenants"] as const).map((group) => {
+          const items = visibleItems.filter((i) => i.group === group);
+          if (items.length === 0) return null;
+          const groupLabel = group === "operations" ? "Operations" : "Tenants";
+          return (
+            <SidebarGroup key={group} className='px-2 pt-2'>
+              <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
+              <SidebarMenu>
+                {items.map(({ to, label, icon: Icon }) => {
+                  const isActive = location.pathname.startsWith(to);
+                  return (
+                    <SidebarMenuItem key={to}>
+                      <SidebarMenuButton asChild isActive={isActive}>
+                        <Link to={to}>
+                          <Icon />
+                          <span>{label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroup>
+          );
+        })}
       </div>
 
       <Footer />

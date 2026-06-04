@@ -10,8 +10,7 @@ use oxy_billing::service::AdminSubscriptionItem;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::server::api::middlewares::org_context::OrgContextExtractor;
-use crate::server::api::middlewares::role_guards::OrgAdmin;
+use crate::server::api::middlewares::role_guards::{OrgAdminStrict, OrgMemberStrict};
 
 #[derive(Serialize)]
 pub struct BillingSummary {
@@ -45,7 +44,9 @@ pub struct InvoiceResp {
 
 /// Full admin summary — pricing items, billing cycle, period boundaries.
 /// Admin-only to preserve the no-public-pricing guarantee.
-pub async fn get_billing(OrgAdmin(ctx): OrgAdmin) -> Result<Json<BillingSummary>, StatusCode> {
+pub async fn get_billing(
+    OrgAdminStrict(ctx): OrgAdminStrict,
+) -> Result<Json<BillingSummary>, StatusCode> {
     if billing_flag_off() {
         return Ok(Json(billing_disabled_summary()));
     }
@@ -105,7 +106,7 @@ pub struct BillingStatusResp {
 /// Readable by any org member. Drives the FE paywall, `BillingBanner`,
 /// and `OrgGuard` — all of which need to render for non-admin members.
 pub async fn get_billing_status(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgMemberStrict(ctx): OrgMemberStrict,
 ) -> Result<Json<BillingStatusResp>, StatusCode> {
     if billing_flag_off() {
         return Ok(Json(BillingStatusResp {
@@ -132,7 +133,7 @@ pub async fn get_billing_status(
     }))
 }
 
-pub async fn post_portal(OrgAdmin(ctx): OrgAdmin) -> Result<Json<UrlResp>, StatusCode> {
+pub async fn post_portal(OrgAdminStrict(ctx): OrgAdminStrict) -> Result<Json<UrlResp>, StatusCode> {
     let svc = billing_service().await?;
     let url = svc
         .create_portal_session(ctx.org.id)
@@ -153,7 +154,7 @@ pub struct CheckoutSessionStatusResp {
 /// Used by the customer-facing `/billing/checkout-success` page to confirm
 /// the redirect before polling billing status — independent of the webhook.
 pub async fn get_checkout_session(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgMemberStrict(ctx): OrgMemberStrict,
     Path((_org_id, session_id)): Path<(Uuid, String)>,
 ) -> Result<Json<CheckoutSessionStatusResp>, StatusCode> {
     let svc = billing_service().await?;
@@ -167,7 +168,9 @@ pub async fn get_checkout_session(
     Ok(Json(CheckoutSessionStatusResp { paid }))
 }
 
-pub async fn get_invoices(OrgAdmin(ctx): OrgAdmin) -> Result<Json<Vec<InvoiceResp>>, StatusCode> {
+pub async fn get_invoices(
+    OrgAdminStrict(ctx): OrgAdminStrict,
+) -> Result<Json<Vec<InvoiceResp>>, StatusCode> {
     let svc = billing_service().await?;
     let invoices = svc
         .list_invoices(ctx.org.id)

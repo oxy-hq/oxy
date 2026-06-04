@@ -277,21 +277,41 @@ pub(super) async fn authenticate_and_authorize(
     Ok(AuthOutcome { app, is_staff })
 }
 
-// ── Bootstrap: legacy OXY_APP_ADMINS env → app_admins table ─────────────────
+// ── Bootstrap: OXY_GLOBAL_ADMINS env → app_admins table ─────────────────────
 
-/// Reads `OXY_APP_ADMINS` (comma-separated emails) once at startup and
-/// inserts any missing rows into `app_admins` with `granted_by = NULL`.
-/// Idempotent — re-running is harmless. After the seed, OXY_OWNER users
-/// can add/remove admins through the UI; the env var becomes a
-/// bootstrap-only convenience, never a permanent allow-list.
+/// Reads `OXY_GLOBAL_ADMINS` (preferred) or the legacy `OXY_APP_ADMINS`
+/// (comma-separated emails) once at startup and inserts any missing rows
+/// into `app_admins` with `granted_by = NULL`. Idempotent — re-running is
+/// harmless. After the seed, OXY_OWNER users can add/remove admins through
+/// the UI; the env var becomes a bootstrap-only convenience, never a
+/// permanent allow-list.
+///
+/// If both env vars are set, the contents are unioned so a half-migrated
+/// deployment doesn't lose admins. A deprecation warning is logged when
+/// the legacy name is observed.
 pub async fn bootstrap_app_admins_from_env(db: &DatabaseConnection) -> Result<(), DbErr> {
-    let Ok(raw) = std::env::var("OXY_APP_ADMINS") else {
+    let mut raw_inputs: Vec<String> = Vec::new();
+    if let Ok(v) = std::env::var("OXY_GLOBAL_ADMINS") {
+        raw_inputs.push(v);
+    }
+    if let Ok(v) = std::env::var("OXY_APP_ADMINS") {
+        tracing::warn!(
+            "OXY_APP_ADMINS is deprecated — rename to OXY_GLOBAL_ADMINS. \
+             Both are accepted for now; the legacy name will be removed in \
+             a future release."
+        );
+        raw_inputs.push(v);
+    }
+    if raw_inputs.is_empty() {
         return Ok(());
-    };
-    let emails: Vec<String> = raw
-        .split(',')
+    }
+    let emails: Vec<String> = raw_inputs
+        .iter()
+        .flat_map(|s| s.split(','))
         .map(|s| s.trim().to_ascii_lowercase())
         .filter(|s| !s.is_empty())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
         .collect();
     if emails.is_empty() {
         return Ok(());
@@ -325,7 +345,7 @@ pub async fn bootstrap_app_admins_from_env(db: &DatabaseConnection) -> Result<()
     invalidate_admin_cache();
     tracing::info!(
         count,
-        "bootstrap_app_admins: seeded {count} admin(s) from OXY_APP_ADMINS env"
+        "bootstrap_app_admins: seeded {count} global admin(s) from env"
     );
     Ok(())
 }

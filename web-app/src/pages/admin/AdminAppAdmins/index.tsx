@@ -35,14 +35,19 @@ function formatGrantedAt(value: string): string {
 }
 
 /**
- * `/admin/app-admins` — OXY_OWNER-only management of the global "Oxy
- * app admin" role. Members of this list see the Customer apps surface
- * and have access to every registered customer app regardless of org
- * membership.
+ * `/admin/app-admins` — Global Owner-only management of the **Global
+ * Admin** role (rendered to users as "Global admins"; the backend table
+ * is still `app_admins` and the API field is still `is_app_admin`).
  *
- * Replaces the legacy `OXY_APP_ADMINS` env var allow-list. On first
- * boot the server seeds existing env entries into the table; from then
- * on, this page is the source of truth.
+ * Members of this list see most of the admin surface (Feature flags,
+ * Internal jobs, Customer apps, Organizations, Users, Workspaces) and
+ * every registered customer app regardless of org membership. Only
+ * Global Owners (OXY_OWNER env-var allow-list) can reach Billing queue
+ * and this page.
+ *
+ * Replaces the env-var allow-list (now `OXY_GLOBAL_ADMINS`, formerly
+ * `OXY_APP_ADMINS`). On first boot the server seeds existing env entries
+ * into the table; from then on, this page is the source of truth.
  */
 export default function AdminAppAdmins() {
   const { data: admins = [], isPending } = useAppAdmins();
@@ -70,10 +75,11 @@ export default function AdminAppAdmins() {
   return (
     <div className='mx-auto max-w-5xl p-6'>
       <div className='mb-6'>
-        <h1 className='font-semibold text-2xl tracking-tight'>App admins</h1>
+        <h1 className='font-semibold text-2xl tracking-tight'>Global admins</h1>
         <p className='mt-1 text-muted-foreground text-sm'>
-          Members of this list have access to the Customer apps admin surface and to every
-          registered customer app, regardless of org membership.
+          Global Admins reach most of the admin panel (Feature flags, Internal jobs, Customer apps,
+          Organizations, Users, Workspaces) and every registered customer app regardless of org
+          membership. Billing queue and this page stay reserved for Global Owners.
         </p>
       </div>
 

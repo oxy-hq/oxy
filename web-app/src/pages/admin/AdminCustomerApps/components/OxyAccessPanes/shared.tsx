@@ -155,7 +155,7 @@ export const GrantsError = ({ error }: { error: unknown }) => (
           </p>
           <p className='mt-2 text-muted-foreground text-xs'>
             Add your email to the oxy backend's{" "}
-            <code className='rounded bg-muted px-1 py-0.5 font-mono'>OXY_APP_ADMINS</code> and
+            <code className='rounded bg-muted px-1 py-0.5 font-mono'>OXY_GLOBAL_ADMINS</code> and
             refresh.
           </p>
         </>

@@ -57,6 +57,37 @@ pub struct ServeArgs {
     /// proxy that restricts access.
     #[clap(long, default_value_t = false)]
     pub local: bool,
+
+    /// Disable in-process agentic workers: HTTP only, no startup recovery and
+    /// no periodic global driver loop.
+    ///
+    /// Use when running a separate `oxy worker` fleet — the workers handle all
+    /// task execution, recovery, and scheduler ticks; `oxy serve` only accepts
+    /// HTTP requests and writes new tasks to the queue.
+    ///
+    /// Also honored via the `OXY_DISABLE_INPROCESS_WORKERS` env var; the CLI
+    /// flag wins if both are set. Default OFF — existing single-process
+    /// deployments are unchanged.
+    #[clap(long, default_value_t = false)]
+    pub no_workers: bool,
+}
+
+impl ServeArgs {
+    /// True when in-process worker plumbing (startup recovery, periodic
+    /// global driver loop) should be skipped because a separate `oxy worker`
+    /// fleet handles execution.
+    ///
+    /// CLI flag (`--no-workers`) wins; falls back to the
+    /// `OXY_DISABLE_INPROCESS_WORKERS` env var (`1`/`true`/`yes`/`on`).
+    pub fn workers_disabled(&self) -> bool {
+        if self.no_workers {
+            return true;
+        }
+        std::env::var("OXY_DISABLE_INPROCESS_WORKERS")
+            .ok()
+            .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+    }
 }
 
 /// Arguments for the `oxy start` command (Docker containers + web server)
@@ -90,5 +121,40 @@ mod tests {
     fn local_flag_is_parsed() {
         let args = ServeArgs::parse_from(["oxy", "--local"]);
         assert!(args.local);
+    }
+
+    #[test]
+    fn no_workers_defaults_to_false() {
+        let args = ServeArgs::parse_from(["oxy"]);
+        assert!(!args.no_workers);
+    }
+
+    #[test]
+    fn no_workers_flag_is_parsed() {
+        let args = ServeArgs::parse_from(["oxy", "--no-workers"]);
+        assert!(args.no_workers);
+        assert!(args.workers_disabled());
+    }
+
+    #[test]
+    fn workers_disabled_falls_back_to_env() {
+        // Lib-binary tests run intra-binary in parallel under nextest, so
+        // any test that mutates env state needs to serialize on a shared
+        // mutex. Today only this test touches OXY_DISABLE_INPROCESS_WORKERS,
+        // but the lock is here so a future test added to this binary
+        // doesn't race against this one. Matches the ENV_LOCK pattern in
+        // crates/app/src/cli/commands/worker_tests.rs.
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _g = ENV_LOCK.lock().unwrap();
+        let prev = std::env::var("OXY_DISABLE_INPROCESS_WORKERS").ok();
+        // SAFETY: ENV_LOCK serializes env mutation within this binary.
+        unsafe { std::env::set_var("OXY_DISABLE_INPROCESS_WORKERS", "1") };
+        let args = ServeArgs::parse_from(["oxy"]);
+        assert!(args.workers_disabled());
+        // Restore prior env state to avoid leaking across tests.
+        match prev {
+            Some(v) => unsafe { std::env::set_var("OXY_DISABLE_INPROCESS_WORKERS", v) },
+            None => unsafe { std::env::remove_var("OXY_DISABLE_INPROCESS_WORKERS") },
+        }
     }
 }
