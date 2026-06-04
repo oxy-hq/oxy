@@ -1174,6 +1174,24 @@ pub async fn delete_app(Path(id): Path<Uuid>) -> Result<StatusCode, StatusCode> 
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Delete the bundle bytes BEFORE the row so a partial failure
+    // leaves an orphan row (recoverable: just re-delete) rather than
+    // an orphan S3 prefix with no DB pointer (silent storage leak).
+    //
+    // Build-store failure is logged but doesn't block the row delete —
+    // there's no recovery path from "DB row exists but operator wanted
+    // it gone" beyond surfacing the error in logs and reclaiming the
+    // bucket bytes via a one-off ops script if it happens. The far
+    // more common case (no S3 configured / FS backend / app has no
+    // builds) succeeds silently.
+    if let Err(e) = crate::server::api::customer_apps_build_store::delete_app(id).await {
+        tracing::warn!(
+            "delete_app {id}: bundle bytes could not be removed from build store: {e} \
+             — proceeding with DB row delete; reclaim manually if needed"
+        );
+    }
+
     row.delete(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1183,19 +1201,32 @@ pub async fn delete_app(Path(id): Path<Uuid>) -> Result<StatusCode, StatusCode> 
 
 /// Resolve `<org_slug>/<app_slug>` → (org row, app row). Returns `Ok(None)`
 /// if either lookup misses; `Err` only on a real DB failure.
+/// Resolve `<org>/<app>` → (org row, app row). The `org` segment can be
+/// either a slug or a UUID — auto-detected on parse, mirroring the
+/// publish-side `OrgRef::from_str_auto`. Lets `oxy publish --org <uuid>`
+/// reach `build-config` without falling over on the slug-only lookup
+/// the route used to do; the customer-facing `/customer-apps/<org>/<app>/`
+/// URLs are unaffected because they only ever carry slugs (UUIDs in
+/// browser URLs would be ugly and the serve dispatcher passes slugs
+/// straight through).
 pub(crate) async fn lookup_by_pretty_path(
     db: &DatabaseConnection,
-    org_slug: &str,
+    org_segment: &str,
     app_slug: &str,
 ) -> Result<Option<(organizations::Model, apps::Model)>, StatusCode> {
-    let org = Organizations::find()
-        .filter(organizations::Column::Slug.eq(org_slug))
-        .one(db)
-        .await
-        .map_err(|e| {
-            tracing::error!("Org lookup failed for {org_slug}: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let org = match Uuid::parse_str(org_segment) {
+        Ok(id) => Organizations::find_by_id(id).one(db).await,
+        Err(_) => {
+            Organizations::find()
+                .filter(organizations::Column::Slug.eq(org_segment))
+                .one(db)
+                .await
+        }
+    }
+    .map_err(|e| {
+        tracing::error!("Org lookup failed for {org_segment}: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let Some(org) = org else {
         return Ok(None);
     };
@@ -1205,7 +1236,7 @@ pub(crate) async fn lookup_by_pretty_path(
         .one(db)
         .await
         .map_err(|e| {
-            tracing::error!("App lookup failed for {org_slug}/{app_slug}: {e}");
+            tracing::error!("App lookup failed for {org_segment}/{app_slug}: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(app.map(|a| (org, a)))

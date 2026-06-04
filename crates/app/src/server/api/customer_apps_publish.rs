@@ -41,7 +41,12 @@ use super::{
 const KEEP_BUILDS: usize = 10;
 
 pub struct PublishInput {
-    pub org_slug: String,
+    /// Org identity — accepts either a slug (`"acme"`) or a UUID
+    /// (`"550e8400-e29b-41d4-a716-446655440000"`). UUIDs are useful
+    /// when the slug has drifted between envs (e.g. an admin renamed
+    /// the org in prod but not staging) and the publisher wants a
+    /// stable handle. `resolve_org` looks at both columns.
+    pub org_ref: OrgRef,
     pub app_slug: String,
     pub project_id: Uuid,
     pub branch: Option<String>,
@@ -55,12 +60,58 @@ pub struct PublishInput {
     pub published_by: Option<Uuid>,
 }
 
+/// How the publisher referred to the target org. Accepting both lets
+/// CLI users pass whichever they have at hand: `--org acme` (slug,
+/// stable for humans) or `--org 550e8400-...` (UUID, stable across
+/// rename/env-drift). The server tries them in order.
+#[derive(Debug)]
+pub enum OrgRef {
+    /// Looked up against `organizations.slug`.
+    Slug(String),
+    /// Looked up against `organizations.id`. Skips a slug round-trip
+    /// when the publisher already knows the row id.
+    Id(Uuid),
+}
+
+impl OrgRef {
+    /// Auto-detect: if the input parses as a UUID, treat as `Id`;
+    /// otherwise treat as `Slug`. Lets a single `--org <value>` CLI
+    /// arg accept either form without forcing the user to pick a
+    /// different flag.
+    pub fn from_str_auto(s: &str) -> Self {
+        match Uuid::parse_str(s) {
+            Ok(id) => OrgRef::Id(id),
+            Err(_) => OrgRef::Slug(s.to_string()),
+        }
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            OrgRef::Slug(s) => s.clone(),
+            OrgRef::Id(id) => id.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct PublishResult {
     pub app_id: Uuid,
     pub build_id: String,
     pub url: String,
     pub channel: String,
+    /// Canonical org slug the app row landed on, after the server
+    /// resolved whatever `OrgRef` the publisher sent. Echoing the
+    /// server's view lets the CLI render `Registered new app
+    /// acme/store-pulse` even when the engineer passed a UUID (which
+    /// would otherwise echo back as `550e8400-…/store-pulse` —
+    /// technically correct but jarring).
+    pub org_slug: String,
+    /// `true` when this publish created the app row, `false` when it
+    /// updated an existing row. Lets the CLI tell the engineer whether
+    /// they just registered a brand-new app or shipped a new version
+    /// of one that was already in the system — surfaces accidental
+    /// re-registration vs. intentional re-publish.
+    pub is_new_app: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -152,14 +203,19 @@ pub fn unpack_tar_gz(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, PublishErro
 
 async fn resolve_org(
     db: &DatabaseConnection,
-    org_slug: &str,
+    org_ref: &OrgRef,
 ) -> Result<organizations::Model, PublishError> {
-    organizations::Entity::find()
-        .filter(organizations::Column::Slug.eq(org_slug))
-        .one(db)
-        .await
-        .map_err(|e| PublishError::Db(e.to_string()))?
-        .ok_or_else(|| PublishError::UnknownOrg(org_slug.to_string()))
+    let row = match org_ref {
+        OrgRef::Slug(slug) => {
+            organizations::Entity::find()
+                .filter(organizations::Column::Slug.eq(slug))
+                .one(db)
+                .await
+        }
+        OrgRef::Id(id) => organizations::Entity::find_by_id(*id).one(db).await,
+    };
+    row.map_err(|e| PublishError::Db(e.to_string()))?
+        .ok_or_else(|| PublishError::UnknownOrg(org_ref.describe()))
 }
 
 /// Best-effort cross-org guard: if the project id resolves to a workspace,
@@ -229,12 +285,16 @@ async fn find_app(
         .map_err(|e| PublishError::Db(e.to_string()))
 }
 
-/// Insert (first publish) or update the `apps` row, returning its id.
+/// Insert (first publish) or update the `apps` row. Returns the app id
+/// and `is_new = true` iff this call inserted a fresh row — the CLI uses
+/// that to print "Registered new app" vs "Published new version of …"
+/// so engineers spot accidental re-registration and intentional updates
+/// without scanning the diff.
 async fn upsert_app(
     db: &DatabaseConnection,
     org: &organizations::Model,
     input: &PublishInput,
-) -> Result<Uuid, PublishError> {
+) -> Result<(Uuid, bool), PublishError> {
     let now = Utc::now().fixed_offset();
     let existing = find_app(db, org.id, &input.app_slug).await?;
     if let Some(row) = existing {
@@ -253,7 +313,7 @@ async fn upsert_app(
             .update(db)
             .await
             .map_err(|e| PublishError::Db(e.to_string()))?;
-        return Ok(id);
+        return Ok((id, false));
     }
 
     let id = Uuid::new_v4();
@@ -289,7 +349,7 @@ async fn upsert_app(
         .insert(db)
         .await
         .map_err(|e| PublishError::Db(e.to_string()))?;
-    Ok(id)
+    Ok((id, true))
 }
 
 fn humanize_slug(slug: &str) -> String {
@@ -390,7 +450,7 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
         .await
         .map_err(|e| PublishError::Db(e.to_string()))?;
 
-    let org = resolve_org(&db, &input.org_slug).await?;
+    let org = resolve_org(&db, &input.org_ref).await?;
     validate_project(&db, input.project_id, org.id, &org.slug).await?;
     authorize_publish(&db, &org, &input).await?;
 
@@ -409,7 +469,7 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
         .and_then(|(_, b)| serde_json::from_slice::<serde_json::Value>(b).ok())
         .or_else(|| input.manifest.clone());
 
-    let app_id = upsert_app(&db, &org, &input).await?;
+    let (app_id, is_new_app) = upsert_app(&db, &org, &input).await?;
     let s3_prefix = store::put_build(app_id, &input.build_id, files).await?;
     // Bytes are now stored. If recording the row or moving the pointer fails,
     // roll the orphaned build back out so a partial publish leaves no
@@ -443,6 +503,8 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
         build_id: input.build_id,
         url: format!("/customer-apps/{}/{}/", org.slug, input.app_slug),
         channel: if input.promote { "published" } else { "draft" }.to_string(),
+        org_slug: org.slug.clone(),
+        is_new_app,
     })
 }
 
@@ -455,7 +517,14 @@ pub async fn publish_handler(
     oxy_auth::extractor::AuthenticatedUserExtractor(user): oxy_auth::extractor::AuthenticatedUserExtractor,
     mut multipart: Multipart,
 ) -> Result<Json<PublishResult>, (StatusCode, String)> {
-    let mut org = None;
+    let mut org: Option<String> = None;
+    let mut org_id: Option<Uuid> = None;
+    // Tracks whether the publisher sent a non-empty `org_id` that
+    // didn't parse — we surface that as a 400 instead of silently
+    // falling back to `org`, so a typo'd UUID doesn't end up landing
+    // the publish on a different org's row that happens to match an
+    // unrelated `org=` slug.
+    let mut org_id_invalid: Option<String> = None;
     let mut app = None;
     let mut project_id = None;
     let mut branch = None;
@@ -490,7 +559,25 @@ pub async fn publish_handler(
                 let key = field_name.to_string();
                 let val = field.text().await.unwrap_or_default();
                 match key.as_str() {
+                    // `org` accepts either a slug or a UUID — auto-detected
+                    // by `OrgRef::from_str_auto` below. `org_id` is the
+                    // explicit alias for the UUID form; if both are present
+                    // `org_id` wins (older clients that send just `org=`
+                    // still work unchanged).
                     "org" => org = Some(val),
+                    "org_id" => {
+                        let trimmed = val.trim();
+                        if trimmed.is_empty() {
+                            // Empty string is treated as "field omitted"
+                            // (consistent with how other multipart fields
+                            // are handled here).
+                        } else {
+                            match Uuid::parse_str(trimmed) {
+                                Ok(id) => org_id = Some(id),
+                                Err(_) => org_id_invalid = Some(trimmed.to_string()),
+                            }
+                        }
+                    }
                     "app" => app = Some(val),
                     "project" | "project_id" => project_id = Uuid::parse_str(val.trim()).ok(),
                     "branch" => branch = Some(val).filter(|s| !s.is_empty()),
@@ -512,8 +599,25 @@ pub async fn publish_handler(
             .map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
     }
 
+    if let Some(bad) = org_id_invalid {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("org_id is not a valid UUID: {bad:?}"),
+        ));
+    }
+    let org_ref = match (org_id, org) {
+        (Some(id), _) => OrgRef::Id(id),
+        (None, Some(s)) => OrgRef::from_str_auto(&s),
+        (None, None) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "missing org: provide `org` (slug or UUID) or `org_id` (UUID)".into(),
+            ));
+        }
+    };
+
     let input = PublishInput {
-        org_slug: org.ok_or((StatusCode::BAD_REQUEST, "missing org".into()))?,
+        org_ref,
         app_slug: app.ok_or((StatusCode::BAD_REQUEST, "missing app".into()))?,
         project_id: project_id
             .ok_or((StatusCode::BAD_REQUEST, "missing/invalid project".into()))?,

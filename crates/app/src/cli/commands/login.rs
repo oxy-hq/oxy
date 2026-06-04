@@ -27,24 +27,43 @@ use super::app_manifest::{OxyAppManifest, resolve_target};
 
 #[derive(Parser, Debug)]
 pub struct LoginArgs {
-    /// Environment name to authenticate against (resolves a target URL from
-    /// oxy-app.json `environments`, else a built-in default). E.g. local,
-    /// dev, production.
-    #[arg(long, default_value = "production")]
-    env: String,
-    /// Explicit oxy base URL; overrides `--env`.
+    /// Environment(s) to authenticate against. Repeat the flag or use a
+    /// comma-separated list to log into several at once
+    /// (`--env dev --env staging`, or `--env dev,staging,production`).
+    /// Each env resolves a target URL via oxy-app.json `environments` or
+    /// the built-in defaults; the browser opens once per env in
+    /// sequence. Default: `production`.
+    #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',')]
+    env: Vec<String>,
+    /// Explicit oxy base URL; overrides `--env`. Only meaningful when a
+    /// single env is given (or when `--env` is omitted altogether).
     #[arg(long)]
     target: Option<String>,
 }
 
 #[derive(Parser, Debug)]
 pub struct LogoutArgs {
-    /// Environment name whose cached token to clear.
-    #[arg(long, default_value = "production")]
-    env: String,
+    /// Environment(s) whose cached token to clear. Same multi-value
+    /// syntax as `oxy login --env`. Default: `production`.
+    #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',')]
+    env: Vec<String>,
     /// Explicit oxy base URL; overrides `--env`.
     #[arg(long)]
     target: Option<String>,
+}
+
+/// Resolve the list of env names to operate on, defaulting to
+/// `production` when `--env` is omitted. Lets the handler treat
+/// single- and multi-env invocations uniformly.
+fn envs_with_default(envs: &[String]) -> Vec<String> {
+    if envs.is_empty() {
+        vec!["production".to_string()]
+    } else {
+        envs.iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
 }
 
 // ── credentials cache ──────────────────────────────────────────────────────
@@ -118,14 +137,83 @@ pub fn load_token(target: &str) -> Option<String> {
 
 pub async fn handle_login_command(args: LoginArgs) -> Result<(), OxyError> {
     let manifest = OxyAppManifest::load_from_dir(&std::env::current_dir().unwrap_or_default());
-    let target = resolve_target(manifest.as_ref(), Some(&args.env), args.target.as_deref())
-        .ok_or_else(|| {
-            OxyError::ConfigurationError(format!(
-                "could not resolve a target for --env {}. Pass --target <url> or add it to oxy-app.json environments.",
-                args.env
-            ))
-        })?;
+    let envs = envs_with_default(&args.env);
 
+    // `--target` only makes sense with a single env. With several envs
+    // the target list comes from oxy-app.json `environments` (or the
+    // built-in defaults), and a single override would silently apply
+    // to all of them — confusing. Refuse early.
+    if envs.len() > 1 && args.target.is_some() {
+        return Err(OxyError::ConfigurationError(
+            "--target is only valid when logging into a single env".into(),
+        ));
+    }
+
+    // Resolve every target up-front so we fail fast on a typo before
+    // popping any browser windows.
+    let targets: Vec<(String, String)> = envs
+        .iter()
+        .map(|env| {
+            resolve_target(manifest.as_ref(), Some(env), args.target.as_deref())
+                .map(|t| (env.clone(), t))
+                .ok_or_else(|| {
+                    OxyError::ConfigurationError(format!(
+                        "could not resolve a target for --env {env}. Pass --target <url> or add it to oxy-app.json environments."
+                    ))
+                })
+        })
+        .collect::<Result<_, _>>()?;
+
+    if targets.len() > 1 {
+        println!(
+            "{}",
+            format!(
+                "Logging into {} environments: {}",
+                targets.len(),
+                targets
+                    .iter()
+                    .map(|(e, _)| e.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+            .text()
+        );
+    }
+
+    // Loop. Errors during one env don't abort the rest — collect them
+    // and surface at the end so a multi-env run isn't all-or-nothing
+    // (e.g. dev OAuth might be configured differently than prod).
+    let mut failures: Vec<(String, String)> = Vec::new();
+    for (env, target) in &targets {
+        if targets.len() > 1 {
+            println!("{}", format!("──── {env} ({target}) ────").secondary());
+        }
+        match login_one(target).await {
+            Ok(()) => {}
+            Err(e) => failures.push((env.clone(), e.to_string())),
+        }
+    }
+
+    if !failures.is_empty() {
+        let summary = failures
+            .iter()
+            .map(|(e, msg)| format!("  {e}: {msg}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(OxyError::RuntimeError(format!(
+            "{}/{} logins failed:\n{summary}",
+            failures.len(),
+            targets.len()
+        )));
+    }
+    Ok(())
+}
+
+/// Run the loopback login flow against a single target and persist the
+/// token + reported email/admin status. Extracted from the original
+/// handler so it can be called in a loop without duplicating the
+/// 60-odd lines of browser/auth dance.
+async fn login_one(target: &str) -> Result<(), OxyError> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| OxyError::RuntimeError(format!("could not bind loopback port: {e}")))?;
@@ -147,11 +235,11 @@ pub async fn handle_login_command(args: LoginArgs) -> Result<(), OxyError> {
     open_browser(&auth_url);
 
     let token = wait_for_callback(listener, &state).await?;
-    let user = fetch_user(&target, &token).await?;
+    let user = fetch_user(target, &token).await?;
 
     let mut store = read_store();
     store.0.insert(
-        host_key(&target),
+        host_key(target),
         HostCredential {
             token: token.clone(),
             email: user.email.clone(),
@@ -178,20 +266,44 @@ pub async fn handle_login_command(args: LoginArgs) -> Result<(), OxyError> {
 
 pub async fn handle_logout_command(args: LogoutArgs) -> Result<(), OxyError> {
     let manifest = OxyAppManifest::load_from_dir(&std::env::current_dir().unwrap_or_default());
-    let target = resolve_target(manifest.as_ref(), Some(&args.env), args.target.as_deref())
-        .ok_or_else(|| {
-            OxyError::ConfigurationError(format!(
-                "could not resolve a target for --env {}",
-                args.env
-            ))
-        })?;
+    let envs = envs_with_default(&args.env);
+
+    if envs.len() > 1 && args.target.is_some() {
+        return Err(OxyError::ConfigurationError(
+            "--target is only valid when logging out of a single env".into(),
+        ));
+    }
+
+    // Resolve every target up-front so a bad --env at position 3
+    // doesn't silently drop the in-memory removals we already did for
+    // positions 1 and 2 before erroring out. Mirrors the up-front
+    // resolution `handle_login_command` does for the same reason.
+    let targets: Vec<(String, String)> = envs
+        .iter()
+        .map(|env| {
+            resolve_target(manifest.as_ref(), Some(env), args.target.as_deref())
+                .map(|t| (env.clone(), t))
+                .ok_or_else(|| {
+                    OxyError::ConfigurationError(format!(
+                        "could not resolve a target for --env {env}"
+                    ))
+                })
+        })
+        .collect::<Result<_, _>>()?;
+
     let mut store = read_store();
-    let removed = store.0.remove(&host_key(&target)).is_some();
-    write_store(&store)?;
-    if removed {
-        println!("{}", format!("Logged out of {target}.").success());
-    } else {
-        println!("{}", format!("No cached credentials for {target}.").text());
+    let mut any_removed = false;
+    for (_env, target) in &targets {
+        let removed = store.0.remove(&host_key(target)).is_some();
+        any_removed |= removed;
+        if removed {
+            println!("{}", format!("Logged out of {target}.").success());
+        } else {
+            println!("{}", format!("No cached credentials for {target}.").text());
+        }
+    }
+    if any_removed {
+        write_store(&store)?;
     }
     Ok(())
 }

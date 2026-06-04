@@ -233,6 +233,96 @@ pub async fn delete_build(app_id: Uuid, build_id: &str) -> Result<(), BuildStore
     Ok(())
 }
 
+/// Delete every object/file under `customer-apps/<app_id>/` — used by
+/// the admin delete-app endpoint to reclaim S3 storage so a deleted
+/// row doesn't leak its bundle bytes forever. Best-effort: returns the
+/// underlying error so the caller can decide whether to fail the
+/// HTTP request or just log and proceed (the admin handler logs and
+/// proceeds — see `delete_app` in `admin/apps/handlers.rs`).
+///
+/// On the local filesystem backend this is a `remove_dir_all` of
+/// `<state_root>/customer-apps/<app_id>/`. On S3 it walks the prefix
+/// in pages and batches each page through `DeleteObjects` (≤1000 keys
+/// per call — the S3 limit, which matches `ListObjectsV2`'s default
+/// page size, so each page becomes exactly one delete request).
+pub async fn delete_app(app_id: Uuid) -> Result<(), BuildStoreError> {
+    match bucket() {
+        Some(bucket) => {
+            let client = s3_client().await;
+            let prefix = format!("customer-apps/{app_id}/");
+            let mut continuation: Option<String> = None;
+            loop {
+                let mut req = client.list_objects_v2().bucket(&bucket).prefix(&prefix);
+                if let Some(token) = &continuation {
+                    req = req.continuation_token(token.clone());
+                }
+                let resp = req
+                    .send()
+                    .await
+                    .map_err(|e| BuildStoreError::S3(format!("list_objects_v2 {prefix}: {e}")))?;
+
+                // Batch this page into a single DeleteObjects call (≤1000
+                // keys per S3 limit; ListObjectsV2 returns ≤1000 by default
+                // so one delete-objects call covers each page exactly).
+                let keys: Vec<aws_sdk_s3::types::ObjectIdentifier> = resp
+                    .contents()
+                    .iter()
+                    .filter_map(|o| o.key())
+                    .filter_map(|k| {
+                        aws_sdk_s3::types::ObjectIdentifier::builder()
+                            .key(k)
+                            .build()
+                            .ok()
+                    })
+                    .collect();
+                if !keys.is_empty() {
+                    let del = aws_sdk_s3::types::Delete::builder()
+                        .set_objects(Some(keys))
+                        .quiet(true)
+                        .build()
+                        .map_err(|e| BuildStoreError::S3(format!("build Delete payload: {e}")))?;
+                    client
+                        .delete_objects()
+                        .bucket(&bucket)
+                        .delete(del)
+                        .send()
+                        .await
+                        .map_err(|e| {
+                            BuildStoreError::S3(format!("delete_objects {prefix}: {e}"))
+                        })?;
+                }
+
+                if resp.is_truncated().unwrap_or(false) {
+                    continuation = resp.next_continuation_token().map(str::to_string);
+                    if continuation.is_none() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        None => {
+            // FS backend mirrors the S3 prefix layout: builds live at
+            // `<state_root>/customer-apps/<app_id>/builds/<build_id>/…`,
+            // so the per-app directory we want to nuke is
+            // `<state_root>/customer-apps/<app_id>/`.
+            let app_dir = state_root().join(format!("customer-apps/{app_id}"));
+            match tokio::fs::remove_dir_all(&app_dir).await {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(BuildStoreError::Io(format!(
+                        "rmdir {}: {e}",
+                        app_dir.display()
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,6 +336,57 @@ mod tests {
             p,
             "customer-apps/00000000-0000-0000-0000-000000000000/builds/abc123/"
         );
+    }
+
+    #[tokio::test]
+    async fn delete_app_removes_every_build_on_fs_and_is_idempotent() {
+        // Force the filesystem backend into a temp state dir.
+        let tmp = std::env::temp_dir().join(format!("oxy-bs-test-{}", Uuid::new_v4()));
+        // SAFETY: single-threaded test; we set then clear the vars.
+        unsafe {
+            std::env::remove_var("OXY_CUSTOMER_APPS_S3_BUCKET");
+            std::env::set_var("OXY_STATE_DIR", &tmp);
+        }
+        let app = Uuid::new_v4();
+
+        // Two builds + a nested asset under each — must all disappear.
+        put_build(
+            app,
+            "b1",
+            vec![
+                ("index.html".into(), b"<html>1".to_vec()),
+                ("assets/main.js".into(), b"console.log(1)".to_vec()),
+            ],
+        )
+        .await
+        .expect("put b1");
+        put_build(app, "b2", vec![("index.html".into(), b"<html>2".to_vec())])
+            .await
+            .expect("put b2");
+        let app_dir = state_root().join(format!("customer-apps/{app}"));
+        assert!(app_dir.exists(), "app dir should exist before delete");
+
+        delete_app(app).await.expect("delete_app");
+        assert!(!app_dir.exists(), "app dir gone after delete_app");
+        assert_eq!(
+            get_object(app, "b1", "index.html").await.expect("get b1"),
+            None,
+            "b1 index.html gone"
+        );
+        assert_eq!(
+            get_object(app, "b2", "index.html").await.expect("get b2"),
+            None,
+            "b2 index.html gone"
+        );
+
+        // Idempotent: calling again on a non-existent app dir is a no-op
+        // (NotFound is swallowed), so an admin double-click can't 500.
+        delete_app(app).await.expect("delete_app idempotent");
+
+        unsafe {
+            std::env::remove_var("OXY_STATE_DIR");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[tokio::test]

@@ -32,8 +32,13 @@ pub struct PublishArgs {
     /// Explicit oxy base URL; overrides `--env`.
     #[arg(long)]
     target: Option<String>,
-    /// Org slug. Default: oxy-app.json `orgSlug`, then OXY_ORG, then the
-    /// `<org>` segment of an `apps/<org>/<app>/` working directory.
+    /// Org identity. Accepts either a slug (`acme`) or a UUID — the
+    /// server auto-detects which form was passed. UUIDs are useful
+    /// when the same engineering team publishes to multiple envs where
+    /// the slug has drifted (renamed in prod but not staging) and you
+    /// want a stable handle that works everywhere. Default: oxy-app.json
+    /// `orgSlug`, then OXY_ORG, then the `<org>` segment of an
+    /// `apps/<org>/<app>/` working directory.
     #[arg(long)]
     org: Option<String>,
     /// App slug. Default: oxy-app.json `slug`, then OXY_APP, then the
@@ -138,6 +143,24 @@ fn run_build_step(label: &str, cmd: &str, cwd: &Path, base_path: &str) -> Result
 #[derive(Debug, Deserialize)]
 struct BuildConfigResp {
     project_id: String,
+}
+
+/// Subset of the server's `PublishResult` we render in the CLI.
+/// Tolerant of extra fields so server-side additions don't break a
+/// pinned CLI. `org_slug` (added 2026-06) lets us render the canonical
+/// org name in the success headline even when the publisher passed a
+/// UUID via `--org`; older servers that don't emit it fall back to the
+/// raw `--org` input via `unwrap_or`.
+#[derive(Debug, Deserialize)]
+struct PublishResp {
+    app_id: String,
+    build_id: String,
+    url: String,
+    channel: String,
+    #[serde(default)]
+    org_slug: Option<String>,
+    #[serde(default)]
+    is_new_app: bool,
 }
 
 /// Resolve the project id from the target oxy using the app's identity.
@@ -298,7 +321,45 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
             "publish failed ({status}): {body}"
         )));
     }
-    println!("{}", format!("Published: {body}").success());
+    // Successful response → render a human-readable summary that calls
+    // out whether this was a first publish (new row in `apps`) or a new
+    // version of an existing app. Fall back to the raw body if the
+    // server's shape ever drifts so we don't swallow a useful response
+    // on a pinned CLI.
+    match serde_json::from_str::<PublishResp>(&body) {
+        Ok(r) => {
+            // Prefer the server's canonical org slug so a UUID passed
+            // via --org doesn't echo back into a jarring
+            // "Registered new app 550e8400-…/store-pulse" headline.
+            let display_org = r.org_slug.as_deref().unwrap_or(org.as_str());
+            let headline = if r.is_new_app {
+                format!("Registered new app {display_org}/{app} (id {})", r.app_id).success()
+            } else {
+                format!(
+                    "Published new version of {display_org}/{app} (id {})",
+                    r.app_id
+                )
+                .success()
+            };
+            println!("{headline}");
+            println!(
+                "{}",
+                format!(
+                    "  build {} → {} channel · {}{}",
+                    r.build_id, r.channel, target, r.url
+                )
+                .tertiary()
+            );
+            if r.is_new_app {
+                println!(
+                    "{}",
+                    "  Tip: future `oxy publish` runs for this app will say \"new version\" instead of \"registered\"."
+                        .tertiary()
+                );
+            }
+        }
+        Err(_) => println!("{}", format!("Published: {body}").success()),
+    }
     Ok(())
 }
 
