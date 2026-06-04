@@ -2,11 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.63] - 2026-06-04
+
+### 🚀 Features
+
+- Clickhouse source for airway ELT pipeline (#2422)
+- QuickBooks Online ELT source + OAuth Connect (#2432)
+- Subdomain dispatch (zero-config) + dual-url admin UI for v0 customer apps (#2442)
+
+### 🐛 Bug Fixes
+
+- Silence spurious manifest error for v0 customer apps (#2441)
+- Surface real connector error on customer-app query 500s (#2447)
+
+### 💼 Other
+
+- *(deps)* Bump crate-ci/typos from 1.46.3 to 1.47.2 (#2444)
+- *(deps)* Bump docker/setup-qemu-action from 3 to 4 (#2443)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 10 updates (#2445)
+- *(deps-dev)* Bump the dev-npm-major-dependencies group across 2 directories with 4 updates (#2446)
+
 ## [0.5.62] - 2026-06-03
 
 ### 🐛 Bug Fixes
 
 - Skip worktree copies when discovering semantic files (#2437)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.62 (#2438)
 
 ## [0.5.61] - 2026-06-03
 
