@@ -27,8 +27,9 @@ use tower::service_fn;
 use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
 use tracing::Level;
+use utoipa::openapi::ExternalDocs;
 use utoipa::openapi::security::{
-    ApiKey as OApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme,
+    ApiKey as OApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityRequirement, SecurityScheme,
 };
 use utoipa::openapi::server::Server;
 use utoipa_swagger_ui::SwaggerUi;
@@ -38,6 +39,11 @@ static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
 #[cfg(not(target_os = "windows"))]
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+
+/// Markdown rendered in the Swagger UI header. Documents both the HTTP API
+/// and the CLI tools (`oxy login`, `oxy api`) that consume it. The body lives
+/// in `apidoc.md` so the long markdown stays out of this file.
+const APIDOC_DESCRIPTION: &str = include_str!("apidoc.md");
 
 pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // Require OXY_DATABASE_URL to be set
@@ -436,21 +442,34 @@ async fn create_web_application(
     println!("create_web_application: openapi_router done, assembling final router");
     let mut openapi_doc = openapi_router.into_openapi().clone();
 
-    openapi_doc.info.title = "oxy-api-docs".to_string();
-    openapi_doc.info.description = Some("oxy api docs".to_string());
+    openapi_doc.info.title = "Oxy API".to_string();
+    openapi_doc.info.description = Some(APIDOC_DESCRIPTION.to_string());
     openapi_doc.info.contact = None;
     openapi_doc.info.license = None;
+    let mut external_docs = ExternalDocs::new("https://docs.oxygen-hq.com");
+    external_docs.description = Some("Oxy documentation".to_string());
+    openapi_doc.external_docs = Some(external_docs);
 
-    let name = "ApiKey".to_string();
     let mut components = openapi_doc.components.take().unwrap_or_default();
+    // API key scheme — for service-to-service calls (X-API-Key header).
     components.security_schemes.insert(
-        name.clone(),
+        "ApiKey".to_string(),
         SecurityScheme::ApiKey(OApiKey::Header(ApiKeyValue::new(
             DEFAULT_API_KEY_HEADER.to_string(),
         ))),
     );
+    // Bearer scheme — the JWT issued by `oxy login` (and returned by the
+    // magic-link flow). Pass via `Authorization: Bearer <token>`.
+    components.security_schemes.insert(
+        "BearerAuth".to_string(),
+        SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+    );
     openapi_doc.components = Some(components);
-    openapi_doc.security = Some(vec![SecurityRequirement::new(name, Vec::<String>::new())]);
+    // Endpoints accept either scheme; clients only need to supply one.
+    openapi_doc.security = Some(vec![
+        SecurityRequirement::new("ApiKey", Vec::<String>::new()),
+        SecurityRequirement::new("BearerAuth", Vec::<String>::new()),
+    ]);
     openapi_doc.servers = Some(vec![Server::new("/api")]);
     let static_service = service_fn(handle_static_files);
 
