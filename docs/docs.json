@@ -32,6 +32,14 @@
         ]
       },
       {
+        "group": "Edge fleet",
+        "pages": [
+          "edge/index",
+          "edge/install",
+          "edge/runbook"
+        ]
+      },
+      {
         "group": "Semantic Layer",
         "pages": [
           "learn-about-oxy/semantic-layer",

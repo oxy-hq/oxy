@@ -13,6 +13,33 @@ yoy = "yoy"
 # "caf" is the truncated slugifier output for inputs like "Café" — non-ASCII
 # is dropped, not romanised (see crates/shared/src/utils/slug.rs).
 caf = "caf"
+# SQL verb pluralisation in prose / comments — "INSERTs", "DELETEs",
+# "UPDATEs", "SELECTs" are common when describing batched statements.
+# typos sees the trailing `s` as suffix and clips it back to a
+# 5-letter fragment.
+INSER = "INSER"
+inser = "inser"
+DELET = "DELET"
+delet = "delet"
+UPDAT = "UPDAT"
+updat = "updat"
+SELEC = "SELEC"
+selec = "selec"
+# "mis-" prefix (mis-copy, mis-positions, mis-policied) is a valid
+# English construction; typos clips the trailing `s` from
+# `mis-copy` style strings into a `mis` token.
+mis = "mis"
+# "unparseable" — common technical English spelling (alongside
+# "unparsable"). Both are correct.
+unparseable = "unparseable"
+# "HashiCorp" — vendor name (HashiCorp Vault, etc.). typos clips
+# to `Hashi` because the bicaps fragment looks like a misspell.
+Hashi = "Hashi"
+# "SME" — Subject Matter Expert acronym used in engineering notes.
+SME = "SME"
+# `b"abd"` in fleet.rs constant-time-eq test: the bytes literal is
+# *meant* to differ from `b"abc"` by exactly one byte.
+abd = "abd"
 # "OT" is the overtime abbreviation used across the world-model labor UI/docs
 # (e.g. "OT hours", the `otHours` ribbon field). Both cases are listed so the
 # fragment from camelCase identifiers (otHours) is accepted too.

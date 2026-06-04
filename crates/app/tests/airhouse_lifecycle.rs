@@ -227,6 +227,7 @@ async fn seed_user_workspace_with_role(
         org_id: ActiveValue::Set(Some(org_id)),
         status: ActiveValue::Set(WorkspaceStatus::Ready),
         error: ActiveValue::Set(None),
+        monthly_vlm_budget_micros: ActiveValue::Set(None),
     }
     .insert(db)
     .await

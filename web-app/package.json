@@ -63,6 +63,7 @@
     "dotenv": "^17.4.2",
     "echarts": "^6.1.0",
     "elkjs": "^0.11.1",
+    "hls.js": "^1.6.16",
     "js-cookie": "^3.0.7",
     "lodash": "^4.18.1",
     "lucide-react": "^1.16.0",

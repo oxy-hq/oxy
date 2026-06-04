@@ -1,0 +1,407 @@
+name: video-poc
+
+# Profiles:
+#   edge      — full edge-box stack (mediamtx + worker). Single
+#               `--profile edge up` brings up everything an edge box
+#               needs; scale workers with `--scale edge=N`.
+#   chaos     — pumba network chaos injector; off by default.
+#
+# The old `central` profile (postgres + control-api) was dropped
+# after the control plane moved into Oxy proper. Only `central/mediamtx/`
+# survives — its config is mounted into the edge MTX below.
+
+networks:
+  video-poc:
+    driver: bridge
+
+volumes:
+  edge-outbox: # shared volume; per-replica subdir lives at /var/lib/outbox/${EDGE_BOX_ID}
+  mtx-recordings: # 24h rolling recording buffer; clips for compliance reports come from here
+  tailscale-state: # persistent tailscaled identity per box — never delete or the box re-registers
+  tailscale-socket: # tailscaled CLI socket — shared with the funnel-init sidecar so it can run `tailscale serve`/`funnel` against the same daemon
+
+services:
+  # Tailscale daemon (Phase 1 of WebRTC). One job: join the tailnet,
+  # then enable Tailscale Funnel on ports 443 (→ MTX :8889 WHEP
+  # signaling) and 5349 (→ coturn TURN-over-TLS). With Funnel
+  # active, any operator browser on the public internet can reach
+  # the box without us doing port-forwards or per-box certs.
+  #
+  # An auth key is required for unattended bring-up. Generate one
+  # in the Tailscale admin console (Settings → Keys → Generate auth
+  # key, "ephemeral" off, "reusable" on, tag = tag:edge-box) and
+  # paste into TS_AUTHKEY in .env. Without it the container will
+  # log a "needs auth" message and idle.
+  #
+  # The container runs in `host` userspace networking mode so it
+  # doesn't need NET_ADMIN — that lets it work on Docker Desktop
+  # too. Production Linux boxes can move to kernel WireGuard for
+  # slightly better throughput when we measure a need for it.
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: video-poc-tailscale
+    profiles: ["edge"]
+    hostname: ${TS_HOSTNAME:-video-poc-edge}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_EXTRA_ARGS: --advertise-tags=tag:edge-box
+      # Socket lives on a shared volume so the `tailscale-funnel-init`
+      # sidecar's CLI can poke this exact daemon. Default path inside
+      # the image is `/var/run/tailscale/tailscaled.sock`; we mirror
+      # it explicitly so the volume mount makes sense at a glance.
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - tailscale-socket:/var/run/tailscale
+    networks: [video-poc]
+    # The previous `TS_SERVE_CONFIG: /config/funnel.json` approach
+    # was supposed to auto-apply serve + funnel from a checked-in
+    # JSON template, but tailscale doesn't expand `${TS_CERT_DOMAIN}`
+    # in that file — the daemon loaded it verbatim and the rules
+    # never matched the real tailnet hostname. The
+    # `tailscale-funnel-init` sidecar below replaces it with a
+    # tiny script that waits for login, then runs the equivalent
+    # `tailscale serve`/`funnel` commands against the live daemon.
+    restart: unless-stopped
+
+  # One-shot sidecar that applies serve + funnel after the
+  # tailscale daemon logs in, then writes the resolved
+  # `EDGE_FUNNEL_HOSTNAME` into the shared outbox so the worker
+  # picks it up without any operator hand-config.
+  #
+  # See central/tailscale/funnel-init.sh for the script. Uses the
+  # same tailscale image (so the CLI version always matches the
+  # daemon) and shares the daemon's CLI socket via the
+  # `tailscale-socket` volume. `restart: on-failure` lets the
+  # init re-run if the daemon was slow to come up; the script
+  # itself is idempotent (re-applying serve + funnel on an
+  # already-configured daemon is a no-op).
+  tailscale-funnel-init:
+    image: tailscale/tailscale:stable
+    profiles: ["edge"]
+    depends_on:
+      - tailscale
+    volumes:
+      - tailscale-socket:/var/run/tailscale
+      - edge-outbox:/var/lib/outbox
+      - ./central/tailscale/funnel-init.sh:/funnel-init.sh:ro
+    entrypoint: ["/bin/sh", "/funnel-init.sh"]
+    environment:
+      # MediaMTX's WHEP port (browser → here for WebRTC signaling).
+      # `mediamtx` is the compose service name — DNS-resolvable
+      # inside the user-defined `video-poc` network. We override
+      # via env so a future deployment with a different MTX
+      # hostname doesn't have to fork the script.
+      MTX_WHEP_URL: ${MTX_WHEP_URL:-http://mediamtx:8889}
+    networks: [video-poc]
+    restart: on-failure
+
+  mediamtx:
+    # `-ffmpeg` variant bundles ffmpeg for runOnInit pipelines (looped
+    # MP4s as virtual cams in sim mode).
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: video-poc-mediamtx
+    profiles: ["edge"]
+    ports:
+      - "8554:8554" # RTSP
+      - "8888:8888" # HLS live — Oxy backend proxies from here
+      - "8889:8889" # WebRTC / WHEP signaling (Phase 1). In prod exposed via Tailscale Funnel; here for local dev browser testing.
+      - "8189:8189/udp" # WebRTC ICE/media. Required for the browser's host candidate to reach MTX directly — without this UDP mapping, ICE falls back to peer-reflexive discovery and startup takes 5-10s instead of <500ms.
+      - "9996:9996" # HLS playback (recorded clips) — Oxy backend proxies from here for compliance clip playback
+      - "9997:9997" # control / metrics API — worker syncs path config via this
+    environment:
+      # MediaMTX's native env-var override for the yaml field
+      # `authHTTPAddress` (MTX expands `MTX_<UPPERCASE>` envs at
+      # startup; `${VAR}` substitution inside the yaml file does
+      # not apply to this field). Defaults to Docker Desktop's host
+      # gateway for local dev; prod sets to Oxy's MagicDNS name
+      # (e.g. http://oxy-backend:3000/api/control/mtx-auth).
+      MTX_AUTHHTTPADDRESS: ${MTX_AUTHHTTPADDRESS:-http://host.docker.internal:3000/api/control/mtx-auth}
+      MTX_LOGLEVEL: debug
+    volumes:
+      - ./central/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./central/mediamtx/samples:/samples:ro
+      - mtx-recordings:/recordings
+    networks: [video-poc]
+
+  edge:
+    build: ./edge
+    profiles: ["edge"]
+    # No container_name — scale=N requires Compose-managed names.
+    ports:
+      # Preview HTTP server: Oxy backend proxies JPEG snapshots from
+      # here for the UI thumbnail. In a real deployment this binds to
+      # the Tailscale interface only; in compose we expose 8090
+      # locally for `cargo run -p oxy-app` on the host to reach.
+      - "8090:8090"
+    environment:
+      # --- Oxy control-plane bearer auth ---
+      # Operator pre-registers the edge box via Oxy's workspace API:
+      #   POST /{workspace_id}/cameras/edge-boxes
+      # and hands these two values to the installer. EDGE_BOX_ID is a
+      # UUID; EDGE_BOX_TOKEN is shown once (only the hash is stored).
+      # Oxy mounts every backend route under /api/* (see entry.rs:
+      # `.nest("/api", api_router)`). Worker base URL must include
+      # that prefix or every call ends up at the SPA fallback.
+      OXY_URL: ${OXY_URL:-http://host.docker.internal:3000/api}
+      EDGE_BOX_ID: ${EDGE_BOX_ID:-}
+      EDGE_BOX_TOKEN: ${EDGE_BOX_TOKEN:-}
+      MEDIAMTX_URL: rtsp://mediamtx:8554
+      # Edge worker syncs MTX path config via the v3 control API so
+      # each camera in Oxy gets a matching `cam-<uuid>` path that
+      # MTX republishes as HLS for the dashboard's live preview.
+      # Empty string disables the sync (useful for dev with no MTX).
+      MEDIAMTX_API_URL: ${MEDIAMTX_API_URL:-http://mediamtx:9997}
+      # IP Oxy should call BACK on for snapshot + HLS proxies. In dev
+      # the edge container's docker bridge IP isn't routable from
+      # Oxy-on-host, so we pin to 127.0.0.1 — both preview-server
+      # :8090 and MediaMTX :8888 are mapped to host ports. In prod
+      # this should be the box's Tailscale IP.
+      EDGE_PUBLIC_HOST: ${EDGE_PUBLIC_HOST:-127.0.0.1}
+      # Manual override for the box's Tailscale Funnel hostname.
+      # Default behaviour is auto-discovery: `tailscale-funnel-init`
+      # reads `Self.DNSName` after the daemon logs in and writes
+      # `EDGE_FUNNEL_HOSTNAME=<host>.<tailnet>.ts.net` to the shared
+      # `/var/lib/outbox/funnel.env`, which the worker entrypoint
+      # sources on boot. That's the right answer for the dev /
+      # OrbStack / production tailscale-sidecar path; the variable
+      # below is the escape hatch for deployments running tailscale
+      # outside the compose stack (separate host daemon, custom
+      # cert domain, etc.) where the discovered hostname would be
+      # wrong. The renamed `_OVERRIDE` suffix avoids the previous
+      # trap where a stale `EDGE_FUNNEL_HOSTNAME=` line in
+      # `/opt/oxy-edge/.env` silently overrode the auto-discovered
+      # value — operators who hand-pasted the original hostname
+      # got stuck on it across tailnet renames.
+      EDGE_FUNNEL_HOSTNAME_OVERRIDE: ${EDGE_FUNNEL_HOSTNAME_OVERRIDE:-}
+      OUTBOX_PATH: ${OUTBOX_PATH:-} # blank ⇒ /var/lib/outbox/<edge_box_id>/outbox.sqlite (per-replica)
+      # Bootstrap env file written by worker.provision (the entrypoint
+      # wrapper runs provision first, then sources this file). Lives
+      # on the outbox volume because /var/lib/oxy is mounted read-only
+      # (install-edge.sh writes device.json there as root and we don't
+      # want the container overwriting that identity file). Reusing
+      # the outbox volume keeps the compose surface flat — no new
+      # named volume just for one file.
+      OXY_EDGE_ENV_PATH: ${OXY_EDGE_ENV_PATH:-/var/lib/outbox/edge.env}
+      HEALTH_INTERVAL_S: "30"
+      CONFIG_POLL_INTERVAL_S: "30"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # --- Inference + VLM (worker/camera.py reads these) ---
+      # If ANTHROPIC_API_KEY is unset, compliance reports are disabled and
+      # only camera_events flow. Set it in .env to enable Haiku checks.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VLM_MODEL: ${VLM_MODEL:-claude-haiku-4-5-20251001}
+      TRACKER: ${TRACKER:-botsort.yaml}
+      TRIGGER_DWELL_SEC: ${TRIGGER_DWELL_SEC:-4}
+      TRACK_COOLDOWN_SEC: ${TRACK_COOLDOWN_SEC:-300}
+      GLOBAL_MIN_INTERVAL_SEC: ${GLOBAL_MIN_INTERVAL_SEC:-60}
+      DWELL_EVENT_EVERY_SEC: ${DWELL_EVENT_EVERY_SEC:-30}
+      REQUIRED_ATTIRE: ${REQUIRED_ATTIRE:-hat,apron}
+      REQUIRED_HYGIENE: ${REQUIRED_HYGIENE:-glove}
+      # --- P3 (Option C) — PPE-YOLO bbox overlay ---
+      # Off by default. Populate by either:
+      #   (a) running `scripts/download-ppe-model.sh` to drop a known-
+      #       good public model into `./models/`, OR
+      #   (b) mounting your own `.pt` and setting the env var to the
+      #       in-container path (`/app/models/<file>.pt`).
+      # When unset, the worker ships compliance reports without
+      # detections_json and the Playback page renders no overlay —
+      # the backend distinguishes "edge doesn't do PPE yet" from
+      # "PPE ran, saw nothing" via this signal. See
+      # `worker/ppe_yolo.py` for the loading contract.
+      PPE_YOLO_MODEL: ${PPE_YOLO_MODEL:-}
+      PPE_YOLO_CONF_THRESHOLD: ${PPE_YOLO_CONF_THRESHOLD:-0.25}
+    volumes:
+      - edge-outbox:/var/lib/outbox
+      # PPE-YOLO model dir. Mounted read-only — the file is provisioned
+      # by the host (scripts/download-ppe-model.sh or operator copy)
+      # and never written from inside the container. Empty dir is fine;
+      # `PPE_YOLO_MODEL` unset means the worker won't try to read it.
+      - ./models:/app/models:ro
+      # IoT identity (factory-burned device.json). The worker
+      # reads /var/lib/oxy/device.json on first boot via
+      # `worker/identity.py::DeviceIdentity.load()`. Mounted
+      # read-only because the file is provisioned by the host
+      # (factory programmer or the Add device wizard's install
+      # snippet) and never modified at runtime — anyone who
+      # could edit it could trivially impersonate the device.
+      # When the file isn't present, the worker falls back to
+      # the legacy EDGE_BOX_TOKEN bearer path.
+      - /var/lib/oxy:/var/lib/oxy:ro
+    # Container-level healthcheck. `restart: unless-stopped`
+    # catches crashes; this catches "process alive but hung"
+    # cases where the worker is no longer serving requests but
+    # also isn't exiting. Compose marks the container unhealthy
+    # after `retries` consecutive failures and operators see
+    # the state via `docker compose ps`. `start_period` is
+    # generous because YOLO model load + first camera decode
+    # takes 10-30s on a Jetson.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8090/preview/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+    networks: [video-poc]
+
+  # OTA update agent (IoT Phase 2). Polls /control/boxes/{id}/target
+  # every ~5 min; when target_image_tag != current_image_tag, pulls
+  # the new image and restarts the worker via `docker compose pull +
+  # up -d`. Watchdog rollback reverts if the worker doesn't report
+  # back on the new tag after a few polls.
+  #
+  # Uses the SAME Dockerfile as the worker (same image, same deps)
+  # but a different CMD. Compose's anchor mechanism would let us share
+  # the build context cleanly; the explicit duplication here keeps it
+  # legible to operators reading the file.
+  #
+  # Mount the docker socket and the compose file so the agent can drive
+  # `docker compose` from inside the container. Path inside the
+  # container must match the host path so `compose -f` references
+  # resolve identically.
+  update-agent:
+    build: ./edge
+    profiles: ["edge"]
+    # Reuses the image's provision-wrapping entrypoint (see
+    # edge/worker/entrypoint.sh). The override here is only the CMD
+    # + the `sidecar` role: this container WAITS for the edge
+    # service's `worker.provision` to write `edge.env`, then sources
+    # it and exec's update-agent. Running provision here too used
+    # to race the edge service's bootstrap call within the same
+    # millisecond — both calls would create their own `edge_boxes`
+    # row, one became the live box, the other was orphaned forever.
+    # The split-of-responsibility kills that race at its source.
+    command: ["python", "-m", "worker.update_agent"]
+    environment:
+      OXY_URL: ${OXY_URL:-http://host.docker.internal:3000/api}
+      OXY_PROVISION_ROLE: sidecar
+      EDGE_BOX_ID: ${EDGE_BOX_ID:-}
+      EDGE_BOX_TOKEN: ${EDGE_BOX_TOKEN:-}
+      # Same path the edge service writes; entrypoint sources it on
+      # update-agent startup so EDGE_BOX_ID/EDGE_BOX_TOKEN above
+      # (which start empty in a fresh deployment) get overridden
+      # with the bootstrapped values.
+      OXY_EDGE_ENV_PATH: ${OXY_EDGE_ENV_PATH:-/var/lib/outbox/edge.env}
+      # Compose service name to pull + restart on update. Must
+      # match the `edge:` block above.
+      OXY_WORKER_SERVICE: ${OXY_WORKER_SERVICE:-edge}
+      # Bind-mounted compose file path inside the container.
+      OXY_COMPOSE_FILE: /etc/oxy/docker-compose.yml
+      # Poll cadence (seconds). 300 = 5min, the documented default.
+      OXY_TARGET_POLL_INTERVAL_S: ${OXY_TARGET_POLL_INTERVAL_S:-300}
+      # Local POC builds the image from this Dockerfile; we don't
+      # sign dev builds, so the agent's cosign verify would fail
+      # closed and the rollout would never apply. Production
+      # deployments (consuming signed GHCR releases) MUST leave this
+      # unset — see internal-docs/edge-image-releases.md.
+      OXY_DISABLE_SIGNATURE_VERIFY: ${OXY_DISABLE_SIGNATURE_VERIFY:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # Docker socket — let the agent drive compose. Read-only so the
+      # agent can read state but every mutating call still goes through
+      # the docker daemon's own authz.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The compose file the agent will tell `docker compose -f` to use.
+      # On a real edge box this maps to /opt/oxy-edge/docker-compose.yml
+      # (the install-edge.sh location); in dev we point at this file.
+      - ./docker-compose.yml:/etc/oxy/docker-compose.yml:ro
+      # Same identity mount as the worker so JWT minting also works
+      # from the agent (post-Phase-3 the agent authenticates with JWT
+      # too, not just the legacy bearer).
+      - /var/lib/oxy:/var/lib/oxy:ro
+      # Shared outbox volume — the entrypoint sources
+      # /var/lib/outbox/edge.env (written by `worker.provision`
+      # during the edge service's first boot) to pick up
+      # EDGE_BOX_ID / EDGE_BOX_TOKEN. Without this mount the agent
+      # would re-run provision on every restart and possibly race
+      # the edge service for a bearer.
+      - edge-outbox:/var/lib/outbox
+    depends_on:
+      - edge
+    restart: unless-stopped
+    networks: [video-poc]
+
+  # TURN relay (Phase 1 of WebRTC).
+  #
+  # In production this is the path Tailscale Funnel forwards through for
+  # WebRTC media (since Funnel doesn't proxy raw UDP), so every operator
+  # behind any NAT can play the live stream. In local dev the browser
+  # already has direct UDP to MTX via the 8189 host-port mapping, so
+  # coturn here is exercised mainly to validate the iceServers config
+  # shape and the eventual HMAC-credential handoff from Oxy (Day 7-8).
+  #
+  # Host networking: TURN needs the real client IP to allocate relay
+  # candidates correctly. Docker bridge NAT mangles source addresses
+  # and the relay candidates coturn hands back become unreachable. On
+  # Mac/Windows Docker Desktop, host networking via the gateway IP
+  # still works, so we use host_internal mode there; on Linux we'd
+  # use network_mode: host for the real thing.
+  coturn:
+    image: coturn/coturn:4.6
+    container_name: video-poc-coturn
+    profiles: ["edge"]
+    ports:
+      # 8443 is the port Tailscale Funnel forwards (TLS-terminated)
+      # to coturn. Funnel only allows 443 / 8443 / 10000 as public
+      # ports; 5349 (the historical TURN-over-TLS port) is not in
+      # that list. Mac/Windows local-dev access can also dial
+      # 8443 directly via the host port mapping.
+      - "8443:8443/tcp" # TURN-over-TCP (TLS terminated by Tailscale)
+      - "8443:8443/udp" # TURN-over-UDP for direct dev access
+      # 3478 stays for direct-LAN dev access (STUN+TURN on
+      # IETF default port). Browsers that have an unrestricted
+      # path to the box's host will prefer this candidate.
+      - "3478:3478" # TURN/STUN over UDP
+      - "3478:3478/tcp" # TURN over TCP
+    # REST-API credential mode (Day 7-8): coturn doesn't store a
+    # user table — it accepts any credential of the form
+    #   username  = <unix-expiry-ts>:<arbitrary-id>
+    #   password  = base64(HMAC-SHA1(secret, username))
+    # ...validating by re-deriving the HMAC. Oxy mints these per
+    # session against the same secret. No round-trip to coturn at
+    # mint time; no shared user database.
+    #
+    # OXY_CAMERAS_TURN_AUTH_SECRET on the Oxy side and
+    # TURN_AUTH_SECRET here are the same value — keep them in sync
+    # via the box's environment file. Compose interpolates from
+    # the shell, so `${TURN_AUTH_SECRET:?...}` errors fast if it's
+    # missing rather than silently issuing nonsense credentials.
+    command:
+      - -n
+      - --no-cli
+      # 3478 = primary listener (STUN + TURN, IETF default port).
+      # 8443 = alt listener that Tailscale Funnel forwards to.
+      # coturn accepts the same protocol on both — the only
+      # difference is which network path the client reached it
+      # through. We don't run TLS *inside* coturn because Tailscale
+      # already terminates the public TLS at the Funnel edge for
+      # `--tls-terminated-tcp=8443`; coturn sees plain TURN.
+      - --listening-port=3478
+      - --alt-listening-port=8443
+      - --realm=${TURN_REALM:-oxygen}
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_AUTH_SECRET:?TURN_AUTH_SECRET must be set; this is the shared secret coturn validates the HMAC creds against. Generate one with `openssl rand -hex 32` and put both this and OXY_CAMERAS_TURN_AUTH_SECRET to that value.}
+      - --no-multicast-peers
+      # No TLS termination inside coturn: Tailscale Funnel handles
+      # it on 8443; the 3478 path is plain TURN. Production
+      # deployments running coturn outside a Funnel can re-enable
+      # `--tls-listening-port` + a real cert.
+      - --no-tls
+      - --no-dtls
+      - --log-file=stdout
+    networks: [video-poc]
+
+  # Pumba: docker-native chaos via `tc`. Off unless explicitly enabled.
+  # Driven by Makefile targets; container exits when chaos window ends.
+  chaos:
+    image: gaiaadm/pumba:latest
+    profiles: ["chaos"]
+    command: ["--help"] # overridden by Makefile
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [video-poc]

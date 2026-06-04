@@ -18,6 +18,7 @@ use oxy::{
     state_dir::get_state_dir,
     theme::StyledText,
 };
+use oxy_cameras::CamerasMigrator;
 use oxy_shared::errors::OxyError;
 use std::net::SocketAddr;
 use tokio::signal;
@@ -333,6 +334,26 @@ async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
         .await
         .map_err(|e| OxyError::RuntimeError(format!("airhouse migrations failed: {}", e)))?;
     println!("migrations: airhouse migrations complete");
+
+    // Camera fleet domain migrations (separate tracking table). No FK deps on
+    // other domains — sites.workspace_id is a loose UUID per
+    // domain-boundaries.md P3.
+    //
+    // We intentionally do NOT register a post-provision hook for the
+    // cameras DDL: provisioning Airhouse is "this workspace wants a
+    // data warehouse" — not "this workspace wants cameras". Eagerly
+    // creating `oxy_cam_*` tables in every tenant would clutter
+    // warehouses that never touch the camera fleet. Instead, the DDL
+    // fires lazily at camera-intent points (see
+    // `oxy_cameras::service::onboarding::import` and
+    // `oxy_cameras::service::registration::register_edge_box`), with
+    // the lazy ensure on the ingest path
+    // (`oxy_cameras::airhouse::connect_and_ensure`) as a final safety
+    // net.
+    CamerasMigrator::up(&db, None)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("cameras migrations failed: {}", e)))?;
+    println!("migrations: cameras migrations complete");
 
     // Observability schema (DuckDB / Postgres / ClickHouse) is initialized by
     // the backend itself during `*Storage::open()` in `main.rs`, so no separate
@@ -658,9 +679,13 @@ async fn serve_application(
             shutdown_handle.shutdown();
         });
 
+        // ConnectInfo<SocketAddr> for downstream extractors (e.g. the
+        // camera-fleet auth middleware uses it as the last-resort
+        // peer-IP source when behind no XFF-setting proxy, i.e. a
+        // Tailscale-native deploy where the edge dials Oxy directly).
         axum_server::bind_rustls(socket_addr, config)
             .handle(handle)
-            .serve(app.into_make_service())
+            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Server error: {}", e)))
     } else {
@@ -673,10 +698,15 @@ async fn serve_application(
             shutdown_token.cancel();
         };
 
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown)
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Server error: {}", e)))
+        // See the matching note above the TLS branch — same
+        // `ConnectInfo<SocketAddr>` plumbing for the plain HTTP path.
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("Server error: {}", e)))
     }
 }
 

@@ -1,0 +1,148 @@
+# MediaMTX serves looped MP4s as virtual RTSP cameras for the sim env.
+# Drop sample-01.mp4 and sample-02.mp4 into ./samples — see samples/README.md.
+
+logLevel: info
+logDestinations: [stdout]
+
+api: yes
+apiAddress: :9997
+
+# Auth method: delegate to Oxy via HTTP callback. MTX POSTs every
+# publish/read/playback/api/metrics/pprof action to the URL set by
+# the `MTX_AUTHHTTPADDRESS` env var (see docker-compose.yml), and
+# Oxy's handler either:
+#
+#   - `read` + `protocol=webrtc` → require valid `?token=...&expiry=...`
+#     in the query string (the HMAC-bound token minted by
+#     `service::webrtc::build_session` when the operator browser
+#     POSTed to /preview/webrtc/session)
+#   - anything else → allow unconditionally; the tailnet ACL already
+#     gates who can reach the corresponding interfaces
+#
+# Trust model: this endpoint is reachable only from `tag:edge-box`
+# inside the tailnet (see internal-docs/tailscale-acl.json).
+# Without that ACL the callback would be a public attack surface.
+#
+# Why env-var: MediaMTX does not expand `${VAR}` substitutions in
+# the `authHTTPAddress` yaml field, but `MTX_<FIELD>` env vars are
+# always read at startup and override yaml. Lets one yaml file ship
+# unchanged across dev (host.docker.internal) and prod (Oxy's
+# MagicDNS hostname).
+authMethod: http
+
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+hls: yes
+hlsAddress: :8888
+
+# Recording playback server. Separate from the live HLS endpoint
+# (`:8888`) and the API (`:9997`). Serves recorded segments via
+# `GET /get?path=<name>&start=<ISO8601>&duration=<seconds>` which
+# returns a concatenated fMP4. Used by Oxy's clip-playback proxy
+# when an operator clicks a compliance report's "Play clip" button.
+playback: yes
+playbackAddress: :9996
+
+# WebRTC live-preview server (Phase 1).
+#
+# Speaks WHEP at GET/POST /:path/whep. Used as a low-latency
+# alternative to HLS (~200ms glass-to-glass vs HLS's 5–10s).
+#
+# DTLS-SRTP encrypts the media plane regardless of this setting —
+# `webrtcEncryption` only controls whether MTX serves the WHEP
+# signaling endpoint over HTTPS. We keep it off for local-dev
+# (browsers permit HTTP secure contexts on localhost) and rely on
+# Tailscale Funnel to provide HTTPS in production.
+#
+# `webrtcICEServers2` is the list of ICE servers MTX advertises
+# to the browser in the SDP. In production each box ships with a
+# coturn co-located on the same host (TCP 5349, see
+# docker-compose.yml + the plan doc). In local-dev the browser
+# and box are on the same host so direct host-candidates win and
+# the TURN entry is unused — the placeholder below keeps the
+# config shape stable across environments.
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+# coturn co-located on the same box (see docker-compose.yml). In
+# local-dev this entry is mostly cosmetic: the browser and box
+# share a host, so host candidates win ICE in <100ms and the
+# relay is never used. In prod the same coturn is exposed via
+# Tailscale Funnel on TCP 5349 (with TLS), at which point this
+# becomes the always-on media path for any operator behind NAT.
+#
+# The static dev/devsecret credential matches docker-compose's
+# coturn service. Day 7-8 swaps coturn to --use-auth-secret mode
+# and Oxy rewrites the offered SDP per session with HMAC-derived
+# ephemeral creds; this entry then becomes a placeholder whose
+# username/password are overwritten by the signaling proxy.
+# IMPORTANT: MTX uses this URL itself for server-side ICE gathering
+# (it'll try to allocate a relay candidate from coturn at startup of
+# every WebRTC session). The URL must be reachable from INSIDE the
+# MTX container — `coturn:3478` resolves via the docker-compose
+# service name on the shared video-poc bridge network.
+#
+# The BROWSER's own iceServers are configured separately by the
+# frontend player code (Day 9), where the URL needs to be reachable
+# from the host network — `turn:127.0.0.1:3478` in dev, or
+# `turns:<box-funnel-host>:5349?transport=tcp` in prod with Funnel.
+# We can't put both URLs here because MTX advertises this exact
+# string to clients too; the Oxy signaling proxy (Day 7-8) rewrites
+# the SDP per session to substitute the browser-reachable URL.
+webrtcICEServers2:
+  - url: turn:coturn:3478
+    username: dev
+    password: devsecret
+
+# Default recording config for ALL paths matched by `paths:` below.
+# Used by the auto-managed `cam-<uuid>` paths the edge worker
+# creates via the API; individual path entries can override.
+#
+# Storage: 24h retention at ~250 kbps × 7 cameras = ~1.5 GB/day.
+# Segment size 1h keeps the file count manageable. fMP4 init+segment
+# layout means clips can be served via HLS playback without
+# re-muxing on demand.
+pathDefaults:
+  record: yes
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordPartDuration: 1s
+  recordSegmentDuration: 1h
+  recordDeleteAfter: 24h
+
+paths:
+  cam-01:
+    runOnInit: >
+      ffmpeg -hide_banner -loglevel warning
+      -re -stream_loop -1 -i /samples/sample-01.mp4
+      -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  cam-02:
+    runOnInit: >
+      ffmpeg -hide_banner -loglevel warning
+      -re -stream_loop -1 -i /samples/sample-02.mp4
+      -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Real UniFi Protect feed (Low channel: ~480×270 @ 15fps, ~200 kbps H.264).
+  #
+  # Bridge mode: ffmpeg pulls Protect RTSP and republishes to this path as
+  # plain RTSP. We don't use MediaMTX's native source pull because Protect uses
+  # MTAP-16 RTP packetization (RFC 6184) for H.264, which MediaMTX's
+  # depacketizer does not support. ffmpeg's RTSP demuxer handles it correctly.
+  #
+  # We also drop audio (-an): the AAC AU-Index format Protect uses also trips
+  # MediaMTX's depacketizer, and we don't need audio for analytics.
+  cam-protect-01:
+    source: publisher
+    runOnInit: >
+      ffmpeg -nostdin -hide_banner -loglevel warning
+      -rtsp_transport tcp
+      -fflags +discardcorrupt -err_detect ignore_err
+      -i rtsp://192.168.0.1:7447/eA7cpgei0WQ0lZl4
+      -map 0:v:0 -c:v copy -an
+      -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes

@@ -71,6 +71,19 @@ const LookerExplorerPage = React.lazy(() => import("./pages/ide/Files/Editor/Loo
 const DatabaseLayout = React.lazy(() => import("./pages/ide/Database"));
 const QueryWorkspacePage = React.lazy(() => import("./pages/ide/Database/QueryWorkspace"));
 const ModelingPage = React.lazy(() => import("./pages/ide/modeling"));
+const EdgeLayout = React.lazy(() => import("./pages/ide/edge"));
+const EdgeDashboardPage = React.lazy(() => import("./pages/ide/edge/DashboardPage"));
+const EdgePlaybackPage = React.lazy(() => import("./pages/ide/edge/PlaybackPage"));
+const EdgeDetectionsPage = React.lazy(() => import("./pages/ide/edge/DetectionsPage"));
+const EdgeTopologyPage = React.lazy(() => import("./pages/ide/edge/TopologyPage"));
+const EdgeDevicesPage = React.lazy(() => import("./pages/ide/edge/DevicesPage"));
+const EdgeBoxDetailPage = React.lazy(() => import("./pages/ide/edge/EdgeBoxDetailPage"));
+// EdgeTimelinePage is gone — Detections + Playback now own the surface.
+// `/ide/edge/timeline` redirects to /playback for back-compat bookmarks.
+const EdgeRolloutsPage = React.lazy(() => import("./pages/ide/edge/RolloutsPage"));
+const EdgeRolloutDetailPage = React.lazy(() => import("./pages/ide/edge/RolloutDetailPage"));
+const EdgeAuditPage = React.lazy(() => import("./pages/ide/edge/AuditPage"));
+const EdgePackPage = React.lazy(() => import("./pages/ide/edge/PackPage"));
 const TestsLayout = React.lazy(() => import("./pages/ide/tests"));
 const TestsDashboardPage = React.lazy(() => import("./pages/ide/tests/TestsDashboardPage"));
 const TestsRunsPage = React.lazy(() => import("./pages/ide/tests/TestsRunsPage"));
@@ -333,6 +346,33 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           {/* Data Modeling routes */}
           <Route path='modeling' element={<ModelingPage />} />
 
+          {/* Edge routes — fleet topology, list management, timeline
+              playback (subsumes the old Compliance pages), audit log,
+              and domain pack — all behind one IDE section so the
+              operator stops hunting between Settings and the IDE. */}
+          <Route path='edge' element={<EdgeLayout />}>
+            <Route index element={<EdgeDashboardPage />} />
+            <Route path='playback' element={<EdgePlaybackPage />} />
+            <Route path='detections' element={<EdgeDetectionsPage />} />
+            <Route path='topology' element={<EdgeTopologyPage />} />
+            <Route path='devices' element={<EdgeDevicesPage />} />
+            <Route path='boxes/:boxId' element={<EdgeBoxDetailPage />} />
+            {/* Legacy /ide/edge/list redirected to the old FleetPage's
+                list-toggle URL; FleetPage is gone now, so route to the
+                new Devices tab which is its functional successor. */}
+            <Route path='list' element={<Navigate to='../devices' replace />} />
+            <Route path='timeline' element={<Navigate to='../playback' replace />} />
+            <Route path='rollouts' element={<EdgeRolloutsPage />} />
+            <Route path='rollouts/:planId' element={<EdgeRolloutDetailPage />} />
+            <Route path='audit' element={<EdgeAuditPage />} />
+            <Route path='pack' element={<EdgePackPage />} />
+          </Route>
+          {/* Legacy /ide/compliance — kept as a back-compat redirect so
+              bookmarks and the old "View clip" links still land somewhere
+              useful. Drops the cameraId/reportId segments since the
+              timeline page resolves to the most recent event. */}
+          <Route path='compliance/*' element={<Navigate to='../edge/timeline' replace />} />
+
           {/* Tests routes */}
           <Route path='tests' element={<TestsLayout />}>
             <Route index element={<TestsDashboardPage />} />
@@ -397,16 +437,18 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
 const getLocalRouter = () =>
   createBrowserRouter(
     createRoutesFromElements(
-      <Route
-        path='/*'
-        element={
-          <ProtectedRoute>
-            <SidebarProvider>
-              <WorkspaceLayout />
-            </SidebarProvider>
-          </ProtectedRoute>
-        }
-      />
+      <Route>
+        <Route
+          path='/*'
+          element={
+            <ProtectedRoute>
+              <SidebarProvider>
+                <WorkspaceLayout />
+              </SidebarProvider>
+            </ProtectedRoute>
+          }
+        />
+      </Route>
     )
   );
 

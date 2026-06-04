@@ -101,6 +101,19 @@ const ROUTES = {
             },
             MODELING: {
               ROOT: `${wsBase}/ide/modeling`
+            },
+            EDGE: {
+              ROOT: `${wsBase}/ide/edge`,
+              DASHBOARD: `${wsBase}/ide/edge`,
+              PLAYBACK: `${wsBase}/ide/edge/playback`,
+              DETECTIONS: `${wsBase}/ide/edge/detections`,
+              TOPOLOGY: `${wsBase}/ide/edge/topology`,
+              DEVICES: `${wsBase}/ide/edge/devices`,
+              BOX: (boxId: string) => `${wsBase}/ide/edge/boxes/${boxId}`,
+              ROLLOUTS: `${wsBase}/ide/edge/rollouts`,
+              ROLLOUT: (planId: string) => `${wsBase}/ide/edge/rollouts/${planId}`,
+              AUDIT: `${wsBase}/ide/edge/audit`,
+              PACK: `${wsBase}/ide/edge/pack`
             }
           },
 

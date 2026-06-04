@@ -44,6 +44,9 @@ pub mod local_seed;
 #[cfg(feature = "admin")]
 pub mod provisioner;
 
+#[cfg(feature = "admin")]
+pub mod post_provision;
+
 #[cfg(feature = "rest")]
 pub mod api;
 
@@ -70,6 +73,9 @@ pub use config::{
     AIRHOUSE_WIRE_PORT_VAR, AirhouseConfig, AirhouseRuntimeConfig, LOCAL_ORG_ID, REQUIRED_VARS,
     WireEndpoint, provisioner_for, token_broker, wire_endpoint,
 };
+
+#[cfg(feature = "admin")]
+pub use post_provision::{HookError, PostProvisionHook, register_post_provision_hook};
 
 #[cfg(feature = "admin")]
 pub use local_seed::ensure_local_org_seeded;

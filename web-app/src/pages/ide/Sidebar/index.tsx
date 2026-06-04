@@ -1,4 +1,4 @@
-import { Activity, Database, Folder, GitBranch, Radio, ShieldCheck } from "lucide-react";
+import { Activity, Boxes, Database, Folder, GitBranch, Radio, ShieldCheck } from "lucide-react";
 import type React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -15,7 +15,8 @@ enum SidebarViewMode {
   COORDINATOR = "coordinator",
   OBSERVABILITY = "observability",
   DATABASE = "database",
-  MODELING = "modeling"
+  MODELING = "modeling",
+  EDGE = "edge"
 }
 
 const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMode => {
@@ -36,6 +37,11 @@ const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMo
   }
   if (pathname.includes("/ide/modeling")) {
     return SidebarViewMode.MODELING;
+  }
+  // /ide/compliance is a legacy alias that still routes through the Edge
+  // shell (see App.tsx redirect), so highlight the Edge button for it too.
+  if (pathname.includes("/ide/edge") || pathname.includes("/ide/compliance")) {
+    return SidebarViewMode.EDGE;
   }
   return SidebarViewMode.FILES;
 };
@@ -70,6 +76,9 @@ const Sidebar: React.FC = () => {
         break;
       case SidebarViewMode.MODELING:
         navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.MODELING.ROOT);
+        break;
+      case SidebarViewMode.EDGE:
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.EDGE.ROOT);
         break;
     }
   };
@@ -167,6 +176,21 @@ const Sidebar: React.FC = () => {
           )}
         >
           <GitBranch className='h-4 w-4' />
+        </Button>
+
+        <Button
+          variant='ghost'
+          size='icon'
+          onClick={() => handleNavigate(SidebarViewMode.EDGE)}
+          tooltip={{ content: "Edge", side: "right" }}
+          className={cn(
+            "h-8 w-8",
+            currentViewMode === SidebarViewMode.EDGE
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "opacity-60 hover:opacity-100"
+          )}
+        >
+          <Boxes className='h-4 w-4' />
         </Button>
       </div>
       <div className='mt-auto flex flex-col items-center px-1 py-2'>

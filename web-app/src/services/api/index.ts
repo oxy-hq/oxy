@@ -10,6 +10,20 @@ export { AnalyticsService } from "./analytics";
 export { AppService } from "./apps";
 export { AuthService } from "./auth";
 
+export {
+  type Camera,
+  type CameraHealthRow,
+  type CameraHealthStatus,
+  CameraService,
+  type CameraSummary,
+  type EdgeBox,
+  type EdgeBoxSummary,
+  type Site,
+  type UnifiImportResult,
+  type UnifiPreviewResult,
+  type UnifiPreviewSite
+} from "./cameras";
+
 export { DatabaseService } from "./database";
 export { FileService } from "./files";
 export { GitHubApiService } from "./github";

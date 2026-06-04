@@ -32,6 +32,16 @@ pub(super) fn build_workspace_routes(
     let mut router = Router::new()
         .route("/details", get(workspaces::get_workspace))
         .route("/status", get(workspaces::get_workspace_status))
+        // Camera fleet operator endpoints (sites / cameras / edge-boxes /
+        // UniFi integration). Mounted here so `workspace_middleware`
+        // (cloud) / `local_context_middleware` (local) gate them, and
+        // the URL's `workspace_id` flows into the service layer for
+        // resource-ownership checks. The edge-facing `/control/*` tree
+        // is mounted separately at the app root (bearer auth resolves
+        // workspace_id from the device token).
+        .merge(oxy_cameras::routes::workspace_routes::<AppState>(
+            agentic_state.db.clone(),
+        ))
         // Legacy `/workflows` and `/automations` routes have been retired.
         // Workflow execution and listing now live under
         // `/agentic-workflows`, mounted below.
@@ -591,6 +601,40 @@ mod tests {
                 "{} must 404 when include_local_setup=false (got {})",
                 path,
                 status
+            );
+        }
+    }
+
+    /// The camera fleet operator surface (sites / cameras / edge boxes /
+    /// UniFi integration / preview proxies) MUST be merged into
+    /// `build_workspace_routes`. That's the only thing keeping it
+    /// behind `workspace_middleware`/`local_context_middleware` +
+    /// `auth_middleware` — see the cross-workspace write incident
+    /// closed by commit `21735f047`. If someone re-merges these routes
+    /// at the app root (or under an un-authed mount), this test fails
+    /// fast instead of waiting for a real cross-workspace breach.
+    #[tokio::test]
+    async fn camera_operator_routes_mounted_inside_workspace_tree() {
+        let state = test_app_state();
+        let router = build_workspace_routes(state.clone(), test_agentic_state(), false, false)
+            .with_state(state);
+
+        // One representative from each operator sub-area. Wildcard
+        // routes (HLS / recording) aren't worth poking here — the
+        // mount-point check on the non-wildcard variants is enough.
+        let cases: &[(&str, &str)] = &[
+            ("GET", "/cameras/sites"),
+            ("GET", "/cameras/edge-boxes"),
+            ("GET", "/cameras"),
+            ("POST", "/integrations/unifi/preview"),
+        ];
+        for (method, path) in cases {
+            let status = status_for(router.clone(), method, path).await;
+            assert_ne!(
+                status,
+                StatusCode::NOT_FOUND,
+                "{method} {path} must be mounted inside build_workspace_routes (got {status}); \
+                 mounting it elsewhere bypasses workspace_middleware + auth_middleware"
             );
         }
     }

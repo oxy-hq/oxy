@@ -72,6 +72,7 @@ pub async fn local_context_middleware(
         org_id: None,
         status,
         error: None,
+        monthly_vlm_budget_micros: None,
     };
 
     request.extensions_mut().insert(workspace.clone());

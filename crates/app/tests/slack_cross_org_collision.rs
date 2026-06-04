@@ -178,6 +178,7 @@ async fn workspace_membership_is_org_scoped() {
         created_by: ActiveValue::Set(None),
         status: ActiveValue::Set(workspaces::WorkspaceStatus::Ready),
         error: ActiveValue::Set(None),
+        monthly_vlm_budget_micros: ActiveValue::Set(None),
         created_at: ActiveValue::NotSet,
         updated_at: ActiveValue::NotSet,
     }

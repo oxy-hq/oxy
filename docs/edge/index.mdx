@@ -1,0 +1,34 @@
+---
+title: "Edge fleet"
+description: "Manage camera fleet — sites, edge boxes, cameras — from the Developer Portal"
+---
+
+## What is the Edge tab
+
+The **Edge** tab in the Developer Portal is where you manage everything related to your camera fleet:
+
+- **Topology** — a network-style map of your tenant, sites, edge boxes, and cameras with live status colors.
+- **List** — flat tables for sites, edge boxes, and cameras with inline editing.
+- **Timeline** — single-camera and multi-camera grid playback with VLM verdict events, severity coloring, and a scrubber.
+- **Rollouts** — canary-first OTA updates with auto-promote and auto-abort.
+- **Audit** — operator action history.
+- **Domain pack** — the compliance prompt set the workers run.
+
+Open it from any workspace at `/ide/edge`, or click the Boxes icon in the IDE sidebar.
+
+## Who it's for
+
+- **Restaurant / retail operators** who need to know "is every camera in every store actually working?"
+- **Compliance reviewers** who watch VLM verdicts and drill into evidence clips.
+- **IT teams** who roll new edge worker images out to a few stores first, then the whole fleet.
+
+## What you'll need to get started
+
+- A Linux host at each site that can run Docker (Jetson Orin Nano, an x86 box, or anything similar — see [hardware notes](./install#supported-hardware)).
+- Network reachability from the host to your Oxy server.
+- Cameras that publish RTSP streams (UniFi Protect, Reolink, Hikvision, etc.).
+
+## Where to go next
+
+- **Onboarding your first box** → [Install guide](./install)
+- **Something broke** → [Runbook](./runbook)

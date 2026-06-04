@@ -94,6 +94,15 @@ impl TenantProvisioner {
 
         self.ensure_service_account_for_workspace(workspace_id)
             .await?;
+
+        // Fire any registered post-provision hooks (camera-fleet DDL,
+        // future per-tenant setup). Hook failures are logged but don't
+        // fail the provision — the affected domain has its own lazy
+        // fallback (see `oxy_cameras::airhouse::connect_and_ensure`).
+        // Hooks run AFTER the SA exists because most of them need to
+        // mint credentials against the new tenant.
+        crate::post_provision::invoke_all(workspace_id).await;
+
         Ok(remote)
     }
 

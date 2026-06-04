@@ -15,3 +15,12 @@ secrets:
   - id: private-key
     paths:
       - crates/airform/src/adapter.rs
+
+  # Test-only JWT in `verify_accepts_python_worker_mint_output`. The token
+  # was produced by `worker/jwt_mint.py::_sign` against deterministic test
+  # inputs (secret = `(0..32u8)`, exp = `1_700_000_000`) and only exists
+  # so the Rust verifier and the Python minter can't silently drift in
+  # payload encoding. Never reaches production binaries.
+  - id: jwt-token
+    paths:
+      - crates/cameras/src/auth/jwt.rs

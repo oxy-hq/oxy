@@ -1,0 +1,39 @@
+# CPU-only torch wheels. The default torch on Linux pulls ~1.5GB of NVIDIA
+# CUDA wheels we'll never use (no GPU in this container). The `+cpu` local
+# version qualifier forces pip to resolve from the PyTorch CPU index.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.12.0+cpu
+torchvision==0.27.0+cpu
+
+# Core sim-mode dependencies. Multi-arch (amd64 + arm64) all available as wheels.
+opencv-python-headless==4.10.0.84
+httpx==0.28.1
+# aiohttp powers the worker's tiny preview HTTP server (JPEG snapshots
+# of the latest decoded frame, consumed by the Oxy UI's per-camera
+# thumbnail via a proxy in oxy-cameras).
+aiohttp==3.11.10
+pydantic==2.10.3
+psutil==6.1.0
+
+# Real inference dependencies.
+# Container build is slow (~250MB of wheels) but only on cold cache. yolo11n.pt
+# is baked into the image at build time so first-boot doesn't need internet.
+ultralytics==8.3.40
+supervision==0.25.1
+numpy==2.0.2
+
+# Linear-assignment solver — required by Ultralytics' built-in trackers
+# (BoT-SORT, ByteTrack). Ultralytics imports `lap` specifically, not `lapx`.
+lap==0.5.13
+
+# VLM client (compliance reports). Optional at runtime: if ANTHROPIC_API_KEY
+# is unset, compliance reports are disabled and only camera_events flow.
+anthropic==0.103.1
+
+# Template rendering for domain-pack prompts. The backend ships an
+# active pack alongside the camera list; the worker renders each
+# role's Jinja2 template at VLM-call time. StrictUndefined catches
+# typo'd variable references rather than silently producing empty
+# output. Built-in fallback (see prompts.py) is used when the
+# backend ships an old config that doesn't include domain_pack.
+Jinja2==3.1.4

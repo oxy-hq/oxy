@@ -1,0 +1,192 @@
+name: Edge Image
+
+# Builds, signs, and pushes the oxy-edge Docker image used by the
+# camera-fleet OTA update channel. See internal-docs/edge-image-releases.md
+# for the release process and the cosign verification contract on the
+# device side.
+#
+# Triggers:
+#   - Push of a tag matching `edge-vX.Y.Z` → tagged release. Cuts a
+#     `vX.Y.Z` image + updates `latest`.
+#   - Push to main that touches `video-poc/edge/**` → development build.
+#     Cuts a `sha-<short>` image + updates `main`. NOT pinnable for
+#     production rollouts — customers should always pin a `vX.Y.Z` tag.
+#   - Manual `workflow_dispatch` for ad-hoc rebuilds.
+#
+# Output: `ghcr.io/<owner>/oxy-edge:<tag>` (linux/amd64 + linux/arm64),
+# signed with Sigstore keyless (cosign) under this workflow's GitHub
+# OIDC identity. The edge update-agent's `verify_signature` step
+# validates the resulting attestations before pulling.
+
+on:
+  push:
+    tags:
+      - "edge-v[0-9]+.[0-9]+.[0-9]+*"
+    branches:
+      - main
+    paths:
+      - "video-poc/edge/**"
+      - ".github/workflows/edge-image.yaml"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (default: HEAD)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+  # Required for cosign keyless signing — the workflow proves its
+  # identity to Sigstore via the GitHub OIDC token.
+  id-token: write
+  attestations: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/oxy-edge
+
+jobs:
+  build-and-push:
+    name: Build, sign, push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      # Derive version + git-sha + ISO build timestamp. CI bakes these
+      # into the image via build-args so the running container can
+      # self-report its compatibility manifest (/opt/oxy-edge/compatibility.json).
+      - name: Compute build metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_REF}"
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          if [[ "$REF" == refs/tags/edge-v* ]]; then
+            VERSION="${REF#refs/tags/edge-v}"
+            CHANNEL="release"
+          else
+            VERSION="0.0.0-dev+${SHORT_SHA}"
+            CHANNEL="dev"
+          fi
+          echo "version=${VERSION}"   >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}"   >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "built_at=${BUILT_AT}" >> "$GITHUB_OUTPUT"
+
+      # docker/metadata-action derives the OCI tag set from the trigger:
+      #   tag push → :vX.Y.Z + :latest
+      #   main push → :main + :sha-<short>
+      # See https://github.com/docker/metadata-action for the rule syntax.
+      - name: Compute Docker tags
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=match,pattern=edge-v(.*),group=1,prefix=v
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/edge-v') }}
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.title=oxy-edge
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.short_sha }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: video-poc/edge
+          file: video-poc/edge/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          # Compatibility manifest fields baked into the image. The
+          # update-agent's compatibility check (server-side gate is a
+          # follow-up) reads /opt/oxy-edge/compatibility.json.
+          build-args: |
+            EDGE_VERSION=${{ steps.meta.outputs.version }}
+            EDGE_GIT_SHA=${{ steps.meta.outputs.short_sha }}
+            EDGE_BUILT_AT=${{ steps.meta.outputs.built_at }}
+            EDGE_PROTOCOL_VERSION=1
+            EDGE_MIN_SERVER_VERSION=0.0.0
+          # Provenance + SBOM are buildx-native and free to enable;
+          # both are emitted as OCI artifacts under the image digest.
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=oxy-edge
+          cache-to: type=gha,mode=max,scope=oxy-edge
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Keyless signing — Sigstore mints a short-lived cert against
+      # this workflow's GitHub OIDC identity (the URL the agent's
+      # OXY_COSIGN_IDENTITY_RE matches). Every tag in the metadata
+      # output gets its own signature against the same digest.
+      - name: Sign the published image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.docker_meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          for tag in $(echo "$TAGS" | tr ',' '\n'); do
+            ref="${tag%%:*}@${DIGEST}"
+            echo "Signing ${ref}"
+            cosign sign --yes "${ref}"
+          done
+
+      # Self-test: the agent's verify path uses --certificate-identity-regexp
+      # and --certificate-oidc-issuer. We invoke the same flags here so a
+      # regression in the workflow identity (path rename, OIDC issuer change)
+      # fails CI BEFORE the artifact is consumed by edge devices.
+      - name: Verify signature (self-check)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          ref="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          cosign verify \
+            --certificate-identity-regexp "^https://github\.com/${{ github.repository }}/\.github/workflows/edge-image\.yaml@.+$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${ref}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### oxy-edge image"
+            echo ""
+            echo "- **Version:** \`${{ steps.meta.outputs.version }}\`"
+            echo "- **Channel:** ${{ steps.meta.outputs.channel }}"
+            echo "- **Digest:** \`${{ steps.build.outputs.digest }}\`"
+            echo ""
+            echo "**Pull:**"
+            echo ""
+            echo '```bash'
+            for tag in $(echo "${{ steps.docker_meta.outputs.tags }}" | tr ',' '\n'); do
+              echo "docker pull ${tag}"
+            done
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY

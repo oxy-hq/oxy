@@ -196,6 +196,7 @@ mod tests {
             org_id: None,
             status: entity::workspaces::WorkspaceStatus::Ready,
             error: None,
+            monthly_vlm_budget_micros: None,
         }
     }
 

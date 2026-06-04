@@ -124,6 +124,14 @@ pub enum SystemPurpose {
     Scheduler,
     SchemaCrawler,
     AgenticBackground,
+    /// Edge box ingest path — high-volume camera_events / *_health writes
+    /// from `oxy-cameras`. Sits in the audit log as `purpose=edge-ingest`.
+    EdgeIngest,
+    /// Operator UI reading compliance reports for the cameras Compliance
+    /// tab. Distinct from `EdgeIngest` so the audit log can filter
+    /// human-driven SELECTs out of the bulk write traffic, and so the
+    /// broker mints them as Reader (least privilege).
+    ComplianceReportsRead,
 }
 
 impl SystemPurpose {
@@ -132,6 +140,8 @@ impl SystemPurpose {
             SystemPurpose::Scheduler => "scheduler",
             SystemPurpose::SchemaCrawler => "crawler",
             SystemPurpose::AgenticBackground => "agentic-bg",
+            SystemPurpose::EdgeIngest => "edge-ingest",
+            SystemPurpose::ComplianceReportsRead => "compliance-reports-read",
         }
     }
 }

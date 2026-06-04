@@ -83,6 +83,7 @@ pub async fn ensure_local_org_seeded(local_workspace_id: Uuid) -> Result<(), Oxy
             org_id: ActiveValue::Set(Some(LOCAL_ORG_ID)),
             status: ActiveValue::Set(WorkspaceStatus::Ready),
             error: ActiveValue::Set(None),
+            monthly_vlm_budget_micros: ActiveValue::Set(None),
         }
         .insert(&conn)
         .await

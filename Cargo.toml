@@ -3,10 +3,12 @@ members = [
   "crates/billing",
   "crates/app",
   "crates/auth",
+  "crates/cameras",
   "crates/core",
   "crates/entity",
   "crates/git",
   "crates/integration/looker",
+  "crates/integration/unifi",
   "crates/migration",
   "crates/integration/omni",
   "crates/observability",
@@ -74,6 +76,7 @@ oxy-airlayer-compat = { path = "crates/infrastructure/semantic" }
 oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }
 oxy-auth = { path = "crates/auth" }
 oxy-billing = { path = "crates/billing" }
+oxy-cameras = { path = "crates/cameras" }
 oxy-gemini = { path = "crates/infrastructure/llm/gemini" }
 oxy-git = { path = "crates/git" }
 oxy-llm = { path = "crates/infrastructure/llm/oxy-llm" }
@@ -88,6 +91,7 @@ oxy-semantic = { path = "crates/semantic" }
 oxy-shared = { path = "crates/shared" }
 oxy-test-utils = { path = "crates/test-utils" }
 oxy-thread = { path = "crates/thread" }
+oxy-unifi = { path = "crates/integration/unifi" }
 
 # External dependencies
 async-openai = {version = "0.35.0"}
@@ -212,6 +216,7 @@ serde_jcs = "0.1.0"
 serde_urlencoded = "0.7"
 serde_with = "3.20.0"
 serial_test = "3.4.0"
+sha1 = "0.11.0"
 sha2 = "0.11.0"
 short-uuid = "0.2.1"
 slugify = "0.1.0"

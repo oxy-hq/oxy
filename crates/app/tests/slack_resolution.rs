@@ -132,6 +132,7 @@ async fn seed_workspace(org_id: Uuid, name: &str) -> Uuid {
         created_by: ActiveValue::Set(None),
         status: ActiveValue::Set(workspaces::WorkspaceStatus::Ready),
         error: ActiveValue::Set(None),
+        monthly_vlm_budget_micros: ActiveValue::Set(None),
         created_at: ActiveValue::NotSet,
         updated_at: ActiveValue::NotSet,
     }

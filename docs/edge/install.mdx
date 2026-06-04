@@ -1,0 +1,101 @@
+---
+title: "Install an edge box"
+description: "Bring up your first camera fleet edge box in 15 minutes."
+---
+
+## What you're about to do
+
+Bring up one edge box at one site. It'll start streaming camera frames + posting health, and you'll see it light up green in the Edge tab.
+
+## Prerequisites
+
+- A Linux host (Ubuntu 22.04+ recommended) reachable by ssh
+- Docker installed (the install script will install it if missing, but only on Ubuntu/Debian)
+- Outbound network to your Oxy server (typically port 443 if Oxy is behind TLS, or via Tailscale)
+- At least one RTSP camera reachable from that host
+
+<Tip>
+For air-gapped or strict-firewall environments, see the [TLS production runbook](https://github.com/oxy-hq/oxy/blob/main/internal-docs/edge-tls-production.md) for the three deployment shapes.
+</Tip>
+
+## Step 1 — Add the device in the UI
+
+1. Open your Oxy workspace → **Edge → List → Edge boxes** tab.
+2. Click **Add device**.
+3. Pick the site this box belongs to, give it a hardware label (e.g. "kitchen-jetson-1"), and submit.
+4. Copy the **one-line install command** the wizard shows. It looks like:
+
+```bash
+curl -fsSL https://get.oxy.tech/edge | sudo bash -s -- \
+  --device-id <uuid> \
+  --device-secret <base64> \
+  --oxy-url https://oxy.example.com \
+  --hardware-label kitchen-jetson-1
+```
+
+The device secret is shown **once**. If you lose it, remove the device and add it again.
+
+## Step 2 — Run the install command on the box
+
+SSH into the edge host and paste the command. It will:
+
+1. Install Docker if missing
+2. Drop the device identity file at `/var/lib/oxy/device.json`
+3. Download the latest signed `docker-compose.yml`
+4. Install a `oxy-edge.service` systemd unit
+5. `systemctl enable --now oxy-edge.service`
+
+The first pull takes 5–15 minutes (the worker image is ~500MB on top of YOLO weights). Subsequent updates via the OTA channel are deltas, much faster.
+
+## Step 3 — Verify in the UI
+
+Within 60 seconds of the worker booting, you should see:
+
+- **Edge → Topology** — the new box appears under its site with a green ring.
+- **Edge → List → Edge boxes** — the row shows status `active`, `auth_mode` chip showing `jwt`, and an `edge v…` version line.
+- **JWT cutover banner** — if it was showing earlier because of this box, it should clear.
+
+If you've also added cameras to this box, the **Timeline** tab's camera dropdown will populate within a poll cycle.
+
+## What just happened (high level)
+
+```
+your-box                    Oxy server
+─────────                   ──────────
+oxy-edge.service
+  └─ docker compose up
+       ├─ tailscale (optional)
+       ├─ mediamtx
+       ├─ edge worker        ─── POST /control/boxes/{id}/health every 30s
+       │                          POST /control/cameras/{id}/health every 30s
+       │                          POST /control/cameras/{id}/events (VLM verdicts)
+       └─ oxy-update-agent   ─── GET /control/boxes/{id}/target every 5min
+```
+
+The worker authenticates with a per-device JWT signed against the secret in `/var/lib/oxy/device.json`. The update agent watches for new image tags the operator sets via the [Rollouts tab](./index#what-is-the-edge-tab) and applies them with cosign signature verification + watchdog rollback.
+
+## Supported hardware
+
+Officially tested:
+
+- **NVIDIA Jetson Orin Nano** (8GB) — recommended for kitchens with 2–4 cameras
+- **Generic x86 box** (Intel N100 or better, 8GB RAM) — recommended for offices / retail
+
+Not officially supported but known to work:
+
+- Raspberry Pi 5 (8GB) — OK for 1 camera; YOLO inference is the bottleneck
+- Older Jetson Nano (4GB) — too tight on RAM for reliable inference
+
+## Adding cameras
+
+Once the box is up, add cameras to it from the **Cameras** tab. You'll need:
+
+- The RTSP URL (e.g. `rtsp://10.0.1.50:554/Streaming/Channels/101`)
+- Optional: substream URL for the lower-resolution preview
+- Optional: credentials reference (workspace secret name) if the camera is auth-gated
+
+The worker picks up new cameras on its next config poll (every 30s) — no restart needed.
+
+## Common first-boot issues
+
+The runbook covers everything that can break: [Edge runbook](./runbook).

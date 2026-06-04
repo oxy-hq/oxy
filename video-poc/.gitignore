@@ -1,0 +1,60 @@
+# Sample MP4s — large binaries, licensing varies; bring your own.
+central/mediamtx/samples/*.mp4
+central/mediamtx/samples/*.mov
+central/mediamtx/samples/*.mkv
+
+# PPE-YOLO model weights — downloaded by scripts/download-ppe-model.sh,
+# tracked per-deployment via the envelope's `model` field on each
+# compliance report rather than in-repo. README is kept.
+models/*.pt
+models/*.onnx
+
+# Ultralytics auto-downloads yolov8n.pt into the cwd when `yolo predict`
+# runs against a path without specifying a project= dir. Stops it
+# leaking into the repo root if someone smoke-tests from video-poc/.
+yolov8n.pt
+
+# Training-frame extracts (scripts/extract-training-frames.sh output).
+# JPEGs of customer footage — never commit. Upload to Roboflow then
+# delete locally, or run `make clean-training-frames`.
+training-frames/
+training-frames.zip
+
+# Local training artefacts (scripts/train-ppe-model.sh).
+# `.training-venv/` is the Python sandbox (~1.5GB of torch wheels);
+# `training-data/` is the annotated dataset pulled from Roboflow;
+# `training-runs/` holds Ultralytics' run dirs (checkpoints, plots,
+# best.pt before it's copied into models/).
+.training-venv/
+training-data/
+training-runs/
+
+# Local env overrides
+.env
+.env.local
+
+# Local SQLite outboxes (if running edge worker outside Docker)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Docker / OS noise
+.DS_Store
+*.log
+
+# Fleet inventory outputs from onboard_unifi_inventory.py — contain customer
+# public IPs, MAC addresses, and camera names. Never commit.
+fleet_inventory*.sql
+fleet_inventory*.json
+inventory_*.sql
+inventory_*.json

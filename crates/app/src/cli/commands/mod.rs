@@ -4,6 +4,7 @@ mod airway;
 mod api;
 mod app_manifest;
 mod apps;
+mod cameras;
 pub mod clean;
 pub mod export_chart;
 mod init;
@@ -261,6 +262,11 @@ enum SubCommand {
     /// not reachable through the user-facing API; reserve them for ops
     /// runbook flows.
     Admin(admin::AdminArgs),
+    /// Camera fleet operator commands.
+    ///
+    /// Hosts deployment-wide actions for the camera fleet (currently:
+    /// device log retention sweep). Reserved for ops / cron flows.
+    Cameras(cameras::CamerasArgs),
     /// Manage customer-app registrations (create, list, delete).
     ///
     /// Wraps the admin app-registry handlers directly — no HTTP server
@@ -550,6 +556,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Agentic(_) => "agentic",
             SubCommand::Airway(_) => "airway",
             SubCommand::Admin(_) => "admin",
+            SubCommand::Cameras(_) => "cameras",
             SubCommand::Apps(_) => "apps",
             SubCommand::Api(_) => "api",
             SubCommand::Publish(_) => "publish",
@@ -885,6 +892,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Admin(admin_args)) => {
             admin::handle_admin_command(admin_args).await?;
+        }
+
+        Some(SubCommand::Cameras(cameras_args)) => {
+            cameras::handle_cameras_command(cameras_args).await?;
         }
 
         Some(SubCommand::Apps(apps_args)) => {

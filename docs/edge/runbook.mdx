@@ -1,0 +1,134 @@
+---
+title: "Edge runbook"
+description: "Top failure modes for the camera fleet, with diagnosis steps and fixes."
+---
+
+When something in the fleet is misbehaving, work through the section that matches the symptom. Each entry follows the same shape: **what you see**, **what to check**, **how to fix it**.
+
+## 1. Box is stuck "offline" after install
+
+**What you see**
+
+- Edge tab → List → box row shows `status: offline` and red ring on the topology graph
+- `last_seen_at` is "Never" or stuck on a stale timestamp
+
+**What to check, in order**
+
+1. **On the host:** is the systemd unit actually up?
+
+   ```bash
+   sudo systemctl status oxy-edge.service
+   sudo docker compose -f /opt/oxy-edge/docker-compose.yml ps
+   ```
+
+   If the `edge` container is not Up, run `docker compose logs edge` and look for crashes.
+
+2. **Cosign signature check.** If you see lines like `cosign verify failed`, the agent is refusing to pull a new image because it can't validate provenance. Two paths:
+
+   - **Expected (dev/POC) — local-built image:** set `OXY_DISABLE_SIGNATURE_VERIFY=true` in `/opt/oxy-edge/.env`, restart the service.
+   - **Unexpected (production):** the workflow identity may have changed. See [edge release notes](https://github.com/oxy-hq/oxy/blob/main/internal-docs/edge-image-releases.md#when-something-breaks).
+
+3. **Network reachability.** From the host:
+
+   ```bash
+   curl -v https://oxy.example.com/api/health
+   ```
+
+   You should get a 200. If it hangs or returns SSL errors, the host can't reach Oxy — fix the firewall/DNS/cert path first.
+
+4. **Auth.** If you see `bearer rejected` or `jwt rejected` in the worker logs:
+   - The device identity may be stale (e.g. you re-added the box without removing the old one). Run **Remove device** in the UI, then **Add device** again — the install command will include a fresh secret.
+
+**Fix**
+
+- Network / cert issue → fix the upstream, restart the service.
+- Identity issue → re-add the device from the UI.
+
+## 2. Camera shows no preview
+
+**What you see**
+
+- Edge → List → Cameras row exists but the snapshot thumbnail is broken
+- Timeline tab shows the camera in the dropdown but events are empty
+
+**What to check**
+
+1. **Is the worker reading the camera at all?** Worker logs (`docker compose logs edge | grep <camera_id>`) should show a per-camera decode loop. If silent, the camera isn't in the worker's config — check the camera's `edge_box_id` is set in the UI.
+
+2. **RTSP URL is reachable from the host.** Run `ffprobe <rtsp_url>` on the edge host — if it can't open the stream, neither can the worker. Check camera IP + port + credentials.
+
+3. **Credentials.** If the URL needs auth, make sure the `credentials_ref` on the camera points at a workspace secret that exists and has the right username/password.
+
+**Fix**
+
+- Wrong site/edge_box binding → edit the camera row in the UI.
+- Bad RTSP creds → update the workspace secret; worker picks it up within 30s.
+
+## 3. Rollout was auto-aborted
+
+**What you see**
+
+- Edge → Rollouts → row shows `Aborted` with a reason like `canary failure rate 25.0% exceeded threshold 5.0%`
+
+**What to check**
+
+1. Click into the rollout detail page. The summary chip strip tells you how many boxes converged vs failed.
+2. Scan the per-box table for rows tinted red — these are the failures. The `Last result` column shows one of:
+   - **`reverted`** — apply ran, the new image didn't catch up, the agent successfully reverted to the previous image. Box is on the old image now.
+   - **`revert_failed`** — apply ran, the new image didn't catch up, AND the rollback also failed. **Box is in an unknown state — needs investigation.**
+   - **`stuck_at_broken_target`** — apply ran but there was no prior image to roll back to (first-ever apply). Box is on the broken image.
+
+**Fix**
+
+- For `reverted` boxes — the old image still works. Investigate why the new tag broke (`docker compose logs edge` on one of the failed hosts) before retrying the rollout.
+- For `revert_failed` or `stuck_at_broken_target` — SSH to the host and manually `docker pull <known-good-tag>` + restart. Then fix the rollout target before retrying.
+
+## 4. Slack alerts are not firing
+
+**What you see**
+
+- Cameras are degraded/stale in the UI, but Slack is silent
+
+**What to check**
+
+1. **Slack install exists for the org.** Settings → Slack — should show a connected workspace.
+2. **Default channel is set for this workspace.** Same Slack settings page — the per-workspace default channel must be configured. Without it, alerts are silently dropped (this is documented behavior — picking an arbitrary channel for the operator would be worse).
+3. **Test the wiring.** Edge → List → Edge boxes → **Test Slack** button. If the test message lands in Slack, the wiring works and the silence is about transitions specifically.
+4. **Cooldown.** The same camera won't generate a second alert within 30 minutes of the previous one. If you're testing by repeatedly toggling, you'll only see the first transition.
+5. **Startup grace.** The first 5 minutes after an Oxy server restart suppress alerts (otherwise every camera would alert because we lost the previous tick's state).
+
+## 5. Cohort change isn't reflected in the next rollout
+
+**What you see**
+
+- You moved box X out of cohort `staging` and into `prod`
+- The New Rollout wizard's canary cohort picker still shows X as part of `staging`
+
+**What to check**
+
+- The picker reads cohorts from the EdgeBoxes list. Refresh the page — the React Query cache invalidates on cohort edit but a stale tab won't pick it up.
+- If still wrong after refresh, check the EdgeBoxes table — the cohort column should reflect the change.
+
+**Fix**
+
+- Refresh the page.
+
+## 6. Box on legacy bearer auth
+
+**What you see**
+
+- Edge tab banner: "N of M boxes still on legacy bearer auth"
+- One or more EdgeBoxes rows show an amber `bearer` chip
+
+**What to fix**
+
+- The cleanest path is to re-onboard each bearer-mode box: **Remove device** then **Add device**. The new install command uses JWT auth from first boot.
+- For boxes you can't reach to re-onboard: an OTA update to the latest worker image will pick up the JWT-minter automatically — set the target tag, watch the cohort, the next `/control/*` call after restart will be JWT-signed.
+
+Once every row shows `jwt`, the cluster operator can flip `OXY_REQUIRE_JWT_AUTH=true` on the server and the bearer code path is hard-disabled. See [JWT cutover runbook](https://github.com/oxy-hq/oxy/blob/main/internal-docs/jwt-cutover.md).
+
+## When you're really stuck
+
+- Pull the worker logs (`docker compose logs edge --tail=500`) and the update agent logs (`docker compose logs update-agent --tail=200`) and open an issue with both attached.
+- Note the box's `device_id` and the workspace ID — both are visible in the EdgeBoxes table.
+- If the issue is signature verification, include the agent's `cosign verify` error line verbatim.

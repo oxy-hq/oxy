@@ -1,0 +1,101 @@
+[package]
+name = "oxy-cameras"
+version.workspace = true
+authors.workspace = true
+description = "Camera fleet domain — sites, edge boxes, cameras + control-plane endpoints"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+exclude.workspace = true
+
+[dependencies]
+# Workspace internals
+oxy-shared = { workspace = true }
+oxy-unifi = { workspace = true }
+# AES-256-GCM envelope sealing for at-rest device_secret + (future)
+# RTSP credential blobs. Cameras pulls the helper from platform
+# rather than wiring its own AES dep so rotation/key-mgmt has one
+# code path.
+oxy-platform = { workspace = true }
+# Pull AuthenticatedUser from request extensions so the audit
+# log can stamp `actor_user_id` on every mutating operator
+# endpoint. Cameras doesn't initiate auth — it consumes the
+# context populated by app's auth middleware.
+oxy-auth = { workspace = true }
+airhouse = { workspace = true, features = ["admin"] }
+
+# Presigned S3 URLs for compliance clip archival (Tier B #6).
+# Server holds the only AWS principal; workers never see creds.
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-s3 = { workspace = true }
+
+# Pgwire client for the per-tenant Airhouse writes. tokio-postgres simple-query
+# (no $N placeholders) is what DuckLake speaks; see observability/airhouse for
+# the precedent.
+tokio-postgres = { workspace = true }
+tokio-postgres-rustls = { workspace = true }
+rustls = { workspace = true }
+webpki-roots = { workspace = true }
+async-stream = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+
+# HTTP
+axum = { workspace = true }
+reqwest = { workspace = true, features = ["json", "cookies"] }
+bytes = "1"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+# `double_option` pattern for PATCH bodies — lets us distinguish
+# `{ "field": null }` (clear it) from absent `{ }` (leave it).
+serde_with = { workspace = true }
+
+# Template rendering for domain-pack prompts. We validate prompt
+# templates at PUT time by rendering against a dummy context;
+# StrictUndefined catches typos before the worker picks them up.
+minijinja = { workspace = true }
+
+# Persistence
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+# Cross-aggregate read of the workspaces row (budget column).
+# Loose-coupled — we only read/write `monthly_vlm_budget_micros`;
+# we do not own the workspaces lifecycle.
+entity = { workspace = true }
+uuid = { workspace = true, features = ["v4", "v5", "v7", "serde"] }
+chrono = { workspace = true, features = ["serde"] }
+
+# Auth / hashing for device tokens
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+async-trait = { workspace = true }
+
+# Errors + logging
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Smoke tests:
+#   - tests/smoke_e2e.rs (Tier A, hermetic): testcontainers Postgres +
+#     tower::oneshot. Airhouse intentionally disabled — the 503 is the
+#     success signal. Runs in CI.
+#   - tests/smoke_real_airhouse.rs (Tier B, real Airhouse): provisions
+#     a fresh tenant, drives the same /control/* flow, verifies via
+#     pgwire SELECT. #[ignore] by default; run with --run-ignored only
+#     after exporting AIRHOUSE_BASE_URL / ADMIN_TOKEN / WIRE_HOST / WIRE_PORT.
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tower = { version = "0.5.3", features = ["util"] }
+testcontainers = { version = "0.27", features = ["blocking", "reusable-containers"] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
+entity = { workspace = true }
+migration = { workspace = true }

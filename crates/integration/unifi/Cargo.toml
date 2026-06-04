@@ -1,0 +1,19 @@
+[package]
+name = "oxy-unifi"
+version.workspace = true
+authors.workspace = true
+description = "UniFi (Ubiquiti) Site Manager + Protect cloud API client for Oxy"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+exclude.workspace = true
+
+[dependencies]
+reqwest = { workspace = true, features = ["json"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }

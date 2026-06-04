@@ -72,6 +72,11 @@ pub struct Model {
     pub org_id: Option<Uuid>,
     pub status: WorkspaceStatus,
     pub error: Option<String>,
+    /// Operator-set monthly camera-fleet VLM spend ceiling, in USD
+    /// micros. NULL = no budget configured (no banner shown). The
+    /// Cameras dashboard projects month-to-date spend forward and
+    /// alerts the operator when projection > budget.
+    pub monthly_vlm_budget_micros: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

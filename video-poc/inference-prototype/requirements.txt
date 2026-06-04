@@ -1,0 +1,11 @@
+anthropic>=0.103.1
+opencv-python-headless>=4.13.0
+supervision>=0.28.0
+ultralytics>=8.4.51
+# Linear-assignment solver required by Ultralytics' built-in trackers
+# (BoT-SORT, ByteTrack via model.track()). Ultralytics auto-imports `lap`
+# specifically, not `lapx` — the two pkgs provide the same name but
+# Ultralytics' auto-install path is hardcoded to `lap>=0.5.12`.
+lap>=0.5.12
+python-dotenv>=1.2.2
+httpx>=0.28.0

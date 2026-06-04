@@ -1,0 +1,66 @@
+# systemd unit wrapping the docker-compose stack on an edge box.
+#
+# Installed at /etc/systemd/system/oxy-edge.service by the
+# `install-edge.sh` script. The compose file + env live under
+# /opt/oxy-edge so the unit has a stable WorkingDirectory across
+# upgrades — operators or the update agent can swap the compose
+# file in place without re-editing this unit.
+#
+# What this gives us over `docker compose up -d` on its own:
+#
+#   - Auto-start on boot. If the operator reboots the box,
+#     `multi-user.target` brings up the stack — no manual
+#     intervention.
+#   - Ordering. `network-online.target` blocks until DHCP
+#     completes, so we don't race `docker compose up` against
+#     "no network." Restaurants have flaky WAN; failing the
+#     first attempt is normal.
+#   - `Restart=on-failure` plus the compose-level
+#     `restart: unless-stopped` gives us two independent
+#     safety nets — if compose itself crashes (rare but
+#     possible during a self-update), systemd restarts it.
+#
+# Note we use `Type=oneshot` + `RemainAfterExit=yes` rather
+# than `Type=simple`. compose returns immediately after
+# starting containers in detached mode; systemd's "service is
+# running" state needs to persist past that exit. The
+# alternative (`Type=simple` running `docker compose up`
+# without -d) ties container lifecycle to the unit's main
+# process — when systemd restarts the unit, containers die
+# even when they were healthy.
+
+[Unit]
+Description=Oxy edge worker stack (MediaMTX + worker + coturn)
+Documentation=https://github.com/oxy-hq/oxy
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/oxy-edge
+
+# Pull the latest image manifest before starting. Cheap on
+# steady-state (digest matches), critical after a target-image
+# bump from the update agent so we actually fetch the new
+# layer before compose tries to recreate the container.
+ExecStartPre=/usr/bin/docker compose pull --quiet --policy missing
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+
+# Keep a tight restart loop on systemd-level failures (compose
+# binary missing, docker socket unreachable, etc.). The
+# 5-second pause prevents the unit from spinning when docker
+# is mid-restart itself.
+Restart=on-failure
+RestartSec=5s
+
+# Logging — compose writes its own JSON-formatted stderr; let
+# journald capture it so `journalctl -u oxy-edge` is the
+# operator's first stop when something looks off.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

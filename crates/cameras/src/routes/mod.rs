@@ -1,0 +1,92 @@
+//! Axum HTTP routes for the camera fleet domain.
+//!
+//! Two subtrees, two mounting points:
+//!
+//! - **Edge tree** ([`router`]) — `/control/*` routes that the Python
+//!   edge worker calls. Bearer-auth via the device-token middleware:
+//!   inbound `Authorization: Bearer <token>` is hashed, looked up in
+//!   `edge_box_tokens`, and the resolved
+//!   [`EdgeContext`](crate::auth::EdgeContext) (with `workspace_id`) is
+//!   injected into request extensions. Mounted at the *root* of the
+//!   app router because edge boxes don't know their workspace_id — the
+//!   bearer alone identifies them.
+//!
+//! - **Operator workspace tree** ([`workspace_routes`]) — user-facing
+//!   endpoints for managing sites / cameras / edge boxes / UniFi
+//!   onboarding. Mounted by the app crate *under
+//!   `/{workspace_id}/...`* alongside the rest of
+//!   `build_workspace_routes`, which puts them behind the standard
+//!   user-session + workspace-context middleware. Service-layer fns
+//!   double-check that any referenced resource (site, camera) belongs
+//!   to the URL's workspace_id — protects against a caller in
+//!   workspace A guessing a `site_id` from workspace B.
+
+pub mod dto;
+pub mod edge;
+pub mod errors;
+pub mod fleet;
+pub mod mtx_auth;
+pub mod operator;
+
+use axum::{Extension, Router, middleware};
+use sea_orm::DatabaseConnection;
+
+use crate::auth::require_device_token;
+
+/// Edge-facing `/control/*` tree. Mount at the top level of the app
+/// router (no workspace prefix — the device token resolves
+/// `workspace_id` implicitly).
+///
+/// Also includes the MediaMTX HTTP-auth callback endpoint
+/// (`/control/mtx-auth`) which is *NOT* gated by the device-token
+/// middleware — MTX itself calls back without a bearer. The trust
+/// boundary on that route is the tailnet ACL (only `tag:edge-box`
+/// can reach `tag:oxy-backend`, see `internal-docs/tailscale-acl.json`)
+/// plus the HMAC validation inside the handler.
+///
+/// Mount with something like:
+///
+/// ```ignore
+/// let db = agentic_state.db.clone();
+/// app_router = app_router.merge(oxy_cameras::routes::router::<AppState>(db));
+/// ```
+pub fn router<S>(db: DatabaseConnection) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let edge_routes = edge::routes::<S>().route_layer(middleware::from_fn(require_device_token));
+    let mtx_auth_routes = mtx_auth::routes::<S>();
+    // Fleet routes carry their own auth (shared secret for factory-
+    // enroll, HMAC for announce) so they don't sit behind
+    // require_device_token. Devices that hit /fleet/* don't yet
+    // have a bearer token.
+    let fleet_routes = fleet::routes::<S>();
+    Router::new()
+        .merge(edge_routes)
+        .merge(mtx_auth_routes)
+        .merge(fleet_routes)
+        .layer(Extension(db))
+}
+
+/// Operator-facing workspace-scoped tree. Designed to be merged into
+/// the app crate's `build_workspace_routes`, which nests it under
+/// `/{workspace_id}` and applies `workspace_middleware` (cloud) or
+/// `local_context_middleware` (local).
+///
+/// Mount with something like:
+///
+/// ```ignore
+/// // crates/app/src/server/router/workspace.rs
+/// .merge(oxy_cameras::routes::workspace_routes::<AppState>(db.clone()))
+/// ```
+///
+/// Each route here trusts `workspace_id` from the URL — the upstream
+/// `workspace_middleware` has already verified the caller has access
+/// to it. Each handler then re-checks that the resource it touches
+/// belongs to that workspace (defense in depth against URL-guessing).
+pub fn workspace_routes<S>(db: DatabaseConnection) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    operator::routes::<S>().layer(Extension(db))
+}

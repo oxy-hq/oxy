@@ -708,9 +708,9 @@ async fn build_local_project_ctx(cwd: &std::path::Path) -> Option<Arc<OxyProject
     };
     // Attach the same DB-first (env-fallback) secrets manager the request
     // middleware builds — otherwise a resumed run can't resolve workspace
-    // secrets stored in the DB (e.g. a ClickHouse `password_var`) and only
-    // sees process env vars. This is the difference between the resume path
-    // and a direct run.
+    // secrets stored in the DB (e.g. a ClickHouse `password_var`, a Toast
+    // `TOAST_CLIENT_SECRET`) and only sees process env vars. This is the
+    // difference between the resume path and a direct run.
     builder = with_db_secrets_manager(builder, LOCAL_WORKSPACE_ID);
     let wm = match builder.build().await {
         Ok(wm) => wm,

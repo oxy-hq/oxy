@@ -322,6 +322,112 @@ const airhouseKeys = {
   connection: (workspaceId: string) => [...airhouseKeys.all, "connection", workspaceId] as const
 };
 
+const cameraKeys = {
+  all: ["cameras"] as const,
+  sites: (workspaceId: string) => [...cameraKeys.all, "sites", workspaceId] as const,
+  site: (workspaceId: string, siteId: string) =>
+    [...cameraKeys.all, "site", workspaceId, siteId] as const,
+  edgeBoxes: (workspaceId: string) => [...cameraKeys.all, "edgeBoxes", workspaceId] as const,
+  fleetMembers: (workspaceId: string) => [...cameraKeys.all, "fleetMembers", workspaceId] as const,
+  authModeSummary: (workspaceId: string) =>
+    [...cameraKeys.all, "authModeSummary", workspaceId] as const,
+  rolloutPlans: (workspaceId: string) => [...cameraKeys.all, "rolloutPlans", workspaceId] as const,
+  rolloutConvergence: (workspaceId: string, planId: string) =>
+    [...cameraKeys.all, "rolloutConvergence", workspaceId, planId] as const,
+  edgeBox: (workspaceId: string, boxId: string) =>
+    [...cameraKeys.all, "edgeBox", workspaceId, boxId] as const,
+  cameras: (workspaceId: string) => [...cameraKeys.all, "cameras", workspaceId] as const,
+  camera: (workspaceId: string, cameraId: string) =>
+    [...cameraKeys.all, "camera", workspaceId, cameraId] as const,
+  complianceReports: (
+    workspaceId: string,
+    cameraId: string,
+    since: string | undefined,
+    limit: number | undefined
+  ) =>
+    [
+      ...cameraKeys.all,
+      "complianceReports",
+      workspaceId,
+      cameraId,
+      since ?? null,
+      limit ?? null
+    ] as const,
+  complianceSummary: (workspaceId: string, siteId: string, since: string | undefined) =>
+    [...cameraKeys.all, "complianceSummary", workspaceId, siteId, since ?? null] as const,
+  activePack: (workspaceId: string) => [...cameraKeys.all, "activePack", workspaceId] as const,
+  packs: (workspaceId: string) => [...cameraKeys.all, "packs", workspaceId] as const,
+  starterPacks: (workspaceId: string) => [...cameraKeys.all, "starterPacks", workspaceId] as const,
+  starterUpdates: (workspaceId: string) =>
+    [...cameraKeys.all, "starterUpdates", workspaceId] as const,
+  edgeBoxCost: (workspaceId: string, boxId: string, range: string) =>
+    [...cameraKeys.all, "edgeBoxCost", workspaceId, boxId, range] as const,
+  workspaceCost: (workspaceId: string, range: string) =>
+    [...cameraKeys.all, "workspaceCost", workspaceId, range] as const,
+  edgeBoxLogs: (
+    workspaceId: string,
+    boxId: string,
+    minSeverity: string | undefined,
+    eventContains: string | undefined
+  ) =>
+    [
+      ...cameraKeys.all,
+      "edgeBoxLogs",
+      workspaceId,
+      boxId,
+      minSeverity ?? null,
+      eventContains ?? null
+    ] as const,
+  budgetStatus: (workspaceId: string) => [...cameraKeys.all, "budgetStatus", workspaceId] as const,
+  fleetDevices: (workspaceId: string) => [...cameraKeys.all, "fleetDevices", workspaceId] as const,
+  auditEvents: (
+    workspaceId: string,
+    actionPrefix: string | undefined,
+    targetId: string | undefined
+  ) =>
+    [
+      ...cameraKeys.all,
+      "auditEvents",
+      workspaceId,
+      actionPrefix ?? null,
+      targetId ?? null
+    ] as const,
+  cameraHealthSummary: (workspaceId: string) =>
+    [...cameraKeys.all, "cameraHealthSummary", workspaceId] as const,
+  dashboardRollup: (workspaceId: string, siteId: string | null, since: string | undefined) =>
+    [...cameraKeys.all, "dashboardRollup", workspaceId, siteId ?? null, since ?? null] as const,
+  recentAlerts: (workspaceId: string, siteId: string | null, limit: number) =>
+    [...cameraKeys.all, "recentAlerts", workspaceId, siteId ?? null, limit] as const,
+  fleetComplianceReports: (
+    workspaceId: string,
+    siteId: string | null,
+    since: string | undefined,
+    limit: number
+  ) =>
+    [
+      ...cameraKeys.all,
+      "fleetComplianceReports",
+      workspaceId,
+      siteId ?? null,
+      since ?? null,
+      limit
+    ] as const,
+  fleetComplianceSummary: (workspaceId: string, siteId: string | null, since: string | undefined) =>
+    [
+      ...cameraKeys.all,
+      "fleetComplianceSummary",
+      workspaceId,
+      siteId ?? null,
+      since ?? null
+    ] as const,
+  recordingSegments: (workspaceId: string, cameraId: string) =>
+    [...cameraKeys.all, "recordingSegments", workspaceId, cameraId] as const,
+  arbitration: (workspaceId: string, reportId: string) =>
+    [...cameraKeys.all, "arbitration", workspaceId, reportId] as const,
+  unifiCredentialStatus: (workspaceId: string) =>
+    [...cameraKeys.all, "unifiCredentialStatus", workspaceId] as const
+};
+
 const billingKeys = {
   all: ["billing"] as const,
   org: (orgId: string) => [...billingKeys.all, "org", orgId] as const,
@@ -404,6 +510,7 @@ const semanticKeys = {
 
 const queryKeys = {
   airhouse: airhouseKeys,
+  camera: cameraKeys,
   billing: billingKeys,
   adminBilling: adminBillingKeys,
   customerApps: customerAppKeys,

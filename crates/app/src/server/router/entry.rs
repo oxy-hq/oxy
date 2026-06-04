@@ -142,6 +142,46 @@ pub async fn api_router(
         agentic_state.shutdown_token.clone(),
     );
 
+    // Camera fleet stale-checker: flips edge_boxes.status to 'offline'
+    // when last_seen_at goes silent past STALE_THRESHOLD. Bound to the
+    // same shutdown token as the rest of the agentic state so it exits
+    // cleanly on SIGTERM. The inverse transition (offline → active) is
+    // handled by the auth middleware on the next /control/* call from
+    // the box, so this loop is one-way only.
+    oxy_cameras::service::stale::spawn(
+        agentic_state.db.clone(),
+        agentic_state.shutdown_token.clone(),
+    );
+
+    // Camera fleet log retention sweep (IoT Phase 6a). DELETEs old
+    // rows from `oxy_cam_device_logs` per the configured policy
+    // (default: info/debug 7d, warn+ 30d). Honors
+    // OXY_CAMERA_LOG_SWEEP_INTERVAL_HOURS=0 to disable when
+    // operators prefer the `oxy cameras sweep-logs` CLI on cron.
+    oxy_cameras::service::log_retention::spawn(
+        agentic_state.db.clone(),
+        agentic_state.shutdown_token.clone(),
+    );
+
+    // OTA rollout supervisor (P1 OTA #3). Advances `camera_rollout_plans`
+    // rows through pending → canary → promoting → complete, auto-aborts
+    // when canary failure rate exceeds threshold. Same shutdown token
+    // as the other camera-domain loops.
+    oxy_cameras::service::rollouts::spawn(
+        agentic_state.db.clone(),
+        agentic_state.shutdown_token.clone(),
+    );
+
+    // Camera health → Slack alerter (P1 #2). Polls camera_health
+    // summary every 60s per workspace, diffs against the previous
+    // tick, emits a Slack message on transitions to/from `ok` with
+    // a 30-min per-camera cooldown. No-op when no workspace has a
+    // Slack installation.
+    oxy_cameras::service::alerts::spawn(
+        agentic_state.db.clone(),
+        agentic_state.shutdown_token.clone(),
+    );
+
     let app_state = AppState {
         enterprise,
         internal: false,
@@ -171,7 +211,19 @@ pub async fn api_router(
             agentic_state.clone(),
         ))?,
     };
-    let app_routes = build_public_routes().merge(protected_routes);
+
+    // Camera-fleet routes split across two mounting points:
+    //   - Edge /control/* tree mounts here at the top level; the
+    //     device-token middleware (inside oxy_cameras::routes::router)
+    //     resolves workspace_id from the bearer.
+    //   - Operator workspace tree (cameras/edge-boxes, cameras/{id}/zones,
+    //     integrations/unifi/*) is merged into build_workspace_routes,
+    //     so it sits behind workspace_middleware + auth_middleware and
+    //     trusts the URL's workspace_id.
+    let camera_routes = oxy_cameras::routes::router::<AppState>(agentic_state.db.clone());
+    let app_routes = build_public_routes()
+        .merge(protected_routes)
+        .merge(camera_routes);
 
     // External API surface (`/external/api`): curated routes, API-key-only
     // auth, wide-open CORS. Built from the SAME shared `app_state` +
