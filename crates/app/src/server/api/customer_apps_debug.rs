@@ -22,6 +22,7 @@ use super::customer_apps_auth::{AuthOutcome, authenticate_and_authorize};
 use super::customer_apps_manifest::{
     bundle_dir_for, pick_channel_for, resolve_manifest, sanitize_bundle_dir_for_display,
 };
+use super::customer_apps_source::AppSource;
 
 // ── Response types ───────────────────────────────────────────────────────────
 
@@ -33,6 +34,11 @@ enum ManifestSource {
     DbOverride,
     /// No override; the bundle's `oxy-app.json` is the source.
     BundleFile,
+    /// Bundle is served by an external host (e.g. v0/Vercel) through the
+    /// reverse proxy. There is no `oxy-app.json` on our side — the upstream
+    /// owns identity, so `manifest` and `bundle_dir` are intentionally
+    /// absent and not an error condition.
+    Remote,
 }
 
 #[derive(Serialize)]
@@ -48,6 +54,10 @@ struct DebugSnapshot {
     /// not here).
     manifest: Option<JsonValue>,
     manifest_error: Option<String>,
+    /// Upstream URL when `manifest_source = remote`; `None` for
+    /// `db_override` / `bundle_file`. Used by the admin UI to render the
+    /// V0 bundle's actual location instead of a spurious "missing" state.
+    upstream_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -76,12 +86,6 @@ pub async fn get_debug(
     let cookie_wants_draft = super::customer_apps_preview::wants_draft_preview(&headers);
     let channel = pick_channel_for(&app, is_staff, cookie_wants_draft);
 
-    let manifest_source = if app.manifest_override.is_some() {
-        ManifestSource::DbOverride
-    } else {
-        ManifestSource::BundleFile
-    };
-
     let mut snap = DebugSnapshot {
         org_slug,
         app_slug,
@@ -94,10 +98,25 @@ pub async fn get_debug(
         },
         bundle_dir: None,
         bundle_dir_exists: false,
-        manifest_source,
+        manifest_source: if app.manifest_override.is_some() {
+            ManifestSource::DbOverride
+        } else {
+            ManifestSource::BundleFile
+        },
         manifest: None,
         manifest_error: None,
+        upstream_url: None,
     };
+
+    // V0 / Vercel sources have no oxy-side bundle dir or oxy-app.json — the
+    // upstream owns identity. Report them as `remote` instead of running
+    // `resolve_manifest`, which would otherwise surface a spurious
+    // "oxy-app.json not found in bundle directory" error in the admin UI.
+    if let Ok(AppSource::V0 { url }) = AppSource::from_model(&app) {
+        snap.manifest_source = ManifestSource::Remote;
+        snap.upstream_url = Some(url);
+        return Json(snap).into_response();
+    }
 
     if let Some(d) = bundle_dir_for(&app) {
         snap.bundle_dir_exists = d.exists();

@@ -34,8 +34,11 @@ export const AppInfo = ({ app }: { app: CustomerApp }) => {
     );
   }
 
-  const manifestOk = !!data.manifest && !data.manifest_error;
-  const dirOk = data.bundle_dir_exists;
+  const isRemote = data.manifest_source === "remote";
+  const manifestOk = isRemote || (!!data.manifest && !data.manifest_error);
+  // Remote bundles have no oxy-side filesystem — bundle-dir checks don't
+  // apply, so treat them as OK and show the upstream URL instead.
+  const dirOk = isRemote || data.bundle_dir_exists;
 
   return (
     <div className='space-y-6 p-6'>
@@ -44,14 +47,26 @@ export const AppInfo = ({ app }: { app: CustomerApp }) => {
         <StatusPill
           label='Bundle dir'
           ok={dirOk}
-          value={dirOk ? "exists" : "missing"}
-          subtle={data.bundle_dir ?? "—"}
+          value={isRemote ? "remote" : dirOk ? "exists" : "missing"}
+          subtle={isRemote ? (data.upstream_url ?? "—") : (data.bundle_dir ?? "—")}
         />
         <StatusPill
           label='Manifest'
           ok={manifestOk}
-          value={data.manifest_source === "db_override" ? "DB override" : "Bundled file"}
-          subtle={manifestOk ? "loaded" : (data.manifest_error ?? "unknown")}
+          value={
+            isRemote
+              ? "external"
+              : data.manifest_source === "db_override"
+                ? "DB override"
+                : "Bundled file"
+          }
+          subtle={
+            isRemote
+              ? "owned by upstream"
+              : manifestOk
+                ? "loaded"
+                : (data.manifest_error ?? "unknown")
+          }
         />
         <StatusPill
           label='Source'
@@ -68,8 +83,9 @@ export const AppInfo = ({ app }: { app: CustomerApp }) => {
         <KV k='Status' v={data.app.status} />
       </Section>
 
-      {/* Manifest error if any */}
-      {data.manifest_error && (
+      {/* Manifest error if any — never shown for remote bundles since
+          there's no oxy-side manifest to fail. */}
+      {!isRemote && data.manifest_error && (
         <Section title='Manifest error' tone='destructive'>
           <pre className='whitespace-pre-wrap rounded-md bg-destructive/10 p-3 text-destructive text-xs'>
             {data.manifest_error}
@@ -78,8 +94,9 @@ export const AppInfo = ({ app }: { app: CustomerApp }) => {
       )}
 
       {/* Raw manifest blob — loose by design (v2 server returns it as
-          opaque JSON; the bundle owns its structure). */}
-      {manifestOk && (
+          opaque JSON; the bundle owns its structure). Skipped for remote
+          bundles. */}
+      {!isRemote && manifestOk && (
         <Section title='Manifest'>
           <pre className='max-h-64 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 font-mono text-xs'>
             {JSON.stringify(data.manifest, null, 2)}

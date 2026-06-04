@@ -251,9 +251,16 @@ export interface CustomerAppDebug {
   };
   bundle_dir: string | null;
   bundle_dir_exists: boolean;
-  /** Where the served manifest came from: DB override or bundled file. */
-  manifest_source: "db_override" | "bundle_file";
+  /**
+   * Where the served manifest came from. `remote` means the bundle is
+   * served by an external host (v0/Vercel) through the reverse proxy —
+   * there's no oxy-side `oxy-app.json`, so `manifest` and `bundle_dir`
+   * are intentionally absent.
+   */
+  manifest_source: "db_override" | "bundle_file" | "remote";
   /** Loose by design — server schema can grow without breaking clients. */
   manifest?: unknown;
   manifest_error: string | null;
+  /** Upstream URL when `manifest_source = "remote"`; null otherwise. */
+  upstream_url: string | null;
 }
