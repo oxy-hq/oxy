@@ -246,16 +246,30 @@ export const DetailToolbar = ({
               size='icon'
               className='size-7'
               onClick={() =>
-                window.open(resolveBundleUrl(app.url), "_blank", "noopener,noreferrer")
+                window.open(
+                  app.url_subdomain ?? resolveBundleUrl(app.url),
+                  "_blank",
+                  "noopener,noreferrer"
+                )
               }
               aria-label='Open customer URL in a new tab'
             >
               <ExternalLink className='size-3.5' />
             </Button>
           </TooltipTrigger>
-          <TooltipContent className='max-w-md'>
-            <span className='block text-xs uppercase tracking-wider opacity-60'>Customer URL</span>
-            <span className='block break-all font-mono text-xs'>{app.url}</span>
+          <TooltipContent className='max-w-md space-y-1.5'>
+            {app.url_subdomain && (
+              <div>
+                <span className='block text-xs uppercase tracking-wider opacity-60'>
+                  Subdomain URL (recommended)
+                </span>
+                <span className='block break-all font-mono text-xs'>{app.url_subdomain}</span>
+              </div>
+            )}
+            <div>
+              <span className='block text-xs uppercase tracking-wider opacity-60'>Subpath URL</span>
+              <span className='block break-all font-mono text-xs'>{app.url}</span>
+            </div>
           </TooltipContent>
         </Tooltip>
       </div>

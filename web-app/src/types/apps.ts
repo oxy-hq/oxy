@@ -29,8 +29,18 @@ export interface CustomerApp {
   branch: string;
   source_repo: string;
   status: string;
-  /** Canonical pretty URL `<base>/customer-apps/<org_slug>/<app_slug>/`. */
+  /**
+   * Canonical pretty URL `<base>/customer-apps/<org_slug>/<app_slug>/`.
+   * Always set; works for every source_type.
+   */
   url: string;
+  /**
+   * Subdomain URL for v0 sources when this cluster has
+   * `OXY_CUSTOMER_APPS_SUBDOMAIN_SUFFIX` configured, e.g.
+   * `https://mars--command-center.customer-apps-dev.oxygen-hq.com/`.
+   * `null` otherwise — admin UI shows whichever URLs are present.
+   */
+  url_subdomain: string | null;
   source_type: "v0" | "local" | "s3";
   source_config: Record<string, unknown>;
   /** PR URL set by the scaffold flow when `scaffold_pr: true` was passed. */

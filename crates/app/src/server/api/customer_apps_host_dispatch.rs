@@ -1,0 +1,403 @@
+//! Host-based dispatch for v0 / Vercel customer-app bundle subdomains.
+//!
+//! Lets a v0-source app be reachable at
+//! `https://<org>--<slug>.customer-apps[-<env>].<zone>/...` in addition
+//! to the existing path-prefix URL
+//! `https://<admin-host>/customer-apps/<org>/<slug>/...`.
+//!
+//! ## Why
+//!
+//! On path-prefix mode every Vercel app must set `basePath` /
+//! `assetPrefix` in `next.config.js` so root-relative asset URLs
+//! (`/_next/...`) and runtime `fetch("/api/...")` resolve under the
+//! prefix. On a dedicated subdomain root is root for the upstream —
+//! v0.dev-generated apps work out of the box with zero per-app config,
+//! and runtime JS calls that construct URLs at execution time (which a
+//! path-rewriting reverse proxy can't reach) also resolve correctly.
+//!
+//! ## Design choices
+//!
+//! - **Pure structural match for dispatch.** The middleware does not
+//!   read any env var. It treats any Host of shape
+//!   `<org>--<slug>.customer-apps[-<env>]?.<zone>` as a customer-app
+//!   subdomain. This means the same image works in dev, staging, prod,
+//!   and any custom domain the cluster operator points at it — no
+//!   per-env config drift. The `customer-apps` second label is the
+//!   discriminator (an admin host like `app-dev.oxygen-hq.com` has no
+//!   `--` in the first label and no `customer-apps` second label, so
+//!   it never matches).
+//!
+//! - **URL generation auto-derives from `OXY_API_URL`.** The admin UI
+//!   needs an absolute subdomain URL to render alongside the subpath
+//!   URL. We derive it by looking at the cluster's admin host
+//!   (extracted from `OXY_API_URL`, which every cloud deployment
+//!   already sets) and applying the `app{-env}` ↔ `customer-apps{-env}`
+//!   convention. No new env var. Returns `None` when the admin host
+//!   doesn't fit the convention (e.g. local `http://localhost:3000` or
+//!   a custom-branded host), in which case the admin UI just hides the
+//!   subdomain URL row.
+//!
+//! ## How
+//!
+//! A tower middleware sits in front of the router. On every request:
+//!
+//!   1. Check the `Host` header. If structural parse yields
+//!      `(org, slug)`, the URI path is rewritten from `/<rest>` to
+//!      `/customer-apps/<org>/<slug>/<rest>` so the existing
+//!      `/customer-apps/{*path}` route handler (`serve_dispatch`)
+//!      takes over with no other changes — including the proxy to the
+//!      upstream Vercel URL for `AppSource::V0`.
+//!   2. Otherwise the request passes through unchanged.
+//!
+//! Critical exception: requests with path `/api/...` are left
+//! untouched even on a subdomain host. Bundle SDK calls like
+//! `fetch("/api/projects/.../query")` from a bundle hosted at
+//! `mars--app.customer-apps-dev.oxygen-hq.com` must land on the data
+//! API (this same oxy backend), NOT be proxied to the upstream Vercel.
+//! Keeping the URI unchanged lets the normal `/api/*` router handle
+//! them with the existing cookie- or API-key-based auth.
+
+use axum::extract::Request;
+use axum::http::Uri;
+use axum::middleware::Next;
+use axum::response::Response;
+
+/// Parse `<org>--<slug>.customer-apps[-<env>]?.<rest>` from a `Host`
+/// header value. Returns `(org_slug, app_slug)` on a match, `None`
+/// otherwise.
+///
+/// Rules:
+/// - Strips any `:port` tail (so dev-server hosts work).
+/// - The first label must split into `<org>--<slug>` on the FIRST
+///   `--`. Slugs may contain `-` but not `--` (we control slug
+///   validation; split_once at first `--` means engineering org names
+///   like `acme--internal` would collide, so we disallow `--` in org
+///   slugs in the registration form — see admin/apps/handlers.rs).
+/// - The second label must be exactly `customer-apps` or start with
+///   `customer-apps-` (i.e. `customer-apps`, `customer-apps-dev`,
+///   `customer-apps-staging`, `customer-apps-prod`, …).
+/// - Both parts non-empty; neither contains `.` (defense against a
+///   crafted host like `evil.mars--app.customer-apps-dev.oxygen-hq.com`
+///   trying to ride a wildcard).
+pub fn parse_subdomain(host: &str) -> Option<(String, String)> {
+    let host_no_port = host.split(':').next().unwrap_or(host);
+    let (prefix, rest) = host_no_port.split_once('.')?;
+    let second_label = rest.split('.').next()?;
+    if second_label != "customer-apps" && !second_label.starts_with("customer-apps-") {
+        return None;
+    }
+    let (org, slug) = prefix.split_once("--")?;
+    if org.is_empty() || slug.is_empty() {
+        return None;
+    }
+    if org.contains('.') || slug.contains('.') {
+        return None;
+    }
+    Some((org.to_string(), slug.to_string()))
+}
+
+/// Build the absolute subdomain URL for an app, e.g.
+/// `https://mars--command-center.customer-apps-dev.oxygen-hq.com/`.
+///
+/// Auto-derives the customer-apps zone from `OXY_API_URL` by stripping
+/// the leading `app` (`app-dev`/`app-staging`/`app` → `customer-apps-dev`
+/// /`customer-apps-staging`/`customer-apps`). Returns `None` when:
+/// - `OXY_API_URL` is unset / malformed (no env var fallback exists),
+/// - the admin host has no `.` (e.g. `localhost`),
+/// - the admin host's first label doesn't start with `app` (custom
+///   branded host — operator should configure DNS + UI separately if
+///   they want subdomain URLs in this case).
+///
+/// In any of those cases the admin UI hides the "Subdomain URL" row;
+/// the path-prefix URL still works for both v0 and S3 sources.
+pub fn subdomain_url_for(org_slug: &str, app_slug: &str) -> Option<String> {
+    let zone = customer_apps_zone()?;
+    Some(format!("https://{org_slug}--{app_slug}.{zone}/"))
+}
+
+/// Compute the customer-apps zone for this deployment by mapping the
+/// admin host's `app{-env}` first label to `customer-apps{-env}`.
+///
+/// `OXY_API_URL = https://app-dev.oxygen-hq.com/api`
+///   → admin host `app-dev.oxygen-hq.com`
+///   → first label `app-dev`, suffix `-dev`
+///   → zone `customer-apps-dev.oxygen-hq.com`
+///
+/// `OXY_API_URL = https://app.oxygen-hq.com/api`
+///   → first label `app`, suffix ``
+///   → zone `customer-apps.oxygen-hq.com`
+///
+/// Cluster operators on a custom-branded host (no `app` prefix) get
+/// `None`; subdomain URLs are simply not surfaced.
+fn customer_apps_zone() -> Option<String> {
+    let api_url = std::env::var("OXY_API_URL").ok()?;
+    let parsed: url::Url = api_url.parse().ok()?;
+    let admin_host = parsed.host_str()?;
+    let (first_label, rest) = admin_host.split_once('.')?;
+    let env_suffix = first_label.strip_prefix("app")?;
+    Some(format!("customer-apps{env_suffix}.{rest}"))
+}
+
+/// Tower middleware that rewrites subdomain requests to the path-prefix
+/// form so the existing `/customer-apps/{*path}` route handles them.
+///
+/// Applied to the outer router so every request is inspected. Cheap:
+/// one Host-header read + at most two `split_once` calls on the
+/// non-matching fast path.
+pub async fn subdomain_rewrite_middleware(request: Request, next: Next) -> Response {
+    let Some(host) = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return next.run(request).await;
+    };
+    let Some((org, slug)) = parse_subdomain(host) else {
+        return next.run(request).await;
+    };
+
+    // Bundle SDK calls land on the data API, NOT on the upstream
+    // Vercel. Keep `/api/*` requests untouched even on a subdomain
+    // host so the normal `/api/*` router handles them.
+    let original_path = request.uri().path();
+    if original_path == "/api" || original_path.starts_with("/api/") {
+        return next.run(request).await;
+    }
+
+    let new_path = format!("/customer-apps/{org}/{slug}{original_path}");
+    let Some(new_uri) = rewrite_uri_path(request.uri(), &new_path) else {
+        return next.run(request).await;
+    };
+
+    let (mut parts, body) = request.into_parts();
+    parts.uri = new_uri;
+    let new_request = Request::from_parts(parts, body);
+    next.run(new_request).await
+}
+
+/// Replace only the path of `original`, preserving scheme, authority,
+/// and query. Returns `None` if the resulting URI is invalid (which
+/// shouldn't happen given the inputs but we fail open rather than
+/// panic).
+fn rewrite_uri_path(original: &Uri, new_path: &str) -> Option<Uri> {
+    let path_and_query = match original.query() {
+        Some(q) => format!("{new_path}?{q}"),
+        None => new_path.to_string(),
+    };
+    let mut builder = Uri::builder().path_and_query(path_and_query);
+    if let Some(scheme) = original.scheme() {
+        builder = builder.scheme(scheme.clone());
+    }
+    if let Some(authority) = original.authority() {
+        builder = builder.authority(authority.clone());
+    }
+    builder.build().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Serializes env-mutation in the URL-helper tests so they don't race
+    // with each other. Per Rust nightly recommendation, swap to
+    // `std::sync::Mutex` lazily so we don't pull in once_cell.
+    fn env_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    #[test]
+    fn parse_dev_host() {
+        let got = parse_subdomain("mars--command-center.customer-apps-dev.oxygen-hq.com");
+        assert_eq!(
+            got,
+            Some(("mars".to_string(), "command-center".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_staging_host() {
+        let got = parse_subdomain("acme--store.customer-apps-staging.oxygen-hq.com");
+        assert_eq!(got, Some(("acme".to_string(), "store".to_string())));
+    }
+
+    #[test]
+    fn parse_prod_host_no_env_label() {
+        let got = parse_subdomain("acme--store.customer-apps.oxygen-hq.com");
+        assert_eq!(got, Some(("acme".to_string(), "store".to_string())));
+    }
+
+    #[test]
+    fn parse_strips_port() {
+        let got = parse_subdomain("mars--command-center.customer-apps-dev.oxygen-hq.com:443");
+        assert_eq!(
+            got,
+            Some(("mars".to_string(), "command-center".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_slug_with_internal_hyphens() {
+        // split_once("--") splits at FIRST occurrence — slug retains
+        // any further hyphens. Round-trips correctly.
+        let got = parse_subdomain("acme--my-data-app.customer-apps-dev.oxygen-hq.com");
+        assert_eq!(got, Some(("acme".to_string(), "my-data-app".to_string())));
+    }
+
+    #[test]
+    fn parse_works_on_alternative_zones() {
+        // The zone is not hard-coded — any `<o>--<s>.customer-apps*.X`
+        // matches. Lets the same binary work on custom-branded hosts
+        // that still follow the `customer-apps[-env]` second-label
+        // convention.
+        let got = parse_subdomain("acme--store.customer-apps.example.io");
+        assert_eq!(got, Some(("acme".to_string(), "store".to_string())));
+    }
+
+    #[test]
+    fn parse_rejects_admin_host() {
+        // No `--` and second label isn't `customer-apps*`.
+        assert_eq!(parse_subdomain("app-dev.oxygen-hq.com"), None);
+        assert_eq!(parse_subdomain("app.oxygen-hq.com"), None);
+    }
+
+    #[test]
+    fn parse_rejects_wrong_second_label() {
+        // Looks similar but isn't `customer-apps*` — reject.
+        assert_eq!(parse_subdomain("mars--app.customer.oxygen-hq.com"), None);
+        assert_eq!(
+            parse_subdomain("mars--app.customer-app.oxygen-hq.com"), // singular — typo, reject
+            None
+        );
+    }
+
+    #[test]
+    fn parse_rejects_missing_delimiter() {
+        let got = parse_subdomain("marscommand-center.customer-apps-dev.oxygen-hq.com");
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn parse_rejects_empty_org() {
+        let got = parse_subdomain("--command-center.customer-apps-dev.oxygen-hq.com");
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn parse_rejects_empty_slug() {
+        let got = parse_subdomain("mars--.customer-apps-dev.oxygen-hq.com");
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn parse_rejects_multi_label_prefix() {
+        // The prefix is just the FIRST label. `evil.mars--app...`
+        // splits into `evil` as the first label and `mars--app...` as
+        // rest — `evil` has no `--`, so it fails. A crafted prefix
+        // can't ride the wildcard cert to impersonate a real app.
+        let got = parse_subdomain("evil.mars--command-center.customer-apps-dev.oxygen-hq.com");
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn rewrite_uri_preserves_query() {
+        let original: Uri = "https://x/foo?bar=1".parse().unwrap();
+        let got = rewrite_uri_path(&original, "/customer-apps/o/s/foo").unwrap();
+        assert_eq!(got.path(), "/customer-apps/o/s/foo");
+        assert_eq!(got.query(), Some("bar=1"));
+    }
+
+    #[test]
+    fn rewrite_uri_root_path() {
+        let original: Uri = "/".parse().unwrap();
+        let got = rewrite_uri_path(&original, "/customer-apps/o/s/").unwrap();
+        assert_eq!(got.path(), "/customer-apps/o/s/");
+        assert_eq!(got.query(), None);
+    }
+
+    // ── URL-helper auto-derivation ───────────────────────────────────
+
+    #[test]
+    fn url_helper_derives_dev() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "https://app-dev.oxygen-hq.com/api");
+        }
+        let got = subdomain_url_for("mars", "command-center");
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
+        assert_eq!(
+            got,
+            Some("https://mars--command-center.customer-apps-dev.oxygen-hq.com/".to_string())
+        );
+    }
+
+    #[test]
+    fn url_helper_derives_staging() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "https://app-staging.oxygen-hq.com/api");
+        }
+        let got = subdomain_url_for("acme", "store");
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
+        assert_eq!(
+            got,
+            Some("https://acme--store.customer-apps-staging.oxygen-hq.com/".to_string())
+        );
+    }
+
+    #[test]
+    fn url_helper_derives_prod() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "https://app.oxygen-hq.com/api");
+        }
+        let got = subdomain_url_for("acme", "store");
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
+        assert_eq!(
+            got,
+            Some("https://acme--store.customer-apps.oxygen-hq.com/".to_string())
+        );
+    }
+
+    #[test]
+    fn url_helper_none_for_localhost() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "http://localhost:3000/api");
+        }
+        let got = subdomain_url_for("mars", "store");
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn url_helper_none_for_custom_branded_host() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "https://data.acme.com/api");
+        }
+        let got = subdomain_url_for("mars", "store");
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
+        // First label is `data`, not `app*` — no convention to apply.
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn url_helper_none_when_api_url_unset() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
+        assert_eq!(subdomain_url_for("mars", "store"), None);
+    }
+}

@@ -183,7 +183,14 @@ pub struct AppResponse {
     pub source_repo: String,
     pub status: String,
     /// Canonical pretty URL `<base>/customer-apps/<org_slug>/<app_slug>/`.
+    /// Always set; works for every source_type.
     pub url: String,
+    /// Subdomain URL for v0 sources when this cluster has
+    /// `OXY_CUSTOMER_APPS_SUBDOMAIN_SUFFIX` configured, e.g.
+    /// `https://mars--command-center.customer-apps-dev.oxygen-hq.com/`.
+    /// `None` otherwise — the admin UI shows whichever URLs are present
+    /// and hides the row when both are unavailable for the current source.
+    pub url_subdomain: Option<String>,
     pub source_type: String,
     pub source_config: serde_json::Value,
     /// Set after a successful PR scaffold; null otherwise.
@@ -223,6 +230,15 @@ pub(crate) fn build_pretty_url(org_slug: &str, app_slug: &str) -> String {
 impl AppResponse {
     fn from_model_with_org(m: apps::Model, org_slug: &str) -> Self {
         let url = build_pretty_url(org_slug, &m.slug);
+        // Subdomain URL only applies to v0 sources (S3 bundles serve
+        // their own assets from this oxy backend, so there's no
+        // upstream to proxy at root). The helper returns None when the
+        // suffix env is unset.
+        let url_subdomain = if m.source_type == "v0" {
+            crate::server::api::customer_apps_host_dispatch::subdomain_url_for(org_slug, &m.slug)
+        } else {
+            None
+        };
         Self {
             id: m.id,
             slug: m.slug,
@@ -234,6 +250,7 @@ impl AppResponse {
             source_repo: m.source_repo,
             status: m.status,
             url,
+            url_subdomain,
             source_type: m.source_type,
             source_config: m.source_config,
             bootstrap_pr_url: m.bootstrap_pr_url,

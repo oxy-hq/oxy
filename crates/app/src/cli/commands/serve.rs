@@ -488,6 +488,18 @@ async fn create_web_application(
         // "CORS error" instead of the real 404. See
         // `crates/app/src/server/router/mod.rs::build_cors_layer`.
         .layer(crate::server::router::build_cors_layer())
+        // Subdomain-based dispatch for v0 / Vercel customer-app bundles.
+        // Inspects the request Host: header against
+        // `OXY_CUSTOMER_APPS_SUBDOMAIN_SUFFIX`; on a match, rewrites the
+        // URI path to the equivalent `/customer-apps/<org>/<slug>/...` so
+        // the existing route handler takes over (including the v0 proxy
+        // path). `/api/*` requests are passed through unchanged so the
+        // bundle SDK's `fetch("/api/...")` calls land on the data API,
+        // not the upstream Vercel. No-op when the env var is unset —
+        // safe to leave installed before the wildcard cert + DNS land.
+        .layer(axum::middleware::from_fn(
+            crate::server::api::customer_apps_host_dispatch::subdomain_rewrite_middleware,
+        ))
         .layer(create_trace_layer())
         // External API surface — mounted AFTER the global CORS + trace layers
         // so it is NOT wrapped by them (axum applies a `.layer` only to routes

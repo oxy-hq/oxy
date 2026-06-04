@@ -1,6 +1,9 @@
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Copy, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useAppDebug } from "@/hooks/api/customerApps/useCustomerApps";
+import { resolveBundleUrl } from "@/pages/admin/AdminCustomerApps/resolveBundleUrl";
 import type { CustomerApp } from "@/types/apps";
 
 /**
@@ -75,6 +78,18 @@ export const AppInfo = ({ app }: { app: CustomerApp }) => {
           subtle={`${app.branch} branch`}
         />
       </div>
+
+      {/* URLs — what to share with the customer or use in iframes.
+          Subdomain URL is preferred for v0 sources when present
+          (root-relative URLs in the upstream resolve correctly with
+          zero per-app config); subpath URL always works and is the
+          only option for S3-source apps. */}
+      <Section title='URLs'>
+        <UrlRow label='Subpath URL' url={app.url} />
+        {app.url_subdomain && (
+          <UrlRow label='Subdomain URL' url={app.url_subdomain} recommended absolute />
+        )}
+      </Section>
 
       {/* Identity card */}
       <Section title='Identity'>
@@ -161,3 +176,66 @@ const KV = ({ k, v, mono }: { k: string; v: string; mono?: boolean }) => (
     <span className={mono ? "font-mono text-xs" : ""}>{v}</span>
   </div>
 );
+
+const UrlRow = ({
+  label,
+  url,
+  recommended,
+  absolute
+}: {
+  label: string;
+  url: string;
+  /** Show a small "Recommended" pill — used for the v0 subdomain URL. */
+  recommended?: boolean;
+  /**
+   * When true, open the URL as-is (it's already absolute, e.g. the v0
+   * subdomain). Otherwise resolve against the current origin so a
+   * relative URL like `/customer-apps/o/s/` opens on the admin host.
+   */
+  absolute?: boolean;
+}) => {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        absolute ? url : new URL(url, window.location.origin).toString()
+      );
+      toast.success(`Copied ${label}`);
+    } catch {
+      toast.error("Failed to copy to clipboard");
+    }
+  };
+  const openHref = absolute ? url : resolveBundleUrl(url);
+  return (
+    <div className='flex items-center gap-2'>
+      <div className='flex-1 space-y-0.5 overflow-hidden'>
+        <div className='flex items-center gap-1.5'>
+          <span className='text-muted-foreground text-xs'>{label}</span>
+          {recommended && (
+            <span className='rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary uppercase tracking-wide'>
+              Recommended
+            </span>
+          )}
+        </div>
+        <div className='truncate font-mono text-xs'>{url}</div>
+      </div>
+      <Button
+        variant='ghost'
+        size='icon'
+        className='size-7 shrink-0'
+        onClick={copy}
+        aria-label={`Copy ${label}`}
+      >
+        <Copy className='size-3.5' />
+      </Button>
+      <Button
+        variant='ghost'
+        size='icon'
+        className='size-7 shrink-0'
+        onClick={() => window.open(openHref, "_blank", "noopener,noreferrer")}
+        aria-label={`Open ${label} in a new tab`}
+      >
+        <ExternalLink className='size-3.5' />
+      </Button>
+    </div>
+  );
+};
