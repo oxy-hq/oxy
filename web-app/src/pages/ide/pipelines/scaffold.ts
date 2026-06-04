@@ -22,7 +22,8 @@ type AirwaySourceKind =
   | "sql_database"
   | "clickhouse"
   | "postgres_cdc"
-  | "toast";
+  | "toast"
+  | "quickbooks";
 
 export interface SourceOption {
   /** Selection id — may differ from the airway kind (e.g. "toast"). */
@@ -45,6 +46,12 @@ export const SOURCE_OPTIONS: SourceOption[] = [
     label: "Toast POS",
     description: "Toast restaurant POS (orders, menus, labor)",
     airwayKind: "toast"
+  },
+  {
+    id: "quickbooks",
+    label: "QuickBooks Online",
+    description: "Accounting + inventory (invoices, bills, P&L)",
+    airwayKind: "quickbooks"
   },
   {
     id: "filesystem",
@@ -96,6 +103,15 @@ const SOURCE_CONFIG: Record<string, string> = {
     client_secret_var: TOAST_CLIENT_SECRET
     restaurant_guids:
       - "<restaurant-guid>"`,
+  // QuickBooks Online. `client_secret_var` / `refresh_token_var` are
+  // secret-manager names resolved at run time; the rotated refresh token
+  // is written back to `refresh_token_var` after each refresh. Use
+  // base_url for the sandbox.
+  quickbooks: `    client_id: <intuit-client-id>
+    client_secret_var: QB_CLIENT_SECRET
+    refresh_token_var: QB_REFRESH_TOKEN
+    realm_id: <company-realm-id>
+    # base_url: https://sandbox-quickbooks.api.intuit.com`,
   filesystem: `    base_path: /path/to/data # or s3://bucket/prefix, gs://..., az://...
     pattern: "*.jsonl"
     format: jsonl # json | jsonl | csv
@@ -135,6 +151,19 @@ interface ToastScaffold {
   baseUrl?: string;
 }
 
+/** QuickBooks Online wizard fields. `clientSecretVar` / `refreshTokenVar`
+ *  are secret-manager names resolved at run time — the secret values
+ *  themselves are never written into the `.airway.yml`. Intuit rotates the
+ *  refresh token on every use; the executor writes the rotated value back
+ *  to `refreshTokenVar`. */
+interface QuickBooksScaffold {
+  clientId: string;
+  clientSecretVar: string;
+  refreshTokenVar: string;
+  realmId: string;
+  baseUrl?: string;
+}
+
 /** ClickHouse wizard fields. `passwordVar` is the secret-manager name
  *  the executor resolves at run time — the password itself is never
  *  written into the `.airway.yml`. `tables` are the names picked from
@@ -169,6 +198,8 @@ export interface ScaffoldInput {
   sourceId: string;
   /** Required when `sourceId === "toast"`. */
   toast?: ToastScaffold;
+  /** Required when `sourceId === "quickbooks"`. */
+  quickbooks?: QuickBooksScaffold;
   /** Required when `sourceId === "clickhouse"`. */
   clickhouse?: ClickHouseScaffold;
   /** A `config.yml` database name (the resolved destination). */
@@ -192,6 +223,20 @@ function buildToastConfig(t: ToastScaffold): string {
     guids
   ];
   if (t.baseUrl?.trim()) lines.push(`    base_url: ${t.baseUrl.trim()}`);
+  return lines.join("\n");
+}
+
+function buildQuickBooksConfig(q: QuickBooksScaffold): string {
+  // realm_id is an all-digits company id (e.g. 9341456860808037). Quote it
+  // so YAML keeps it a string — unquoted it parses as an integer and the
+  // connector's `realm_id: String` field rejects it ("invalid type: integer").
+  const lines = [
+    `    client_id: ${q.clientId}`,
+    `    client_secret_var: ${q.clientSecretVar}`,
+    `    refresh_token_var: ${q.refreshTokenVar}`,
+    `    realm_id: "${q.realmId}"`
+  ];
+  if (q.baseUrl?.trim()) lines.push(`    base_url: ${q.baseUrl.trim()}`);
   return lines.join("\n");
 }
 
@@ -229,6 +274,8 @@ export function buildPipelineScaffold(input: ScaffoldInput): string {
   let configBlock: string;
   if (option.id === "toast" && input.toast) {
     configBlock = buildToastConfig(input.toast);
+  } else if (option.id === "quickbooks" && input.quickbooks) {
+    configBlock = buildQuickBooksConfig(input.quickbooks);
   } else if (option.id === "clickhouse" && input.clickhouse) {
     configBlock = buildClickHouseConfig(input.clickhouse);
   } else {

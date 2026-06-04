@@ -16,6 +16,17 @@ databases:
   - name: local
     dataset: .db/
     type: duckdb
+  # Airway-writable destination so the New Pipeline wizard has a landing
+  # database (DuckDB is read-only as an ELT sink). Placeholder localhost
+  # creds — never connected by the demo; pipelines only reference it by
+  # name and the agentic pipeline-wizard test reaches the Details step.
+  - name: warehouse
+    type: postgres
+    host: localhost
+    port: "5432"
+    user: oxy
+    password: oxy
+    database: warehouse
 
 # Built-in copilot for chat Build mode (Cmd+I). Just a model reference;
 # the platform supplies the system prompt and tools.

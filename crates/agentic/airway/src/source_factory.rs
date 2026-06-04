@@ -19,9 +19,12 @@
 //!
 //! [`SourceConfig`]: crate::config::SourceConfig
 
+use std::sync::Arc;
+
 use airway::connector::SourceConnector;
 use airway::connector::sources::filesystem::{FilesystemSource, SourceFileFormat};
 use airway::connector::sources::postgres_cdc::PostgresCdcSource;
+use airway::connector::sources::quickbooks::QuickBooksSource;
 use airway::connector::sources::rest_api::{RestApiConfig, RestApiSource};
 use airway::connector::sources::sql_database::{
     ClickHouseConn, DatabaseBackend, SqlDatabaseSource, TableConfig,
@@ -32,19 +35,52 @@ pub use airway::connector::sources::sql_database::{DiscoveredColumn, DiscoveredT
 use airway::connector::sources::toast::ToastSource;
 use airway::connector::sources::weather::{WeatherConfig, weather_source};
 use airway::types::WriteDisposition;
+use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::config::SourceConfig;
 use crate::error::AirwayError;
 
+/// Write-back port for a rotated OAuth refresh token (QuickBooks).
+///
+/// Implemented by the host (`agentic-pipeline`'s executor) so the rotated
+/// token can be persisted to the host's secret store between runs. Uses a
+/// `String` error so implementors don't take a dependency on the `airway`
+/// crate's error type — [`build_quickbooks`] bridges this to airway's own
+/// `RefreshTokenSink` ([`AirwayRefreshSink`]).
+#[async_trait]
+pub trait RefreshTokenSink: Send + Sync {
+    async fn persist(&self, refresh_token: &str) -> Result<(), String>;
+}
+
+/// Bridges a host [`RefreshTokenSink`] (String error) onto airway's
+/// `RefreshTokenSink` (AirwayError), so the engine can drive it.
+struct AirwayRefreshSink(Arc<dyn RefreshTokenSink>);
+
+#[async_trait]
+impl airway::connector::sources::quickbooks::RefreshTokenSink for AirwayRefreshSink {
+    async fn persist(&self, refresh_token: &str) -> Result<(), airway::AirwayError> {
+        self.0
+            .persist(refresh_token)
+            .await
+            .map_err(airway::AirwayError::Extract)
+    }
+}
+
 /// Build the concrete [`SourceConnector`] for a parsed source config.
 ///
 /// Returns a boxed trait object so the worker can hand it straight to
 /// `airway::connector::parallel::extract_*` without committing to a
 /// specific connector type at the worker layer.
+///
+/// `refresh_sink` is an optional write-back hook for OAuth refresh tokens
+/// that the host supplies (only the `quickbooks` source consumes it; all
+/// other arms ignore it). It lets a rotated refresh token be persisted to
+/// the host's secret store between runs.
 pub fn build_source_connector(
     config: &SourceConfig,
+    refresh_sink: Option<Arc<dyn RefreshTokenSink>>,
 ) -> Result<Box<dyn SourceConnector>, AirwayError> {
     match config.kind.as_str() {
         "rest_api" => build_rest_api(&config.config),
@@ -53,6 +89,7 @@ pub fn build_source_connector(
         "clickhouse" => build_clickhouse(&config.config),
         "postgres_cdc" => build_postgres_cdc(&config.config),
         "toast" => build_toast(&config.config),
+        "quickbooks" => build_quickbooks(&config.config, refresh_sink),
         "weather" => build_weather(&config.config),
         other => Err(AirwayError::Other(format!(
             "unsupported source kind `{other}`. Wire it up in \
@@ -394,6 +431,87 @@ fn build_toast(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
     Ok(Box::new(source))
 }
 
+// ── quickbooks ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QuickBooksParams {
+    /// Intuit OAuth2 client id (an identifier, not a secret).
+    client_id: String,
+    /// Intuit OAuth2 client secret. The `agentic-pipeline` executor
+    /// substitutes `client_secret_var` -> this field from the secret
+    /// manager before dispatch, so the factory only sees the resolved
+    /// literal.
+    client_secret: String,
+    /// Bootstrap refresh token (rotates on first use). Resolved from
+    /// `refresh_token_var` by the executor; the rotated value is written
+    /// back via the supplied [`RefreshTokenSink`].
+    refresh_token: String,
+    /// QuickBooks company id. Accepts a YAML string *or* a bare integer —
+    /// realm ids are all-digits (e.g. 9341456860808037) and an unquoted
+    /// value would otherwise fail deserialization ("invalid type: integer").
+    #[serde(deserialize_with = "de_string_or_number")]
+    realm_id: String,
+    /// Sandbox override (`https://sandbox-quickbooks.api.intuit.com`).
+    #[serde(default)]
+    base_url: Option<String>,
+    /// Optional API minor version (`?minorversion=`).
+    #[serde(default, deserialize_with = "de_opt_string_or_number")]
+    minor_version: Option<String>,
+}
+
+/// Deserialize a field that may appear as a YAML string or a bare number,
+/// always yielding a `String`. Guards all-digit identifiers (realm id,
+/// minor version) that YAML would otherwise parse as integers.
+fn de_string_or_number<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        String(String),
+        I64(i64),
+        U64(u64),
+    }
+    Ok(match StringOrNumber::deserialize(deserializer)? {
+        StringOrNumber::String(s) => s,
+        StringOrNumber::I64(n) => n.to_string(),
+        StringOrNumber::U64(n) => n.to_string(),
+    })
+}
+
+fn de_opt_string_or_number<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(de_string_or_number(deserializer)?))
+}
+
+fn build_quickbooks(
+    raw: &Value,
+    refresh_sink: Option<Arc<dyn RefreshTokenSink>>,
+) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    let params: QuickBooksParams = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid quickbooks config: {e}")))?;
+    let mut source = QuickBooksSource::new(
+        params.client_id,
+        params.client_secret,
+        params.refresh_token,
+        params.realm_id,
+    );
+    if let Some(base) = params.base_url.as_deref() {
+        source = source.with_base_url(base);
+    }
+    if let Some(mv) = params.minor_version.as_deref() {
+        source = source.with_minor_version(mv);
+    }
+    if let Some(sink) = refresh_sink {
+        source = source.with_refresh_token_sink(Arc::new(AirwayRefreshSink(sink)));
+    }
+    Ok(Box::new(source))
+}
+
 // ── weather (Open-Meteo) ───────────────────────────────────────────────────────
 
 fn build_weather(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
@@ -425,9 +543,14 @@ mod tests {
         }
     }
 
+    /// Build with no refresh-token sink (the common test case).
+    fn build(config: &SourceConfig) -> Result<Box<dyn SourceConnector>, AirwayError> {
+        build_source_connector(config, None)
+    }
+
     #[test]
     fn rest_api_builds() {
-        let source = build_source_connector(&cfg(
+        let source = build(&cfg(
             "rest_api",
             json!({
                 "base_url": "https://api.example.com",
@@ -440,7 +563,7 @@ mod tests {
 
     #[test]
     fn filesystem_builds_with_json_format() {
-        let source = build_source_connector(&cfg(
+        let source = build(&cfg(
             "filesystem",
             json!({
                 "base_path": "/tmp/data",
@@ -456,7 +579,7 @@ mod tests {
 
     #[test]
     fn sql_database_builds_with_no_tables() {
-        let source = build_source_connector(&cfg(
+        let source = build(&cfg(
             "sql_database",
             json!({
                 "connection_string": "postgres://u:p@h/d",
@@ -469,7 +592,7 @@ mod tests {
 
     #[test]
     fn clickhouse_builds_minimal() {
-        let source = build_source_connector(&cfg(
+        let source = build(&cfg(
             "clickhouse",
             json!({
                 "host": "my-host.clickhouse.cloud",
@@ -483,7 +606,7 @@ mod tests {
 
     #[test]
     fn clickhouse_builds_with_credentials_and_tables() {
-        let source = build_source_connector(&cfg(
+        let source = build(&cfg(
             "clickhouse",
             json!({
                 "host": "my-host.clickhouse.cloud",
@@ -505,7 +628,7 @@ mod tests {
     fn clickhouse_rejects_unresolved_password_var() {
         // `password_var` must be stripped by the executor; if it leaks
         // through, deny_unknown_fields catches it.
-        let err = build_source_connector(&cfg(
+        let err = build(&cfg(
             "clickhouse",
             json!({
                 "host": "h",
@@ -520,7 +643,7 @@ mod tests {
 
     #[test]
     fn postgres_cdc_builds() {
-        let source = build_source_connector(&cfg(
+        let source = build(&cfg(
             "postgres_cdc",
             json!({
                 "connection_string": "postgres://u:p@h/d",
@@ -539,7 +662,7 @@ mod tests {
     fn toast_builds_with_resolved_credentials() {
         // Mirrors what the executor hands the factory: literal
         // client_id / client_secret (no `*_var` keys survive).
-        let source = build_source_connector(&cfg(
+        let source = build(&cfg(
             "toast",
             json!({
                 "client_id": "abc123",
@@ -553,7 +676,7 @@ mod tests {
 
     #[test]
     fn toast_rejects_empty_restaurant_guids() {
-        let err = build_source_connector(&cfg(
+        let err = build(&cfg(
             "toast",
             json!({
                 "client_id": "abc",
@@ -570,7 +693,7 @@ mod tests {
     fn toast_rejects_unresolved_var_key() {
         // `client_secret_var` must be stripped by the executor; if it
         // leaks through, deny_unknown_fields catches it.
-        let err = build_source_connector(&cfg(
+        let err = build(&cfg(
             "toast",
             json!({
                 "client_id": "abc",
@@ -584,8 +707,79 @@ mod tests {
     }
 
     #[test]
+    fn quickbooks_builds_with_resolved_credentials() {
+        // Mirrors what the executor hands the factory: literal
+        // client_secret / refresh_token (no `*_var` keys survive).
+        let source = build(&cfg(
+            "quickbooks",
+            json!({
+                "client_id": "intuit-client",
+                "client_secret": "shhh-resolved",
+                "refresh_token": "refresh-resolved",
+                "realm_id": "1234567890",
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "quickbooks");
+        // All 8 resources are advertised.
+        assert_eq!(source.resources().len(), 8);
+    }
+
+    #[test]
+    fn quickbooks_builds_with_optional_fields() {
+        let source = build(&cfg(
+            "quickbooks",
+            json!({
+                "client_id": "c",
+                "client_secret": "s",
+                "refresh_token": "r",
+                "realm_id": "realm",
+                "base_url": "https://sandbox-quickbooks.api.intuit.com",
+                "minor_version": "70",
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "quickbooks");
+    }
+
+    #[test]
+    fn quickbooks_accepts_numeric_realm_id() {
+        // A bare-integer realm_id (unquoted YAML) must coerce to a string
+        // rather than fail with "invalid type: integer".
+        let source = build(&cfg(
+            "quickbooks",
+            json!({
+                "client_id": "c",
+                "client_secret": "s",
+                "refresh_token": "r",
+                "realm_id": 9341456860808037i64,
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "quickbooks");
+    }
+
+    #[test]
+    fn quickbooks_rejects_unresolved_var_key() {
+        // `client_secret_var` / `refresh_token_var` must be stripped by
+        // the executor; if one leaks through, deny_unknown_fields catches it.
+        let err = build(&cfg(
+            "quickbooks",
+            json!({
+                "client_id": "c",
+                "client_secret_var": "QB_CLIENT_SECRET",
+                "refresh_token_var": "QB_REFRESH_TOKEN",
+                "realm_id": "realm",
+            }),
+        ))
+        .err()
+        .expect("expected error");
+        assert!(err.to_string().contains("invalid quickbooks config"));
+    }
+
+    #[test]
     fn weather_builds_with_locations() {
-        let source = build_source_connector(&cfg(
+        let source = build(&cfg(
             "weather",
             json!({
                 "locations": [
@@ -599,7 +793,7 @@ mod tests {
 
     #[test]
     fn weather_rejects_empty_locations() {
-        let err = build_source_connector(&cfg("weather", json!({ "locations": [] })))
+        let err = build(&cfg("weather", json!({ "locations": [] })))
             .err()
             .expect("expected error");
         assert!(err.to_string().contains("locations"));
@@ -607,7 +801,7 @@ mod tests {
 
     #[test]
     fn unknown_kind_errors_with_extension_hint() {
-        let err = build_source_connector(&cfg("not_a_real_thing", json!({})))
+        let err = build(&cfg("not_a_real_thing", json!({})))
             .err()
             .expect("expected error");
         let msg = err.to_string();

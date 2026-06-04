@@ -1,6 +1,6 @@
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
@@ -28,12 +28,15 @@ import { useDiscoverSourceTables } from "@/hooks/api/airway/useAirway";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCreateFile from "@/hooks/api/files/useCreateFile";
 import useSaveFile from "@/hooks/api/files/useSaveFile";
+import { useQuickBooksConnect } from "@/hooks/api/quickbooks/useQuickBooksConnect";
 import { useCreateSecret } from "@/hooks/api/secrets/useSecretMutations";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import type { DiscoveredTable } from "@/services/api/airway";
+import { QB_WIZARD_STASH_KEY } from "@/services/api/quickbooks";
+import { apiBaseURL } from "@/services/env";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import {
   buildPipelineScaffold,
@@ -103,6 +106,18 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
   const [toastGuids, setToastGuids] = useState("");
   const [toastBaseUrl, setToastBaseUrl] = useState("");
 
+  // QuickBooks Online fields (only used when sourceId === "quickbooks").
+  // The realm id + refresh token are captured by the OAuth Connect flow, so
+  // they're not manual inputs. Secret-name vars default to sensible names.
+  const [qbClientId, setQbClientId] = useState("");
+  const [qbRealmId, setQbRealmId] = useState(""); // captured on Connect
+  const [qbClientSecret, setQbClientSecret] = useState("");
+  const [qbClientSecretName, setQbClientSecretName] = useState("QB_CLIENT_SECRET");
+  const [qbRefreshTokenName, setQbRefreshTokenName] = useState("QB_REFRESH_TOKEN");
+  const [qbBaseUrl, setQbBaseUrl] = useState("");
+  // True once the Intuit Connect flow has stored the refresh token + realm id.
+  const [qbConnected, setQbConnected] = useState(false);
+
   // ClickHouse source fields (only used when sourceId === "clickhouse").
   const [chHost, setChHost] = useState("");
   const [chPort, setChPort] = useState("");
@@ -130,6 +145,7 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
   const saveFile = useSaveFile();
   const createSecret = useCreateSecret();
   const navigate = useNavigate();
+  const { connect: qbConnect, connecting: qbConnecting } = useQuickBooksConnect(project.id);
   const { data: databases, isLoading: databasesLoading } = useDatabases();
   const writableDatabases = (databases ?? []).filter((d) => WRITABLE.has(d.db_type));
 
@@ -146,6 +162,13 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
     setToastSecretName("");
     setToastGuids("");
     setToastBaseUrl("");
+    setQbClientId("");
+    setQbRealmId("");
+    setQbClientSecret("");
+    setQbClientSecretName("QB_CLIENT_SECRET");
+    setQbRefreshTokenName("QB_REFRESH_TOKEN");
+    setQbBaseUrl("");
+    setQbConnected(false);
     setChHost("");
     setChPort("");
     setChDatabase("default");
@@ -155,6 +178,94 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
     setChSecure(true);
     setChTables(null);
     setChSel({});
+  };
+
+  // Restore the form after a full-page OAuth redirect (mobile / popup
+  // blocked): the success page bounced back with `?qb_connected=ok&realm_id`
+  // and the pre-redirect form was stashed in sessionStorage.
+  useEffect(() => {
+    if (!open) return;
+    const raw = sessionStorage.getItem(QB_WIZARD_STASH_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(QB_WIZARD_STASH_KEY);
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("qb_connected") === "ok";
+    try {
+      const s = JSON.parse(raw) as Record<string, string>;
+      setSourceId("quickbooks");
+      setDestinationDb(s.destinationDb || null);
+      setName(s.name ?? "");
+      setDescription(s.description ?? "");
+      setQbClientId(s.qbClientId ?? "");
+      setQbClientSecretName(s.qbClientSecretName ?? "");
+      setQbRefreshTokenName(s.qbRefreshTokenName ?? "");
+      setQbBaseUrl(s.qbBaseUrl ?? "");
+      setQbRealmId(params.get("realm_id") || s.qbRealmId || "");
+      setQbConnected(connected);
+      setStep(2);
+    } catch {
+      // Malformed stash — ignore and start fresh.
+    }
+    // Strip the one-shot query params so a refresh doesn't re-trigger.
+    if (params.has("qb_connected") || params.has("realm_id")) {
+      params.delete("qb_connected");
+      params.delete("realm_id");
+      const qs = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    }
+  }, [open]);
+
+  /** Persist the in-progress form so a redirect-mode Connect can restore it. */
+  const stashWizard = () => {
+    sessionStorage.setItem(
+      QB_WIZARD_STASH_KEY,
+      JSON.stringify({
+        destinationDb,
+        name,
+        description,
+        qbClientId,
+        qbClientSecretName,
+        qbRefreshTokenName,
+        qbBaseUrl,
+        qbRealmId
+      })
+    );
+  };
+
+  const handleQbConnect = async () => {
+    if (!qbClientId.trim()) {
+      setError("QuickBooks: Client ID is required before connecting");
+      return;
+    }
+    if (!qbClientSecretName.trim() || !qbRefreshTokenName.trim()) {
+      setError("QuickBooks: client secret name and refresh token name are required");
+      return;
+    }
+    if (!qbClientSecret.trim()) {
+      setError("QuickBooks: enter the client secret so we can complete the OAuth exchange");
+      return;
+    }
+    setError(null);
+    try {
+      const result = await qbConnect({
+        clientId: qbClientId,
+        clientSecret: qbClientSecret,
+        clientSecretVar: qbClientSecretName,
+        refreshTokenVar: qbRefreshTokenName,
+        returnPath: window.location.href,
+        stash: stashWizard
+      });
+      // Popup mode resolves here; redirect mode navigates away.
+      if (result) {
+        if (result.realmId) setQbRealmId(result.realmId);
+        setQbConnected(true);
+        toast.success("QuickBooks connected", {
+          description: "Refresh token stored. You can finish creating the pipeline."
+        });
+      }
+    } catch {
+      // The hook already surfaced a toast.
+    }
   };
 
   const parseGuids = (raw: string): string[] =>
@@ -254,6 +365,7 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
     if (!sourceId || !destinationDb || !validate()) return;
 
     const isToast = sourceId === "toast";
+    const isQuickbooks = sourceId === "quickbooks";
     const isClickhouse = sourceId === "clickhouse";
     const guids = parseGuids(toastGuids);
     const secretName = toastSecretName.trim();
@@ -300,6 +412,23 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
       }
     }
 
+    if (isQuickbooks) {
+      if (!qbClientId.trim()) {
+        setError("QuickBooks: Client ID is required");
+        return;
+      }
+      if (!qbClientSecretName.trim() || !qbRefreshTokenName.trim()) {
+        setError("QuickBooks: secret names for the client secret and refresh token are required");
+        return;
+      }
+      // Connect captures the realm id + refresh token via OAuth, so it's the
+      // required first step (Intuit only mints refresh tokens via consent).
+      if (!qbConnected || !qbRealmId.trim()) {
+        setError("QuickBooks: click “Connect with QuickBooks” to authorize before creating");
+        return;
+      }
+    }
+
     setCreating(true);
     try {
       const trimmed = name.trim();
@@ -323,6 +452,10 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
         });
       }
 
+      // QuickBooks secrets (client secret + rotating refresh token) are
+      // stored by the OAuth Connect flow (authorize + callback upserts), so
+      // there's nothing to create here.
+
       const path = `pipelines/${trimmed}.airway.yml`;
       const pathb64 = encodeBase64(path);
       await createFile.mutateAsync(pathb64);
@@ -338,6 +471,15 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
                 clientSecretVar: secretName,
                 restaurantGuids: guids,
                 baseUrl: toastBaseUrl.trim() || undefined
+              }
+            : undefined,
+          quickbooks: isQuickbooks
+            ? {
+                clientId: qbClientId.trim(),
+                clientSecretVar: qbClientSecretName.trim(),
+                refreshTokenVar: qbRefreshTokenName.trim(),
+                realmId: qbRealmId.trim(),
+                baseUrl: qbBaseUrl.trim() || undefined
               }
             : undefined,
           clickhouse: isClickhouse
@@ -463,6 +605,7 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
                       key={opt.id}
                       label={opt.label}
                       description={opt.description}
+                      testId={`pipeline-source-${opt.id}`}
                       selected={sourceId === opt.id}
                       onSelect={() => {
                         setSourceId(opt.id);
@@ -498,6 +641,7 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
                         key={db.name}
                         label={db.name}
                         description={db.db_type}
+                        testId={`pipeline-dest-${db.name}`}
                         selected={destinationDb === db.name}
                         onSelect={() => {
                           setDestinationDb(db.name);
@@ -605,6 +749,115 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
                       onChange={(e) => setToastBaseUrl(e.target.value)}
                       placeholder='Optional — sandbox override (defaults to Toast prod)'
                     />
+                  </div>
+                </div>
+              )}
+
+              {sourceId === "quickbooks" && (
+                <div className='grid gap-3 rounded-md border border-border p-3'>
+                  <p className='font-medium text-sm'>QuickBooks Online credentials</p>
+                  <p className='text-muted-foreground text-xs'>
+                    Enter your Intuit app's client id + secret, then Connect — the consent flow
+                    captures the company (realm) id and refresh token for you.
+                  </p>
+                  <div className='grid gap-2'>
+                    <Label htmlFor='qb-client-id'>
+                      Client ID <span className='text-destructive'>*</span>
+                    </Label>
+                    <Input
+                      id='qb-client-id'
+                      value={qbClientId}
+                      onChange={(e) => {
+                        setQbClientId(e.target.value);
+                        setError(null);
+                      }}
+                      placeholder='Intuit OAuth2 client id'
+                    />
+                  </div>
+                  <div className='grid gap-2'>
+                    <Label htmlFor='qb-client-secret'>
+                      Client secret <span className='text-destructive'>*</span>
+                    </Label>
+                    <Input
+                      id='qb-client-secret'
+                      type='password'
+                      value={qbClientSecret}
+                      onChange={(e) => setQbClientSecret(e.target.value)}
+                      placeholder='Stored securely when you Connect'
+                    />
+                  </div>
+                  <div className='grid gap-2'>
+                    <Label htmlFor='qb-client-secret-name'>
+                      Client secret name <span className='text-destructive'>*</span>
+                    </Label>
+                    <Input
+                      id='qb-client-secret-name'
+                      value={qbClientSecretName}
+                      onChange={(e) => {
+                        setQbClientSecretName(e.target.value);
+                        setError(null);
+                      }}
+                      placeholder='QB_CLIENT_SECRET'
+                    />
+                  </div>
+                  <div className='grid gap-2'>
+                    <Label htmlFor='qb-refresh-token-name'>
+                      Refresh token name <span className='text-destructive'>*</span>
+                    </Label>
+                    <Input
+                      id='qb-refresh-token-name'
+                      value={qbRefreshTokenName}
+                      onChange={(e) => {
+                        setQbRefreshTokenName(e.target.value);
+                        setError(null);
+                      }}
+                      placeholder='QB_REFRESH_TOKEN'
+                    />
+                    <p className='text-muted-foreground text-xs'>
+                      Connect stores the captured refresh token under this name and the pipeline
+                      reads it at run time; Intuit rotates it on every use and the new value is
+                      written back here automatically.
+                    </p>
+                  </div>
+                  <div className='grid gap-2'>
+                    <Label htmlFor='qb-base-url'>
+                      Base URL <span className='text-muted-foreground text-xs'>(optional)</span>
+                    </Label>
+                    <Input
+                      id='qb-base-url'
+                      value={qbBaseUrl}
+                      onChange={(e) => setQbBaseUrl(e.target.value)}
+                      placeholder='Sandbox override (defaults to QuickBooks prod)'
+                    />
+                  </div>
+                  <div className='grid gap-2 border-border border-t pt-3'>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      onClick={handleQbConnect}
+                      disabled={qbConnecting}
+                      data-testid='qb-connect-button'
+                    >
+                      {qbConnecting
+                        ? "Connecting…"
+                        : qbConnected
+                          ? "Reconnect QuickBooks"
+                          : "Connect with QuickBooks"}
+                    </Button>
+                    {qbConnected ? (
+                      <p className='flex items-center gap-1 text-muted-foreground text-xs'>
+                        <Check className='h-3 w-3 text-primary' />
+                        Connected{qbRealmId ? ` — company ${qbRealmId}` : ""}. Refresh token stored.
+                      </p>
+                    ) : (
+                      <p className='text-muted-foreground text-xs'>
+                        Authorize with Intuit to capture the realm id + refresh token automatically.
+                        Register this Redirect URI in your Intuit app:{" "}
+                        <code className='break-all'>
+                          {`${apiBaseURL}/quickbooks/oauth/callback`}
+                        </code>
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -828,7 +1081,11 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
             </Button>
           )}
           {step === 2 && (
-            <Button onClick={handleCreate} disabled={creating || !name.trim()}>
+            <Button
+              onClick={handleCreate}
+              disabled={creating || !name.trim()}
+              data-testid='pipeline-create-button'
+            >
               {creating ? "Creating..." : "Create"}
             </Button>
           )}

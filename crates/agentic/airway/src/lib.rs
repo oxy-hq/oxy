@@ -33,6 +33,14 @@ pub use source_factory::{
 pub use state_store::AirwayPgStateStore;
 pub use worker::AirwayWorker;
 
+/// QuickBooks refresh-token write-back port. The host (via
+/// `agentic-pipeline`'s executor) supplies an implementation that
+/// persists the rotated token to its secret store. This is a thin,
+/// `String`-error port so callers don't need to depend on the `airway`
+/// crate's error type — the factory bridges it to airway's own
+/// `RefreshTokenSink` internally.
+pub use source_factory::RefreshTokenSink;
+
 /// `source_type` to register this domain under in the runtime event
 /// registry. Used by the SSE layer to look up the right processor for a
 /// run's events.

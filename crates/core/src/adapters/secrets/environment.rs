@@ -96,6 +96,18 @@ impl SecretsStorage for SecretsEnvironmentStorage {
         Ok(())
     }
 
+    async fn upsert_secret(
+        &self,
+        secret_name: &str,
+        secret_value: &str,
+        created_by: Uuid,
+    ) -> Result<(), OxyError> {
+        // `create_secret` here already overwrites an existing `.env` entry,
+        // so it's an upsert as-is.
+        self.create_secret(secret_name, secret_value, created_by)
+            .await
+    }
+
     async fn remove_secret(&self, secret_name: &str) -> Result<(), OxyError> {
         let env_path = Self::get_env_file_path()?;
         let lines = Self::read_env_file(&env_path)?;

@@ -413,6 +413,19 @@ impl PipelineTaskExecutor {
         let mut spec = agentic_airway::AirwayPipelineSpec::from_yaml_with_vars(&yaml, variables)
             .map_err(|e| format!("airway: parse `{pipeline_ref}`: {e}"))?;
 
+        // Capture QuickBooks' refresh-token var name *before* secret
+        // resolution strips it — the write-back sink needs to know which
+        // secret to update when Intuit rotates the token mid-run.
+        let qb_refresh_var: Option<String> = if spec.source.kind == "quickbooks" {
+            spec.source
+                .config
+                .get("refresh_token_var")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        } else {
+            None
+        };
+
         // Resource override (e.g. "retry failed tables"): restrict the run
         // to the named subset. The worker filters the source by
         // `spec.resources`, so this re-runs only those streams.
@@ -423,7 +436,18 @@ impl PipelineTaskExecutor {
         self.resolve_airway_source_secrets(&mut spec).await?;
         self.resolve_airway_destination(&mut spec).await?;
 
-        let worker = agentic_airway::AirwayWorker::new(Arc::new(self.db.clone()));
+        let db = Arc::new(self.db.clone());
+        let worker = match qb_refresh_var {
+            Some(var_name) => {
+                let sink: Arc<dyn agentic_airway::RefreshTokenSink> =
+                    Arc::new(PlatformRefreshTokenSink {
+                        platform: self.platform.clone(),
+                        var_name,
+                    });
+                agentic_airway::AirwayWorker::with_refresh_sink(db, sink)
+            }
+            None => agentic_airway::AirwayWorker::new(db),
+        };
         Ok(worker.execute(spec))
     }
 
@@ -437,7 +461,8 @@ impl PipelineTaskExecutor {
     ) -> Result<(), String> {
         let kind = spec.source.kind.clone();
         // (field, var-key) pairs each source kind supports as managed secrets.
-        // Kinds not listed here carry no managed credentials.
+        // `client_id` / `realm_id` are identifiers, not secrets. Kinds not
+        // listed here carry no managed credentials.
         //
         // KNOWN / FOLLOW-UP (out of scope here): this table is stringly typed
         // and has no compile-time link to airway's per-kind source defs (same
@@ -448,6 +473,10 @@ impl PipelineTaskExecutor {
             "toast" => &[
                 ("client_secret", "client_secret_var"),
                 ("client_id", "client_id_var"),
+            ],
+            "quickbooks" => &[
+                ("client_secret", "client_secret_var"),
+                ("refresh_token", "refresh_token_var"),
             ],
             "clickhouse" => &[("password", "password_var")],
             // Open-Meteo commercial API key → routes the connector to the paid
@@ -539,6 +568,25 @@ impl PipelineTaskExecutor {
                 config,
             });
         Ok(())
+    }
+}
+
+/// Persists a rotated OAuth refresh token back to the platform secret
+/// store. Wired into the airway worker for `quickbooks` pipelines: when
+/// Intuit rotates the refresh token mid-run, the connector calls
+/// [`persist`](agentic_airway::RefreshTokenSink::persist) and we upsert
+/// the new value under the same `*_var` secret name the run resolved from.
+struct PlatformRefreshTokenSink {
+    platform: Arc<dyn PlatformContext>,
+    var_name: String,
+}
+
+#[async_trait]
+impl agentic_airway::RefreshTokenSink for PlatformRefreshTokenSink {
+    async fn persist(&self, refresh_token: &str) -> Result<(), String> {
+        self.platform
+            .persist_secret(&self.var_name, refresh_token)
+            .await
     }
 }
 

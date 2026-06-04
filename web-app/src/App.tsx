@@ -54,6 +54,7 @@ import OrgDispatcher from "./pages/OrgDispatcher";
 import OnboardingPage from "./pages/onboarding";
 import OrgOnboardingPage from "./pages/onboarding/OrgOnboardingPage";
 import PostLoginDispatcher from "./pages/PostLoginDispatcher";
+import QuickBooksConnected from "./pages/quickbooks/QuickBooksConnected";
 import useBuilderDialog from "./stores/useBuilderDialog";
 import useCurrentOrg from "./stores/useCurrentOrg";
 import useCurrentWorkspace from "./stores/useCurrentWorkspace";
@@ -438,6 +439,9 @@ const getLocalRouter = () =>
   createBrowserRouter(
     createRoutesFromElements(
       <Route>
+        {/* QuickBooks OAuth success landing — must resolve before the `/*`
+            catch-all so the popup/redirect return renders this page. */}
+        <Route path='/quickbooks/connected' element={<QuickBooksConnected />} />
         <Route
           path='/*'
           element={
@@ -468,6 +472,10 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
 
         {/* GitHub callback must always be accessible (used during the workspace import popup flow) */}
         <Route path='/github/callback' element={<GitHubCallback />} />
+
+        {/* QuickBooks OAuth success landing — public; posts the realm id back
+            to the opener (popup) or bounces to the return path (mobile). */}
+        <Route path='/quickbooks/connected' element={<QuickBooksConnected />} />
 
         {/* Invitation accept — public; the page itself redirects to /login if needed */}
         <Route path='/invite/:token' element={<InvitePage />} />

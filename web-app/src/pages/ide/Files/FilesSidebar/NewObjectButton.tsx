@@ -40,6 +40,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import NewPipelineDialog from "@/pages/ide/pipelines/components/NewPipelineDialog";
+import { QB_WIZARD_STASH_KEY } from "@/services/api/quickbooks";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
@@ -174,6 +175,17 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
 
   const { data: fileTree, refetch } = useFileTree();
 
+  // Returning from a full-page QuickBooks OAuth redirect (mobile / popup
+  // blocked): the success page bounced back with `?qb_connected=ok` and the
+  // pre-redirect wizard form is stashed in sessionStorage. Reopen the wizard
+  // so it can restore + apply the captured realm id.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("qb_connected") === "ok" && sessionStorage.getItem(QB_WIZARD_STASH_KEY)) {
+      setPipelineDialogOpen(true);
+    }
+  }, []);
+
   useEffect(() => {
     if (dialogOpen) {
       // Small delay to ensure dialog is fully rendered
@@ -285,6 +297,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
             size='sm'
             disabled={disabled}
             tooltip={disabled ? "Read-only mode" : "New Object"}
+            data-testid='new-object-button'
           >
             <Plus className='h-4 w-4' />
           </Button>
@@ -322,7 +335,11 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
           {/* Pipelines use a richer wizard (source → destination → details)
               instead of the generic name-prompt — opens its dedicated
               dialog rather than the shared one below. */}
-          <DropdownMenuItem className='cursor-pointer' onClick={() => setPipelineDialogOpen(true)}>
+          <DropdownMenuItem
+            className='cursor-pointer'
+            data-testid='new-object-pipeline'
+            onClick={() => setPipelineDialogOpen(true)}
+          >
             <Database className='mr-2 h-4 w-4' />
             Pipeline
           </DropdownMenuItem>

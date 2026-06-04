@@ -45,3 +45,10 @@
 - flow: ide-compile-error
   cold_usd: 0.30
   warm_usd: 0.005
+
+- flow: ide-pipeline-quickbooks
+  # 4 act steps (open wizard, pick source, pick destination, type name) +
+  # asserts on the credential inputs. All steps use data-testids so cold
+  # converges in 1-2 iterations each; no streaming/build phase.
+  cold_usd: 0.40
+  warm_usd: 0.005

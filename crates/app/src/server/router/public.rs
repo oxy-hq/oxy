@@ -39,6 +39,12 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/slack/oauth/callback",
             get(crate::integrations::slack::oauth::callback::callback),
         )
+        // Public: Intuit redirects the bare browser here after consent. The
+        // state nonce (single-use, 15-min TTL) is the CSRF/replay guard.
+        .route(
+            "/quickbooks/oauth/callback",
+            get(crate::integrations::quickbooks::oauth::callback::callback),
+        )
         .route(
             "/slack/events",
             post(crate::integrations::slack::webhooks::events::handle_events),

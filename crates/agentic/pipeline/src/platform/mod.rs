@@ -85,6 +85,16 @@ pub trait ProjectContext: Send + Sync {
 
     async fn resolve_secret(&self, var_name: &str) -> Option<String>;
 
+    /// Persist (create or overwrite) a secret value under `var_name`.
+    ///
+    /// Used to write back a rotated OAuth refresh token (QuickBooks) so the
+    /// next run starts from the freshest token. Defaults to an error so
+    /// adapters and test fakes that don't support writes compile unchanged
+    /// — the airway sink logs the failure rather than failing the run.
+    async fn persist_secret(&self, _var_name: &str, _value: &str) -> Result<(), String> {
+        Err("secret persistence is not supported by this context".into())
+    }
+
     /// Workspace identifier stamped onto every run this context starts
     /// (`agentic_runs.workspace_id`). HTTP handlers + the scheduler tick
     /// pass this into `start_*_run` so out-of-process drivers (recovery

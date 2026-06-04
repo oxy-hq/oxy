@@ -393,6 +393,10 @@ fn build_integration_routes() -> Router<AppState> {
         .route("/looker", get(integration::list_looker_integrations))
         .route("/looker/query", post(integration::execute_looker_query))
         .route("/looker/query/sql", post(integration::compile_looker_query))
+        .route(
+            "/quickbooks/authorize",
+            post(crate::integrations::quickbooks::oauth::authorize::authorize),
+        )
 }
 
 fn build_app_routes() -> Router<AppState> {

@@ -55,6 +55,20 @@ impl SecretsManager {
             .await
     }
 
+    /// Create the secret, or atomically overwrite its value if it exists.
+    /// Prefer this over `remove_secret` + `create_secret` for rotated
+    /// credentials — there is no window in which the value is absent.
+    pub async fn upsert_secret(
+        &self,
+        secret_name: &str,
+        secret_value: &str,
+        updated_by: Uuid,
+    ) -> Result<(), OxyError> {
+        self.storage
+            .upsert_secret(secret_name, secret_value, updated_by)
+            .await
+    }
+
     pub async fn remove_secret(&self, secret_name: &str) -> Result<(), OxyError> {
         self.storage.remove_secret(secret_name).await
     }

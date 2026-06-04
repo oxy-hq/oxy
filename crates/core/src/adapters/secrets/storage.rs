@@ -13,6 +13,16 @@ pub trait SecretsStorage {
         secret_value: &str,
         created_by: Uuid,
     ) -> Result<(), OxyError>;
+    /// Create the secret, or overwrite its value if it already exists.
+    /// Atomic on the update path (single UPDATE) — no remove/recreate
+    /// window. Used for rotated credentials (e.g. QuickBooks refresh
+    /// tokens) where losing the value between writes would break auth.
+    async fn upsert_secret(
+        &self,
+        secret_name: &str,
+        secret_value: &str,
+        updated_by: Uuid,
+    ) -> Result<(), OxyError>;
     async fn remove_secret(&self, secret_name: &str) -> Result<(), OxyError>;
 }
 
@@ -60,6 +70,19 @@ impl SecretsStorage for SecretsFallbackStorage {
     ) -> Result<(), OxyError> {
         self.db
             .create_secret(secret_name, secret_value, created_by)
+            .await
+    }
+
+    async fn upsert_secret(
+        &self,
+        secret_name: &str,
+        secret_value: &str,
+        updated_by: Uuid,
+    ) -> Result<(), OxyError> {
+        // Write to the DB so the value takes precedence over any env var
+        // of the same name (DB-first resolution above).
+        self.db
+            .upsert_secret(secret_name, secret_value, updated_by)
             .await
     }
 

@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import LineageGraph from "@/components/airway/LineageGraph";
 import PhaseBar from "@/components/airway/PhaseBar";
 import PipelineOverview from "@/components/airway/PipelineOverview";
+import QuickBooksReconnect from "@/components/airway/QuickBooksReconnect";
 import ResourceGrid from "@/components/airway/ResourceGrid";
 import RetryFailedTablesButton from "@/components/airway/RetryFailedTablesButton";
 import RunHistory from "@/components/airway/RunHistory";
@@ -243,10 +244,17 @@ export const AirwayRunDetailPage: React.FC<{
         {view.status === "failed" && view.error && (
           <div
             role='alert'
-            className='mx-4 mb-2 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive text-sm'
+            className='mx-4 mb-2 flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive text-sm'
           >
-            <AlertTriangle className='mt-0.5 h-4 w-4 shrink-0' />
-            <span className='break-words'>{view.error}</span>
+            <div className='flex items-start gap-2'>
+              <AlertTriangle className='mt-0.5 h-4 w-4 shrink-0' />
+              <span className='break-words'>{view.error}</span>
+            </div>
+            {/* For a quickbooks pipeline, offer one-click re-auth — the
+                common cause of a failed run is an expired refresh token. */}
+            <div className='pl-6'>
+              <QuickBooksReconnect pipelineRef={pipelineRef} />
+            </div>
           </div>
         )}
 

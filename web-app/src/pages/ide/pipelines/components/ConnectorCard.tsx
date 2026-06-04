@@ -7,6 +7,8 @@ interface ConnectorCardProps {
   description: string;
   selected: boolean;
   onSelect: () => void;
+  /** Optional stable selector hook for tests. */
+  testId?: string;
 }
 
 /** Selectable card used in the source / destination steps of the
@@ -15,11 +17,13 @@ const ConnectorCard: React.FC<ConnectorCardProps> = ({
   label,
   description,
   selected,
-  onSelect
+  onSelect,
+  testId
 }) => (
   <button
     type='button'
     onClick={onSelect}
+    data-testid={testId}
     aria-pressed={selected}
     className={cn(
       "relative flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors",

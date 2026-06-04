@@ -50,11 +50,31 @@ const OUTCOME_BUFFER: usize = 4;
 #[derive(Clone)]
 pub struct AirwayWorker {
     db: Arc<DatabaseConnection>,
+    /// Optional OAuth refresh-token write-back sink, supplied by the
+    /// host for sources that rotate refresh tokens (QuickBooks). `None`
+    /// for every other source.
+    refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
 }
 
 impl AirwayWorker {
     pub fn new(db: Arc<DatabaseConnection>) -> Self {
-        Self { db }
+        Self {
+            db,
+            refresh_sink: None,
+        }
+    }
+
+    /// Construct a worker that hands `sink` to the source factory so a
+    /// rotated OAuth refresh token can be persisted to the host's secret
+    /// store. Used by the executor for `quickbooks` pipelines.
+    pub fn with_refresh_sink(
+        db: Arc<DatabaseConnection>,
+        sink: Arc<dyn crate::RefreshTokenSink>,
+    ) -> Self {
+        Self {
+            db,
+            refresh_sink: Some(sink),
+        }
     }
 
     /// Start the airway run for `spec`. Returns immediately with
@@ -71,6 +91,7 @@ impl AirwayWorker {
         let cancel = CancellationToken::new();
 
         let db = self.db.clone();
+        let refresh_sink = self.refresh_sink.clone();
         let cancel_clone = cancel.clone();
         // If `drive` panics its JoinHandle is normally dropped and the
         // panic is swallowed: no `TaskOutcome` is ever sent and the
@@ -79,7 +100,14 @@ impl AirwayWorker {
         // the run always reaches a terminal state.
         let outcome_tx_watch = outcome_tx.clone();
         tokio::spawn(async move {
-            let handle = tokio::spawn(drive(spec, db, event_tx, cancel_clone, outcome_tx));
+            let handle = tokio::spawn(drive(
+                spec,
+                db,
+                refresh_sink,
+                event_tx,
+                cancel_clone,
+                outcome_tx,
+            ));
             if let Err(join_err) = handle.await {
                 let msg = if join_err.is_panic() {
                     "airway worker panicked (internal error)".to_string()
@@ -110,6 +138,7 @@ impl AirwayWorker {
 async fn drive(
     spec: AirwayPipelineSpec,
     db: Arc<DatabaseConnection>,
+    refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
     event_tx: mpsc::Sender<(String, Value)>,
     cancel: CancellationToken,
     outcome_tx: mpsc::Sender<TaskOutcome>,
@@ -122,7 +151,16 @@ async fn drive(
     // the latter would otherwise flip the run to failed with nothing
     // on the SSE stream, so the UI shows a status change but no cause.
     let saw_error = Arc::new(AtomicBool::new(false));
-    let outcome = match run_pipeline(spec, db, event_tx.clone(), cancel, saw_error.clone()).await {
+    let outcome = match run_pipeline(
+        spec,
+        db,
+        refresh_sink,
+        event_tx.clone(),
+        cancel,
+        saw_error.clone(),
+    )
+    .await
+    {
         Ok(()) => TaskOutcome::Done {
             answer: String::new(),
             metadata: None,
@@ -150,12 +188,13 @@ async fn drive(
 async fn run_pipeline(
     spec: AirwayPipelineSpec,
     db: Arc<DatabaseConnection>,
+    refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
     event_tx: mpsc::Sender<(String, Value)>,
     cancel: CancellationToken,
     saw_error: Arc<AtomicBool>,
 ) -> Result<(), AirwayError> {
     // ── Build pluggable parts ──────────────────────────────────────────────
-    let connector = build_source_connector(&spec.source)?;
+    let connector = build_source_connector(&spec.source, refresh_sink)?;
     let destination = build_destination(spec.destination.as_inline()?)?;
 
     let mut source = airway::Source::from_connector(BoxedSourceConnector(connector));

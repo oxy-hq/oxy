@@ -41,6 +41,32 @@ describe("buildPipelineScaffold", () => {
     expect(yaml).not.toContain("client_secret:");
   });
 
+  it("emits a quickbooks source with secret vars, never raw secrets", () => {
+    const yaml = buildPipelineScaffold({
+      name: "qb_daily",
+      sourceId: "quickbooks",
+      quickbooks: {
+        clientId: "intuit-abc",
+        clientSecretVar: "QB_PROD_SECRET",
+        refreshTokenVar: "QB_PROD_REFRESH",
+        realmId: "9130350000000000",
+        baseUrl: "https://sandbox-quickbooks.api.intuit.com"
+      },
+      destinationDatabase: "wh",
+      datasetName: "qb_daily"
+    });
+    expect(yaml).toContain("kind: quickbooks");
+    expect(yaml).toContain("client_id: intuit-abc");
+    expect(yaml).toContain("client_secret_var: QB_PROD_SECRET");
+    expect(yaml).toContain("refresh_token_var: QB_PROD_REFRESH");
+    // realm_id is quoted so YAML keeps the all-digits id a string.
+    expect(yaml).toContain('realm_id: "9130350000000000"');
+    expect(yaml).toContain("base_url: https://sandbox-quickbooks.api.intuit.com");
+    // Neither secret value is ever scaffolded.
+    expect(yaml).not.toContain("client_secret:");
+    expect(yaml).not.toContain("refresh_token:");
+  });
+
   it("omits base_url when not provided", () => {
     const yaml = buildPipelineScaffold({
       name: "t",

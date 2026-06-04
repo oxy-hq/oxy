@@ -341,6 +341,18 @@ impl ProjectContext for OxyProjectContext {
         std::env::var(var_name).ok()
     }
 
+    async fn persist_secret(&self, var_name: &str, value: &str) -> Result<(), String> {
+        // Atomic upsert: a single UPDATE when the secret exists (no
+        // remove/recreate window), create when it doesn't. On a fresh
+        // env-only token this writes a DB secret that then takes
+        // precedence (DB-first fallback storage).
+        self.workspace_manager
+            .secrets_manager
+            .upsert_secret(var_name, value, uuid::Uuid::nil())
+            .await
+            .map_err(|e| format!("persist secret `{var_name}`: {e}"))
+    }
+
     fn metric_sink(&self) -> Option<SharedMetricSink> {
         // Only hand back a sink when an observability store is actually
         // registered. Non-enterprise runs leave `get_global()` as `None`
