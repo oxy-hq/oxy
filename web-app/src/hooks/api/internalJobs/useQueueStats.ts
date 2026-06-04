@@ -2,11 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { InternalJobsService } from "@/services/api/internalJobs";
 import queryKeys from "../queryKey";
 
-const REFETCH_MS = 30_000;
+const DEFAULT_INTERVAL_MS = 5_000;
 
-export const useQueueStats = () =>
-  useQuery({
+/**
+ * Polls `/admin/internal-jobs/queue-stats`. The operator console
+ * drives the cadence — keep it at 5s by default for the "alive" feel,
+ * accept a paused flag from the LiveIndicator so the user can stop
+ * background fetches without unmounting the page.
+ */
+export const useQueueStats = (options: { paused?: boolean; intervalMs?: number } = {}) => {
+  const { paused = false, intervalMs = DEFAULT_INTERVAL_MS } = options;
+  return useQuery({
     queryKey: queryKeys.internalJobs.queueStats(),
     queryFn: () => InternalJobsService.queueStats(),
-    refetchInterval: REFETCH_MS
+    refetchInterval: paused ? false : intervalMs
   });
+};
