@@ -152,10 +152,18 @@ pub async fn run_query(
             return err(StatusCode::BAD_REQUEST, msg);
         }
         Err(e) => {
-            error!("connector build failed: {e}");
+            // The previous generic "could not resolve database 'X'" body
+            // hid the real cause (connection refused / auth failure /
+            // TLS error) inside the server log. Bundle authors hitting
+            // a 500 had no actionable signal without `kubectl logs`.
+            // Surface the underlying error directly — agentic_connector
+            // formats these as host/protocol diagnostics (e.g.
+            // "authentication failed for user 'oxy'", "connection
+            // refused (os error 61)"); none contain secret values.
+            error!("connector build failed for '{db_name}': {e}");
             return err(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not resolve database '{db_name}'"),
+                format!("failed to connect to database '{db_name}': {e}"),
             );
         }
     };

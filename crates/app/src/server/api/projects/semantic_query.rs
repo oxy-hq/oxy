@@ -209,10 +209,13 @@ pub async fn run_semantic_query(
             return err(StatusCode::BAD_REQUEST, msg);
         }
         Err(e) => {
-            error!("connector build failed: {e}");
+            // Surface the underlying error to the bundle author —
+            // mirrors `query.rs`. Agentic-connector error strings are
+            // host/protocol diagnostics, no secret values.
+            error!("connector build failed for '{database_name}': {e}");
             return err(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not resolve database '{database_name}'"),
+                format!("failed to connect to database '{database_name}': {e}"),
             );
         }
     };
