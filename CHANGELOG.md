@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.65] - 2026-06-05
+
+### 🚀 Features
+
+- Add AWS RDS IAM authentication support to worker (#2455)
+
 ## [0.5.64] - 2026-06-05
 
 ### 🚀 Features
@@ -18,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 - Bump airway to 0.1.1 (#2453)
 - Restrict edge image build to main repository (#2454)
+- Release 0.5.64 (#2451)
 
 ## [0.5.63] - 2026-06-04
 
