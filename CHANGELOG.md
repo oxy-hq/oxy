@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.64] - 2026-06-05
+
+### 🚀 Features
+
+- Live operator console for internal jobs admin (#2450)
+- *(customer-apps)* Publish org-id, multi-env login, delete cleans S3, new-vs-version (#2452)
+- *(edge)* UniFi scan + install/auth diagnostics (#2448)
+
+### 📚 Documentation
+
+- Enhance API documentation with authentication and CLI guides (#2425)
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump airway to 0.1.1 (#2453)
+- Restrict edge image build to main repository (#2454)
+
 ## [0.5.63] - 2026-06-04
 
 ### 🚀 Features
@@ -9,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - Clickhouse source for airway ELT pipeline (#2422)
 - QuickBooks Online ELT source + OAuth Connect (#2432)
 - Subdomain dispatch (zero-config) + dual-url admin UI for v0 customer apps (#2442)
+- Standalone worker fleet + internal jobs admin (#2409)
 
 ### 🐛 Bug Fixes
 
@@ -21,6 +39,10 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump docker/setup-qemu-action from 3 to 4 (#2443)
 - *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 10 updates (#2445)
 - *(deps-dev)* Bump the dev-npm-major-dependencies group across 2 directories with 4 updates (#2446)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.63 (#2440)
 
 ## [0.5.62] - 2026-06-03
 
