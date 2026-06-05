@@ -853,6 +853,180 @@ async fn specifying_handler_falls_back_to_default_when_sql_oxy_db_unknown() {
     let _ = std::fs::remove_dir_all(file_path.parent().unwrap());
 }
 
+// ── workspace-relative SQL file path resolution ───────────────────────────
+
+/// A relative `selected_procedure` path must be joined against `workspace_path`
+/// and read successfully, matching the behaviour of `search_procedures` which
+/// returns workspace-relative paths.
+#[tokio::test]
+async fn specifying_handler_resolves_relative_sql_path_against_workspace() {
+    let sql_content = "/*\n  oxy:\n    description: \"Store count\"\n*/\nSELECT COUNT(*) FROM stores;";
+    // Write to a temp workspace dir, keeping a relative name.
+    let workspace = std::env::temp_dir().join(format!(
+        "oxy_ws_test_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(workspace.join("example_sql")).unwrap();
+    std::fs::write(
+        workspace.join("example_sql/total_number_of_store.sql"),
+        sql_content,
+    )
+    .unwrap();
+
+    // Supply only the relative path — as search_procedures would return it.
+    let rel_path = std::path::PathBuf::from("example_sql/total_number_of_store.sql");
+    let intent = AnalyticsIntent {
+        selected_procedure: Some(rel_path.clone()),
+        ..make_intent()
+    };
+
+    let mut solver = make_solver().with_workspace_path(workspace.clone());
+    let handlers = build_analytics_handlers();
+    let execute_fn = std::sync::Arc::clone(
+        &handlers
+            .get("specifying")
+            .expect("specifying handler must exist")
+            .execute,
+    );
+    let run_ctx = make_run_ctx();
+    let memory = agentic_core::orchestrator::SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Specifying(intent),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    match result.state_data {
+        ProblemState::Executing(solution) => {
+            assert!(
+                matches!(
+                    &solution.solution_source,
+                    SolutionSource::SqlFile { file_path: fp } if *fp == rel_path
+                ),
+                "must carry the original relative path in SolutionSource",
+            );
+            assert!(
+                matches!(&solution.payload, SolutionPayload::Sql(sql) if !sql.is_empty()),
+                "SQL payload must be non-empty",
+            );
+        }
+        other => panic!(
+            "expected ProblemState::Executing, got: {:?}",
+            std::mem::discriminant(&other)
+        ),
+    }
+
+    let _ = std::fs::remove_dir_all(&workspace);
+}
+
+/// Without `workspace_path` configured, a bare relative path fails to read
+/// (resolves against CWD, which won't have the file), confirming the fix is
+/// load-bearing.
+#[tokio::test]
+async fn specifying_handler_relative_sql_path_fails_without_workspace_path() {
+    let rel_path =
+        std::path::PathBuf::from("example_sql/this_file_does_not_exist_in_cwd.sql");
+    let intent = AnalyticsIntent {
+        selected_procedure: Some(rel_path.clone()),
+        ..make_intent()
+    };
+
+    // No with_workspace_path — solver has workspace_path: None.
+    let mut solver = make_solver();
+    let handlers = build_analytics_handlers();
+    let execute_fn = std::sync::Arc::clone(
+        &handlers
+            .get("specifying")
+            .expect("specifying handler must exist")
+            .execute,
+    );
+    let run_ctx = make_run_ctx();
+    let memory = agentic_core::orchestrator::SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Specifying(intent),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    assert!(
+        matches!(
+            result.state_data,
+            ProblemState::Diagnosing {
+                error: AnalyticsError::FileReadError { .. },
+                ..
+            }
+        ),
+        "relative path without workspace_path must produce FileReadError",
+    );
+}
+
+/// A path containing `..` that would escape the workspace root must be
+/// rejected with a FileReadError, not silently read.
+#[tokio::test]
+async fn specifying_handler_rejects_traversal_path() {
+    let workspace = std::env::temp_dir().join(format!(
+        "oxy_traversal_test_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&workspace).unwrap();
+
+    // A traversal path that escapes the workspace.
+    let traversal = std::path::PathBuf::from("../../etc/passwd");
+    let intent = AnalyticsIntent {
+        selected_procedure: Some(traversal),
+        ..make_intent()
+    };
+
+    let mut solver = make_solver().with_workspace_path(workspace.clone());
+    let handlers = build_analytics_handlers();
+    let execute_fn = std::sync::Arc::clone(
+        &handlers
+            .get("specifying")
+            .expect("specifying handler must exist")
+            .execute,
+    );
+    let run_ctx = make_run_ctx();
+    let memory = agentic_core::orchestrator::SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Specifying(intent),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    assert!(
+        matches!(
+            result.state_data,
+            ProblemState::Diagnosing {
+                error: AnalyticsError::FileReadError { ref message, .. },
+                ..
+            } if message.contains("escapes workspace root")
+        ),
+        "traversal path must be rejected with a containment error",
+    );
+
+    let _ = std::fs::remove_dir_all(&workspace);
+}
+
 // ── SQL file failure routing through the Executing handler ────────────────
 
 #[tokio::test]

@@ -103,6 +103,11 @@ pub struct AnalyticsSolver {
     /// runs a `LIMIT 0` smoke check first. Procedure delegation is
     /// rejected with an explicit error in this mode.
     pub(crate) sql_generation_mode: bool,
+    /// Root directory of the workspace / project.
+    ///
+    /// Used to resolve workspace-relative paths returned by `search_procedures`
+    /// (e.g. `example_sql/total_number_of_store.sql`) before reading the file.
+    pub(crate) workspace_path: Option<std::path::PathBuf>,
     /// Layer-1 preagg refresh-key cache, shared with the background worker.
     ///
     /// When set together with `semantic_scan_path`, the Specifying stage
@@ -161,6 +166,7 @@ impl AnalyticsSolver {
             preagg_cache: None,
             preagg_renewal_threshold_secs: 0,
             semantic_scan_path: None,
+            workspace_path: None,
         }
     }
 
@@ -199,6 +205,7 @@ impl AnalyticsSolver {
             preagg_cache: None,
             preagg_renewal_threshold_secs: 0,
             semantic_scan_path: None,
+            workspace_path: None,
         }
     }
 
@@ -344,6 +351,11 @@ impl AnalyticsSolver {
         self.preagg_cache = cache;
         self.preagg_renewal_threshold_secs = renewal_threshold_secs;
         self.semantic_scan_path = semantic_scan_path;
+        self
+    }
+
+    pub fn with_workspace_path(mut self, path: std::path::PathBuf) -> Self {
+        self.workspace_path = Some(path);
         self
     }
 

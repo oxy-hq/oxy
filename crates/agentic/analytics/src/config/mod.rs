@@ -593,7 +593,8 @@ impl AgentConfig {
             .with_state_configs(self.states.clone())
             .with_state_clients(state_clients)
             .with_validator(validator)
-            .with_max_tokens(self.llm.max_tokens);
+            .with_max_tokens(self.llm.max_tokens)
+            .with_workspace_path(base_dir.to_path_buf());
 
         // Wire global thinking config: llm.thinking > top-level thinking.
         let effective_thinking = self.llm.thinking.as_ref().or(self.thinking.as_ref());

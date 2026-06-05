@@ -1340,7 +1340,43 @@ pub(super) fn build_specifying_handler()
                         let default_conn = solver.default_connector.clone();
                         // SQL files are executed directly as verified queries.
                         if file_path.extension().is_some_and(|e| e == "sql") {
-                            let sql = match tokio::fs::read_to_string(file_path).await {
+                            // Resolve workspace-relative paths (as returned by
+                            // `search_procedures`) against the workspace root.
+                            let abs_path = if file_path.is_absolute() {
+                                file_path.clone()
+                            } else if let Some(ref ws) = solver.workspace_path {
+                                ws.join(file_path)
+                            } else {
+                                file_path.clone()
+                            };
+
+                            // Guard against path traversal: reject any resolved
+                            // path that escapes the workspace root (e.g. a path
+                            // containing `..` that the LLM produced). This
+                            // mirrors the analogous check in the workflow domain.
+                            if let Some(ref ws) = solver.workspace_path {
+                                let canonical_ws = std::fs::canonicalize(ws)
+                                    .unwrap_or_else(|_| ws.clone());
+                                let canonical_abs = std::fs::canonicalize(&abs_path)
+                                    .unwrap_or_else(|_| abs_path.clone());
+                                if !canonical_abs.starts_with(&canonical_ws) {
+                                    return TransitionResult::diagnosing(
+                                        ProblemState::Diagnosing {
+                                            error: crate::AnalyticsError::FileReadError {
+                                                file_path: file_path.display().to_string(),
+                                                message: "path escapes workspace root"
+                                                    .to_string(),
+                                            },
+                                            back: agentic_core::back_target::BackTarget::Clarify(
+                                                intent,
+                                                Default::default(),
+                                            ),
+                                        },
+                                    );
+                                }
+                            }
+
+                            let sql = match tokio::fs::read_to_string(&abs_path).await {
                                 Ok(s) => s,
                                 Err(e) => {
                                     // Fatal: a missing/unreadable verified SQL
@@ -1350,7 +1386,7 @@ pub(super) fn build_specifying_handler()
                                     return TransitionResult::diagnosing(
                                         ProblemState::Diagnosing {
                                             error: crate::AnalyticsError::FileReadError {
-                                                file_path: file_path.display().to_string(),
+                                                file_path: abs_path.display().to_string(),
                                                 message: e.to_string(),
                                             },
                                             back: agentic_core::back_target::BackTarget::Clarify(
