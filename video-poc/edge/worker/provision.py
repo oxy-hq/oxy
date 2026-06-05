@@ -60,6 +60,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 
@@ -135,11 +136,20 @@ async def _bootstrap(
     return r.json()
 
 
-def _write_edge_env(path: Path, payload: dict) -> None:
-    """Write `EDGE_BOX_ID=…` / `EDGE_BOX_TOKEN=…` / `WORKSPACE_ID=…`
-    to a `.env` file the worker entrypoint sources. 0600 because the
-    bearer is as sensitive as the original device secret in terms of
-    "what can talk to /control/* as this box."
+def _write_edge_env(path: Path, payload: dict, device_id: UUID) -> None:
+    """Write `EDGE_BOX_ID=…` / `EDGE_BOX_TOKEN=…` / `WORKSPACE_ID=…` /
+    `BOOTSTRAP_DEVICE_ID=…` to a `.env` file the worker entrypoint
+    sources. 0600 because the bearer is as sensitive as the original
+    device secret in terms of "what can talk to /control/* as this box."
+
+    `BOOTSTRAP_DEVICE_ID` records which `device.json` identity owned
+    this bootstrap. On re-runs, [`_edge_env_device_id`] reads it back so
+    we can detect when the operator re-installed with a fresh
+    device-id and re-run bootstrap instead of silently sourcing a
+    stale env (the failure mode that produced the `pending_claim`
+    deadlock — pre-fix, the worker would JWT-sign with the new
+    device-id while keeping the old EDGE_BOX_ID and 401 every poll).
+
     Atomic rename via .tmp so a crash mid-write doesn't leave a
     truncated file that future boots would silently source."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,12 +157,29 @@ def _write_edge_env(path: Path, payload: dict) -> None:
         f"EDGE_BOX_ID={payload['edge_box_id']}\n"
         f"EDGE_BOX_TOKEN={payload['bearer']}\n"
         f"WORKSPACE_ID={payload['workspace_id']}\n"
+        f"BOOTSTRAP_DEVICE_ID={device_id}\n"
     )
     tmp = path.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(body)
     os.replace(tmp, path)
+
+
+def _edge_env_device_id(path: Path) -> UUID | None:
+    """Return the `BOOTSTRAP_DEVICE_ID` recorded in an existing edge.env,
+    or `None` if the file is missing the line (pre-fix vintage written
+    before we started recording it). Treats parse errors as "missing"
+    rather than raising — we'd rather short-circuit conservatively
+    than crash the entrypoint on a malformed line."""
+    try:
+        for line in path.read_text().splitlines():
+            if line.startswith("BOOTSTRAP_DEVICE_ID="):
+                raw = line.split("=", 1)[1].strip()
+                return UUID(raw) if raw else None
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 async def run(cfg: ProvisionConfig) -> int:
@@ -181,12 +208,42 @@ async def run(cfg: ProvisionConfig) -> int:
         return 2
 
     if cfg.edge_env_path.exists():
+        recorded_device_id = _edge_env_device_id(cfg.edge_env_path)
+        if recorded_device_id == ident.device_id:
+            log(
+                "info",
+                "provision.already_onboarded",
+                edge_env_path=str(cfg.edge_env_path),
+                device_id=str(ident.device_id),
+            )
+            return 0
+        if recorded_device_id is None:
+            # Pre-fix edge.env (or hand-written one) — no
+            # BOOTSTRAP_DEVICE_ID line. Trust it: rewriting bootstrap
+            # against a stale claim wouldn't help anyway, and existing
+            # working boxes shouldn't be disturbed on first upgrade.
+            log(
+                "info",
+                "provision.already_onboarded",
+                edge_env_path=str(cfg.edge_env_path),
+                device_id=str(ident.device_id),
+                note="edge.env predates BOOTSTRAP_DEVICE_ID; can't verify",
+            )
+            return 0
+        # Identity drifted under us — the operator re-ran the wizard
+        # and re-installed with a fresh device.json but the outbox
+        # volume still carries the old bootstrap. Re-run announce +
+        # bootstrap so the new claim row transitions to `claimed` and
+        # the worker's JWT issuer matches the EDGE_BOX_ID it polls
+        # against.
         log(
-            "info",
-            "provision.already_onboarded",
+            "warn",
+            "provision.identity_drift",
             edge_env_path=str(cfg.edge_env_path),
+            previous_device_id=str(recorded_device_id),
+            current_device_id=str(ident.device_id),
+            action="re-running announce + bootstrap against current device.json",
         )
-        return 0
 
     log(
         "info",
@@ -225,7 +282,7 @@ async def run(cfg: ProvisionConfig) -> int:
             log("error", "provision.bootstrap_failed", error=str(exc))
             return 3
 
-    _write_edge_env(cfg.edge_env_path, payload)
+    _write_edge_env(cfg.edge_env_path, payload, ident.device_id)
     log(
         "info",
         "provision.bootstrap_complete",

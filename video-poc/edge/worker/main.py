@@ -105,7 +105,29 @@ async def _fetch_config(client: httpx.AsyncClient, box_id: UUID) -> EdgeConfig:
         try:
             r = await client.get(f"/control/boxes/{box_id}/config")
             r.raise_for_status()
-            payload = r.json()
+            try:
+                payload = r.json()
+            except ValueError as decode_err:
+                # 2xx response with a non-JSON body. The classic cause is an
+                # OXY_URL that doesn't include `/api` — the API tree is
+                # mounted under /api and the SPA fallback returns index.html
+                # (status 200, content-type text/html) for any other path,
+                # so r.json() blows up with the opaque "Expecting value:
+                # line 1 column 1" message. Surface the actual status,
+                # content-type, and a body snippet so the operator can fix
+                # OXY_URL without source-diving.
+                content_type = r.headers.get("content-type", "")
+                body_snippet = r.text[:120].replace("\n", " ").strip()
+                hint = (
+                    " — looks like HTML; OXY_URL likely needs `/api` appended"
+                    if "html" in content_type.lower() or body_snippet.startswith("<")
+                    else ""
+                )
+                raise ValueError(
+                    f"non-JSON response from /control/boxes/{box_id}/config "
+                    f"(status={r.status_code}, content_type={content_type!r}, "
+                    f"body={body_snippet!r}){hint}"
+                ) from decode_err
             # Tolerate the pre-Phase-2 array response shape during
             # rollout. New shape: {cameras: [...], domain_pack: {...}}.
             # Old shape: [...] (list of cameras).

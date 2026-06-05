@@ -1,4 +1,4 @@
-import { CheckCircle2, KeyRound, Loader2, Trash2 } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, Search, Trash2 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import {
   useUnifiCredentialStatus
 } from "@/hooks/api/cameras/useUnifiCredentialStatus";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
+import UnifiSetupDialog from "./UnifiSetupDialog";
 
 /**
  * Inline status bar that surfaces the workspace's UniFi credential
@@ -39,6 +40,11 @@ const UnifiCredentialBanner: React.FC = () => {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  // Drives the Scan-sites UnifiSetupDialog in `scan-stored` mode. Opens
+  // from the explicit "Scan sites" button on the configured banner, and
+  // also auto-opens right after saving a fresh key so the operator sees
+  // what they just connected without an extra click.
+  const [scanDialogOpen, setScanDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!dialogOpen) setApiKey("");
@@ -54,6 +60,9 @@ const UnifiCredentialBanner: React.FC = () => {
       await setMutation.mutateAsync({ apiKey: trimmed });
       toast.success("UniFi credential saved");
       setDialogOpen(false);
+      // Surface the scan flow immediately — the operator just told us
+      // about a new key, the natural next question is "what's in it?".
+      setScanDialogOpen(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save credential");
     }
@@ -108,6 +117,18 @@ const UnifiCredentialBanner: React.FC = () => {
         )}
       </div>
       <div className='flex items-center gap-1.5'>
+        {configured && (
+          <Button
+            size='sm'
+            variant='outline'
+            onClick={() => setScanDialogOpen(true)}
+            className='h-7 text-xs'
+            title='Re-check the UniFi account for new sites and cameras using the stored credential.'
+          >
+            <Search className='mr-1 h-3 w-3' />
+            Scan sites
+          </Button>
+        )}
         <Button
           size='sm'
           variant='outline'
@@ -133,6 +154,8 @@ const UnifiCredentialBanner: React.FC = () => {
           </Button>
         )}
       </div>
+
+      <UnifiSetupDialog open={scanDialogOpen} onOpenChange={setScanDialogOpen} mode='scan-stored' />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className='max-w-md'>

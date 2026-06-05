@@ -178,6 +178,22 @@ if [[ "$OXY_URL" != http://* && "$OXY_URL" != https://* ]]; then
     die "--oxy-url must start with http:// or https://: $OXY_URL"
 fi
 
+# The Oxy API tree is mounted under `/api` (see crates/app/src/cli/commands/serve.rs).
+# The frontend SPA's fallback service catches any path that doesn't match a
+# route and returns index.html with a 200 — so a missing /api turns into the
+# worker getting HTML on every `/control/*` poll and choking on JSON parse.
+# When the URL has *no* path component at all we know it's the common mistake
+# and append `/api`; if the operator typed an intentional path (`/api/v2`,
+# `/oxy-api`, etc.) we trust them. The strip is `:port`-aware so
+# `host.example.com:3000` doesn't look like it has a path.
+oxy_url_no_scheme="${OXY_URL#http://}"
+oxy_url_no_scheme="${oxy_url_no_scheme#https://}"
+if [[ "$oxy_url_no_scheme" != */* ]]; then
+    OXY_URL="${OXY_URL%/}/api"
+    warn "appended missing /api path to --oxy-url; final value: $OXY_URL"
+    warn "pass an explicit path (e.g. /api/v2) to override this behaviour"
+fi
+
 # ── Step 1 — dependencies ────────────────────────────────────
 
 log "checking dependencies"

@@ -209,7 +209,29 @@ async def fetch_target(client: httpx.AsyncClient, cfg: AgentConfig) -> dict[str,
     if r.status_code != 200:
         log("warn", "update_agent.target_fetch_non_200", status=r.status_code)
         return None
-    return r.json()
+    try:
+        return r.json()
+    except ValueError:
+        # 200 with non-JSON body — almost always an OXY_URL missing `/api`
+        # so the request hit the SPA fallback. Surface enough to fix it
+        # without source-diving (see `main.py::_fetch_config` for the
+        # same pattern on the config endpoint).
+        content_type = r.headers.get("content-type", "")
+        body_snippet = r.text[:120].replace("\n", " ").strip()
+        hint = (
+            " (looks like HTML — OXY_URL likely needs `/api` appended)"
+            if "html" in content_type.lower() or body_snippet.startswith("<")
+            else ""
+        )
+        log(
+            "warn",
+            "update_agent.target_fetch_non_json",
+            status=r.status_code,
+            content_type=content_type,
+            body=body_snippet,
+            hint=hint,
+        )
+        return None
 
 
 @dataclass

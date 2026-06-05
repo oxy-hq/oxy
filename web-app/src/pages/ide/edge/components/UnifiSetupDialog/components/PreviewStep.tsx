@@ -19,7 +19,12 @@ import type { UnifiImportResult, UnifiPreviewResult } from "@/services/api";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 
 type Props = {
-  apiKey: string;
+  /**
+   * UniFi API key. Undefined when the dialog is in `scan-stored` mode —
+   * the backend then uses the stored workspace credential for both the
+   * preview that produced `data` and the import that follows.
+   */
+  apiKey?: string;
   data: UnifiPreviewResult;
   onBack: () => void;
   onImported: (result: UnifiImportResult) => void;

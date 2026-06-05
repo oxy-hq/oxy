@@ -5,7 +5,10 @@ import { CameraService } from "@/services/api";
 const useUnifiPreview = (workspaceId: string | undefined) => {
   const effectiveWorkspaceId = workspaceId ?? LOCAL_WORKSPACE_ID;
   return useMutation({
-    mutationFn: ({ apiKey }: { apiKey: string }) =>
+    // `apiKey` is optional — when omitted, the backend uses the workspace's
+    // stored UniFi credential. The Scan-sites flow calls this with no key
+    // to re-discover sites without forcing the operator to paste again.
+    mutationFn: ({ apiKey }: { apiKey?: string } = {}) =>
       CameraService.unifiPreview(effectiveWorkspaceId, apiKey)
   });
 };

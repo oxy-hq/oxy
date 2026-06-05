@@ -12,7 +12,9 @@ const useUnifiImport = (workspaceId: string | undefined) => {
   const effectiveWorkspaceId = workspaceId ?? LOCAL_WORKSPACE_ID;
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ apiKey, siteFilter }: { apiKey: string; siteFilter?: string }) =>
+    // `apiKey` is optional — when omitted, the backend uses the workspace's
+    // stored UniFi credential (same fallback as preview).
+    mutationFn: ({ apiKey, siteFilter }: { apiKey?: string; siteFilter?: string } = {}) =>
       CameraService.unifiImport(effectiveWorkspaceId, apiKey, siteFilter),
     onSuccess: () => {
       queryClient.invalidateQueries({

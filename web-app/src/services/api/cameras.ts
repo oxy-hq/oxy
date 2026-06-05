@@ -516,7 +516,11 @@ export const CameraService = {
 
   // ── UniFi onboarding ─────────────────────────────────────────────────────
 
-  async unifiPreview(workspaceId: string, apiKey: string): Promise<UnifiPreviewResult> {
+  async unifiPreview(workspaceId: string, apiKey?: string): Promise<UnifiPreviewResult> {
+    // Omitting `api_key` falls back to the stored workspace credential
+    // server-side (see `service::unifi_credentials::resolve_api_key`).
+    // Used by the "Scan sites" action that re-checks the customer's
+    // UniFi account for new sites after the initial onboarding.
     const response = await apiClient.post(`/${workspaceId}/integrations/unifi/preview`, {
       api_key: apiKey
     });
@@ -525,7 +529,7 @@ export const CameraService = {
 
   async unifiImport(
     workspaceId: string,
-    apiKey: string,
+    apiKey?: string,
     siteFilter?: string
   ): Promise<UnifiImportResult> {
     const response = await apiClient.post(`/${workspaceId}/integrations/unifi/import`, {
