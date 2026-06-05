@@ -164,7 +164,10 @@ fn worker_id_is_stable_and_includes_pid() {
 fn require_database_url_errors_when_unset() {
     let _g = ENV_LOCK.lock().unwrap();
     let prev = std::env::var("OXY_DATABASE_URL").ok();
-    unsafe { std::env::remove_var("OXY_DATABASE_URL") };
+    unsafe {
+        std::env::remove_var("OXY_DATABASE_URL");
+        std::env::remove_var("OXY_DATABASE_AUTH_MODE");
+    }
 
     let err = require_database_url().expect_err("expected error when unset");
     let msg = err.to_string();
@@ -177,4 +180,113 @@ fn require_database_url_errors_when_unset() {
         Some(v) => unsafe { std::env::set_var("OXY_DATABASE_URL", v) },
         None => {}
     }
+}
+
+fn clear_iam_env() {
+    unsafe {
+        for var in [
+            "OXY_DATABASE_URL",
+            "OXY_DATABASE_AUTH_MODE",
+            "OXY_DATABASE_HOST",
+            "OXY_DATABASE_PORT",
+            "OXY_DATABASE_NAME",
+            "OXY_DATABASE_USER",
+            "OXY_DATABASE_REGION",
+            "OXY_DATABASE_SSL_MODE",
+        ] {
+            std::env::remove_var(var);
+        }
+    }
+}
+
+fn set_iam_env_minimal() {
+    unsafe {
+        std::env::set_var("OXY_DATABASE_AUTH_MODE", "iam");
+        std::env::set_var("OXY_DATABASE_HOST", "rds.example.com");
+        std::env::set_var("OXY_DATABASE_NAME", "oxydb");
+        std::env::set_var("OXY_DATABASE_USER", "oxy_app");
+        std::env::set_var("OXY_DATABASE_REGION", "us-east-1");
+    }
+}
+
+/// IAM mode with all required vars set — must succeed even with no URL.
+#[test]
+fn require_database_url_iam_mode_ok_with_all_vars() {
+    let _g = ENV_LOCK.lock().unwrap();
+    clear_iam_env();
+    set_iam_env_minimal();
+
+    assert!(
+        require_database_url().is_ok(),
+        "IAM mode with all vars set should succeed"
+    );
+
+    clear_iam_env();
+}
+
+/// IAM mode with a missing required var — must fail with a clear message.
+#[test]
+fn require_database_url_iam_mode_err_when_var_missing() {
+    let _g = ENV_LOCK.lock().unwrap();
+    clear_iam_env();
+    set_iam_env_minimal();
+    unsafe { std::env::remove_var("OXY_DATABASE_REGION") };
+
+    let err = require_database_url().expect_err("should fail with missing REGION");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("OXY_DATABASE_REGION"),
+        "error should name the missing var: {msg}"
+    );
+
+    clear_iam_env();
+}
+
+/// IAM mode with a malformed port — IamConfig::from_env parses it and must
+/// fail before the connection is attempted.
+#[test]
+fn require_database_url_iam_mode_err_malformed_port() {
+    let _g = ENV_LOCK.lock().unwrap();
+    clear_iam_env();
+    set_iam_env_minimal();
+    unsafe { std::env::set_var("OXY_DATABASE_PORT", "notaport") };
+
+    assert!(
+        require_database_url().is_err(),
+        "malformed OXY_DATABASE_PORT should be rejected"
+    );
+
+    clear_iam_env();
+}
+
+/// IAM mode with an unsupported ssl-mode value — same fail-fast guarantee.
+#[test]
+fn require_database_url_iam_mode_err_bad_ssl_mode() {
+    let _g = ENV_LOCK.lock().unwrap();
+    clear_iam_env();
+    set_iam_env_minimal();
+    unsafe { std::env::set_var("OXY_DATABASE_SSL_MODE", "bogus") };
+
+    assert!(
+        require_database_url().is_err(),
+        "unsupported OXY_DATABASE_SSL_MODE should be rejected"
+    );
+
+    clear_iam_env();
+}
+
+/// An unrecognised auth mode (e.g. a typo) must be rejected, not silently
+/// treated as password mode.
+#[test]
+fn require_database_url_rejects_unknown_auth_mode() {
+    let _g = ENV_LOCK.lock().unwrap();
+    clear_iam_env();
+    unsafe { std::env::set_var("OXY_DATABASE_AUTH_MODE", "kerberos") };
+
+    assert!(
+        require_database_url().is_err(),
+        "unknown OXY_DATABASE_AUTH_MODE should be rejected"
+    );
+
+    clear_iam_env();
 }

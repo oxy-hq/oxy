@@ -4,15 +4,16 @@
 //! Public surface is intentionally tiny — most users only need
 //! [`establish_connection`] (the main pool) and
 //! [`listener_factory_from_env`] (the agentic task router's dedicated
-//! LISTEN connection). The [`auth_mode`] and [`iam`] submodules are
-//! kept `pub(crate)` because they're implementation details of the
-//! connection setup; nothing outside this crate has historically
-//! called them directly.
+//! LISTEN connection). [`DatabaseAuthMode`] and [`IamConfig`] are also
+//! exported so callers that need to validate env-var config before
+//! attempting a connection (e.g. `oxy worker`) can share the canonical
+//! parser without duplicating the logic.
 
 pub(crate) mod auth_mode;
 mod client;
 pub(crate) mod iam;
 mod listener;
 
+pub use auth_mode::{DatabaseAuthMode, IamConfig};
 pub use client::establish_connection;
 pub use listener::listener_factory_from_env;

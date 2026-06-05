@@ -8,13 +8,26 @@
 //! optional k8s probe port.
 //!
 //! See `internal-docs/worker-fleet.md` for full deployment guidance.
-//! Env vars: `OXY_DATABASE_URL` (required), `OXY_WORKER_MAX_INFLIGHT`,
+//!
+//! ## Database connection
+//!
+//! Two auth modes are supported (controlled by `OXY_DATABASE_AUTH_MODE`):
+//!
+//! - **`password`** (default) — set `OXY_DATABASE_URL` to the full
+//!   PostgreSQL connection string.
+//! - **`iam`** — AWS RDS IAM auth; `OXY_DATABASE_URL` is **not** required.
+//!   Set `OXY_DATABASE_HOST`, `OXY_DATABASE_NAME`, `OXY_DATABASE_USER`,
+//!   `OXY_DATABASE_REGION`, and optionally `OXY_DATABASE_PORT` /
+//!   `OXY_DATABASE_SSL_MODE` instead.
+//!
+//! Other env vars: `OXY_WORKER_MAX_INFLIGHT`,
 //! `OXY_WORKER_RECOVERY_INTERVAL_SECS`, `OXY_WORKER_HEALTH_PORT`.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use oxy::database::client::{DatabaseAuthMode, IamConfig};
 use oxy::theme::StyledText;
 use oxy_shared::errors::OxyError;
 use tokio::signal;
@@ -277,17 +290,35 @@ async fn tick_once(
     }
 }
 
+/// Validate that the environment has everything needed to open the database
+/// connection.  The check is auth-mode-aware:
+///
+/// - `password` mode (default): `OXY_DATABASE_URL` must be set.
+/// - `iam` mode: delegates to [`IamConfig::from_env`] which validates all
+///   required vars including port format and ssl-mode values.
+///
+/// Using the canonical platform validators keeps this guard in sync with
+/// the actual connection layer automatically.
 fn require_database_url() -> Result<(), OxyError> {
-    if std::env::var("OXY_DATABASE_URL").is_err() {
-        return Err(OxyError::RuntimeError(
-            "OXY_DATABASE_URL environment variable is required.\n\n\
-             Set it to the same PostgreSQL connection string your `oxy serve`\n\
-             frontend uses — the worker process and the HTTP server must share\n\
-             one queue (and therefore one Postgres database)."
-                .to_string(),
-        ));
+    match DatabaseAuthMode::from_env()? {
+        DatabaseAuthMode::Iam => {
+            IamConfig::from_env().map(|_| ())
+        }
+        DatabaseAuthMode::Password => {
+            if std::env::var("OXY_DATABASE_URL").is_err() {
+                return Err(OxyError::RuntimeError(
+                    "OXY_DATABASE_URL environment variable is required.\n\n\
+                     Set it to the same PostgreSQL connection string your `oxy serve`\n\
+                     frontend uses — the worker process and the HTTP server must share\n\
+                     one queue (and therefore one Postgres database).\n\n\
+                     Alternatively, set OXY_DATABASE_AUTH_MODE=iam and supply the\n\
+                     individual OXY_DATABASE_HOST / NAME / USER / REGION vars."
+                        .to_string(),
+                ));
+            }
+            Ok(())
+        }
     }
-    Ok(())
 }
 
 fn read_max_inflight() -> usize {
@@ -334,8 +365,17 @@ fn compute_worker_id() -> String {
     format!("{host}@{}", std::process::id())
 }
 
-/// Strip the password out of `OXY_DATABASE_URL` for log lines.
+/// Return a safe-to-log database identifier.
+///
+/// - `password` mode: strips the password from `OXY_DATABASE_URL`.
+/// - `iam` mode: formats `host/database` from the individual IAM vars since
+///   there is no URL to parse.
 fn mask_db_url() -> String {
+    if DatabaseAuthMode::from_env().ok() == Some(DatabaseAuthMode::Iam) {
+        let host = std::env::var("OXY_DATABASE_HOST").unwrap_or_else(|_| "<unset>".to_string());
+        let db = std::env::var("OXY_DATABASE_NAME").unwrap_or_else(|_| "<unset>".to_string());
+        return format!("{host}/{db} (IAM)");
+    }
     mask_db_url_str(&std::env::var("OXY_DATABASE_URL").unwrap_or_default())
 }
 
