@@ -1355,8 +1355,8 @@ pub(super) fn build_specifying_handler()
                             // containing `..` that the LLM produced). This
                             // mirrors the analogous check in the workflow domain.
                             if let Some(ref ws) = solver.workspace_path {
-                                let canonical_ws = std::fs::canonicalize(ws)
-                                    .unwrap_or_else(|_| ws.clone());
+                                let canonical_ws =
+                                    std::fs::canonicalize(ws).unwrap_or_else(|_| ws.clone());
                                 let canonical_abs = std::fs::canonicalize(&abs_path)
                                     .unwrap_or_else(|_| abs_path.clone());
                                 if !canonical_abs.starts_with(&canonical_ws) {
@@ -1364,8 +1364,7 @@ pub(super) fn build_specifying_handler()
                                         ProblemState::Diagnosing {
                                             error: crate::AnalyticsError::FileReadError {
                                                 file_path: file_path.display().to_string(),
-                                                message: "path escapes workspace root"
-                                                    .to_string(),
+                                                message: "path escapes workspace root".to_string(),
                                             },
                                             back: agentic_core::back_target::BackTarget::Clarify(
                                                 intent,

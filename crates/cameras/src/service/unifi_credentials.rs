@@ -27,9 +27,7 @@ use crate::entities::unifi_credentials;
 use crate::service::{ServiceError, ServiceResult};
 use entity::workspaces;
 use oxy_platform::secrets::OrgSecretsService;
-use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::Serialize;
 use uuid::Uuid;
 

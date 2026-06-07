@@ -253,14 +253,14 @@ pub async fn list_for_box(
                     .unwrap_or(edge_box_id),
                 ts: row
                     .get("ts")
-                    .and_then(|s| parse_airhouse_ts(s))
+                    .and_then(parse_airhouse_ts)
                     .unwrap_or_else(Utc::now),
                 severity: row.get("severity").unwrap_or("").to_string(),
                 event: row.get("event").unwrap_or("").to_string(),
                 fields_json: row.get("fields_json").unwrap_or("{}").to_string(),
                 received_at: row
                     .get("received_at")
-                    .and_then(|s| parse_airhouse_ts(s))
+                    .and_then(parse_airhouse_ts)
                     .unwrap_or_else(Utc::now),
             };
             out.push(parsed);

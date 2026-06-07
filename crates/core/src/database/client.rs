@@ -2,5 +2,5 @@
 //! `oxy-platform`; this module preserves the legacy `oxy::database::client`
 //! import path so existing call sites compile unchanged.
 pub use oxy_platform::db::{
-    establish_connection, listener_factory_from_env, DatabaseAuthMode, IamConfig,
+    DatabaseAuthMode, IamConfig, establish_connection, listener_factory_from_env,
 };
