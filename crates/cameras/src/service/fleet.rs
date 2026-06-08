@@ -412,15 +412,12 @@ pub fn decode_signature(b64: &str) -> Result<Vec<u8>, base64::DecodeError> {
 // ── Phase 1C — bootstrap ────────────────────────────────────────────────────
 
 /// What [`bootstrap_device`] hands back. The device persists these
-/// to disk and uses the bearer for subsequent `/control/*` calls,
-/// transitioning from the IoT identity protocol to the existing
-/// edge-box bearer protocol.
+/// to disk; subsequent `/control/*` calls authenticate via a JWT
+/// minted from the device's HMAC secret (resolved on the server side
+/// through `device_claims.edge_box_id`).
 pub struct BootstrapOutput {
     pub workspace_id: Uuid,
     pub edge_box_id: Uuid,
-    /// Plaintext bearer, shown ONCE. Device must persist it
-    /// immediately; the server only stores a hash.
-    pub bearer: String,
 }
 
 /// Inputs to [`bootstrap_device`]. Reuses the announce signature
@@ -441,22 +438,15 @@ pub struct BootstrapInput<'a> {
 ///   3. Create an `edge_boxes` row at the claim's `site_id` with
 ///      reasonable defaults (cohort=stable, hardware_model from
 ///      registry).
-///   4. Create an `edge_box_tokens` row (the device's bearer for
-///      `/control/*`). Hash-only persisted; plaintext returned in
-///      the response.
-///   5. Transition the claim to `claimed` with `edge_box_id` set.
+///   4. Transition the claim to `claimed` with `edge_box_id` set.
 ///
 /// Idempotency: if the device retries bootstrap (lost the response,
-/// fault recovery), the claim has already moved to `claimed`. We
-/// return 409 with the existing edge_box_id so the caller can
-/// recover by re-requesting a bearer rotation (future surface). v1:
-/// device is expected to persist the bearer on first receipt.
+/// fault recovery), the claim has already moved to `claimed`.
 pub async fn bootstrap_device(
     db: &DatabaseConnection,
     input: BootstrapInput<'_>,
 ) -> ServiceResult<BootstrapOutput> {
-    use crate::auth::token::issue;
-    use crate::entities::{edge_box_tokens, edge_boxes, sites};
+    use crate::entities::{edge_boxes, sites};
 
     const REPLAY_WINDOW_SECS: i64 = 300;
     let now_ts = chrono::Utc::now().timestamp();
@@ -497,7 +487,6 @@ pub async fn bootstrap_device(
     // round-trip.
     let now = chrono::Utc::now();
     let edge_box_id = Uuid::new_v4();
-    let token = issue();
     let txn = db.begin().await?;
 
     let claim = device_claims::Entity::find()
@@ -542,7 +531,6 @@ pub async fn bootstrap_device(
         held_until: NotSet,
         last_update_result: NotSet,
         last_update_at: NotSet,
-        auth_mode: NotSet,
         edge_compatibility_json: NotSet,
         incompatible_reason: NotSet,
         status: Set("pending".into()),
@@ -552,19 +540,6 @@ pub async fn bootstrap_device(
         registered_at: Set(now.into()),
         last_seen_at: NotSet,
         updated_at: Set(now.into()),
-    }
-    .insert(&txn)
-    .await?;
-
-    edge_box_tokens::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        edge_box_id: Set(edge_box_id),
-        token_hash: Set(token.hash.clone()),
-        token_prefix: Set(token.prefix.clone()),
-        description: Set(Some(format!("iot:{}", input.device_id))),
-        created_at: Set(now.into()),
-        last_used_at: NotSet,
-        revoked_at: NotSet,
     }
     .insert(&txn)
     .await?;
@@ -591,11 +566,11 @@ pub async fn bootstrap_device(
     Ok(BootstrapOutput {
         workspace_id,
         edge_box_id,
-        bearer: token.plaintext,
     })
 }
 
-// ── Phase 7 — retroactive claim (legacy bearer boxes) ───────────────────────
+// ── Retroactive claim — attach a self-enrolled device to an
+//    operator-registered edge_box ──────────────────────────────────
 
 /// What [`bind_existing`] hands back.
 pub struct BindExistingOutput {
@@ -605,22 +580,13 @@ pub struct BindExistingOutput {
 /// Bind a known `device_id` to an existing `edge_box_id` without
 /// running the full announce → bootstrap dance.
 ///
-/// **Why this exists.** Before the IoT identity layer, operators
-/// registered edge boxes through `POST /cameras/edge-boxes` and
-/// handed the bearer to the installer; there's no
-/// `device_registry` / `device_claims` linkage. Once those boxes
-/// update to the new factory image and self-enroll, the operator
-/// needs a way to associate the now-known `device_id` with the
-/// already-running edge_box. This is that flow.
-///
 /// **What it does.** Validates the edge_box belongs to the
 /// caller's workspace, looks up the device in `device_registry`
 /// (the device must have self-enrolled first — we deliberately
 /// do not auto-enroll from the operator path, which would
 /// weaken the manufacturing-VPN gate on `/fleet/factory-enroll`),
 /// and inserts a `device_claims` row with `status='claimed'` and
-/// `edge_box_id` already set. The bearer is untouched — auth
-/// stays on the legacy path until the JWT cutover (Phase 3).
+/// `edge_box_id` already set.
 ///
 /// **Conflicts.**
 ///   - Unknown `device_id` → 404 (device hasn't enrolled yet).
@@ -714,11 +680,10 @@ pub async fn bind_existing(
 // ── Remove device ──────────────────────────────────────────────────────────
 
 /// What [`remove_member`] actually did. Operator-facing UI uses
-/// this to log "retired box X and revoked claim C and 2 bearers."
+/// this to log "retired box X and revoked claim C."
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RemoveOutput {
     pub edge_box_retired: bool,
-    pub bearers_revoked: u64,
     pub claim_revoked: bool,
     /// Resolved primary target for audit logging — operator
     /// hit Remove on a row; this is "the thing they removed."
@@ -729,10 +694,9 @@ pub struct RemoveOutput {
 /// emits:
 ///
 ///   - **Edge box, possibly with claim** — flips
-///     `edge_boxes.status = 'retired'`, revokes every bearer
-///     token under it, and if any `device_claims` row points
-///     at it, flips that to `'revoked'`. The actual rows stay
-///     (for compliance reports, audit trail, etc.); the
+///     `edge_boxes.status = 'retired'`, and if any `device_claims`
+///     row points at it, flips that to `'revoked'`. The actual rows
+///     stay (for compliance reports, audit trail, etc.); the
 ///     operator-visible row disappears from the fleet list
 ///     because it's filtered to non-retired + active claims.
 ///
@@ -752,7 +716,7 @@ pub async fn remove_member(
     edge_box_id: Option<Uuid>,
     device_id: Option<Uuid>,
 ) -> ServiceResult<RemoveOutput> {
-    use crate::entities::{cameras, edge_box_tokens, edge_boxes, sites};
+    use crate::entities::{cameras, edge_boxes, sites};
     use sea_orm::sea_query::Expr;
 
     if edge_box_id.is_none() && device_id.is_none() {
@@ -764,7 +728,6 @@ pub async fn remove_member(
     let now = chrono::Utc::now().fixed_offset();
     let mut out = RemoveOutput {
         edge_box_retired: false,
-        bearers_revoked: 0,
         claim_revoked: false,
         target_id: edge_box_id.or(device_id).unwrap_or(Uuid::nil()),
     };
@@ -792,23 +755,6 @@ pub async fn remove_member(
             am.updated_at = Set(now);
             am.update(db).await?;
             out.edge_box_retired = true;
-        }
-
-        // Revoke every bearer pointing at this box. Iterating
-        // + updating one-by-one because seaorm's bulk
-        // `update_many` would lose the per-row updated_at
-        // stamp if we ever add one. Bearer counts per box are
-        // small (usually 1, occasionally 2 during a rotation).
-        let bearers = edge_box_tokens::Entity::find()
-            .filter(edge_box_tokens::Column::EdgeBoxId.eq(eb_id))
-            .filter(edge_box_tokens::Column::RevokedAt.is_null())
-            .all(db)
-            .await?;
-        for token in bearers {
-            let mut am: edge_box_tokens::ActiveModel = token.into();
-            am.revoked_at = Set(Some(now));
-            am.update(db).await?;
-            out.bearers_revoked += 1;
         }
 
         // Revoke the linked claim (if any).

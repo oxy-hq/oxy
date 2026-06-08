@@ -43,7 +43,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use oxy_cameras::CamerasMigrator;
-use oxy_cameras::entities::{cameras, edge_box_tokens, sites};
+use oxy_cameras::entities::{cameras, sites};
 use oxy_cameras::routes;
 
 // ── Shared postgres testcontainer (one per `nextest` process tree) ──────────
@@ -253,46 +253,42 @@ async fn body_json(resp: Response) -> Value {
         .unwrap_or_else(|e| panic!("parse json: {e}; body={}", String::from_utf8_lossy(&bytes)))
 }
 
-/// Convenience: register one edge box for a site in `workspace_id`,
-/// return `(edge_box_id, bearer)`. Calls the service directly now
-/// that the `POST /{wid}/cameras/edge-boxes` operator route has
-/// been removed — same DB writes as the production bootstrap
-/// path uses, so the resulting bearer authenticates against
-/// `/control/*` identically.
-async fn register_box(
-    db: &DatabaseConnection,
-    workspace_id: Uuid,
-    site_id: Uuid,
-) -> (Uuid, String) {
-    // Post-cutover the middleware defaults to JWT-only — but
-    // tests in this file pre-date the cutover and exercise the
-    // bearer flow end-to-end on purpose. Flip the opt-out here so
-    // any test that mints a bearer can still use it. The single
-    // post-cutover regression test below removes the var before
-    // its assertion to verify the default behaviour.
-    enable_legacy_bearer_for_tests();
+/// Convenience: create one edge_box row for a site in
+/// `workspace_id` and return its id. No device claim is attached, so
+/// calls to `/control/*` against this box won't authenticate. Use
+/// [`register_box`] when you need a JWT-authable box (which is the
+/// common case).
+async fn register_box_unbound(db: &DatabaseConnection, workspace_id: Uuid, site_id: Uuid) -> Uuid {
     let input = oxy_cameras::service::registration::RegisterEdgeBoxInput {
         site_id,
         hardware_model: "smoke-n100".into(),
         image_tag: None,
         cohort: None,
-        token_description: None,
     };
-    let out = oxy_cameras::service::registration::register_edge_box(db, workspace_id, input)
+    oxy_cameras::service::registration::register_edge_box(db, workspace_id, input)
         .await
-        .expect("register edge box");
-    (out.edge_box_id, out.token.plaintext)
+        .expect("register edge box")
+        .edge_box_id
 }
 
-fn enable_legacy_bearer_for_tests() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        // SAFETY: nextest runs each #[tokio::test] in its own
-        // process, so this env var doesn't leak between tests.
-        unsafe {
-            std::env::set_var("OXY_ALLOW_LEGACY_BEARER", "true");
-        }
-    });
+/// Convenience: register one edge box for a site in `workspace_id`,
+/// enroll a fresh IoT device, bind the two together, and return
+/// `(edge_box_id, jwt)`. The JWT is signed with the device's HMAC
+/// secret and verifies against the `/control/*` middleware exactly
+/// like a worker-minted one would.
+async fn register_box(
+    db: &DatabaseConnection,
+    workspace_id: Uuid,
+    site_id: Uuid,
+) -> (Uuid, String) {
+    let edge_box_id = register_box_unbound(db, workspace_id, site_id).await;
+    let (device_id, secret, _claim_code) = enroll_test_device(db).await;
+    oxy_cameras::service::fleet::bind_existing(db, workspace_id, device_id, edge_box_id, None)
+        .await
+        .expect("bind device to edge box");
+    let exp = chrono::Utc::now().timestamp() + 3600;
+    let jwt = oxy_cameras::auth::jwt::sign(device_id, &secret, exp);
+    (edge_box_id, jwt)
 }
 
 /// Make sure Airhouse env vars aren't leaking from the host into the
@@ -480,60 +476,6 @@ async fn malformed_auth_header_returns_401() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn revoked_bearer_returns_401() {
-    let db = test_db().await;
-    let (workspace_id, site_id) = seed_site(&db).await;
-    let app = router(db.clone());
-
-    let (edge_box_id, bearer) = register_box(&db, workspace_id, site_id).await;
-
-    // Sanity check: bearer works pre-revoke.
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/control/boxes/{edge_box_id}/config"))
-                .header(AUTHORIZATION, format!("Bearer {bearer}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Revoke directly via the entity (simulates an admin click).
-    let token_row = edge_box_tokens::Entity::find()
-        .filter(edge_box_tokens::Column::EdgeBoxId.eq(edge_box_id))
-        .one(&db)
-        .await
-        .unwrap()
-        .expect("token row");
-    let token_id = token_row.id;
-    let mut am: edge_box_tokens::ActiveModel = token_row.into();
-    am.revoked_at = Set(Some(Utc::now().into()));
-    am.update(&db).await.expect("revoke token");
-
-    // After revoke, the same bearer must be rejected.
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/control/boxes/{edge_box_id}/config"))
-                .header(AUTHORIZATION, format!("Bearer {bearer}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        resp.status(),
-        StatusCode::UNAUTHORIZED,
-        "revoked token (id={token_id}) must be rejected"
-    );
 }
 
 #[tokio::test]
@@ -1672,7 +1614,6 @@ async fn list_edge_boxes_filters_out_unifi_controllers() {
         held_until: Set(None),
         last_update_result: Set(None),
         last_update_at: Set(None),
-        auth_mode: Set("bearer".into()),
         edge_compatibility_json: Set(None),
         incompatible_reason: Set(None),
         status: Set("active".into()),
@@ -1914,7 +1855,6 @@ async fn seed_edge_box(
         held_until: Set(None),
         last_update_result: Set(None),
         last_update_at: Set(None),
-        auth_mode: Set("bearer".into()),
         edge_compatibility_json: Set(None),
         incompatible_reason: Set(None),
         status: Set(status.into()),
@@ -4129,14 +4069,15 @@ async fn list_fleet_devices_scoped_to_workspace() {
     assert_eq!(body.as_array().unwrap().len(), 0);
 }
 
-// ── Phase 7 — retroactive claim for legacy bearer boxes ─────────────────────
+// ── Retroactive claim — attach a self-enrolled device to an
+//    operator-registered edge_box ─────────────────────────────────
 
 #[tokio::test]
 async fn bind_existing_succeeds_for_clean_pair() {
     let db = test_db().await;
     let (ws_a, site_a) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_id, _bearer) = register_box(&db, ws_a, site_a).await;
+    let edge_box_id = register_box_unbound(&db, ws_a, site_a).await;
     let (device_id, _secret, _code) = enroll_test_device(&db).await;
 
     let resp = app
@@ -4194,7 +4135,7 @@ async fn bind_existing_rejects_cross_workspace_edge_box() {
     let (ws_a, _site_a) = seed_site(&db).await;
     let (_ws_b, site_b) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_b, _bearer) = register_box(&db, _ws_b, site_b).await;
+    let edge_box_b = register_box_unbound(&db, _ws_b, site_b).await;
     let (device_id, _secret, _code) = enroll_test_device(&db).await;
 
     let resp = app
@@ -4218,7 +4159,7 @@ async fn bind_existing_404s_for_unenrolled_device() {
     let db = test_db().await;
     let (ws_a, site_a) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_id, _bearer) = register_box(&db, ws_a, site_a).await;
+    let edge_box_id = register_box_unbound(&db, ws_a, site_a).await;
 
     let resp = app
         .oneshot(
@@ -4241,7 +4182,7 @@ async fn bind_existing_409s_when_edge_box_already_linked() {
     let db = test_db().await;
     let (ws_a, site_a) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_id, _bearer) = register_box(&db, ws_a, site_a).await;
+    let edge_box_id = register_box_unbound(&db, ws_a, site_a).await;
     let (device_a, _, _) = enroll_test_device(&db).await;
     let (device_b, _, _) = enroll_test_device(&db).await;
 
@@ -4280,109 +4221,17 @@ async fn bind_existing_409s_when_edge_box_already_linked() {
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
 
-// ── Phase 3 — JWT auth path ─────────────────────────────────────────────────
+// ── JWT auth path ──────────────────────────────────────────────────────────
 //
-// The middleware learns to accept JWTs in addition to the legacy
-// bearer. These tests exercise the JWT path end-to-end against
+// These tests exercise the per-device JWT path end-to-end against
 // /control/boxes/{id}/config (a representative GET behind the
-// middleware) plus the auth_mode column stamp and the hard-cutover
-// env switch.
-
-/// Set up a fully-claimed device + edge box, return (edge_box_id,
-/// device_id, device_secret, legacy_bearer). The bearer is what
-/// the device materialized at bootstrap; the secret is what the
-/// JWT mint signs against.
-async fn seed_jwt_authable_box(
-    db: &sea_orm::DatabaseConnection,
-    app: axum::Router,
-    workspace_id: Uuid,
-    site_id: Uuid,
-) -> (Uuid, Uuid, Vec<u8>, String) {
-    let (edge_box_id, bearer) = register_box(&db, workspace_id, site_id).await;
-    let (device_id, secret, _claim_code) = enroll_test_device(&db).await;
-
-    // Use bind_existing to attach the device to the just-registered
-    // edge_box. Same shape as Phase 7 retroactive-claim — clean,
-    // no announce/bootstrap dance needed.
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/{workspace_id}/fleet/claims/bind-existing"))
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({ "device_id": device_id, "edge_box_id": edge_box_id }).to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    // Sanity: nothing about the workspace's edge_box was mutated;
-    // the bearer above still works as well.
-    let _ = db;
-    (edge_box_id, device_id, secret, bearer)
-}
+// middleware). `register_box` already mints a JWT-backed credential
+// via `enroll_test_device` + `bind_existing`; the additional tests
+// below cover the rejection paths.
 
 fn mint_test_jwt(device_id: Uuid, secret: &[u8]) -> String {
     let exp = chrono::Utc::now().timestamp() + 3600;
     oxy_cameras::auth::jwt::sign(device_id, secret, exp)
-}
-
-#[tokio::test]
-async fn jwt_auth_accepted_on_control_endpoint() {
-    assert_airhouse_disabled_in_env();
-    let db = test_db().await;
-    let (workspace_id, site_id) = seed_site(&db).await;
-    let app = router(db.clone());
-    let (edge_box_id, device_id, secret, _bearer) =
-        seed_jwt_authable_box(&db, app.clone(), workspace_id, site_id).await;
-
-    let jwt = mint_test_jwt(device_id, &secret);
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/control/boxes/{edge_box_id}/config"))
-                .header(AUTHORIZATION, format!("Bearer {jwt}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "JWT auth should succeed");
-}
-
-#[tokio::test]
-async fn jwt_auth_stamps_auth_mode_on_edge_box() {
-    assert_airhouse_disabled_in_env();
-    let db = test_db().await;
-    let (workspace_id, site_id) = seed_site(&db).await;
-    let app = router(db.clone());
-    let (edge_box_id, device_id, secret, _bearer) =
-        seed_jwt_authable_box(&db, app.clone(), workspace_id, site_id).await;
-
-    let jwt = mint_test_jwt(device_id, &secret);
-    let _ = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/control/boxes/{edge_box_id}/config"))
-                .header(AUTHORIZATION, format!("Bearer {jwt}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    use sea_orm::EntityTrait;
-    let row = oxy_cameras::entities::edge_boxes::Entity::find_by_id(edge_box_id)
-        .one(&db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(row.auth_mode, "jwt", "auth_mode should be stamped");
 }
 
 #[tokio::test]
@@ -4391,10 +4240,24 @@ async fn jwt_auth_rejects_expired_token() {
     let db = test_db().await;
     let (workspace_id, site_id) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_id, device_id, secret, _bearer) =
-        seed_jwt_authable_box(&db, app.clone(), workspace_id, site_id).await;
+    let (edge_box_id, _jwt) = register_box(&db, workspace_id, site_id).await;
 
-    // exp far in the past, outside the skew window.
+    // Look up the device_id from the materialized claim so we can
+    // sign a deliberately expired token against the right secret.
+    let claim = oxy_cameras::entities::device_claims::Entity::find()
+        .filter(oxy_cameras::entities::device_claims::Column::EdgeBoxId.eq(edge_box_id))
+        .one(&db)
+        .await
+        .unwrap()
+        .expect("claim row");
+    let device_id = claim.device_id;
+    let device = oxy_cameras::entities::device_registry::Entity::find_by_id(device_id)
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let secret = oxy_cameras::secrets::open(&device.device_secret).unwrap();
+
     let expired_exp = chrono::Utc::now().timestamp() - 600;
     let jwt = oxy_cameras::auth::jwt::sign(device_id, &secret, expired_exp);
     let resp = app
@@ -4417,13 +4280,18 @@ async fn jwt_auth_rejects_signature_with_wrong_secret() {
     let db = test_db().await;
     let (workspace_id, site_id) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_id, device_id, _secret, _bearer) =
-        seed_jwt_authable_box(&db, app.clone(), workspace_id, site_id).await;
+    let (edge_box_id, _jwt) = register_box(&db, workspace_id, site_id).await;
+    let claim = oxy_cameras::entities::device_claims::Entity::find()
+        .filter(oxy_cameras::entities::device_claims::Column::EdgeBoxId.eq(edge_box_id))
+        .one(&db)
+        .await
+        .unwrap()
+        .expect("claim row");
 
     // Sign with the wrong secret — looks structurally valid, fails
     // verification.
     let other_secret = oxy_cameras::service::fleet::generate_device_secret();
-    let jwt = mint_test_jwt(device_id, &other_secret);
+    let jwt = mint_test_jwt(claim.device_id, &other_secret);
     let resp = app
         .oneshot(
             Request::builder()
@@ -4463,77 +4331,6 @@ async fn jwt_auth_rejects_when_no_active_claim() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn bearer_auth_emits_sunset_header_when_configured() {
-    assert_airhouse_disabled_in_env();
-    let db = test_db().await;
-    let (workspace_id, site_id) = seed_site(&db).await;
-    let app = router(db.clone());
-    let (edge_box_id, bearer) = register_box(&db, workspace_id, site_id).await;
-
-    // SAFETY: tests run single-threaded under nextest's default
-    // and env mutation is local to this test.
-    let sunset = "Sun, 31 Dec 2026 23:59:59 GMT";
-    unsafe {
-        std::env::set_var("OXY_BEARER_SUNSET_DATE", sunset);
-    }
-
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/control/boxes/{edge_box_id}/config"))
-                .header(AUTHORIZATION, format!("Bearer {bearer}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(
-        resp.headers().get("sunset").and_then(|v| v.to_str().ok()),
-        Some(sunset)
-    );
-
-    unsafe {
-        std::env::remove_var("OXY_BEARER_SUNSET_DATE");
-    }
-}
-
-#[tokio::test]
-async fn bearer_rejected_by_default_after_cutover() {
-    assert_airhouse_disabled_in_env();
-    let db = test_db().await;
-    let (workspace_id, site_id) = seed_site(&db).await;
-    let app = router(db.clone());
-    let (edge_box_id, bearer) = register_box(&db, workspace_id, site_id).await;
-
-    // `register_box` sets OXY_ALLOW_LEGACY_BEARER=true so the rest
-    // of the suite can keep using the bearer flow. Here we want to
-    // verify the post-cutover *default*, so we remove the opt-out
-    // before issuing the request.
-    //
-    // SAFETY: nextest runs each #[tokio::test] in its own process,
-    // so removing the env var doesn't affect other tests.
-    unsafe {
-        std::env::remove_var("OXY_ALLOW_LEGACY_BEARER");
-    }
-
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/control/boxes/{edge_box_id}/config"))
-                .header(AUTHORIZATION, format!("Bearer {bearer}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -4619,7 +4416,7 @@ async fn audit_log_records_bind_existing() {
     let db = test_db().await;
     let (ws_a, site_a) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_id, _bearer) = register_box(&db, ws_a, site_a).await;
+    let edge_box_id = register_box_unbound(&db, ws_a, site_a).await;
     let (device_id, _secret, _code) = enroll_test_device(&db).await;
 
     let resp = app
@@ -5106,43 +4903,9 @@ async fn prepared_device_can_bootstrap_directly() {
             .unwrap(),
         workspace_id
     );
-    assert!(!boot["bearer"].as_str().unwrap().is_empty());
 }
 
 // ── Merged fleet view ───────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn fleet_list_returns_legacy_edge_box_with_no_identity() {
-    let db = test_db().await;
-    let (workspace_id, site_id) = seed_site(&db).await;
-    let app = router(db.clone());
-    let (edge_box_id, _bearer) = register_box(&db, workspace_id, site_id).await;
-
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/{workspace_id}/cameras/fleet"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = body_json(resp).await;
-    let rows = body.as_array().unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["claim_status"].as_str(), Some("legacy"));
-    assert_eq!(
-        rows[0]["edge_box"]["id"]
-            .as_str()
-            .unwrap()
-            .parse::<Uuid>()
-            .unwrap(),
-        edge_box_id
-    );
-    assert!(rows[0]["device_id"].is_null());
-}
 
 #[tokio::test]
 async fn fleet_list_surfaces_pending_claim_without_edge_box() {
@@ -5191,29 +4954,11 @@ async fn fleet_list_surfaces_pending_claim_without_edge_box() {
 }
 
 #[tokio::test]
-async fn fleet_list_merges_edge_box_and_claim_after_bind() {
+async fn fleet_list_returns_claimed_edge_box() {
     let db = test_db().await;
     let (workspace_id, site_id) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_id, _bearer) = register_box(&db, workspace_id, site_id).await;
-    let (device_id, _secret, _code) = enroll_test_device(&db).await;
-
-    // Retroactive bind — flips the legacy edge_box to `claimed`.
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/{workspace_id}/fleet/claims/bind-existing"))
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({ "device_id": device_id, "edge_box_id": edge_box_id }).to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    let (edge_box_id, _jwt) = register_box(&db, workspace_id, site_id).await;
 
     let resp = app
         .oneshot(
@@ -5227,7 +4972,7 @@ async fn fleet_list_merges_edge_box_and_claim_after_bind() {
         .unwrap();
     let body = body_json(resp).await;
     let rows = body.as_array().unwrap();
-    assert_eq!(rows.len(), 1, "one merged row for the linked box");
+    assert_eq!(rows.len(), 1, "one row for the registered box");
     assert_eq!(rows[0]["claim_status"].as_str(), Some("claimed"));
     assert_eq!(
         rows[0]["edge_box"]["id"]
@@ -5237,14 +4982,7 @@ async fn fleet_list_merges_edge_box_and_claim_after_bind() {
             .unwrap(),
         edge_box_id
     );
-    assert_eq!(
-        rows[0]["device_id"]
-            .as_str()
-            .unwrap()
-            .parse::<Uuid>()
-            .unwrap(),
-        device_id
-    );
+    assert!(rows[0]["device_id"].is_string());
 }
 
 #[tokio::test]
@@ -5272,11 +5010,11 @@ async fn fleet_list_scoped_per_workspace() {
 // ── Remove device ──────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn remove_member_retires_edge_box_and_revokes_bearer() {
+async fn remove_member_retires_edge_box_and_revokes_claim() {
     let db = test_db().await;
     let (workspace_id, site_id) = seed_site(&db).await;
     let app = router(db.clone());
-    let (edge_box_id, _bearer) = register_box(&db, workspace_id, site_id).await;
+    let (edge_box_id, _jwt) = register_box(&db, workspace_id, site_id).await;
 
     let resp = app
         .clone()
@@ -5295,8 +5033,9 @@ async fn remove_member_retires_edge_box_and_revokes_bearer() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = body_json(resp).await;
     assert_eq!(body["edge_box_retired"].as_bool(), Some(true));
-    assert!(body["bearers_revoked"].as_i64().unwrap() >= 1);
-    assert_eq!(body["claim_revoked"].as_bool(), Some(false));
+    // `register_box` binds a device claim alongside the edge_box, so
+    // removing the box also revokes the linked claim.
+    assert_eq!(body["claim_revoked"].as_bool(), Some(true));
 
     // Fleet list should no longer include the retired box.
     let resp = app

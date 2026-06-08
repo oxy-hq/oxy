@@ -52,11 +52,6 @@ pub struct Model {
     /// via the health endpoint after an update attempt.
     pub last_update_result: Option<String>,
     pub last_update_at: Option<DateTimeWithTimeZone>,
-    /// `'bearer' | 'jwt'`. Stamped by the auth middleware on every
-    /// successful auth so the operator dashboard can show the
-    /// bearer → JWT rollout drain. Defaults to `'bearer'` so
-    /// pre-Phase-3 rows show up correctly.
-    pub auth_mode: String,
     /// CI #3 — compatibility manifest the worker copied out of
     /// `/opt/oxy-edge/compatibility.json` in its container image.
     /// Shape: `{edge_version, git_sha, built_at, protocol_version,
@@ -82,8 +77,6 @@ pub enum Relation {
     Site,
     #[sea_orm(has_many = "super::cameras::Entity")]
     Cameras,
-    #[sea_orm(has_many = "super::edge_box_tokens::Entity")]
-    EdgeBoxTokens,
 }
 
 impl Related<super::sites::Entity> for Entity {
@@ -95,12 +88,6 @@ impl Related<super::sites::Entity> for Entity {
 impl Related<super::cameras::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Cameras.def()
-    }
-}
-
-impl Related<super::edge_box_tokens::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::EdgeBoxTokens.def()
     }
 }
 

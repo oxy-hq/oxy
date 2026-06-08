@@ -1,15 +1,16 @@
 """Edge worker entrypoint.
 
 Lifecycle:
-  1. Read edge_box_id + bearer token from env (operator pre-registered
-     this box via Oxy's POST /{workspace_id}/cameras/edge-boxes; the token was handed
-     to the installer at that time).
-  2. Fetch camera config from Oxy via GET /control/boxes/{id}/config.
-  3. Spawn one CameraReader per camera (threads, since OpenCV is
+  1. Read edge_box_id from env (provision.py wrote it after the
+     announce → bootstrap dance against the control plane).
+  2. Load the device identity from disk and build the JWT-minting
+     auth flow; every /control/* call signs a fresh JWT.
+  3. Fetch camera config from Oxy via GET /control/boxes/{id}/config.
+  4. Spawn one CameraReader per camera (threads, since OpenCV is
      blocking).
-  4. Spawn outbox drain task.
-  5. Spawn box + per-camera health tasks.
-  6. Spawn config poller (re-sync every CONFIG_POLL_INTERVAL_S).
+  5. Spawn outbox drain task.
+  6. Spawn box + per-camera health tasks.
+  7. Spawn config poller (re-sync every CONFIG_POLL_INTERVAL_S).
 
 Failure posture:
   - Config fetch retries with backoff on transient errors.
@@ -18,9 +19,8 @@ Failure posture:
 
 Required env:
   - OXY_URL              base URL of the Oxy server (e.g. https://api.oxy.tech)
-  - EDGE_BOX_ID          UUID of this edge box (printed by the operator's
-                         POST /{workspace_id}/cameras/edge-boxes response)
-  - EDGE_BOX_TOKEN       bearer token (returned by the same register call)
+  - EDGE_BOX_ID          UUID of this edge box, written to edge.env by
+                         worker.provision after a successful bootstrap.
 
 Optional env:
   - OUTBOX_PATH          default: /var/lib/outbox/<edge_box_id>/outbox.sqlite
@@ -44,7 +44,7 @@ from .camera import CameraReader
 from .config import CameraConfig, EdgeConfig
 from .health import box_health_loop, camera_health_loop
 from .identity import DeviceIdentity
-from .jwt_mint import BearerAuth, DeviceJwtAuth, JwtMinter
+from .jwt_mint import DeviceJwtAuth, JwtMinter
 from .log import attach_shipper, log
 from .log_shipper import LogShipper
 from .mtx_client import MtxClient
@@ -297,7 +297,6 @@ async def _bandwidth_reporter(
 async def run() -> None:
     oxy_url = _required_env("OXY_URL")
     edge_box_id_str = _required_env("EDGE_BOX_ID")
-    edge_box_token = _required_env("EDGE_BOX_TOKEN")
     box_id = UUID(edge_box_id_str)
 
     # Per-replica outbox path so `docker compose --scale edge=N` doesn't
@@ -318,8 +317,7 @@ async def run() -> None:
     log("info", "edge.boot",
         edge_box_id=str(box_id),
         oxy_url=oxy_url,
-        outbox=outbox_path,
-        token_prefix=edge_box_token[:8])
+        outbox=outbox_path)
 
     outbox = Outbox(outbox_path)
     queue: asyncio.Queue = asyncio.Queue(maxsize=10_000)
@@ -351,34 +349,23 @@ async def run() -> None:
     # entirely (useful for tests / dev with no MTX in the stack).
     mtx_api_url = os.environ.get("MEDIAMTX_API_URL", "http://mediamtx:9997").strip()
 
-    # Auth mode resolution (IoT Phase 3). Two paths:
-    #
-    #   - **JWT** (preferred): the device has a persisted identity
-    #     from factory enrollment. We mint a fresh JWT every
-    #     ~55min, signed with the on-disk HMAC secret. Operator
-    #     sees `auth_mode='jwt'` on the box's row in the Fleet
-    #     tab.
-    #   - **Bearer** (legacy): no identity file, fall back to the
-    #     static EDGE_BOX_TOKEN. Boxes shipped before Phase 1
-    #     stay on this path until the operator (a) flashes the
-    #     new factory image AND (b) runs the retroactive-claim
-    #     flow.
-    #
-    # We resolve at boot and never switch paths mid-process, so
-    # there's no per-request branching once the auth object is
-    # built.
+    # Auth: per-device JWT signed with the HMAC secret persisted at
+    # factory enroll. We mint a fresh JWT every ~55min and inject it
+    # via `DeviceJwtAuth` on every /control/* request. A missing
+    # identity file is a hard configuration error — the device can't
+    # authenticate without it, so fail loud instead of silently
+    # 401-ing forever.
     identity = DeviceIdentity.load()
-    if identity is not None:
-        minter = JwtMinter(identity.device_id, identity.device_secret)
-        control_auth = DeviceJwtAuth(minter)
-        log("info", "edge.auth_mode",
-            mode="jwt",
-            device_id=str(identity.device_id))
-    else:
-        control_auth = BearerAuth(edge_box_token)
-        log("info", "edge.auth_mode",
-            mode="bearer",
-            reason="no device identity file; staying on legacy bearer")
+    if identity is None:
+        raise StartupError(
+            "no device identity at /var/lib/oxy/device.json — "
+            "rerun the 'Add device' install snippet on this box."
+        )
+    minter = JwtMinter(identity.device_id, identity.device_secret)
+    control_auth = DeviceJwtAuth(minter)
+    log("info", "edge.auth_mode",
+        mode="jwt",
+        device_id=str(identity.device_id))
 
     # Headers carry everything EXCEPT auth — the auth object
     # injects `Authorization` per-request so JWT rotation is
@@ -428,6 +415,20 @@ async def run() -> None:
     if edge_funnel_hostname:
         headers["X-Edge-Funnel-Hostname"] = edge_funnel_hostname
         log("info", "edge.funnel_hostname", value=edge_funnel_hostname)
+    else:
+        # Loud "unset" log makes "is the header being sent?" one
+        # grep instead of inferring from absence. The previous silent
+        # path produced WebRTC-session "edge box has no funnel_hostname
+        # yet" failures that took source-diving to diagnose.
+        log(
+            "warn",
+            "edge.funnel_hostname_unset",
+            hint=(
+                "EDGE_FUNNEL_HOSTNAME is empty — WebRTC live preview will "
+                "be unavailable. Check /var/lib/outbox/funnel.env on the "
+                "host and that the tailscale-funnel-init sidecar succeeded."
+            ),
+        )
 
     async with (
         httpx.AsyncClient(

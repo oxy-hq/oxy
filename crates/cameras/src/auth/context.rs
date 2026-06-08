@@ -2,9 +2,8 @@
 //!
 //! Every authenticated `/control/*` handler can rely on these four
 //! UUIDs being present: which edge box is calling, which site it
-//! belongs to, which workspace owns the site, and which token row
-//! authenticated the request (for last-used tracking + revocation
-//! audit).
+//! belongs to, which workspace owns the site, and which device_claims
+//! row authorised the request (for per-device audit correlation).
 
 use sea_orm::prelude::Uuid;
 use serde::Serialize;
@@ -16,9 +15,9 @@ pub struct EdgeContext {
     /// Loose cross-aggregate ref — the Workspace that owns this fleet.
     /// Used by the ingest path to pick the right Airhouse tenant.
     pub workspace_id: Uuid,
-    /// Which `edge_box_tokens` row authenticated the request.
-    pub token_id: Uuid,
-    /// First 8 chars of the bearer — included so handlers can log
-    /// "edge sim-abc12345 made request X" without revealing the secret.
-    pub token_prefix: String,
+    /// Which `device_claims` row authorised the request. Same value
+    /// for every `/control/*` call from this device until the claim
+    /// is revoked or rotated; useful for correlating per-device
+    /// activity in audit / debug logs.
+    pub claim_id: Uuid,
 }

@@ -1,12 +1,9 @@
-//! Edge-device JWT auth (IoT Phase 3).
+//! Edge-device JWT auth.
 //!
-//! Per-device JWTs replace the static `edge_box_tokens` bearer for
-//! `/control/*`. Each device mints a short-lived (1h) token using
-//! the HMAC-SHA256 secret already provisioned at factory enroll
-//! (`device_registry.device_secret`) and sends it in the same
-//! `Authorization: Bearer …` header. The server detects the
-//! three-segment shape and routes to verification instead of the
-//! bearer lookup.
+//! Each device mints a short-lived (1h) token using the HMAC-SHA256
+//! secret already provisioned at factory enroll
+//! (`device_registry.device_secret`) and sends it in an
+//! `Authorization: Bearer …` header.
 //!
 //! ## Wire shape
 //!
@@ -176,16 +173,13 @@ pub fn sign(device_id: Uuid, device_secret: &[u8], exp_secs: i64) -> String {
     format!("{header_b64}.{payload_b64}.{sig_b64}")
 }
 
-/// Loose JWT-shape check used by the middleware to decide which
-/// path (JWT vs legacy bearer) to enter. `true` means "looks like
-/// a JWT, try verify"; `false` means "definitely not a JWT, do
-/// bearer lookup." Cheap — no allocation, no base64 decode.
+/// Loose JWT-shape check the middleware uses to short-circuit
+/// non-JWT credentials before attempting verification. `true`
+/// means "looks like a JWT, try verify"; `false` means "reject as
+/// malformed." Cheap — no allocation, no base64 decode.
 ///
 /// We require all three segments to be non-empty and consist only
-/// of base64url chars (letters, digits, `-`, `_`). The bearer
-/// tokens minted by [`crate::auth::token::mint`] are random
-/// base64 of a fixed length and never contain dots, so the two
-/// shapes are unambiguous on the wire.
+/// of base64url chars (letters, digits, `-`, `_`).
 pub fn looks_like_jwt(s: &str) -> bool {
     let mut count = 0usize;
     let mut current_empty = true;

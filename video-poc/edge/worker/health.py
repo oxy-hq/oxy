@@ -48,6 +48,50 @@ def _load_compatibility() -> dict[str, Any] | None:
 
 
 _COMPATIBILITY = _load_compatibility()
+
+
+# Statuses we treat as transient — usually an ALB target hiccup, a
+# brief pgwire pool exhaustion on Oxy, or a network reset. Bounded
+# retry recovers the sample without dropping it. Auth / validation
+# errors (4xx) fall through immediately — retry won't help and
+# would just spam the logs.
+_TRANSIENT_STATUSES = frozenset({502, 503, 504})
+
+
+async def _post_with_retry(
+    client: httpx.AsyncClient,
+    path: str,
+    payload: dict,
+    op: str,
+    **extra_log: object,
+) -> None:
+    """POST with bounded retry on transient 5xx + network errors.
+
+    Three attempts, 1s -> 2s -> 4s backoff. Total worst-case wall
+    clock ~7s, comfortably inside the loop's interval. Raises the
+    last exception so the caller's existing failure log fires for
+    persistent issues.
+    """
+    backoff = 1.0
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            r = await client.post(path, json=payload)
+            r.raise_for_status()
+            if attempt > 0:
+                log("info", f"{op}_recovered", attempts=attempt + 1, **extra_log)
+            return
+        except httpx.HTTPStatusError as e:
+            last_err = e
+            if e.response.status_code not in _TRANSIENT_STATUSES:
+                break  # 4xx / non-transient 5xx — retry won't help
+        except httpx.RequestError as e:
+            last_err = e  # connection reset, DNS hiccup, etc.
+        if attempt < 2:
+            await asyncio.sleep(backoff)
+            backoff *= 2
+    if last_err is not None:
+        raise last_err
 if _COMPATIBILITY:
     log(
         "info",
@@ -81,9 +125,11 @@ async def box_health_loop(
             }
             if _COMPATIBILITY is not None:
                 payload["compatibility"] = _COMPATIBILITY
-            r = await client.post(f"/control/boxes/{box_id}/health", json=payload)
-            r.raise_for_status()
+            await _post_with_retry(
+                client, f"/control/boxes/{box_id}/health", payload, "health.box_push"
+            )
         except Exception as e:
+            # Final-failure log (after retries inside _post_with_retry).
             log("warn", "health.box_push_failed", error=str(e))
         await asyncio.sleep(interval_s)
 
@@ -105,8 +151,13 @@ async def camera_health_loop(
                 "decoder_errors": int(stats.get("decoder_errors") or 0),
                 "reconnect_count": int(stats.get("reconnect_count") or 0),
             }
-            r = await client.post(f"/control/cameras/{camera_id}/health", json=payload)
-            r.raise_for_status()
+            await _post_with_retry(
+                client,
+                f"/control/cameras/{camera_id}/health",
+                payload,
+                "health.camera_push",
+                camera_id=str(camera_id),
+            )
         except Exception as e:
             log("warn", "health.camera_push_failed", camera_id=str(camera_id), error=str(e))
         await asyncio.sleep(interval_s)

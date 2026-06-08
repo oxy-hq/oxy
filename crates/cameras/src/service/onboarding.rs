@@ -93,7 +93,11 @@ pub async fn preview(unifi: &UnifiClient) -> ServiceResult<OnboardingPreview> {
 pub struct ImportInput {
     /// Workspace the imported sites are scoped to (loose UUID column).
     pub workspace_id: Uuid,
-    /// Substring filter for `host_name`. `None` imports the entire fleet.
+    /// Allowlist of UniFi `console_id`s to import. Empty/None imports
+    /// every host returned by the API.
+    pub console_ids: Option<Vec<String>>,
+    /// Legacy substring filter on site name. Ignored when
+    /// `console_ids` is non-empty.
     pub site_filter: Option<String>,
 }
 
@@ -123,9 +127,19 @@ pub async fn import(
     let hosts = unifi.list_hosts().await?;
     let device_groups = unifi.list_devices().await?;
 
+    let console_allowlist: Option<std::collections::HashSet<String>> = input
+        .console_ids
+        .as_ref()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.iter().cloned().collect());
+
     for h in hosts {
         let host_name = site_name_from_host(&h);
-        if let Some(filter) = &input.site_filter
+        if let Some(allowed) = &console_allowlist {
+            if !allowed.contains(&h.id) {
+                continue;
+            }
+        } else if let Some(filter) = &input.site_filter
             && !host_name.to_lowercase().contains(&filter.to_lowercase())
         {
             continue;
@@ -200,7 +214,6 @@ pub async fn import(
             held_until: NotSet,
             last_update_result: NotSet,
             last_update_at: NotSet,
-            auth_mode: NotSet,
             edge_compatibility_json: NotSet,
             incompatible_reason: NotSet,
             status: Set("active".into()),

@@ -66,56 +66,6 @@ pub struct EdgeBoxWithSite {
 /// every operator-facing read.
 pub const UNIFI_CONTROLLER_MODEL: &str = "unifi-controller";
 
-/// Fleet-wide rollup of `edge_boxes.auth_mode` for the operator
-/// dashboard. Post-cutover the summary still lets operators see at
-/// a glance which boxes are about to 401 (bearer) vs healthy (jwt)
-/// vs never-booted (unknown).
-///
-/// Three buckets:
-///   - `jwt` — box has authenticated via Phase 3 JWT at least once.
-///     Healthy under the JWT-only default.
-///   - `bearer` — box is still on the legacy static bearer. Will
-///     401 on next ping (set `OXY_ALLOW_LEGACY_BEARER=true` as an
-///     emergency lever during a rolling upgrade if needed).
-///   - `unknown` — box exists but has never authenticated. Treated
-///     as "needs attention" so freshly-prepared devices that
-///     haven't booted yet don't get lost.
-///
-/// UniFi controller rows are excluded — they aren't real boxes
-/// and don't speak the device-token protocol.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct AuthModeSummary {
-    pub jwt: u32,
-    pub bearer: u32,
-    pub unknown: u32,
-}
-
-pub async fn auth_mode_summary(
-    db: &DatabaseConnection,
-    workspace_id: Uuid,
-) -> ServiceResult<AuthModeSummary> {
-    let rows = edge_boxes::Entity::find()
-        .find_also_related(sites::Entity)
-        .filter(sites::Column::WorkspaceId.eq(workspace_id))
-        .filter(edge_boxes::Column::HardwareModel.ne(UNIFI_CONTROLLER_MODEL))
-        .all(db)
-        .await?;
-
-    let mut summary = AuthModeSummary {
-        jwt: 0,
-        bearer: 0,
-        unknown: 0,
-    };
-    for (eb, _site) in rows {
-        match eb.auth_mode.as_str() {
-            "jwt" => summary.jwt += 1,
-            "bearer" => summary.bearer += 1,
-            _ => summary.unknown += 1,
-        }
-    }
-    Ok(summary)
-}
-
 pub async fn list_edge_boxes(
     db: &DatabaseConnection,
     workspace_id: Uuid,
@@ -164,9 +114,6 @@ pub async fn list_edge_boxes(
 /// edge_box and flips the claim to `claimed`).
 ///
 /// We emit one row per physical box:
-///   - **Real edge_box** with no claim: legacy bearer-auth box
-///     registered before the IoT identity layer existed. The
-///     identity columns are `None`.
 ///   - **Real edge_box** with a claimed device_claim: the
 ///     post-Phase-3 case. All columns populated.
 ///   - **Pending claim** with no edge_box: a freshly-added
@@ -192,10 +139,6 @@ pub struct FleetMemberRow {
 /// What state the device-identity layer thinks this box is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaimStatus {
-    /// No `device_claims` row — pre-IoT box on the bearer path.
-    /// `device_id` and friends are `None`. Operator can use the
-    /// retroactive-claim flow to attach an identity.
-    Legacy,
     /// Operator pre-claimed; device hasn't bootstrapped yet.
     /// `edge_box` is `None`.
     Pending,
@@ -207,7 +150,6 @@ pub enum ClaimStatus {
 impl ClaimStatus {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Legacy => "legacy",
             Self::Pending => "pending_claim",
             Self::Claimed => "claimed",
         }
@@ -276,35 +218,29 @@ pub async fn list_fleet_members(
         };
         let site_id = site.id;
         let site_name = site.name;
-        if let Some(claim) = claim_by_edge_box.get(&eb.id) {
-            let dev = devices.get(&claim.device_id);
-            out.push(FleetMemberRow {
-                edge_box: Some(eb),
-                site_id,
-                site_name,
-                device_id: Some(claim.device_id),
-                claim_status: match claim.status.as_str() {
-                    "pending_claim" => ClaimStatus::Pending,
-                    _ => ClaimStatus::Claimed,
-                },
-                claim_code: dev.map(|d| d.claim_code.clone()),
-                sku: dev.map(|d| d.sku.clone()),
-                hardware_revision: dev.map(|d| d.hardware_revision.clone()),
-                last_announce_at: dev.and_then(|d| d.last_announce_at),
-            });
-        } else {
-            out.push(FleetMemberRow {
-                edge_box: Some(eb),
-                site_id,
-                site_name,
-                device_id: None,
-                claim_status: ClaimStatus::Legacy,
-                claim_code: None,
-                sku: None,
-                hardware_revision: None,
-                last_announce_at: None,
-            });
-        }
+        let Some(claim) = claim_by_edge_box.get(&eb.id) else {
+            // Every materialized edge_box should have a matching
+            // device_claim — `bootstrap_device` creates them in the
+            // same transaction. A row without one is leftover data
+            // from before the IoT identity layer; skip it rather
+            // than render an orphan.
+            continue;
+        };
+        let dev = devices.get(&claim.device_id);
+        out.push(FleetMemberRow {
+            edge_box: Some(eb),
+            site_id,
+            site_name,
+            device_id: Some(claim.device_id),
+            claim_status: match claim.status.as_str() {
+                "pending_claim" => ClaimStatus::Pending,
+                _ => ClaimStatus::Claimed,
+            },
+            claim_code: dev.map(|d| d.claim_code.clone()),
+            sku: dev.map(|d| d.sku.clone()),
+            hardware_revision: dev.map(|d| d.hardware_revision.clone()),
+            last_announce_at: dev.and_then(|d| d.last_announce_at),
+        });
     }
 
     // Pass 2 — pending claims that haven't materialized an

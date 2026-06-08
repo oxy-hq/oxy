@@ -684,7 +684,6 @@ mod tests {
             held_until: None,
             last_update_result: result.map(String::from),
             last_update_at: at,
-            auth_mode: "jwt".into(),
             edge_compatibility_json: None,
             incompatible_reason: None,
             updated_at: now,

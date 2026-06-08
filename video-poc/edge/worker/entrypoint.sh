@@ -116,15 +116,32 @@ if [[ -f "$EDGE_ENV_PATH" ]]; then
 fi
 
 # Source the tailscale-funnel-init's hostname write. May not
-# exist (TS_AUTHKEY unset, or the sidecar hasn't run yet); in
-# that case the worker just sees an empty EDGE_FUNNEL_HOSTNAME
-# and logs `edge.funnel_hostname_unset`. Live preview falls back
-# to "not available" with a calm explanation.
+# exist on a clean boot if the sidecar hasn't written it yet;
+# we poll briefly (configurable; default 30s) so the common
+# race — worker started before funnel-init finished its login +
+# serve dance — doesn't require a manual `docker compose restart
+# edge` to recover. With TS_AUTHKEY unset the file never
+# appears; the wait expires, the worker comes up with
+# `funnel_hostname_unset` and live preview is just disabled.
+FUNNEL_ENV_WAIT_S="${OXY_FUNNEL_ENV_WAIT_S:-30}"
+waited=0
+while [[ ! -f "$FUNNEL_ENV_PATH" && "$waited" -lt "$FUNNEL_ENV_WAIT_S" ]]; do
+    if (( waited == 0 )); then
+        echo "{\"ts\":\"$(date -u +%FT%T)\",\"level\":\"info\",\"msg\":\"entrypoint.waiting_for_funnel_env\",\"path\":\"${FUNNEL_ENV_PATH}\",\"max_wait_s\":${FUNNEL_ENV_WAIT_S}}"
+    fi
+    sleep 1
+    waited=$((waited + 1))
+done
 if [[ -f "$FUNNEL_ENV_PATH" ]]; then
+    if (( waited > 0 )); then
+        echo "{\"ts\":\"$(date -u +%FT%T)\",\"level\":\"info\",\"msg\":\"entrypoint.funnel_env_ready\",\"waited_s\":${waited}}"
+    fi
     set -a
     # shellcheck disable=SC1090
     source "$FUNNEL_ENV_PATH"
     set +a
+elif (( waited > 0 )); then
+    echo "{\"ts\":\"$(date -u +%FT%T)\",\"level\":\"warn\",\"msg\":\"entrypoint.funnel_env_wait_timed_out\",\"waited_s\":${waited}}"
 fi
 
 # Restore the operator's explicit override if any. Has to

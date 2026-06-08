@@ -84,6 +84,37 @@ fn http_client() -> &'static reqwest::Client {
 /// struggling and we'd rather fail fast than tie up an Oxy thread.
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Build the base URL Oxy should dial for HLS / snapshot / clip
+/// requests against this edge box.
+///
+/// Preference order:
+///   1. **Funnel hostname**: `https://<funnel>` — single public hostname
+///      that the box's nginx gateway demultiplexes by path. This is
+///      what lets a cloud-hosted Oxy reach a tailnet-only box without
+///      sharing a tailnet itself; the box's Tailscale Funnel publishes
+///      port 443 publicly, nginx routes /preview/, /list, /get,
+///      /cam-X/{whep,index.m3u8,…} to the correct upstream.
+///   2. **Direct tailnet dial**: `http://<tailscale_ip>:<port>` — the
+///      original shape, kept as a fallback for boxes that haven't
+///      enabled Funnel (dev compose, prod-tailnet deployments where
+///      Oxy is on the same tailnet anyway).
+///
+/// Returns `Unavailable` only when *both* are absent, since one or
+/// the other is required for any preview/playback round-trip.
+fn upstream_base(edge_box: &edge_boxes::Model, fallback_port: u16) -> ServiceResult<String> {
+    if let Some(funnel) = edge_box.funnel_hostname.as_deref()
+        && !funnel.trim().is_empty()
+    {
+        return Ok(format!("https://{funnel}"));
+    }
+    let tailscale_ip = edge_box.tailscale_ip.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable(
+            "edge box has no reachable address (neither funnel_hostname nor tailscale_ip set)",
+        )
+    })?;
+    Ok(format!("http://{tailscale_ip}:{fallback_port}"))
+}
+
 /// Result of a successful snapshot fetch. The body bytes are JPEG;
 /// the content-type is whatever the upstream sent (almost always
 /// `image/jpeg`).
@@ -130,16 +161,13 @@ pub async fn snapshot(
         .ok_or(ServiceError::Unavailable(
             "camera's edge box no longer exists",
         ))?;
-    let tailscale_ip = edge_box.tailscale_ip.ok_or(ServiceError::Unavailable(
-        "edge box has no reachable address (tailscale_ip not set)",
-    ))?;
-
     let port: u16 = std::env::var("OXY_CAMERAS_EDGE_PREVIEW_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_EDGE_PREVIEW_PORT);
 
-    let url = format!("http://{tailscale_ip}:{port}/preview/cameras/{camera_id}/snapshot.jpg");
+    let base = upstream_base(&edge_box, port)?;
+    let url = format!("{base}/preview/cameras/{camera_id}/snapshot.jpg");
 
     let resp = http_client()
         .get(&url)
@@ -237,10 +265,6 @@ pub async fn hls_fetch(
         .ok_or(ServiceError::Unavailable(
             "camera's edge box no longer exists",
         ))?;
-    let tailscale_ip = edge_box.tailscale_ip.ok_or(ServiceError::Unavailable(
-        "edge box has no reachable address (tailscale_ip not set)",
-    ))?;
-
     // Defense-in-depth: reject any `..` or scheme injection in `tail`.
     // The path is parsed from the URL by axum's wildcard extractor, so
     // it shouldn't contain these — but a tightly-scoped check costs
@@ -262,7 +286,8 @@ pub async fn hls_fetch(
     // for registering this path in MediaMTX so the camera's RTSP
     // republishes as HLS.
     let mtx_path = format!("cam-{}", camera_id.simple());
-    let url = format!("http://{tailscale_ip}:{port}/{mtx_path}/{tail}");
+    let base = upstream_base(&edge_box, port)?;
+    let url = format!("{base}/{mtx_path}/{tail}");
 
     // Use the shared process-wide client so the MTX `cookieCheck=1`
     // cookie persists across playlist + variant + segment fetches.
@@ -380,10 +405,6 @@ pub async fn recording_clip(
         .ok_or(ServiceError::Unavailable(
             "camera's edge box no longer exists",
         ))?;
-    let tailscale_ip = edge_box.tailscale_ip.ok_or(ServiceError::Unavailable(
-        "edge box has no reachable address (tailscale_ip not set)",
-    ))?;
-
     let port: u16 = std::env::var("OXY_CAMERAS_EDGE_PLAYBACK_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -399,7 +420,7 @@ pub async fn recording_clip(
     // versions reject the raw `:` in `start=`, and other operators
     // upstream of us (Tailscale Funnel, intermediate proxies) treat
     // unencoded reserved chars in query strings inconsistently.
-    let base = format!("http://{tailscale_ip}:{port}/get");
+    let base = format!("{}/get", upstream_base(&edge_box, port)?);
     let duration_str = format!("{duration_s}");
     // MTX 1.18+ playback server: a credential MUST be present
     // (Basic Auth or `?user=X&pass=Y`) before MTX will even call
@@ -560,16 +581,12 @@ pub async fn list_recordings(
         .ok_or(ServiceError::Unavailable(
             "camera's edge box no longer exists",
         ))?;
-    let tailscale_ip = edge_box.tailscale_ip.ok_or(ServiceError::Unavailable(
-        "edge box has no reachable address (tailscale_ip not set)",
-    ))?;
-
     let port: u16 = std::env::var("OXY_CAMERAS_EDGE_PLAYBACK_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_EDGE_PLAYBACK_PORT);
     let mtx_path = format!("cam-{}", camera_id.simple());
-    let base = format!("http://{tailscale_ip}:{port}/list");
+    let base = format!("{}/list", upstream_base(&edge_box, port)?);
 
     let resp = http_client()
         .get(&base)

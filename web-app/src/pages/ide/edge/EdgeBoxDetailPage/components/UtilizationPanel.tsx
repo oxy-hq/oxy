@@ -119,12 +119,9 @@ const UtilizationPanel: React.FC<Props> = ({ box }) => {
         </Card>
       </div>
 
-      <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+      <div className='grid grid-cols-1 gap-3 md:grid-cols-2'>
         <Card label='Tailscale IP'>
           <code className='break-all text-xs'>{box.tailscale_ip ?? "—"}</code>
-        </Card>
-        <Card label='Auth mode'>
-          <code className='text-xs uppercase'>{box.auth_mode}</code>
         </Card>
         <Card label='Cohort'>
           <code className='text-xs'>{box.cohort || "—"}</code>

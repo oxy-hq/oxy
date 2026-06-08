@@ -176,21 +176,6 @@ const Header: React.FC<{ box: EdgeBoxSummary }> = ({ box }) => {
           </div>
           <div className='flex flex-wrap items-center gap-1.5'>
             <Badge variant={statusVariant(box.status)}>{box.status}</Badge>
-            <Badge
-              variant={box.auth_mode === "jwt" ? "default" : "outline"}
-              className={
-                box.auth_mode === "jwt"
-                  ? "font-mono text-[10px] uppercase"
-                  : "border-amber-500/40 bg-amber-500/10 font-mono text-[10px] text-amber-900 uppercase dark:text-amber-300"
-              }
-              title={
-                box.auth_mode === "jwt"
-                  ? "Per-device signed JWT (IoT Phase 3)"
-                  : "Legacy static bearer — will 401 after JWT cutover. Reboot or re-onboard to migrate."
-              }
-            >
-              {box.auth_mode}
-            </Badge>
             {box.incompatible_reason && (
               <Badge
                 variant='outline'

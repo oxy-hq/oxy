@@ -1,4 +1,4 @@
-import { ArrowUpCircle, Edit3, FileText, Link2, Trash2, X } from "lucide-react";
+import { ArrowUpCircle, Edit3, FileText, Trash2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -52,7 +52,6 @@ import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import AddDeviceDialog from "./AddDeviceDialog";
 import CohortCell from "./CohortCell";
-import LinkToFleetDialog from "./LinkToFleetDialog";
 import SetTargetImageDialog from "./SetTargetImageDialog";
 import TestSlackButton from "./TestSlackButton";
 import VlmBudgetCard from "./VlmBudgetCard";
@@ -150,10 +149,6 @@ const EdgeBoxesTable: React.FC = () => {
   // the bulk path operates on the selectedBoxes set rather than a
   // single row, and the copy / button label changes accordingly.
   const [bulkRetireOpen, setBulkRetireOpen] = useState(false);
-  // Retroactive-claim ("link to fleet") dialog — kept as a recovery
-  // affordance for legacy bearer-auth boxes. New boxes self-claim
-  // via the JWT flow. Null = closed.
-  const [linkBox, setLinkBox] = useState<EdgeBoxSummary | null>(null);
   // Site filter — defers to the global SitePicker mounted in the
   // edge layout header (`useSelectedSite`, `?site=<uuid>`). One
   // shared source of truth means the filter survives switching
@@ -497,21 +492,6 @@ const EdgeBoxesTable: React.FC = () => {
                     <TableCell>
                       <div className='flex flex-wrap items-center gap-1'>
                         <Badge variant={statusVariant(eb.status)}>{eb.status}</Badge>
-                        <Badge
-                          variant={eb.auth_mode === "jwt" ? "default" : "outline"}
-                          className={
-                            eb.auth_mode === "jwt"
-                              ? "font-mono text-[10px] uppercase"
-                              : "border-amber-500/40 bg-amber-500/10 font-mono text-[10px] text-amber-900 uppercase dark:text-amber-300"
-                          }
-                          title={
-                            eb.auth_mode === "jwt"
-                              ? "Per-device signed JWT (IoT Phase 3)"
-                              : "Legacy static bearer — will 401 after JWT cutover. Reboot or re-onboard to migrate."
-                          }
-                        >
-                          {eb.auth_mode}
-                        </Badge>
                         {eb.incompatible_reason && (
                           <Badge
                             variant='outline'
@@ -578,14 +558,6 @@ const EdgeBoxesTable: React.FC = () => {
                         <Button
                           size='icon'
                           variant='ghost'
-                          aria-label='Link to fleet'
-                          onClick={() => setLinkBox(eb)}
-                        >
-                          <Link2 className='h-4 w-4' />
-                        </Button>
-                        <Button
-                          size='icon'
-                          variant='ghost'
                           aria-label='Set target image'
                           onClick={() => openSingleDialog(eb)}
                         >
@@ -628,14 +600,6 @@ const EdgeBoxesTable: React.FC = () => {
             // same boxes.
             if (dialogBoxes.length > 1) setSelectedIds(new Set());
           }
-        }}
-      />
-
-      <LinkToFleetDialog
-        box={linkBox}
-        open={linkBox !== null}
-        onOpenChange={(open) => {
-          if (!open) setLinkBox(null);
         }}
       />
 
@@ -721,7 +685,6 @@ const EdgeBoxesTable: React.FC = () => {
                   });
                   const parts: string[] = [];
                   if (res.edge_box_retired) parts.push("box retired");
-                  if (res.bearers_revoked > 0) parts.push(`${res.bearers_revoked} bearer revoked`);
                   if (res.claim_revoked) parts.push("claim revoked");
                   toast.success(
                     parts.length > 0 ? `Removed: ${parts.join(", ")}.` : "Already removed."

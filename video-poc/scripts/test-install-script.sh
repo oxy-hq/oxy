@@ -183,7 +183,9 @@ if [[ "$MINT" -eq 1 ]]; then
     # Args: METHOD URL [extra_curl_args…]
     local method="$1"; shift
     local url="$1"; shift
-    curl -fsS -X "$method" "${auth_curl_args[@]}" "$@" "$url"
+    # `${arr[@]+"${arr[@]}"}` — expand only when set. Empty-array
+    # expansion under `set -u` blows up on macOS's bash 3.2.
+    curl -fsS -X "$method" ${auth_curl_args[@]+"${auth_curl_args[@]}"} "$@" "$url"
   }
 
   # Common 401 hint — used after every API call below so the
@@ -528,7 +530,8 @@ vm_root bash /tmp/install-edge.sh \
   --compose-url "$COMPOSE_URL" \
   --systemd-url "$SYSTEMD_URL" \
   --hardware-label "test-orbstack" \
-  "${TS_AUTHKEY_ARGS[@]}" \
+  --turn-auth-secret "$HOST_TURN_SECRET" \
+  ${TS_AUTHKEY_ARGS[@]+"${TS_AUTHKEY_ARGS[@]}"} \
   --force \
   2>&1 | sed 's/^/  [install] /'
 

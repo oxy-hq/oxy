@@ -3,13 +3,13 @@
 //! Two subtrees, two mounting points:
 //!
 //! - **Edge tree** ([`router`]) — `/control/*` routes that the Python
-//!   edge worker calls. Bearer-auth via the device-token middleware:
-//!   inbound `Authorization: Bearer <token>` is hashed, looked up in
-//!   `edge_box_tokens`, and the resolved
-//!   [`EdgeContext`](crate::auth::EdgeContext) (with `workspace_id`) is
-//!   injected into request extensions. Mounted at the *root* of the
-//!   app router because edge boxes don't know their workspace_id — the
-//!   bearer alone identifies them.
+//!   edge worker calls. The device-token middleware verifies a
+//!   per-device JWT (signed with the device's HMAC secret from
+//!   `device_registry`), resolves the active `device_claims` row, and
+//!   injects the [`EdgeContext`](crate::auth::EdgeContext) (with
+//!   `workspace_id`) into request extensions. Mounted at the *root* of
+//!   the app router because edge boxes don't know their workspace_id
+//!   — the JWT alone identifies them.
 //!
 //! - **Operator workspace tree** ([`workspace_routes`]) — user-facing
 //!   endpoints for managing sites / cameras / edge boxes / UniFi
@@ -59,7 +59,7 @@ where
     // Fleet routes carry their own auth (shared secret for factory-
     // enroll, HMAC for announce) so they don't sit behind
     // require_device_token. Devices that hit /fleet/* don't yet
-    // have a bearer token.
+    // have a JWT-issuing identity row to authenticate against.
     let fleet_routes = fleet::routes::<S>();
     Router::new()
         .merge(edge_routes)

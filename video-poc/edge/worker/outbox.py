@@ -143,8 +143,7 @@ class Outbox:
         Uses its own httpx.AsyncClient (separate from the main worker's)
         so the drain loop's lifecycle is independent. `auth` is an
         httpx.Auth instance that stamps `Authorization` on every
-        request — wired by the caller as either `BearerAuth(token)`
-        (legacy) or `DeviceJwtAuth(minter)` (IoT Phase 3+).
+        request — wired by the caller as `DeviceJwtAuth(minter)`.
         """
         backoffs: dict[str, float] = {k: _BACKOFF_INITIAL_S for k in _KIND_ENDPOINTS}
         async with httpx.AsyncClient(base_url=oxy_url, timeout=30.0, auth=auth) as client:

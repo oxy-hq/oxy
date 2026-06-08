@@ -94,6 +94,27 @@ TS_HOST_AUTHKEY=""
 # key in the Tailscale admin and wants the box to forget the old
 # one without yet having a replacement.
 CLEAR_TS_AUTHKEY=0
+# WebRTC shared secret — must equal `OXY_CAMERAS_TURN_AUTH_SECRET` on
+# the Oxy server. coturn's `--use-auth-secret` validates browser-side
+# TURN credentials via HMAC against this; without it WebRTC live
+# preview either rejects every session or fails to bring up coturn at
+# all (compose's `${TURN_AUTH_SECRET:?...}` errors fast). The wizard's
+# install snippet pre-fills this from Oxy's running env so the
+# operator doesn't have to copy a value between two systems.
+TURN_AUTH_SECRET=""
+# HLS-only / no-WebRTC mode. When set, install writes a placeholder
+# `TURN_AUTH_SECRET=disabled-no-webrtc` so compose's `${TURN_AUTH_SECRET:?...}`
+# passes and coturn starts, but the HMAC won't match anything Oxy mints
+# so WebRTC sessions just fail at auth — intentional. (Real
+# profile-based skip is a future follow-up; placeholder is simpler
+# and doesn't break the existing fleet.)
+NO_WEBRTC=0
+NO_WEBRTC_PLACEHOLDER="disabled-no-webrtc"
+# Anthropic API key for the worker's on-trigger Haiku VLM compliance
+# checks. Optional: when unset the worker logs `edge.vlm_disabled`
+# and skips compliance reports; events still flow. Passed through to
+# `/opt/oxy-edge/.env` so docker-compose picks it up at runtime.
+ANTHROPIC_API_KEY=""
 
 # ── Output helpers ───────────────────────────────────────────
 
@@ -123,6 +144,17 @@ Optional:
                                     requiring a fresh --ts-authkey). Useful after
                                     rotating the key in the Tailscale admin so
                                     the previous value doesn't sit on disk.
+  --turn-auth-secret <hex>         coturn HMAC secret for WebRTC TURN credentials.
+                                    Must equal OXY_CAMERAS_TURN_AUTH_SECRET on the
+                                    Oxy server. The Add-device wizard pre-fills
+                                    this in the install snippet automatically;
+                                    pass explicitly only for standalone installs.
+  --no-webrtc                      HLS-only install. Skips coturn + funnel-init
+                                    TURN apply. No TURN secret required.
+  --anthropic-api-key <key>        Anthropic API key for the worker's Haiku VLM
+                                    compliance checks. Optional: omit to install
+                                    with compliance reports disabled (events
+                                    still flow).
   --allow-remote-support           Opt this box in to Oxy operator SSH-via-tailnet.
                                     Default OFF. When set, requires --ts-host-authkey.
                                     Can be enabled later with
@@ -146,6 +178,9 @@ while [[ $# -gt 0 ]]; do
         --hardware-label) HARDWARE_LABEL="$2"; shift 2 ;;
         --ts-authkey) TS_AUTHKEY="$2"; shift 2 ;;
         --clear-ts-authkey) CLEAR_TS_AUTHKEY=1; shift ;;
+        --turn-auth-secret) TURN_AUTH_SECRET="$2"; shift 2 ;;
+        --no-webrtc) NO_WEBRTC=1; shift ;;
+        --anthropic-api-key) ANTHROPIC_API_KEY="$2"; shift 2 ;;
         --allow-remote-support) ALLOW_REMOTE_SUPPORT=1; shift ;;
         --ts-host-authkey) TS_HOST_AUTHKEY="$2"; shift 2 ;;
         --compose-url) COMPOSE_URL="$2"; shift 2 ;;
@@ -163,6 +198,14 @@ done
 
 if [[ "$ALLOW_REMOTE_SUPPORT" -eq 1 && -z "$TS_HOST_AUTHKEY" ]]; then
     die "--allow-remote-support requires --ts-host-authkey (a key permitted to carry tag:edge-box-host)"
+fi
+
+# WebRTC is the default — fail fast if the operator forgot to copy the
+# TURN secret AND didn't opt out of WebRTC. The wizard's install snippet
+# wires --turn-auth-secret automatically when the server has the env set,
+# so a missing one here usually means standalone install + missed step.
+if [[ "$NO_WEBRTC" -eq 0 && -z "$TURN_AUTH_SECRET" ]]; then
+    die "missing --turn-auth-secret (HMAC shared with OXY_CAMERAS_TURN_AUTH_SECRET on the Oxy server). Pass --no-webrtc to install HLS-only."
 fi
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -244,24 +287,56 @@ chmod 755 "$INSTALL_ROOT"
 
 curl -fsSL "$COMPOSE_URL" -o "${INSTALL_ROOT}/docker-compose.yml"
 
+# The Oxy API tree mounts under /api, so the MediaMTX-auth callback
+# is /api/control/mtx-auth. Hard-coding the host-localhost dev default
+# in docker-compose.yml caused the most recent production incident
+# (boxes pointing at staging Oxy with --oxy-url, but coturn / MTX
+# calling back to a non-existent local Oxy → 401 on every WHEP).
+# Deriving from --oxy-url removes the foot-gun.
+MTX_AUTH_URL="${OXY_URL%/}/control/mtx-auth"
+
 # Keep the existing .env if one exists so operators who've
 # tuned OUTBOX_PATH / EDGE_PUBLIC_HOST / etc. don't lose
-# their work. We strip OXY_URL (and TS_AUTHKEY when a fresh one
-# is being written, or when --clear-ts-authkey is set) so
+# their work. We strip every var we're about to (re)write so
 # re-running with new values doesn't leave a stale duplicate
-# line below the fresh one — bash dotenv-style files honor the
-# last definition, but operators read top-down and get confused.
+# below the fresh one — dotenv files honor the last definition,
+# but operators read top-down and get confused.
 {
     if [[ -f "${INSTALL_ROOT}/.env" ]]; then
+        # Lines we always rewrite: OXY_URL, MTX_AUTHHTTPADDRESS.
+        # TS_AUTHKEY when fresh OR --clear-ts-authkey. TURN_AUTH_SECRET
+        # whenever we're setting a secret OR --no-webrtc (the latter
+        # writes a placeholder so compose's `${TURN_AUTH_SECRET:?...}`
+        # passes).
+        strip_re='^(OXY_URL|MTX_AUTHHTTPADDRESS)='
         if [[ -n "$TS_AUTHKEY" || "$CLEAR_TS_AUTHKEY" -eq 1 ]]; then
-            grep -vE '^(OXY_URL|TS_AUTHKEY)=' "${INSTALL_ROOT}/.env" || true
-        else
-            grep -v '^OXY_URL=' "${INSTALL_ROOT}/.env" || true
+            strip_re="${strip_re}|^TS_AUTHKEY="
         fi
+        if [[ -n "$TURN_AUTH_SECRET" || "$NO_WEBRTC" -eq 1 ]]; then
+            strip_re="${strip_re}|^TURN_AUTH_SECRET="
+        fi
+        # Only strip ANTHROPIC_API_KEY when we're about to write a
+        # new one. Operators who hand-edited the .env to add the
+        # key shouldn't lose it on a re-install that omits the flag.
+        if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+            strip_re="${strip_re}|^ANTHROPIC_API_KEY="
+        fi
+        grep -vE "$strip_re" "${INSTALL_ROOT}/.env" || true
     fi
     printf 'OXY_URL=%s\n' "$OXY_URL"
+    printf 'MTX_AUTHHTTPADDRESS=%s\n' "$MTX_AUTH_URL"
     if [[ -n "$TS_AUTHKEY" ]]; then
         printf 'TS_AUTHKEY=%s\n' "$TS_AUTHKEY"
+    fi
+    if [[ -n "$TURN_AUTH_SECRET" ]]; then
+        printf 'TURN_AUTH_SECRET=%s\n' "$TURN_AUTH_SECRET"
+    elif [[ "$NO_WEBRTC" -eq 1 ]]; then
+        # Placeholder. coturn starts but its HMAC will never match
+        # what Oxy mints, so WebRTC sessions silently fail at TURN auth.
+        printf 'TURN_AUTH_SECRET=%s\n' "$NO_WEBRTC_PLACEHOLDER"
+    fi
+    if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+        printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY"
     fi
 } > "${INSTALL_ROOT}/.env.new"
 mv "${INSTALL_ROOT}/.env.new" "${INSTALL_ROOT}/.env"
@@ -269,6 +344,9 @@ chmod 600 "${INSTALL_ROOT}/.env"
 
 if [[ "$CLEAR_TS_AUTHKEY" -eq 1 && -z "$TS_AUTHKEY" ]]; then
     log "--clear-ts-authkey set without a new --ts-authkey; TS_AUTHKEY removed from .env"
+fi
+if [[ "$NO_WEBRTC" -eq 1 ]]; then
+    log "--no-webrtc set; TURN_AUTH_SECRET written as placeholder ('${NO_WEBRTC_PLACEHOLDER}') — WebRTC sessions will fail auth, HLS path remains functional"
 fi
 
 # ── Step 4 — systemd unit ────────────────────────────────────

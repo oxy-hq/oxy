@@ -212,7 +212,6 @@ where
         .route("/fleet/claims/bind-existing", post(post_bind_existing))
         .route("/fleet/devices", get(list_fleet_devices))
         .route("/fleet/prepared-devices", post(post_prepare_device))
-        .route("/fleet/auth-mode-summary", get(get_auth_mode_summary))
         .route("/fleet/dashboard", get(get_dashboard_rollup))
         .route("/fleet/alerts", get(get_recent_alerts))
         .route(
@@ -580,20 +579,6 @@ async fn list_edge_boxes(
     }
 }
 
-/// `GET /{wid}/fleet/auth-mode-summary` — counts of edge boxes by
-/// auth_mode. After the 2026-06 cutover, JWT-only is the default;
-/// any `bearer > 0` rows are boxes about to 401. UI surfaces this
-/// as a per-box badge rather than a dashboard-wide banner.
-async fn get_auth_mode_summary(
-    Extension(db): Extension<DatabaseConnection>,
-    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
-) -> Response {
-    match listing::auth_mode_summary(&db, workspace_id).await {
-        Ok(summary) => Json(summary).into_response(),
-        Err(e) => map_err(e),
-    }
-}
-
 #[derive(Debug, serde::Deserialize)]
 struct DashboardQuery {
     /// ISO-8601 timestamp; defaults to "24h ago" when missing so a
@@ -860,7 +845,6 @@ async fn delete_fleet_member(
                     "edge_box_id": body.edge_box_id,
                     "device_id": body.device_id,
                     "edge_box_retired": out.edge_box_retired,
-                    "bearers_revoked": out.bearers_revoked,
                     "claim_revoked": out.claim_revoked,
                 }),
             )
@@ -1991,12 +1975,24 @@ fn render_install_command(
         Some(key) => format!(" --ts-authkey {}", sh_squote(key)),
         None => String::new(),
     };
+    // WebRTC TURN shared secret. When set on this Oxy, we hand the same
+    // value to the install snippet so the box's coturn HMAC-verifies
+    // against the same secret Oxy mints credentials with — single source
+    // of truth, no copy-paste between two systems. When unset, fall back
+    // to `--no-webrtc` so the install brings up the HLS-only stack
+    // instead of failing on compose's `${TURN_AUTH_SECRET:?...}`.
+    let webrtc_flag = match std::env::var("OXY_CAMERAS_TURN_AUTH_SECRET") {
+        Ok(secret) if !secret.trim().is_empty() => {
+            format!(" --turn-auth-secret {}", sh_squote(secret.trim()))
+        }
+        _ => " --no-webrtc".to_string(),
+    };
     format!(
         "curl -sSL {install_url} | sudo bash -s -- \
 --device-id {device_id} \
 --device-secret {device_secret_b64} \
 --oxy-url {oxy_url} \
---hardware-label {}{ts_flag}",
+--hardware-label {}{ts_flag}{webrtc_flag}",
         sh_squote(hardware_label)
     )
 }
@@ -2097,6 +2093,7 @@ async fn unifi_import(
     };
     let input = onboarding::ImportInput {
         workspace_id,
+        console_ids: body.console_ids,
         site_filter: body.site_filter,
     };
     match onboarding::import(&db, &client, input).await {

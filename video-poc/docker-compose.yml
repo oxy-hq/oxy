@@ -126,6 +126,23 @@ services:
       - mtx-recordings:/recordings
     networks: [video-poc]
 
+  # Single-port reverse proxy in front of MediaMTX + the worker preview
+  # server. Tailscale Funnel publishes only this service on 443, which
+  # lets the cloud Oxy reach HLS / snapshot / clip endpoints through a
+  # public hostname instead of dialing the box's tailnet IP directly.
+  # Path → upstream split lives in central/nginx/edge-gateway.conf.
+  edge-gateway:
+    image: nginx:1.27-alpine
+    container_name: video-poc-edge-gateway
+    profiles: ["edge"]
+    depends_on:
+      - mediamtx
+      - edge
+    volumes:
+      - ./central/nginx/edge-gateway.conf:/etc/nginx/nginx.conf:ro
+    networks: [video-poc]
+    restart: unless-stopped
+
   edge:
     build: ./edge
     profiles: ["edge"]

@@ -15,7 +15,6 @@ stack as the worker, with the docker socket mounted:
         environment:
           OXY_URL: ${OXY_URL}
           EDGE_BOX_ID: ${EDGE_BOX_ID}
-          EDGE_BOX_TOKEN: ${EDGE_BOX_TOKEN}
           # Worker compose service name we'll pull + restart.
           OXY_WORKER_SERVICE: worker
           # Compose file path inside the container; bind-mount the
@@ -67,7 +66,7 @@ from typing import Any
 import httpx
 
 from .identity import DeviceIdentity
-from .jwt_mint import BearerAuth, DeviceJwtAuth, JwtMinter
+from .jwt_mint import DeviceJwtAuth, JwtMinter
 from .log import log
 
 DEFAULT_POLL_SECS = int(os.environ.get("OXY_UPDATE_POLL_SECS", "300"))
@@ -130,10 +129,8 @@ class AgentConfig:
     oxy_url: str
     edge_box_id: str
     # `httpx.Auth` object the client uses on every `/control/*`
-    # call. Built once at boot from either the device identity
-    # (JWT) or the legacy bearer token; we never branch per-request
-    # so JWT rotation stays transparent to the call sites — same
-    # contract the worker uses.
+    # call. Built once at boot from the device identity; per-request
+    # injection makes JWT rotation transparent to the call sites.
     auth: httpx.Auth
     worker_service: str
     compose_file: str | None
@@ -145,17 +142,13 @@ def _config_from_env() -> AgentConfig:
     required variable — running with an empty URL would silently
     no-op every poll.
 
-    Auth resolution mirrors the worker (see `worker.main`): when
-    a device identity is on disk we mint JWTs from its HMAC
-    secret; otherwise we fall back to the static EDGE_BOX_TOKEN
-    bearer. After the 2026-06 cutover the backend only accepts
-    JWT by default, so the bearer path is effectively a "tests
-    + dev only" fallback (the missing-identity case shouldn't
-    happen on a properly bootstrapped box)."""
+    Auth comes from the device identity on disk
+    (`/var/lib/oxy/device.json`). Missing identity is a hard error:
+    the backend only accepts per-device JWTs, so there is no
+    fallback to fall back to."""
     required = {
         "OXY_URL": os.environ.get("OXY_URL", "").strip(),
         "EDGE_BOX_ID": os.environ.get("EDGE_BOX_ID", "").strip(),
-        "EDGE_BOX_TOKEN": os.environ.get("EDGE_BOX_TOKEN", "").strip(),
     }
     missing = [k for k, v in required.items() if not v]
     if missing:
@@ -163,16 +156,16 @@ def _config_from_env() -> AgentConfig:
             f"update-agent: missing required env vars: {', '.join(missing)}"
         )
     identity = DeviceIdentity.load()
-    if identity is not None:
-        auth: httpx.Auth = DeviceJwtAuth(
-            JwtMinter(identity.device_id, identity.device_secret)
+    if identity is None:
+        raise SystemExit(
+            "update-agent: no device identity at /var/lib/oxy/device.json — "
+            "rerun the 'Add device' install snippet on this box."
         )
-        log("info", "update_agent.auth_mode", mode="jwt",
-            device_id=str(identity.device_id))
-    else:
-        auth = BearerAuth(required["EDGE_BOX_TOKEN"])
-        log("warn", "update_agent.auth_mode", mode="bearer",
-            reason="no device identity on disk; bearer will 401 against post-cutover backends")
+    auth: httpx.Auth = DeviceJwtAuth(
+        JwtMinter(identity.device_id, identity.device_secret)
+    )
+    log("info", "update_agent.auth_mode", mode="jwt",
+        device_id=str(identity.device_id))
     return AgentConfig(
         oxy_url=required["OXY_URL"].rstrip("/"),
         edge_box_id=required["EDGE_BOX_ID"],
@@ -204,7 +197,7 @@ async def fetch_target(client: httpx.AsyncClient, cfg: AgentConfig) -> dict[str,
         # Don't retry forever on auth — the credentials are wrong;
         # the operator must intervene.
         raise SystemExit(
-            f"update-agent: auth rejected ({r.status_code}); check device.json + EDGE_BOX_TOKEN"
+            f"update-agent: auth rejected ({r.status_code}); check device.json"
         )
     if r.status_code != 200:
         log("warn", "update_agent.target_fetch_non_200", status=r.status_code)

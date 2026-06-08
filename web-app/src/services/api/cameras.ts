@@ -113,15 +113,6 @@ export type EdgeBox = {
   last_update_result: string | null;
   last_update_at: string | null;
   /**
-   * IoT Phase 3 — `bearer` (legacy static token) or `jwt` (per-
-   * device signed token). Stamped on every successful auth. After
-   * the 2026-06 cutover JWT-only is the default; `bearer` means
-   * the box's next ping will 401 and the operator should
-   * re-onboard. The opt-out `OXY_ALLOW_LEGACY_BEARER=true` is an
-   * emergency lever for rolling upgrade windows.
-   */
-  auth_mode: string;
-  /**
    * CI #3 — last compatibility manifest the worker reported. Shape:
    * `{edge_version, git_sha, built_at, protocol_version, min_server_version}`.
    * `null` when the box runs an older worker that doesn't ship this
@@ -378,21 +369,6 @@ export type RolloutConvergenceRow = {
   convergence_status: "converged" | "failed" | "pending" | "untargeted";
 };
 
-/**
- * Fleet auth-mode rollup. Pre-cutover this powered a dashboard
- * banner; post-cutover the same data feeds per-box badges so
- * operators can see at a glance which boxes are about to 401.
- *  - `jwt`     — boxes that have authenticated via Phase-3 JWT.
- *  - `bearer`  — legacy static-bearer boxes. Will 401 on next
- *                ping under the JWT-only default.
- *  - `unknown` — registered but never authenticated yet.
- */
-export type AuthModeSummary = {
-  jwt: number;
-  bearer: number;
-  unknown: number;
-};
-
 export type CameraComplianceSummary = {
   camera_id: string;
   camera_name: string;
@@ -530,11 +506,11 @@ export const CameraService = {
   async unifiImport(
     workspaceId: string,
     apiKey?: string,
-    siteFilter?: string
+    consoleIds?: string[]
   ): Promise<UnifiImportResult> {
     const response = await apiClient.post(`/${workspaceId}/integrations/unifi/import`, {
       api_key: apiKey,
-      site_filter: siteFilter
+      console_ids: consoleIds
     });
     return response.data;
   },
@@ -1070,13 +1046,6 @@ export const CameraService = {
     return response.data;
   },
 
-  async getAuthModeSummary(workspaceId: string): Promise<AuthModeSummary> {
-    const response = await apiClient.get<AuthModeSummary>(
-      `/${workspaceId}/fleet/auth-mode-summary`
-    );
-    return response.data;
-  },
-
   async getDashboardRollup(
     workspaceId: string,
     params: { since?: string; site_id?: string | null } = {}
@@ -1311,7 +1280,6 @@ export type FleetClaimStatus = "pending_claim" | "claimed" | "revoked";
  *  these flags to render a toast summarizing what changed. */
 export type RemoveFleetMemberResult = {
   edge_box_retired: boolean;
-  bearers_revoked: number;
   claim_revoked: boolean;
   target_id: string;
 };

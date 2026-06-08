@@ -118,7 +118,7 @@ const UnifiSetupDialog: React.FC<Props> = ({ open, onOpenChange, onImported, mod
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className='max-w-2xl'>
+      <DialogContent className='max-w-2xl overflow-x-hidden'>
         <DialogHeader>
           <DialogTitle>{isScanMode ? "Scan UniFi sites" : "Connect UniFi"}</DialogTitle>
           <DialogDescription>

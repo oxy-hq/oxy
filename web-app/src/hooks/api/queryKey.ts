@@ -329,8 +329,6 @@ const cameraKeys = {
     [...cameraKeys.all, "site", workspaceId, siteId] as const,
   edgeBoxes: (workspaceId: string) => [...cameraKeys.all, "edgeBoxes", workspaceId] as const,
   fleetMembers: (workspaceId: string) => [...cameraKeys.all, "fleetMembers", workspaceId] as const,
-  authModeSummary: (workspaceId: string) =>
-    [...cameraKeys.all, "authModeSummary", workspaceId] as const,
   rolloutPlans: (workspaceId: string) => [...cameraKeys.all, "rolloutPlans", workspaceId] as const,
   rolloutConvergence: (workspaceId: string, planId: string) =>
     [...cameraKeys.all, "rolloutConvergence", workspaceId, planId] as const,

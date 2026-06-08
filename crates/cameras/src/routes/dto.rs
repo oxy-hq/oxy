@@ -368,8 +368,14 @@ pub struct UnifiImportBody {
     /// when absent.
     #[serde(default)]
     pub api_key: Option<String>,
-    /// Optional substring filter on site name; `None` imports all sites
-    /// in the customer's UniFi account.
+    /// Optional list of UniFi `console_id`s to import. `None`/empty
+    /// imports every site visible to the credential.
+    #[serde(default)]
+    pub console_ids: Option<Vec<String>>,
+    /// Legacy substring filter on site name. Kept for backwards
+    /// compatibility with older clients; new UI sends `console_ids`.
+    /// Ignored when `console_ids` is non-empty.
+    #[serde(default)]
     pub site_filter: Option<String>,
 }
 
@@ -561,12 +567,6 @@ pub struct EdgeBoxDto {
     pub held_until: Option<chrono::DateTime<chrono::FixedOffset>>,
     pub last_update_result: Option<String>,
     pub last_update_at: Option<chrono::DateTime<chrono::FixedOffset>>,
-    /// `'bearer' | 'jwt'`. Stamped on every successful auth by
-    /// the middleware. After the 2026-06 cutover JWT-only is the
-    /// default; a `bearer` value means the box's next ping will
-    /// 401. Operators see this as a per-box badge in the Fleet
-    /// tab and re-onboard the affected box.
-    pub auth_mode: String,
     /// CI #3 — last compatibility manifest the worker posted. Null
     /// for older workers that don't yet send it. Operator UI uses
     /// the `edge_version` field to render the running version next
@@ -602,7 +602,6 @@ impl From<crate::entities::edge_boxes::Model> for EdgeBoxDto {
             held_until: m.held_until,
             last_update_result: m.last_update_result,
             last_update_at: m.last_update_at,
-            auth_mode: m.auth_mode,
             edge_compatibility_json: m.edge_compatibility_json,
             incompatible_reason: m.incompatible_reason,
             updated_at: m.updated_at,
@@ -640,8 +639,8 @@ pub struct FleetMemberDto {
     pub site_id: Uuid,
     pub site_name: String,
     pub device_id: Option<Uuid>,
-    /// `legacy` (no identity layer) | `pending_claim` | `claimed`.
-    /// The UI uses this to color the row's status badge.
+    /// `pending_claim` | `claimed`. The UI uses this to color the
+    /// row's status badge.
     pub claim_status: String,
     pub claim_code: Option<String>,
     pub sku: Option<String>,

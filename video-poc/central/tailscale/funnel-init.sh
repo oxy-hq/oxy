@@ -38,7 +38,12 @@ WAIT_ATTEMPTS=300   # 300 × 2s = 10min total
 WAIT_INTERVAL_S=2
 OUTBOX_DIR="/var/lib/outbox"
 FUNNEL_ENV_PATH="${OUTBOX_DIR}/funnel.env"
-MTX_WHEP_URL="${MTX_WHEP_URL:-http://mediamtx:8889}"
+# The edge-gateway nginx multiplexes HLS / WHEP / snapshot / clips
+# onto a single port so Funnel only publishes one upstream. Routing
+# split lives in central/nginx/edge-gateway.conf. Override the env
+# only when running funnel-init against a non-default gateway
+# hostname.
+EDGE_GATEWAY_URL="${EDGE_GATEWAY_URL:-http://edge-gateway:80}"
 # Coturn TURN endpoint. Tailscale Funnel only allows public ports
 # 443 / 8443 / 10000, so we land TURN on 8443. The browser uses
 # `turns:<funnel>:8443?transport=tcp` (advertised in the WHEP
@@ -120,10 +125,16 @@ fi
 # overwriting the serve with a default `http://127.0.0.1:<port>`
 # proxy target. That's exactly the "WHEP ECONNTIMEOUT in the
 # browser" failure mode — the public URL responds but proxies to
-# nothing on port 443, not MTX on 8889.
-log "applying tailscale funnel --bg --https=443 ${MTX_WHEP_URL}"
-tailscale funnel --bg --https=443 "$MTX_WHEP_URL" || {
-    log "funnel apply failed (mtx/whep); will retry on next sidecar boot"
+# nothing on port 443, not the gateway on 80.
+#
+# We point Funnel at edge-gateway (nginx) instead of MediaMTX
+# directly: nginx multiplexes HLS / WHEP / snapshot / clip endpoints
+# onto a single upstream so the cloud Oxy can hit all of them via
+# the same Funnel hostname (previously only WHEP worked via Funnel;
+# HLS / snapshot / clips required Oxy ↔ box tailnet reachability).
+log "applying tailscale funnel --bg --https=443 ${EDGE_GATEWAY_URL}"
+tailscale funnel --bg --https=443 "$EDGE_GATEWAY_URL" || {
+    log "funnel apply failed (edge-gateway); will retry on next sidecar boot"
     exit 1
 }
 

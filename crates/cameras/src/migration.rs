@@ -7,7 +7,7 @@
 //! Tables owned by this migrator (Postgres only — see
 //! `internal-docs/video-processing-fleet-architecture.md` for the Airhouse-side tables):
 //!
-//!   sites  ←─  edge_boxes  ←─  edge_box_tokens
+//!   sites  ←─  edge_boxes
 //!                  ↑
 //!                  └─  cameras  (edge_box_id is SET NULL)
 //!
@@ -42,6 +42,7 @@ impl MigratorTrait for CamerasMigrator {
             Box::new(CreateUnifiCredentials),
             Box::new(CreateComplianceArbitrations),
             Box::new(DropCamerasSiteIdNameUnique),
+            Box::new(DropEdgeBoxTokensAndAuthMode),
         ]
     }
 
@@ -1911,6 +1912,67 @@ impl MigrationTrait for DropCamerasSiteIdNameUnique {
             .get_connection()
             .execute_unprepared(
                 "ALTER TABLE cameras ADD CONSTRAINT cameras_site_id_name_uniq UNIQUE (site_id, name)",
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+/// Final bearer-purge: drop the `edge_box_tokens` table and the
+/// `edge_boxes.auth_mode` column. Middleware has been JWT-only since
+/// the 2026-06 cutover; no production fleet remains on the bearer
+/// path, so the table + column are dead schema.
+///
+/// Cascade order: drop `edge_box_tokens` first (it has an FK to
+/// `edge_boxes`), then drop the column.
+struct DropEdgeBoxTokensAndAuthMode;
+
+impl MigrationName for DropEdgeBoxTokensAndAuthMode {
+    fn name(&self) -> &str {
+        "m20260608_000001_drop_edge_box_tokens_and_auth_mode"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for DropEdgeBoxTokensAndAuthMode {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(EdgeBoxTokens::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(EdgeBoxes::Table)
+                    .drop_column(EdgeBoxesV5::AuthMode)
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // Restore the column with its original default so an
+        // emergency rollback works. We do NOT recreate
+        // `edge_box_tokens` — the table dropped above was empty by
+        // the time of cutover and rebuilding it would require
+        // re-issuing every bearer (which the system no longer knows
+        // how to do).
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(EdgeBoxes::Table)
+                    .add_column(
+                        ColumnDef::new(EdgeBoxesV5::AuthMode)
+                            .string_len(16)
+                            .not_null()
+                            .default("jwt"),
+                    )
+                    .to_owned(),
             )
             .await?;
         Ok(())

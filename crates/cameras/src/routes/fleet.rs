@@ -122,10 +122,6 @@ struct BootstrapBody {
 struct BootstrapResponse {
     workspace_id: Uuid,
     edge_box_id: Uuid,
-    /// Plaintext bearer, shown ONCE. Device persists it for use
-    /// against `/control/*` (the legacy bearer protocol — Phase 3
-    /// will replace this with per-device JWT auth).
-    bearer: String,
 }
 
 async fn bootstrap(
@@ -151,7 +147,6 @@ async fn bootstrap(
         Ok(out) => Json(BootstrapResponse {
             workspace_id: out.workspace_id,
             edge_box_id: out.edge_box_id,
-            bearer: out.bearer,
         })
         .into_response(),
         Err(e) => map_err(e),

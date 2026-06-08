@@ -986,8 +986,11 @@ async fn specifying_handler_rejects_traversal_path() {
     ));
     std::fs::create_dir_all(&workspace).unwrap();
 
-    // A traversal path that escapes the workspace.
-    let traversal = std::path::PathBuf::from("../../etc/passwd");
+    // A traversal path that escapes the workspace. The `.sql`
+    // extension is load-bearing: the containment guard lives inside
+    // the SQL-file short-circuit in `build_specifying_handler`'s
+    // step-0 branch, which only fires for `.sql` paths.
+    let traversal = std::path::PathBuf::from("../../etc/passwd.sql");
     let intent = AnalyticsIntent {
         selected_procedure: Some(traversal),
         ..make_intent()

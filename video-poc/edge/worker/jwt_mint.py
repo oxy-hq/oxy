@@ -1,8 +1,7 @@
-"""Device-side JWT minter (IoT Phase 3).
+"""Device-side JWT minter.
 
 Generates short-lived per-device JWTs the worker sends as
-`Authorization: Bearer <jwt>` on every `/control/*` request,
-replacing the static bearer that pre-Phase-3 boxes used.
+`Authorization: Bearer <jwt>` on every `/control/*` request.
 
 Wire format mirrors the server-side verifier in
 `crates/cameras/src/auth/jwt.rs`:
@@ -130,20 +129,6 @@ class DeviceJwtAuth(httpx.Auth):
 
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
         request.headers["Authorization"] = self._minter.header()
-        yield request
-
-
-class BearerAuth(httpx.Auth):
-    """Legacy static-bearer flow. Same shape as [`DeviceJwtAuth`]
-    so callers don't have to branch on which auth they got —
-    construct one or the other at boot and pass it to every
-    AsyncClient unchanged."""
-
-    def __init__(self, bearer: str) -> None:
-        self._header = f"Bearer {bearer}"
-
-    def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
-        request.headers["Authorization"] = self._header
         yield request
 
 

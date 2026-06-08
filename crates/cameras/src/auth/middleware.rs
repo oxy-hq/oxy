@@ -1,24 +1,33 @@
-//! Axum middleware that authenticates an inbound request via the
-//! `Authorization: Bearer <token>` header and injects an
+//! Axum middleware that authenticates an inbound `/control/*` request
+//! via the `Authorization: Bearer <jwt>` header and injects an
 //! [`EdgeContext`] into `request.extensions` for downstream handlers.
 //!
 //! Mounted as `axum::middleware::from_fn_with_state(db.clone(),
 //! require_device_token)` on the `/control/*` router subtree.
 //!
-//! Failure modes (all 401):
-//!   - missing or malformed `Authorization` header
-//!   - token not found in `edge_box_tokens`
-//!   - token row has `revoked_at IS NOT NULL`
-//!   - edge_box / site lookup fails (token references a deleted box)
+//! All edge auth goes through per-device JWTs minted from a sealed
+//! `device_secret` in `device_registry`.
 //!
-//! Side effect: stamps `last_used_at = now()` on every successful auth.
-//! At target scale (~50K req/sec across the fleet) this is one extra
-//! UPDATE per request — acceptable for now; can be batched via a
-//! periodic flush if it ever becomes a hot spot.
+//! Failure modes (all 401):
+//!   - missing or malformed `Authorization: Bearer …` header
+//!   - JWT signature mismatch, expired, or `iss` not in `device_registry`
+//!   - `device_claims` has no row with `status='claimed'` for this device
+//!     (operator revoked the claim or never finished bootstrap)
+//!   - edge_box / site lookup fails (claim points at a deleted box)
+//!   - edge_box is retired (operator clicked Remove)
+//!
+//! Side effects, all best-effort (a failure logs but never blocks the
+//! request):
+//!   - `edge_boxes.status` flips to `active` on first successful auth
+//!   - `edge_boxes.tailscale_ip` is auto-tracked from the request's
+//!     reachable address so snapshot / HLS proxies can dial back
+//!   - `edge_boxes.funnel_hostname` is recorded from the
+//!     `X-Edge-Funnel-Hostname` header for WebRTC session URL minting
+//!   - `edge_boxes.last_seen_at` is stamped on every call
 
 use axum::{
     body::Body,
-    http::{HeaderValue, Request, StatusCode, header::AUTHORIZATION},
+    http::{Request, StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::Response,
 };
@@ -26,37 +35,9 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 
 use crate::auth::context::EdgeContext;
 use crate::auth::jwt;
-use crate::auth::token;
-use crate::entities::{
-    cameras, device_claims, device_registry, edge_box_tokens, edge_boxes, sites,
-};
+use crate::entities::{cameras, device_claims, device_registry, edge_boxes, sites};
 
-/// HTTP header used to deprecate the bearer auth path per
-/// RFC 8594. Set via `OXY_BEARER_SUNSET_DATE` (an HTTP-date
-/// string, e.g. `Sun, 31 Dec 2026 23:59:59 GMT`). When unset, no
-/// header is emitted — the legacy path is fully alive.
-const SUNSET_HEADER: &str = "sunset";
-const SUNSET_DATE_ENV: &str = "OXY_BEARER_SUNSET_DATE";
-
-/// Env opt-out that *re-enables* the legacy bearer path. The
-/// default behaviour is JWT-only: any device authenticating with a
-/// static bearer gets 401. Setting `OXY_ALLOW_LEGACY_BEARER=true`
-/// is the emergency lever for a rolling upgrade window where some
-/// boxes haven't received the JWT image yet — once they're on JWT
-/// the flag should be removed again.
-///
-/// Predecessor: `OXY_REQUIRE_JWT_AUTH=true` was the opt-in switch
-/// before cutover. After the 2026-06 cutover the default flipped
-/// and the old name was retired.
-const ALLOW_BEARER_ENV: &str = "OXY_ALLOW_LEGACY_BEARER";
-
-fn legacy_bearer_allowed() -> bool {
-    std::env::var(ALLOW_BEARER_ENV)
-        .map(|v| v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-}
-
-/// Middleware that authenticates an edge box via bearer token and
+/// Middleware that authenticates an edge box via per-device JWT and
 /// injects [`EdgeContext`] into request extensions.
 ///
 /// Reads the `DatabaseConnection` from request extensions (mounted by
@@ -79,51 +60,27 @@ pub async fn require_device_token(
         })?;
     let bearer = extract_bearer(&req).ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // ── Dual-path verify ────────────────────────────────────────────────
-    //
-    // The wire shape disambiguates: a JWT has exactly three
-    // base64url segments joined with periods; bearer tokens
-    // minted by `auth::token::issue` are flat base64 with no
-    // dots. We try JWT first when the shape matches; otherwise
-    // fall straight to the legacy bearer lookup. This keeps the
-    // hot path one extra branch deep, not one extra DB call.
-    let auth_outcome = if jwt::looks_like_jwt(&bearer) {
-        verify_jwt(&db, &bearer).await
-    } else {
-        verify_bearer(&db, &bearer).await
-    };
-    let (edge_box, token_id, token_prefix, auth_mode) = match auth_outcome {
-        Ok(v) => v,
-        Err(status) => return Err(status),
-    };
-
-    if auth_mode == AuthMode::Bearer && !legacy_bearer_allowed() {
-        // Post-cutover default: bearer auth rejected. Operator UI's
-        // per-box `auth_mode` column still surfaces "bearer" so the
-        // rejection isn't a surprise — we log here for the support
-        // paper trail.
-        tracing::warn!(
-            edge_box_id = %edge_box.id,
-            token_prefix = %token_prefix,
-            "edge-auth: bearer rejected (JWT-only is the default post-cutover; set OXY_ALLOW_LEGACY_BEARER=true to temporarily re-enable)"
-        );
+    if !jwt::looks_like_jwt(&bearer) {
+        // A non-JWT credential here is either a stale device.json
+        // from before the IoT identity layer or a misconfigured
+        // client. 401 with a log so support can identify the wave.
+        tracing::warn!("edge-auth: non-JWT credential rejected — device needs re-onboarding");
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Retired-box guard. `remove_member` revokes bearer rows so the
-    // legacy bearer path naturally fails after retirement, but the
-    // JWT path verifies against the device's HMAC secret (which
-    // stays in `device_registry`) and would otherwise keep
-    // authenticating forever. Without this check, the liveness
-    // batch below was re-flipping `status` back to `active` on
-    // every poll — operators saw retired boxes resurface within
-    // 30s of clicking Remove. After retire, the operator's intent
-    // is "this box is gone": send 401 so the worker stops cleanly.
+    let (edge_box, claim_id) = verify_jwt(&db, &bearer).await?;
+
+    // Retired-box guard. The JWT path verifies against the device's
+    // HMAC secret (which stays in `device_registry` even after retire)
+    // and would otherwise keep authenticating forever. After retire,
+    // the operator's intent is "this box is gone": send 401 so the
+    // worker stops cleanly. Without this check the liveness batch
+    // below was re-flipping `status` back to `active` on every poll —
+    // operators saw retired boxes resurface within 30s of clicking
+    // Remove.
     if edge_box.status == "retired" {
         tracing::warn!(
             edge_box_id = %edge_box.id,
-            token_prefix = %token_prefix,
-            auth_mode = ?auth_mode,
             "edge-auth: rejected — box is retired"
         );
         return Err(StatusCode::UNAUTHORIZED);
@@ -134,24 +91,6 @@ pub async fn require_device_token(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    // Stamp last_used_at on the bearer token row when we used
-    // one. JWT path has no per-token row to stamp — the device's
-    // `device_registry.last_announce_at` is the equivalent
-    // liveness signal there.
-    if auth_mode == AuthMode::Bearer
-        && let Ok(Some(t)) = edge_box_tokens::Entity::find_by_id(token_id).one(&db).await
-    {
-        let mut am: edge_box_tokens::ActiveModel = t.into();
-        am.last_used_at = Set(Some(chrono::Utc::now().into()));
-        if let Err(e) = am.update(&db).await {
-            tracing::warn!(
-                error = %e,
-                token_id = %token_id,
-                "edge-auth: last_used_at update failed"
-            );
-        }
-    }
 
     // Single per-call edge_boxes UPDATE that batches three liveness
     // signals into one write:
@@ -167,12 +106,11 @@ pub async fn require_device_token(
     //                          a. X-Edge-Tailscale-IP header
     //                          b. X-Forwarded-For last hop
     //                          c. socket peer via ConnectInfo (set by
-    //                             `into_make_service_with_connect_info`
-    //                             at the top of the router)
-    //   3. `last_seen_at`  — what the UI's "Last seen" column reads.
-    //                        Written on every call, accepting the
-    //                        cost of one UPDATE per (~30s) poll per
-    //                        edge. Throttling can come if it bites.
+    //                             `into_make_service_with_connect_info`)
+    //                        Always stamps `last_seen_at`. Throttling
+    //                        can come if it bites.
+    //   3. `funnel_hostname` — same idea for the Tailscale Funnel
+    //                          hostname the worker self-reports.
     //
     // Best-effort: log on failure, never block the request.
     {
@@ -192,9 +130,6 @@ pub async fn require_device_token(
             (None, _) => false,
         };
 
-        let observed_auth_mode = auth_mode.as_str();
-        let needs_auth_mode_update = edge_box.auth_mode != observed_auth_mode;
-
         let mut eb_am: edge_boxes::ActiveModel = edge_box.clone().into();
         if needs_status_flip {
             eb_am.status = Set("active".into());
@@ -205,15 +140,6 @@ pub async fn require_device_token(
         }
         if needs_funnel_update {
             eb_am.funnel_hostname = Set(observed_funnel.clone());
-        }
-        if needs_auth_mode_update {
-            // Persist the transition so operators see the rollout
-            // drain in real time. We never write 'bearer' back over
-            // 'jwt' to avoid bouncing the column for a single
-            // misconfigured request — but a device that has truly
-            // downgraded would show up on the legacy `bearer` path
-            // here, and the next handler call would correct it.
-            eb_am.auth_mode = Set(observed_auth_mode.into());
         }
         eb_am.last_seen_at = Set(Some(now.into()));
         eb_am.updated_at = Set(now.into());
@@ -253,90 +179,19 @@ pub async fn require_device_token(
         edge_box_id: edge_box.id,
         site_id: site.id,
         workspace_id: site.workspace_id,
-        token_id,
-        token_prefix,
+        claim_id,
     };
     req.extensions_mut().insert(ctx);
 
-    let mut response = next.run(req).await;
-
-    // Sunset header (RFC 8594) — when the deployment has declared
-    // a deprecation date for the bearer path, stamp it on every
-    // bearer auth response so devices' clients can log the
-    // upcoming break before it happens. JWT auth never carries
-    // the header (it's the migration target, not the deprecated
-    // path).
-    if auth_mode == AuthMode::Bearer
-        && let Ok(date) = std::env::var(SUNSET_DATE_ENV)
-        && let Ok(value) = HeaderValue::from_str(date.trim())
-    {
-        response.headers_mut().insert(SUNSET_HEADER, value);
-    }
-
-    Ok(response)
+    Ok(next.run(req).await)
 }
 
-/// Outcome of the per-request auth attempt — the four values the
-/// rest of the middleware needs regardless of which path verified
-/// the credential.
-type AuthOutcome = (edge_boxes::Model, uuid::Uuid, String, AuthMode);
+/// What `verify_jwt` returns: the resolved edge_box plus the
+/// device_claims row id that authorized this request (carried into
+/// `EdgeContext` so handlers can correlate per-device audit logs).
+type AuthOutcome = (edge_boxes::Model, uuid::Uuid);
 
-/// Which auth path matched. Stamped on the edge_boxes row so the
-/// operator UI can show the bearer → JWT rollout drain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AuthMode {
-    Bearer,
-    Jwt,
-}
-
-impl AuthMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Bearer => "bearer",
-            Self::Jwt => "jwt",
-        }
-    }
-}
-
-/// Legacy bearer-token path: hash + lookup `edge_box_tokens`.
-/// Identical semantics to pre-Phase-3 — we factored it out so the
-/// dual-path branch in the main handler stays readable.
-async fn verify_bearer(db: &DatabaseConnection, bearer: &str) -> Result<AuthOutcome, StatusCode> {
-    let token_hash = token::hash(bearer);
-    let token_row = edge_box_tokens::Entity::find()
-        .filter(edge_box_tokens::Column::TokenHash.eq(&token_hash))
-        .one(db)
-        .await
-        .map_err(|e| {
-            tracing::warn!(error = %e, "edge-auth: token lookup failed");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    if token_row.revoked_at.is_some() {
-        tracing::info!(
-            token_id = %token_row.id,
-            prefix = %token_row.token_prefix,
-            "edge-auth: rejected revoked token"
-        );
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    let edge_box = edge_boxes::Entity::find_by_id(token_row.edge_box_id)
-        .one(db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    Ok((
-        edge_box,
-        token_row.id,
-        token_row.token_prefix,
-        AuthMode::Bearer,
-    ))
-}
-
-/// Phase 3 JWT path:
+/// Per-device JWT verification:
 ///   1. Parse + cheap structural checks
 ///   2. Look up `device_registry` row by `iss`
 ///   3. Verify HMAC-SHA256 signature with the device's secret
@@ -408,13 +263,7 @@ async fn verify_jwt(db: &DatabaseConnection, raw: &str) -> Result<AuthOutcome, S
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Synthetic identifiers for downstream logging — the JWT path
-    // has no `edge_box_tokens` row. `token_id` is the claim id
-    // (which IS the per-device authorization row), `token_prefix`
-    // is the first 8 chars of the device UUID. Both are safe to
-    // log: a leaked claim id buys nothing without the secret.
-    let token_prefix = device_id.to_string().chars().take(8).collect::<String>();
-    Ok((edge_box, active_claim.id, token_prefix, AuthMode::Jwt))
+    Ok((edge_box, active_claim.id))
 }
 
 /// Pull the `iss` field out of a JWT payload without verifying
@@ -439,7 +288,7 @@ fn peek_jwt_issuer(token: &str) -> Option<uuid::Uuid> {
 ///   1. `X-Edge-Tailscale-IP` — explicit override the edge can set if
 ///      it knows its own Tailscale IP (e.g. read from
 ///      `tailscale status --json` on boot). Trust unconditionally
-///      because the request is already bearer-authenticated.
+///      because the request is already JWT-authenticated.
 ///   2. `X-Forwarded-For` last hop — set by reverse proxies / LBs.
 ///      We pick the LAST entry because that's the closest hop we
 ///      trust (the upstream proxy); earlier entries can be spoofed.
@@ -451,20 +300,21 @@ fn peek_jwt_issuer(token: &str) -> Option<uuid::Uuid> {
 fn peer_ip_from_request<B>(req: &Request<B>) -> Option<String> {
     if let Some(h) = req.headers().get("x-edge-tailscale-ip")
         && let Ok(s) = h.to_str()
+        && let Some(ip) = parse_literal_ip(s.trim())
     {
-        let v = s.trim();
-        if !v.is_empty() {
-            return Some(v.to_string());
-        }
+        return Some(ip);
     }
     if let Some(h) = req.headers().get("x-forwarded-for")
         && let Ok(s) = h.to_str()
     {
         // XFF format: "client, proxy1, proxy2" — last is the closest
-        // hop. Trim for whitespace.
+        // hop. Reject anything that doesn't parse as an IP literal:
+        // the value flows into `service::preview::upstream_base`
+        // which builds `https://{ip}:port`, so a hostname or
+        // URL-meaningful character here would be SSRF.
         let last = s.split(',').next_back()?.trim();
-        if !last.is_empty() {
-            return Some(last.to_string());
+        if let Some(ip) = parse_literal_ip(last) {
+            return Some(ip);
         }
     }
     // Socket peer via `ConnectInfo<SocketAddr>`. Inserted into
@@ -487,6 +337,23 @@ fn peer_ip_from_request<B>(req: &Request<B>) -> Option<String> {
     None
 }
 
+/// Parse a literal IPv4 or IPv6 address. Returns the canonical
+/// string form (so callers get consistent input regardless of
+/// whether the client sent `100.64.001.42` or surrounding
+/// brackets on a v6 literal). Returns None for hostnames, empty
+/// strings, or anything containing URL-meaningful characters.
+fn parse_literal_ip(s: &str) -> Option<String> {
+    if s.is_empty() {
+        return None;
+    }
+    let stripped = s.strip_prefix('[').and_then(|t| t.strip_suffix(']'));
+    let candidate = stripped.unwrap_or(s);
+    candidate
+        .parse::<std::net::IpAddr>()
+        .ok()
+        .map(|ip| ip.to_string())
+}
+
 /// Extract the box's Tailscale Funnel hostname from the inbound
 /// request. The edge worker reads its own funnel hostname from local
 /// tailscaled (`tailscale serve status --json`) at boot and stamps
@@ -495,26 +362,57 @@ fn peer_ip_from_request<B>(req: &Request<B>) -> Option<String> {
 /// the WebRTC session endpoint can hand the right per-box URL
 /// to the operator browser.
 ///
-/// Trust model: the request is already bearer-authenticated by the
-/// time this runs, so a self-reported hostname is acceptable.
-/// Defense-in-depth: reject anything that doesn't look like a
-/// `.ts.net` hostname (no whitespace, no scheme prefix).
+/// Trust model: the request is already JWT-authenticated by the
+/// time this runs, so a self-reported hostname is acceptable. But
+/// `service::preview::upstream_base` later builds `https://{value}`
+/// from this without re-validating, so a permissive parser here
+/// turns into SSRF on the snapshot / HLS / clip proxies. Defense:
+/// require a strict DNS-label syntax that ends in `.ts.net` and
+/// reject any URL-meaningful character (`/`, `?`, `#`, `@`, `:`,
+/// `\`) so values like `evil.com/foo.ts.net` can't slip through.
 fn funnel_hostname_from_request<B>(req: &Request<B>) -> Option<String> {
     let raw = req.headers().get("x-edge-funnel-hostname")?.to_str().ok()?;
-    let v = raw.trim();
-    if v.is_empty()
-        || v.contains(char::is_whitespace)
-        || v.contains("://")
-        || !v.ends_with(".ts.net")
-    {
-        return None;
+    is_valid_funnel_hostname(raw.trim()).then(|| raw.trim().to_string())
+}
+
+/// Strict `.ts.net` hostname check. Public for unit-testability.
+///
+/// Returns true iff `v`:
+///   - is non-empty and contains no URL-meaningful characters
+///     (`/`, `?`, `#`, `@`, `:`, `\`, scheme separators, whitespace),
+///   - ends in `.ts.net`,
+///   - has at least one label before the `.ts.net` suffix,
+///   - has every dot-separated label match `[a-z0-9-]+` with no
+///     leading/trailing hyphen.
+fn is_valid_funnel_hostname(v: &str) -> bool {
+    if v.is_empty() || !v.ends_with(".ts.net") {
+        return false;
     }
-    Some(v.to_string())
+    // Belt-and-suspenders: any of these would already break the
+    // label check below, but listing them explicitly makes the
+    // SSRF guard intent obvious to readers.
+    if v.contains(['/', '?', '#', '@', ':', '\\'])
+        || v.contains("://")
+        || v.contains(char::is_whitespace)
+    {
+        return false;
+    }
+    let labels: Vec<&str> = v.split('.').collect();
+    // ".ts.net" suffix → at minimum "<one-label>.ts.net" = 3 labels.
+    if labels.len() < 3 {
+        return false;
+    }
+    labels.iter().all(|l| {
+        !l.is_empty()
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+            && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    })
 }
 
 /// Extract the bearer string from an `Authorization: Bearer <token>`
 /// header. Returns `None` if the header is missing, malformed, or uses
-/// a different scheme.
+/// a different scheme. The token itself is a per-device JWT.
 fn extract_bearer<B>(req: &Request<B>) -> Option<String> {
     let h = req.headers().get(AUTHORIZATION)?;
     let s = h.to_str().ok()?;
@@ -642,5 +540,71 @@ mod tests {
     fn peer_ip_none_when_nothing_set() {
         let r = req_with_extensions(None, None, None);
         assert!(peer_ip_from_request(&r).is_none());
+    }
+
+    #[test]
+    fn peer_ip_rejects_non_ip_x_edge_tailscale_ip() {
+        // The value flows into `service::preview::upstream_base`
+        // verbatim. A hostname-looking value here would let a JWT-
+        // authenticated caller redirect the snapshot/HLS/clip proxy
+        // to an arbitrary host (SSRF). Header must be a literal IP.
+        for bad in [
+            "evil.com",
+            "evil.com/path",
+            "100.64.1.42@evil.com",
+            "100.64.1.42?x=1",
+            "100.64.1.42#frag",
+            "100.64.1.42 evil.com",
+            "",
+        ] {
+            let r = req_with_extensions(None, None, Some(bad));
+            assert!(
+                peer_ip_from_request(&r).is_none(),
+                "expected rejection for {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn peer_ip_accepts_ipv6_literal() {
+        let r = req_with_extensions(None, None, Some("[2001:db8::1]"));
+        assert_eq!(peer_ip_from_request(&r).as_deref(), Some("2001:db8::1"));
+    }
+
+    #[test]
+    fn peer_ip_rejects_hostname_in_xff_last_hop() {
+        let r = req_with_extensions(None, Some("client.example, evil.com"), None);
+        assert!(peer_ip_from_request(&r).is_none());
+    }
+
+    #[test]
+    fn funnel_hostname_accepts_canonical() {
+        assert!(is_valid_funnel_hostname("video-poc-edge.tail123.ts.net"));
+        assert!(is_valid_funnel_hostname("abc-123.tailnet.ts.net"));
+    }
+
+    #[test]
+    fn funnel_hostname_rejects_ssrf_payloads() {
+        // Every one of these used to slip past the prior `ends_with`
+        // check and into `format!("https://{value}")` downstream.
+        let bad = [
+            "evil.com/x.ts.net",
+            "evil.com#.ts.net",
+            "evil.com?.ts.net",
+            "evil.com@x.ts.net",
+            "evil.com:80.ts.net",
+            "evil.com\\x.ts.net",
+            "evil .com.ts.net",
+            "/x.ts.net",
+            ".ts.net",     // empty leading label
+            "foo..ts.net", // empty middle label
+            "-foo.ts.net", // leading hyphen
+            "foo-.ts.net", // trailing hyphen
+            "foo.ts.net.evil.com",
+            "https://x.ts.net",
+        ];
+        for v in bad {
+            assert!(!is_valid_funnel_hostname(v), "expected rejection for {v:?}");
+        }
     }
 }

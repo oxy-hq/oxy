@@ -14,8 +14,8 @@ const useUnifiImport = (workspaceId: string | undefined) => {
   return useMutation({
     // `apiKey` is optional — when omitted, the backend uses the workspace's
     // stored UniFi credential (same fallback as preview).
-    mutationFn: ({ apiKey, siteFilter }: { apiKey?: string; siteFilter?: string } = {}) =>
-      CameraService.unifiImport(effectiveWorkspaceId, apiKey, siteFilter),
+    mutationFn: ({ apiKey, consoleIds }: { apiKey?: string; consoleIds?: string[] } = {}) =>
+      CameraService.unifiImport(effectiveWorkspaceId, apiKey, consoleIds),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.camera.sites(effectiveWorkspaceId)

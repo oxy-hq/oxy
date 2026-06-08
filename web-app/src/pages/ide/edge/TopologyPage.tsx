@@ -5,7 +5,6 @@ import {
   type Edge as FlowEdge,
   type Node as FlowNode,
   Handle,
-  MiniMap,
   type NodeProps,
   Position,
   ReactFlow,
@@ -344,7 +343,12 @@ const TopologyContent: React.FC<{
   }
 
   return (
+    // `key={direction}` forces a fresh ReactFlow mount on layout
+    // flip. Without it, RF's internal node-position state survives
+    // the `nodes` prop change and the toggle visually no-ops even
+    // though the new positions are computed correctly.
     <ReactFlow
+      key={direction}
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
@@ -383,26 +387,6 @@ const TopologyContent: React.FC<{
           )}
         </ControlButton>
       </Controls>
-      <MiniMap
-        pannable
-        zoomable
-        className='!rounded-md !border !border-border !bg-card !shadow-sm'
-        nodeStrokeWidth={2}
-        maskColor='var(--muted)'
-        nodeColor={(n) => {
-          const status = (n.data as EdgeNodeData | undefined)?.status;
-          switch (status) {
-            case "ok":
-              return "#10b981";
-            case "warn":
-              return "#f59e0b";
-            case "down":
-              return "#ef4444";
-            default:
-              return "#94a3b8";
-          }
-        }}
-      />
     </ReactFlow>
   );
 };

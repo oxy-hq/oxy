@@ -17,7 +17,7 @@ Lifecycle:
      pending claim, so the very first announce typically lands on
      `pending_claim` without any human polling.
   4. POST `/fleet/bootstrap/{device_id}` → receive
-     `{workspace_id, edge_box_id, bearer}`. Persist these to
+     `{workspace_id, edge_box_id}`. Persist them to
      `OXY_EDGE_ENV_PATH` (default `/var/lib/outbox/edge.env`) at 0600.
 
 Network is the only side effect besides the env file. No docker /
@@ -124,9 +124,9 @@ async def _bootstrap(
     client: httpx.AsyncClient, cfg: ProvisionConfig, ident: DeviceIdentity
 ) -> dict:
     """One POST to /fleet/bootstrap/{device_id}. Returns the parsed
-    `{workspace_id, edge_box_id, bearer}` body. The bearer is the
-    one-shot value the device persists + uses against `/control/*`
-    from here on out."""
+    `{workspace_id, edge_box_id}` body. After bootstrap the device
+    authenticates against `/control/*` with a per-device JWT signed
+    by the on-disk HMAC secret — no static bearer is exchanged."""
     ts, sig_b64 = ident.announce_signature_b64()
     r = await client.post(
         f"{cfg.oxy_url}/fleet/bootstrap/{ident.device_id}",
@@ -137,10 +137,9 @@ async def _bootstrap(
 
 
 def _write_edge_env(path: Path, payload: dict, device_id: UUID) -> None:
-    """Write `EDGE_BOX_ID=…` / `EDGE_BOX_TOKEN=…` / `WORKSPACE_ID=…` /
+    """Write `EDGE_BOX_ID=…` / `WORKSPACE_ID=…` /
     `BOOTSTRAP_DEVICE_ID=…` to a `.env` file the worker entrypoint
-    sources. 0600 because the bearer is as sensitive as the original
-    device secret in terms of "what can talk to /control/* as this box."
+    sources.
 
     `BOOTSTRAP_DEVICE_ID` records which `device.json` identity owned
     this bootstrap. On re-runs, [`_edge_env_device_id`] reads it back so
@@ -155,7 +154,6 @@ def _write_edge_env(path: Path, payload: dict, device_id: UUID) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     body = (
         f"EDGE_BOX_ID={payload['edge_box_id']}\n"
-        f"EDGE_BOX_TOKEN={payload['bearer']}\n"
         f"WORKSPACE_ID={payload['workspace_id']}\n"
         f"BOOTSTRAP_DEVICE_ID={device_id}\n"
     )
@@ -315,8 +313,8 @@ def main() -> int:
         # Smoke-test path: exercise identity + signing + announce
         # without committing to a bootstrap. Useful when triaging a
         # box that's stuck announcing — the bootstrap call costs the
-        # backend a real edge_box row + bearer mint, so we don't
-        # want it firing accidentally during diagnostics.
+        # backend a real edge_box row, so we don't want it firing
+        # accidentally during diagnostics.
         ident = DeviceIdentity.load(cfg.identity_path)
         if ident is None:
             raise SystemExit(

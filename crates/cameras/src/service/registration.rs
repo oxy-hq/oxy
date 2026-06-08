@@ -1,22 +1,17 @@
 //! Edge box registration.
 //!
-//! Operator pre-provisions an edge_box row for a specific site and gets
-//! a one-shot bearer token to hand to the installer. The installer's
-//! Jetson / N100 uses that token for every subsequent `/control/*`
-//! request.
-//!
-//! Token rotation: call [`rotate_token`] to issue a new bearer for the
-//! same edge_box. The old one stays in the DB with `revoked_at` set so
-//! the audit trail survives.
+//! Operator pre-provisions an edge_box row for a specific site. The
+//! device's identity layer (`device_registry` + `device_claims`)
+//! authenticates every subsequent `/control/*` request via per-device
+//! JWT — no static bearers.
 
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, Set, prelude::Uuid as SeaUuid,
+    ActiveModelTrait, ActiveValue::NotSet, DatabaseConnection, EntityTrait, Set,
+    prelude::Uuid as SeaUuid,
 };
 use uuid::Uuid;
 
-use crate::auth::token::{IssuedToken, issue};
-use crate::entities::{edge_box_tokens, edge_boxes, sites};
+use crate::entities::{edge_boxes, sites};
 
 use super::{ServiceError, ServiceResult};
 
@@ -30,19 +25,12 @@ pub struct RegisterEdgeBoxInput {
     pub image_tag: Option<String>,
     /// Cohort label for OTA rollouts: `"stable"` (default) or `"canary"`.
     pub cohort: Option<String>,
-    /// Human-readable label for the issued token; appears in the
-    /// `edge_box_tokens.description` column. Useful when an operator
-    /// reissues for the same box.
-    pub token_description: Option<String>,
 }
 
-/// Result of a successful registration. The plaintext token is returned
-/// **once** here; it cannot be recovered afterward (only the hash is
-/// stored).
+/// Result of a successful registration.
 #[derive(Debug)]
 pub struct RegisterEdgeBoxOutput {
     pub edge_box_id: Uuid,
-    pub token: IssuedToken,
 }
 
 /// Pre-register an edge box bound to a site. Caller is responsible for
@@ -96,7 +84,6 @@ pub async fn register_edge_box(
         held_until: NotSet,
         last_update_result: NotSet,
         last_update_at: NotSet,
-        auth_mode: NotSet,
         edge_compatibility_json: NotSet,
         incompatible_reason: NotSet,
         status: Set("pending".into()),
@@ -108,19 +95,6 @@ pub async fn register_edge_box(
         updated_at: Set(now.into()),
     };
     edge_box.insert(db).await?;
-
-    let token = issue();
-    let token_row = edge_box_tokens::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        edge_box_id: Set(edge_box_id),
-        token_hash: Set(token.hash.clone()),
-        token_prefix: Set(token.prefix.clone()),
-        description: Set(input.token_description),
-        created_at: Set(now.into()),
-        last_used_at: NotSet,
-        revoked_at: NotSet,
-    };
-    token_row.insert(db).await?;
 
     // Camera-intent trigger: registering an edge box is an explicit
     // "this workspace runs camera infrastructure" signal. Eagerly
@@ -137,68 +111,5 @@ pub async fn register_edge_box(
         );
     }
 
-    Ok(RegisterEdgeBoxOutput { edge_box_id, token })
-}
-
-/// Issue a new bearer for an existing edge box and revoke all prior
-/// active tokens for the same box. Use after physical replacement of
-/// the edge hardware or when a token is believed leaked.
-pub async fn rotate_token(
-    db: &DatabaseConnection,
-    edge_box_id: Uuid,
-    token_description: Option<String>,
-) -> ServiceResult<IssuedToken> {
-    let now = chrono::Utc::now();
-
-    // Confirm the box exists.
-    if edge_boxes::Entity::find_by_id::<SeaUuid>(edge_box_id)
-        .one(db)
-        .await?
-        .is_none()
-    {
-        return Err(ServiceError::NotFound);
-    }
-
-    // Revoke all currently-active tokens for this box. We don't bother
-    // batching this; in practice it's almost always exactly one row.
-    edge_box_tokens::Entity::update_many()
-        .col_expr(
-            edge_box_tokens::Column::RevokedAt,
-            sea_orm::sea_query::Expr::value(Some::<chrono::DateTime<chrono::Utc>>(now)),
-        )
-        .filter(edge_box_tokens::Column::EdgeBoxId.eq(edge_box_id))
-        .filter(edge_box_tokens::Column::RevokedAt.is_null())
-        .exec(db)
-        .await?;
-
-    let token = issue();
-    let token_row = edge_box_tokens::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        edge_box_id: Set(edge_box_id),
-        token_hash: Set(token.hash.clone()),
-        token_prefix: Set(token.prefix.clone()),
-        description: Set(token_description),
-        created_at: Set(now.into()),
-        last_used_at: NotSet,
-        revoked_at: NotSet,
-    };
-    token_row.insert(db).await?;
-    Ok(token)
-}
-
-/// Revoke a single token by id. Idempotent — re-revoking a revoked
-/// token returns `Ok(())` without changing `revoked_at`.
-pub async fn revoke_token(db: &DatabaseConnection, token_id: Uuid) -> ServiceResult<()> {
-    edge_box_tokens::Entity::update_many()
-        .col_expr(
-            edge_box_tokens::Column::RevokedAt,
-            sea_orm::sea_query::Expr::value(Some::<chrono::DateTime<chrono::Utc>>(
-                chrono::Utc::now(),
-            )),
-        )
-        .filter(edge_box_tokens::Column::Id.eq(token_id))
-        .filter(edge_box_tokens::Column::RevokedAt.is_null())
-        .exec(db)
-        .await?;
-    Ok(())
+    Ok(RegisterEdgeBoxOutput { edge_box_id })
 }
