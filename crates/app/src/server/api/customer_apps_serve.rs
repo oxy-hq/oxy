@@ -233,8 +233,27 @@ async fn serve_pretty(
 
     let runtime = AppRuntimeConfig::from_app(&app, &org.slug);
 
+    // Detect the "user-navigation" requests (root path, trailing-slash
+    // directory, or `.html`) so we record at most one view event per
+    // user-visible page load — not once per asset / API fetch which
+    // would 100× the volume with zero extra signal.
+    //
+    // Computed BEFORE the dispatch so the per-source-type response
+    // build doesn't need to know about tracking. Tracking + cookie
+    // injection happen in the post-dispatch wrapper at the bottom.
+    let is_html_request = is_html_navigation(&rest);
+    let source_label = match super::customer_apps_host_dispatch::parse_subdomain(
+        headers
+            .get(axum::http::header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or(""),
+    ) {
+        Some(_) => "subdomain",
+        None => "subpath",
+    };
+
     use super::customer_apps_source::AppSource;
-    match source {
+    let response = match source {
         AppSource::V0 { url } => {
             super::customer_apps_proxy::proxy(
                 &url,
@@ -298,6 +317,92 @@ async fn serve_pretty(
                 }
             }
         }
+    };
+
+    // Post-dispatch: for browser-navigation requests only (root /
+    // trailing-slash / `.html`), stamp the session cookie on the
+    // response and spawn the view-event recording. Asset / API
+    // fetches are storm-volume — exclude them so the Activity tab
+    // counts user-visible page loads, not request volume.
+    if is_html_request {
+        let host = headers
+            .get(axum::http::header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .split(':')
+            .next()
+            .unwrap_or("");
+        let secure = uri.scheme_str() == Some("https")
+            || headers
+                .get("x-forwarded-proto")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.eq_ignore_ascii_case("https"))
+                .unwrap_or(false);
+        let (session_id, set_cookie) =
+            super::customer_apps_tracking::session_id_for_serve(&headers, secure);
+        let referrer = headers
+            .get(axum::http::header::REFERER)
+            .and_then(|v| v.to_str().ok());
+        let sanitized_referrer = super::customer_apps_tracking::sanitize_referrer(referrer, host);
+        let user_agent_class = classify_user_agent(headers.get(axum::http::header::USER_AGENT));
+        let app_id = id;
+        let user_id = user.id;
+        let user_email = user.email.clone();
+        let source_label = source_label.to_string();
+        // Fire-and-forget; a slow DB insert must not stall the HTML
+        // response. Losing a row on crash is the documented acceptable
+        // failure mode for tracking-grade data.
+        tokio::spawn(async move {
+            super::customer_apps_tracking::record_view(
+                app_id,
+                user_id,
+                user_email,
+                session_id,
+                sanitized_referrer,
+                user_agent_class,
+                source_label,
+            )
+            .await;
+        });
+
+        let mut resp = response;
+        if let Ok(hv) = axum::http::HeaderValue::from_str(&set_cookie) {
+            resp.headers_mut().append(header::SET_COOKIE, hv);
+        }
+        return resp;
+    }
+
+    response
+}
+
+/// True for "user opened a page" requests: root, any trailing-slash
+/// directory, or a `.html` file. Excludes asset URLs (`/_next/...`,
+/// `/static/...`, `*.js`/`*.css`/`*.svg`/etc.) and API fetches so the
+/// Activity tab counts page loads, not request volume.
+fn is_html_navigation(rest: &str) -> bool {
+    let path = rest.trim_start_matches('/');
+    if path.is_empty() || path.ends_with('/') {
+        return true;
+    }
+    // Strip a query string before checking the extension.
+    let bare = path.split('?').next().unwrap_or(path);
+    bare.ends_with(".html")
+}
+
+/// Cheap UA classifier — keeps the recorded value small + bounded so
+/// the Activity tab can group rows by class without storing the full
+/// UA string. Real browser navigations have UA strings starting with
+/// `Mozilla/` (per RFC convention); SDK/curl-style calls don't.
+fn classify_user_agent(header: Option<&axum::http::HeaderValue>) -> String {
+    let Some(v) = header.and_then(|h| h.to_str().ok()) else {
+        return "unknown".to_string();
+    };
+    if v.starts_with("Mozilla/") {
+        "browser".to_string()
+    } else if v.is_empty() {
+        "unknown".to_string()
+    } else {
+        "sdk".to_string()
     }
 }
 

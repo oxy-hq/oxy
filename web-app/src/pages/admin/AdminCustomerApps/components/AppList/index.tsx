@@ -440,8 +440,19 @@ const AppRow = ({
 
         <div className='flex w-full items-center gap-1.5 font-mono text-[11px] text-muted-foreground/70'>
           <span className='truncate'>proj:{app.project_id.slice(0, 8)}</span>
+          {/* Right-edge stamp. Prefers `last_active_at` (someone opened
+              the app recently) over `last_synced_at` (registry mutation
+              time) because "is this thing being used?" is the higher-
+              signal answer when triaging "what's stale?" — sync time
+              only moves when an admin edits the row, which doesn't
+              correlate with actual usage. Falls back to sync time when
+              tracking has no rows yet (e.g. a freshly registered app). */}
           <span className='ml-auto shrink-0'>
-            {app.last_synced_at ? relativeTime(app.last_synced_at) : "—"}
+            {app.last_active_at
+              ? `active ${relativeTime(app.last_active_at)}`
+              : app.last_synced_at
+                ? relativeTime(app.last_synced_at)
+                : "—"}
           </span>
         </div>
       </div>

@@ -84,3 +84,62 @@ export const useUpdateApp = () => {
     }
   });
 };
+
+// ── Activity (usage tracking) ───────────────────────────────────────────
+
+/**
+ * Headline numbers (last viewed, 7d uniques, 7d total views/events)
+ * for the AppDetail Activity tab. 30s staleTime so navigating away
+ * and back doesn't refetch; the data isn't real-time-critical.
+ */
+export const useAppActivitySummary = (appId: string | undefined) =>
+  useQuery({
+    queryKey: queryKeys.customerApps.activitySummary(appId ?? ""),
+    queryFn: () => CustomerAppsService.activitySummary(appId as string),
+    enabled: !!appId,
+    staleTime: 30_000
+  });
+
+export const useAppActivityVisitors = (appId: string | undefined, days = 7) =>
+  useQuery({
+    queryKey: queryKeys.customerApps.activityVisitors(appId ?? "", days),
+    queryFn: () => CustomerAppsService.activityVisitors(appId as string, days),
+    enabled: !!appId,
+    staleTime: 30_000
+  });
+
+/**
+ * Per-event-name counts + last-fired timestamps for the Activity tab's
+ * Events table. Split from the occurrences hook because they return
+ * different row shapes — folding both into one `useQuery` widened
+ * the `queryFn` return into a union TanStack Query's overloads
+ * can't satisfy (TS2769 in CI). One hook per shape keeps the
+ * generics clean.
+ */
+export const useAppActivityEventGroups = (appId: string | undefined, days = 7) =>
+  useQuery({
+    queryKey: queryKeys.customerApps.activityEvents(appId ?? "", days, null),
+    queryFn: () => CustomerAppsService.activityEventGroups(appId as string, days),
+    enabled: !!appId,
+    staleTime: 30_000
+  });
+
+/**
+ * Recent occurrences for a single event_name — the drill-down view
+ * the Activity tab opens when an operator clicks a row in the
+ * Events table. Disabled when `eventName` is null so the call site
+ * can `useState<string | null>` and pass it through without a
+ * conditional hook.
+ */
+export const useAppActivityEventOccurrences = (
+  appId: string | undefined,
+  eventName: string | null,
+  days = 7
+) =>
+  useQuery({
+    queryKey: queryKeys.customerApps.activityEvents(appId ?? "", days, eventName),
+    queryFn: () =>
+      CustomerAppsService.activityEventOccurrences(appId as string, eventName as string, days),
+    enabled: !!appId && !!eventName,
+    staleTime: 30_000
+  });

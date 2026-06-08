@@ -173,5 +173,66 @@ export const CustomerAppsService = {
       );
     }
     return data as Template[];
+  },
+
+  // ── Activity (usage tracking) ──────────────────────────────────────────
+
+  async activitySummary(id: string): Promise<ActivitySummary> {
+    const r = await apiClient.get(`/customer-apps/${id}/activity/summary`);
+    return r.data as ActivitySummary;
+  },
+
+  async activityVisitors(id: string, days = 7, limit = 50): Promise<VisitorRow[]> {
+    const r = await apiClient.get(
+      `/customer-apps/${id}/activity/visitors?days=${days}&limit=${limit}`
+    );
+    return (r.data?.rows ?? []) as VisitorRow[];
+  },
+
+  async activityEventGroups(id: string, days = 7): Promise<EventGroupRow[]> {
+    const r = await apiClient.get(`/customer-apps/${id}/activity/events?days=${days}`);
+    return (r.data?.groups ?? []) as EventGroupRow[];
+  },
+
+  async activityEventOccurrences(
+    id: string,
+    eventName: string,
+    days = 7,
+    limit = 50
+  ): Promise<EventOccurrenceRow[]> {
+    const r = await apiClient.get(
+      `/customer-apps/${id}/activity/events?days=${days}&limit=${limit}&event_name=${encodeURIComponent(eventName)}`
+    );
+    return (r.data?.rows ?? []) as EventOccurrenceRow[];
   }
 };
+
+export interface ActivitySummary {
+  total_views_7d: number;
+  unique_users_7d: number;
+  total_events_7d: number;
+  last_viewed_at: string | null;
+}
+
+export interface VisitorRow {
+  user_id: string;
+  user_email: string;
+  sessions: number;
+  views: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface EventGroupRow {
+  event_name: string;
+  count: number;
+  last_fired_at: string;
+}
+
+export interface EventOccurrenceRow {
+  id: string;
+  event_name: string;
+  user_email: string;
+  payload: Record<string, unknown>;
+  occurred_at: string;
+}

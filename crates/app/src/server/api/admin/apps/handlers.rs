@@ -207,6 +207,14 @@ pub struct AppResponse {
     pub repo_path: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// `MAX(custom_app_view_event.viewed_at)` for this app, or `None`
+    /// when nobody has opened the app yet. Drives the list-level
+    /// "last active" column on the Custom apps admin page so operators
+    /// can sort by "stale apps". Populated by `list_apps` via a single
+    /// batched query — `from_model_with_org` leaves it `None` because
+    /// per-row queries would be N+1 on the list page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_active_at: Option<String>,
     /// Soft warnings the UI should surface to the operator. Populated
     /// by `create_app` + `update_app` after side-effect validation
     /// (e.g. "no index.html at the configured local path"). The row
@@ -259,6 +267,7 @@ impl AppResponse {
             repo_path: m.repo_path,
             created_at: m.created_at.to_rfc3339(),
             updated_at: m.updated_at.to_rfc3339(),
+            last_active_at: None,
             warnings: Vec::new(),
         }
     }
@@ -737,7 +746,24 @@ pub async fn list_apps(
         tracing::error!("Failed to load org slugs for apps list: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let items = rows_to_responses(rows, &org_slugs);
+    // Batch-load last-active timestamps for the page (single query;
+    // N+1 would be brutal on an org with 100+ apps). Failures fall
+    // back to `None` — the list page should never 500 because the
+    // tracking table is unavailable.
+    let app_ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+    let last_active =
+        crate::server::api::customer_apps_activity::last_active_at_by_app(&db, &app_ids)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("last_active_at_by_app failed (filling Nones): {e}");
+                Default::default()
+            });
+    let mut items = rows_to_responses(rows, &org_slugs);
+    for item in items.iter_mut() {
+        if let Some(ts) = last_active.get(&item.id) {
+            item.last_active_at = Some(ts.to_rfc3339());
+        }
+    }
     // `next_offset` only exists when the page came back full — short
     // pages are the tail of the dataset and signal "stop fetching" to
     // the client without a separate `total` count query.

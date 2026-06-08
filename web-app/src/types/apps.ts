@@ -48,6 +48,13 @@ export interface CustomerApp {
   last_synced_at: string | null;
   last_deploy_at: string | null;
   /**
+   * MAX(custom_app_view_event.viewed_at) — last time anyone opened
+   * this app in a browser. NULL until the first view is recorded.
+   * Populated on list responses (batched); detail responses leave it
+   * absent because the Activity tab fetches a richer view.
+   */
+  last_active_at?: string | null;
+  /**
    * Set when an Oxy engineer publishes the app via the admin UI. Null
    * = draft (only Oxy staff with workspace oxy-access can reach it).
    * Once set, the app appears in the customer's workspace sidebar.

@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { CustomerAppsService } from "@/services/api/customerApps";
 import type { CustomerApp } from "@/types/apps";
+import { Activity } from "./components/Activity";
 import { AppInfo } from "./components/AppInfo";
 import { AppSettings } from "./components/AppSettings";
 import { BuildHistory } from "./components/BuildHistory";
@@ -117,6 +118,11 @@ export const AppDetail = ({ app }: { app: CustomerApp }) => {
           <div className='p-4'>
             <BuildHistory appId={app.id} />
           </div>
+        </div>
+      )}
+      {tab === "activity" && (
+        <div className='min-h-0 flex-1 overflow-auto'>
+          <Activity appId={app.id} />
         </div>
       )}
       {tab === "settings" && (

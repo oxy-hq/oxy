@@ -105,6 +105,14 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // installed and there's no receiver to drain.
     crate::observability_boot::finalize().await;
 
+    // Spawn the 90-day retention sweep for custom-app usage tracking.
+    // Mirrors how `observability_boot::finalize` wires the
+    // observability retention task. Runs every 6h; the first tick
+    // fires 60s after startup so migrations can settle. See
+    // `customer_apps_tracking::spawn_retention_cleanup` for the
+    // failure-handling rationale.
+    crate::server::api::customer_apps_tracking::spawn_retention_cleanup();
+
     // Detect whether any cloud auth provider is configured — used only to
     // surface an informational log when `--local` is requested with providers
     // present (the providers are ignored in local mode).

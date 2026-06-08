@@ -1398,6 +1398,129 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+// ── useTrackEvent (custom-app usage tracking) ────────────────────────────────
+
+/**
+ * Engineer-tagged usage event. Free-form `event_name` (≤ 64 chars,
+ * `[a-z][a-z0-9-]*` validated server-side) + optional JSON `payload`
+ * (object, ≤ 4 KiB serialized). Surfaces in the admin Activity tab
+ * grouped by name, with drill-down into recent occurrences.
+ *
+ * The handler returned by [`useTrackEvent`] is **fire-and-forget**:
+ * it enqueues the event into an in-memory batch flushed every second
+ * (and on `pagehide` so a navigation away doesn't drop the tail).
+ * No await semantics — call it inline from a click handler without
+ * awaiting it. Server-side validation errors are logged to the
+ * console; the call site doesn't need to handle them.
+ *
+ * Example:
+ * ```tsx
+ * const track = useTrackEvent();
+ * <button
+ *   onClick={() => {
+ *     track("export-clicked", { format: "csv", rowCount });
+ *     doExport();
+ *   }}
+ * >Export</button>
+ * ```
+ *
+ * Rate-limited at 60/min per (user, app) on the server. A burst that
+ * trips the limit drops the excess events with a console warning;
+ * within-limit events are unaffected.
+ */
+export function useTrackEvent(): (name: string, payload?: Record<string, unknown>) => void {
+  const { projectId, fetcher } = useOxyApp();
+  // Per-mount queue. Held in a ref so callers can fire from event
+  // handlers without re-rendering. Flush schedules itself once a
+  // queued event exists; the cleanup on unmount drains synchronously
+  // via the `pagehide` listener.
+  const queueRef = React.useRef<Array<{ event_name: string; payload: Record<string, unknown> }>>(
+    []
+  );
+  const flushTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flush = React.useCallback(() => {
+    flushTimerRef.current = null;
+    if (!projectId) return;
+    const batch = queueRef.current;
+    if (batch.length === 0) return;
+    queueRef.current = [];
+    // The server endpoint takes one event per request — keep the
+    // wire format simple, fire each in parallel. With the 60/min
+    // server-side rate limit + the engineer-tagged surface area
+    // (one-call-per-meaningful-interaction), batch sizes are tiny.
+    for (const evt of batch) {
+      const url = `/api/customer-apps/${projectId}/events`;
+      // Use sendBeacon when the page is unloading — keeps the request
+      // alive past navigation. Otherwise normal fetch via the
+      // context-provided wrapper (which includes credentials + the
+      // engineer's bearer when running cross-origin in `pnpm dev`).
+      //
+      // Dev-mode gap: `navigator.sendBeacon` is a fixed browser API
+      // that carries the user's cookies but doesn't go through the
+      // OxyAppProvider `fetcher` wrapper, so the `OXY_TOKEN` bearer
+      // the vite-plugin proxy adds in cross-origin `pnpm dev` is
+      // missing on these requests. Result: a click that fires + the
+      // tab closes immediately in local dev gets dropped at the
+      // gate as 401. Same-origin prod (cookie auth) is unaffected
+      // because the cookie travels with sendBeacon.
+      const body = JSON.stringify(evt);
+      try {
+        if (
+          typeof navigator !== "undefined" &&
+          typeof navigator.sendBeacon === "function" &&
+          document.visibilityState === "hidden"
+        ) {
+          navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+        } else {
+          fetcher(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body
+          }).catch((e: unknown) => {
+            // Server-side validation errors / rate-limit hits land
+            // here. Surface in console so engineers can see them
+            // during dev without disrupting the app.
+            // biome-ignore lint/suspicious/noConsole: tracking is dev-visible diagnostic
+            console.warn("[oxy] useTrackEvent flush failed:", e);
+          });
+        }
+      } catch (e) {
+        // biome-ignore lint/suspicious/noConsole: see above
+        console.warn("[oxy] useTrackEvent enqueue failed:", e);
+      }
+    }
+  }, [projectId, fetcher]);
+
+  // Drain on page hide / unload so a "click then immediately navigate
+  // away" doesn't lose the click. Cleanup also clears any pending
+  // 1s flush timer — without this, the timer keeps a callback on an
+  // empty queue alive after unmount (harmless but untidy).
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onHide = () => flush();
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      flush();
+      if (flushTimerRef.current !== null) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+    };
+  }, [flush]);
+
+  return React.useCallback(
+    (name: string, payload?: Record<string, unknown>) => {
+      queueRef.current.push({ event_name: name, payload: payload ?? {} });
+      if (flushTimerRef.current === null) {
+        flushTimerRef.current = setTimeout(flush, 1000);
+      }
+    },
+    [flush]
+  );
+}
+
 // ── <OxyAnswer> + <OxyChat> drop-in components ──────────────────────────────
 //
 // Bundles that want a chat surface without rolling their own UI use

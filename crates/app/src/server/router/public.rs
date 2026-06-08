@@ -86,6 +86,14 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/projects/{project_id}/semantic-query",
             post(projects::semantic_query::run_semantic_query),
         )
+        // Bundle-SDK custom event ingest — `useTrackEvent("name", {...})`.
+        // Sits next to /query because both share the same gate chain
+        // (cookie or bearer auth + org-member/app-admin access check).
+        // See `customer_apps_activity::post_event`.
+        .route(
+            "/customer-apps/{project_id}/events",
+            post(crate::server::api::customer_apps_activity::post_event),
+        )
         // Phase 2 — one-shot ask. POST starts a run, GET polls for state.
         // Bundle SDK exposes both behind `useAsk({agentId})`.
         .route(

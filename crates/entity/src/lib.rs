@@ -9,6 +9,8 @@ pub mod app_builds;
 pub mod apps;
 pub mod artifacts;
 pub mod checkpoints;
+pub mod custom_app_event;
+pub mod custom_app_view_event;
 pub mod customer_app_procedure_runs;
 pub mod feature_flag;
 pub mod git_namespaces;

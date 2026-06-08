@@ -84,6 +84,21 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 // Pointer moves only — bytes already live in S3.
                 .route("/{id}/builds", get(admin::apps::handlers::list_builds))
                 .route("/{id}/rollback", post(admin::apps::handlers::rollback_app))
+                // Activity (usage tracking) — see `customer_apps_activity`.
+                // Reads the `custom_app_view_event` + `custom_app_event`
+                // tables to power the AppDetail "Activity" tab.
+                .route(
+                    "/{id}/activity/summary",
+                    get(crate::server::api::customer_apps_activity::get_summary),
+                )
+                .route(
+                    "/{id}/activity/visitors",
+                    get(crate::server::api::customer_apps_activity::get_visitors),
+                )
+                .route(
+                    "/{id}/activity/events",
+                    get(crate::server::api::customer_apps_activity::get_events),
+                )
                 // Preview-draft cookie: flips this staff session into
                 // draft view on the customer URL. Replaces the
                 // (discoverable) `?view=draft` query param so the

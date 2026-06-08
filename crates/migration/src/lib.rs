@@ -106,6 +106,7 @@ mod m20260427_000001_slack_oauth_state_add_channel;
 mod m20260529_000001_add_vlm_budget_to_workspaces;
 mod m20260601_000001_api_keys_add_app_id;
 mod m20260602_000001_create_quickbooks_oauth_states;
+mod m20260606_000001_create_custom_app_tracking;
 
 pub struct Migrator;
 
@@ -213,6 +214,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260529_000001_add_vlm_budget_to_workspaces::Migration),
             Box::new(m20260601_000001_api_keys_add_app_id::Migration),
             Box::new(m20260602_000001_create_quickbooks_oauth_states::Migration),
+            Box::new(m20260606_000001_create_custom_app_tracking::Migration),
         ]
     }
 }

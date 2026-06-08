@@ -454,6 +454,11 @@ const customerAppKeys = {
     ["customerApps", "listdir", path, showHidden] as const,
   probe: (path: string) => ["customerApps", "probe", path] as const,
   builds: (id: string) => ["customerApps", "builds", id] as const,
+  activitySummary: (id: string) => ["customerApps", "activity", id, "summary"] as const,
+  activityVisitors: (id: string, days: number) =>
+    ["customerApps", "activity", id, "visitors", days] as const,
+  activityEvents: (id: string, days: number, eventName: string | null) =>
+    ["customerApps", "activity", id, "events", days, eventName] as const,
   // Key includes a version segment so any cache entry recorded
   // against the pre-fix URL (`/api/admin/customer-apps/templates`,
   // which SPA-fell-back to HTML) gets invalidated when this code

@@ -19,7 +19,7 @@ import { cn } from "@/libs/shadcn/utils";
 import type { CustomerApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../../resolveBundleUrl";
 
-export type DetailTab = "preview" | "info" | "settings";
+export type DetailTab = "preview" | "info" | "activity" | "settings";
 export type Device = "mobile" | "tablet" | "desktop";
 export type ChannelView = "published" | "draft";
 
@@ -123,6 +123,9 @@ export const DetailToolbar = ({
         </TabPill>
         <TabPill active={tab === "info"} onClick={() => onTabChange("info")}>
           Info
+        </TabPill>
+        <TabPill active={tab === "activity"} onClick={() => onTabChange("activity")}>
+          Activity
         </TabPill>
         <TabPill active={tab === "settings"} onClick={() => onTabChange("settings")}>
           Settings
