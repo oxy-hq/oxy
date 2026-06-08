@@ -62,7 +62,9 @@ fn init_tracing_logging(observability_enabled: bool) {
     let filter_directives = env::var("RUST_LOG").unwrap_or_else(|_| {
         format!(
             "{log_level},tower_http=warn,h2=warn,hyper=warn,reqwest=warn,\
-             sqlx=warn,sea_orm=warn,tonic=warn,rustls=warn,deser_incomplete=off"
+             sqlx=warn,sea_orm=warn,tonic=warn,rustls=warn,\
+             tokio_postgres=warn,tungstenite=warn,tokio_tungstenite=warn,\
+             deser_incomplete=off"
         )
     });
     let make_filter = || EnvFilter::new(&filter_directives);
