@@ -63,11 +63,11 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "@types/react": "^19.2.15",
+    "@types/react": "^19.2.17",
     "@typescript-eslint/eslint-plugin": "^8.60.1",
     "@typescript-eslint/parser": "^8.60.1",
     "eslint": "^10.4.1",
-    "react": "^19.2.6",
+    "react": "^19.2.7",
     "tsdown": "^0.22.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
