@@ -79,5 +79,6 @@ export {
   useProcedureRun,
   useQuery,
   useResolvedManifest,
-  useSemanticQuery
+  useSemanticQuery,
+  useTrackEvent
 } from "./react";

@@ -5,6 +5,44 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-06-08
+
+Adds engineer-tagged usage events to the SDK so a bundle can record
+which features its users actually exercise. Pairs with the per-app
+**Activity** tab in the Oxy admin UI (oxy-internal #2465 / §13 of
+`internal-docs/customer-apps.md`).
+
+### Added
+
+- `useTrackEvent()` — fire-and-forget hook returning
+  `(name: string, payload?: object) => void`. Batches every 1s and
+  flushes on `pagehide` via `sendBeacon` so a click that fires
+  immediately before a navigation isn't lost. Server-validated
+  `event_name` regex (`^[a-z][a-z0-9-]{0,63}$`) + 4 KiB payload cap
+  + 60-events-per-minute rate limit per (user, app).
+
+  ```tsx
+  import { useTrackEvent } from "@oxy-hq/sdk";
+
+  const track = useTrackEvent();
+  <button
+    onClick={() => {
+      track("export-clicked", { format: "csv", rowCount });
+      doExport();
+    }}
+  >Export</button>
+  ```
+
+### Notes
+
+- View events (page loads) are recorded automatically by the oxy
+  backend on every HTML serve — no SDK code required. The SDK hook
+  is only for engineer-tagged interactions inside the bundle.
+- Dev-mode caveat: `sendBeacon` carries cookies but bypasses the
+  `OxyAppProvider` fetcher wrapper, so the `OXY_TOKEN` bearer
+  injected by the vite-plugin proxy in cross-origin `pnpm dev` is
+  missing on these requests. Cookie-served prod is unaffected.
+
 ## [2.0.0] - 2026-05-29
 
 Complete rewrite: `@oxy-hq/sdk` is now a **React-only, customer-app-only**
