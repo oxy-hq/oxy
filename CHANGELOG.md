@@ -2,12 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.67] - 2026-06-08
+
+### 🚀 Features
+
+- *(custom-apps)* Usage tracking — view events, custom events, Activity tab (#2465)
+
+### 🐛 Bug Fixes
+
+- Host dispatch double-prefixes S3-source app asset URLs → blank page (#2466)
+- *(sdk)* Export useTrackEvent + bump @oxy-hq/sdk to 2.1.0 (#2468)
+
+### ⚙️ Miscellaneous Tasks
+
+- Run cargo fmt
+
 ## [0.5.66] - 2026-06-08
 
 ### 🚀 Features
 
 - Add workspace path resolution for procedure SQL files (#2456)
 - *(admin)* Custom-apps URL chips, /admin landing, version badge, rename (#2463)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.66 (#2458)
 
 ## [0.5.65] - 2026-06-05
 
