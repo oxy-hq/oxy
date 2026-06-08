@@ -2,11 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.66] - 2026-06-08
+
+### 🚀 Features
+
+- Add workspace path resolution for procedure SQL files (#2456)
+- *(admin)* Custom-apps URL chips, /admin landing, version badge, rename (#2463)
+
 ## [0.5.65] - 2026-06-05
 
 ### 🚀 Features
 
 - Add AWS RDS IAM authentication support to worker (#2455)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.65 (#2457)
 
 ## [0.5.64] - 2026-06-05
 
