@@ -164,6 +164,14 @@ pub async fn subdomain_rewrite_middleware(request: Request, next: Next) -> Respo
         return next.run(request).await;
     }
 
+    // If the request already carries the path-prefix form
+    // `/customer-apps/<org>/<slug>/...` for THIS subdomain's
+    // (org, slug) pair, pass it through unchanged — see
+    // [`already_canonicalized`] for the rationale.
+    if already_canonicalized(original_path, &org, &slug) {
+        return next.run(request).await;
+    }
+
     let new_path = format!("/customer-apps/{org}/{slug}{original_path}");
     let Some(new_uri) = rewrite_uri_path(request.uri(), &new_path) else {
         return next.run(request).await;
@@ -173,6 +181,31 @@ pub async fn subdomain_rewrite_middleware(request: Request, next: Next) -> Respo
     parts.uri = new_uri;
     let new_request = Request::from_parts(parts, body);
     next.run(new_request).await
+}
+
+/// True when `path` already matches the path-prefix form
+/// `/customer-apps/<org>/<slug>(/...)` for THIS subdomain's
+/// (org, slug) pair — in which case the middleware must NOT rewrite,
+/// because doing so would produce
+/// `/customer-apps/<org>/<slug>/customer-apps/<org>/<slug>/...` and
+/// 404 every asset.
+///
+/// This is the common case for S3-source apps (`oxy publish`): the
+/// bundle was built with `OXY_APP_BASE_PATH=/customer-apps/<org>/<slug>/`
+/// baked into every asset URL, so the very first HTML response on the
+/// subdomain contains `<script src="/customer-apps/<org>/<slug>/_next/...">`.
+/// The browser then fetches those URLs on the subdomain host; without
+/// this guard the middleware would double-prefix them, every asset
+/// would 404, and the page would render blank.
+///
+/// (v0-source apps don't hit this because their upstream HTML is
+/// root-rooted — `/_next/...` not `/customer-apps/.../_next/...` —
+/// and the middleware correctly prefixes them once. S3 apps were
+/// built before the subdomain existed and bake the subpath into the
+/// bytes.)
+fn already_canonicalized(path: &str, org: &str, slug: &str) -> bool {
+    let target = format!("/customer-apps/{org}/{slug}");
+    path == target || path.starts_with(&format!("{target}/"))
 }
 
 /// Replace only the path of `original`, preserving scheme, authority,
@@ -297,6 +330,71 @@ mod tests {
         // can't ride the wildcard cert to impersonate a real app.
         let got = parse_subdomain("evil.mars--command-center.customer-apps-dev.oxygen-hq.com");
         assert_eq!(got, None);
+    }
+
+    #[test]
+    fn already_canonicalized_matches_exact_prefix() {
+        // S3-source apps' baked-in asset URLs land here on the
+        // subdomain. Without skipping the rewrite, the doubled-prefix
+        // bug bites and the page is blank.
+        assert!(already_canonicalized(
+            "/customer-apps/poke-house/command-center/_next/static/x.js",
+            "poke-house",
+            "command-center"
+        ));
+        assert!(already_canonicalized(
+            "/customer-apps/poke-house/command-center/",
+            "poke-house",
+            "command-center"
+        ));
+        assert!(already_canonicalized(
+            "/customer-apps/poke-house/command-center",
+            "poke-house",
+            "command-center"
+        ));
+    }
+
+    #[test]
+    fn already_canonicalized_rejects_other_apps_path() {
+        // A subdomain for `mars/store` mustn't serve a path that
+        // claims to be for `evil/leak` — the rewrite-and-dispatch
+        // gives the operator's intended (org, slug) the only
+        // authority over what's served.
+        assert!(!already_canonicalized(
+            "/customer-apps/evil/leak/secret",
+            "mars",
+            "store"
+        ));
+    }
+
+    #[test]
+    fn already_canonicalized_rejects_root_or_unrelated() {
+        // The common rewrite case: subdomain hit for `/`, `/_next/...`,
+        // `/assets/foo.css` etc. all need to be rewritten to add the
+        // canonical prefix. Don't skip.
+        assert!(!already_canonicalized("/", "poke-house", "command-center"));
+        assert!(!already_canonicalized(
+            "/_next/static/x.js",
+            "poke-house",
+            "command-center"
+        ));
+        assert!(!already_canonicalized(
+            "/assets/main.css",
+            "poke-house",
+            "command-center"
+        ));
+    }
+
+    #[test]
+    fn already_canonicalized_rejects_partial_prefix_match() {
+        // `/customer-apps/poke-houseFOO/...` shouldn't be treated as
+        // belonging to `poke-house`. Only an exact path-segment match
+        // counts — the `/` boundary check guards against it.
+        assert!(!already_canonicalized(
+            "/customer-apps/poke-houseFOO/command-center/foo",
+            "poke-house",
+            "command-center"
+        ));
     }
 
     #[test]
