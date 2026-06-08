@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.68] - 2026-06-08
+
+### 🐛 Bug Fixes
+
+- Enforce active status and expiration checks on API key validation (#2471)
+- *(logging)* Suppress raw SQL and TLS chatter under OXY_DEBUG (#2475)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2474)
+
 ## [0.5.67] - 2026-06-08
 
 ### 🚀 Features
@@ -16,6 +27,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Run cargo fmt
+- Release 0.5.67 (#2467)
 
 ## [0.5.66] - 2026-06-08
 
