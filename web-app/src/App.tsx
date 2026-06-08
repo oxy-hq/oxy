@@ -515,6 +515,12 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
               </Suspense>
             }
           >
+            {/* Bare `/admin` lands somewhere — Custom apps is the most-
+                used admin surface, and the AdminLayout's owner/admin
+                redirect already runs above this so app-admins reach it
+                cleanly, owners reach it cleanly, and unauthorized users
+                get bounced before the Navigate even runs. */}
+            <Route path='admin' element={<Navigate to={ROUTES.ADMIN.CUSTOMER_APPS} replace />} />
             <Route path='admin/billing/queue' element={<AdminBillingQueue />} />
             <Route path='admin/feature-flags' element={<AdminFeatureFlags />} />
             <Route path='admin/internal-jobs' element={<AdminInternalJobs />} />

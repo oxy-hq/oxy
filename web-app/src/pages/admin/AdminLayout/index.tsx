@@ -11,7 +11,7 @@ const PAGE_TITLES: Record<string, string> = {
   [ROUTES.ADMIN.FEATURE_FLAGS]: "Feature flags",
   [ROUTES.ADMIN.INTERNAL_JOBS]: "Internal jobs",
   [ROUTES.ADMIN.APP_ADMINS]: "Global admins",
-  [ROUTES.ADMIN.CUSTOMER_APPS]: "Customer apps",
+  [ROUTES.ADMIN.CUSTOMER_APPS]: "Custom apps",
   [ROUTES.ADMIN.TENANTS]: "Tenants overview",
   [ROUTES.ADMIN.ORGS]: "Organizations",
   [ROUTES.ADMIN.USERS]: "Users",

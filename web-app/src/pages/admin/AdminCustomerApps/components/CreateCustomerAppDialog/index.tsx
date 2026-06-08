@@ -205,7 +205,7 @@ export const CreateCustomerAppDialog = ({ open, onOpenChange }: Props) => {
           breadcrumb shouldn't drag the modal past max-w-xl. */}
       <DialogContent className='flex max-h-[85vh] max-w-xl flex-col overflow-hidden'>
         <DialogHeader>
-          <DialogTitle>{result ? "App created" : "Add customer app"}</DialogTitle>
+          <DialogTitle>{result ? "App created" : "Add custom app"}</DialogTitle>
         </DialogHeader>
 
         {!result && (

@@ -77,8 +77,8 @@ export default function AdminAppAdmins() {
       <div className='mb-6'>
         <h1 className='font-semibold text-2xl tracking-tight'>Global admins</h1>
         <p className='mt-1 text-muted-foreground text-sm'>
-          Global Admins reach most of the admin panel (Feature flags, Internal jobs, Customer apps,
-          Organizations, Users, Workspaces) and every registered customer app regardless of org
+          Global Admins reach most of the admin panel (Feature flags, Internal jobs, Custom apps,
+          Organizations, Users, Workspaces) and every registered custom app regardless of org
           membership. Billing queue and this page stay reserved for Global Owners.
         </p>
       </div>
@@ -179,7 +179,7 @@ export default function AdminAppAdmins() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove app admin?</AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingDelete?.email} will lose access to the Customer apps surface and to apps they
+              {pendingDelete?.email} will lose access to the Custom apps surface and to apps they
               reach through this role. Re-add them anytime.
             </AlertDialogDescription>
           </AlertDialogHeader>

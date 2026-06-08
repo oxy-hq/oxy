@@ -71,7 +71,7 @@ const ADMIN_NAV: AdminNavItem[] = [
   },
   {
     to: ROUTES.ADMIN.CUSTOMER_APPS,
-    label: "Customer apps",
+    label: "Custom apps",
     icon: AppWindow,
     adminOrAppAdmin: true,
     group: "operations"

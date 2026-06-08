@@ -1,5 +1,6 @@
-import { AppWindow, Check, ChevronsUpDown, Plus, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { AppWindow, Check, ChevronsUpDown, Copy, Plus, Search } from "lucide-react";
+import { type KeyboardEvent, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -22,6 +23,7 @@ import {
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import type { CustomerApp } from "@/types/apps";
+import { resolveBundleUrl } from "../../resolveBundleUrl";
 
 interface AppListProps {
   apps: CustomerApp[];
@@ -49,7 +51,8 @@ type SourceFilter = "all" | "v0" | "local" | "s3";
  *
  * List body still groups by org with sticky headers + dense rows:
  *   line 1: app name + source badge
- *   line 2: org/slug · project-uuid-short · last-synced
+ *   line 2: URL chips (subpath always, subdomain when present) with copy buttons
+ *   line 3: project-uuid-short · last-synced
  *
  * Selection is a 2px left accent + soft bg lift — reads as "this is
  * current" without competing with the detail pane.
@@ -253,7 +256,7 @@ export const AppList = (props: AppListProps) => {
         {!isLoading && apps.length === 0 && (
           <div className='flex flex-col items-center gap-2 px-6 py-10 text-center'>
             <AppWindow className='size-6 text-muted-foreground/60' />
-            <p className='text-muted-foreground text-sm'>No customer apps yet.</p>
+            <p className='text-muted-foreground text-sm'>No custom apps yet.</p>
             <Button size='sm' variant='outline' onClick={onCreate}>
               <Plus className='size-3.5' />
               Create the first
@@ -309,6 +312,40 @@ export const AppList = (props: AppListProps) => {
   );
 };
 
+/**
+ * Renders the two URL forms (subdomain when present, subpath always)
+ * as click-to-copy stubs the operator can grab without opening the
+ * detail pane. Subpath shows the slug pair `<org>/<slug>`; subdomain
+ * shows the host prefix `<org>--<slug>` so the row stays compact
+ * while still being self-evident — the full URL goes on hover via the
+ * `title` attr for cases where you need to paste the absolute form.
+ *
+ * Copy buttons stop event propagation so clicking them doesn't also
+ * select the row (which would scroll the detail pane unexpectedly).
+ */
+const UrlChip = ({ label, short, full }: { label: string; short: string; full: string }) => (
+  <span className='inline-flex items-center gap-1 truncate' title={`${label}: ${full}`}>
+    <span className='shrink-0 text-muted-foreground/50'>{label}</span>
+    <span className='truncate'>{short}</span>
+    <button
+      type='button'
+      aria-label={`Copy ${label} URL`}
+      className='inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground'
+      onClick={async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(full);
+          toast.success(`Copied ${label} URL`);
+        } catch {
+          toast.error("Failed to copy to clipboard");
+        }
+      }}
+    >
+      <Copy className='size-3' />
+    </button>
+  </span>
+);
+
 const AppRow = ({
   app,
   active,
@@ -317,49 +354,100 @@ const AppRow = ({
   app: CustomerApp;
   active: boolean;
   onSelect: (a: CustomerApp) => void;
-}) => (
-  <li>
-    <button
-      type='button'
-      onClick={() => onSelect(app)}
-      className={cn(
-        "relative flex w-full flex-col items-start gap-1 px-3 py-2 text-left transition-colors",
-        "hover:bg-accent/60",
-        active && "bg-accent/80"
-      )}
-    >
-      {active && (
-        <span className='absolute inset-y-1.5 left-0 w-0.5 rounded-r-full bg-foreground' />
-      )}
+}) => {
+  // Absolute URLs the operator can paste. `resolveBundleUrl` is the
+  // shared helper used everywhere else (DetailToolbar, AppInfo,
+  // CreateCustomerAppDialog) — it handles both the relative form
+  // (`/customer-apps/...` resolved against window.location) and the
+  // absolute form (rewrites host/port to the current admin origin so a
+  // baked-in `:5173` from an older server doesn't sneak through).
+  // Reinventing it as `${origin}${app.url}` would double-prefix any
+  // absolute value into garbage like `https://app.oxygen-hq.comhttp://...`.
+  const subpathAbs = resolveBundleUrl(app.url);
+  const subpathShort = `${app.org_slug}/${app.slug}`;
+  const subdomainAbs = app.url_subdomain ?? null;
+  // Strip scheme + trailing slash for the compact label so it fits
+  // alongside the subpath chip without wrapping. e.g.
+  // "mars--command-center.customer-apps-dev.oxygen-hq.com"
+  const subdomainShort = subdomainAbs
+    ? subdomainAbs.replace(/^https?:\/\//, "").replace(/\/$/, "")
+    : null;
 
-      <div className='flex w-full items-center gap-2'>
-        <span
-          className={cn(
-            "max-w-full flex-1 truncate text-sm",
-            active ? "font-medium text-foreground" : "font-normal text-foreground/90"
+  // Outer container intentionally renders as a div-with-button-role,
+  // NOT an actual <button>. The URL chips inside are interactive
+  // (Copy buttons) — nesting a <button> inside another <button> is
+  // invalid HTML, triggers React's `validateDOMNesting` warning, and
+  // produces implementation-defined hit-testing across browsers. The
+  // div + role + tabIndex + Enter/Space handler reproduces the
+  // keyboard-accessible click semantics of <button> without the
+  // nesting violation.
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelect(app);
+    }
+  };
+
+  return (
+    <li>
+      {/* biome-ignore lint/a11y/useSemanticElements: cannot use a real
+           <button> here — UrlChip's copy <button> is rendered inside,
+           and button-in-button is invalid HTML (see review on PR #2463
+           and the long comment on `const onKey` above). */}
+      <div
+        role='button'
+        tabIndex={0}
+        onClick={() => onSelect(app)}
+        onKeyDown={onKey}
+        className={cn(
+          "relative flex w-full cursor-pointer flex-col items-start gap-1 px-3 py-2 text-left outline-none transition-colors",
+          "hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring",
+          active && "bg-accent/80"
+        )}
+      >
+        {active && (
+          <span className='absolute inset-y-1.5 left-0 w-0.5 rounded-r-full bg-foreground' />
+        )}
+
+        <div className='flex w-full items-center gap-2'>
+          <span
+            className={cn(
+              "max-w-full flex-1 truncate text-sm",
+              active ? "font-medium text-foreground" : "font-normal text-foreground/90"
+            )}
+          >
+            {app.name}
+          </span>
+          <Badge
+            variant='outline'
+            className='shrink-0 px-1.5 py-0 font-mono text-[9px] tracking-wide'
+          >
+            {app.source_type.toUpperCase()}
+          </Badge>
+        </div>
+
+        {/* URLs row — what the operator most often needs to grab.
+            Subpath always renders; subdomain only when the server
+            surfaced it (v0 source + recognized admin host).
+            `subdomainShort` is non-null iff `subdomainAbs` is, so a
+            single guard on `subdomainAbs` suffices. */}
+        <div className='flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-muted-foreground'>
+          <UrlChip label='path' short={subpathShort} full={subpathAbs} />
+          {subdomainAbs && (
+            <UrlChip label='sub' short={subdomainShort as string} full={subdomainAbs} />
           )}
-        >
-          {app.name}
-        </span>
-        <Badge
-          variant='outline'
-          className='shrink-0 px-1.5 py-0 font-mono text-[9px] tracking-wide'
-        >
-          {app.source_type.toUpperCase()}
-        </Badge>
-      </div>
+        </div>
 
-      <div className='flex w-full items-center gap-1.5 font-mono text-[11px] text-muted-foreground'>
-        <span className='truncate'>{app.slug}</span>
-        <span className='text-muted-foreground/40'>·</span>
-        <span className='truncate'>proj:{app.project_id.slice(0, 8)}</span>
-        <span className='ml-auto shrink-0 text-muted-foreground/70'>
-          {app.last_synced_at ? relativeTime(app.last_synced_at) : "—"}
-        </span>
+        <div className='flex w-full items-center gap-1.5 font-mono text-[11px] text-muted-foreground/70'>
+          <span className='truncate'>proj:{app.project_id.slice(0, 8)}</span>
+          <span className='ml-auto shrink-0'>
+            {app.last_synced_at ? relativeTime(app.last_synced_at) : "—"}
+          </span>
+        </div>
       </div>
-    </button>
-  </li>
-);
+    </li>
+  );
+};
 
 function groupByOrg(apps: CustomerApp[]): Array<{ org: string; items: CustomerApp[] }> {
   const map = new Map<string, CustomerApp[]>();
