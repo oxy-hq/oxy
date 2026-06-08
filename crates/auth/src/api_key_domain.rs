@@ -53,18 +53,21 @@ impl ApiKeyService {
         use ::entity::prelude::*;
         use sea_orm::*;
 
+        let now = chrono::Utc::now().fixed_offset();
+
         let api_key = ApiKeys::find()
             .filter(::entity::api_keys::Column::KeyHash.eq(key))
+            .filter(::entity::api_keys::Column::IsActive.eq(true))
+            .filter(
+                Condition::any()
+                    .add(::entity::api_keys::Column::ExpiresAt.is_null())
+                    .add(::entity::api_keys::Column::ExpiresAt.gt(now)),
+            )
             .one(db)
             .await
             .map_err(|e| OxyError::DBError(format!("Database error: {}", e)))?
             .ok_or_else(|| OxyError::AuthenticationError("Invalid API key".to_string()))?;
 
-        // TODO(active-and-expiry-check): honour `is_active` and `expires_at`
-        // here. Today a revoked key (`is_active = false`) or an expired
-        // one still authenticates, so `revoke_api_key` is effectively a
-        // no-op at the auth path. Mirror site:
-        // `crates/app/src/server/api/customer_apps_api_keys.rs`.
         Ok(ValidatedApiKey {
             id: api_key.id,
             key: key.to_string(),
