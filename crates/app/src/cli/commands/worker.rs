@@ -301,9 +301,7 @@ async fn tick_once(
 /// the actual connection layer automatically.
 fn require_database_url() -> Result<(), OxyError> {
     match DatabaseAuthMode::from_env()? {
-        DatabaseAuthMode::Iam => {
-            IamConfig::from_env().map(|_| ())
-        }
+        DatabaseAuthMode::Iam => IamConfig::from_env().map(|_| ()),
         DatabaseAuthMode::Password => {
             if std::env::var("OXY_DATABASE_URL").is_err() {
                 return Err(OxyError::RuntimeError(

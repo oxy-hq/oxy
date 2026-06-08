@@ -860,7 +860,8 @@ async fn specifying_handler_falls_back_to_default_when_sql_oxy_db_unknown() {
 /// returns workspace-relative paths.
 #[tokio::test]
 async fn specifying_handler_resolves_relative_sql_path_against_workspace() {
-    let sql_content = "/*\n  oxy:\n    description: \"Store count\"\n*/\nSELECT COUNT(*) FROM stores;";
+    let sql_content =
+        "/*\n  oxy:\n    description: \"Store count\"\n*/\nSELECT COUNT(*) FROM stores;";
     // Write to a temp workspace dir, keeping a relative name.
     let workspace = std::env::temp_dir().join(format!(
         "oxy_ws_test_{}_{}",
@@ -932,8 +933,7 @@ async fn specifying_handler_resolves_relative_sql_path_against_workspace() {
 /// load-bearing.
 #[tokio::test]
 async fn specifying_handler_relative_sql_path_fails_without_workspace_path() {
-    let rel_path =
-        std::path::PathBuf::from("example_sql/this_file_does_not_exist_in_cwd.sql");
+    let rel_path = std::path::PathBuf::from("example_sql/this_file_does_not_exist_in_cwd.sql");
     let intent = AnalyticsIntent {
         selected_procedure: Some(rel_path.clone()),
         ..make_intent()
