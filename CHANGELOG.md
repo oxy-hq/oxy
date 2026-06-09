@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.69] - 2026-06-09
+
+### 🚀 Features
+
+- *(edge)* Tailscale funnel + JWT-only auth + UX polish (#2469)
+- *(airway)* ClickHouse timeout, settings + batch_size config (airway 0.1.3) (#2479)
+
+### 🐛 Bug Fixes
+
+- *(admin)* Surface subdomain URL for S3 apps too, not just v0 (#2476)
+- *(router)* Honor OXY_DATABASE_SSL_MODE in the LISTEN connector (fix chronic router.reconnect TLS handshake flap) (#2480)
+
+### 🚜 Refactor
+
+- Extract credential forms into separate components (#2473)
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump airway to 0.1.3 (#2481)
+
 ## [0.5.68] - 2026-06-08
 
 ### 🐛 Bug Fixes
@@ -12,6 +32,10 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Update product-context.md from recent changelogs (#2474)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.68 (#2472)
 
 ## [0.5.67] - 2026-06-08
 
