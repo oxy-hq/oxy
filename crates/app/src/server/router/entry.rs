@@ -94,8 +94,16 @@ pub async fn api_router(
             let database = preagg_cfg.as_ref().and_then(|p| p.database.clone());
 
             // Build OxyProjectContext once at startup — shared across all heartbeat ticks.
+            // Use the *fallback* variant: cloud `oxy serve` runs with startup_cwd=/app,
+            // which has no project config.yml (it's an RDS-backed API server, not a
+            // project checkout). The strict `with_workspace_path` errors there with
+            // "Failed to read config from file: No such file or directory" and takes
+            // down the entire API router (crash loop) — see preagg_cfg above, which is
+            // already read tolerantly via build_with_fallback_config. Keep the two in
+            // sync; this matches pre-0.5.70 behavior. With no pre_aggregations defined,
+            // the spawned worker simply idles.
             let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-                .with_workspace_path(&startup_cwd)
+                .with_workspace_path_and_fallback_config(&startup_cwd)
                 .await
                 .map_err(|e| {
                     OxyError::RuntimeError(format!("preagg: workspace builder init failed: {e}"))
