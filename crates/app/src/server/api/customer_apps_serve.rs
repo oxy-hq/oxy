@@ -629,9 +629,37 @@ async fn serve_from_dir(
 }
 
 fn redirect_to_login(headers: &HeaderMap, uri: &Uri) -> Redirect {
-    let base = base_url(headers);
-    let return_to = format!("{base}{uri}");
-    let target = format!("{base}/login?return_to={}", urlencoding::encode(&return_to));
+    // `return_to` is where the user lands after a successful login —
+    // it MUST be the URL they originally hit (subdomain or subpath),
+    // so the post-login bounce drops them back at the customer-app
+    // entry point. `base_url(headers)` echoes the request Host, which
+    // is exactly what we want for `return_to`.
+    let request_base = base_url(headers);
+    let return_to = format!("{request_base}{uri}");
+
+    // The login SPA itself only lives on the admin host. If the
+    // request came in on a customer-apps subdomain (no SPA there),
+    // bouncing to the same subdomain's `/login` causes the dispatcher
+    // to rewrite it to `/customer-apps/<org>/<slug>/login`, which is
+    // another `serve_dispatch` invocation that re-runs auth, redirects
+    // again, accumulating `?return_to=` each round. nginx caps that at
+    // 414 Request-URI Too Large after a handful of iterations and the
+    // browser surfaces "too many redirects." Use the admin host
+    // explicitly when we can derive it (from `OXY_API_URL`); fall back
+    // to `request_base` when we can't (local dev with localhost).
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let login_base = if super::customer_apps_host_dispatch::parse_subdomain(host).is_some() {
+        super::customer_apps_host_dispatch::admin_base_url().unwrap_or(request_base)
+    } else {
+        request_base
+    };
+    let target = format!(
+        "{login_base}/login?return_to={}",
+        urlencoding::encode(&return_to)
+    );
     Redirect::to(&target)
 }
 

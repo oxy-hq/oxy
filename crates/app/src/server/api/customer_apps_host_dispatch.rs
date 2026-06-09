@@ -138,6 +138,30 @@ fn customer_apps_zone() -> Option<String> {
     Some(format!("customer-apps{env_suffix}.{rest}"))
 }
 
+/// Absolute base URL of the admin host this cluster serves, e.g.
+/// `https://app-staging.oxygen-hq.com`. Derived from `OXY_API_URL`
+/// (same source as [`customer_apps_zone`]). Returns `None` when
+/// `OXY_API_URL` is unset / malformed.
+///
+/// Used by the customer-apps serve path to bounce unauthenticated
+/// visitors hitting a subdomain URL to the admin host's `/login`
+/// page. The subdomain doesn't serve the login SPA, so echoing the
+/// request Host back into the redirect produces an infinite loop:
+/// 302 → dispatcher rewrites `/login` to
+/// `/customer-apps/<org>/<slug>/login` → another 302 with a longer
+/// `?return_to=` appended → … until nginx returns 414 Request-URI
+/// Too Large.
+pub fn admin_base_url() -> Option<String> {
+    let api_url = std::env::var("OXY_API_URL").ok()?;
+    let parsed: url::Url = api_url.parse().ok()?;
+    let scheme = parsed.scheme();
+    let host = parsed.host_str()?;
+    match parsed.port() {
+        Some(port) => Some(format!("{scheme}://{host}:{port}")),
+        None => Some(format!("{scheme}://{host}")),
+    }
+}
+
 /// Tower middleware that rewrites subdomain requests to the path-prefix
 /// form so the existing `/customer-apps/{*path}` route handles them.
 ///
@@ -568,5 +592,49 @@ mod tests {
             got, b"DISPATCH",
             "wrapping the whole router runs the rewrite before routing"
         );
+    }
+
+    // ── admin_base_url ────────────────────────────────────────────────────
+
+    #[test]
+    fn admin_base_url_prod_apex() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "https://app.oxygen-hq.com/api");
+        }
+        assert_eq!(
+            admin_base_url(),
+            Some("https://app.oxygen-hq.com".to_string())
+        );
+    }
+
+    #[test]
+    fn admin_base_url_env_suffix() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "https://app-staging.oxygen-hq.com/api");
+        }
+        assert_eq!(
+            admin_base_url(),
+            Some("https://app-staging.oxygen-hq.com".to_string())
+        );
+    }
+
+    #[test]
+    fn admin_base_url_keeps_explicit_port() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "http://localhost:3000/api");
+        }
+        assert_eq!(admin_base_url(), Some("http://localhost:3000".to_string()));
+    }
+
+    #[test]
+    fn admin_base_url_none_when_api_url_unset() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
+        assert_eq!(admin_base_url(), None);
     }
 }
