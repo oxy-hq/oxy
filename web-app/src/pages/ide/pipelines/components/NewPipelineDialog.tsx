@@ -1,10 +1,9 @@
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
-import { Checkbox } from "@/components/ui/shadcn/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -15,57 +14,25 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from "@/components/ui/shadcn/select";
-import { Switch } from "@/components/ui/shadcn/switch";
 import { Textarea } from "@/components/ui/shadcn/textarea";
-import { useDiscoverSourceTables } from "@/hooks/api/airway/useAirway";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCreateFile from "@/hooks/api/files/useCreateFile";
 import useSaveFile from "@/hooks/api/files/useSaveFile";
-import { useQuickBooksConnect } from "@/hooks/api/quickbooks/useQuickBooksConnect";
-import { useCreateSecret } from "@/hooks/api/secrets/useSecretMutations";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
-import type { DiscoveredTable } from "@/services/api/airway";
-import { QB_WIZARD_STASH_KEY } from "@/services/api/quickbooks";
-import { apiBaseURL } from "@/services/env";
 import useCurrentOrg from "@/stores/useCurrentOrg";
-import {
-  buildPipelineScaffold,
-  SOURCE_OPTIONS,
-  WRITABLE_DESTINATION_DB_TYPES,
-  type WriteDisposition
-} from "../scaffold";
+import { buildPipelineScaffold, SOURCE_OPTIONS, WRITABLE_DESTINATION_DB_TYPES } from "../scaffold";
 import ConnectorCard from "./ConnectorCard";
+import ClickHouseCredentialsForm from "./credentials/clickhouse/ClickHouseCredentialsForm";
+import { useClickHouseCredentials } from "./credentials/clickhouse/useClickHouseCredentials";
+import QuickBooksCredentialsForm from "./credentials/quickbooks/QuickBooksCredentialsForm";
+import { useQuickBooksCredentials } from "./credentials/quickbooks/useQuickBooksCredentials";
+import ToastCredentialsForm from "./credentials/toast/ToastCredentialsForm";
+import { useToastCredentials } from "./credentials/toast/useToastCredentials";
 
 const WRITABLE = new Set<string>(WRITABLE_DESTINATION_DB_TYPES);
-
-/** Per-table load config the user sets in the picker. */
-interface TableSel {
-  disposition: WriteDisposition;
-  /** High-water-mark column for incremental `append`. */
-  cursorField?: string;
-  /** Upsert key for `merge`. */
-  primaryKey?: string;
-}
-
-const DISPOSITIONS: { value: WriteDisposition; label: string; hint: string }[] = [
-  {
-    value: "append",
-    label: "Append",
-    hint: "insert rows (rerun duplicates unless a cursor is set)"
-  },
-  { value: "replace", label: "Replace", hint: "overwrite the whole table each run" },
-  { value: "merge", label: "Merge", hint: "upsert on a key (idempotent reruns)" }
-];
 
 interface NewPipelineDialogProps {
   open: boolean;
@@ -99,39 +66,6 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Toast source fields (only used when sourceId === "toast").
-  const [toastClientId, setToastClientId] = useState("");
-  const [toastClientSecret, setToastClientSecret] = useState("");
-  const [toastSecretName, setToastSecretName] = useState("");
-  const [toastGuids, setToastGuids] = useState("");
-  const [toastBaseUrl, setToastBaseUrl] = useState("");
-
-  // QuickBooks Online fields (only used when sourceId === "quickbooks").
-  // The realm id + refresh token are captured by the OAuth Connect flow, so
-  // they're not manual inputs. Secret-name vars default to sensible names.
-  const [qbClientId, setQbClientId] = useState("");
-  const [qbRealmId, setQbRealmId] = useState(""); // captured on Connect
-  const [qbClientSecret, setQbClientSecret] = useState("");
-  const [qbClientSecretName, setQbClientSecretName] = useState("QB_CLIENT_SECRET");
-  const [qbRefreshTokenName, setQbRefreshTokenName] = useState("QB_REFRESH_TOKEN");
-  const [qbBaseUrl, setQbBaseUrl] = useState("");
-  // True once the Intuit Connect flow has stored the refresh token + realm id.
-  const [qbConnected, setQbConnected] = useState(false);
-
-  // ClickHouse source fields (only used when sourceId === "clickhouse").
-  const [chHost, setChHost] = useState("");
-  const [chPort, setChPort] = useState("");
-  const [chDatabase, setChDatabase] = useState("default");
-  const [chUsername, setChUsername] = useState("default");
-  const [chPassword, setChPassword] = useState("");
-  const [chSecretName, setChSecretName] = useState("");
-  const [chSecure, setChSecure] = useState(true);
-  // Tables returned by discovery (with columns), and per-table load config
-  // keyed by table name (presence == selected).
-  const [chTables, setChTables] = useState<DiscoveredTable[] | null>(null);
-  const [chSel, setChSel] = useState<Record<string, TableSel>>({});
-  const discoverTables = useDiscoverSourceTables();
-
   // Clear the search when moving between steps so a stale query
   // doesn't hide the next step's cards.
   const goStep = (next: Step) => {
@@ -143,11 +77,26 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const createFile = useCreateFile();
   const saveFile = useSaveFile();
-  const createSecret = useCreateSecret();
   const navigate = useNavigate();
-  const { connect: qbConnect, connecting: qbConnecting } = useQuickBooksConnect(project.id);
   const { data: databases, isLoading: databasesLoading } = useDatabases();
   const writableDatabases = (databases ?? []).filter((d) => WRITABLE.has(d.db_type));
+
+  const toastCredentials = useToastCredentials();
+  const clickhouseCredentials = useClickHouseCredentials();
+  const quickbooksCredentials = useQuickBooksCredentials({
+    open,
+    projectId: project.id,
+    onError: setError,
+    // Re-applies the shared dialog fields after a stashed wizard is restored
+    // from a full-page OAuth redirect (mobile / popup blocked).
+    onRestore: (fields) => {
+      setSourceId("quickbooks");
+      setDestinationDb(fields.destinationDb);
+      setName(fields.name);
+      setDescription(fields.description);
+      setStep(2);
+    }
+  });
 
   const reset = () => {
     setStep(0);
@@ -157,122 +106,10 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
     setName("");
     setDescription("");
     setError(null);
-    setToastClientId("");
-    setToastClientSecret("");
-    setToastSecretName("");
-    setToastGuids("");
-    setToastBaseUrl("");
-    setQbClientId("");
-    setQbRealmId("");
-    setQbClientSecret("");
-    setQbClientSecretName("QB_CLIENT_SECRET");
-    setQbRefreshTokenName("QB_REFRESH_TOKEN");
-    setQbBaseUrl("");
-    setQbConnected(false);
-    setChHost("");
-    setChPort("");
-    setChDatabase("default");
-    setChUsername("default");
-    setChPassword("");
-    setChSecretName("");
-    setChSecure(true);
-    setChTables(null);
-    setChSel({});
+    toastCredentials.reset();
+    quickbooksCredentials.reset();
+    clickhouseCredentials.reset();
   };
-
-  // Restore the form after a full-page OAuth redirect (mobile / popup
-  // blocked): the success page bounced back with `?qb_connected=ok&realm_id`
-  // and the pre-redirect form was stashed in sessionStorage.
-  useEffect(() => {
-    if (!open) return;
-    const raw = sessionStorage.getItem(QB_WIZARD_STASH_KEY);
-    if (!raw) return;
-    sessionStorage.removeItem(QB_WIZARD_STASH_KEY);
-    const params = new URLSearchParams(window.location.search);
-    const connected = params.get("qb_connected") === "ok";
-    try {
-      const s = JSON.parse(raw) as Record<string, string>;
-      setSourceId("quickbooks");
-      setDestinationDb(s.destinationDb || null);
-      setName(s.name ?? "");
-      setDescription(s.description ?? "");
-      setQbClientId(s.qbClientId ?? "");
-      setQbClientSecretName(s.qbClientSecretName ?? "");
-      setQbRefreshTokenName(s.qbRefreshTokenName ?? "");
-      setQbBaseUrl(s.qbBaseUrl ?? "");
-      setQbRealmId(params.get("realm_id") || s.qbRealmId || "");
-      setQbConnected(connected);
-      setStep(2);
-    } catch {
-      // Malformed stash — ignore and start fresh.
-    }
-    // Strip the one-shot query params so a refresh doesn't re-trigger.
-    if (params.has("qb_connected") || params.has("realm_id")) {
-      params.delete("qb_connected");
-      params.delete("realm_id");
-      const qs = params.toString();
-      window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
-    }
-  }, [open]);
-
-  /** Persist the in-progress form so a redirect-mode Connect can restore it. */
-  const stashWizard = () => {
-    sessionStorage.setItem(
-      QB_WIZARD_STASH_KEY,
-      JSON.stringify({
-        destinationDb,
-        name,
-        description,
-        qbClientId,
-        qbClientSecretName,
-        qbRefreshTokenName,
-        qbBaseUrl,
-        qbRealmId
-      })
-    );
-  };
-
-  const handleQbConnect = async () => {
-    if (!qbClientId.trim()) {
-      setError("QuickBooks: Client ID is required before connecting");
-      return;
-    }
-    if (!qbClientSecretName.trim() || !qbRefreshTokenName.trim()) {
-      setError("QuickBooks: client secret name and refresh token name are required");
-      return;
-    }
-    if (!qbClientSecret.trim()) {
-      setError("QuickBooks: enter the client secret so we can complete the OAuth exchange");
-      return;
-    }
-    setError(null);
-    try {
-      const result = await qbConnect({
-        clientId: qbClientId,
-        clientSecret: qbClientSecret,
-        clientSecretVar: qbClientSecretName,
-        refreshTokenVar: qbRefreshTokenName,
-        returnPath: window.location.href,
-        stash: stashWizard
-      });
-      // Popup mode resolves here; redirect mode navigates away.
-      if (result) {
-        if (result.realmId) setQbRealmId(result.realmId);
-        setQbConnected(true);
-        toast.success("QuickBooks connected", {
-          description: "Refresh token stored. You can finish creating the pipeline."
-        });
-      }
-    } catch {
-      // The hook already surfaced a toast.
-    }
-  };
-
-  const parseGuids = (raw: string): string[] =>
-    raw
-      .split(/[\s,]+/)
-      .map((g) => g.trim())
-      .filter(Boolean);
 
   const validate = (): boolean => {
     const trimmed = name.trim();
@@ -292,166 +129,30 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
     return true;
   };
 
-  const parsedPort = (): number | undefined => {
-    const p = chPort.trim();
-    if (!p) return undefined;
-    const n = Number(p);
-    return Number.isInteger(n) && n > 0 ? n : undefined;
-  };
-
-  /** Live credentials for discovery + scaffold. Password included only
-   *  when typed (discovery needs it; reuse-existing-secret can't list). */
-  const chConfig = (): Record<string, unknown> => {
-    const config: Record<string, unknown> = {
-      host: chHost.trim(),
-      database: chDatabase.trim(),
-      username: chUsername.trim() || "default",
-      secure: chSecure
-    };
-    const port = parsedPort();
-    if (port != null) config.port = port;
-    if (chPassword) config.password = chPassword;
-    return config;
-  };
-
-  const handleFetchTables = async () => {
-    if (!chHost.trim() || !chDatabase.trim()) {
-      setError("ClickHouse: host and database are required to list tables");
-      return;
-    }
-    setError(null);
-    try {
-      const tables = await discoverTables.mutateAsync({
-        kind: "clickhouse",
-        config: chConfig()
-      });
-      setChTables(tables);
-      setChSel({});
-    } catch (err) {
-      toast.error("Couldn't list tables", {
-        description: err instanceof Error ? err.message : "Check the credentials and try again."
-      });
-    }
-  };
-
-  const toggleTable = (name: string) => {
-    setChSel((prev) => {
-      const next = { ...prev };
-      if (name in next) delete next[name];
-      else next[name] = { disposition: "append" };
-      return next;
-    });
-  };
-
-  const setTable = (name: string, patch: Partial<TableSel>) => {
-    setChSel((prev) => (name in prev ? { ...prev, [name]: { ...prev[name], ...patch } } : prev));
-  };
-
-  const selectedCount = Object.keys(chSel).length;
-  const allTablesSelected =
-    chTables != null && chTables.length > 0 && selectedCount === chTables.length;
-
-  const toggleSelectAll = () => {
-    if (!chTables) return;
-    setChSel((prev) => {
-      if (allTablesSelected) return {};
-      const next = { ...prev };
-      for (const t of chTables) if (!(t.name in next)) next[t.name] = { disposition: "append" };
-      return next;
-    });
-  };
-
   const handleCreate = async () => {
     if (!sourceId || !destinationDb || !validate()) return;
 
     const isToast = sourceId === "toast";
     const isQuickbooks = sourceId === "quickbooks";
     const isClickhouse = sourceId === "clickhouse";
-    const guids = parseGuids(toastGuids);
-    const secretName = toastSecretName.trim();
-    const chSecret = chSecretName.trim();
-    if (isToast) {
-      if (!toastClientId.trim()) {
-        setError("Toast: Client ID is required");
-        return;
-      }
-      if (!secretName) {
-        setError("Toast: a secret name for the client secret is required");
-        return;
-      }
-      if (guids.length === 0) {
-        setError("Toast: at least one restaurant GUID is required");
-        return;
-      }
-    }
-    if (isClickhouse) {
-      if (!chHost.trim() || !chDatabase.trim()) {
-        setError("ClickHouse: host and database are required");
-        return;
-      }
-      if (!chSecret) {
-        setError("ClickHouse: a secret name for the password is required");
-        return;
-      }
-      if (!chPassword) {
-        // Discovery uses the live password; clearing it before Create would
-        // leave a `password_var` reference with no secret behind it.
-        setError("ClickHouse: password is required");
-        return;
-      }
-      if (selectedCount === 0) {
-        setError("ClickHouse: select at least one table to ingest");
-        return;
-      }
-      const mergeNoKey = Object.entries(chSel).find(
-        ([, sel]) => sel.disposition === "merge" && !sel.primaryKey
-      );
-      if (mergeNoKey) {
-        setError(`ClickHouse: pick a merge key for "${mergeNoKey[0]}" (or change its load mode)`);
-        return;
-      }
-    }
 
-    if (isQuickbooks) {
-      if (!qbClientId.trim()) {
-        setError("QuickBooks: Client ID is required");
-        return;
-      }
-      if (!qbClientSecretName.trim() || !qbRefreshTokenName.trim()) {
-        setError("QuickBooks: secret names for the client secret and refresh token are required");
-        return;
-      }
-      // Connect captures the realm id + refresh token via OAuth, so it's the
-      // required first step (Intuit only mints refresh tokens via consent).
-      if (!qbConnected || !qbRealmId.trim()) {
-        setError("QuickBooks: click “Connect with QuickBooks” to authorize before creating");
-        return;
-      }
+    let sourceError: string | null = null;
+    if (isToast) sourceError = toastCredentials.validate();
+    else if (isClickhouse) sourceError = clickhouseCredentials.validate();
+    else if (isQuickbooks) sourceError = quickbooksCredentials.validate();
+    if (sourceError) {
+      setError(sourceError);
+      return;
     }
 
     setCreating(true);
     try {
       const trimmed = name.trim();
 
-      // Store the client secret in the secret manager. A blank value
-      // means "reuse an existing secret with this name" — skip create.
-      if (isToast && toastClientSecret.trim()) {
-        await createSecret.mutateAsync({
-          name: secretName,
-          value: toastClientSecret,
-          description: `Toast OAuth2 client secret for pipeline ${trimmed}`
-        });
-      }
-      // Same for the ClickHouse password — persisted as a secret; the
-      // YAML only references `password_var`.
-      if (isClickhouse && chPassword) {
-        await createSecret.mutateAsync({
-          name: chSecret,
-          value: chPassword,
-          description: `ClickHouse password for pipeline ${trimmed}`
-        });
-      }
-
+      // Store the client secret / password in the secret manager. A blank
+      // value means "reuse an existing secret with this name" — skip create.
+      if (isToast) await toastCredentials.persistSecret(trimmed);
+      if (isClickhouse) await clickhouseCredentials.persistSecret(trimmed);
       // QuickBooks secrets (client secret + rotating refresh token) are
       // stored by the OAuth Connect flow (authorize + callback upserts), so
       // there's nothing to create here.
@@ -465,41 +166,9 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
           name: trimmed,
           description: description.trim() || undefined,
           sourceId,
-          toast: isToast
-            ? {
-                clientId: toastClientId.trim(),
-                clientSecretVar: secretName,
-                restaurantGuids: guids,
-                baseUrl: toastBaseUrl.trim() || undefined
-              }
-            : undefined,
-          quickbooks: isQuickbooks
-            ? {
-                clientId: qbClientId.trim(),
-                clientSecretVar: qbClientSecretName.trim(),
-                refreshTokenVar: qbRefreshTokenName.trim(),
-                realmId: qbRealmId.trim(),
-                baseUrl: qbBaseUrl.trim() || undefined
-              }
-            : undefined,
-          clickhouse: isClickhouse
-            ? {
-                host: chHost.trim(),
-                port: parsedPort(),
-                database: chDatabase.trim(),
-                username: chUsername.trim() || undefined,
-                passwordVar: chSecret,
-                secure: chSecure,
-                tables: Object.entries(chSel).map(([name, sel]) => ({
-                  name,
-                  writeDisposition: sel.disposition,
-                  cursorField:
-                    sel.disposition === "append" ? sel.cursorField || undefined : undefined,
-                  primaryKey:
-                    sel.disposition === "merge" && sel.primaryKey ? [sel.primaryKey] : undefined
-                }))
-              }
-            : undefined,
+          toast: isToast ? toastCredentials.buildScaffoldConfig() : undefined,
+          quickbooks: isQuickbooks ? quickbooksCredentials.buildScaffoldConfig() : undefined,
+          clickhouse: isClickhouse ? clickhouseCredentials.buildScaffoldConfig() : undefined,
           destinationDatabase: destinationDb,
           datasetName: trimmed,
           destinationIsAirhouse: writableDatabases
@@ -543,6 +212,8 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
       className='mb-2'
     />
   );
+
+  const clearError = () => setError(null);
 
   return (
     <Dialog
@@ -687,381 +358,25 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
               </div>
 
               {sourceId === "toast" && (
-                <div className='grid gap-3 rounded-md border border-border p-3'>
-                  <p className='font-medium text-sm'>Toast credentials</p>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='toast-client-id'>Client ID</Label>
-                    <Input
-                      id='toast-client-id'
-                      value={toastClientId}
-                      onChange={(e) => {
-                        setToastClientId(e.target.value);
-                        setError(null);
-                      }}
-                      placeholder='Toast OAuth2 client id'
-                    />
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='toast-client-secret'>Client secret</Label>
-                    <Input
-                      id='toast-client-secret'
-                      type='password'
-                      value={toastClientSecret}
-                      onChange={(e) => setToastClientSecret(e.target.value)}
-                      placeholder='Stored as a secret — leave blank to reuse an existing one'
-                    />
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='toast-secret-name'>Secret name</Label>
-                    <Input
-                      id='toast-secret-name'
-                      value={toastSecretName}
-                      onChange={(e) => {
-                        setToastSecretName(e.target.value);
-                        setError(null);
-                      }}
-                      placeholder='TOAST_CLIENT_SECRET'
-                    />
-                    <p className='text-muted-foreground text-xs'>
-                      The pipeline references this name; the executor resolves it from the secret
-                      manager at run time. Reuse an existing secret by entering its name and leaving
-                      the value blank.
-                    </p>
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='toast-guids'>Restaurant GUID(s)</Label>
-                    <Textarea
-                      id='toast-guids'
-                      value={toastGuids}
-                      onChange={(e) => {
-                        setToastGuids(e.target.value);
-                        setError(null);
-                      }}
-                      placeholder='One per line (or comma-separated)'
-                      rows={2}
-                    />
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='toast-base-url'>Base URL</Label>
-                    <Input
-                      id='toast-base-url'
-                      value={toastBaseUrl}
-                      onChange={(e) => setToastBaseUrl(e.target.value)}
-                      placeholder='Optional — sandbox override (defaults to Toast prod)'
-                    />
-                  </div>
-                </div>
+                <ToastCredentialsForm credentials={toastCredentials} onClearError={clearError} />
               )}
 
               {sourceId === "quickbooks" && (
-                <div className='grid gap-3 rounded-md border border-border p-3'>
-                  <p className='font-medium text-sm'>QuickBooks Online credentials</p>
-                  <p className='text-muted-foreground text-xs'>
-                    Enter your Intuit app's client id + secret, then Connect — the consent flow
-                    captures the company (realm) id and refresh token for you.
-                  </p>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='qb-client-id'>
-                      Client ID <span className='text-destructive'>*</span>
-                    </Label>
-                    <Input
-                      id='qb-client-id'
-                      value={qbClientId}
-                      onChange={(e) => {
-                        setQbClientId(e.target.value);
-                        setError(null);
-                      }}
-                      placeholder='Intuit OAuth2 client id'
-                    />
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='qb-client-secret'>
-                      Client secret <span className='text-destructive'>*</span>
-                    </Label>
-                    <Input
-                      id='qb-client-secret'
-                      type='password'
-                      value={qbClientSecret}
-                      onChange={(e) => setQbClientSecret(e.target.value)}
-                      placeholder='Stored securely when you Connect'
-                    />
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='qb-client-secret-name'>
-                      Client secret name <span className='text-destructive'>*</span>
-                    </Label>
-                    <Input
-                      id='qb-client-secret-name'
-                      value={qbClientSecretName}
-                      onChange={(e) => {
-                        setQbClientSecretName(e.target.value);
-                        setError(null);
-                      }}
-                      placeholder='QB_CLIENT_SECRET'
-                    />
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='qb-refresh-token-name'>
-                      Refresh token name <span className='text-destructive'>*</span>
-                    </Label>
-                    <Input
-                      id='qb-refresh-token-name'
-                      value={qbRefreshTokenName}
-                      onChange={(e) => {
-                        setQbRefreshTokenName(e.target.value);
-                        setError(null);
-                      }}
-                      placeholder='QB_REFRESH_TOKEN'
-                    />
-                    <p className='text-muted-foreground text-xs'>
-                      Connect stores the captured refresh token under this name and the pipeline
-                      reads it at run time; Intuit rotates it on every use and the new value is
-                      written back here automatically.
-                    </p>
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='qb-base-url'>
-                      Base URL <span className='text-muted-foreground text-xs'>(optional)</span>
-                    </Label>
-                    <Input
-                      id='qb-base-url'
-                      value={qbBaseUrl}
-                      onChange={(e) => setQbBaseUrl(e.target.value)}
-                      placeholder='Sandbox override (defaults to QuickBooks prod)'
-                    />
-                  </div>
-                  <div className='grid gap-2 border-border border-t pt-3'>
-                    <Button
-                      type='button'
-                      variant='outline'
-                      onClick={handleQbConnect}
-                      disabled={qbConnecting}
-                      data-testid='qb-connect-button'
-                    >
-                      {qbConnecting
-                        ? "Connecting…"
-                        : qbConnected
-                          ? "Reconnect QuickBooks"
-                          : "Connect with QuickBooks"}
-                    </Button>
-                    {qbConnected ? (
-                      <p className='flex items-center gap-1 text-muted-foreground text-xs'>
-                        <Check className='h-3 w-3 text-primary' />
-                        Connected{qbRealmId ? ` — company ${qbRealmId}` : ""}. Refresh token stored.
-                      </p>
-                    ) : (
-                      <p className='text-muted-foreground text-xs'>
-                        Authorize with Intuit to capture the realm id + refresh token automatically.
-                        Register this Redirect URI in your Intuit app:{" "}
-                        <code className='break-all'>
-                          {`${apiBaseURL}/quickbooks/oauth/callback`}
-                        </code>
-                      </p>
-                    )}
-                  </div>
-                </div>
+                <QuickBooksCredentialsForm
+                  credentials={quickbooksCredentials}
+                  onClearError={clearError}
+                  onConnect={() =>
+                    quickbooksCredentials.handleConnect(destinationDb, name, description)
+                  }
+                />
               )}
 
               {sourceId === "clickhouse" && (
-                <div className='grid gap-3 rounded-md border border-border p-3'>
-                  <p className='font-medium text-sm'>ClickHouse connection</p>
-                  <div className='grid grid-cols-[1fr_auto] gap-2'>
-                    <div className='grid gap-2'>
-                      <Label htmlFor='ch-host'>Host</Label>
-                      <Input
-                        id='ch-host'
-                        value={chHost}
-                        onChange={(e) => {
-                          setChHost(e.target.value);
-                          setError(null);
-                        }}
-                        placeholder='my-host.clickhouse.cloud'
-                      />
-                    </div>
-                    <div className='grid w-24 gap-2'>
-                      <Label htmlFor='ch-port'>Port</Label>
-                      <Input
-                        id='ch-port'
-                        value={chPort}
-                        onChange={(e) => setChPort(e.target.value)}
-                        placeholder='8443'
-                        inputMode='numeric'
-                      />
-                    </div>
-                  </div>
-                  <div className='grid grid-cols-2 gap-2'>
-                    <div className='grid gap-2'>
-                      <Label htmlFor='ch-database'>Database</Label>
-                      <Input
-                        id='ch-database'
-                        value={chDatabase}
-                        onChange={(e) => {
-                          setChDatabase(e.target.value);
-                          setError(null);
-                        }}
-                        placeholder='default'
-                      />
-                    </div>
-                    <div className='grid gap-2'>
-                      <Label htmlFor='ch-username'>Username</Label>
-                      <Input
-                        id='ch-username'
-                        value={chUsername}
-                        onChange={(e) => setChUsername(e.target.value)}
-                        placeholder='default'
-                      />
-                    </div>
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='ch-password'>Password</Label>
-                    <Input
-                      id='ch-password'
-                      type='password'
-                      value={chPassword}
-                      onChange={(e) => setChPassword(e.target.value)}
-                      placeholder='Stored as a secret — needed to list tables'
-                    />
-                  </div>
-                  <div className='grid gap-2'>
-                    <Label htmlFor='ch-secret-name'>Secret name</Label>
-                    <Input
-                      id='ch-secret-name'
-                      value={chSecretName}
-                      onChange={(e) => {
-                        setChSecretName(e.target.value);
-                        setError(null);
-                      }}
-                      placeholder='CLICKHOUSE_PASSWORD'
-                    />
-                    <p className='text-muted-foreground text-xs'>
-                      The pipeline references this name; the executor resolves it from the secret
-                      manager at run time.
-                    </p>
-                  </div>
-                  <div className='flex items-center justify-between'>
-                    <Label htmlFor='ch-secure'>Use TLS (HTTPS)</Label>
-                    <Switch id='ch-secure' checked={chSecure} onCheckedChange={setChSecure} />
-                  </div>
-
-                  <div className='flex items-center justify-between gap-2'>
-                    <Button
-                      type='button'
-                      variant='secondary'
-                      size='sm'
-                      onClick={handleFetchTables}
-                      disabled={
-                        discoverTables.isPending ||
-                        !chHost.trim() ||
-                        !chDatabase.trim() ||
-                        !chPassword
-                      }
-                    >
-                      {discoverTables.isPending ? "Listing tables…" : "Fetch tables"}
-                    </Button>
-                    {chTables != null && chTables.length > 0 && (
-                      <div className='flex items-center gap-2'>
-                        <span className='text-muted-foreground text-xs'>
-                          {selectedCount} of {chTables.length} selected
-                        </span>
-                        <Button type='button' variant='ghost' size='sm' onClick={toggleSelectAll}>
-                          {allTablesSelected ? "Clear" : "Select all"}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
-                  {chTables != null &&
-                    (chTables.length === 0 ? (
-                      <p className='text-muted-foreground text-xs'>
-                        No tables found in “{chDatabase.trim()}”.
-                      </p>
-                    ) : (
-                      <div className='max-h-56 overflow-y-auto rounded-md border border-border'>
-                        {chTables.map((t) => {
-                          const sel = chSel[t.name];
-                          return (
-                            <div key={t.name} className='border-border border-b last:border-0'>
-                              <label
-                                htmlFor={`ch-table-${t.name}`}
-                                className='flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/50'
-                              >
-                                <Checkbox
-                                  id={`ch-table-${t.name}`}
-                                  checked={sel != null}
-                                  onCheckedChange={() => toggleTable(t.name)}
-                                />
-                                <span className='truncate'>{t.name}</span>
-                              </label>
-                              {sel != null && (
-                                <div className='flex flex-wrap items-center gap-2 px-2 pb-2 pl-8'>
-                                  <Select
-                                    value={sel.disposition}
-                                    onValueChange={(v) =>
-                                      setTable(t.name, { disposition: v as WriteDisposition })
-                                    }
-                                  >
-                                    <SelectTrigger className='h-7 w-28 text-xs'>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {DISPOSITIONS.map((d) => (
-                                        <SelectItem key={d.value} value={d.value} title={d.hint}>
-                                          {d.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-
-                                  {sel.disposition === "append" && (
-                                    <Select
-                                      value={sel.cursorField ?? "__none"}
-                                      onValueChange={(v) =>
-                                        setTable(t.name, {
-                                          cursorField: v === "__none" ? undefined : v
-                                        })
-                                      }
-                                    >
-                                      <SelectTrigger className='h-7 w-44 text-xs'>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value='__none'>
-                                          No cursor (full reload)
-                                        </SelectItem>
-                                        {t.columns.map((c) => (
-                                          <SelectItem key={c.name} value={c.name}>
-                                            {c.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-
-                                  {sel.disposition === "merge" && (
-                                    <Select
-                                      value={sel.primaryKey ?? ""}
-                                      onValueChange={(v) => setTable(t.name, { primaryKey: v })}
-                                    >
-                                      <SelectTrigger className='h-7 w-44 text-xs'>
-                                        <SelectValue placeholder='merge key (required)' />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {t.columns.map((c) => (
-                                          <SelectItem key={c.name} value={c.name}>
-                                            {c.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
-                </div>
+                <ClickHouseCredentialsForm
+                  credentials={clickhouseCredentials}
+                  onClearError={clearError}
+                  onError={setError}
+                />
               )}
 
               {error && <p className='text-destructive text-sm'>{error}</p>}
