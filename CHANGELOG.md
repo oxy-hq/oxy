@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.71] - 2026-06-09
+
+### 🐛 Bug Fixes
+
+- *(preagg)* Restore fallback config in serve workspace builder (#2407 regression, fixes 0.5.70 crash-loop) (#2484)
+
 ## [0.5.70] - 2026-06-09
 
 ### 🚀 Features
@@ -11,6 +17,10 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 
 - Customer-apps subdomain login redirect loops to 414 in incognito (#2482)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.70 (#2483)
 
 ## [0.5.69] - 2026-06-09
 
