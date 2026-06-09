@@ -23,7 +23,7 @@ use oxy_shared::errors::OxyError;
 use std::net::SocketAddr;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
-use tower::service_fn;
+use tower::{ServiceBuilder, service_fn};
 use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
 use tracing::Level;
@@ -484,7 +484,11 @@ async fn create_web_application(
     use crate::server::api::customer_apps_serve;
     use axum::routing::any;
 
-    let router = Router::new()
+    // Everything that must be subject to the host-based subdomain rewrite:
+    // the data API, the customer-app serve route, the SwaggerUI tree, and
+    // the static admin-SPA fallback. Global CORS + trace are applied here so
+    // they wrap this whole surface.
+    let main = Router::new()
         .nest("/api", api_router)
         // Customer-app subpath bundle serving. Mounted at the top level (NOT
         // under /api) because the URL is browser-facing and must redirect to
@@ -524,25 +528,38 @@ async fn create_web_application(
         // "CORS error" instead of the real 404. See
         // `crates/app/src/server/router/mod.rs::build_cors_layer`.
         .layer(crate::server::router::build_cors_layer())
-        // Subdomain-based dispatch for v0 / Vercel customer-app bundles.
-        // Inspects the request Host: header against
-        // `OXY_CUSTOMER_APPS_SUBDOMAIN_SUFFIX`; on a match, rewrites the
-        // URI path to the equivalent `/customer-apps/<org>/<slug>/...` so
-        // the existing route handler takes over (including the v0 proxy
-        // path). `/api/*` requests are passed through unchanged so the
-        // bundle SDK's `fetch("/api/...")` calls land on the data API,
-        // not the upstream Vercel. No-op when the env var is unset —
-        // safe to leave installed before the wildcard cert + DNS land.
+        .layer(create_trace_layer());
+
+    // Subdomain-based dispatch for customer-app bundles. Rewrites a
+    // `<org>--<slug>.customer-apps[-env].<zone>` Host to the equivalent
+    // `/customer-apps/<org>/<slug>/...` path so the route above takes over
+    // (including the reverse-proxy path for remote-hosted sources). `/api/*`
+    // requests are passed through unchanged so a bundle SDK's
+    // `fetch("/api/...")` lands on the data API, not the upstream.
+    //
+    // CRITICAL: this wraps the WHOLE `main` router as a single service so it
+    // runs BEFORE routing. Attaching it with `Router::layer` instead runs it
+    // AFTER routing — axum applies `.layer` per-endpoint (each route AND the
+    // fallback individually) and matches the path first, so a fallback-bound
+    // request (`/`, `/foo.js`, `/_next/...`) is already routed to the static
+    // admin SPA before the rewrite runs; the rewritten path then goes
+    // straight to the static file server and the customer app never loads
+    // (the staging/prod "blank page" bug). Regression test:
+    // `customer_apps_host_dispatch::subdomain_rewrite_must_run_before_routing`.
+    let main = ServiceBuilder::new()
         .layer(axum::middleware::from_fn(
             crate::server::api::customer_apps_host_dispatch::subdomain_rewrite_middleware,
         ))
-        .layer(create_trace_layer())
-        // External API surface — mounted AFTER the global CORS + trace layers
-        // so it is NOT wrapped by them (axum applies a `.layer` only to routes
-        // registered before the call). It carries its OWN wide-open CORS
-        // (`build_external_cors_layer`) and is API-key-only; the locked-down
-        // `/api` surface above is completely unaffected.
-        .nest("/external/api", external_api_router);
+        .service(main);
+
+    // External API surface — a sibling of `main`, so it is NOT wrapped by the
+    // global CORS/trace layers OR the subdomain rewrite. It carries its OWN
+    // wide-open CORS (`build_external_cors_layer`) and is API-key-only; its
+    // callers use the admin host, never a customer-app subdomain. Every other
+    // path falls through to `main`.
+    let router = Router::new()
+        .nest("/external/api", external_api_router)
+        .fallback_service(main);
     Ok(router)
 }
 

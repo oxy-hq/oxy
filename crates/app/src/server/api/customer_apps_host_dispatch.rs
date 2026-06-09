@@ -498,4 +498,75 @@ mod tests {
         }
         assert_eq!(subdomain_url_for("mars", "store"), None);
     }
+
+    // ── Router wiring: the rewrite MUST run before routing ───────────────
+    //
+    // Regression test for the staging/prod customer-app "blank page" bug.
+    //
+    // `Router::layer` runs middleware AFTER routing — it wraps each leaf
+    // service (every route AND the fallback) individually, and path
+    // matching happens on the ORIGINAL URI first. So a fallback-bound
+    // request like `/foo.js` is already routed to the static fallback
+    // before this middleware runs; the rewrite to
+    // `/customer-apps/<org>/<slug>/foo.js` is then handed straight to the
+    // static file server (→ admin SPA `index.html`) and never re-enters the
+    // router to reach `serve_dispatch`. Wrapping the WHOLE router instead
+    // makes the rewrite run before routing, so it can change which handler
+    // is selected.
+    #[tokio::test]
+    async fn subdomain_rewrite_must_run_before_routing() {
+        use axum::http::Request;
+        use axum::{Router, body::Body, routing::any};
+        use tower::ServiceExt;
+
+        async fn dispatch() -> &'static str {
+            "DISPATCH"
+        }
+        async fn spa() -> &'static str {
+            "ADMIN_SPA"
+        }
+
+        let host = "poke-house--command-center.customer-apps-staging.oxygen-hq.com";
+        let make_req = || {
+            Request::builder()
+                .uri("/foo.js")
+                .header("host", host)
+                .body(Body::empty())
+                .unwrap()
+        };
+        async fn body_of(resp: Response) -> Vec<u8> {
+            axum::body::to_bytes(resp.into_body(), 64 * 1024)
+                .await
+                .unwrap()
+                .to_vec()
+        }
+
+        // (1) BUGGY wiring — exactly what serve.rs does today: middleware
+        //     applied via `Router::layer`. Reproduces the production
+        //     symptom: `/foo.js` falls through to the admin SPA because the
+        //     rewrite happened after routing.
+        let buggy = Router::new()
+            .route("/customer-apps/{*path}", any(dispatch))
+            .fallback(spa)
+            .layer(axum::middleware::from_fn(subdomain_rewrite_middleware));
+        let got = body_of(buggy.oneshot(make_req()).await.unwrap()).await;
+        assert_eq!(
+            got, b"ADMIN_SPA",
+            "Router::layer runs after routing, so the rewrite misses serve_dispatch"
+        );
+
+        // (2) FIXED wiring — wrap the WHOLE router so the rewrite runs
+        //     before routing and `/foo.js` is re-routed to the dispatch
+        //     handler.
+        use tower::Layer;
+        let inner = Router::new()
+            .route("/customer-apps/{*path}", any(dispatch))
+            .fallback(spa);
+        let fixed = axum::middleware::from_fn(subdomain_rewrite_middleware).layer(inner);
+        let got = body_of(fixed.oneshot(make_req()).await.unwrap()).await;
+        assert_eq!(
+            got, b"DISPATCH",
+            "wrapping the whole router runs the rewrite before routing"
+        );
+    }
 }

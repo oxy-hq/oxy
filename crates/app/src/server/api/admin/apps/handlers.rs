@@ -238,15 +238,21 @@ pub(crate) fn build_pretty_url(org_slug: &str, app_slug: &str) -> String {
 impl AppResponse {
     fn from_model_with_org(m: apps::Model, org_slug: &str) -> Self {
         let url = build_pretty_url(org_slug, &m.slug);
-        // Subdomain URL only applies to v0 sources (S3 bundles serve
-        // their own assets from this oxy backend, so there's no
-        // upstream to proxy at root). The helper returns None when the
-        // suffix env is unset.
-        let url_subdomain = if m.source_type == "v0" {
-            crate::server::api::customer_apps_host_dispatch::subdomain_url_for(org_slug, &m.slug)
-        } else {
-            None
-        };
+        // Subdomain URL applies to every source type that gets served
+        // through the customer-apps surface — both v0 (reverse-proxied
+        // to Vercel) and s3 (served from this oxy backend's bundle
+        // cache). The host dispatcher's `already_canonicalized` guard
+        // (#2466) made S3 apps work on the subdomain too, but this
+        // function still had the original v0-only gate from when the
+        // feature first shipped — so the admin UI surfaced subdomain
+        // URLs only for v0 apps and operators wondered why their
+        // `oxy publish`-deployed apps showed just the subpath. Drop
+        // the gate; `subdomain_url_for` returns None when the
+        // cluster's admin host doesn't fit the auto-derivation
+        // convention (local dev / custom-branded host), which is the
+        // only case where the row should be hidden.
+        let url_subdomain =
+            crate::server::api::customer_apps_host_dispatch::subdomain_url_for(org_slug, &m.slug);
         Self {
             id: m.id,
             slug: m.slug,
