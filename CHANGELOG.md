@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.70] - 2026-06-09
+
+### 🚀 Features
+
+- Metric tree integration — semantic layer tab, anomaly monitoring, and metric-tree agent tools (#2407)
+
+### 🐛 Bug Fixes
+
+- Customer-apps subdomain login redirect loops to 414 in incognito (#2482)
+
 ## [0.5.69] - 2026-06-09
 
 ### 🚀 Features
@@ -21,6 +31,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Bump airway to 0.1.3 (#2481)
+- Release 0.5.69 (#2477)
 
 ## [0.5.68] - 2026-06-08
 
