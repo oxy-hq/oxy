@@ -19,6 +19,7 @@
 //!
 //! [`SourceConfig`]: crate::config::SourceConfig
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use airway::connector::SourceConnector;
@@ -284,6 +285,36 @@ struct ClickHouseParams {
     /// is only reachable by hand-editing; left as-is deliberately.
     #[serde(default)]
     secure: Option<bool>,
+    /// Client-side connect timeout in seconds. Defaults to airway's `30`.
+    #[serde(default)]
+    connect_timeout_secs: Option<u64>,
+    /// Client-side read (inactivity) timeout in seconds. Defaults to airway's
+    /// `120`. Resets on each received body chunk, so a steadily-streaming
+    /// table of any size completes; only a stall longer than this aborts.
+    /// Raise this when a slow destination back-pressures the read for long
+    /// stretches (see also `settings.http_send_timeout`, which governs the
+    /// ClickHouse *server* side of the same stall).
+    #[serde(default)]
+    read_timeout_secs: Option<u64>,
+    /// Extra ClickHouse settings forwarded as URL query parameters on every
+    /// request (e.g. `http_send_timeout`, `send_timeout`, `receive_timeout`,
+    /// `max_execution_time`, `max_block_size`). Values may be written as
+    /// numbers or strings in YAML; both are forwarded as strings.
+    ///
+    /// Socket timeouts MUST be set here rather than via a trailing SQL
+    /// `SETTINGS` clause: ClickHouse fixes the HTTP response socket's timeout
+    /// at request setup, before the query body's `SETTINGS` are parsed, so a
+    /// `SETTINGS http_send_timeout=…` inside the SQL is ignored.
+    #[serde(default)]
+    settings: BTreeMap<String, Value>,
+    /// Rows per streamed batch (one destination write). Defaults to airway's
+    /// `10000`. Lower it when a slow destination back-pressures the read long
+    /// enough to trip ClickHouse's socket send timeout — smaller writes drain
+    /// faster, so the source read pauses for shorter stretches. `max_block_size`
+    /// (a `settings` entry) does NOT do this: it tunes ClickHouse's output, not
+    /// the destination-write size.
+    #[serde(default)]
+    batch_size: Option<usize>,
     /// Tables to extract. Reuses the `sql_database` table shape.
     #[serde(default)]
     tables: Vec<SqlTableParams>,
@@ -305,7 +336,32 @@ fn clickhouse_conn(params: &ClickHouseParams) -> ClickHouseConn {
     if let Some(secure) = params.secure {
         conn.secure = secure;
     }
+    if let Some(secs) = params.connect_timeout_secs {
+        conn.connect_timeout_secs = secs;
+    }
+    if let Some(secs) = params.read_timeout_secs {
+        conn.read_timeout_secs = secs;
+    }
+    if let Some(n) = params.batch_size {
+        conn.batch_size = n;
+    }
+    conn.settings = params
+        .settings
+        .iter()
+        .map(|(k, v)| (k.clone(), json_value_to_setting(v)))
+        .collect();
     conn
+}
+
+/// Render a YAML/JSON setting value as the string ClickHouse expects in a URL
+/// query parameter. Strings pass through unquoted (`"600"` -> `600`); numbers
+/// and bools use their plain literal so `http_send_timeout: 600` works without
+/// the author needing to quote it.
+fn json_value_to_setting(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
 }
 
 fn build_clickhouse(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
