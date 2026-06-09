@@ -4,6 +4,13 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import type { ArtifactItem } from "@/hooks/analyticsSteps";
 import type { AnalyticsDisplayBlock } from "@/hooks/useAnalyticsRun";
+import { ExplainBody } from "@/pages/ide/SemanticLayer/AnomaliesInbox/ExplainDrawer";
+import type {
+  ExplainResult,
+  OpportunityResult,
+  PredictResult,
+  SensitivityResult
+} from "@/types/metricTree";
 import { AnalyticsDisplayBlockItem, parseToolJson } from "./analyticsArtifactHelpers";
 
 // ── TimingBar ─────────────────────────────────────────────────────────────────
@@ -2309,6 +2316,414 @@ export const CountRowsView = ({ item }: { item: ArtifactItem }) => {
         )}
         {error && <ErrorAlert message={error} />}
       </div>
+    </div>
+  );
+};
+
+// ── ExplainMetricView ─────────────────────────────────────────────────────────
+
+function fmtNumber(n: number): string {
+  if (!Number.isFinite(n)) return String(n);
+  const abs = Math.abs(n);
+  if (abs >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (abs >= 1) return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function ToolErrorOrLoading({ item }: { item: ArtifactItem }) {
+  if (item.isStreaming) {
+    return (
+      <div className='flex items-center gap-2 px-4 py-6 text-muted-foreground text-xs'>
+        <Spinner className='h-3 w-3' />
+        Running…
+      </div>
+    );
+  }
+  return null;
+}
+
+export const ExplainMetricView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{
+    target?: string;
+    time_dimension?: string;
+    current_period_start?: string;
+    current_period_end?: string;
+    previous_period_start?: string;
+    previous_period_end?: string;
+    deep?: boolean;
+  }>(item.toolInput);
+  const output = parseToolJson<ExplainResult & { error?: string }>(item.toolOutput);
+  const error = output?.error;
+  const result = output && !error && output.target ? (output as ExplainResult) : null;
+
+  return (
+    <div className='flex h-full flex-col'>
+      {/* Fixed-height header: input cards + error/loading state */}
+      <div className='flex-none p-4 pb-2'>
+        <div className='space-y-3'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Target</p>
+              <p className='font-medium font-mono text-xs'>{input?.target ?? "—"}</p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                Time dimension
+              </p>
+              <p className='font-medium font-mono text-xs'>{input?.time_dimension ?? "—"}</p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                Current period
+              </p>
+              <p className='font-medium font-mono text-xs'>
+                {input?.current_period_start ?? "—"} → {input?.current_period_end ?? "—"}
+              </p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                Previous period
+              </p>
+              <p className='font-medium font-mono text-xs'>
+                {input?.previous_period_start ?? "—"} → {input?.previous_period_end ?? "—"}
+              </p>
+            </div>
+          </div>
+          {error && <ErrorAlert message={error} />}
+          <ToolErrorOrLoading item={item} />
+        </div>
+      </div>
+      {/* ExplainBody fills remaining space as a proper flex child */}
+      <div className='flex min-h-0 flex-1 flex-col px-4 pb-2'>
+        {result && <ExplainBody result={result} />}
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── FindOpportunitiesView ────────────────────────────────────────────────────
+
+export const FindOpportunitiesView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{
+    target?: string;
+    time_dimension?: string;
+    period_start?: string;
+    period_end?: string;
+  }>(item.toolInput);
+  const output = parseToolJson<OpportunityResult & { error?: string }>(item.toolOutput);
+  const error = output?.error;
+  const result = output && !error && output.target ? (output as OpportunityResult) : null;
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Target</p>
+              <p className='font-medium font-mono text-xs'>{input?.target ?? "—"}</p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Period</p>
+              <p className='font-medium font-mono text-xs'>
+                {input?.period_start ?? "—"} → {input?.period_end ?? "—"}
+              </p>
+            </div>
+          </div>
+          {error && <ErrorAlert message={error} />}
+          <ToolErrorOrLoading item={item} />
+          {result && (
+            <>
+              <div className='rounded border border-primary/20 bg-primary/5 px-3 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  Overall value
+                </p>
+                <p className='font-medium font-mono text-sm'>{fmtNumber(result.overall_value)}</p>
+                <p className='mt-0.5 text-[10px] text-muted-foreground'>
+                  Weight basis: {result.weight_basis}
+                </p>
+              </div>
+
+              {(result.dimensions ?? []).length === 0 ? (
+                <p className='text-muted-foreground text-xs'>
+                  No actionable opportunities found in the analysed dimensions.
+                </p>
+              ) : (
+                <div className='space-y-3'>
+                  <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                    Opportunities by dimension
+                  </p>
+                  {(result.dimensions ?? []).map((dim) => (
+                    <div key={dim.dimension} className='space-y-1.5'>
+                      <div className='flex items-center justify-between gap-2'>
+                        <p className='font-medium font-mono text-xs'>{dim.dimension}</p>
+                        <div className='flex shrink-0 items-center gap-1.5 text-[10px]'>
+                          <span className='rounded bg-muted px-1.5 py-0.5 text-muted-foreground'>
+                            {dim.benchmark_basis}
+                          </span>
+                          <span className='font-mono text-foreground tabular-nums'>
+                            +{fmtNumber(dim.total_upside)}
+                          </span>
+                        </div>
+                      </div>
+                      <ul className='space-y-1'>
+                        {dim.segments.map((seg) => (
+                          <li
+                            key={seg.segment}
+                            className='rounded border bg-card px-2.5 py-1.5 text-xs'
+                          >
+                            <div className='flex items-center justify-between gap-2'>
+                              <span className='font-medium'>{seg.segment}</span>
+                              <span className='font-mono text-muted-foreground tabular-nums'>
+                                +{fmtNumber(seg.upside)} upside
+                              </span>
+                            </div>
+                            <p className='mt-0.5 font-mono text-[10px] text-muted-foreground tabular-nums'>
+                              {fmtNumber(seg.current_value)} → {fmtNumber(seg.benchmark)} (gap{" "}
+                              {fmtNumber(seg.gap)})
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                      {dim.other_segments_skipped > 0 && (
+                        <p className='text-[10px] text-muted-foreground italic'>
+                          + {dim.other_segments_skipped} more segment(s) trimmed
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(result.downstream ?? []).length > 0 && (
+                <div className='space-y-1.5'>
+                  <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                    Downstream impact
+                  </p>
+                  <ul className='space-y-1'>
+                    {(result.downstream ?? []).map((d) => (
+                      <li
+                        key={`${d.measure}-${d.path.join("/")}`}
+                        className='flex items-center justify-between gap-2 rounded border bg-card px-2.5 py-1.5 text-xs'
+                      >
+                        <span className='truncate font-mono'>{d.measure}</span>
+                        <span className='flex shrink-0 items-center gap-1.5'>
+                          <span className='font-mono tabular-nums'>
+                            {d.estimated_delta >= 0 ? "+" : ""}
+                            {fmtNumber(d.estimated_delta)}
+                          </span>
+                          <span className='rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground'>
+                            {d.confidence}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {(result.skipped_dimensions ?? []).length > 0 && (
+                <div className='space-y-1.5'>
+                  <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                    Skipped dimensions ({(result.skipped_dimensions ?? []).length})
+                  </p>
+                  <ul className='space-y-1'>
+                    {(result.skipped_dimensions ?? []).map((s) => (
+                      <li
+                        key={s.dimension}
+                        className='rounded border border-dashed bg-muted/20 px-2.5 py-1.5 text-[11px]'
+                      >
+                        <span className='font-mono'>{s.dimension}</span>
+                        <span className='ml-1.5 text-muted-foreground'>— {s.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── MetricSensitivityView ─────────────────────────────────────────────────────
+
+export const MetricSensitivityView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ target?: string }>(item.toolInput);
+  const output = parseToolJson<SensitivityResult & { error?: string }>(item.toolOutput);
+  const error = output?.error;
+  const result = output && !error && output.target ? (output as SensitivityResult) : null;
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='rounded border bg-muted/30 px-2.5 py-2'>
+            <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Target</p>
+            <p className='font-medium font-mono text-xs'>
+              {input?.target ?? result?.target ?? "—"}
+            </p>
+          </div>
+          {error && <ErrorAlert message={error} />}
+          <ToolErrorOrLoading item={item} />
+          {result && (
+            <div className='space-y-1.5'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                Drivers ({result.drivers.length})
+              </p>
+              {result.drivers.length === 0 ? (
+                <p className='text-muted-foreground text-xs'>
+                  No declared drivers found for this measure.
+                </p>
+              ) : (
+                <ul className='space-y-1'>
+                  {result.drivers.map((d) => (
+                    <li
+                      key={`${d.measure}-${d.path.join("/")}`}
+                      className='rounded border bg-card px-2.5 py-1.5 text-xs'
+                    >
+                      <div className='flex items-center justify-between gap-2'>
+                        <span className='font-medium font-mono'>{d.measure}</span>
+                        <div className='flex shrink-0 items-center gap-1.5 text-[10px]'>
+                          <span className='rounded bg-muted px-1.5 py-0.5 text-muted-foreground'>
+                            {d.edge_kind}
+                          </span>
+                          <span
+                            className={
+                              d.direction === "positive"
+                                ? "rounded bg-primary/10 px-1.5 py-0.5 text-primary"
+                                : d.direction === "negative"
+                                  ? "rounded bg-destructive/10 px-1.5 py-0.5 text-destructive"
+                                  : "rounded bg-muted px-1.5 py-0.5 text-muted-foreground"
+                            }
+                          >
+                            {d.direction}
+                          </span>
+                          <span className='rounded bg-muted px-1.5 py-0.5 text-muted-foreground'>
+                            {d.strength}
+                          </span>
+                        </div>
+                      </div>
+                      <p className='mt-0.5 truncate font-mono text-[10px] text-muted-foreground'>
+                        {d.path.join(" → ")}
+                      </p>
+                      {((d.effective_coefficient !== undefined &&
+                        d.effective_coefficient !== null) ||
+                        d.form ||
+                        d.lag != null) && (
+                        <p className='mt-0.5 text-[10px] text-muted-foreground tabular-nums'>
+                          {d.effective_coefficient !== undefined &&
+                            d.effective_coefficient !== null &&
+                            `coef ${fmtNumber(d.effective_coefficient)}`}
+                          {d.form && ` · ${d.form}`}
+                          {d.lag != null && ` · lag ${d.lag}d`}
+                        </p>
+                      )}
+                      {d.description && (
+                        <p className='mt-0.5 text-[10px] text-muted-foreground italic'>
+                          {d.description}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── PredictImpactView ─────────────────────────────────────────────────────────
+
+export const PredictImpactView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{
+    changes?: { measure?: string; delta?: number }[];
+  }>(item.toolInput);
+  const output = parseToolJson<PredictResult & { error?: string }>(item.toolOutput);
+  const error = output?.error;
+  const result =
+    output && !error && Array.isArray(output.impacts) ? (output as PredictResult) : null;
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          {input?.changes && input.changes.length > 0 && (
+            <div className='space-y-1.5'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                Hypothetical changes
+              </p>
+              <ul className='space-y-1'>
+                {input.changes.map((c, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: stable order
+                  <li
+                    key={i}
+                    className='flex items-center justify-between gap-2 rounded border bg-card px-2.5 py-1.5 text-xs'
+                  >
+                    <span className='truncate font-mono'>{c.measure ?? "?"}</span>
+                    <span className='font-mono tabular-nums'>
+                      {(c.delta ?? 0) >= 0 ? "+" : ""}
+                      {fmtNumber(c.delta ?? 0)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {error && <ErrorAlert message={error} />}
+          <ToolErrorOrLoading item={item} />
+          {result && (
+            <div className='space-y-1.5'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                Predicted impacts ({result.impacts.length})
+              </p>
+              {result.impacts.length === 0 ? (
+                <p className='text-muted-foreground text-xs'>
+                  No downstream impacts propagated through the metric tree.
+                </p>
+              ) : (
+                <ul className='space-y-1'>
+                  {result.impacts.map((d, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable order
+                    <li key={i} className='rounded border bg-card px-2.5 py-1.5 text-xs'>
+                      <div className='flex items-center justify-between gap-2'>
+                        <span className='font-medium font-mono'>{d.measure}</span>
+                        <span className='flex shrink-0 items-center gap-1.5'>
+                          <span className='font-mono tabular-nums'>
+                            {d.estimated_delta >= 0 ? "+" : ""}
+                            {fmtNumber(d.estimated_delta)}
+                          </span>
+                          <span className='rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground'>
+                            {d.confidence}
+                          </span>
+                        </span>
+                      </div>
+                      <p className='mt-0.5 truncate font-mono text-[10px] text-muted-foreground'>
+                        {d.path.join(" → ")}
+                      </p>
+                      {(d.form || d.lag != null) && (
+                        <p className='mt-0.5 text-[10px] text-muted-foreground'>
+                          {d.form}
+                          {d.lag != null && ` · lag ${d.lag}d`}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
     </div>
   );
 };

@@ -1,0 +1,36 @@
+table: content_level_monthly_stats_fruits_veggies.csv
+database: local
+description: Lorem ipsum
+
+entities:
+  - name: content_id
+    description: content_id
+    sample: [1, 2, 3, 4]
+
+dimensions:
+  - name: month
+    sample:
+      - "2024-08"
+  - name: property_grouping
+    synonyms:
+      - "property_grouping"
+    sample:
+      - "Fruit"
+      - "Vegetable"
+  - name: content_type
+    synonyms:
+      - "content_type"
+    sample:
+      - "Instagram"
+      - "Facebook"
+  - name: views
+    sample:
+      - 100
+      - 200
+
+measures:
+  - name: count_content_id
+    sql: sum(distinct content_id)
+
+  - name: total_views
+    sql: sum(views)

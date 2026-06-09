@@ -1,0 +1,51 @@
+id,name,category,price,cost,created_at,is_active
+1,Wireless Headphones,Electronics,173.26,75.63,2022-04-15,True
+2,Bluetooth Speaker,Electronics,82.48,56.51,2022-02-03,True
+3,USB-C Cable,Electronics,65.64,40.03,2022-12-21,True
+4,Phone Case,Electronics,117.34,43.4,2022-04-26,True
+5,Screen Protector,Electronics,146.23,77.97,2022-01-20,True
+6,Laptop Stand,Electronics,90.3,39.43,2022-08-23,False
+7,Keyboard,Electronics,144.5,44.42,2022-01-10,True
+8,Mouse,Electronics,140.52,64.72,2022-03-25,True
+9,Webcam,Electronics,23.6,10.25,2022-04-08,True
+10,Monitor Light,Electronics,52.2,31.35,2022-08-15,True
+11,Cotton T-Shirt,Clothing,18.65,7.22,2022-06-18,True
+12,Denim Jeans,Clothing,140.01,83.19,2022-09-12,True
+13,Running Shoes,Clothing,118.27,67.19,2022-05-02,True
+14,Winter Jacket,Clothing,26.24,8.54,2022-06-29,True
+15,Baseball Cap,Clothing,133.91,44.04,2022-08-19,True
+16,Silk Scarf,Clothing,50.04,26.14,2022-05-08,True
+17,Leather Belt,Clothing,36.99,23.98,2022-05-17,True
+18,Wool Socks,Clothing,64.75,25.7,2022-01-03,True
+19,Dress Shirt,Clothing,77.67,34.57,2022-03-01,True
+20,Cargo Pants,Clothing,183.81,56.18,2022-02-02,True
+21,Table Lamp,Home & Garden,143.15,47.46,2022-12-10,True
+22,Throw Pillow,Home & Garden,132.05,66.89,2022-05-06,True
+23,Wall Clock,Home & Garden,70.21,34.15,2022-11-13,True
+24,Plant Pot,Home & Garden,90.19,28.45,2022-01-29,True
+25,Candle Set,Home & Garden,24.66,12.07,2022-04-11,True
+26,Door Mat,Home & Garden,141.38,82.98,2022-01-06,True
+27,Picture Frame,Home & Garden,146.39,55.84,2022-06-27,True
+28,Blanket,Home & Garden,34.77,23.69,2022-10-18,True
+29,Mug Set,Home & Garden,174.76,97.24,2022-06-04,True
+30,Coaster Set,Home & Garden,17.28,11.67,2022-08-17,True
+31,Python Cookbook,Books,22.54,14.43,2022-02-09,True
+32,Data Science Guide,Books,134.82,83.63,2022-08-26,True
+33,Fiction Novel,Books,29.63,16.82,2022-11-15,True
+34,Biography,Books,184.97,101.14,2022-10-01,True
+35,Art Book,Books,180.93,118.25,2022-11-20,True
+36,Travel Guide,Books,187.63,126.91,2022-03-28,True
+37,History Book,Books,48.72,27.24,2022-06-11,True
+38,Self Help Book,Books,96.88,62.61,2022-08-17,True
+39,Cookbook,Books,141.38,59.92,2022-10-02,True
+40,Poetry Collection,Books,109.04,74.08,2022-12-09,True
+41,Yoga Mat,Sports,120.33,71.39,2022-09-28,True
+42,Dumbbells,Sports,138.18,49.13,2022-08-08,True
+43,Water Bottle,Sports,135.87,65.82,2022-03-04,True
+44,Running Watch,Sports,58.46,36.29,2022-02-13,True
+45,Tennis Racket,Sports,192.74,102.85,2022-05-25,True
+46,Face Cream,Beauty,66.6,38.27,2022-06-01,True
+47,Shampoo,Beauty,183.45,119.18,2022-01-28,True
+48,Lip Balm,Beauty,81.7,38.41,2022-11-20,True
+49,Sunscreen,Beauty,173.33,67.49,2022-08-25,True
+50,Perfume,Beauty,46.99,15.44,2022-04-22,True

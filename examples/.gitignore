@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.omni/**
+.semantics
+db.duckdb
+oxy.log
+outputs/
+.checkpoint/
+.lancedb/
+generated/
+results/
+.databases/
+.oxy_state/
+
+# DuckDB runtime artifacts written next to the seed CSV in .db/.
+.db/*.duckdb
+.db/*.wal

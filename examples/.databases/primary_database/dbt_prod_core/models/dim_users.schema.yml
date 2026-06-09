@@ -1,0 +1,15 @@
+table: dbt_prod_core.dim_users
+database: primary_database
+dimensions:
+- name: id_user
+  type: STRING
+- name: email
+  type: STRING
+- name: name
+  type: STRING
+- name: id_organization
+  type: STRING
+- name: organization_subdomain
+  type: STRING
+- name: ts_first_event
+  type: TIMESTAMP

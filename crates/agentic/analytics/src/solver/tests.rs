@@ -1203,7 +1203,7 @@ fn triage_prompt_instructs_propose_semantic_query() {
 
 #[test]
 fn triage_tools_include_propose_semantic_query() {
-    let tools = crate::tools::triage_tools();
+    let tools = crate::tools::triage_tools(false);
     assert!(
         tools.iter().any(|t| t.name == "propose_semantic_query"),
         "triage_tools must include propose_semantic_query"

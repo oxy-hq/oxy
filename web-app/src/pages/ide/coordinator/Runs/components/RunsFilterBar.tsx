@@ -146,7 +146,8 @@ export const RunsFilterBar: React.FC<{
           { value: "all", label: "All types" },
           { value: "agent", label: "Agent" },
           { value: "dag", label: "DAG" },
-          { value: "elt", label: "ELT" }
+          { value: "elt", label: "ELT" },
+          { value: "monitor", label: "Monitor" }
         ]}
       />
       <FilterSelect
@@ -159,7 +160,8 @@ export const RunsFilterBar: React.FC<{
           { value: "builder", label: "Builder" },
           { value: "workflow", label: "Workflow" },
           { value: "airway", label: "Airway" },
-          { value: "coordinator", label: "Coordinator" }
+          { value: "coordinator", label: "Coordinator" },
+          { value: "monitor_scan", label: "Monitor" }
         ]}
       />
       <FilterSelect

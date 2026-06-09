@@ -8,6 +8,7 @@ members = [
   "crates/entity",
   "crates/git",
   "crates/integration/looker",
+  "crates/metric-monitoring",
   "crates/integration/unifi",
   "crates/migration",
   "crates/integration/omni",
@@ -81,6 +82,7 @@ oxy-gemini = { path = "crates/infrastructure/llm/gemini" }
 oxy-git = { path = "crates/git" }
 oxy-llm = { path = "crates/infrastructure/llm/oxy-llm" }
 oxy-looker = { path = "crates/integration/looker" }
+oxy-metric-monitoring = { path = "crates/metric-monitoring" }
 oxy-observability = { path = "crates/observability" }
 oxy-ollama = { path = "crates/infrastructure/llm/ollama" }
 oxy-airform = { path = "crates/airform" }
@@ -128,7 +130,13 @@ tracing = {version = "0.1.44"}
 uuid = { version = "1.23", features = ["serde", "v4"] }
 aes-gcm = "0.10.3"
 aho-corasick = "1.1"
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "2b240a4cd858f2e300883577675eec655c3f3d87" }
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "95b036950f2aa3ea408bd6946ecca18306c384e3" }
+# Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
+# Holt-Winters family (with auto model selection); augurs-mstl handles
+# multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.
+augurs-core = "0.10.2"
+augurs-ets = "0.10.2"
+augurs-mstl = "0.10.2"
 anyhow = "1.0.102"
 apalis = "0.7.4"
 apalis-core = "0.7.4"

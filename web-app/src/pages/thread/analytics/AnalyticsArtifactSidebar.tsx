@@ -24,6 +24,8 @@ import {
   CountRowsView,
   DebugDbtProjectView,
   DocsGenerateDbtView,
+  ExplainMetricView,
+  FindOpportunitiesView,
   FormatDbtSqlView,
   GetDbtColumnLineageView,
   GetDbtLineageView,
@@ -31,7 +33,9 @@ import {
   GetMetricDefinitionView,
   InitDbtProjectView,
   ListDbtNodesView,
+  MetricSensitivityView,
   ParseDbtProjectView,
+  PredictImpactView,
   ProcedureStepView,
   RawArtifactView,
   RenderChartView,
@@ -309,6 +313,67 @@ const AnalyticsArtifactSidebar = ({
           ) : (
             <RawArtifactView item={item} />
           )}
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── metric-tree tools ─────────────────────────────────────────────────────
+  if (item.toolName === "explain_metric") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Explain Metric'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ExplainMetricView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "find_opportunities") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Find Opportunities'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <FindOpportunitiesView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "metric_sensitivity") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Metric Sensitivity'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <MetricSensitivityView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "predict_impact") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Predict Impact'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <PredictImpactView item={item} />
         </PanelContent>
       </Panel>
     );

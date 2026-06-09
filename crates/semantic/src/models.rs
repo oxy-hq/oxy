@@ -153,6 +153,84 @@ pub struct MeasureFilter {
     pub description: Option<String>,
 }
 
+/// Direction of a driver relationship.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DriverDirection {
+    Positive,
+    Negative,
+    #[default]
+    Unknown,
+}
+
+/// Strength of a driver relationship.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DriverStrength {
+    Strong,
+    #[default]
+    Moderate,
+    Weak,
+}
+
+/// Confidence in a driver relationship.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DriverConfidence {
+    High,
+    #[default]
+    Medium,
+    Low,
+}
+
+/// Functional form of a quantitative driver relationship.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum DriverForm {
+    #[default]
+    Linear,
+    LogLog,
+    LogLinear,
+    LinearLog,
+}
+
+/// A driver relationship: a measure that influences this measure's value.
+///
+/// Supports two modes: qualitative (`direction`/`strength`/`confidence`) and
+/// quantitative (`coefficient`/`form`/`intercept`/`lag`).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Driver {
+    /// Fully qualified measure reference (e.g., "marketing.ad_spend").
+    pub measure: String,
+    /// Direction of the relationship.
+    #[serde(default)]
+    pub direction: DriverDirection,
+    /// Strength of the relationship.
+    #[serde(default)]
+    pub strength: DriverStrength,
+    /// Confidence in the relationship.
+    #[serde(default)]
+    pub confidence: DriverConfidence,
+    /// Marginal effect coefficient (quantitative mode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coefficient: Option<f64>,
+    /// Functional form of the relationship.
+    #[serde(default)]
+    pub form: DriverForm,
+    /// Intercept term (quantitative mode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intercept: Option<f64>,
+    /// Lag in days before a change in the driver affects the target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lag: Option<u64>,
+    /// Human-readable description of the relationship.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Links to supporting research, experiments, or documentation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refs: Option<Vec<String>>,
+}
+
 /// Represents a measure in the semantic layer
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Measure {
@@ -174,6 +252,9 @@ pub struct Measure {
     pub samples: Option<Vec<String>>,
     /// Alternative names or terms that refer to this measure
     pub synonyms: Option<Vec<String>>,
+    /// Driver relationships: measures that influence this measure's value
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drivers: Option<Vec<Driver>>,
 }
 
 impl Dimension {
@@ -540,4 +621,50 @@ pub struct DatabaseDetails {
     pub db_type: String,
     /// For Domo databases, this contains the dataset_id to use as the table name
     pub dataset_id: Option<String>,
+}
+
+#[cfg(test)]
+mod driver_tests {
+    use super::*;
+
+    #[test]
+    fn driver_deserializes_qualitative() {
+        let yaml = r#"
+measure: marketing.ad_spend
+direction: positive
+strength: strong
+confidence: high
+"#;
+        let d: Driver = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(d.measure, "marketing.ad_spend");
+        assert_eq!(d.direction, DriverDirection::Positive);
+        assert_eq!(d.strength, DriverStrength::Strong);
+        assert_eq!(d.confidence, DriverConfidence::High);
+    }
+
+    #[test]
+    fn driver_defaults_are_unknown_moderate_medium_linear() {
+        let d: Driver = serde_yaml::from_str("measure: a.b").unwrap();
+        assert_eq!(d.direction, DriverDirection::Unknown);
+        assert_eq!(d.strength, DriverStrength::Moderate);
+        assert_eq!(d.confidence, DriverConfidence::Medium);
+        assert_eq!(d.form, DriverForm::Linear);
+    }
+
+    #[test]
+    fn measure_carries_drivers() {
+        let yaml = r#"
+name: total_revenue
+type: sum
+expr: amount
+drivers:
+  - measure: marketing.ad_spend
+    direction: positive
+    strength: strong
+"#;
+        let m: Measure = serde_yaml::from_str(yaml).unwrap();
+        let drivers = m.drivers.expect("drivers parsed");
+        assert_eq!(drivers.len(), 1);
+        assert_eq!(drivers[0].measure, "marketing.ad_spend");
+    }
 }

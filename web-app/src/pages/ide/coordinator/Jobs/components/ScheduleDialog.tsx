@@ -143,7 +143,8 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit job" : "Create job"}</DialogTitle>
           <DialogDescription>
-            Run a DAG workflow, ELT pipeline, or agent on a recurring cron schedule.
+            Run a DAG workflow, ELT pipeline, agent, or metric monitor scan on a recurring cron
+            schedule.
           </DialogDescription>
         </DialogHeader>
 
@@ -168,6 +169,7 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
                   setTargetRef("");
                   setFreeText(false);
                 }}
+                disabled={targetKind === "monitor_scan"}
               >
                 <SelectTrigger className='w-44'>
                   <SelectValue />
@@ -176,46 +178,61 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
                   <SelectItem value='workflow'>DAG workflow</SelectItem>
                   <SelectItem value='airway'>ELT pipeline</SelectItem>
                   <SelectItem value='agent'>Agent</SelectItem>
+                  {targetKind === "monitor_scan" && (
+                    <SelectItem value='monitor_scan'>Monitor scan</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
-            <div className='flex min-w-60 flex-1 flex-col gap-2'>
-              <Label>{targetKind === "agent" ? "Agent" : "Target file"}</Label>
-              {freeText ? (
-                <Input
-                  placeholder='workspace-relative path'
-                  className='font-mono'
-                  value={targetRef}
-                  onChange={(e) => setTargetRef(e.target.value)}
-                />
-              ) : (
-                <Select
-                  value={isKnownRef ? targetRef : ""}
-                  onValueChange={(v) => {
-                    if (v === FREE_TEXT) {
-                      setFreeText(true);
-                      setTargetRef("");
-                    } else {
-                      setTargetRef(v);
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={targetKind === "agent" ? "Select an agent" : "Select a file"}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {refs.map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {r}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value={FREE_TEXT}>Other (type a path)…</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
+
+            {targetKind !== "monitor_scan" && (
+              <div className='flex min-w-60 flex-1 flex-col gap-2'>
+                <Label>{targetKind === "agent" ? "Agent" : "Target file"}</Label>
+                {freeText ? (
+                  <Input
+                    placeholder='workspace-relative path'
+                    className='font-mono'
+                    value={targetRef}
+                    onChange={(e) => setTargetRef(e.target.value)}
+                  />
+                ) : (
+                  <Select
+                    value={isKnownRef ? targetRef : ""}
+                    onValueChange={(v) => {
+                      if (v === FREE_TEXT) {
+                        setFreeText(true);
+                        setTargetRef("");
+                      } else {
+                        setTargetRef(v);
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={targetKind === "agent" ? "Select an agent" : "Select a file"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {refs.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {r}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={FREE_TEXT}>Other (type a path)…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            {targetKind === "monitor_scan" && (
+              <div className='flex min-w-60 flex-1 flex-col gap-2'>
+                <Label>Granularity</Label>
+                <div className='flex h-9 items-center rounded-md border border-input bg-muted px-3 text-muted-foreground text-sm'>
+                  {(schedule?.variables as Record<string, string> | null)?.granularity ?? "—"}
+                </div>
+              </div>
+            )}
           </div>
 
           {targetKind === "agent" && (

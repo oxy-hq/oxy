@@ -87,6 +87,12 @@ couldn't already read.
 | `<OxyAnswer … />` | Renders markdown + SQL artifacts + thread link. URL schemes are allowlisted (rejects `javascript:` etc.). |
 | `OxyApiError` | Structured `{ message, code? }` server-error envelope. |
 
+### Metric Tree
+
+Additional exports for programmatic metric-tree analyses (`AnomaliesClient`,
+`MetricTreeClient` and all related types) are available from the package root
+— see [metricTree.ts](src/metricTree.ts) and [anomalies.ts](src/anomalies.ts).
+
 Hooks fail loudly if called outside `<OxyAppProvider>`. The default fetcher
 sends `credentials: "include"` so same-origin (served-by-oxy) calls carry the
 session cookie automatically.
@@ -97,6 +103,7 @@ session cookie automatically.
   [`oxy-hq/customer-apps`](https://github.com/oxy-hq/customer-apps) repo.
 - SDK flow reference: `docs/sdk-flow.md` in that repo.
 - Platform internals: `internal-docs/customer-apps.md` in oxygen-internal.
+
 
 ## License
 

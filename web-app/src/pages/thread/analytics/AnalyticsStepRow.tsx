@@ -142,7 +142,7 @@ const VERIFIED_PILL_CLASS =
   "flex shrink-0 items-center gap-1 rounded bg-muted-foreground/10 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground max-w-[140px]";
 
 interface ArtifactPillProps {
-  icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  icon: React.ElementType;
   label: string;
   verified?: boolean;
   verifiedTooltip?: string;
@@ -265,7 +265,7 @@ function trunc(s: string, max = 60): string {
 }
 
 type ToolDisplay = {
-  Icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  Icon: React.ElementType;
   label: string;
   preview: string;
   isError?: boolean;
@@ -657,6 +657,44 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
       return { Icon: FolderPlus, label: "Init dbt Project", preview: trunc(preview), isError };
     }
 
+    // ── Metric-tree tools ────────────────────────────────────────────────────
+    case "explain_metric": {
+      const target = typeof input?.target === "string" ? input.target : "?";
+      const cur = typeof input?.current_period_end === "string" ? input.current_period_end : null;
+      const prev =
+        typeof input?.previous_period_end === "string" ? input.previous_period_end : null;
+      const period = cur && prev ? `${prev} → ${cur}` : null;
+      const preview = period ? `${target} · ${period}` : target;
+      return { Icon: GitBranch, label: "Explain Metric", preview: trunc(preview) };
+    }
+
+    case "find_opportunities": {
+      const target = typeof input?.target === "string" ? input.target : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const dimCount = Array.isArray(output?.dimensions) ? output.dimensions.length : null;
+      const preview = dimCount !== null ? `${target} · ${dimCount} dimension(s)` : target;
+      return { Icon: ScanSearch, label: "Find Opportunities", preview: trunc(preview) };
+    }
+
+    case "metric_sensitivity": {
+      const target = typeof input?.target === "string" ? input.target : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const driverCount = Array.isArray(output?.drivers) ? output.drivers.length : null;
+      const preview = driverCount !== null ? `${target} · ${driverCount} driver(s)` : target;
+      return { Icon: Network, label: "Metric Sensitivity", preview: trunc(preview) };
+    }
+
+    case "predict_impact": {
+      const changes = Array.isArray(input?.changes) ? input.changes : [];
+      const first = changes[0] as Record<string, unknown> | undefined;
+      const measure = typeof first?.measure === "string" ? first.measure : "?";
+      const label = changes.length > 1 ? `${measure} +${changes.length - 1} more` : measure;
+      const output = tryParseJson(item.toolOutput ?? "");
+      const impactCount = Array.isArray(output?.impacts) ? output.impacts.length : null;
+      const preview = impactCount !== null ? `${label} · ${impactCount} impact(s)` : label;
+      return { Icon: Zap, label: "Predict Impact", preview: trunc(preview) };
+    }
+
     // ── Domain event ──────────────────────────────────────────────────────────
     case "resolve_schema": {
       const tables = item.toolOutput ?? "Resolving schema…";
@@ -814,7 +852,7 @@ const TextChild = ({ item }: { item: TextItem }) => (
 
 type PillInfo = {
   id: string;
-  icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  icon: React.ElementType;
   label: string;
   verified?: boolean;
   verifiedTooltip?: string;

@@ -1,0 +1,172 @@
+# Anomaly monitors — examples for the Insights inbox.
+#
+# Each entry declares (measure, time_dimension, granularity, sensitivity)
+# plus optional lookback / seasonality overrides. The detector (MSTL +
+# AutoETS) fits on the lookback window, forecasts the test tail, and flags
+# any bucket whose residual is both outside the 95% prediction interval
+# AND past the sensitivity z-cutoff.
+#
+# Test it: open the IDE → Semantic Layer → Insights tab → "Scan now".
+# Use the date picker in the inbox header to scan against a known-good
+# reference date — these examples target the `orders.csv` dataset which
+# covers 2024-01-01 through 2025-12-31, so try `2025-12-15` to get a
+# tail window with real data.
+
+monitors:
+  # ── Daily order revenue ────────────────────────────────────────────────
+  # Sum, weekly seasonality, medium sensitivity. The most common shape:
+  # a top-line additive metric where the detector handles the day-of-week
+  # cycle automatically.
+  - measure: orders.total_order_value
+    label: Daily order revenue
+    time_dimension: orders.order_date
+    granularity: day
+    lookback_days: 365
+    seasonality: [7]
+    sensitivity: medium
+
+  # ── Order count ────────────────────────────────────────────────────────
+  # Same shape, different measure. High sensitivity so the inbox shows
+  # 2σ-and-up moves — useful while validating the pipeline end-to-end.
+  - measure: orders.total_orders
+    label: Daily order count
+    time_dimension: orders.order_date
+    granularity: day
+    lookback_days: 365
+    seasonality: [7]
+    sensitivity: high
+
+  # ── Weekly average order value ─────────────────────────────────────────
+  # Average (non-additive) on a weekly grain. Dimension splits would be
+  # silently misleading for averages so airlayer emits a
+  # NonAdditiveDimensionSplit warning when explain runs on this; the
+  # monitor itself is unaffected (it operates on the series only).
+  - measure: orders.avg_order_value
+    label: Weekly avg order value
+    time_dimension: orders.order_date
+    granularity: week
+    lookback_days: 730
+    seasonality: [4]
+    sensitivity: low
+
+  # ── Distinct customers ─────────────────────────────────────────────────
+  # count_distinct, daily. Distinct counts don't decompose linearly across
+  # dimensions either, but for a single-series anomaly check that doesn't
+  # matter — we just need a baseline + interval per bucket.
+  - measure: orders.distinct_customers_with_orders
+    label: Daily distinct buyers
+    time_dimension: orders.order_date
+    granularity: day
+    lookback_days: 365
+    seasonality: [7]
+    sensitivity: medium
+
+  # ── Composite measure (net revenue) ────────────────────────────────────
+  # Demonstrates that composite measures (built from {{view.measure}} refs)
+  # are first-class to the detector. The metric tree shows component edges
+  # for this measure under Semantic Layer → Metric Tree.
+  - measure: orders.net_revenue
+    label: Net revenue
+    time_dimension: orders.order_date
+    granularity: day
+    lookback_days: 365
+    seasonality: [7]
+    sensitivity: medium
+
+  # ── Multiplicative composite: revenue = volume × price ─────────────────
+  # When this measure spikes, explain runs a *log-share* decomposition and
+  # tells you whether the move came from more orders or higher avg price.
+  # That's a far better answer than the additive walk on net_revenue (which
+  # bottoms out at "order_status = completed" without saying why).
+  - measure: orders.revenue_volume_x_price
+    label: Revenue (volume × price)
+    time_dimension: orders.order_date
+    granularity: day
+    lookback_days: 365
+    seasonality: [7]
+    sensitivity: medium
+
+  # ── Marketing funnel: paid signups ─────────────────────────────────────
+  # Sum at the day grain. The seed dataset has a deliberate 35% drop in
+  # paid_search signup_rate during September 2025 — open explain on a
+  # flagged bucket and the channel split should surface that dimension
+  # concentration immediately.
+  - measure: marketing_funnel.total_paid_signups
+    label: Daily paid signups
+    time_dimension: marketing_funnel.event_date
+    granularity: day
+    lookback_days: 365
+    seasonality: [7]
+    sensitivity: medium
+
+  # ── Marketing funnel: overall conversion rate ──────────────────────────
+  # Multiplicative composite (lead_rate × signup_rate × paid_conversion_rate).
+  # When this dips, the log-share decomposition tells you which stage
+  # of the funnel moved — not just that conversion fell.
+  - measure: marketing_funnel.overall_conversion_rate
+    label: Overall funnel conversion
+    time_dimension: marketing_funnel.event_date
+    granularity: week
+    lookback_days: 365
+    seasonality: [4]
+    sensitivity: low
+
+  # ── Spend: weekly marketing spend ──────────────────────────────────────
+  # Top of the metric-tree driver chain. A move here propagates through
+  # sessions → leads → signups → paid signups → net revenue via the
+  # declared driver edges, so predict_impact has a long path to walk.
+  - measure: marketing_spend.total_spend
+    label: Weekly marketing spend
+    time_dimension: marketing_spend.event_date
+    granularity: week
+    lookback_days: 365
+    seasonality: [4]
+    sensitivity: medium
+
+  # ── Operating costs: daily total OpEx ──────────────────────────────────
+  # The seed data has a deliberate 65% spike in latam logistics during
+  # 2025-Q4 — explain_metric on a flagged bucket should surface the
+  # (region=latam, category=logistics) split with high concentration.
+  - measure: operating_costs.total_op_cost
+    label: Daily operating costs
+    time_dimension: operating_costs.cost_date
+    granularity: day
+    lookback_days: 365
+    seasonality: [7]
+    sensitivity: medium
+
+  # ── Operating costs: daily logistics spend ─────────────────────────────
+  # Region-specific variable cost. Sensitive monitor so the latam Q4
+  # anomaly shows up clearly. find_opportunities on this measure ranks
+  # regions by weighted cost gap.
+  - measure: operating_costs.logistics_cost
+    label: Daily logistics spend
+    time_dimension: operating_costs.cost_date
+    granularity: day
+    lookback_days: 365
+    seasonality: [7]
+    sensitivity: high
+
+  # ── Payroll: monthly fully-loaded cost ─────────────────────────────────
+  # Largest fixed cost. Monthly grain matches the underlying snapshot.
+  # No seasonality (payroll doesn't have a weekly cycle). predict_impact
+  # uses the headcount → fully_loaded_cost driver to answer "what does
+  # +10 engineers cost?".
+  - measure: employees.fully_loaded_cost
+    label: Monthly payroll cost
+    time_dimension: employees.month
+    granularity: month
+    lookback_days: 720
+    sensitivity: medium
+
+  # ── Operating profit: real monthly bottom-line ─────────────────────────
+  # Computed at query time by financials.view.yml (joins orders +
+  # employees + operating_costs at month grain). When this flags an
+  # anomaly, explain_metric will walk the additive decomposition
+  # net_revenue − payroll − total_op_cost and tell you which side moved.
+  - measure: financials.operating_profit
+    label: Monthly operating profit
+    time_dimension: financials.month
+    granularity: month
+    lookback_days: 720
+    sensitivity: medium

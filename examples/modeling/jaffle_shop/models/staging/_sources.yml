@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: jaffle_shop
+    schema: raw
+    description: Raw data from the Jaffle Shop application database.
+    tables:
+      - name: raw_customers
+        description: One record per customer.
+      - name: raw_orders
+        description: One record per order placed.
+      - name: raw_payments
+        description: One record per payment made. An order may have multiple payments.

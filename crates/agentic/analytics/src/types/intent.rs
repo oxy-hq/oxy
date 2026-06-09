@@ -26,6 +26,18 @@ pub enum QuestionType {
     /// do you have?", "what metrics can you track?", or any conversational
     /// follow-up that the system can answer directly from schema context.
     GeneralInquiry,
+    /// "Why did X change?" / "What drove the move in X?" / "Are there anomalies
+    /// in X?" / "Why did X spike or drop?" — root-cause analysis and anomaly
+    /// investigation. Routed to a dedicated handler that has access to metric-tree
+    /// tools (`explain_metric`) and anomaly tools (`list_anomalies`,
+    /// `detect_anomalies`, `explain_anomaly`). Does NOT go through
+    /// Specifying/Solving.
+    RootCause,
+    /// "How do we make more money?" / "Where can we grow X?" — opportunity
+    /// sizing. Routed to a dedicated handler that calls airlayer's
+    /// `find_opportunities` and produces the answer from the returned
+    /// per-segment weighted gaps. Does NOT go through Specifying/Solving.
+    Opportunity,
 }
 
 /// A single completed question–answer exchange, kept for follow-up context.

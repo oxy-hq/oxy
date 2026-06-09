@@ -1,0 +1,30 @@
+table: python_prod.v1_search_table
+database: primary_database
+dimensions:
+- name: context_library_name
+  type: STRING
+- name: context_library_version
+  type: STRING
+- name: event
+  type: STRING
+- name: event_text
+  type: STRING
+- name: id
+  type: STRING
+- name: loaded_at
+  type: TIMESTAMP
+- name: original_timestamp
+  type: TIMESTAMP
+- name: received_at
+  type: TIMESTAMP
+- name: sent_at
+  type: TIMESTAMP
+- name: timestamp
+  type: TIMESTAMP
+- name: user_id
+  type: STRING
+- name: uuid_ts
+  type: TIMESTAMP
+- name: _PARTITIONTIME
+  type: TIMESTAMP
+  is_partition_key: true

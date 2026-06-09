@@ -40,14 +40,20 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
     /// function's caller reaches `execute_tool` — see `resuming.rs` for details
     /// (smell #1 fix: documented here to avoid confusion).
     fn tools_for_state(state: &str) -> Vec<ToolDef> {
+        // `tools_for_state` is a static method so it can't see the solver
+        // instance's `metric_tree_runner` field. Production paths build tool
+        // lists from the per-state custom handlers (which DO see the field);
+        // this default is only hit by the fallback orchestrator (CLI / tests),
+        // where the metric-tree tools are off by default. Setting both flags
+        // to `false` keeps that behavior consistent.
         match state {
             "clarifying" => {
-                let mut tools = clarifying_tools(false);
+                let mut tools = clarifying_tools(false, false);
                 tools.push(ask_user_tool_def());
                 tools
             }
             "specifying" => {
-                let mut tools = specifying_tools(false);
+                let mut tools = specifying_tools(false, false);
                 tools.push(ask_user_tool_def());
                 tools
             }
@@ -74,6 +80,16 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
             .get(&self.default_connector)
             .cloned()
             .expect("default connector must be registered");
+        // Metric-tree tools are dispatched by the dedicated `root_cause`
+        // handler in clarifying/mod.rs, not by this generic fallback.
+        // Reaching here with one means the FSM routed wrong; surface a
+        // loud error rather than silently running it from the wrong stage.
+        if crate::tools::is_metric_tree_tool(name) {
+            return Err(agentic_core::tools::ToolError::Execution(format!(
+                "metric-tree tool '{name}' called outside the RootCause handler — \
+                 this indicates a question-type routing bug"
+            )));
+        }
         match state {
             "clarifying" => {
                 if name == "search_procedures" {

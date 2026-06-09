@@ -1,0 +1,9 @@
+table: main.customer_csv
+database: local
+dimensions:
+- name: id
+  type: BIGINT
+- name: name
+  type: VARCHAR
+- name: gender
+  type: VARCHAR

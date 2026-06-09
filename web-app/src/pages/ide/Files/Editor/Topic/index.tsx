@@ -44,4 +44,5 @@ const TopicEditor = () => {
   );
 };
 
+export { TopicExplorer };
 export default TopicEditor;

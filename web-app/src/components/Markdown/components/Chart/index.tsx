@@ -109,7 +109,7 @@ const ChartContainer = (props: Props) => {
   const { data, isPending, error, refetch } = useChart(encodedPath);
 
   return (
-    <div ref={parent}>
+    <div ref={parent as React.Ref<HTMLDivElement>}>
       <ErrorBoundary
         fallback={
           <ChartError

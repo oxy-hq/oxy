@@ -1,0 +1,7 @@
+table: dbt_prod_core.dim_organizations_with_warehouse
+database: primary_database
+dimensions:
+- name: organization_subdomain
+  type: STRING
+- name: ts_earliest_warehouse_added
+  type: TIMESTAMP

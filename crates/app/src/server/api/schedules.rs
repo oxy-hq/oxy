@@ -24,10 +24,14 @@ use agentic_pipeline::WorkflowWorkspaceContext;
 use agentic_pipeline::platform::PlatformContext;
 use agentic_pipeline::scheduler::{
     BackfillRequest, BackfillResult, ScheduleError, ScheduleInput, backfill_schedule,
-    create_schedule, delete_schedule, get_schedule, list_schedules, run_schedule_now,
-    update_schedule,
+    create_schedule, delete_schedule, get_schedule, list_schedules, record_fire_success,
+    run_schedule_now, update_schedule,
+};
+use agentic_runtime::lifecycle::crud::runs::{
+    insert_run_with_schedule, update_run_done, update_run_failed,
 };
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use tokio::sync::{mpsc, watch};
 
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 
@@ -114,10 +118,122 @@ pub async fn run_now(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Response {
-    let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
-    match run_schedule_now(&state.db, workspace_id, workspace.as_ref(), &id).await {
-        Ok(run_id) => Json(RunNowResponse { run_id }).into_response(),
-        Err(e) => map_err(e),
+    // Fetch once to inspect target_kind before routing.
+    let schedule = match get_schedule(&state.db, workspace_id, &id).await {
+        Ok(s) => s,
+        Err(e) => return map_err(e),
+    };
+
+    if schedule.target_kind == "monitor_scan" {
+        let granularity = match schedule
+            .variables
+            .as_ref()
+            .and_then(|v| v.get("granularity"))
+            .and_then(|g| g.as_str())
+            .map(ToString::to_string)
+        {
+            Some(g) => g,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    "missing granularity in schedule variables",
+                )
+                    .into_response();
+            }
+        };
+
+        let run_id = Uuid::new_v4().to_string();
+        let mut meta = serde_json::json!({ "granularity": granularity });
+        agentic_pipeline::scheduler::stamp_trigger_metadata(
+            &mut meta,
+            &Some("manual".into()),
+            &None,
+            &None,
+        );
+        if let Err(e) = insert_run_with_schedule(
+            &state.db,
+            &run_id,
+            &format!("Anomaly scan ({granularity})"),
+            None,
+            "monitor_scan",
+            Some(meta),
+            &schedule.id,
+            workspace_id,
+        )
+        .await
+        {
+            tracing::error!(error = %e, "run_now: failed to create monitor scan run row");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response();
+        }
+        record_fire_success(&state.db, &schedule.id, &run_id).await;
+
+        // Register before spawning so SSE, cancel, and graceful shutdown all
+        // see this run. Monitor scans don't use HITL answers, but we still
+        // create the channel to satisfy the register signature.
+        let (answer_tx, _answer_rx) = mpsc::channel::<String>(1);
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        state.register(&run_id, answer_tx, cancel_tx);
+
+        let db = state.db.clone();
+        let state_bg = state.clone();
+        let run_id_bg = run_id.clone();
+        let schedule_id_bg = schedule.id.clone();
+        let platform_bg = platform.clone();
+        tokio::spawn(async move {
+            // Honour a cancel that arrived before the scan started.
+            if *cancel_rx.borrow() {
+                if let Err(e) = update_run_failed(&db, &run_id_bg, "cancelled by user").await {
+                    tracing::error!(error = %e, run_id = %run_id_bg, "failed to write cancel to DB");
+                }
+                state_bg.notify(&run_id_bg);
+                state_bg.deregister(&run_id_bg);
+                return;
+            }
+
+            let Some(port) = platform_bg.as_monitor_scan_port() else {
+                if let Err(e) =
+                    update_run_failed(&db, &run_id_bg, "monitor scan not available").await
+                {
+                    tracing::error!(error = %e, run_id = %run_id_bg, "failed to write unavailable to DB");
+                }
+                state_bg.notify(&run_id_bg);
+                state_bg.deregister(&run_id_bg);
+                return;
+            };
+
+            match port.run_monitor_scan(&db, workspace_id, &granularity).await {
+                Ok(summary) => {
+                    if let Err(e) = update_run_done(&db, &run_id_bg, &summary, None).await {
+                        tracing::error!(error = %e, run_id = %run_id_bg, "failed to mark scan run done");
+                    }
+                }
+                Err(e) => {
+                    if let Err(db_err) = update_run_failed(&db, &run_id_bg, &e).await {
+                        tracing::error!(error = %db_err, run_id = %run_id_bg, "failed to mark scan run failed");
+                    }
+                    agentic_pipeline::scheduler::set_schedule_last_error(
+                        &db,
+                        &schedule_id_bg,
+                        Some(&e),
+                    )
+                    .await;
+                }
+            }
+
+            // Wake the SSE subscriber, then remove from the active-run maps.
+            // Order matters: notify must come before deregister so the Notify
+            // permit is delivered while the Arc is still alive in notifiers.
+            state_bg.notify(&run_id_bg);
+            state_bg.deregister(&run_id_bg);
+        });
+
+        Json(RunNowResponse { run_id }).into_response()
+    } else {
+        let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
+        match run_schedule_now(&state.db, workspace_id, workspace.as_ref(), &id).await {
+            Ok(run_id) => Json(RunNowResponse { run_id }).into_response(),
+            Err(e) => map_err(e),
+        }
     }
 }
 

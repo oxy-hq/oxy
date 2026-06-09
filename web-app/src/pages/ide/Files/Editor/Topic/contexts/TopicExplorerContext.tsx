@@ -9,6 +9,8 @@ import type { TopicData, ViewWithData } from "../../types";
 
 type TopicExplorerProviderProps = {
   children: ReactNode;
+  /** When set, drives the explorer directly instead of the editor context. */
+  pathb64?: string;
 };
 
 type TopicExplorerContextType = {
@@ -21,9 +23,13 @@ type TopicExplorerContextType = {
 
 const TopicExplorerContext = createContext<TopicExplorerContextType | null>(null);
 
-const TopicExplorerProviderInner = ({ children }: TopicExplorerProviderProps) => {
-  const { pathb64 } = useEditorContext();
-
+const TopicExplorerProviderInner = ({
+  children,
+  pathb64
+}: {
+  children: ReactNode;
+  pathb64: string;
+}) => {
   const {
     data: topicDetails,
     isLoading: topicLoading,
@@ -104,8 +110,16 @@ const TopicExplorerProviderInner = ({ children }: TopicExplorerProviderProps) =>
   );
 };
 
-export const TopicExplorerProvider = ({ children }: TopicExplorerProviderProps) => {
-  return <TopicExplorerProviderInner>{children}</TopicExplorerProviderInner>;
+const TopicExplorerProviderFromEditor = ({ children }: { children: ReactNode }) => {
+  const { pathb64 } = useEditorContext();
+  return <TopicExplorerProviderInner pathb64={pathb64}>{children}</TopicExplorerProviderInner>;
+};
+
+export const TopicExplorerProvider = ({ children, pathb64 }: TopicExplorerProviderProps) => {
+  if (pathb64 !== undefined) {
+    return <TopicExplorerProviderInner pathb64={pathb64}>{children}</TopicExplorerProviderInner>;
+  }
+  return <TopicExplorerProviderFromEditor>{children}</TopicExplorerProviderFromEditor>;
 };
 
 export const useTopicExplorerContext = () => {

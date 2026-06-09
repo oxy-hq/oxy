@@ -1,0 +1,102 @@
+version: 2
+
+models:
+  - name: customers
+    description: >
+      Customer dimension table with lifetime order metrics and segmentation.
+      One row per user.
+    columns:
+      - name: user_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: customer_segment
+        description: Customer classification based on order history.
+        tests:
+          - accepted_values:
+              values: ["never_ordered", "single_purchaser", "repeat_buyer", "loyal_customer"]
+
+  - name: orders
+    description: >
+      Order fact table with item summaries, payment details, and sequence info.
+      One row per order.
+    columns:
+      - name: order_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: user_id
+        description: Foreign key to the customers table.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_users')
+              field: user_id
+
+  - name: products
+    description: >
+      Product dimension table with sales volume, revenue, and review metrics.
+      One row per product.
+    columns:
+      - name: product_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: sales_tier
+        tests:
+          - accepted_values:
+              values: ["no_sales", "low_volume", "medium_volume", "high_volume"]
+
+  - name: order_items
+    description: >
+      Fully enriched order line item fact table.
+      One row per order item.
+    columns:
+      - name: order_item_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+
+  - name: daily_revenue
+    description: >
+      Daily revenue summary, built incrementally.
+      One row per day.
+    columns:
+      - name: revenue_date
+        description: The date for this revenue record.
+        tests:
+          - not_null
+          - unique
+
+  - name: customer_cohorts
+    description: >
+      Monthly cohort analysis showing ordering behavior over time
+      by acquisition channel and cohort date.
+
+  - name: product_category_performance
+    description: >
+      Category-level performance summary with revenue, margin, and volume rankings.
+    columns:
+      - name: category
+        description: Product category name.
+        tests:
+          - not_null
+          - unique
+
+  - name: user_engagement
+    description: >
+      User engagement metrics combining web activity, purchase history, and reviews.
+    columns:
+      - name: user_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: engagement_tier
+        tests:
+          - accepted_values:
+              values: ["inactive", "one_time_visitor", "casual", "power_user"]

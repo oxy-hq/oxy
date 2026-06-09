@@ -1,0 +1,1 @@
+SELECT {{ variable_a }} AS {{ variable_b }}, "{{schedules.value}}" as schedules, "{{metrics.value}}" as metrics

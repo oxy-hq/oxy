@@ -609,6 +609,30 @@ impl SemanticValidator for SemanticLayer {
             }
         }
 
+        // Validate driver references resolve to real measures.
+        let measure_ids: HashSet<String> = self
+            .views
+            .iter()
+            .flat_map(|v| {
+                v.measures
+                    .iter()
+                    .flatten()
+                    .map(move |m| format!("{}.{}", v.name, m.name))
+            })
+            .collect();
+        for view in &self.views {
+            for measure in view.measures.iter().flatten() {
+                for driver in measure.drivers.iter().flatten() {
+                    if !measure_ids.contains(&driver.measure) {
+                        result.add_error(format!(
+                            "Measure '{}.{}' declares driver '{}' which does not resolve to any view.measure",
+                            view.name, measure.name, driver.measure
+                        ));
+                    }
+                }
+            }
+        }
+
         result
     }
 }
@@ -1137,5 +1161,105 @@ mod tests {
         let topic: Topic = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(topic.name, "sales");
         assert!(topic.description.is_none());
+    }
+}
+
+#[cfg(test)]
+mod driver_validation_tests {
+    use super::*;
+
+    fn primary_entity() -> Entity {
+        Entity {
+            name: "id".to_string(),
+            entity_type: EntityType::Primary,
+            description: None,
+            key: Some("id".to_string()),
+            keys: None,
+        }
+    }
+
+    fn make_measure(name: &str, drivers: Option<Vec<Driver>>) -> Measure {
+        Measure {
+            name: name.to_string(),
+            measure_type: MeasureType::Sum,
+            description: None,
+            expr: Some("amount".to_string()),
+            original_expr: None,
+            filters: None,
+            samples: None,
+            synonyms: None,
+            drivers,
+        }
+    }
+
+    fn make_view(name: &str, measures: Vec<Measure>) -> View {
+        View {
+            name: name.to_string(),
+            description: None,
+            label: None,
+            datasource: None,
+            table: Some(format!("public.{name}")),
+            sql: None,
+            entities: vec![primary_entity()],
+            dimensions: vec![Dimension {
+                name: "created_at".to_string(),
+                dimension_type: DimensionType::Date,
+                description: None,
+                expr: "created_at".to_string(),
+                original_expr: None,
+                samples: None,
+                synonyms: None,
+            }],
+            measures: Some(measures),
+        }
+    }
+
+    fn driver(measure: &str) -> Driver {
+        Driver {
+            measure: measure.to_string(),
+            direction: DriverDirection::Positive,
+            strength: DriverStrength::Strong,
+            confidence: DriverConfidence::High,
+            coefficient: None,
+            form: DriverForm::Linear,
+            intercept: None,
+            lag: None,
+            description: None,
+            refs: None,
+        }
+    }
+
+    /// A two-view layer whose `orders.total_revenue` measure declares a driver
+    /// pointing at `driver_ref`.
+    fn layer_with_driver(_target: &str, driver_ref: &str) -> SemanticLayer {
+        let marketing = make_view("marketing", vec![make_measure("ad_spend", None)]);
+        let orders = make_view(
+            "orders",
+            vec![make_measure(
+                "total_revenue",
+                Some(vec![driver(driver_ref)]),
+            )],
+        );
+        SemanticLayer::new(vec![marketing, orders], None)
+    }
+
+    #[test]
+    fn dangling_driver_reference_is_an_error() {
+        let layer = layer_with_driver("orders.total_revenue", "nonexistent.measure");
+        let result = validate_semantic_layer(&layer).unwrap();
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("nonexistent.measure"))
+        );
+    }
+
+    #[test]
+    fn valid_driver_reference_passes() {
+        let layer = layer_with_driver("orders.total_revenue", "marketing.ad_spend");
+        let result = validate_semantic_layer(&layer).unwrap();
+        assert!(result.is_valid, "errors: {:?}", result.errors);
     }
 }

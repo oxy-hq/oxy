@@ -16,6 +16,7 @@
 
 pub mod builder_bridges;
 pub mod metric_sink;
+pub mod metric_tree_runner;
 pub mod project_ctx;
 pub mod thread_owner;
 
@@ -24,6 +25,7 @@ use std::sync::Arc;
 use agentic_pipeline::platform::BuilderBridges;
 
 pub use metric_sink::OxyAnalyticsMetricSink;
+pub use metric_tree_runner::{OxyMetricTreeRunner, build_query_executor};
 pub use project_ctx::OxyProjectContext;
 pub use thread_owner::OxyThreadOwnerLookup;
 

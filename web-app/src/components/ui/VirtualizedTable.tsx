@@ -63,6 +63,7 @@ export const VirtualizedTable = ({
     direction: null
   });
   const [tableName, setTableName] = useState<string>("");
+  const tableNameRef = useRef<string>("");
 
   // Use refs for columns and schema to avoid triggering refetches
   const columnsRef = useRef<string[]>([]);
@@ -105,10 +106,10 @@ export const VirtualizedTable = ({
         const conn = await db.connect();
 
         // Use a local variable to track the table name for this execution
-        let tableToQuery = tableName;
+        let tableToQuery = tableNameRef.current;
 
         // Register the file if not already registered OR if filePath has changed
-        const needsRegistration = !tableName || registeredFilePathRef.current !== filePath;
+        const needsRegistration = registeredFilePathRef.current !== filePath;
 
         if (needsRegistration) {
           const registeredName = await registerAuthenticatedParquetFile(
@@ -116,9 +117,12 @@ export const VirtualizedTable = ({
             project.id,
             branchName
           );
+          // Set ref before state so that if this effect is cancelled and re-runs,
+          // needsRegistration is already false and we don't register again.
+          tableNameRef.current = registeredName;
+          registeredFilePathRef.current = filePath;
           setTableName(registeredName);
-          registeredFilePathRef.current = filePath; // Track the registered filePath
-          tableToQuery = registeredName; // Use the newly registered name for this query
+          tableToQuery = registeredName;
 
           // Get schema and total count
           const countResult = await conn.query(`SELECT COUNT(*) as count FROM "${registeredName}"`);
@@ -165,7 +169,7 @@ export const VirtualizedTable = ({
         throw err;
       }
     },
-    [filePath, project.id, branchName, pageSize, tableName]
+    [filePath, project.id, branchName, pageSize]
   );
 
   useEffect(() => {

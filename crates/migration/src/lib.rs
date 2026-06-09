@@ -79,11 +79,14 @@ mod m20260416_000003_drop_branches_and_workspace_repos;
 mod m20260424_000001_create_org_billing;
 mod m20260424_000002_create_stripe_webhook_events;
 mod m20260430_000001_create_feature_flags;
+mod m20260525_000001_create_metric_anomalies;
+mod m20260526_000001_metric_anomalies_explain_cache;
 mod m20260528_000001_create_customer_apps_schema;
 mod m20260528_000002_apps_add_repo_path;
 mod m20260528_000003_create_app_builds;
 mod m20260528_000004_app_builds_add_published_by;
 mod m20260528_000005_apps_add_last_promoted;
+mod m20260604_000001_metric_anomalies_filters;
 // Legacy single-tenant Slack tables. The original CREATE migrations were
 // deleted when the universal multi-tenant Slack bot replaced them, but
 // dev/prod databases that had already applied them required the files
@@ -211,9 +214,12 @@ impl MigratorTrait for Migrator {
             Box::new(m20260422_000001_create_slack_seen_events::Migration),
             Box::new(m20260424_000001_create_slack_channel_defaults::Migration),
             Box::new(m20260427_000001_slack_oauth_state_add_channel::Migration),
+            Box::new(m20260525_000001_create_metric_anomalies::Migration),
+            Box::new(m20260526_000001_metric_anomalies_explain_cache::Migration),
             Box::new(m20260529_000001_add_vlm_budget_to_workspaces::Migration),
             Box::new(m20260601_000001_api_keys_add_app_id::Migration),
             Box::new(m20260602_000001_create_quickbooks_oauth_states::Migration),
+            Box::new(m20260604_000001_metric_anomalies_filters::Migration),
             Box::new(m20260606_000001_create_custom_app_tracking::Migration),
         ]
     }

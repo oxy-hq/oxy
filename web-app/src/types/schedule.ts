@@ -1,5 +1,5 @@
 /** Mirrors `agentic_schedules` (backend `schedule::Model`, serde snake_case). */
-export type ScheduleTargetKind = "workflow" | "airway" | "agent";
+export type ScheduleTargetKind = "workflow" | "airway" | "agent" | "monitor_scan";
 
 export interface Schedule {
   id: string;

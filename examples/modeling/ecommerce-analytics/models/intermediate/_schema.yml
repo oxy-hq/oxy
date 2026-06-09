@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: int_order_items_enriched
+    description: >
+      Order items joined with product details including cost, margin, and category.
+      Materialized as ephemeral.
+
+  - name: int_order_payments
+    description: >
+      Payments aggregated at the order level with success/refund breakdowns.
+      Materialized as ephemeral.
+
+  - name: int_user_order_history
+    description: >
+      Per-user order history with sequence numbers and lifetime counts.
+      Materialized as ephemeral.
+
+  - name: int_product_metrics
+    description: >
+      Product-level aggregated sales and review metrics.
+      Materialized as ephemeral.

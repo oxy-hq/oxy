@@ -32,27 +32,32 @@ use agentic_core::result::CellValue;
 use agentic_core::tools::ToolError;
 use serde_json::{Value, json};
 
+pub mod anomalies;
 pub mod clarifying;
 pub mod database;
 pub mod defs;
 pub mod interpreting;
+pub mod metric_tree;
 pub mod solving;
 pub mod specifying;
 
 #[cfg(test)]
 mod tests;
 
+pub use anomalies::{AnomalyToolContext, execute_anomaly_tool};
 pub use clarifying::execute_clarifying_tool;
 pub use database::{SchemaCache, execute_database_lookup_tool, new_schema_cache};
 #[allow(unused_imports)]
 pub use defs::{
-    clarifying_tools, interpreting_tools, propose_semantic_query_tool, solving_tools,
+    METRIC_TREE_TOOL_NAMES, anomaly_tools, clarifying_tools, interpreting_tools,
+    is_metric_tree_tool, metric_tree_tools, propose_semantic_query_tool, solving_tools,
     specifying_tools, suggest_chart_config, triage_tools,
 };
 #[allow(unused_imports)]
 pub use interpreting::{
     execute_interpreting_tool, validate_chart_column_types, validate_chart_config,
 };
+pub use metric_tree::{execute_metric_tree_tool, no_runner_error as metric_tree_no_runner_error};
 pub use solving::execute_solving_tool;
 pub use specifying::execute_specifying_tool;
 

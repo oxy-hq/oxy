@@ -1,9 +1,45 @@
-// `@oxy-hq/sdk` public surface.
-//
-// Customer-app bundle helpers only — the legacy `OxyClient` / `OxySDK` /
-// iframe-postMessage stack was removed in v2 once the platform
-// consolidated on the `/api/projects/:id/query` proxy. Bundles use
-// `OxyAppProvider` + hooks (`useQuery`, `useSemanticQuery`,
-// `useAgentRun`, `useProcedureRun`) plus the drop-in components
-// (`OxyChat`, `OxyAnswer`) exported below.
+// Customer-app bundle helpers (v2 platform surface)
+
+// Anomaly inbox
+export type {
+  Anomaly,
+  AnomalySeverity,
+  AnomalyStatus,
+  ListAnomaliesOptions,
+  ListAnomaliesResponse,
+  ScanOptions,
+  ScanResponse
+} from "./anomalies";
+export { AnomaliesClient } from "./anomalies";
 export * from "./customer-app";
+
+// Metric-tree analyses
+export type {
+  DimensionOpportunity,
+  DriverAttribution,
+  DriverConfidence,
+  DriverDirection,
+  DriverForm,
+  DriverStrength,
+  EdgeKind,
+  ExplainConfigOverride,
+  ExplainNode,
+  ExplainRequest,
+  ExplainResult,
+  ExplainSibling,
+  ExplainWarning,
+  MetricEdge,
+  MetricNode,
+  MetricTree,
+  OpportunityRequest,
+  OpportunityResult,
+  PredictChange,
+  PredictImpact,
+  PredictResult,
+  SegmentOpportunity,
+  SensitivityDriver,
+  SensitivityResult,
+  SkippedDimension,
+  SplitKind
+} from "./metricTree";
+export { MetricTreeClient } from "./metricTree";

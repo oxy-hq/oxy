@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: stg_users
+    description: Cleaned user data, one row per user.
+    columns:
+      - name: user_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_products
+    description: Cleaned product catalog, one row per product.
+    columns:
+      - name: product_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_orders
+    description: Cleaned order data, one row per order.
+    columns:
+      - name: order_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: order_status
+        tests:
+          - accepted_values:
+              values: ["processing", "shipped", "completed", "cancelled", "refunded"]
+
+  - name: stg_order_items
+    description: Cleaned order line items, one row per item per order.
+    columns:
+      - name: order_item_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_payments
+    description: Cleaned payment data, one row per payment attempt.
+    columns:
+      - name: payment_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: payment_method
+        tests:
+          - accepted_values:
+              values: ["credit_card", "debit_card", "paypal", "apple_pay", "gift_card"]
+
+  - name: stg_page_views
+    description: Cleaned page view events, one row per page view.
+    columns:
+      - name: page_view_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_reviews
+    description: Cleaned product reviews, one row per review.
+    columns:
+      - name: review_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: rating
+        tests:
+          - accepted_values:
+              values: [1, 2, 3, 4, 5]

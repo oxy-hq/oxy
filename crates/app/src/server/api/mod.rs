@@ -39,6 +39,8 @@ pub mod healthcheck;
 pub mod integration;
 pub mod local_setup;
 pub mod message;
+pub mod metric_anomalies;
+pub mod metric_tree;
 pub mod metrics;
 pub mod middlewares;
 pub mod modeling;

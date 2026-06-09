@@ -9,6 +9,8 @@ import type { ViewData } from "../../types";
 
 type ViewExplorerProviderProps = {
   children: ReactNode;
+  /** When set, drives the explorer directly instead of the editor context. */
+  pathb64?: string;
 };
 
 type ViewExplorerContextType = {
@@ -20,9 +22,13 @@ type ViewExplorerContextType = {
 
 const ViewExplorerContext = createContext<ViewExplorerContextType | null>(null);
 
-const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
-  const { pathb64 } = useEditorContext();
-
+const ViewExplorerProviderInner = ({
+  children,
+  pathb64
+}: {
+  children: ReactNode;
+  pathb64: string;
+}) => {
   const {
     data: viewDetails,
     isLoading: viewLoading,
@@ -86,8 +92,16 @@ const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
   );
 };
 
-export const ViewExplorerProvider = ({ children }: ViewExplorerProviderProps) => {
-  return <ViewExplorerProviderInner>{children}</ViewExplorerProviderInner>;
+const ViewExplorerProviderFromEditor = ({ children }: { children: ReactNode }) => {
+  const { pathb64 } = useEditorContext();
+  return <ViewExplorerProviderInner pathb64={pathb64}>{children}</ViewExplorerProviderInner>;
+};
+
+export const ViewExplorerProvider = ({ children, pathb64 }: ViewExplorerProviderProps) => {
+  if (pathb64 !== undefined) {
+    return <ViewExplorerProviderInner pathb64={pathb64}>{children}</ViewExplorerProviderInner>;
+  }
+  return <ViewExplorerProviderFromEditor>{children}</ViewExplorerProviderFromEditor>;
 };
 
 export const useViewExplorerContext = () => {

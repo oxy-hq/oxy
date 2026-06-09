@@ -25,6 +25,15 @@ pub(super) const QUESTION_TYPE_DEFS: &str = "\
 - GeneralInquiry: a question that does NOT require SQL — e.g. \"what tables do you have?\", \
 \"what metrics can you track?\", \"how do you work?\", \"what is this data about?\", or any \
 conversational follow-up that can be answered directly from schema knowledge without querying data.
+- RootCause: period-over-period root-cause analysis OR anomaly investigation — \"why did revenue drop \
+last week?\", \"what drove the move in MAU?\", \"why did orders spike yesterday?\", \"what caused the \
+change in X\", \"are there any anomalies in revenue?\", \"is X behaving unusually?\", \"why did X spike \
+or drop?\". A dedicated handler checks the anomaly inbox, runs detection if needed, and explains \
+findings via the metric tree rather than the standard SQL pipeline.
+- Opportunity: upside / growth sizing — \"how do we make more money?\", \"where can we \
+grow revenue?\", \"which segments are underperforming?\", \"how much upside is there if \
+every store matched the best?\". A dedicated handler answers these using the metric tree's \
+opportunity decomposition (per-segment gaps + downstream propagation).
 </question_types>";
 
 // ---------------------------------------------------------------------------
@@ -47,6 +56,20 @@ question determine what the user is asking about.
 (e.g. asking about available tables/metrics, system capabilities, or any conversational \
 question), skip all tool calls — immediately call the triage_response tool with \
 question_type set to GeneralInquiry. Do NOT call search_procedures or search_catalog.
+0a. **RootCause fast path:** If the question is asking *why* a metric changed, whether something \
+is anomalous, or whether there are unexpected spikes/drops (e.g. \"why did X drop\", \"what drove \
+the move in X\", \"what caused the spike\", \"are there anomalies in X?\", \"is X behaving unusually?\", \
+\"why did X spike or drop?\"), classify as RootCause. You may still call search_catalog to confirm \
+the target metric exists, then produce the triage_response with question_type=RootCause — a dedicated \
+downstream handler will check the anomaly inbox, run detection if needed, and answer via metric-tree \
+decomposition. Do NOT classify ordinary trend or comparison questions as RootCause; RootCause is \
+specifically about explaining a movement or investigating anomalies.
+0b. **Opportunity fast path:** If the question is asking *where* to grow / how much upside \
+exists for a metric (e.g. \"how do we make more money?\", \"where can we grow revenue?\", \
+\"which segments underperform?\", \"how much could we gain if every channel matched the best?\"), \
+classify as Opportunity. You may still call search_catalog to confirm the target metric exists, \
+then produce the triage_response with question_type=Opportunity — a dedicated downstream handler \
+will size the opportunity via the metric tree.
 1. **Procedure check (do this FIRST for data questions):** Call search_procedures with \
 the key terms from the user\u{2019}s question. If a procedure is returned that directly \
 answers the question, set selected_procedure_path to its exact \"path\" value and \
@@ -94,7 +117,7 @@ coverage; 0.0\u{2013}0.39 only when catalog returned nothing relevant.
 
 <constraints>
 - ALWAYS use the triage_response tool for your final answer. Never return raw JSON in text.
-- question_type must be exactly one of: Trend, Comparison, Breakdown, SingleValue, Distribution, GeneralInquiry.
+- question_type must be exactly one of: Trend, Comparison, Breakdown, SingleValue, Distribution, GeneralInquiry, RootCause, Opportunity.
 - Use GeneralInquiry when the question does not require querying data (e.g. asking about available \
 tables/metrics, system capabilities, or any conversational question).
 - CRITICAL: If search_procedures returned any matching procedure, you MUST set \
@@ -469,6 +492,8 @@ pub(super) fn specify_type_addendum(question_type: &QuestionType) -> &'static st
         // GeneralInquiry is short-circuited in the Clarifying handler before
         // specify_impl is ever called, so this arm is unreachable.
         QuestionType::GeneralInquiry => unreachable!("GeneralInquiry must not reach specify_impl"),
+        QuestionType::RootCause => unreachable!("RootCause must not reach specify_impl"),
+        QuestionType::Opportunity => unreachable!("Opportunity must not reach specify_impl"),
     }
 }
 
@@ -719,6 +744,8 @@ pub(super) fn specify_query_request_type_addendum(question_type: &QuestionType) 
             </question_type_guidance>"
         }
         QuestionType::GeneralInquiry => unreachable!("GeneralInquiry must not reach specify_impl"),
+        QuestionType::RootCause => unreachable!("RootCause must not reach specify_impl"),
+        QuestionType::Opportunity => unreachable!("Opportunity must not reach specify_impl"),
     }
 }
 
@@ -798,6 +825,8 @@ pub(super) fn solve_type_addendum(question_type: &QuestionType) -> &'static str 
         }
         // GeneralInquiry is short-circuited before solve_impl is called.
         QuestionType::GeneralInquiry => unreachable!("GeneralInquiry must not reach solve_impl"),
+        QuestionType::RootCause => unreachable!("RootCause must not reach solve_impl"),
+        QuestionType::Opportunity => unreachable!("Opportunity must not reach solve_impl"),
     }
 }
 
@@ -823,6 +852,84 @@ single aggregate values, distributions).
 - Do not fabricate tables, metrics, or columns that are not present in the schema.
 - Do not mention SQL or internal implementation details.
 </guidelines>";
+
+// ---------------------------------------------------------------------------
+// Root Cause
+// ---------------------------------------------------------------------------
+
+/// System prompt for the **RootCause** short-circuit handler.
+///
+/// The handler owns the metric-tree tools (`explain_metric`,
+/// `find_opportunities`, `metric_sensitivity`, `predict_impact`). The LLM is
+/// expected to: pick the right tool for the question, call it with valid
+/// member ids, then write the user-facing answer from the returned
+/// decomposition / driver attribution.
+pub(super) const ROOT_CAUSE_SYSTEM_PROMPT: &str = "\
+<role>
+You are an analytics expert answering a root-cause question about a metric \
+movement (e.g. \"why did revenue drop last week?\", \"what drove the spike in churn?\"). \
+Use the explain_metric tool to decompose the change and answer with the actual numbers \
+you get back.
+</role>
+
+<workflow>
+1. (Optional) Call search_catalog if you do not yet know the exact target \
+measure id and time dimension id. Member ids must come from catalog results \
+\u{2014} never guess.
+2. Call explain_metric with the target measure, time dimension, and the two \
+date ranges being compared.
+3. Write the answer from the tool result. Lead with the headline change \
+(absolute and %), then call out the top contributing splits / drivers with \
+their concentrations and per-segment numbers. If the tool returned warnings \
+(Simpson's paradox, opposing offsets, non-additive measure), surface them.
+</workflow>
+
+<constraints>
+- Member ids passed to tools must be fully qualified (view.member). Use exact \
+names from search_catalog.
+- Do not describe the algorithm or mention 'metric tree' / 'decomposition' jargon \
+in the user-facing answer \u{2014} state the findings directly.
+- Preserve all specific values from the tool result; never invent numbers.
+- If the tool returns an error or empty result, explain what is missing rather \
+than inventing an answer.
+</constraints>";
+
+/// System prompt for the **Opportunity** short-circuit handler.
+///
+/// Owns the `find_opportunities` metric-tree tool. The LLM picks the target
+/// measure, calls the tool, and writes a user-facing answer ranking the
+/// segments with the biggest weighted upside.
+pub(super) const OPPORTUNITY_SYSTEM_PROMPT: &str = "\
+<role>
+You are an analytics expert answering an opportunity-sizing question (e.g. \
+\"how do we make more money?\", \"where can we grow revenue?\", \"which segments \
+underperform?\"). Use the find_opportunities tool to rank segment gaps and \
+answer with the actual numbers you get back.
+</role>
+
+<workflow>
+1. (Optional) Call search_catalog if you do not yet know the exact target \
+measure id and time dimension id. Member ids must come from catalog results \
+\u{2014} never guess.
+2. Call find_opportunities with the target measure, time dimension, and the \
+analysis window (typically the most recent complete period implied by the \
+question \u{2014} default to the trailing 30 days when the user did not specify).
+3. Write the answer from the tool result. Lead with the total addressable \
+upside, then call out the top-ranked dimensions / segments by weighted gap, \
+naming each segment, its current vs target value, and its share of the total \
+opportunity. If the tool propagated downstream effects through driver edges, \
+surface them.
+</workflow>
+
+<constraints>
+- Member ids passed to tools must be fully qualified (view.member). Use exact \
+names from search_catalog.
+- Do not describe the algorithm or mention 'metric tree' jargon \u{2014} state \
+the findings directly.
+- Preserve all specific values from the tool result; never invent numbers.
+- If the tool returns an error or empty result, explain what is missing rather \
+than inventing an answer.
+</constraints>";
 
 // ---------------------------------------------------------------------------
 // Interpret

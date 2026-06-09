@@ -44,4 +44,5 @@ const ViewEditor = () => {
   );
 };
 
+export { ViewExplorer };
 export default ViewEditor;

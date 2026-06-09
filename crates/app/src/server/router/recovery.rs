@@ -55,6 +55,12 @@ pub(super) fn spawn_shutdown_hook(agentic_state: Arc<AgenticState>) {
 /// (Phase 2) and crash-orphaned `scope_owned = false` runs are driven to
 /// completion without a per-request coordinator. Default OFF — when unset
 /// the loop never spawns and behavior is byte-identical to before.
+///
+/// **NOTE:** The periodic monitor-scan tick (`tick_monitor_schedules`) is also
+/// gated behind this flag. When the flag is unset, no automatic anomaly scans
+/// fire; operators must trigger them manually via `POST .../scan` or the
+/// run-now button. Set `OXY_INPROC_GLOBAL_WORKER=1` to enable the full
+/// periodic loop including monitor scans.
 pub(super) const INPROC_GLOBAL_WORKER_ENV: &str = "OXY_INPROC_GLOBAL_WORKER";
 const INPROC_GLOBAL_WORKER_INTERVAL_ENV: &str = "OXY_INPROC_GLOBAL_WORKER_INTERVAL_SECS";
 const DEFAULT_INPROC_GLOBAL_WORKER_INTERVAL_SECS: u64 = 30;
@@ -272,6 +278,7 @@ async fn recover_local(
         return 0;
     };
     let platform: Arc<dyn PlatformContext> = project_ctx.clone();
+    let platform_for_monitor: Arc<dyn PlatformContext> = project_ctx.clone();
     // Reused by the Phase 2 scheduler tick (airway seeds need a workspace
     // surface; OxyProjectContext is also a WorkflowWorkspaceContext).
     let workspace: Arc<dyn agentic_pipeline::WorkflowWorkspaceContext> = project_ctx.clone();
@@ -301,6 +308,21 @@ async fn recover_local(
                 .await;
         if fired > 0 {
             tracing::info!(target: "scheduler", fired, workspace_id = %LOCAL_WORKSPACE_ID, "periodic tick fired schedules");
+        }
+        bootstrap_monitor_schedules(db, LOCAL_WORKSPACE_ID, &cwd).await;
+        let monitor_fired = agentic_pipeline::scheduler::tick_monitor_schedules(
+            db,
+            LOCAL_WORKSPACE_ID,
+            platform_for_monitor,
+        )
+        .await;
+        if monitor_fired > 0 {
+            tracing::info!(
+                target: "metric_monitoring",
+                fired = monitor_fired,
+                workspace_id = %LOCAL_WORKSPACE_ID,
+                "monitor tick enqueued scans"
+            );
         }
         recovered + fired
     } else {
@@ -364,6 +386,7 @@ async fn recover_all_workspaces(
             continue;
         };
         let platform: Arc<dyn PlatformContext> = project_ctx.clone();
+        let platform_for_monitor: Arc<dyn PlatformContext> = project_ctx.clone();
         // §12 FU4b: keep a workspace handle for the per-workspace
         // scheduler tick below; airway targets need it to resolve the
         // pipeline file on THIS workspace's filesystem.
@@ -397,6 +420,22 @@ async fn recover_all_workspaces(
                     workspace_id = %ws.id,
                     fired,
                     "cloud tick fired schedules"
+                );
+            }
+            let ws_root = std::path::Path::new(path.as_str());
+            bootstrap_monitor_schedules(db, ws.id, ws_root).await;
+            let monitor_fired = agentic_pipeline::scheduler::tick_monitor_schedules(
+                db,
+                ws.id,
+                platform_for_monitor,
+            )
+            .await;
+            if monitor_fired > 0 {
+                tracing::info!(
+                    target: "metric_monitoring",
+                    workspace_id = %ws.id,
+                    fired = monitor_fired,
+                    "monitor tick spawned scans"
                 );
             }
             recovered + fired
@@ -784,4 +823,110 @@ async fn build_cloud_project_ctx(
         }
     };
     Some(Arc::new(OxyProjectContext::new(wm)))
+}
+
+/// Read `.monitor.yml`'s `schedule:` block and create `monitor_scan` schedule
+/// rows for any granularity not yet present in `agentic_schedules`.
+/// Create-only — never updates or deletes rows already present.
+async fn bootstrap_monitor_schedules(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    workspace_root: &std::path::Path,
+) {
+    use agentic_pipeline::scheduler::{ScheduleInput, create_schedule};
+    use agentic_runtime::entity::schedule;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let config_path = oxy_metric_monitoring::default_config_path(workspace_root);
+    let cfg = match oxy_metric_monitoring::load_from_file(&config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(
+                target: "metric_monitoring",
+                error = %e,
+                "bootstrap: failed to read .monitor.yml; skipping"
+            );
+            return;
+        }
+    };
+    let Some(sched) = cfg.schedule else {
+        return;
+    };
+
+    // Fetch existing monitor_scan rows once to avoid N+1 queries.
+    let existing = match schedule::Entity::find()
+        .filter(schedule::Column::WorkspaceId.eq(workspace_id))
+        .filter(schedule::Column::TargetKind.eq("monitor_scan"))
+        .all(db)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(
+                target: "metric_monitoring",
+                %workspace_id,
+                error = %e,
+                "bootstrap: failed to query existing monitor schedules"
+            );
+            return;
+        }
+    };
+
+    let has_granularity = |gran: &str| {
+        existing.iter().any(|s| {
+            s.variables
+                .as_ref()
+                .and_then(|v| v.get("granularity"))
+                .and_then(|g| g.as_str())
+                == Some(gran)
+        })
+    };
+
+    let entries = [
+        (sched.daily.as_deref(), "day", "Metric monitoring (daily)"),
+        (
+            sched.weekly.as_deref(),
+            "week",
+            "Metric monitoring (weekly)",
+        ),
+        (
+            sched.monthly.as_deref(),
+            "month",
+            "Metric monitoring (monthly)",
+        ),
+    ];
+
+    for (maybe_cron, gran, name) in entries {
+        let Some(cron_expr) = maybe_cron else {
+            continue;
+        };
+        if has_granularity(gran) {
+            continue;
+        }
+        let input = ScheduleInput {
+            name: name.to_string(),
+            target_kind: "monitor_scan".to_string(),
+            target_ref: ".monitor.yml".to_string(),
+            question: None,
+            variables: Some(serde_json::json!({ "granularity": gran })),
+            cron_expr: cron_expr.to_string(),
+            timezone: "UTC".to_string(),
+            enabled: true,
+        };
+        match create_schedule(db, workspace_id, input).await {
+            Ok(_) => tracing::info!(
+                target: "metric_monitoring",
+                %workspace_id,
+                granularity = %gran,
+                "bootstrapped monitor_scan schedule"
+            ),
+            Err(e) => tracing::warn!(
+                target: "metric_monitoring",
+                %workspace_id,
+                granularity = %gran,
+                error = %e,
+                "bootstrap: failed to create monitor_scan schedule"
+            ),
+        }
+    }
 }

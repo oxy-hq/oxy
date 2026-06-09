@@ -110,6 +110,9 @@ const ROUTES = {
             MODELING: {
               ROOT: `${wsBase}/ide/modeling`
             },
+            SEMANTIC: {
+              ROOT: `${wsBase}/ide/semantic`
+            },
             EDGE: {
               ROOT: `${wsBase}/ide/edge`,
               DASHBOARD: `${wsBase}/ide/edge`,

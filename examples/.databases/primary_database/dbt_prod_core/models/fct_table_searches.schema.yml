@@ -1,0 +1,23 @@
+table: dbt_prod_core.fct_table_searches
+database: primary_database
+dimensions:
+- name: id_search
+  type: STRING
+- name: id_user
+  type: STRING
+- name: filters_score
+  type: INT64
+- name: table_admin_quality_score
+  type: INT64
+- name: filters_tag
+  type: STRING
+- name: term
+  type: STRING
+- name: pagination_from
+  type: INT64
+- name: pagination_size
+  type: INT64
+- name: ts
+  type: TIMESTAMP
+- name: ds
+  type: DATE

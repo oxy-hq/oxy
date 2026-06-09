@@ -1,0 +1,7 @@
+table: main.users_csv
+database: local
+dimensions:
+- name: user_id
+  type: VARCHAR
+- name: user_name
+  type: VARCHAR

@@ -95,7 +95,7 @@ pub async fn api_router(
 
             // Build OxyProjectContext once at startup — shared across all heartbeat ticks.
             let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-                .with_workspace_path_and_fallback_config(&startup_cwd)
+                .with_workspace_path(&startup_cwd)
                 .await
                 .map_err(|e| {
                     OxyError::RuntimeError(format!("preagg: workspace builder init failed: {e}"))

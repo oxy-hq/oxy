@@ -104,7 +104,7 @@ impl From<OxyError> for SqlExecuteError {
 }
 
 impl SqlExecuteError {
-    fn debug_string(&self) -> String {
+    pub(crate) fn debug_string(&self) -> String {
         match self {
             Self::Connector(e) => format!("{e:?}"),
             Self::Other(e) => format!("{e:?}"),

@@ -461,7 +461,8 @@ impl AnalyticsSolver {
     /// inside the tool loop before `execute_tool` is reached (see resuming.rs).
     pub(super) fn tools_for_state_specifying(&self) -> Vec<agentic_core::tools::ToolDef> {
         let has_semantic = !self.catalog.is_empty();
-        let mut tools = crate::tools::specifying_tools(has_semantic);
+        let has_metric_tree = self.metric_tree_runner.is_some();
+        let mut tools = crate::tools::specifying_tools(has_semantic, has_metric_tree);
         tools.push(ask_user_tool_def());
         tools
     }
@@ -1338,6 +1339,41 @@ pub(super) fn build_specifying_handler()
                     // ── 0. Procedure/workflow/SQL file short-circuit ─────────────
                     if let Some(ref file_path) = intent.selected_procedure.clone() {
                         let default_conn = solver.default_connector.clone();
+
+                        // Guard against path traversal for ALL procedure types
+                        // (SQL, workflow, procedure yml, etc.) — not just .sql.
+                        // A relative path containing `..` that escapes the workspace
+                        // root is rejected here before any read or execution.
+                        if let Some(ref ws) = solver.workspace_path {
+                            let abs_path = if file_path.is_absolute() {
+                                file_path.clone()
+                            } else {
+                                ws.join(file_path)
+                            };
+                            // Use canonicalize when the path exists (resolves symlinks).
+                            // Fall back to lexical normalization so that non-existent
+                            // traversal paths (e.g. `../../etc/passwd.sql`) still have
+                            // their `..` components collapsed before the prefix check —
+                            // the raw abs_path would still start_with(ws) before `..`
+                            // is resolved, letting a traversal slip through.
+                            let canonical_ws =
+                                std::fs::canonicalize(ws).unwrap_or_else(|_| normalize_path(ws));
+                            let canonical_abs = std::fs::canonicalize(&abs_path)
+                                .unwrap_or_else(|_| normalize_path(&abs_path));
+                            if !canonical_abs.starts_with(&canonical_ws) {
+                                return TransitionResult::diagnosing(ProblemState::Diagnosing {
+                                    error: crate::AnalyticsError::FileReadError {
+                                        file_path: file_path.display().to_string(),
+                                        message: "path escapes workspace root".to_string(),
+                                    },
+                                    back: agentic_core::back_target::BackTarget::Clarify(
+                                        intent,
+                                        Default::default(),
+                                    ),
+                                });
+                            }
+                        }
+
                         // SQL files are executed directly as verified queries.
                         if file_path.extension().is_some_and(|e| e == "sql") {
                             // Resolve workspace-relative paths (as returned by
@@ -1390,10 +1426,10 @@ pub(super) fn build_specifying_handler()
                             // (Only meaningful when the target exists; harmless
                             // otherwise.)
                             if let Some(ref ws) = solver.workspace_path {
-                                let canonical_ws =
-                                    std::fs::canonicalize(ws).unwrap_or_else(|_| ws.clone());
+                                let canonical_ws = std::fs::canonicalize(ws)
+                                    .unwrap_or_else(|_| normalize_path(ws));
                                 let canonical_abs = std::fs::canonicalize(&abs_path)
-                                    .unwrap_or_else(|_| abs_path.clone());
+                                    .unwrap_or_else(|_| normalize_path(&abs_path));
                                 if !canonical_abs.starts_with(&canonical_ws) {
                                     return TransitionResult::diagnosing(
                                         ProblemState::Diagnosing {
@@ -1486,4 +1522,26 @@ pub(super) fn build_specifying_handler()
         ),
         diagnose: None,
     }
+}
+
+/// Normalize a path lexically (no I/O) by resolving `.` and `..` components.
+/// Used as the fallback when `std::fs::canonicalize` fails (e.g. file does
+/// not exist) so path-traversal guards still fire correctly.
+fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut components: Vec<Component<'_>> = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // Only pop a normal component — preserve leading `..` on
+                // relative paths and the root prefix on absolute ones.
+                if matches!(components.last(), Some(Component::Normal(_))) {
+                    components.pop();
+                }
+            }
+            other => components.push(other),
+        }
+    }
+    components.iter().collect()
 }

@@ -1,0 +1,6 @@
+member_id,name,email,join_date,city
+MEM101,Anna Brooks,anna@example.com,2023-06-01,New York
+MEM102,Daniel Kim,daniel@EXAMPLE.com,15/06/2023,new york
+MEM103,Sofia Ruiz,,2023-05-20,
+MEM104,Tom Hardy,tom@example.com,2023-20-06,LA
+MEM105,Jess,NULL,2023-04-10,Los Angeles

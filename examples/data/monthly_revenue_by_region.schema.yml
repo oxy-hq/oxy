@@ -1,0 +1,15 @@
+table: monthly_revenue_by_region.csv
+database: local
+description: ''
+entities: []
+dimensions:
+- name: month
+  sample:
+  - Jan
+- name: region
+  sample:
+  - North America
+- name: revenue
+  sample:
+  - '125.3'
+measures: []

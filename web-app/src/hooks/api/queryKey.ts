@@ -542,6 +542,70 @@ const semanticKeys = {
     [...semanticKeys.all, "viewDetails", projectId, filePathB64] as const
 };
 
+const metricTreeKeys = {
+  all: ["metric-tree"] as const,
+  tree: (projectId: string, root: string | undefined) =>
+    [...metricTreeKeys.all, "tree", projectId, root ?? null] as const,
+  sensitivity: (projectId: string, measureId: string | undefined) =>
+    [...metricTreeKeys.all, "sensitivity", projectId, measureId] as const,
+  /** Cached period-over-period explain (used by the Insights inbox drawer
+   *  so reopening the same anomaly reuses the result instead of re-running
+   *  airlayer's recursive search). Keyed by the full request payload. */
+  explain: (
+    projectId: string,
+    target: string,
+    timeDimension: string,
+    currentPeriod: readonly [string, string],
+    previousPeriod: readonly [string, string],
+    deep: boolean
+  ) =>
+    [
+      ...metricTreeKeys.all,
+      "explain",
+      projectId,
+      target,
+      timeDimension,
+      currentPeriod[0],
+      currentPeriod[1],
+      previousPeriod[0],
+      previousPeriod[1],
+      deep
+    ] as const,
+  /** Time dimensions available per view — discovery endpoint that lets the
+   *  metric-tree UI offer a real select instead of a hardcoded fallback. */
+  timeDimensions: (projectId: string) =>
+    [...metricTreeKeys.all, "time-dimensions", projectId] as const,
+  /** Single-period distribution — same `ExplainResult` shape as `explain`
+   *  but the baseline is auto-derived server-side. Keyed by request payload. */
+  distribution: (
+    projectId: string,
+    target: string,
+    timeDimension: string,
+    period: readonly [string, string]
+  ) =>
+    [
+      ...metricTreeKeys.all,
+      "distribution",
+      projectId,
+      target,
+      timeDimension,
+      period[0],
+      period[1]
+    ] as const
+};
+
+const metricAnomaliesKeys = {
+  all: ["metric-anomalies"] as const,
+  list: (projectId: string, status: string | undefined) =>
+    [...metricAnomaliesKeys.all, "list", projectId, status ?? null] as const,
+  monitors: (projectId: string) => [...metricAnomaliesKeys.all, "monitors", projectId] as const,
+  /** Per-anomaly explain decomposition (cached server-side on the row).
+   *  Distinct from `metricTree.explain` because the cache lifecycle is
+   *  tied to the anomaly itself, not to the request payload. */
+  explain: (projectId: string, anomalyId: string) =>
+    [...metricAnomaliesKeys.all, "explain", projectId, anomalyId] as const
+};
+
 const queryKeys = {
   airhouse: airhouseKeys,
   camera: cameraKeys,
@@ -558,6 +622,8 @@ const queryKeys = {
   adminWorkspaces: adminWorkspacesKeys,
   authConfig: authConfigKeys,
   semantic: semanticKeys,
+  metricTree: metricTreeKeys,
+  metricAnomalies: metricAnomaliesKeys,
   org: orgKeys,
   agent: agentKeys,
   builder: builderKeys,

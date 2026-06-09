@@ -19,8 +19,8 @@
 
 use std::sync::Arc;
 
-use agentic_analytics::SharedMetricSink;
 use agentic_analytics::config::{LlmVendor, ResolvedModelInfo};
+use agentic_analytics::{MetricTreeRunner, SharedMetricSink};
 use agentic_builder::{
     BuilderDatabaseProvider, BuilderProjectValidator, BuilderSchemaProvider,
     BuilderSecretsProvider, BuilderSemanticCompiler,
@@ -30,6 +30,22 @@ use agentic_llm::{LlmClient, OpenAiCompatProvider, OpenAiProvider};
 use agentic_workflow::WorkspaceContext;
 use async_trait::async_trait;
 use std::collections::HashMap;
+
+/// Port for running a workspace anomaly scan for one granularity tier.
+///
+/// Implemented by `OxyProjectContext` in the `app` crate. The default impl
+/// returns `None` so test fakes and non-Oxy adapters compile unchanged.
+#[async_trait]
+pub trait MonitorScanPort: Send + Sync {
+    /// Run monitors matching `granularity` ("day" | "week" | "month"),
+    /// persist anomaly rows, and return a brief audit summary.
+    async fn run_monitor_scan(
+        &self,
+        db: &sea_orm::DatabaseConnection,
+        workspace_id: uuid::Uuid,
+        granularity: &str,
+    ) -> Result<String, String>;
+}
 
 /// A `config.yml` database resolved into an airway destination: the
 /// destination `kind` airway should build, plus an already-credentialed
@@ -115,6 +131,37 @@ pub trait ProjectContext: Send + Sync {
     /// Default impl returns `None` so existing platform adapters keep
     /// compiling unchanged.
     fn metric_sink(&self) -> Option<SharedMetricSink> {
+        None
+    }
+
+    /// Optional runner powering the analytics agent's metric-tree tools
+    /// (`explain`, `opportunity`, `sensitivity`, `predict`). When `None`
+    /// those tools are not exposed to the LLM. Hosts with a semantic layer
+    /// + connector pool return a runner that loads the layer and executes
+    /// airlayer-compiled SQL through their connectors.
+    fn metric_tree_runner(&self) -> Option<Arc<dyn MetricTreeRunner>> {
+        None
+    }
+
+    /// System-mode metric-tree runner — same as [`Self::metric_tree_runner`]
+    /// but doesn't gate on a per-request subject + role. Used by the cron
+    /// scheduler (no user in scope) and other background paths. Hosts should
+    /// return a runner that runs as an admin / service principal; tests and
+    /// non-Oxy hosts can leave the default `None`.
+    fn metric_tree_runner_system(&self) -> Option<Arc<dyn MetricTreeRunner>> {
+        None
+    }
+
+    /// Optional anomaly store powering the `list_anomalies` / `detect_anomalies` /
+    /// `explain_anomaly` tools in the `RootCause` inquiry loop. When `None` those
+    /// tools are not exposed to the LLM. Default impl returns `None`.
+    fn anomaly_store(&self) -> Option<Arc<dyn agentic_analytics::anomaly_store::AnomalyStore>> {
+        None
+    }
+
+    /// Return a [`MonitorScanPort`] implementation if this context supports
+    /// anomaly scanning. Default `None` so existing adapters compile unchanged.
+    fn as_monitor_scan_port(&self) -> Option<&dyn MonitorScanPort> {
         None
     }
 }

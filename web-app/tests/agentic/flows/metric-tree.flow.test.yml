@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Open the IDE's Metric Tree view, confirm the workspace's measures render
+# as a graph, select a measure node, and confirm the Drivers panel responds.
+# Runs against the demo project's semantic layer (oxymart sales measures).
+
+name: IDE metric tree view
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  max_steps: 20
+  backend_mode: local
+
+setup:
+  - "goto:/ide"
+
+cases:
+  - name: open the metric tree and inspect a measure's drivers
+    tags: [ide, metric-tree]
+    steps:
+      - act: |
+          Click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          button in the narrow IDE sidebar rail. The URL changes to end
+          with /ide/semantic.
+      - act: |
+          Click the "Metric Tree" tab (role=tab, name "Metric Tree"),
+          then wait for [data-testid=metric-tree-view] to be visible.
+      - act: |
+          Click the first measure node in the graph — measure nodes
+          carry a data-testid starting with `metric-node-` (e.g.
+          browser_click selector "[data-testid^=metric-node-]"). This
+          selects the measure and updates the right-hand panel.
+    expect:
+      - assert: "[data-testid=metric-tree-view] is visible"
+      - judge: |
+          the left side shows a graph of measure nodes, and the
+          right-hand panel has tabs labelled Definition and Drivers

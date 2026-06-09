@@ -1,0 +1,7 @@
+table: dbt_prod_metrics.monthly_active_organizations
+database: primary_database
+dimensions:
+- name: ds
+  type: DATE
+- name: monthly_active_organizations
+  type: INT64

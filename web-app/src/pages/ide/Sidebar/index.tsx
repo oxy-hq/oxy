@@ -1,4 +1,13 @@
-import { Activity, Boxes, Database, Folder, GitBranch, Radio, ShieldCheck } from "lucide-react";
+import {
+  Activity,
+  Boxes,
+  Database,
+  Folder,
+  GitBranch,
+  Network,
+  Radio,
+  ShieldCheck
+} from "lucide-react";
 import type React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -16,6 +25,7 @@ enum SidebarViewMode {
   OBSERVABILITY = "observability",
   DATABASE = "database",
   MODELING = "modeling",
+  SEMANTIC = "semantic",
   EDGE = "edge"
 }
 
@@ -34,6 +44,9 @@ const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMo
   }
   if (pathname.includes("/ide/database")) {
     return SidebarViewMode.DATABASE;
+  }
+  if (pathname.includes("/ide/semantic")) {
+    return SidebarViewMode.SEMANTIC;
   }
   if (pathname.includes("/ide/modeling")) {
     return SidebarViewMode.MODELING;
@@ -76,6 +89,9 @@ const Sidebar: React.FC = () => {
         break;
       case SidebarViewMode.MODELING:
         navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.MODELING.ROOT);
+        break;
+      case SidebarViewMode.SEMANTIC:
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SEMANTIC.ROOT);
         break;
       case SidebarViewMode.EDGE:
         navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.EDGE.ROOT);
@@ -176,6 +192,22 @@ const Sidebar: React.FC = () => {
           )}
         >
           <GitBranch className='h-4 w-4' />
+        </Button>
+
+        <Button
+          variant='ghost'
+          size='icon'
+          onClick={() => handleNavigate(SidebarViewMode.SEMANTIC)}
+          data-testid='ide-nav-semantic'
+          tooltip={{ content: "Semantic Layer", side: "right" }}
+          className={cn(
+            "h-8 w-8",
+            currentViewMode === SidebarViewMode.SEMANTIC
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "opacity-60 hover:opacity-100"
+          )}
+        >
+          <Network className='h-4 w-4' />
         </Button>
 
         <Button

@@ -1,0 +1,31 @@
+config-version: 2
+
+name: "ecommerce_analytics"
+version: "1.0.0"
+
+profile: "ecommerce_analytics"
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+seeds:
+  ecommerce_analytics:
+    +schema: raw
+
+models:
+  +start: "2024-01-01"
+  ecommerce_analytics:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: ephemeral
+    marts:
+      +materialized: table

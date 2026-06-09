@@ -6,6 +6,7 @@
 
 #[doc(hidden)]
 pub mod airlayer_compat;
+pub mod anomaly_store;
 pub mod brief;
 mod catalog;
 pub mod config;
@@ -15,6 +16,7 @@ mod events;
 pub mod extension;
 mod llm;
 pub mod metric_sink;
+pub mod metric_tree_runner;
 pub mod pipeline;
 mod preagg_exec;
 mod schemas;
@@ -67,6 +69,10 @@ pub use pipeline::{PipelineParams, resume_pipeline, start_pipeline};
 // ── Metric sink port ────────────────────────────────────────────────────────
 
 pub use metric_sink::{AnalyticsMetricSink, SharedMetricSink};
+
+// ── Metric tree runner port ─────────────────────────────────────────────────
+
+pub use metric_tree_runner::{MetricTreeRunner, MetricTreeRunnerError, load_tree};
 
 // ── Solver (needed by pipeline's run_agentic_eval) ──────────────────────────
 

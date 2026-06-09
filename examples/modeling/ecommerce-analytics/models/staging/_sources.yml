@@ -1,0 +1,26 @@
+version: 2
+
+sources:
+  - name: ecommerce
+    schema: raw
+    description: Raw data from the e-commerce application database.
+    tables:
+      - name: raw_users
+        description: One record per registered user.
+      - name: raw_products
+        description: Product catalog, one record per product.
+      - name: raw_orders
+        description: One record per order placed.
+      - name: raw_order_items
+        description: Line items for each order, one record per item in an order.
+      - name: raw_payments
+        description: Payment transactions, one record per payment attempt.
+
+  - name: web_analytics
+    schema: raw
+    description: Clickstream and engagement data from the web analytics platform.
+    tables:
+      - name: raw_page_views
+        description: Page view events, one record per page view.
+      - name: raw_product_reviews
+        description: Product reviews submitted by users.

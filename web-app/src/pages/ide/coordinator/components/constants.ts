@@ -1,4 +1,5 @@
 import {
+  Activity,
   Ban,
   Bot,
   CalendarClock,
@@ -100,7 +101,7 @@ export const normalizeStatus = (raw: string | null | undefined): RunStatus => {
 
 // ── Job type ────────────────────────────────────────────────────────────────
 
-export type JobType = "agent" | "dag" | "elt";
+export type JobType = "agent" | "dag" | "elt" | "monitor";
 
 interface JobTypeMeta {
   label: string;
@@ -142,15 +143,25 @@ export const JOB_TYPE: Record<JobType, JobTypeMeta> = {
     tint: "bg-vis-cyan/10 text-vis-cyan",
     icon: Database,
     unit: "rows + freshness"
+  },
+  monitor: {
+    label: "Monitor scan",
+    short: "Monitor",
+    fg: "text-vis-amber",
+    bg: "bg-vis-amber",
+    tint: "bg-vis-amber/10 text-vis-amber",
+    icon: Activity,
+    unit: "anomaly scan"
   }
 };
 
-export const JOB_TYPES: JobType[] = ["agent", "dag", "elt"];
+export const JOB_TYPES: JobType[] = ["agent", "dag", "elt", "monitor"];
 
 /** Map a schedule `target_kind` to a job type. */
 export const targetKindToJobType = (kind: string): JobType => {
   if (kind === "airway") return "elt";
   if (kind === "agent") return "agent";
+  if (kind === "monitor_scan") return "monitor";
   return "dag";
 };
 
@@ -161,6 +172,8 @@ export const sourceTypeToJobType = (source: string | null | undefined): JobType 
       return "dag";
     case "airway":
       return "elt";
+    case "monitor_scan":
+      return "monitor";
     default:
       return "agent";
   }

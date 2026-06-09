@@ -1,0 +1,29 @@
+table: dbt_prod_core.fct_typeform_private_beta_requests
+database: primary_database
+dimensions:
+- name: id_form
+  type: STRING
+- name: id_response
+  type: STRING
+- name: email
+  type: STRING
+- name: full_name
+  type: STRING
+- name: company_name
+  type: STRING
+- name: primary_role
+  type: STRING
+- name: company_size
+  type: STRING
+- name: sql_or_python
+  type: STRING
+- name: ts_submitted_at
+  type: TIMESTAMP
+- name: answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: is_lifetime_purchase
+  type: BOOL

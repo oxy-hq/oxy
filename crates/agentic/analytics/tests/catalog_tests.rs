@@ -1386,15 +1386,14 @@ fn fuzzy_search_works_on_schema_catalog() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// 8. Real-world semantic layer validation (internal_demo)
+// 8. Real-world semantic layer validation (examples)
 // ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn demo_project_semantic_layer_loads_and_compiles() {
     use std::path::PathBuf;
 
-    let sem_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../internal_demo/semantics");
+    let sem_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../examples/semantics");
 
     let paths: Vec<PathBuf> = std::fs::read_dir(&sem_dir)
         .unwrap_or_else(|e| panic!("failed to read {}: {e}", sem_dir.display()))
@@ -1410,8 +1409,8 @@ fn demo_project_semantic_layer_loads_and_compiles() {
     );
 
     let dialects = airlayer::DatasourceDialectMap::with_default(airlayer::Dialect::DuckDB);
-    let cat = SemanticCatalog::load_files(&paths, dialects)
-        .expect("internal_demo semantic layer should load");
+    let cat =
+        SemanticCatalog::load_files(&paths, dialects).expect("examples semantic layer should load");
 
     // Verify metrics are discovered
     let metrics = cat.list_metrics("");
@@ -1496,7 +1495,7 @@ fn qualify_names_resolves_llm_raw_column_names() {
 // 9. Semantic layer → try_compile end-to-end (reproduces runtime path)
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Cardio view matching the real internal_demo/semantics/cardio.view.yml.
+/// Cardio view matching the real examples/semantics/cardio.view.yml.
 fn cardio_view_yaml() -> &'static str {
     r#"
 name: cardio

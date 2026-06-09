@@ -14,7 +14,7 @@ use agentic_connector::{
     SnowflakeAuth, SnowflakeConfig,
 };
 use agentic_pipeline::SharedMetricSink;
-use agentic_pipeline::platform::{ProjectContext, ResolvedPipelineDestination};
+use agentic_pipeline::platform::{MonitorScanPort, ProjectContext, ResolvedPipelineDestination};
 use agentic_workflow::WorkspaceContext;
 use agentic_workflow::workspace::IntegrationConfig;
 use async_trait::async_trait;
@@ -57,6 +57,10 @@ pub struct OxyProjectContext {
     /// `pre_aggregations.refresh_worker.renewal_threshold` so operators who
     /// change one see the matching read-side behaviour.
     preagg_renewal_threshold_secs: u64,
+    /// Database connection for anomaly store queries. Set by the HTTP workspace
+    /// middleware from `AgenticState.db`; background / CLI paths leave it unset
+    /// and anomaly tools are silently disabled.
+    db: Option<Arc<sea_orm::DatabaseConnection>>,
 }
 
 impl OxyProjectContext {
@@ -68,7 +72,16 @@ impl OxyProjectContext {
             connectors: tokio::sync::Mutex::new(HashMap::new()),
             preagg_cache: None,
             preagg_renewal_threshold_secs: 120,
+            db: None,
         }
+    }
+
+    /// Attach the database connection. The HTTP workspace middleware sets this
+    /// from `AgenticState.db` so anomaly tools can query the `metric_anomalies`
+    /// table. Background / CLI paths leave it unset — anomaly tools are disabled.
+    pub fn with_db(mut self, db: Arc<sea_orm::DatabaseConnection>) -> Self {
+        self.db = Some(db);
+        self
     }
 
     /// Attach the requesting user's id. The HTTP workspace middleware sets
@@ -362,6 +375,53 @@ impl ProjectContext for OxyProjectContext {
         oxy_observability::global::get_global()?;
         Some(Arc::new(super::metric_sink::OxyAnalyticsMetricSink::new()))
     }
+
+    fn metric_tree_runner(&self) -> Option<Arc<dyn agentic_analytics::MetricTreeRunner>> {
+        // Background paths (scheduler, recovery) leave subject + role unset;
+        // the metric-tree ops need both to mint Airhouse credentials, so we
+        // only expose the runner for HTTP-driven runs that carried them in.
+        let user_id = self.subject?;
+        let role = self.role.clone()?;
+        Some(super::metric_tree_runner::make_runner(
+            self.workspace_manager.clone(),
+            user_id,
+            role,
+            self.preagg_cache.clone(),
+            self.preagg_renewal_threshold_secs,
+        ))
+    }
+
+    fn metric_tree_runner_system(&self) -> Option<Arc<dyn agentic_analytics::MetricTreeRunner>> {
+        // Cron-driven scans don't have a user — mint with nil UUID + Owner
+        // so the Airhouse credential resolves with admin read access.
+        // Real per-user scoping is enforced upstream when a human triggers
+        // a scan via the HTTP endpoint.
+        //
+        // THREAT-MODEL: anomaly rows produced here (observed, expected,
+        // period_*) are visible to all workspace members including Viewers.
+        // If warehouse-level RLS is part of the deployment threat model,
+        // consider restricting the inbox payload for non-admin roles or
+        // running the system scan with a read-only service account that
+        // matches the most restrictive tenant RLS policy.
+        Some(super::metric_tree_runner::make_runner(
+            self.workspace_manager.clone(),
+            uuid::Uuid::nil(),
+            WorkspaceRole::Owner,
+            None,
+            120,
+        ))
+    }
+
+    fn anomaly_store(&self) -> Option<Arc<dyn agentic_analytics::anomaly_store::AnomalyStore>> {
+        let db = self.db.clone()?;
+        Some(Arc::new(oxy_metric_monitoring::store::OxyAnomalyStore {
+            db,
+        }))
+    }
+
+    fn as_monitor_scan_port(&self) -> Option<&dyn agentic_pipeline::platform::MonitorScanPort> {
+        Some(self)
+    }
 }
 
 #[async_trait]
@@ -492,6 +552,51 @@ impl WorkspaceContext for OxyProjectContext {
         let resolved = resolve_workspace_relative(&self.workspace_manager, workflow_ref).await?;
         std::fs::read_to_string(&resolved)
             .map_err(|e| format!("failed to read workflow {workflow_ref:?}: {e}"))
+    }
+}
+
+#[async_trait]
+impl MonitorScanPort for OxyProjectContext {
+    async fn run_monitor_scan(
+        &self,
+        db: &sea_orm::DatabaseConnection,
+        workspace_id: uuid::Uuid,
+        granularity: &str,
+    ) -> Result<String, String> {
+        use oxy_metric_monitoring::Granularity;
+
+        let runner = self
+            .metric_tree_runner_system()
+            .ok_or_else(|| "no metric tree runner available".to_string())?;
+        let gran = match granularity {
+            "day" => Granularity::Day,
+            "week" => Granularity::Week,
+            "month" => Granularity::Month,
+            other => return Err(format!("unknown granularity: {other:?}")),
+        };
+        let config_path = oxy_metric_monitoring::default_config_path(self.workspace_path());
+        let scan = oxy_metric_monitoring::scan_workspace(
+            runner,
+            &config_path,
+            chrono::Utc::now(),
+            Some(gran),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let persisted = oxy_metric_monitoring::upsert_anomalies(db, workspace_id, &scan)
+            .await
+            .map_err(|e| e.to_string())?;
+        let summary = format!(
+            "scanned={} failed={} persisted={}",
+            scan.outcomes.len(),
+            scan.failures.len(),
+            persisted
+        );
+        if scan.failures.is_empty() {
+            Ok(summary)
+        } else {
+            Err(summary)
+        }
     }
 }
 

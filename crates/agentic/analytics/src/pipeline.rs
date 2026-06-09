@@ -18,10 +18,14 @@ use agentic_core::human_input::SuspendedRunData;
 use agentic_core::orchestrator::{Orchestrator, OrchestratorError};
 use agentic_runtime::handle::{PipelineHandle, PipelineOutcome};
 
+use uuid::Uuid;
+
+use crate::anomaly_store::AnomalyStore;
 use crate::catalog::SchemaCatalog;
 use crate::config::{AgentConfig, BuildContext, ConfigError, ResolvedModelInfo};
 use crate::events::AnalyticsEvent;
 use crate::metric_sink::SharedMetricSink;
+use crate::metric_tree_runner::MetricTreeRunner;
 use crate::solver::build_analytics_handlers;
 use crate::types::{AnalyticsIntent, ConversationTurn, QuestionType, SpecHint};
 use agentic_core::subrun::SubrunRunner;
@@ -51,6 +55,15 @@ pub struct PipelineParams {
     /// Optional subrun search provider for the `search_procedures` tool.
     /// Subrun *execution* is handled by the coordinator, not this runner.
     pub subrun_runner: Option<Arc<dyn SubrunRunner>>,
+    /// Optional metric-tree runner powering the `explain` / `opportunity` /
+    /// `sensitivity` / `predict` agent tools. `None` excludes those tools.
+    pub metric_tree_runner: Option<Arc<dyn MetricTreeRunner>>,
+    /// Optional anomaly store powering the `list_anomalies` / `detect_anomalies` /
+    /// `explain_anomaly` tools inside the `RootCause` inquiry loop.
+    /// `None` disables those tools.
+    pub anomaly_store: Option<Arc<dyn AnomalyStore>>,
+    /// Workspace that owns this run. Used to scope anomaly store queries.
+    pub workspace_id: Uuid,
     /// Optional sink for recording Tier 1 metric usage (measures +
     /// dimensions) to an external observability backend. `None` means
     /// metrics won't be recorded — the pipeline still runs.
@@ -168,6 +181,20 @@ pub async fn start_pipeline(
     } else {
         solver
     };
+
+    let solver = if let Some(runner) = params.metric_tree_runner {
+        solver.with_metric_tree_runner(runner)
+    } else {
+        solver
+    };
+
+    let solver = if let Some(store) = params.anomaly_store {
+        solver.with_anomaly_store(store)
+    } else {
+        solver
+    };
+
+    let solver = solver.with_workspace_id(params.workspace_id);
 
     let (outcome_tx, outcome_rx) = mpsc::channel::<PipelineOutcome>(4);
     let cancel = CancellationToken::new();
@@ -328,6 +355,20 @@ pub async fn resume_pipeline(
     } else {
         solver
     };
+
+    let solver = if let Some(runner) = params.metric_tree_runner {
+        solver.with_metric_tree_runner(runner)
+    } else {
+        solver
+    };
+
+    let solver = if let Some(store) = params.anomaly_store {
+        solver.with_anomaly_store(store)
+    } else {
+        solver
+    };
+
+    let solver = solver.with_workspace_id(params.workspace_id);
 
     let (outcome_tx, outcome_rx) = mpsc::channel::<PipelineOutcome>(4);
     let cancel = CancellationToken::new();

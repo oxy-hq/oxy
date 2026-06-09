@@ -24,8 +24,8 @@ pub fn triage_response_schema() -> ResponseSchema {
                 },
                 "question_type": {
                     "type": "string",
-                    "description": "Broad question category. Trend: metric over time. Comparison: contrasting items/periods. Breakdown: metric split by category. SingleValue: one aggregate number. Distribution: spread or histogram. GeneralInquiry: question that does not need SQL — e.g. what tables are available, what metrics exist, or any conversational follow-up.",
-                    "enum": ["Trend", "Comparison", "Breakdown", "SingleValue", "Distribution", "GeneralInquiry"]
+                    "description": "Broad question category. Trend: metric over time. Comparison: contrasting items/periods. Breakdown: metric split by category. SingleValue: one aggregate number. Distribution: spread or histogram. GeneralInquiry: question that does not need SQL — e.g. what tables are available, what metrics exist, or any conversational follow-up. RootCause: period-over-period root-cause analysis — 'why did X change/drop/spike', 'what drove the move in X' — routed to a dedicated handler that uses the metric tree. Opportunity: upside / growth sizing — 'how do we make more money', 'where can we grow X', 'which segments underperform' — routed to a dedicated handler that uses the metric tree.",
+                    "enum": ["Trend", "Comparison", "Breakdown", "SingleValue", "Distribution", "GeneralInquiry", "RootCause", "Opportunity"]
                 },
                 "time_scope": {
                     "type": ["string", "null"],
@@ -118,8 +118,8 @@ pub fn clarify_response_schema() -> ResponseSchema {
             "properties": {
                 "question_type": {
                     "type": "string",
-                    "description": "The type of analytical question. Trend: how a metric changes over time. Comparison: contrasting two or more items, groups, or periods. Breakdown: a metric split by a categorical dimension. SingleValue: one aggregate number with no grouping. Distribution: the spread, histogram, or frequency of a metric. GeneralInquiry: a question that does not need SQL — e.g. what data is available, what metrics exist, or any conversational follow-up.",
-                    "enum": ["Trend", "Comparison", "Breakdown", "SingleValue", "Distribution", "GeneralInquiry"]
+                    "description": "The type of analytical question. Trend: how a metric changes over time. Comparison: contrasting two or more items, groups, or periods. Breakdown: a metric split by a categorical dimension. SingleValue: one aggregate number with no grouping. Distribution: the spread, histogram, or frequency of a metric. GeneralInquiry: a question that does not need SQL — e.g. what data is available, what metrics exist, or any conversational follow-up. RootCause: period-over-period root-cause analysis. Opportunity: upside / growth opportunity sizing.",
+                    "enum": ["Trend", "Comparison", "Breakdown", "SingleValue", "Distribution", "GeneralInquiry", "RootCause", "Opportunity"]
                 },
                 "metrics": {
                     "type": "array",
@@ -444,7 +444,7 @@ mod tests {
         let enum_vals = schema.schema["properties"]["question_type"]["enum"]
             .as_array()
             .unwrap();
-        assert_eq!(enum_vals.len(), 6);
+        assert_eq!(enum_vals.len(), 8);
         let variants: Vec<&str> = enum_vals.iter().map(|v| v.as_str().unwrap()).collect();
         for v in &[
             "Trend",
@@ -453,6 +453,8 @@ mod tests {
             "SingleValue",
             "Distribution",
             "GeneralInquiry",
+            "RootCause",
+            "Opportunity",
         ] {
             assert!(variants.contains(v), "missing variant: {v}");
         }
@@ -528,11 +530,16 @@ mod tests {
         let enum_vals = schema.schema["properties"]["question_type"]["enum"]
             .as_array()
             .unwrap();
-        assert_eq!(enum_vals.len(), 6);
+        assert_eq!(enum_vals.len(), 8);
         let variants: Vec<&str> = enum_vals.iter().map(|v| v.as_str().unwrap()).collect();
         assert!(
             variants.contains(&"GeneralInquiry"),
             "missing GeneralInquiry variant"
+        );
+        assert!(variants.contains(&"RootCause"), "missing RootCause variant");
+        assert!(
+            variants.contains(&"Opportunity"),
+            "missing Opportunity variant"
         );
     }
 

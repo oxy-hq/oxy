@@ -72,6 +72,7 @@ const LookerExplorerPage = React.lazy(() => import("./pages/ide/Files/Editor/Loo
 const DatabaseLayout = React.lazy(() => import("./pages/ide/Database"));
 const QueryWorkspacePage = React.lazy(() => import("./pages/ide/Database/QueryWorkspace"));
 const ModelingPage = React.lazy(() => import("./pages/ide/modeling"));
+const SemanticLayerPage = React.lazy(() => import("./pages/ide/SemanticLayer"));
 const EdgeLayout = React.lazy(() => import("./pages/ide/edge"));
 const EdgeDashboardPage = React.lazy(() => import("./pages/ide/edge/DashboardPage"));
 const EdgePlaybackPage = React.lazy(() => import("./pages/ide/edge/PlaybackPage"));
@@ -358,6 +359,9 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
 
           {/* Data Modeling routes */}
           <Route path='modeling' element={<ModelingPage />} />
+
+          {/* Semantic layer — explorer + metric tree */}
+          <Route path='semantic' element={<SemanticLayerPage />} />
 
           {/* Edge routes — fleet topology, list management, timeline
               playback (subsumes the old Compliance pages), audit log,

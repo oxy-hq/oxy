@@ -28,8 +28,8 @@ use crate::{AnalyticsAnswer, AnalyticsDomain, AnalyticsError, AnalyticsIntent, A
 use super::{
     AnalyticsSolver, emit_domain,
     prompts::{
-        GENERAL_INQUIRY_SYSTEM_PROMPT, TRIAGE_SYSTEM_PROMPT, format_history_section,
-        format_session_turns_section,
+        GENERAL_INQUIRY_SYSTEM_PROMPT, OPPORTUNITY_SYSTEM_PROMPT, ROOT_CAUSE_SYSTEM_PROMPT,
+        TRIAGE_SYSTEM_PROMPT, format_history_section, format_session_turns_section,
     },
     resuming::{ask_user_tool_def, handle_ask_user},
 };
@@ -75,8 +75,13 @@ impl AnalyticsSolver {
         let system_prompt = self.build_system_prompt("clarifying", TRIAGE_SYSTEM_PROMPT, None);
         let thinking = self.thinking_for_state("clarifying", ThinkingConfig::Disabled);
 
-        // Build tool list: catalog/procedure tools + ask_user for mid-loop suspension.
-        let mut tools = crate::tools::triage_tools();
+        // Triage tools: catalog/procedure search only. RCA questions get
+        // routed via QuestionType::RootCause to a dedicated handler that
+        // owns the metric-tree tools and their answer path. Keeping
+        // triage lean (a) keeps the compiled grammar small enough for
+        // strict-mode providers, and (b) preserves the staged architecture
+        // — triage classifies; downstream handlers execute.
+        let mut tools = crate::tools::triage_tools(self.metric_tree_runner.is_some());
         tools.push(ask_user_tool_def());
 
         let subrun_runner = self.subrun_runner.clone();
@@ -279,6 +284,41 @@ impl AnalyticsSolver {
                 raw_question: intent.raw_question,
                 summary: hypothesis.summary.clone(),
                 question_type: QuestionType::GeneralInquiry,
+                metrics: vec![],
+                dimensions: vec![],
+                filters: vec![],
+                history: intent.history,
+                spec_hint: None,
+                selected_procedure: None,
+                semantic_query: semantic_query.clone(),
+                semantic_confidence,
+            }));
+        }
+
+        if hypothesis.question_type == QuestionType::Opportunity {
+            return Ok(ClarifyOutcome::Intent(AnalyticsIntent {
+                raw_question: intent.raw_question,
+                summary: hypothesis.summary.clone(),
+                question_type: QuestionType::Opportunity,
+                metrics: vec![],
+                dimensions: vec![],
+                filters: vec![],
+                history: intent.history,
+                spec_hint: None,
+                selected_procedure: None,
+                semantic_query: semantic_query.clone(),
+                semantic_confidence,
+            }));
+        }
+
+        if hypothesis.question_type == QuestionType::RootCause {
+            // Carry the intent forward unchanged; the FSM routes
+            // RootCause to root_cause_impl (see general_or_root_cause
+            // dispatcher in this module).
+            return Ok(ClarifyOutcome::Intent(AnalyticsIntent {
+                raw_question: intent.raw_question,
+                summary: hypothesis.summary.clone(),
+                question_type: QuestionType::RootCause,
                 metrics: vec![],
                 dimensions: vec![],
                 filters: vec![],
@@ -509,6 +549,164 @@ impl AnalyticsSolver {
             spec_hint: None,
         })
     }
+
+    /// Answer a [`QuestionType::RootCause`] question via airlayer's
+    /// `explain_metric` tool. Bypasses Specifying / Solving entirely.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            oxy.name = "analytics.root_cause",
+            oxy.span_type = "analytics",
+        )
+    )]
+    pub(crate) async fn root_cause_impl(
+        &mut self,
+        intent: &AnalyticsIntent,
+        session_turns: &[CompletedTurn<AnalyticsDomain>],
+    ) -> Result<AnalyticsAnswer, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
+        self.metric_tree_inquiry_impl(
+            intent,
+            session_turns,
+            ROOT_CAUSE_SYSTEM_PROMPT,
+            "root cause",
+        )
+        .await
+    }
+
+    /// Answer a [`QuestionType::Opportunity`] question via airlayer's
+    /// `find_opportunities` tool. Bypasses Specifying / Solving entirely.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            oxy.name = "analytics.opportunity",
+            oxy.span_type = "analytics",
+        )
+    )]
+    pub(crate) async fn opportunity_impl(
+        &mut self,
+        intent: &AnalyticsIntent,
+        session_turns: &[CompletedTurn<AnalyticsDomain>],
+    ) -> Result<AnalyticsAnswer, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
+        self.metric_tree_inquiry_impl(
+            intent,
+            session_turns,
+            OPPORTUNITY_SYSTEM_PROMPT,
+            "opportunity",
+        )
+        .await
+    }
+
+    /// Shared LLM-tool-loop scaffolding for the dedicated metric-tree handlers.
+    /// Distinguished only by system prompt and tracing label; both share the
+    /// same metric-tree + search_catalog tool surface and the same answer
+    /// path (write a user-facing answer directly from the tool result).
+    async fn metric_tree_inquiry_impl(
+        &mut self,
+        intent: &AnalyticsIntent,
+        session_turns: &[CompletedTurn<AnalyticsDomain>],
+        system_prompt_template: &str,
+        label: &str,
+    ) -> Result<AnalyticsAnswer, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
+        let Some(runner) = self.metric_tree_runner.clone() else {
+            return Err((
+                AnalyticsError::NeedsUserInput {
+                    prompt: format!(
+                        "This workspace does not have a metric tree configured, \
+                         so {label} questions cannot be answered."
+                    ),
+                },
+                BackTarget::Clarify(intent.clone(), Default::default()),
+            ));
+        };
+
+        let catalog = Arc::clone(&self.catalog);
+        let session_section = format_session_turns_section(session_turns);
+        let history_section = format_history_section(&intent.history);
+        let schema_context = self.catalog.to_prompt_string();
+
+        let user_prompt = format!(
+            "{session_section}{history_section}Question: {raw_question}\n\n\
+             Schema overview:\n{schema}",
+            raw_question = intent.raw_question,
+            schema = schema_context,
+        );
+
+        let system_prompt = self.build_system_prompt("clarifying", system_prompt_template, None);
+        let thinking = self.thinking_for_state("clarifying", ThinkingConfig::Disabled);
+
+        let mut tools = crate::tools::metric_tree_tools();
+        tools.extend(crate::tools::triage_tools(true));
+        // Add anomaly tools when the store is configured.
+        let anomaly_store = self.anomaly_store.clone();
+        if anomaly_store.is_some() {
+            tools.extend(crate::tools::anomaly_tools());
+        }
+        let workspace_id = self.workspace_id;
+
+        let output = self
+            .client_for_state("clarifying")
+            .run_with_tools(
+                &system_prompt,
+                &user_prompt,
+                &tools,
+                |name: String, params| {
+                    let runner = runner.clone();
+                    let catalog = Arc::clone(&catalog);
+                    let anomaly_store = anomaly_store.clone();
+                    Box::pin(async move {
+                        if crate::tools::is_metric_tree_tool(&name) {
+                            crate::tools::execute_metric_tree_tool(&name, params, runner)
+                                .await
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
+                        } else if name == "search_catalog" {
+                            execute_clarifying_tool(&name, params, &*catalog)
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
+                        } else if matches!(
+                            name.as_str(),
+                            "list_anomalies" | "detect_anomalies" | "explain_anomaly"
+                        ) {
+                            let store = anomaly_store.ok_or_else(|| {
+                                ToolError::Execution("anomaly store not configured".into())
+                            })?;
+                            let ctx = crate::tools::AnomalyToolContext {
+                                workspace_id,
+                                store: store.as_ref(),
+                                runner: runner.as_ref(),
+                            };
+                            crate::tools::execute_anomaly_tool(&name, params, &ctx)
+                                .await
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
+                        } else {
+                            Err(ToolError::UnknownTool(name))
+                        }
+                    })
+                },
+                &self.event_tx,
+                ToolLoopConfig {
+                    max_tool_rounds: 6,
+                    state: "clarifying".into(),
+                    thinking,
+                    response_schema: None,
+                    max_tokens_override: self.max_tokens,
+                    sub_spec_index: None,
+                    system_date_hint: Some(AnalyticsSolver::current_date_hint()),
+                },
+            )
+            .await
+            .map_err(|e| {
+                let msg = format!("LLM call failed during {label}: {e}");
+                (
+                    AnalyticsError::NeedsUserInput { prompt: msg },
+                    BackTarget::Clarify(intent.clone(), Default::default()),
+                )
+            })?;
+
+        Ok(AnalyticsAnswer {
+            text: output.text,
+            display_blocks: vec![],
+            spec_hint: None,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -546,6 +744,36 @@ pub(super) fn build_clarifying_handler()
                                 .general_inquiry_impl(&clarified, memory.turns())
                                 .await
                             {
+                                Ok(answer) => {
+                                    TransitionResult::ok_to(ProblemState::Done(answer), "done")
+                                }
+                                Err((err, back)) => {
+                                    TransitionResult::diagnosing(ProblemState::Diagnosing {
+                                        error: err,
+                                        back,
+                                    })
+                                }
+                            }
+                        }
+                        Ok(ClarifyOutcome::Intent(clarified))
+                            if clarified.question_type == QuestionType::RootCause =>
+                        {
+                            match solver.root_cause_impl(&clarified, memory.turns()).await {
+                                Ok(answer) => {
+                                    TransitionResult::ok_to(ProblemState::Done(answer), "done")
+                                }
+                                Err((err, back)) => {
+                                    TransitionResult::diagnosing(ProblemState::Diagnosing {
+                                        error: err,
+                                        back,
+                                    })
+                                }
+                            }
+                        }
+                        Ok(ClarifyOutcome::Intent(clarified))
+                            if clarified.question_type == QuestionType::Opportunity =>
+                        {
+                            match solver.opportunity_impl(&clarified, memory.turns()).await {
                                 Ok(answer) => {
                                     TransitionResult::ok_to(ProblemState::Done(answer), "done")
                                 }

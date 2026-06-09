@@ -4,6 +4,7 @@ pub mod builder;
 pub mod change_detector;
 pub mod entity_graph;
 pub mod errors;
+pub mod metric_tree;
 pub mod models;
 pub mod parser;
 pub mod types;
@@ -18,10 +19,12 @@ pub use builder::{
 };
 pub use change_detector::{ChangeDetectionResult, ChangeDetector, hash_database_config};
 pub use errors::SemanticLayerError;
+pub use metric_tree::{build as build_metric_tree, predict, sensitivity, subtree};
 pub use models::{
-    AccessLevel, DatabaseDetails, Dimension, DimensionType, Entity, EntityType, Measure,
-    MeasureFilter, MeasureType, SemanticLayer, SemanticTableRef, Topic, TopicArrayFilter,
-    TopicDateRangeFilter, TopicFilter, TopicFilterType, TopicScalarFilter, View,
+    AccessLevel, DatabaseDetails, Dimension, DimensionType, Driver, DriverConfidence,
+    DriverDirection, DriverForm, DriverStrength, Entity, EntityType, Measure, MeasureFilter,
+    MeasureType, SemanticLayer, SemanticTableRef, Topic, TopicArrayFilter, TopicDateRangeFilter,
+    TopicFilter, TopicFilterType, TopicScalarFilter, View,
 };
 pub use parser::{ParseResult, ParserConfig, SemanticLayerParser, parse_semantic_layer_from_dir};
 pub use types::SyncMetrics;

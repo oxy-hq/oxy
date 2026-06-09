@@ -13,19 +13,26 @@
 //!   after now* ([`agentic_runtime::cron::next_occurrence_after`]), so
 //!   missed slots during an outage collapse to one catch-up run.
 
+use std::sync::Arc;
+
 use agentic_runtime::cron::{
     count_occurrences_between, next_occurrence_after, occurrences_between, validate_cron,
 };
 use agentic_runtime::entity::schedule;
+use agentic_runtime::lifecycle::crud::runs::{
+    insert_run_with_schedule, update_run_done, update_run_failed,
+};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, EntityTrait,
     QueryFilter, Statement,
 };
 use serde::Deserialize;
+use uuid::Uuid;
 
 use crate::agent_run::{StartAgentRequest, start_agent_run};
 use crate::airway_run::{StartAirwayRequest, start_airway_run};
+use crate::platform::PlatformContext;
 use crate::workflow_run::{StartWorkflowRequest, start_workflow_run};
 
 /// Create/update payload. Deserialized straight from the HTTP body.
@@ -85,9 +92,12 @@ fn validate_input(input: &ScheduleInput) -> Result<(), ScheduleError> {
     if input.name.trim().is_empty() {
         return Err(ScheduleError::Invalid("name must not be empty".into()));
     }
-    if !matches!(input.target_kind.as_str(), "workflow" | "airway" | "agent") {
+    if !matches!(
+        input.target_kind.as_str(),
+        "workflow" | "airway" | "agent" | "monitor_scan"
+    ) {
         return Err(ScheduleError::Invalid(format!(
-            "target_kind must be 'workflow', 'airway', or 'agent', got {:?}",
+            "target_kind must be 'workflow', 'airway', 'agent', or 'monitor_scan', got {:?}",
             input.target_kind
         )));
     }
@@ -269,7 +279,7 @@ pub async fn run_schedule_now(
             Ok(run_id)
         }
         Err(e) => {
-            set_last_error(db, &s.id, Some(&e)).await;
+            set_schedule_last_error(db, &s.id, Some(&e)).await;
             Err(ScheduleError::Invalid(e))
         }
     }
@@ -317,7 +327,7 @@ pub async fn tick_schedules(
                     error = %e,
                     "tick: bad cron/timezone; skipping (fix via CRUD)"
                 );
-                set_last_error(db, &s.id, Some(&e)).await;
+                set_schedule_last_error(db, &s.id, Some(&e)).await;
                 continue;
             }
         };
@@ -407,9 +417,178 @@ pub async fn tick_schedules(
                     error = %e,
                     "tick: seed failed; schedule advanced, will retry next slot"
                 );
-                set_last_error(db, &s.id, Some(&e)).await;
+                set_schedule_last_error(db, &s.id, Some(&e)).await;
             }
         }
+    }
+
+    fired
+}
+
+/// Run one scheduler pass for `monitor_scan` schedules in the given workspace.
+/// Creates an `agentic_runs` row per due schedule and spawns the scan in a
+/// background task so the tick loop is not blocked. The run is visible in
+/// the coordinator immediately as "running".
+/// Returns the number of schedules fired. Never errors the caller —
+/// per-schedule failures are logged and skipped.
+pub async fn tick_monitor_schedules(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    platform: Arc<dyn PlatformContext>,
+) -> usize {
+    let now = chrono::Utc::now().fixed_offset();
+    let due = match schedule::Entity::find()
+        .filter(schedule::Column::WorkspaceId.eq(workspace_id))
+        .filter(schedule::Column::TargetKind.eq("monitor_scan"))
+        .filter(schedule::Column::Enabled.eq(true))
+        .filter(schedule::Column::NextRunAt.lte(now))
+        .all(db)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!(target: "scheduler", error = %e, "monitor tick: query failed");
+            return 0;
+        }
+    };
+
+    let mut fired = 0;
+    for s in due {
+        // Validate granularity before touching next_run_at — a misconfigured
+        // row is a data error, not a transient failure, so we don't advance.
+        let granularity = match s
+            .variables
+            .as_ref()
+            .and_then(|v| v.get("granularity"))
+            .and_then(|g| g.as_str())
+        {
+            Some(g) => g.to_string(),
+            None => {
+                set_schedule_last_error(db, &s.id, Some("missing granularity in variables")).await;
+                continue;
+            }
+        };
+
+        let next = match next_occurrence_after(&s.cron_expr, &s.timezone, chrono::Utc::now()) {
+            Ok(n) => n.fixed_offset(),
+            Err(e) => {
+                tracing::warn!(
+                    target: "scheduler",
+                    schedule_id = %s.id,
+                    error = %e,
+                    "monitor tick: bad cron/timezone; skipping"
+                );
+                set_schedule_last_error(db, &s.id, Some(&e)).await;
+                continue;
+            }
+        };
+
+        let prev_due_utc = s.next_run_at.with_timezone(&chrono::Utc);
+        let missed = count_occurrences_between(
+            &s.cron_expr,
+            &s.timezone,
+            prev_due_utc,
+            chrono::Utc::now(),
+            1000,
+        )
+        .unwrap_or(0);
+
+        // CAS-advance: exactly-once fire across replicas.
+        let won = match db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE agentic_schedules \
+                 SET next_run_at = $1, \
+                     last_fired_at = now(), \
+                     missed_runs = missed_runs + $4, \
+                     last_missed_at = CASE WHEN $4 > 0 THEN now() ELSE last_missed_at END, \
+                     updated_at = now() \
+                 WHERE id = $2 AND next_run_at = $3",
+                [
+                    next.into(),
+                    s.id.clone().into(),
+                    s.next_run_at.into(),
+                    (missed as i32).into(),
+                ],
+            ))
+            .await
+        {
+            Ok(r) => r.rows_affected() == 1,
+            Err(e) => {
+                tracing::error!(target: "scheduler", schedule_id = %s.id, error = %e, "monitor tick: CAS failed");
+                continue;
+            }
+        };
+        if !won {
+            continue;
+        }
+        if missed > 0 {
+            tracing::warn!(
+                target: "scheduler",
+                schedule_id = %s.id,
+                missed,
+                "monitor tick: catch-up fire skipped {} occurrences (policy: run-once-then-resume)",
+                missed,
+            );
+        }
+
+        let run_id = Uuid::new_v4().to_string();
+        let mut meta = serde_json::json!({ "granularity": granularity });
+        stamp_trigger_metadata(&mut meta, &Some("scheduled".into()), &None, &None);
+        if let Err(e) = insert_run_with_schedule(
+            db,
+            &run_id,
+            &format!("Anomaly scan ({granularity})"),
+            None,
+            "monitor_scan",
+            Some(meta),
+            &s.id,
+            workspace_id,
+        )
+        .await
+        {
+            tracing::error!(target: "scheduler", schedule_id = %s.id, error = %e, "monitor tick: failed to create run row; skipping enqueue");
+            continue;
+        }
+
+        fired += 1;
+        record_fire_success(db, &s.id, &run_id).await;
+
+        // Spawn the scan as a background task so the tick loop advances
+        // immediately. The run is already visible as "running" in the
+        // coordinator; status is updated to done/failed when the scan finishes.
+        let db_scan = db.clone();
+        let platform_scan = platform.clone();
+        let schedule_id_scan = s.id.clone();
+        let run_id_scan = run_id.clone();
+        let granularity_scan = granularity.clone();
+        tokio::spawn(async move {
+            let Some(port) = platform_scan.as_monitor_scan_port() else {
+                tracing::error!(target: "monitor_scan", run_id = %run_id_scan, "no MonitorScanPort available");
+                let _ = update_run_failed(
+                    &db_scan,
+                    &run_id_scan,
+                    "monitor scan not available in this deployment",
+                )
+                .await;
+                return;
+            };
+            match port
+                .run_monitor_scan(&db_scan, workspace_id, &granularity_scan)
+                .await
+            {
+                Ok(summary) => {
+                    tracing::info!(target: "monitor_scan", run_id = %run_id_scan, %summary, "scan complete");
+                    let _ = update_run_done(&db_scan, &run_id_scan, &summary, None).await;
+                }
+                Err(e) => {
+                    tracing::warn!(target: "monitor_scan", run_id = %run_id_scan, error = %e, "scan failed");
+                    let _ = update_run_failed(&db_scan, &run_id_scan, &e).await;
+                    set_schedule_last_error(&db_scan, &schedule_id_scan, Some(&e)).await;
+                }
+            }
+        });
+        tracing::info!(target: "monitor_scan", schedule_id = %s.id, run_id = %run_id, %granularity, "scan spawned");
     }
 
     fired
@@ -503,7 +682,7 @@ async fn fire_schedule(
 /// Record a successful fire: link the run and clear any prior error, in
 /// one UPDATE. Best-effort — the run is already seeded, so a failure here
 /// doesn't lose work.
-async fn record_fire_success(db: &DatabaseConnection, schedule_id: &str, run_id: &str) {
+pub async fn record_fire_success(db: &DatabaseConnection, schedule_id: &str, run_id: &str) {
     if let Err(e) = db
         .execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -524,7 +703,7 @@ async fn record_fire_success(db: &DatabaseConnection, schedule_id: &str, run_id:
 /// `metadata` is mutated in place — the surrounding seed builds the rest
 /// of the JSON object first; this just stamps the well-known keys when
 /// each field is set.
-pub(crate) fn stamp_trigger_metadata(
+pub fn stamp_trigger_metadata(
     metadata: &mut serde_json::Value,
     trigger: &Option<String>,
     logical_date: &Option<chrono::DateTime<chrono::Utc>>,
@@ -735,7 +914,11 @@ async fn seed_backfill_occurrence(
 
 /// Record the most recent fire/seed/cron failure for UI surfacing.
 /// Best-effort observability — never blocks the loop.
-async fn set_last_error(db: &DatabaseConnection, schedule_id: &str, msg: Option<&str>) {
+pub async fn set_schedule_last_error(
+    db: &DatabaseConnection,
+    schedule_id: &str,
+    msg: Option<&str>,
+) {
     let msg: Option<String> = msg.map(str::to_string);
     if let Err(e) = db
         .execute(Statement::from_sql_and_values(

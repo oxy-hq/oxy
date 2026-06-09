@@ -11,10 +11,20 @@ use super::{SAMPLE_COLUMNS_DESC, SEARCH_CATALOG_DESC, SEARCH_PROCEDURES_DESC};
 
 /// Tools available during the **triage** sub-phase of Clarify.
 ///
-/// Only `search_procedures` is exposed — triage must check for an existing
-/// procedure before doing any schema discovery.
-pub fn triage_tools() -> Vec<ToolDef> {
-    vec![
+/// Triage only *classifies* the question and discovers schema. Metric-tree
+/// tools belong to the dedicated `root_cause` handler that runs when
+/// triage classifies as `QuestionType::RootCause`. Earlier we tried
+/// putting them here directly; the result was that triage produced a
+/// great draft answer but the FSM's `general_inquiry_impl` then issued a
+/// fresh LLM call with no awareness of the tool result, producing a
+/// "I can only report what the data shows" non-answer.
+///
+/// `has_metric_tree` is kept on the signature for API stability — the
+/// caller doesn't need to thread two different function signatures
+/// based on workspace config — but it currently has no effect on the
+/// returned tool list.
+pub fn triage_tools(_has_metric_tree: bool) -> Vec<ToolDef> {
+    let tools = vec![
         ToolDef {
             name: "search_procedures",
             description: SEARCH_PROCEDURES_DESC,
@@ -49,7 +59,8 @@ pub fn triage_tools() -> Vec<ToolDef> {
             ..Default::default()
         },
         propose_semantic_query_tool(),
-    ]
+    ];
+    tools
 }
 
 const PROPOSE_SEMANTIC_QUERY_DESC: &str = "Call this tool AFTER search_catalog confirms that ALL needed measures \
@@ -141,7 +152,7 @@ pub fn propose_semantic_query_tool() -> ToolDef {
 /// When `has_semantic` is `true` the semantic layer covers the data model and
 /// raw database introspection tools (`list_tables`, `describe_table`) are
 /// excluded to avoid confusing the LLM with two competing schema views.
-pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
+pub fn clarifying_tools(has_semantic: bool, has_metric_tree: bool) -> Vec<ToolDef> {
     let mut tools = vec![
         ToolDef {
             name: "search_catalog",
@@ -181,6 +192,9 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
         tools.push(list_tables_tool_def());
         tools.push(describe_table_tool_def());
     }
+    // Metric-tree tools live in the dedicated `root_cause` handler, not
+    // here. See `triage_tools` comment for the architectural rationale.
+    let _ = has_metric_tree;
     tools
 }
 
@@ -191,7 +205,7 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
 ///
 /// When `has_semantic` is `true`, raw database tools (`list_tables`,
 /// `describe_table`) are excluded — same rationale as [`clarifying_tools`].
-pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
+pub fn specifying_tools(has_semantic: bool, has_metric_tree: bool) -> Vec<ToolDef> {
     let mut tools = vec![
         ToolDef {
             name: "search_catalog",
@@ -273,6 +287,8 @@ pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
         tools.push(list_tables_tool_def());
         tools.push(describe_table_tool_def());
     }
+    // Metric-tree tools live in the dedicated `root_cause` handler.
+    let _ = has_metric_tree;
     tools
 }
 
@@ -415,7 +431,10 @@ pub fn suggest_chart_config(
             x_axis_label: None,
             y_axis_label: None,
         }),
-        QuestionType::SingleValue | QuestionType::GeneralInquiry => None,
+        QuestionType::SingleValue
+        | QuestionType::GeneralInquiry
+        | QuestionType::RootCause
+        | QuestionType::Opportunity => None,
     }
 }
 
@@ -438,6 +457,206 @@ pub(super) fn list_tables_tool_def() -> ToolDef {
         }),
         ..Default::default()
     }
+}
+
+// ── Metric-tree tools ────────────────────────────────────────────────────────
+//
+// Surfaced when the workspace has a semantic layer AND a
+// `MetricTreeRunner` is wired in. The four tools cover the airlayer
+// metric-tree op surface:
+//
+// - `explain_metric`     — period-over-period root cause analysis
+// - `find_opportunities` — segment opportunity sizing
+// - `metric_sensitivity` — rank declared drivers of a measure
+// - `predict_impact`     — propagate hypothetical deltas through the tree
+//
+// Tool descriptions point the LLM at the right tool for the question
+// type: "why did X drop / change / spike" → explain_metric; "where can we
+// grow X / which segments underperform" → find_opportunities;
+// "what drives X" → metric_sensitivity; "if Y went up by 10% what
+// happens to Z" → predict_impact.
+
+const EXPLAIN_METRIC_DESC: &str = "Explain WHY a metric changed between two time periods. Use this for \
+     questions like 'why did revenue drop in Q1?', 'what caused the spike \
+     in churn last week?', 'what's behind the slowdown in signups?'. \
+     Walks the metric tree to find the smallest (component, dimension-segment) \
+     combinations that account for the change. Returns a ranked tree of \
+     splits with per-node concentration, plus driver attribution and warnings \
+     about Simpson's paradox / opposing offsets / non-additive measures.";
+
+const OPPORTUNITY_DESC: &str = "Size the upside opportunity for a metric. For each viable \
+     dimension of the target's view, picks a benchmark (best-performing peer \
+     for small dimensions, P75 once there are >=8 segments), measures every \
+     segment's gap to that benchmark, and ranks dimensions by total match-the-best \
+     upside. Use for 'how do we make more money?', 'where can we grow X?', \
+     'which segments underperform?'. Returns the top-K dimensions x top-K \
+     segments (with the long tail trimmed), each segment's gap and weighted \
+     upside, plus downstream effects propagated via the metric tree. \
+     High-cardinality dimensions (customer_id, order_id, etc.) and flat \
+     distributions are excluded automatically and reported in skipped_dimensions \
+     so you can describe what was and wasn't analysed.";
+
+const SENSITIVITY_DESC: &str = "List the declared drivers of a metric, ranked by influence. Use for \
+     questions like 'what drives revenue?', 'what affects churn?', 'what \
+     levers move X?'. Uses the metric tree's component + driver edges \
+     (with declared coefficients and functional forms) — does NOT fit \
+     coefficients from data. Returns each driver's path, effective \
+     coefficient (chain rule along the path), direction, strength, \
+     and lag.";
+
+const PREDICT_IMPACT_DESC: &str = "Propagate hypothetical changes through the metric tree. Use for \
+     'if we improve X by 10%, what happens to Y?' / 'what's the impact \
+     of cutting fuel cost by 5% on profit?'. Takes one or more (measure, \
+     delta) pairs and returns predicted impacts on every downstream \
+     measure, marked as 'exact' (component edges) or 'estimated' (driver \
+     edges with declared coefficients).";
+
+/// `ToolDef`s for the four metric-tree analysis tools.
+///
+/// Returned only when both a semantic layer and a `MetricTreeRunner`
+/// are present. The caller (`specifying_tools` / `clarifying_tools`)
+/// concatenates these into the per-state tool list.
+pub fn metric_tree_tools() -> Vec<ToolDef> {
+    vec![
+        ToolDef {
+            name: "explain_metric",
+            description: EXPLAIN_METRIC_DESC,
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Fully qualified measure id, e.g. 'orders.revenue'. Must come from search_catalog results."
+                    },
+                    "time_dimension": {
+                        "type": "string",
+                        "description": "Fully qualified time-dimension id used to partition the periods, e.g. 'orders.order_date'."
+                    },
+                    "current_period_start": {
+                        "type": "string",
+                        "description": "Inclusive start date of the period being explained (YYYY-MM-DD)."
+                    },
+                    "current_period_end": {
+                        "type": "string",
+                        "description": "Inclusive end date of the period being explained (YYYY-MM-DD)."
+                    },
+                    "previous_period_start": {
+                        "type": "string",
+                        "description": "Inclusive start date of the comparison/baseline period (YYYY-MM-DD)."
+                    },
+                    "previous_period_end": {
+                        "type": "string",
+                        "description": "Inclusive end date of the comparison/baseline period (YYYY-MM-DD)."
+                    },
+                    "deep": {
+                        "type": ["boolean", "null"],
+                        "description": "When true, run beam-search + statistical significance for higher-quality alternatives at higher query cost. Default false."
+                    }
+                },
+                "required": [
+                    "target", "time_dimension",
+                    "current_period_start", "current_period_end",
+                    "previous_period_start", "previous_period_end",
+                    "deep"
+                ],
+                "additionalProperties": false
+            }),
+            // strict=false: the four metric-tree tool schemas combined
+            // push the strict-mode compiled grammar past OpenAI's size
+            // cap on the specifying state's tool list. Descriptions still
+            // drive selection; runtime ToolError::BadParams catches any
+            // shape drift at dispatch.
+            strict: false,
+            ..Default::default()
+        },
+        ToolDef {
+            name: "find_opportunities",
+            description: OPPORTUNITY_DESC,
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Fully qualified measure id to optimize."
+                    },
+                    "time_dimension": {
+                        "type": "string",
+                        "description": "Fully qualified time-dimension id used to bound the analysis window."
+                    },
+                    "period_start": {
+                        "type": "string",
+                        "description": "Inclusive start date of the analysis window (YYYY-MM-DD)."
+                    },
+                    "period_end": {
+                        "type": "string",
+                        "description": "Inclusive end date of the analysis window (YYYY-MM-DD)."
+                    }
+                },
+                "required": ["target", "time_dimension", "period_start", "period_end"],
+                "additionalProperties": false
+            }),
+            strict: false,
+            ..Default::default()
+        },
+        ToolDef {
+            name: "metric_sensitivity",
+            description: SENSITIVITY_DESC,
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Fully qualified measure id whose drivers should be ranked."
+                    }
+                },
+                "required": ["target"],
+                "additionalProperties": false
+            }),
+            strict: false,
+            ..Default::default()
+        },
+        ToolDef {
+            name: "predict_impact",
+            description: PREDICT_IMPACT_DESC,
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "changes": {
+                        "type": "array",
+                        "description": "List of hypothetical changes to propagate. Each entry is a (measure, delta) pair.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "measure": { "type": "string" },
+                                "delta": { "type": "number" }
+                            },
+                            "required": ["measure", "delta"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["changes"],
+                "additionalProperties": false
+            }),
+            strict: false,
+            ..Default::default()
+        },
+    ]
+}
+
+/// Tool names exposed by [`metric_tree_tools`]. Routing in the solver
+/// uses this to detect a metric-tree dispatch without string-matching
+/// every call site.
+pub const METRIC_TREE_TOOL_NAMES: &[&str] = &[
+    "explain_metric",
+    "find_opportunities",
+    "metric_sensitivity",
+    "predict_impact",
+];
+
+/// True when `name` is one of the four metric-tree tool names.
+pub fn is_metric_tree_tool(name: &str) -> bool {
+    METRIC_TREE_TOOL_NAMES.contains(&name)
 }
 
 pub(super) fn describe_table_tool_def() -> ToolDef {
@@ -464,4 +683,74 @@ pub(super) fn describe_table_tool_def() -> ToolDef {
         }),
         ..Default::default()
     }
+}
+
+/// Tools for anomaly discovery and explanation, used inside the `RootCause` inquiry loop.
+pub fn anomaly_tools() -> Vec<ToolDef> {
+    vec![
+        ToolDef {
+            name: "list_anomalies",
+            description: "Check the anomaly inbox for previously detected anomalies matching \
+                          the given metric and time range. Call this first before running \
+                          on-the-fly detection.",
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "measure": { "type": "string", "description": "Measure name from the semantic layer" },
+                    "time_dimension": { "type": "string", "description": "Time dimension field" },
+                    "granularity": {
+                        "type": "string",
+                        "enum": ["day", "week", "month", "quarter"],
+                        "description": "Time granularity"
+                    },
+                    "period_start": { "type": "string", "description": "ISO 8601 date, e.g. 2024-01-01" },
+                    "period_end": { "type": "string", "description": "ISO 8601 date, e.g. 2024-01-31" }
+                },
+                "required": ["measure", "time_dimension", "granularity", "period_start", "period_end"],
+                "additionalProperties": false
+            }),
+            ..Default::default()
+        },
+        ToolDef {
+            name: "detect_anomalies",
+            description: "Fetch time-series data from the semantic layer and run anomaly \
+                          detection. Use when the inbox is empty or when the user asks \
+                          about a period not yet scanned. Results are persisted to the inbox.",
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "measure": { "type": "string", "description": "Measure name from the semantic layer" },
+                    "time_dimension": { "type": "string", "description": "Time dimension field" },
+                    "granularity": {
+                        "type": "string",
+                        "enum": ["day", "week", "month", "quarter"],
+                        "description": "Time granularity"
+                    },
+                    "period_start": { "type": "string", "description": "ISO 8601 date" },
+                    "period_end": { "type": "string", "description": "ISO 8601 date" }
+                },
+                "required": ["measure", "time_dimension", "granularity", "period_start", "period_end"],
+                "additionalProperties": false
+            }),
+            ..Default::default()
+        },
+        ToolDef {
+            name: "explain_anomaly",
+            description: "Run root-cause analysis on a specific anomaly using the metric tree. \
+                          Returns contributing dimensions and their impact magnitude. \
+                          Uses a cached result when available.",
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "anomaly_id": {
+                        "type": "string",
+                        "description": "UUID of the anomaly from list_anomalies or detect_anomalies"
+                    }
+                },
+                "required": ["anomaly_id"],
+                "additionalProperties": false
+            }),
+            ..Default::default()
+        },
+    ]
 }

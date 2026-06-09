@@ -12,6 +12,7 @@ use crate::engine::SemanticEngine;
 use crate::events::AnalyticsEvent;
 use crate::llm::{LlmClient, ThinkingConfig};
 use crate::metric_sink::SharedMetricSink;
+use crate::metric_tree_runner::MetricTreeRunner;
 use crate::semantic::SemanticCatalog;
 use crate::tools::{SchemaCache, new_schema_cache};
 use crate::validation::Validator;
@@ -68,6 +69,16 @@ pub struct AnalyticsSolver {
     /// When set, the executing stage delegates `SolutionSource::Procedure`
     /// solutions to this runner instead of the SQL connector.
     pub(crate) subrun_runner: Option<Arc<dyn SubrunRunner>>,
+    /// Optional metric-tree runner for `explain` / `opportunity` /
+    /// `sensitivity` / `predict` agent tools. `None` disables those tools
+    /// (CLI, tests, and contexts without a semantic layer).
+    pub(crate) metric_tree_runner: Option<Arc<dyn MetricTreeRunner>>,
+    /// Optional anomaly store for `list_anomalies` / `detect_anomalies` /
+    /// `explain_anomaly` tools inside the `RootCause` inquiry loop.
+    /// `None` disables those tools.
+    pub(crate) anomaly_store: Option<Arc<dyn crate::anomaly_store::AnomalyStore>>,
+    /// Workspace that owns this run. Used to scope anomaly store queries.
+    pub(crate) workspace_id: uuid::Uuid,
     /// Configured validator for all three pipeline stages.
     pub(crate) validator: Validator,
     /// Initial max output tokens per LLM call, sourced from `llm.max_tokens` in config.
@@ -155,6 +166,9 @@ impl AnalyticsSolver {
             suspension_data: None,
             resume_data: None,
             subrun_runner: None,
+            metric_tree_runner: None,
+            anomaly_store: None,
+            workspace_id: uuid::Uuid::nil(),
             validator: Validator::default_validator(),
             max_tokens: None,
             engine: None,
@@ -194,6 +208,9 @@ impl AnalyticsSolver {
             suspension_data: None,
             resume_data: None,
             subrun_runner: None,
+            metric_tree_runner: None,
+            anomaly_store: None,
+            workspace_id: uuid::Uuid::nil(),
             validator: Validator::default_validator(),
             max_tokens: None,
             engine: None,
@@ -307,6 +324,27 @@ impl AnalyticsSolver {
     /// Attach an external subrun runner for `SolutionSource::Procedure` solutions.
     pub fn with_subrun_runner(mut self, runner: Arc<dyn SubrunRunner>) -> Self {
         self.subrun_runner = Some(runner);
+        self
+    }
+
+    /// Attach a metric-tree runner for the `explain` / `opportunity` /
+    /// `sensitivity` / `predict` agent tools. Without one, those tools are
+    /// excluded from the tool list exposed to the LLM.
+    pub fn with_metric_tree_runner(mut self, runner: Arc<dyn MetricTreeRunner>) -> Self {
+        self.metric_tree_runner = Some(runner);
+        self
+    }
+
+    pub fn with_anomaly_store(
+        mut self,
+        store: Arc<dyn crate::anomaly_store::AnomalyStore>,
+    ) -> Self {
+        self.anomaly_store = Some(store);
+        self
+    }
+
+    pub fn with_workspace_id(mut self, workspace_id: uuid::Uuid) -> Self {
+        self.workspace_id = workspace_id;
         self
     }
 

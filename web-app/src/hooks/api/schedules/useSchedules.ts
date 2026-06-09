@@ -95,6 +95,7 @@ export const useRunScheduleNow = () => {
     mutationFn: (id: string) => ScheduleService.runNow(project.id, id),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: queryKeys.schedule.list(project.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.coordinator.all });
       toast.success(`Run started (${res.run_id.slice(0, 8)}…)`);
     },
     onError: (e: Error) => toast.error(`Failed to run schedule: ${e.message}`)

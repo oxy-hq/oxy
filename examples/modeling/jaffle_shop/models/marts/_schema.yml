@@ -1,0 +1,79 @@
+version: 2
+
+models:
+  - name: customers
+    description: >
+      Customer-level table with lifetime order summary metrics.
+      One row per customer.
+    columns:
+      - name: customer_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: first_name
+        description: Customer's first name.
+      - name: last_name
+        description: Customer's last name.
+      - name: first_order
+        description: Date of the customer's first order.
+      - name: most_recent_order
+        description: Date of the customer's most recent order.
+      - name: number_of_orders
+        description: Total number of orders placed by the customer.
+      - name: customer_lifetime_value
+        description: Total amount spent by the customer across all orders (in dollars).
+
+  - name: orders
+    description: >
+      Order-level table with payment breakdown by method.
+      One row per order.
+    columns:
+      - name: order_id
+        description: Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        description: Foreign key to the customers table.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+      - name: order_date
+        description: Date the order was placed.
+      - name: status
+        description: Current status of the order.
+        tests:
+          - accepted_values:
+              values: ["placed", "shipped", "completed", "return_pending", "returned"]
+      - name: amount
+        description: Total payment amount for this order (in dollars).
+
+  - name: payment_method_summary
+    description: >
+      Aggregated revenue and order metrics broken down by payment method.
+      One row per payment method.
+    columns:
+      - name: payment_method
+        description: Payment method used (credit_card, coupon, bank_transfer, gift_card).
+        tests:
+          - not_null
+          - unique
+      - name: order_count
+        description: Number of distinct orders that used this payment method.
+        tests:
+          - not_null
+      - name: payment_count
+        description: Total number of individual payments made with this method.
+        tests:
+          - not_null
+      - name: total_revenue
+        description: Total revenue (in dollars) collected via this payment method.
+        tests:
+          - not_null
+      - name: avg_payment_amount
+        description: Average individual payment amount (in dollars) for this method.
+      - name: revenue_pct
+        description: Percentage share of total revenue attributed to this payment method.

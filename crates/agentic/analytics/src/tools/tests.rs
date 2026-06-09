@@ -29,9 +29,9 @@ use super::{
 /// at runtime when the HTTP call fails with an opaque 400.
 #[test]
 fn all_tool_schemas_are_openai_strict_compatible() {
-    let all: Vec<ToolDef> = clarifying_tools(false)
+    let all: Vec<ToolDef> = clarifying_tools(false, false)
         .into_iter()
-        .chain(specifying_tools(false))
+        .chain(specifying_tools(false, false))
         .chain(solving_tools())
         .chain(interpreting_tools())
         .collect();
@@ -58,7 +58,7 @@ fn make_catalog() -> SchemaCatalog {
 
 #[test]
 fn clarifying_does_not_include_solving_tools() {
-    let tools = clarifying_tools(false);
+    let tools = clarifying_tools(false, false);
     let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
     assert!(
         !names.contains(&"execute_preview"),
@@ -82,7 +82,7 @@ fn solving_does_not_include_clarifying_tools() {
 
 #[test]
 fn specifying_does_not_include_solving_tools() {
-    let tools = specifying_tools(false);
+    let tools = specifying_tools(false, false);
     let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
     assert!(!names.contains(&"execute_preview"));
     assert!(!names.contains(&"update_chart_config"));
@@ -90,7 +90,10 @@ fn specifying_does_not_include_solving_tools() {
 
 #[test]
 fn specifying_contains_expected_tools() {
-    let names: Vec<&str> = specifying_tools(false).iter().map(|t| t.name).collect();
+    let names: Vec<&str> = specifying_tools(false, false)
+        .iter()
+        .map(|t| t.name)
+        .collect();
     assert!(names.contains(&"get_join_path"));
     assert!(names.contains(&"sample_columns"));
     // Catalog discovery tools moved from clarifying to specifying.
@@ -371,16 +374,28 @@ fn unknown_tool_in_clarifying_returns_error() {
 
 #[test]
 fn list_tables_tool_in_clarifying_and_specifying() {
-    let clar_names: Vec<&str> = clarifying_tools(false).iter().map(|t| t.name).collect();
-    let spec_names: Vec<&str> = specifying_tools(false).iter().map(|t| t.name).collect();
+    let clar_names: Vec<&str> = clarifying_tools(false, false)
+        .iter()
+        .map(|t| t.name)
+        .collect();
+    let spec_names: Vec<&str> = specifying_tools(false, false)
+        .iter()
+        .map(|t| t.name)
+        .collect();
     assert!(clar_names.contains(&"list_tables"));
     assert!(spec_names.contains(&"list_tables"));
 }
 
 #[test]
 fn describe_table_tool_in_clarifying_and_specifying() {
-    let clar_names: Vec<&str> = clarifying_tools(false).iter().map(|t| t.name).collect();
-    let spec_names: Vec<&str> = specifying_tools(false).iter().map(|t| t.name).collect();
+    let clar_names: Vec<&str> = clarifying_tools(false, false)
+        .iter()
+        .map(|t| t.name)
+        .collect();
+    let spec_names: Vec<&str> = specifying_tools(false, false)
+        .iter()
+        .map(|t| t.name)
+        .collect();
     assert!(clar_names.contains(&"describe_table"));
     assert!(spec_names.contains(&"describe_table"));
 }
@@ -394,8 +409,8 @@ fn list_tables_not_in_solving() {
 
 #[test]
 fn db_tools_excluded_when_has_semantic() {
-    let clar = clarifying_tools(true);
-    let spec = specifying_tools(true);
+    let clar = clarifying_tools(true, false);
+    let spec = specifying_tools(true, false);
     let clar_names: Vec<&str> = clar.iter().map(|t| t.name).collect();
     let spec_names: Vec<&str> = spec.iter().map(|t| t.name).collect();
     assert!(!clar_names.contains(&"list_tables"));
@@ -604,4 +619,311 @@ async fn describe_table_case_insensitive() {
     .await
     .unwrap();
     assert_eq!(result["table"], "orders");
+}
+
+// ── Anomaly tools ─────────────────────────────────────────────────────────
+
+#[test]
+fn anomaly_tools_are_openai_strict_compatible() {
+    use crate::tools::anomaly_tools;
+    let tools = anomaly_tools();
+    for tool in &tools {
+        let violations = validate_openai_strict_schema(&tool.parameters, tool.name);
+        assert!(
+            violations.is_empty(),
+            "tool '{}' violates OpenAI strict mode:\n  {}",
+            tool.name,
+            violations.join("\n  ")
+        );
+    }
+}
+
+#[test]
+fn anomaly_tools_returns_three_tools() {
+    use crate::tools::anomaly_tools;
+    assert_eq!(anomaly_tools().len(), 3);
+    let names: Vec<&str> = anomaly_tools().iter().map(|t| t.name).collect();
+    assert!(names.contains(&"list_anomalies"));
+    assert!(names.contains(&"detect_anomalies"));
+    assert!(names.contains(&"explain_anomaly"));
+}
+
+#[test]
+fn anomaly_tools_not_in_solving_tools() {
+    let solving = solving_tools();
+    let names: Vec<&str> = solving.iter().map(|t| t.name).collect();
+    assert!(!names.contains(&"list_anomalies"));
+    assert!(!names.contains(&"detect_anomalies"));
+    assert!(!names.contains(&"explain_anomaly"));
+}
+
+#[tokio::test]
+async fn list_anomalies_returns_empty_for_null_store() {
+    use crate::anomaly_store::{
+        AnomalyFilter, AnomalyRecord, AnomalyStoreError, DetectAndUpsertResult,
+    };
+    use crate::metric_tree_runner::MetricTreeRunnerError;
+    use crate::tools::{AnomalyToolContext, execute_anomaly_tool};
+    use airlayer::DatabaseConfig;
+    use airlayer::SemanticLayer;
+    use airlayer::engine::metric_tree_ops::{ExplainConfig, ExplainResult, OpportunityResult};
+
+    struct NullStore;
+    #[async_trait::async_trait]
+    impl crate::anomaly_store::AnomalyStore for NullStore {
+        async fn list(
+            &self,
+            _: uuid::Uuid,
+            _: AnomalyFilter,
+        ) -> Result<Vec<AnomalyRecord>, AnomalyStoreError> {
+            Ok(vec![])
+        }
+        async fn get(
+            &self,
+            _: uuid::Uuid,
+            _: uuid::Uuid,
+        ) -> Result<Option<AnomalyRecord>, AnomalyStoreError> {
+            Ok(None)
+        }
+        async fn detect_and_upsert(
+            &self,
+            _: uuid::Uuid,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: Vec<(String, f64)>,
+        ) -> Result<DetectAndUpsertResult, AnomalyStoreError> {
+            Ok(DetectAndUpsertResult {
+                anomalies: vec![],
+                total_observations: 0,
+                message: None,
+            })
+        }
+        async fn get_explain_cache(
+            &self,
+            _: uuid::Uuid,
+            _: uuid::Uuid,
+        ) -> Result<Option<serde_json::Value>, AnomalyStoreError> {
+            Ok(None)
+        }
+        async fn set_explain_cache(
+            &self,
+            _: uuid::Uuid,
+            _: uuid::Uuid,
+            _: serde_json::Value,
+        ) -> Result<(), AnomalyStoreError> {
+            Ok(())
+        }
+    }
+
+    struct NullRunner;
+    #[async_trait::async_trait]
+    impl crate::metric_tree_runner::MetricTreeRunner for NullRunner {
+        async fn load_layer(&self) -> Result<SemanticLayer, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::LayerLoad("test stub".into()))
+        }
+        async fn list_databases(&self) -> Vec<DatabaseConfig> {
+            vec![]
+        }
+        async fn run_explain(
+            &self,
+            _: String,
+            _: String,
+            _: (String, String),
+            _: (String, String),
+            _: ExplainConfig,
+        ) -> Result<ExplainResult, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::Op("test stub".into()))
+        }
+        async fn run_opportunity(
+            &self,
+            _: String,
+            _: String,
+            _: (String, String),
+        ) -> Result<OpportunityResult, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::Op("test stub".into()))
+        }
+        async fn get_dimension_values(
+            &self,
+            _: String,
+            _: String,
+            _: u32,
+        ) -> Result<Vec<String>, MetricTreeRunnerError> {
+            Ok(vec![])
+        }
+        async fn run_time_series(
+            &self,
+            _: String,
+            _: String,
+            _: String,
+            _: (String, String),
+            _: Vec<airlayer::engine::query::QueryFilter>,
+        ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
+            Ok(vec![])
+        }
+    }
+
+    let ctx = AnomalyToolContext {
+        workspace_id: uuid::Uuid::nil(),
+        store: &NullStore,
+        runner: &NullRunner,
+    };
+
+    let result = execute_anomaly_tool(
+        "list_anomalies",
+        serde_json::json!({
+            "measure": "revenue",
+            "time_dimension": "created_at",
+            "granularity": "day",
+            "period_start": "2024-01-01T00:00:00Z",
+            "period_end": "2024-01-31T00:00:00Z"
+        }),
+        &ctx,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result["count"], 0);
+    assert!(result["anomalies"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn detect_anomalies_returns_message_when_insufficient_data() {
+    use crate::anomaly_store::{
+        AnomalyFilter, AnomalyRecord, AnomalyStoreError, DetectAndUpsertResult,
+    };
+    use crate::metric_tree_runner::MetricTreeRunnerError;
+    use crate::tools::{AnomalyToolContext, execute_anomaly_tool};
+    use airlayer::DatabaseConfig;
+    use airlayer::SemanticLayer;
+    use airlayer::engine::metric_tree_ops::{ExplainConfig, ExplainResult, OpportunityResult};
+
+    struct ThinStore;
+    #[async_trait::async_trait]
+    impl crate::anomaly_store::AnomalyStore for ThinStore {
+        async fn list(
+            &self,
+            _: uuid::Uuid,
+            _: AnomalyFilter,
+        ) -> Result<Vec<AnomalyRecord>, AnomalyStoreError> {
+            Ok(vec![])
+        }
+        async fn get(
+            &self,
+            _: uuid::Uuid,
+            _: uuid::Uuid,
+        ) -> Result<Option<AnomalyRecord>, AnomalyStoreError> {
+            Ok(None)
+        }
+        async fn detect_and_upsert(
+            &self,
+            _: uuid::Uuid,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: Vec<(String, f64)>,
+        ) -> Result<DetectAndUpsertResult, AnomalyStoreError> {
+            // Simulate "not enough data" — return empty with a message.
+            Ok(DetectAndUpsertResult {
+                anomalies: vec![],
+                total_observations: 3,
+                message: Some("Not enough data: 3 observations, need at least 8".into()),
+            })
+        }
+        async fn get_explain_cache(
+            &self,
+            _: uuid::Uuid,
+            _: uuid::Uuid,
+        ) -> Result<Option<serde_json::Value>, AnomalyStoreError> {
+            Ok(None)
+        }
+        async fn set_explain_cache(
+            &self,
+            _: uuid::Uuid,
+            _: uuid::Uuid,
+            _: serde_json::Value,
+        ) -> Result<(), AnomalyStoreError> {
+            Ok(())
+        }
+    }
+
+    struct ThinRunner;
+    #[async_trait::async_trait]
+    impl crate::metric_tree_runner::MetricTreeRunner for ThinRunner {
+        async fn load_layer(&self) -> Result<SemanticLayer, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::LayerLoad("stub".into()))
+        }
+        async fn list_databases(&self) -> Vec<DatabaseConfig> {
+            vec![]
+        }
+        async fn run_explain(
+            &self,
+            _: String,
+            _: String,
+            _: (String, String),
+            _: (String, String),
+            _: ExplainConfig,
+        ) -> Result<ExplainResult, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::Op("stub".into()))
+        }
+        async fn run_opportunity(
+            &self,
+            _: String,
+            _: String,
+            _: (String, String),
+        ) -> Result<OpportunityResult, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::Op("stub".into()))
+        }
+        async fn get_dimension_values(
+            &self,
+            _: String,
+            _: String,
+            _: u32,
+        ) -> Result<Vec<String>, MetricTreeRunnerError> {
+            Ok(vec![])
+        }
+        async fn run_time_series(
+            &self,
+            _: String,
+            _: String,
+            _: String,
+            _: (String, String),
+            _: Vec<airlayer::engine::query::QueryFilter>,
+        ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
+            // Only 3 data points — not enough for weekly seasonality (needs ≥ 8).
+            Ok(vec![
+                ("2024-01-01T00:00:00Z".into(), 100.0),
+                ("2024-01-02T00:00:00Z".into(), 110.0),
+                ("2024-01-03T00:00:00Z".into(), 90.0),
+            ])
+        }
+    }
+
+    let ctx = AnomalyToolContext {
+        workspace_id: uuid::Uuid::nil(),
+        store: &ThinStore,
+        runner: &ThinRunner,
+    };
+
+    let result = execute_anomaly_tool(
+        "detect_anomalies",
+        serde_json::json!({
+            "measure": "revenue",
+            "time_dimension": "created_at",
+            "granularity": "day",
+            "period_start": "2024-01-01",
+            "period_end": "2024-01-31"
+        }),
+        &ctx,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result["count"], 0);
+    assert!(
+        result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Not enough data")
+    );
 }

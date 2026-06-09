@@ -1,0 +1,1 @@
+select * from "large.csv" limit 10000;

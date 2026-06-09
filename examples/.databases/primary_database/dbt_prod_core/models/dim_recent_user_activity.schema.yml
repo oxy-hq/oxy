@@ -1,0 +1,13 @@
+table: dbt_prod_core.dim_recent_user_activity
+database: primary_database
+dimensions:
+- name: id_user
+  type: STRING
+- name: email
+  type: STRING
+- name: name
+  type: STRING
+- name: organization_subdomain
+  type: STRING
+- name: ds_latest_visit
+  type: DATE

@@ -44,6 +44,8 @@ oxy-shared = { workspace = true }
 oxy-airlayer-compat = { workspace = true }
 strsim = { workspace = true }
 chrono = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [

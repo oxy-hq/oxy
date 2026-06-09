@@ -380,6 +380,7 @@ impl MeasureBuilder {
             filters: self.filters,
             samples: self.samples,
             synonyms: self.synonyms,
+            drivers: None,
         };
 
         let validation = measure.validate();

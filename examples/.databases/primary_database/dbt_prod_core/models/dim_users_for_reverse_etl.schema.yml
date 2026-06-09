@@ -1,0 +1,19 @@
+table: dbt_prod_core.dim_users_for_reverse_etl
+database: primary_database
+dimensions:
+- name: id_user
+  type: STRING
+- name: email
+  type: STRING
+- name: name
+  type: STRING
+- name: first_name
+  type: STRING
+- name: id_organization
+  type: STRING
+- name: organization_subdomain
+  type: STRING
+- name: ts_first_active
+  type: TIMESTAMP
+- name: ts_last_active
+  type: TIMESTAMP

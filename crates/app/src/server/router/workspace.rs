@@ -15,9 +15,9 @@ use agentic_http::{AgenticState, airway_router, router as agentic_router, workfl
 use crate::api::{
     agent, api_keys, app, apps, artifacts, chart, competitors, data, data_repo, database,
     execution_analytics, exported_chart, file, foot_traffic, integration, local_setup, message,
-    metrics, modeling, onboarding, result_files, run, schedules, semantic, task, test_file,
-    test_project_run, test_run, thread, traces, video, workspace_custom_apps, workspace_members,
-    workspace_oxy_access, workspaces, world_model,
+    metric_anomalies, metric_tree, metrics, modeling, onboarding, result_files, run, schedules,
+    semantic, task, test_file, test_project_run, test_run, thread, traces, video,
+    workspace_custom_apps, workspace_members, workspace_oxy_access, workspaces, world_model,
 };
 
 use super::AppState;
@@ -122,6 +122,40 @@ pub(super) fn build_workspace_routes(
         .route("/semantic/preagg-status", get(semantic::get_preagg_status))
         .route("/semantic/compile", post(semantic::compile_semantic_query))
         .route("/semantic", post(semantic::execute_semantic_query))
+        // Metric tree — structure + pure analysis ops over the semantic layer.
+        .route("/semantic/metric-tree", get(metric_tree::get_metric_tree))
+        .route(
+            "/semantic/metric-tree/{measure_id}/sensitivity",
+            get(metric_tree::get_sensitivity),
+        )
+        .route(
+            "/semantic/metric-tree/predict",
+            post(metric_tree::post_predict),
+        )
+        .route(
+            "/semantic/metric-tree/explain",
+            post(metric_tree::post_explain),
+        )
+        .route(
+            "/semantic/metric-tree/opportunity",
+            post(metric_tree::post_opportunity),
+        )
+        .route(
+            "/semantic/metric-tree/time-dimensions",
+            get(metric_tree::get_time_dimensions),
+        )
+        .route(
+            "/semantic/metric-tree/distribution",
+            post(metric_tree::post_distribution),
+        )
+        // Anomaly inbox — backed by oxy-metric-monitoring. Nested so the
+        // `Extension<Arc<AgenticState>>` layer scopes only to these routes
+        // (same pattern as `build_schedule_routes` below).
+        .route("/semantic/monitors", get(metric_anomalies::list_monitors))
+        .nest(
+            "/semantic/anomalies",
+            build_metric_anomaly_routes(agentic_state.clone()),
+        )
         .route(
             "/world-model/events",
             get(world_model::world_model_events_sse),
@@ -300,6 +334,22 @@ fn build_api_key_routes() -> Router<AppState> {
 /// handlers can use `WorkspaceAdmin` from `role_guards` (agentic-http is
 /// a lower layer and must not depend on `app`). AgenticState is attached
 /// as an Extension here so the handlers can extract it.
+fn build_metric_anomaly_routes(agentic_state: Arc<AgenticState>) -> Router<AppState> {
+    use axum::Extension;
+    Router::new()
+        .route("/", get(metric_anomalies::list_anomalies))
+        .route("/scan", post(metric_anomalies::run_scan))
+        .route(
+            "/{anomaly_id}/status",
+            post(metric_anomalies::update_status),
+        )
+        .route(
+            "/{anomaly_id}/explain",
+            post(metric_anomalies::explain_anomaly),
+        )
+        .layer(Extension(agentic_state))
+}
+
 fn build_schedule_routes(agentic_state: Arc<AgenticState>) -> Router<AppState> {
     use axum::Extension;
     Router::new()

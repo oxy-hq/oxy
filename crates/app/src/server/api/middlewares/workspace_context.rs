@@ -180,6 +180,11 @@ pub async fn workspace_middleware(
 
     let branch_id = Uuid::nil();
 
+    let agentic_db = app_state
+        .agentic_state
+        .as_ref()
+        .map(|s| std::sync::Arc::new(s.db.clone()));
+
     match authorize_workspace(workspace_id, user.id, &mut request).await? {
         Some(workspace_row) => {
             try_attach_workspace_manager(
@@ -190,6 +195,7 @@ pub async fn workspace_middleware(
                 user.id,
                 app_state.preagg_cache,
                 app_state.preagg_renewal_threshold_secs,
+                agentic_db,
                 &mut request,
             )
             .await?;
@@ -345,6 +351,7 @@ async fn try_attach_workspace_manager(
     user_id: Uuid,
     preagg_cache: Option<std::sync::Arc<std::sync::RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: Option<u64>,
+    db: Option<std::sync::Arc<sea_orm::DatabaseConnection>>,
     request: &mut Request<axum::body::Body>,
 ) -> Result<(), StatusCode> {
     // Branch name is validated inside `effective_workspace_path`. The helper
@@ -437,6 +444,9 @@ async fn try_attach_workspace_manager(
     }
     if let Some(secs) = preagg_renewal_threshold_secs {
         ctx = ctx.with_preagg_renewal_threshold_secs(secs);
+    }
+    if let Some(db) = db {
+        ctx = ctx.with_db(db);
     }
     // Also expose the cache + threshold directly to handlers via a typed
     // extension so endpoints like POST /semantic can resolve preagg without

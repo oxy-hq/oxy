@@ -1,0 +1,25 @@
+table: dbt_prod_core.dim_typeform_prequel_beta_signup_2
+database: primary_database
+dimensions:
+- name: email
+  type: STRING
+- name: full_name
+  type: STRING
+- name: company_name
+  type: STRING
+- name: favorite_features
+  type: STRING
+- name: primary_role
+  type: STRING
+- name: company_size
+  type: STRING
+- name: warehouses
+  type: STRING
+- name: id_response
+  type: STRING
+- name: ts
+  type: TIMESTAMP
+- name: ds
+  type: DATE
+- name: invite_sent
+  type: BOOL

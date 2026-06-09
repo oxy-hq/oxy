@@ -133,16 +133,13 @@ async fn attach_workspace_manager(
         })?;
 
     let mut builder = match WorkspaceBuilder::new(LOCAL_WORKSPACE_ID)
-        .with_workspace_path_and_fallback_config(&effective_path)
+        .with_workspace_path(&effective_path)
         .await
     {
         Ok(b) => b,
         Err(e) => {
-            tracing::warn!(
-                "local_context: builder init failed: {}, continuing without manager",
-                e
-            );
-            return Ok(());
+            tracing::error!("local_context: failed to load config.yml: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
 
