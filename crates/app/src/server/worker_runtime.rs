@@ -20,9 +20,11 @@ use std::sync::Arc;
 
 use agentic_runtime::background;
 use agentic_runtime::router::{
-    DEFAULT_LISTENER_KEEPALIVE_INTERVAL, PostgresTaskRouter, TaskRouter,
+    DEFAULT_LISTENER_KEEPALIVE_INTERVAL, PostgresTaskRouter, PostgresTaskRouterOptions, TaskRouter,
 };
-use oxy::database::client::{establish_connection, listener_factory_from_env};
+use oxy::database::client::{
+    establish_connection, listener_factory_from_env, listener_tls_verification_from_env,
+};
 use oxy_shared::errors::OxyError;
 use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
@@ -62,7 +64,19 @@ impl WorkerRuntime {
         // branching here.
         let factory = listener_factory_from_env()
             .map_err(|e| OxyError::RuntimeError(format!("listener factory: {e}")))?;
-        let (router_handle, router_cancel) = PostgresTaskRouter::start(db.clone(), factory);
+        // Match the connection pool's TLS strictness (OXY_DATABASE_SSL_MODE)
+        // so the listener's handshake succeeds where the pool's does — RDS
+        // and CloudNativePG CAs aren't in the Mozilla bundle.
+        let tls_verification = listener_tls_verification_from_env()
+            .map_err(|e| OxyError::RuntimeError(format!("listener tls mode: {e}")))?;
+        let (router_handle, router_cancel) = PostgresTaskRouter::start_with_options(
+            db.clone(),
+            factory,
+            PostgresTaskRouterOptions {
+                tls_verification,
+                ..Default::default()
+            },
+        );
         let router: Arc<dyn TaskRouter> = router_handle;
         tracing::info!(
             target: "agentic",

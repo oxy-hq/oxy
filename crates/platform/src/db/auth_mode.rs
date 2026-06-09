@@ -46,6 +46,15 @@ impl SslMode {
             ))),
         }
     }
+
+    /// Resolve the SSL mode from `OXY_DATABASE_SSL_MODE`, defaulting to
+    /// `require` when unset. Single source of truth shared by the
+    /// connection pool, the IAM config, and the task-router listener so
+    /// they can never disagree about TLS strictness.
+    pub(crate) fn from_env() -> Result<Self, OxyError> {
+        let raw = std::env::var("OXY_DATABASE_SSL_MODE").unwrap_or_else(|_| "require".to_string());
+        Self::parse(&raw)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -72,9 +81,7 @@ impl IamConfig {
         let database = require_var("OXY_DATABASE_NAME")?;
         let user = require_var("OXY_DATABASE_USER")?;
         let region = require_var("OXY_DATABASE_REGION")?;
-        let ssl_mode_raw =
-            std::env::var("OXY_DATABASE_SSL_MODE").unwrap_or_else(|_| "require".to_string());
-        let ssl_mode = SslMode::parse(&ssl_mode_raw)?;
+        let ssl_mode = SslMode::from_env()?;
         Ok(Self {
             host,
             port,

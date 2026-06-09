@@ -326,8 +326,20 @@ async fn new_agentic_state(
     // mid-stream).
     let factory = oxy::database::client::listener_factory_from_env()
         .map_err(|e| OxyError::RuntimeError(format!("listener factory: {e}")))?;
+    // Match the connection pool's TLS strictness (OXY_DATABASE_SSL_MODE) so
+    // the listener's handshake succeeds where the pool's does — RDS and
+    // CloudNativePG CAs aren't in the Mozilla bundle.
+    let tls_verification = oxy::database::client::listener_tls_verification_from_env()
+        .map_err(|e| OxyError::RuntimeError(format!("listener tls mode: {e}")))?;
     let (router_handle, router_cancel) =
-        agentic_runtime::router::PostgresTaskRouter::start(db.clone(), factory);
+        agentic_runtime::router::PostgresTaskRouter::start_with_options(
+            db.clone(),
+            factory,
+            agentic_runtime::router::PostgresTaskRouterOptions {
+                tls_verification,
+                ..Default::default()
+            },
+        );
     let router: Arc<dyn agentic_runtime::router::TaskRouter> = router_handle;
     // Tie the listener's lifetime to the same shutdown token as the
     // rest of the agentic state. Dropped CancellationToken would

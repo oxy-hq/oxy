@@ -415,6 +415,7 @@ async fn listener_keepalive_runs_silently_when_healthy() {
     let factory = PostgresTaskRouter::password_factory_from_url(&url).expect("valid url");
     let options = PostgresTaskRouterOptions {
         keepalive_interval: Duration::from_millis(100),
+        ..Default::default()
     };
     let (router, cancel) = PostgresTaskRouter::start_with_options(db.clone(), factory, options);
     // Let the listener establish and let several keepalive ticks fire.

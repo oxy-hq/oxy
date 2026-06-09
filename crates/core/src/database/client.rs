@@ -3,4 +3,5 @@
 //! import path so existing call sites compile unchanged.
 pub use oxy_platform::db::{
     DatabaseAuthMode, IamConfig, establish_connection, listener_factory_from_env,
+    listener_tls_verification_from_env,
 };

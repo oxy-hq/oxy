@@ -36,7 +36,7 @@
 mod postgres;
 pub use postgres::{
     DEFAULT_LISTENER_KEEPALIVE_INTERVAL, HEALTH_PROBE_CHANNEL, ListenerConfigFactory,
-    PostgresTaskRouter, PostgresTaskRouterOptions, TASK_ENQUEUED_CHANNEL,
+    PostgresTaskRouter, PostgresTaskRouterOptions, TASK_ENQUEUED_CHANNEL, TlsVerification,
 };
 
 use std::sync::Arc;

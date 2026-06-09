@@ -16,4 +16,4 @@ mod listener;
 
 pub use auth_mode::{DatabaseAuthMode, IamConfig};
 pub use client::establish_connection;
-pub use listener::listener_factory_from_env;
+pub use listener::{listener_factory_from_env, listener_tls_verification_from_env};

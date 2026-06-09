@@ -1353,7 +1353,42 @@ pub(super) fn build_specifying_handler()
                             // Guard against path traversal: reject any resolved
                             // path that escapes the workspace root (e.g. a path
                             // containing `..` that the LLM produced). This
-                            // mirrors the analogous check in the workflow domain.
+                            // mirrors the analogous check in the workflow domain
+                            // (`pipeline_ref::resolve_pipeline_ref`).
+                            //
+                            // The syntactic `..`-component check MUST come first
+                            // and is filesystem-independent: the target file
+                            // legitimately may not exist yet, and
+                            // `std::fs::canonicalize` errors on a missing path —
+                            // its `unwrap_or_else` fallback then leaves the `..`
+                            // segments in place, so a lexical `starts_with`
+                            // against the canonicalized workspace wrongly judges
+                            // `<ws>/../../etc/passwd.sql` as contained. (It only
+                            // appeared to work where the workspace sat behind a
+                            // symlink — e.g. macOS `/var`→`/private/var` — whose
+                            // prefix mismatch masked the bug; on a plain `/tmp`
+                            // it lets the traversal through.)
+                            if file_path
+                                .components()
+                                .any(|c| matches!(c, std::path::Component::ParentDir))
+                            {
+                                return TransitionResult::diagnosing(ProblemState::Diagnosing {
+                                    error: crate::AnalyticsError::FileReadError {
+                                        file_path: file_path.display().to_string(),
+                                        message: "path escapes workspace root".to_string(),
+                                    },
+                                    back: agentic_core::back_target::BackTarget::Clarify(
+                                        intent,
+                                        Default::default(),
+                                    ),
+                                });
+                            }
+
+                            // Defence-in-depth: even without `..` segments, a
+                            // symlink inside the workspace could point out of it.
+                            // Canonicalize both sides and require containment.
+                            // (Only meaningful when the target exists; harmless
+                            // otherwise.)
                             if let Some(ref ws) = solver.workspace_path {
                                 let canonical_ws =
                                     std::fs::canonicalize(ws).unwrap_or_else(|_| ws.clone());

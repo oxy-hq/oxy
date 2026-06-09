@@ -48,9 +48,19 @@
 //!
 //! Built once at construction via [`build_rustls_connector`] and
 //! shared across every reconnect. The actual TLS handshake fires only
-//! when the server offers it *and* the [`Config::ssl_mode`] permits
-//! it — `Disable` skips it entirely, `Prefer` falls back to plain on
-//! a plain-TCP server, `Require`/`VerifyFull` insist on TLS.
+//! when the server offers it *and* the [`tokio_postgres::Config::ssl_mode`]
+//! permits it — `Disable` skips it entirely, `Prefer` falls back to plain
+//! on a plain-TCP server, `Require` insists on TLS.
+//!
+//! Certificate *verification* strictness is a separate axis, set by
+//! [`TlsVerification`] and threaded in through
+//! [`PostgresTaskRouterOptions`]. It must match the connection pool's
+//! `OXY_DATABASE_SSL_MODE` handling: under `require` the pool encrypts
+//! without validating the certificate, so the listener does the same
+//! ([`TlsVerification::RequireNoVerify`]). Diverging here is what made
+//! the listener's handshake fail against AWS RDS (Amazon RDS CA) and
+//! in-cluster CloudNativePG (self-signed CA) while the pool connected
+//! fine — neither CA is in the Mozilla `webpki-roots` bundle.
 //!
 //! ## What we deliberately don't do
 //!
@@ -123,18 +133,42 @@ const MAX_RECONNECT_BACKOFF: Duration = Duration::from_secs(5);
 /// probe.
 pub const DEFAULT_LISTENER_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(300);
 
+/// TLS certificate-verification posture for the listener connection.
+///
+/// Mirrors the connection pool's `OXY_DATABASE_SSL_MODE` handling so the
+/// router and the pool agree on how strict to be. tokio-postgres
+/// delegates *all* certificate checking to the rustls connector, so this
+/// is the only place the listener's verification strictness is decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TlsVerification {
+    /// Encrypt but do not validate the server certificate. Matches libpq
+    /// `sslmode=require` / sqlx `PgSslMode::Require`. Required for servers
+    /// whose CA isn't in the Mozilla bundle — AWS RDS (Amazon RDS CA) and
+    /// in-cluster CloudNativePG (self-signed internal CA).
+    RequireNoVerify,
+    /// Full certificate chain + SAN/hostname verification against the
+    /// Mozilla root bundle. Matches `sslmode=verify-full`.
+    VerifyFull,
+}
+
 /// Tunables for [`PostgresTaskRouter::start_with_options`]. Use
 /// [`Default`] for production; tests override individual fields.
 #[derive(Debug, Clone)]
 pub struct PostgresTaskRouterOptions {
     /// See [`DEFAULT_LISTENER_KEEPALIVE_INTERVAL`].
     pub keepalive_interval: Duration,
+    /// TLS verification posture for the dedicated listener connection.
+    /// Production callers derive this from `OXY_DATABASE_SSL_MODE` (see
+    /// `listener_tls_verification_from_env` in the platform crate) so the
+    /// listener matches the pool. Defaults to [`TlsVerification::VerifyFull`].
+    pub tls_verification: TlsVerification,
 }
 
 impl Default for PostgresTaskRouterOptions {
     fn default() -> Self {
         Self {
             keepalive_interval: DEFAULT_LISTENER_KEEPALIVE_INTERVAL,
+            tls_verification: TlsVerification::VerifyFull,
         }
     }
 }
@@ -220,7 +254,7 @@ impl PostgresTaskRouter {
         });
 
         let listener_cancel = cancel.clone();
-        let tls = build_rustls_connector();
+        let tls = build_rustls_connector(options.tls_verification);
         tokio::spawn(async move {
             run_listener(
                 factory,
@@ -330,27 +364,115 @@ impl TaskRouter for PostgresTaskRouter {
     }
 }
 
-/// Build the shared rustls connector. Trust roots come from
-/// `webpki-roots` (Mozilla CA bundle) — sufficient for AWS RDS, which
-/// chains to public CAs. If we ever need to accept a private CA, this
-/// is the single place to load it.
+/// Build the shared rustls connector, honouring the requested
+/// [`TlsVerification`] posture so the listener matches the connection
+/// pool's `OXY_DATABASE_SSL_MODE` handling exactly.
+///
+/// - [`TlsVerification::VerifyFull`] verifies the full certificate chain
+///   + SAN/hostname against the `webpki-roots` Mozilla CA bundle.
+/// - [`TlsVerification::RequireNoVerify`] still encrypts (real TLS
+///   handshake, real session keys) but accepts any server certificate —
+///   matching libpq `sslmode=require` / sqlx `PgSslMode::Require`. This
+///   is mandatory for our deployments: AWS RDS presents the Amazon RDS
+///   CA and in-cluster CloudNativePG presents a self-signed internal CA,
+///   neither of which is in the Mozilla bundle. The pool connects to
+///   these same servers under `require` without validating the cert, so
+///   the listener must do the same or its handshake fails where the
+///   pool's succeeds.
 ///
 /// Rustls 0.23 requires an explicit crypto provider; we install
 /// `ring` as the process default. `install_default` errors on the
 /// second call but doesn't panic, so the `let _ =` is safe and lets
 /// multiple routers in the same process coexist (e.g. a test that
 /// constructs more than one).
-fn build_rustls_connector() -> MakeRustlsConnect {
+fn build_rustls_connector(verification: TlsVerification) -> MakeRustlsConnect {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let mut roots = rustls::RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-    let client_config = rustls::ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let client_config = match verification {
+        TlsVerification::VerifyFull => {
+            let mut roots = rustls::RootCertStore::empty();
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth()
+        }
+        TlsVerification::RequireNoVerify => {
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            rustls::ClientConfig::builder()
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(NoCertVerification::new(provider)))
+                .with_no_client_auth()
+        }
+    };
 
     MakeRustlsConnect::new(client_config)
+}
+
+/// rustls [`ServerCertVerifier`] that encrypts but does not validate the
+/// server's certificate — the rustls equivalent of libpq
+/// `sslmode=require`. The TLS handshake (key exchange + signature over
+/// the handshake transcript) is still performed and verified; only the
+/// certificate *chain / identity* check is skipped.
+///
+/// Used by [`TlsVerification::RequireNoVerify`]. See
+/// [`build_rustls_connector`] for why our RDS / CloudNativePG backends
+/// require this.
+#[derive(Debug)]
+struct NoCertVerification {
+    provider: Arc<rustls::crypto::CryptoProvider>,
+}
+
+impl NoCertVerification {
+    fn new(provider: Arc<rustls::crypto::CryptoProvider>) -> Self {
+        Self { provider }
+    }
+}
+
+impl rustls::client::danger::ServerCertVerifier for NoCertVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
 }
 
 /// Owns the dedicated listener connection. Reconnects with backoff
@@ -636,5 +758,44 @@ async fn listen_once(
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustls::client::danger::ServerCertVerifier;
+    use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+
+    /// `RequireNoVerify` must accept a certificate it cannot chain to any
+    /// trust root — that's the whole point. This is the regression guard
+    /// for the listener flapping `error performing TLS handshake` against
+    /// AWS RDS / CloudNativePG, whose CAs aren't in the Mozilla bundle.
+    #[test]
+    fn no_verify_verifier_accepts_untrusted_cert() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let verifier = NoCertVerification::new(provider);
+
+        // Bytes don't need to be a real cert — verify_server_cert must
+        // not look at them under the no-verify posture.
+        let cert = CertificateDer::from(vec![0x30, 0x00]);
+        let server_name =
+            ServerName::try_from("oxy-staging-postgres.example.com").expect("valid server name");
+
+        let result = verifier.verify_server_cert(&cert, &[], &server_name, &[], UnixTime::now());
+
+        assert!(
+            result.is_ok(),
+            "RequireNoVerify must accept an untrusted certificate; got {result:?}"
+        );
+    }
+
+    /// Both postures must build a connector without panicking (covers the
+    /// crypto-provider install + the dangerous verifier wiring).
+    #[test]
+    fn build_rustls_connector_builds_for_both_postures() {
+        let _ = build_rustls_connector(TlsVerification::RequireNoVerify);
+        let _ = build_rustls_connector(TlsVerification::VerifyFull);
     }
 }

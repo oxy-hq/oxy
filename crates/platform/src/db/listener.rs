@@ -32,7 +32,7 @@
 
 use std::sync::Arc;
 
-use agentic_runtime::router::{ListenerConfigFactory, PostgresTaskRouter};
+use agentic_runtime::router::{ListenerConfigFactory, PostgresTaskRouter, TlsVerification};
 use oxy_shared::errors::OxyError;
 use tokio_postgres::config::SslMode as PgSslMode;
 
@@ -48,6 +48,23 @@ pub fn listener_factory_from_env() -> Result<ListenerConfigFactory, OxyError> {
         DatabaseAuthMode::Password => password_factory_from_env(),
         DatabaseAuthMode::Iam => Ok(iam_factory(IamConfig::from_env()?)),
     }
+}
+
+/// Resolve the listener's TLS certificate-verification posture from
+/// `OXY_DATABASE_SSL_MODE`, mapping it onto the router's
+/// [`TlsVerification`].
+///
+/// This is the companion to [`listener_factory_from_env`]: it reads the
+/// *same* env var (and default, `require`) the connection pool uses, so
+/// the router's dedicated LISTEN connection is exactly as strict as the
+/// pool. `require` → [`TlsVerification::RequireNoVerify`] (encrypt, don't
+/// validate the cert — our RDS and CloudNativePG CAs aren't in the
+/// Mozilla bundle); `verify-full` → [`TlsVerification::VerifyFull`].
+pub fn listener_tls_verification_from_env() -> Result<TlsVerification, OxyError> {
+    Ok(match SslMode::from_env()? {
+        SslMode::Require => TlsVerification::RequireNoVerify,
+        SslMode::VerifyFull => TlsVerification::VerifyFull,
+    })
 }
 
 fn password_factory_from_env() -> Result<ListenerConfigFactory, OxyError> {
@@ -71,13 +88,12 @@ fn password_factory_from_env() -> Result<ListenerConfigFactory, OxyError> {
 /// failover events.
 ///
 /// `SslMode::VerifyFull` and `SslMode::Require` both map to
-/// `tokio_postgres::SslMode::Require`. The hostname / cert chain
-/// verification difference normally signalled by libpq's `VerifyFull`
-/// is enforced at the rustls layer inside
-/// `agentic_runtime::router`'s `build_rustls_connector` — that
-/// connector uses `with_root_certificates(...)` which performs full
-/// chain + SAN/hostname verification unconditionally. We're always
-/// strict; both modes get the same TLS behaviour.
+/// `tokio_postgres::SslMode::Require` at the tokio-postgres layer
+/// (tokio-postgres only decides *whether* to do TLS, not how strictly to
+/// verify). The verification *strictness* is decided separately by the
+/// router's rustls connector via [`listener_tls_verification_from_env`]:
+/// `require` skips certificate validation (matching the pool), and
+/// `verify-full` enforces full chain + SAN/hostname verification.
 fn iam_factory(config: IamConfig) -> ListenerConfigFactory {
     Arc::new(move || {
         let config = config.clone();
@@ -132,13 +148,39 @@ mod tests {
 
     #[test]
     fn verify_full_maps_to_require_at_tokio_postgres_layer() {
-        // VerifyFull is enforced by rustls (always), not by the
-        // tokio_postgres ssl_mode field. Both map to Require here;
-        // strictness comes from `build_rustls_connector` in the router.
+        // Both SSL modes map to tokio_postgres `Require` (TLS on/off
+        // only). The verify-full vs require *strictness* is decided by
+        // the router's rustls connector via
+        // `listener_tls_verification_from_env`, not by this field.
         let mut cfg = fake_iam_config();
         cfg.ssl_mode = SslMode::VerifyFull;
         let pg = build_iam_config(&cfg, "fake-token");
         assert_eq!(pg.get_ssl_mode(), PgSslMode::Require);
+    }
+
+    #[test]
+    #[serial]
+    fn tls_verification_maps_require_to_no_verify_by_default() {
+        clear_env();
+        // Unset OXY_DATABASE_SSL_MODE defaults to `require`, which must
+        // map to the no-verify posture so the listener matches the pool.
+        match listener_tls_verification_from_env() {
+            Ok(v) => assert_eq!(v, TlsVerification::RequireNoVerify),
+            Err(e) => panic!("expected RequireNoVerify, got error: {e}"),
+        }
+        clear_env();
+    }
+
+    #[test]
+    #[serial]
+    fn tls_verification_maps_verify_full() {
+        clear_env();
+        unsafe { std::env::set_var("OXY_DATABASE_SSL_MODE", "verify-full") };
+        match listener_tls_verification_from_env() {
+            Ok(v) => assert_eq!(v, TlsVerification::VerifyFull),
+            Err(e) => panic!("expected VerifyFull, got error: {e}"),
+        }
+        clear_env();
     }
 
     // The env-var dispatch tests are `#[serial]` because they read
