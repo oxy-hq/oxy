@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - *(preagg)* Restore fallback config in serve workspace builder (#2407 regression, fixes 0.5.70 crash-loop) (#2484)
 
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.71 (#2485)
+
 ## [0.5.70] - 2026-06-09
 
 ### 🚀 Features
