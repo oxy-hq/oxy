@@ -98,10 +98,10 @@ def _path_config_for(rtsp_url: str) -> dict[str, Any]:
                                   audio for analytics.
       - `-fflags +discardcorrupt` etc. — survive occasional packet
                                           corruption without dying.
-      - `-rw_timeout 5000000`  — 5s I/O read timeout (microseconds). The
-                                  critical reliability flag. UniFi Protect
-                                  RTSP over a public IP can *stall* — the
-                                  TCP socket stays open but RTP stops
+      - `-timeout 5000000`     — 5s socket TCP I/O timeout (microseconds).
+                                  The critical reliability flag. UniFi
+                                  Protect RTSP over a public IP can *stall*
+                                  — the TCP socket stays open but RTP stops
                                   arriving (NVR hiccup, NAT idle-timeout,
                                   Protect re-keying). Without a timeout
                                   ffmpeg blocks forever, never exits, and
@@ -111,13 +111,18 @@ def _path_config_for(rtsp_url: str) -> dict[str, Any]:
                                   5s is well above the keyframe interval so
                                   it won't false-trigger on normal GOP gaps,
                                   but turns a stall into a clean exit →
-                                  restart → reconnect loop.
+                                  restart → reconnect loop. (This is the
+                                  RTSP demuxer's socket-timeout option,
+                                  formerly `-stimeout`; the protocol-level
+                                  `-rw_timeout` is NOT accepted by the RTSP
+                                  demuxer and errors with "Option not
+                                  found".)
     """
     return {
         "source": "publisher",
         "runOnInit": (
             "ffmpeg -nostdin -hide_banner -loglevel warning "
-            "-rtsp_transport tcp -rw_timeout 5000000 "
+            "-rtsp_transport tcp -timeout 5000000 "
             "-fflags +discardcorrupt -err_detect ignore_err "
             f"-i {rtsp_url} "
             "-map 0:v:0 -c:v copy -an "
