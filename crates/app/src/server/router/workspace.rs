@@ -261,6 +261,17 @@ pub(super) fn build_external_workspace_routes(
             "/world-model/competitors",
             post(competitors::get_competitors),
         )
+        // Anomaly monitoring: list and update status — used by standalone apps
+        // (e.g. world-model-app) that can't reach the internal /api surface.
+        // Nested with an explicit Extension layer because both handlers extract
+        // Arc<AgenticState> for db access (same pattern as build_metric_anomaly_routes).
+        .nest("/semantic/anomalies", {
+            use axum::Extension;
+            Router::new()
+                .route("/", get(metric_anomalies::list_anomalies))
+                .route("/{id}/status", post(metric_anomalies::update_status))
+                .layer(Extension(agentic_state.clone()))
+        })
         // Agentic analytics: POST /analytics/runs, the SSE events stream,
         // /answer, /cancel, /threads/* — the chat surface external apps drive.
         .nest("/analytics", agentic_router(agentic_state))
