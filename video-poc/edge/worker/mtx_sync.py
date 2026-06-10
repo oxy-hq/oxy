@@ -98,12 +98,26 @@ def _path_config_for(rtsp_url: str) -> dict[str, Any]:
                                   audio for analytics.
       - `-fflags +discardcorrupt` etc. — survive occasional packet
                                           corruption without dying.
+      - `-rw_timeout 5000000`  — 5s I/O read timeout (microseconds). The
+                                  critical reliability flag. UniFi Protect
+                                  RTSP over a public IP can *stall* — the
+                                  TCP socket stays open but RTP stops
+                                  arriving (NVR hiccup, NAT idle-timeout,
+                                  Protect re-keying). Without a timeout
+                                  ffmpeg blocks forever, never exits, and
+                                  `runOnInitRestart` (which only fires on
+                                  exit) never revives it — the path sits
+                                  at `source:null` until a manual restart.
+                                  5s is well above the keyframe interval so
+                                  it won't false-trigger on normal GOP gaps,
+                                  but turns a stall into a clean exit →
+                                  restart → reconnect loop.
     """
     return {
         "source": "publisher",
         "runOnInit": (
             "ffmpeg -nostdin -hide_banner -loglevel warning "
-            "-rtsp_transport tcp "
+            "-rtsp_transport tcp -rw_timeout 5000000 "
             "-fflags +discardcorrupt -err_detect ignore_err "
             f"-i {rtsp_url} "
             "-map 0:v:0 -c:v copy -an "
@@ -121,6 +135,33 @@ def _desired_paths(cameras: Iterable[CameraConfig]) -> dict[str, dict[str, Any]]
             continue
         out[path_name_for(cam.id)] = _path_config_for(cam.rtsp_url)
     return out
+
+
+# Set to False to disable drift correction (revert to add-only behaviour).
+# When True, a managed path whose stored `runOnInit` no longer matches the
+# command we'd generate for the camera (e.g. the UniFi Protect RTSP alias
+# rotated, changing the embedded source URL) is rebuilt via delete+add on
+# the next poll, instead of silently running the stale command until a
+# manual MTX restart. We compare stored-vs-desired and only touch paths
+# that actually drifted, so healthy streams aren't needlessly bounced.
+REPLACE_ON_DRIFT = True
+
+
+def _drifted_paths(
+    desired: dict[str, dict[str, Any]],
+    current_by_name: dict[str, dict[str, Any]],
+) -> set[str]:
+    """Names present in both sides whose stored `runOnInit` differs from
+    what we'd generate now. The source URL is embedded in that command
+    string, so a changed RTSP alias shows up here as drift.
+    """
+    drifted: set[str] = set()
+    for name in desired.keys() & current_by_name.keys():
+        stored = (current_by_name[name].get("runOnInit") or "").strip()
+        wanted = (desired[name].get("runOnInit") or "").strip()
+        if stored != wanted:
+            drifted.add(name)
+    return drifted
 
 
 async def reconcile(client: MtxClient, cameras: Iterable[CameraConfig]) -> None:
@@ -141,34 +182,33 @@ async def reconcile(client: MtxClient, cameras: Iterable[CameraConfig]) -> None:
         )
         return
 
-    current_managed: set[str] = {
-        p["name"]
+    current_by_name: dict[str, dict[str, Any]] = {
+        p["name"]: p
         for p in current
         if isinstance(p.get("name"), str) and is_managed_path(p["name"])
     }
+    current_managed = set(current_by_name.keys())
     desired_names = set(desired.keys())
 
-    # Add missing paths. We don't try to detect drift on `keep` here —
-    # if MTX has a path but the source URL differs from what we want
-    # (e.g. camera's rtsp_url changed), `add` will 409 and we'd need
-    # delete-then-add. Acceptable for v1: source URLs are stable after
-    # UniFi import; if they change we can flip the flag below to true.
-    REPLACE_ON_DRIFT = False  # set to True if source URLs start drifting
-
+    # Add missing paths.
     for name in sorted(desired_names - current_managed):
         try:
             await client.add_path(name, desired[name])
         except MtxApiError as e:
             log("warn", "mtx.path_add_failed", name=name, error=str(e))
 
-    if REPLACE_ON_DRIFT:
-        # With the ffmpeg-as-source shape we can no longer cheaply
-        # diff "source URL" against MTX's stored config because the
-        # URL is embedded in the runOnInit command string. If drift
-        # detection ever becomes necessary, the simplest path is to
-        # always delete+add managed paths on every reconcile (idempotent
-        # but a hair heavier). Out of scope for the v1 flag.
-        log("warn", "mtx.drift_detection_disabled", note="see comment in mtx_sync.py")
+    # Replace drifted paths (changed source URL → stale runOnInit command).
+    # Only paths whose stored command differs are rebuilt; healthy paths are
+    # left running so we don't blip live previews on every poll.
+    drifted: set[str] = (
+        _drifted_paths(desired, current_by_name) if REPLACE_ON_DRIFT else set()
+    )
+    for name in sorted(drifted):
+        try:
+            await client.delete_path(name)
+            await client.add_path(name, desired[name])
+        except MtxApiError as e:
+            log("warn", "mtx.path_replace_failed", name=name, error=str(e))
 
     # Remove paths for cameras we no longer manage. Only touch
     # things under our prefix; hand-managed paths in mediamtx.yml
@@ -183,6 +223,7 @@ async def reconcile(client: MtxClient, cameras: Iterable[CameraConfig]) -> None:
         "info",
         "mtx.sync_complete",
         added=len(desired_names - current_managed),
-        kept=len(desired_names & current_managed),
+        kept=len(desired_names & current_managed) - len(drifted),
+        replaced=len(drifted),
         removed=len(current_managed - desired_names),
     )
