@@ -90,3 +90,13 @@ where
 {
     operator::routes::<S>().layer(Extension(db))
 }
+
+/// Live-stream subtree for the EXTERNAL API surface. Nested by the app
+/// crate under `/{workspace_id}/world-model/camera-stream` behind
+/// API-key-only auth.
+pub fn external_stream_routes<S>(db: DatabaseConnection) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    operator::external_stream_routes::<S>().layer(Extension(db))
+}

@@ -7,9 +7,7 @@
 //! workspace from receiving another workspace's order ripples / camera events
 //! once the route is exposed on the multi-tenant cloud + external routers.
 
-use axum::Json;
 use axum::extract::Path;
-use axum::http::StatusCode;
 use axum::response::sse::{KeepAlive, Sse};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -19,7 +17,6 @@ use std::sync::OnceLock;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::router::WorkspaceExtractor;
 
 /// Camera state-change event (from the UniFi watcher). Surfaces in the
@@ -34,6 +31,36 @@ pub struct CameraStateEvent {
     pub status: String,
 }
 
+/// Compliance report ingested from the edge worker. `type` is
+/// `compliance_violation` when the verdict is non-compliant, else
+/// `compliance_report` — alert on the former, tick a live detection
+/// counter on the latter.
+#[derive(Debug, Clone, Serialize)]
+pub struct ComplianceEvent {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub camera_id: String,
+    pub report_id: String,
+    pub violation: bool,
+    pub missing_items: Vec<String>,
+    pub confidence: Option<f64>,
+    pub segment_start: DateTime<Utc>,
+    pub segment_end: DateTime<Utc>,
+    pub ts: DateTime<Utc>,
+}
+
+/// Camera health transition from the alerter tick (`ok`/`degraded`/`stale`).
+#[derive(Debug, Clone, Serialize)]
+pub struct CameraHealthEvent {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub camera_id: String,
+    pub from: String,
+    pub to: String,
+    pub reason: String,
+    pub ts: DateTime<Utc>,
+}
+
 /// Tagged union the SSE channel actually broadcasts. Lets one channel carry
 /// both order ripples and camera transitions without a second handler.
 #[derive(Debug, Clone, Serialize)]
@@ -41,6 +68,8 @@ pub struct CameraStateEvent {
 pub enum WorldModelEvent {
     Order(OrderEvent),
     Camera(CameraStateEvent),
+    Compliance(ComplianceEvent),
+    Health(CameraHealthEvent),
 }
 
 /// One ripple's worth of data — what the world-model app needs to draw a
@@ -88,6 +117,55 @@ pub fn publish_camera_event(workspace_id: Uuid, event: CameraStateEvent) {
     let _ = bus_for(workspace_id).send(WorldModelEvent::Camera(event));
 }
 
+/// Bridges `oxy_cameras` domain events onto the bus. Registered once at
+/// startup (entry.rs) via the cameras crate's `service::events` sink —
+/// that crate can't depend on this one.
+pub fn publish_camera_domain_event(
+    workspace_id: Uuid,
+    event: oxy_cameras::service::events::CameraDomainEvent,
+) {
+    use oxy_cameras::service::events::CameraDomainEvent;
+    let event = match event {
+        CameraDomainEvent::ComplianceReport {
+            camera_id,
+            report_id,
+            violation,
+            missing_items,
+            confidence,
+            segment_start,
+            segment_end,
+        } => WorldModelEvent::Compliance(ComplianceEvent {
+            kind: if violation {
+                "compliance_violation"
+            } else {
+                "compliance_report"
+            },
+            camera_id: camera_id.to_string(),
+            report_id: report_id.to_string(),
+            violation,
+            missing_items,
+            confidence,
+            segment_start,
+            segment_end,
+            ts: Utc::now(),
+        }),
+        CameraDomainEvent::HealthTransition {
+            camera_id,
+            from,
+            to,
+            reason,
+        } => WorldModelEvent::Health(CameraHealthEvent {
+            kind: "camera_health",
+            camera_id: camera_id.to_string(),
+            from,
+            to,
+            reason,
+            ts: Utc::now(),
+        }),
+    };
+    let _ = bus_for(workspace_id).send(event);
+}
+
 #[derive(Deserialize)]
 pub struct WorkspacePath {
     pub workspace_id: Uuid,
@@ -115,78 +193,4 @@ pub async fn world_model_events_sse(
         receiver,
     ))
     .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
-}
-
-/// Workspace object inventory for the Graph-mode ribbon.
-#[derive(Debug, Serialize)]
-pub struct WorldModelObjects {
-    /// Number of analytics agents (`*.agentic.yml`).
-    pub agents: usize,
-    /// Number of data apps (`*.app.yml`).
-    pub apps: usize,
-    /// Number of semantic views (`semantics/views/*.view.yml`).
-    pub views: usize,
-    /// Number of semantic topics (`semantics/topics/*.topic.yml`).
-    pub topics: usize,
-    /// `agents + apps + views + topics` — the single "objects" total.
-    pub objects: usize,
-}
-
-/// Count files directly under `dir` whose name ends with `ext`. Missing dir or
-/// a read error yields 0 — the ribbon prefers a 0 over erroring the request.
-fn count_files_with_ext(dir: &std::path::Path, ext: &str) -> usize {
-    std::fs::read_dir(dir)
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter(|e| {
-                    e.path()
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.ends_with(ext))
-                })
-                .count()
-        })
-        .unwrap_or(0)
-}
-
-/// `GET /api/{workspace_id}/world-model/objects`
-///
-/// Counts the agents, data apps, semantic views, and semantic topics defined in
-/// the project so the world-model app's Graph ribbon can show a real inventory.
-/// Mirrors the IDE's `/agents` + `/apps` lists and the `semantics/{views,topics}`
-/// file scan, but lives on the world-model surface so it's reachable from the
-/// external API-key router too (the IDE list endpoints are not).
-///
-/// A failure to enumerate any kind degrades that count to 0 rather than
-/// erroring the whole request, matching the "show what we can" ribbon ethos.
-pub async fn world_model_objects(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-) -> Result<Json<WorldModelObjects>, (StatusCode, String)> {
-    let config_manager = &workspace_manager.config_manager;
-    let agents = config_manager
-        .list_analytics_agents()
-        .await
-        .map(|paths| paths.len())
-        .unwrap_or(0);
-    let apps = config_manager
-        .list_apps()
-        .await
-        .map(|paths| paths.len())
-        .unwrap_or(0);
-
-    // Semantic views/topics have no list-all endpoint, so scan the
-    // `semantics/{views,topics}` dirs the same way the CLI's
-    // `list_semantic_files` does.
-    let semantics = config_manager.semantics_path();
-    let views = count_files_with_ext(&semantics.join("views"), ".view.yml");
-    let topics = count_files_with_ext(&semantics.join("topics"), ".topic.yml");
-
-    Ok(Json(WorldModelObjects {
-        agents,
-        apps,
-        views,
-        topics,
-        objects: agents + apps + views + topics,
-    }))
 }

@@ -2102,6 +2102,117 @@ async fn unifi_import(
     }
 }
 
+// ── External API surface ────────────────────────────────────────────────────
+
+/// Live-stream subtree for the EXTERNAL API surface: registry list, WHEP
+/// signaling, HLS proxy, compliance + alert reads. Reuses the operator
+/// handlers above where the full DTO is safe to expose.
+pub fn external_stream_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new()
+        .route("/registry", get(list_stream_registry))
+        .route("/compliance-summary", get(get_fleet_compliance_summary))
+        .route("/alerts", get(get_recent_alerts))
+        .route("/{cam_id}/webrtc-session", post(post_webrtc_session))
+        .route("/{cam_id}/hls/{*tail}", get(get_hls))
+        .route(
+            "/{cam_id}/compliance-reports",
+            get(list_stream_compliance_reports),
+        )
+}
+
+/// Identity + join-key fields only — not [`CameraSummaryDto`], which would
+/// leak `rtsp_url` / `credentials_ref` to API-key holders.
+#[derive(serde::Serialize)]
+struct StreamRegistryEntryDto {
+    id: Uuid,
+    name: String,
+    site_name: String,
+    protect_camera_id: Option<String>,
+    mac_address: Option<String>,
+    online: Option<bool>,
+    edge_box_status: Option<String>,
+}
+
+/// Verdict + evidence window only — drops `report_text`, `frame_uri`,
+/// `evidence_s3_key`, token counts, and the YOLO bbox envelope.
+#[derive(serde::Serialize)]
+struct StreamComplianceReportDto {
+    report_id: String,
+    camera_id: String,
+    segment_start: chrono::DateTime<chrono::Utc>,
+    segment_end: chrono::DateTime<chrono::Utc>,
+    trigger_type: String,
+    structured_json: serde_json::Value,
+    agreement_status: Option<String>,
+    received_at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn list_stream_compliance_reports(
+    Extension(db): Extension<DatabaseConnection>,
+    Path(WorkspaceCameraPath {
+        workspace_id,
+        cam_id,
+    }): Path<WorkspaceCameraPath>,
+    Query(ComplianceListQuery { since, limit }): Query<ComplianceListQuery>,
+) -> Response {
+    let since_dt = match since {
+        None => None,
+        Some(s) => match chrono::DateTime::parse_from_rfc3339(&s) {
+            Ok(dt) => Some(dt.with_timezone(&chrono::Utc)),
+            Err(e) => {
+                return map_err(crate::service::ServiceError::InvalidInput(format!(
+                    "invalid `since` (expected RFC 3339): {e}"
+                )));
+            }
+        },
+    };
+    let limit = limit.unwrap_or(compliance::DEFAULT_LIST_LIMIT);
+    match compliance::list_for_camera(&db, workspace_id, cam_id, since_dt, limit).await {
+        Ok(rows) => Json(
+            rows.into_iter()
+                .map(|r| StreamComplianceReportDto {
+                    report_id: r.report_id,
+                    camera_id: r.camera_id,
+                    segment_start: r.segment_start,
+                    segment_end: r.segment_end,
+                    trigger_type: r.trigger_type,
+                    structured_json: r.structured_json,
+                    agreement_status: r.agreement_status,
+                    received_at: r.received_at,
+                })
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(e) => map_err(e),
+    }
+}
+
+async fn list_stream_registry(
+    Extension(db): Extension<DatabaseConnection>,
+    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
+) -> Response {
+    match listing::list_cameras(&db, workspace_id).await {
+        Ok(rows) => Json(
+            rows.into_iter()
+                .map(|r| StreamRegistryEntryDto {
+                    id: r.camera.id,
+                    name: r.camera.name,
+                    site_name: r.site_name,
+                    protect_camera_id: r.camera.protect_camera_id,
+                    mac_address: r.camera.mac_address,
+                    online: r.camera.online,
+                    edge_box_status: r.edge_box_status,
+                })
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(e) => map_err(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

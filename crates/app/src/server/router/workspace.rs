@@ -162,10 +162,6 @@ pub(super) fn build_workspace_routes(
         )
         .route("/world-model/cameras", get(video::list_cameras))
         .route(
-            "/world-model/objects",
-            get(world_model::world_model_objects),
-        )
-        .route(
             "/world-model/weather/{layer}/{z}/{x}/{y}",
             get(video::weather_tile),
         )
@@ -238,9 +234,12 @@ pub(super) fn build_external_workspace_routes(
             get(world_model::world_model_events_sse),
         )
         .route("/world-model/cameras", get(video::list_cameras))
-        .route(
-            "/world-model/objects",
-            get(world_model::world_model_objects),
+        // Camera live streaming for standalone apps: registry, WHEP
+        // signaling, HLS proxy. Same handlers as the operator tree —
+        // only the auth wrapper differs.
+        .nest(
+            "/world-model/camera-stream",
+            oxy_cameras::routes::external_stream_routes::<AppState>(agentic_state.db.clone()),
         )
         .route(
             "/world-model/weather/{layer}/{z}/{x}/{y}",

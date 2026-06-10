@@ -389,6 +389,17 @@ pub async fn alerter_tick(db: &DatabaseConnection, state: &mut AlertState) -> Se
             )
             .await;
 
+            // Live fan-out (world-model SSE), independent of Slack delivery.
+            crate::service::events::emit(
+                workspace_id,
+                crate::service::events::CameraDomainEvent::HealthTransition {
+                    camera_id: row.camera_id,
+                    from: prev.clone(),
+                    to: row.status.clone(),
+                    reason: row.reason.clone(),
+                },
+            );
+
             if delivered == Some(true) {
                 state.last_alert_at.insert(key, now);
                 info!(

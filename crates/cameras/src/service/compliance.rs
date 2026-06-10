@@ -147,6 +147,34 @@ pub async fn write_reports(
     client.simple_query(&sql).await.map_err(|e| {
         ServiceError::Airhouse(crate::airhouse::AirhouseError::Insert(e.to_string()))
     })?;
+
+    // Live fan-out (world-model SSE) once the rows are durably inserted.
+    for r in &reports {
+        let s = &r.structured_json;
+        let non_compliant = |key: &str| s.get(key).and_then(|v| v.as_bool()) == Some(false);
+        let missing_items = s
+            .get("missing_items")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        crate::service::events::emit(
+            workspace_id,
+            crate::service::events::CameraDomainEvent::ComplianceReport {
+                camera_id: r.camera_id,
+                report_id: r.report_id,
+                violation: non_compliant("attire_compliant") || non_compliant("hygiene_compliant"),
+                missing_items,
+                confidence: s.get("confidence").and_then(|v| v.as_f64()),
+                segment_start: r.segment_start,
+                segment_end: r.segment_end,
+            },
+        );
+    }
+
     Ok(ComplianceIngestResult {
         accepted: reports.len(),
     })

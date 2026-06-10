@@ -199,6 +199,12 @@ pub async fn api_router(
         agentic_state.shutdown_token.clone(),
     );
 
+    // Bridge camera domain events (compliance ingest, health transitions)
+    // onto the world-model SSE bus.
+    oxy_cameras::service::events::set_sink(Box::new(
+        crate::server::api::world_model::publish_camera_domain_event,
+    ));
+
     let app_state = AppState {
         enterprise,
         internal: false,

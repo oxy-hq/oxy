@@ -32,6 +32,7 @@ pub mod compliance;
 pub mod config;
 pub mod cost;
 pub mod dashboard;
+pub mod events;
 pub mod fleet;
 pub mod ingest;
 pub mod listing;
