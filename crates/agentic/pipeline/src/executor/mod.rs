@@ -434,10 +434,10 @@ impl PipelineTaskExecutor {
         }
 
         self.resolve_airway_source_secrets(&mut spec).await?;
-        self.resolve_airway_destination(&mut spec).await?;
+        let airhouse_db = self.resolve_airway_destination(&mut spec).await?;
 
         let db = Arc::new(self.db.clone());
-        let worker = match qb_refresh_var {
+        let mut worker = match qb_refresh_var {
             Some(var_name) => {
                 let sink: Arc<dyn agentic_airway::RefreshTokenSink> =
                     Arc::new(PlatformRefreshTokenSink {
@@ -448,6 +448,17 @@ impl PipelineTaskExecutor {
             }
             None => agentic_airway::AirwayWorker::new(db),
         };
+        // Airhouse destinations hold/cycle one pgwire connection for the whole
+        // load; attach a provider so each (re)connect re-mints a fresh
+        // (non-expired) ephemeral credential instead of reusing the static DSN.
+        if let Some(database) = airhouse_db {
+            let provider: Arc<dyn agentic_airway::CredentialProvider> =
+                Arc::new(PlatformAirhouseCredentialProvider {
+                    platform: self.platform.clone(),
+                    database,
+                });
+            worker = worker.with_credential_provider(provider);
+        }
         Ok(worker.execute(spec))
     }
 
@@ -522,12 +533,17 @@ impl PipelineTaskExecutor {
     /// database through the platform (secret substitution + per-subject
     /// `airhouse_managed` minting happen host-side). Inline destinations
     /// (the `memory` fixture, already-resolved specs) pass through.
+    ///
+    /// Returns `Some(database)` when it resolved to an **airhouse**
+    /// destination, so the caller can attach a credential provider that
+    /// re-mints the ephemeral credential on every (re)connect; `None`
+    /// otherwise.
     async fn resolve_airway_destination(
         &self,
         spec: &mut agentic_airway::AirwayPipelineSpec,
-    ) -> Result<(), String> {
+    ) -> Result<Option<String>, String> {
         let agentic_airway::DestinationSpec::Reference(ref_) = &spec.destination else {
-            return Ok(());
+            return Ok(None);
         };
         let database = ref_.database.clone();
         let dataset_name = ref_.dataset_name.clone();
@@ -562,12 +578,13 @@ impl PipelineTaskExecutor {
             }
             config["schema_separator"] = serde_json::Value::String(sep);
         }
+        let is_airhouse = resolved.kind == "airhouse";
         spec.destination =
             agentic_airway::DestinationSpec::Inline(agentic_airway::DestinationConfig {
                 kind: resolved.kind,
                 config,
             });
-        Ok(())
+        Ok(is_airhouse.then_some(database))
     }
 }
 
@@ -587,6 +604,43 @@ impl agentic_airway::RefreshTokenSink for PlatformRefreshTokenSink {
         self.platform
             .persist_secret(&self.var_name, refresh_token)
             .await
+    }
+}
+
+/// Re-mints a fresh `airhouse_managed` credential on every (re)connect for an
+/// airway pipeline destination. Wired into the airway worker for airhouse
+/// destinations: when the destination opens or cycles its long-lived pgwire
+/// connection, it calls this to get a freshly-minted DSN.
+///
+/// DESIGN ASSUMPTION (verified against airhouse as of 0.x, but a CP property
+/// not enforced here): a credential's `expires_at` is checked **only at the
+/// SCRAM handshake** — `get_user_credentials` filters expired rows and is the
+/// auth path's lookup — and never per-query, so an established session persists
+/// past the credential's expiry (the ephemeral-user sweeper only reclaims
+/// storage after a grace window, it doesn't drop live sessions). That's why
+/// re-resolving (which re-mints via the broker) on each connect is sufficient
+/// and the standard short TTL needs no bump. If airhouse ever starts validating
+/// `expires_at` per-query, long single-segment loads would fail and this
+/// provider would need to force a full-TTL mint (`evict_and_remint`) per cycle.
+struct PlatformAirhouseCredentialProvider {
+    platform: Arc<dyn PlatformContext>,
+    database: String,
+}
+
+#[async_trait]
+impl agentic_airway::CredentialProvider for PlatformAirhouseCredentialProvider {
+    async fn connection_string(&self) -> Result<String, String> {
+        self.platform
+            .resolve_pipeline_destination(&self.database)
+            .await
+            .map(|resolved| resolved.connection_string)
+            .ok_or_else(|| {
+                format!(
+                    "airway: failed to re-resolve airhouse destination `{}` \
+                     for credential refresh",
+                    self.database
+                )
+            })
     }
 }
 

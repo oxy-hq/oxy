@@ -41,6 +41,12 @@ pub use worker::AirwayWorker;
 /// `RefreshTokenSink` internally.
 pub use source_factory::RefreshTokenSink;
 
+/// Host-side credential provider for `airhouse_managed` destinations. A thin,
+/// `String`-error port (the factory bridges it to airway's `CredentialProvider`)
+/// so an airway load re-mints a fresh ephemeral credential on every (re)connect
+/// instead of reusing a possibly-expired static DSN.
+pub use destination_factory::CredentialProvider;
+
 /// `source_type` to register this domain under in the runtime event
 /// registry. Used by the SSE layer to look up the right processor for a
 /// run's events.

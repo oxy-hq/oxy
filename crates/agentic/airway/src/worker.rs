@@ -54,6 +54,11 @@ pub struct AirwayWorker {
     /// host for sources that rotate refresh tokens (QuickBooks). `None`
     /// for every other source.
     refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
+    /// Optional credential provider, supplied by the host for
+    /// `airhouse_managed` destinations so the destination re-mints a fresh
+    /// (non-expired) ephemeral credential on every (re)connect. `None` for
+    /// every other destination.
+    credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
 }
 
 impl AirwayWorker {
@@ -61,6 +66,7 @@ impl AirwayWorker {
         Self {
             db,
             refresh_sink: None,
+            credential_provider: None,
         }
     }
 
@@ -74,7 +80,19 @@ impl AirwayWorker {
         Self {
             db,
             refresh_sink: Some(sink),
+            credential_provider: None,
         }
+    }
+
+    /// Attach a [`crate::CredentialProvider`] handed to the destination factory
+    /// so an `airhouse_managed` destination re-mints fresh credentials on every
+    /// (re)connect. Chainable with the constructors above.
+    pub fn with_credential_provider(
+        mut self,
+        provider: Arc<dyn crate::CredentialProvider>,
+    ) -> Self {
+        self.credential_provider = Some(provider);
+        self
     }
 
     /// Start the airway run for `spec`. Returns immediately with
@@ -92,6 +110,7 @@ impl AirwayWorker {
 
         let db = self.db.clone();
         let refresh_sink = self.refresh_sink.clone();
+        let credential_provider = self.credential_provider.clone();
         let cancel_clone = cancel.clone();
         // If `drive` panics its JoinHandle is normally dropped and the
         // panic is swallowed: no `TaskOutcome` is ever sent and the
@@ -104,6 +123,7 @@ impl AirwayWorker {
                 spec,
                 db,
                 refresh_sink,
+                credential_provider,
                 event_tx,
                 cancel_clone,
                 outcome_tx,
@@ -139,6 +159,7 @@ async fn drive(
     spec: AirwayPipelineSpec,
     db: Arc<DatabaseConnection>,
     refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
+    credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
     event_tx: mpsc::Sender<(String, Value)>,
     cancel: CancellationToken,
     outcome_tx: mpsc::Sender<TaskOutcome>,
@@ -155,6 +176,7 @@ async fn drive(
         spec,
         db,
         refresh_sink,
+        credential_provider,
         event_tx.clone(),
         cancel,
         saw_error.clone(),
@@ -189,13 +211,14 @@ async fn run_pipeline(
     spec: AirwayPipelineSpec,
     db: Arc<DatabaseConnection>,
     refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
+    credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
     event_tx: mpsc::Sender<(String, Value)>,
     cancel: CancellationToken,
     saw_error: Arc<AtomicBool>,
 ) -> Result<(), AirwayError> {
     // ── Build pluggable parts ──────────────────────────────────────────────
     let connector = build_source_connector(&spec.source, refresh_sink)?;
-    let destination = build_destination(spec.destination.as_inline()?)?;
+    let destination = build_destination(spec.destination.as_inline()?, credential_provider)?;
 
     let mut source = airway::Source::from_connector(BoxedSourceConnector(connector));
     if !spec.resources.is_empty() {
