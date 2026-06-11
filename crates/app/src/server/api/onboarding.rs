@@ -219,6 +219,7 @@ async fn register_project(
         status: Set(status),
         error: Set(None),
         monthly_vlm_budget_micros: Set(None),
+        current_revision_id: Set(None),
     };
     new_workspace.insert(&db).await.map_err(|e| {
         (

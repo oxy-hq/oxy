@@ -10,6 +10,7 @@
 pub mod app_admins;
 pub mod apps;
 pub mod billing;
+pub mod compiles;
 pub mod internal_jobs;
 pub mod orgs_admin;
 pub mod oxy_access;

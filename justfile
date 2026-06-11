@@ -205,3 +205,105 @@ release-changelog-preview +VERSIONS:
 # Manually trigger the release PR workflow on GitHub (requires gh CLI + auth).
 release-trigger:
     gh workflow run prepare-release.yaml --ref main
+
+# ── Airhouse local stack ───────────────────────────────────────────────────────
+
+# Boot the local airhouse stack.
+airhouse-up:
+    docker compose -f docker-compose.airhouse.yml up -d
+
+# Tear it down (drops volumes; pass --keep-data to retain).
+airhouse-down *FLAGS:
+    docker compose -f docker-compose.airhouse.yml down {{ if FLAGS =~ "--keep-data" { "" } else { "-v" } }}
+
+# Tail logs; pass a service name to focus.
+airhouse-logs *SERVICE:
+    docker compose -f docker-compose.airhouse.yml logs -f {{SERVICE}}
+
+# Show services, buckets, and DBs.
+airhouse-status:
+    @docker compose -f docker-compose.airhouse.yml ps
+    @echo
+    @echo "==> Buckets on MinIO:"
+    @docker compose -f docker-compose.airhouse.yml run --rm --no-deps -T --entrypoint sh airhouse-createbucket \
+        -c 'mc alias set m http://airhouse-minio:9000 minioadmin minioadmin >/dev/null && mc ls m' \
+        2>/dev/null || echo "  (minio not reachable yet)"
+    @echo
+    @echo "==> Databases on airhouse-postgres:"
+    @docker compose -f docker-compose.airhouse.yml exec -T airhouse-postgres \
+        psql -U airhouse -d airhouse -tc \
+        "SELECT datname FROM pg_database WHERE datname IN ('airhouse','airhouse_cp','oxydb') ORDER BY 1" \
+        2>/dev/null || echo "  (postgres not reachable yet)"
+
+# psql shell on oxydb.
+airhouse-psql:
+    docker compose -f docker-compose.airhouse.yml exec airhouse-postgres \
+        psql -U airhouse -d oxydb
+
+# Run pending migrations against oxydb.
+airhouse-migrate:
+    set -a; . ./.env.airhouse; set +a; cargo run -p migration --bin migration
+
+# Compile a workspace into the stack.
+airhouse-compile path="./examples":
+    set -a; . ./.env.airhouse; set +a; cargo run -p oxy-app -- compile --workspace {{path}}
+
+# Boot oxy serve against the stack.
+airhouse-serve path="./examples":
+    set -a; . ./.env.airhouse; set +a; cargo run -p oxy-app -- serve --local --workspace {{path}}
+
+# Print blob keys from PG + objects from MinIO.
+airhouse-verify-blobs:
+    @echo "==> semantic_views with blob keys:"
+    @set -a; . ./.env.airhouse; set +a; \
+        psql "$OXY_DATABASE_URL" -c \
+        "SELECT name, substring(compiled_sql_blob_key, 1, 80) AS key FROM semantic_views WHERE compiled_sql_blob_key IS NOT NULL LIMIT 10;"
+    @echo
+    @echo "==> Objects in s3://oxy-compile-blobs/workspaces/:"
+    @set -a; . ./.env.airhouse; set +a; \
+        AWS_PAGER='' aws --endpoint-url "$AWS_ENDPOINT_URL" \
+        s3 ls "s3://${OXY_COMPILE_BLOB_S3_BUCKET}/workspaces/" --recursive
+
+# ── Split-fleet showcase ───────────────────────────────────────────────────────
+
+# Boot 2 oxy serve processes against the airhouse stack: ide on :3001, serve on :3002.
+split-up path="./examples":
+    @just airhouse-up
+    @mkdir -p .oxy_state/split
+    @echo "==> Booting oxy-ide on :3001 (OXY_ROLE=ide)"
+    @set -a; . ./.env.airhouse; set +a; \
+        OXY_ROLE=ide HOSTNAME=ide-demo \
+        cargo run -p oxy-app -- serve --local --workspace {{path}} --port 3001 \
+        > .oxy_state/split/ide.log 2>&1 & echo $! > .oxy_state/split/ide.pid
+    @echo "==> Booting oxy-serve on :3002 (OXY_ROLE=serve)"
+    @set -a; . ./.env.airhouse; set +a; \
+        OXY_ROLE=serve HOSTNAME=serve-demo \
+        cargo run -p oxy-app -- serve --local --workspace {{path}} --port 3002 \
+        > .oxy_state/split/serve.log 2>&1 & echo $! > .oxy_state/split/serve.pid
+    @echo
+    @echo "ide   → http://localhost:3001  (logs: .oxy_state/split/ide.log)"
+    @echo "serve → http://localhost:3002  (logs: .oxy_state/split/serve.log)"
+    @echo "Run \`just split-demo\` to exercise the boundary."
+
+# Stop the two oxy processes started by split-up.
+split-down:
+    @-test -f .oxy_state/split/ide.pid && kill `cat .oxy_state/split/ide.pid` 2>/dev/null && rm .oxy_state/split/ide.pid || true
+    @-test -f .oxy_state/split/serve.pid && kill `cat .oxy_state/split/serve.pid` 2>/dev/null && rm .oxy_state/split/serve.pid || true
+    @echo "split processes stopped"
+
+# Curl-driven demo of the routing boundary.
+split-demo:
+    #!/usr/bin/env bash
+    set -eu
+    WS=$(uuidgen | tr A-Z a-z)
+    echo "==> Manifest on each replica"
+    curl -s http://localhost:3001/_internal/routing-manifest | jq '{role: .process_role, ide_only_routes: (.ide_only | length)}'
+    curl -s http://localhost:3002/_internal/routing-manifest | jq '{role: .process_role, ide_only_routes: (.ide_only | length)}'
+    echo
+    echo "==> POST /$WS/compile on ide  (expect 401 since unauth; X-Oxy-Served-By: ide@...)"
+    curl -s -o /dev/null -D - -X POST http://localhost:3001/$WS/compile \
+        | grep -iE 'HTTP/|x-oxy-' || true
+    echo
+    echo "==> POST /$WS/compile on serve (expect 421; X-Oxy-Required-Role: ide)"
+    curl -s -o /dev/null -D - -X POST http://localhost:3002/$WS/compile \
+        | grep -iE 'HTTP/|x-oxy-' || true

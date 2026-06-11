@@ -142,10 +142,32 @@ pub async fn run_semantic_query(
     // 5. Compile via airlayer. Off-thread because compile is
     //    blocking-CPU work (parses every .view.yml / .topic.yml under
     //    the workspace scan path); same pattern the IDE handler uses.
-    let scan_path = proj_ctx
-        .workspace_manager()
-        .config_manager
-        .semantics_scan_path();
+    //
+    // Slice 4.semantic: when `compile_runtime_use_postgres` is on AND
+    // the workspace has a promoted revision, materialise the
+    // semantic_views / semantic_topics rows into a tempdir and use
+    // THAT as the scan path. The airlayer loader's filesystem walk
+    // is unchanged — it just walks Postgres-sourced bytes. Drop the
+    // tempdir handle at end of request to clean up.
+    let materialised =
+        match crate::server::api::semantic_scan::materialise_semantic_scan(project_id).await {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!(
+                    project_id = %project_id,
+                    error = ?e,
+                    "semantic scan: materialise failed; falling through to FS"
+                );
+                None
+            }
+        };
+    let scan_path = match materialised.as_ref() {
+        Some(m) => m.scan_path.clone(),
+        None => proj_ctx
+            .workspace_manager()
+            .config_manager
+            .semantics_scan_path(),
+    };
     let databases: Vec<airlayer::DatabaseConfig> = proj_ctx
         .workspace_manager()
         .config_manager

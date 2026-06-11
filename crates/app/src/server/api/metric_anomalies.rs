@@ -104,6 +104,31 @@ pub struct ListMonitorsResponse {
 pub async fn list_monitors(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<Json<ListMonitorsResponse>, (StatusCode, String)> {
+    // Compile-boundary fast path. When the workspace is promoted and
+    // the flag is on, hydrate the MonitorConfig from `monitor_configs`
+    // and skip the .monitor.yml disk read.
+    if let Ok(Some(definition)) =
+        crate::server::api::compiled_reader::resolve_monitor_config(
+            workspace_manager.workspace_id,
+            None,
+        )
+        .await
+        && crate::server::feature_flags::is_enabled("compile_runtime_use_postgres")
+    {
+        match serde_json::from_value::<monitoring::config::MonitorConfig>(definition) {
+            Ok(cfg) => {
+                return Ok(Json(ListMonitorsResponse {
+                    monitors: cfg.monitors,
+                }));
+            }
+            Err(e) => tracing::warn!(
+                workspace_id = %workspace_manager.workspace_id,
+                error = ?e,
+                "list_monitors: compiled monitor config deserialise failed; falling through to FS"
+            ),
+        }
+    }
+
     let workspace_root = workspace_manager.config_manager.workspace_path();
     let config_path = monitoring::config::default_config_path(workspace_root);
     let config = monitoring::config::load_from_file(&config_path)
@@ -225,8 +250,24 @@ pub async fn run_scan(
         user.id,
         role,
     ));
+    // Compile-boundary fast path. When the workspace is promoted +
+    // flag is on, we materialise `.monitor.yml` into a tempdir from
+    // Postgres and pass THAT path to scan_workspace. The tempdir is
+    // owned by the spawned task below so it lives for the whole scan.
+    let materialised_monitor =
+        match crate::server::api::semantic_scan::materialise_monitor_config(workspace_id).await {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!(error = ?e, "run_scan: monitor materialise failed; falling through to FS");
+                None
+            }
+        };
     let workspace_root = workspace_manager.config_manager.workspace_path();
-    let config_path = monitoring::default_config_path(workspace_root);
+    let fs_config_path = monitoring::default_config_path(workspace_root);
+    let config_path = materialised_monitor
+        .as_ref()
+        .map(|m| m.config_path.clone())
+        .unwrap_or(fs_config_path);
     let now = parse_as_of(q.as_of.as_deref())?;
     let db = state.db.clone();
 
@@ -253,7 +294,11 @@ pub async fn run_scan(
         tokio::sync::oneshot::channel::<Result<(monitoring::ScanResult, usize), AnomalyError>>();
     let db_bg = db.clone();
     let run_id_bg = run_id.clone();
+    // Move the tempdir handle into the spawned task so it lives as
+    // long as the scan does. Drop at task end cleans up the file.
+    let _materialised_monitor_guard = materialised_monitor;
     tokio::spawn(async move {
+        let _hold = _materialised_monitor_guard;
         let outcome = async {
             let result = monitoring::scan_workspace(runner, &config_path, now, None)
                 .await

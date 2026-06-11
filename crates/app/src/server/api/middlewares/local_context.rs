@@ -73,6 +73,7 @@ pub async fn local_context_middleware(
         status,
         error: None,
         monthly_vlm_budget_micros: None,
+        current_revision_id: None,
     };
 
     request.extensions_mut().insert(workspace.clone());

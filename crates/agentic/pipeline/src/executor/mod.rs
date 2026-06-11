@@ -132,6 +132,25 @@ impl TaskExecutor for PipelineTaskExecutor {
                 self.execute_airway(pipeline_ref, variables.as_ref(), resources)
                     .await
             }
+
+            TaskSpec::Compile {
+                workspace_id,
+                git_sha,
+                branch,
+                promote,
+                kind,
+                owner_user_id,
+            } => {
+                self.execute_compile(
+                    *workspace_id,
+                    git_sha.clone(),
+                    branch.clone(),
+                    *promote,
+                    kind.as_deref(),
+                    *owner_user_id,
+                )
+                .await
+            }
         }
     }
 
@@ -459,6 +478,61 @@ impl PipelineTaskExecutor {
                 });
             worker = worker.with_credential_provider(provider);
         }
+        Ok(worker.execute(spec))
+    }
+
+    /// Dispatch a `TaskSpec::Compile`. Resolves the workspace path
+    /// from `workspace_id` via the DB (the authoritative source —
+    /// `workspaces.path` is set at registration time), translates
+    /// the payload into a `CompileSpec`, and hands off to
+    /// `CompileWorker`.
+    ///
+    /// **Why not `self.platform.workspace_path()`?** The platform
+    /// context is bound to one workspace at executor construction.
+    /// Compile tasks are enqueued `TaskScope::Global` and claimed by
+    /// any worker via SKIP LOCKED, so a global worker would otherwise
+    /// compile its own bound workspace's files while writing rows
+    /// tagged with the task's `workspace_id` — silently serving
+    /// workspace A's source under workspace B. We resolve from
+    /// `workspace_id` to fix that, and fail loudly when the path
+    /// isn't on disk so a worker without a clone of the workspace
+    /// doesn't silently promote the wrong source. Per-worker clone-
+    /// on-demand is Phase 3 of the 2026-05-31 scaling design.
+    async fn execute_compile(
+        &self,
+        workspace_id: uuid::Uuid,
+        git_sha: Option<String>,
+        branch: Option<String>,
+        promote: bool,
+        kind: Option<&str>,
+        owner_user_id: Option<uuid::Uuid>,
+    ) -> Result<ExecutingTask, String> {
+        let workspace_path =
+            oxy_compile::resolve_workspace_path(&self.db, workspace_id)
+                .await
+                .map_err(|e| format!("compile: {e}"))?;
+        if !workspace_path.is_dir() {
+            return Err(format!(
+                "compile: workspace {workspace_id} path {} does not exist on this worker — \
+                 per-worker clone-on-demand is Phase 3 work (see internal-docs/\
+                 2026-05-31-scaling-oxy-multi-instance-architecture.md). Until that lands, \
+                 only workers that already hold a clone of the workspace can compile it.",
+                workspace_path.display()
+            ));
+        }
+
+        let spec = crate::compile_worker::spec_from_taskspec(
+            workspace_id,
+            workspace_path,
+            git_sha,
+            branch,
+            promote,
+            kind,
+            owner_user_id,
+        )?;
+
+        let db = std::sync::Arc::new(self.db.clone());
+        let worker = crate::compile_worker::CompileWorker::new(db);
         Ok(worker.execute(spec))
     }
 

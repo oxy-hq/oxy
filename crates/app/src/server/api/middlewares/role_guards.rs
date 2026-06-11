@@ -264,6 +264,7 @@ mod tests {
             status: entity::workspaces::WorkspaceStatus::Ready,
             error: None,
             monthly_vlm_budget_micros: None,
+            current_revision_id: None,
         }
     }
 

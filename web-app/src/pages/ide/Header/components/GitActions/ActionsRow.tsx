@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useIdeGit } from "../../context/IdeGitContext";
 import { ChangesPanel } from "../ChangesPanel";
+import { CompileButton } from "../CompileButton";
 import { PullDialog } from "../PullDialog";
 import { CommitButton } from "./CommitButton";
 import { DiscardAllConfirmDialog } from "./DiscardAllConfirmDialog";
@@ -87,6 +88,8 @@ export function ActionsRow() {
       )}
 
       <CommitButton state={gitState} isPushing={isPushing} onClick={openChanges} />
+
+      <CompileButton />
 
       <OverflowMenu
         state={gitState}

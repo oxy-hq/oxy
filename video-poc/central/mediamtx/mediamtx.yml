@@ -112,19 +112,37 @@ pathDefaults:
   recordSegmentDuration: 1h
   recordDeleteAfter: 24h
 
-# No statically-defined paths.
-#
-# Real camera paths are auto-managed: the edge worker registers a
-# `cam-<uuid>` path per camera at runtime via the MTX v3 API
-# (`edge/worker/mtx_sync.py`), each pulling its UniFi Protect RTSP feed
-# through an ffmpeg bridge. Those paths inherit `pathDefaults` above
-# (recording, etc.), so nothing needs to be declared here.
-#
-# We intentionally do NOT ship sim/demo paths in this file. Previously
-# `cam-01`/`cam-02` (looped /samples/*.mp4) and a hand-authored
-# `cam-protect-01` (hardcoded LAN IP) lived here; on any box without
-# those sample files or that exact LAN they crash-loop ffmpeg every few
-# seconds, flooding the logs and burning CPU. To run the local MP4 sim,
-# drop sample MP4s into ./samples (see samples/README.md) and add the
-# `cam-01`/`cam-02` path entries back in a local-only copy of this file.
-paths: {}
+paths:
+  cam-01:
+    runOnInit: >
+      ffmpeg -hide_banner -loglevel warning
+      -re -stream_loop -1 -i /samples/sample-01.mp4
+      -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  cam-02:
+    runOnInit: >
+      ffmpeg -hide_banner -loglevel warning
+      -re -stream_loop -1 -i /samples/sample-02.mp4
+      -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Real UniFi Protect feed (Low channel: ~480×270 @ 15fps, ~200 kbps H.264).
+  #
+  # Bridge mode: ffmpeg pulls Protect RTSP and republishes to this path as
+  # plain RTSP. We don't use MediaMTX's native source pull because Protect uses
+  # MTAP-16 RTP packetization (RFC 6184) for H.264, which MediaMTX's
+  # depacketizer does not support. ffmpeg's RTSP demuxer handles it correctly.
+  #
+  # We also drop audio (-an): the AAC AU-Index format Protect uses also trips
+  # MediaMTX's depacketizer, and we don't need audio for analytics.
+  cam-protect-01:
+    source: publisher
+    runOnInit: >
+      ffmpeg -nostdin -hide_banner -loglevel warning
+      -rtsp_transport tcp
+      -fflags +discardcorrupt -err_detect ignore_err
+      -i rtsp://192.168.0.1:7447/eA7cpgei0WQ0lZl4
+      -map 0:v:0 -c:v copy -an
+      -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes

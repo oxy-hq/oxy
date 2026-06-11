@@ -57,11 +57,15 @@ impl WorkerHealthState {
     }
 }
 
-/// Spawn the health server on `port`. Returns the join handle so the
-/// shutdown path can drain it. Bind errors propagate as `OxyError`.
+/// Spawn the health + metrics server on `port`. Returns the join
+/// handle so the shutdown path can drain it. Bind errors propagate
+/// as `OxyError`. The `metrics_state` argument is optional: if
+/// `None`, only `/healthz` + `/readyz` are mounted (handy for tests
+/// or local-mode where the queue-depth DB read isn't wanted).
 pub async fn spawn(
     port: u16,
     state: WorkerHealthState,
+    metrics_state: Option<crate::server::worker_metrics::MetricsState>,
     shutdown: CancellationToken,
 ) -> Result<JoinHandle<()>, OxyError> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -69,10 +73,19 @@ pub async fn spawn(
         .await
         .map_err(|e| OxyError::RuntimeError(format!("worker health: bind {addr}: {e}")))?;
 
-    let router = Router::new()
+    let health_router = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .with_state(state);
+
+    let router = if let Some(ms) = metrics_state {
+        let metrics_router = Router::new()
+            .route("/metrics", get(crate::server::worker_metrics::metrics))
+            .with_state(ms);
+        Router::new().merge(health_router).merge(metrics_router)
+    } else {
+        health_router
+    };
 
     let serve_token = shutdown.clone();
     let handle = tokio::spawn(async move {

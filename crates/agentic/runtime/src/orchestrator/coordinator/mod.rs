@@ -343,6 +343,7 @@ pub(crate) fn source_type_for_spec(spec: &TaskSpec) -> String {
         // Match agentic_airway::SOURCE_TYPE — inlined here to keep the
         // runtime free of a dep on the airway domain crate.
         TaskSpec::Airway { .. } => "airway".to_string(),
+        TaskSpec::Compile { .. } => "compile".to_string(),
         TaskSpec::Custom { kind, .. } => kind.clone(),
     }
 }

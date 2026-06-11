@@ -174,6 +174,7 @@ export interface AdminWorkspaceDetail extends AdminWorkspaceRow {
   git_remote_url: string | null;
   error: string | null;
   members: AdminWorkspaceMember[];
+  current_revision_id: string | null;
 }
 
 export interface AdminWorkspaceMember {

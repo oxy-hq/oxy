@@ -180,8 +180,9 @@ The `oxy start` command manages Docker containers programmatically via the `boll
 
 ## Project Claude Skills (backend)
 
-This repo ships two project-specific Claude skills that codify decisions
-captured in `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md`.
+This repo ships three project-specific Claude skills that codify decisions
+captured in `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md`
+and `internal-docs/2026-06-10-compile-boundary-simplification.md`.
 When the work in front of you matches their triggers, **invoke them — do
 not rederive the decision from first principles**.
 
@@ -218,6 +219,27 @@ challenged through this skill: either justify the exception in writing
 or migrate to a `TaskSpec`. The scope survey at
 `internal-docs/2026-05-28-worker-fleet-scope-survey.md` lists pre-existing
 violations to migrate.
+
+### `oxy-compile-boundary` (`.claude/skills/oxy-compile-boundary/SKILL.md`)
+
+The runtime no longer walks the workspace filesystem on customer-facing
+requests. Every YAML entity is addressable as a `*_definitions` row keyed
+by `revision_id`, written by the compile worker and read by
+`crates/app/src/server/api/compiled_reader.rs`. When a new file type
+joins the workspace, it owes five integration points: a walker entry, a
+compile-output variant, a schema migration + entity, a writer arm, and a
+reader (plus handler wiring). The kill switch is
+`compile_boundary_disabled`; the master flag is
+`compile_runtime_use_postgres`.
+
+**Invoke when** adding a new `.foo.yml` file type, introducing a new
+runtime read site that walks the workspace filesystem, wiring a handler
+that calls `ConfigManager::resolve_*` or
+`fs::read_to_string(workspace_path...)`, or any time someone proposes
+"just read it from the workspace dir." PRs that add a per-request FS read
+without a compile boundary path should be challenged through this skill.
+The skill carries the five-step contract; the diagram is at
+`internal-docs/2026-06-10-compile-boundary-architecture.md`.
 
 ## Design Docs & Specs
 
