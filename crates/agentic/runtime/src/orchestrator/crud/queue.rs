@@ -299,6 +299,56 @@ pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<u64, DbErr> {
     Ok(dead.rows_affected() + requeued.rows_affected())
 }
 
+/// Delete terminal task-queue rows older than their retention window, so the
+/// queue doesn't grow unbounded with the history of every job ever run.
+///
+/// Two windows on purpose: `completed_ttl` covers the bulk happy-path rows
+/// (`completed`, `cancelled`), `dead_ttl` covers `failed`/`dead` rows which
+/// stay longer because they're the dead-letter triage surface. A `None` window
+/// disables pruning for that class (keep forever). Only ever touches TERMINAL
+/// rows — never `queued`/`claimed` — so an in-flight task can't be deleted out
+/// from under a worker. FK-safe: `agentic_task_outcomes` references
+/// `agentic_runs`, not this table.
+pub async fn purge_old_terminal_tasks(
+    db: &DatabaseConnection,
+    completed_ttl: Option<std::time::Duration>,
+    dead_ttl: Option<std::time::Duration>,
+) -> Result<u64, DbErr> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    let mut total = 0u64;
+
+    if let Some(ttl) = completed_ttl {
+        let secs = ttl.as_secs() as i64;
+        let res = db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "DELETE FROM agentic_task_queue \
+                 WHERE queue_status IN ('completed', 'cancelled') \
+                   AND updated_at < now() - ($1 * interval '1 second')",
+                [secs.into()],
+            ))
+            .await?;
+        total += res.rows_affected();
+    }
+
+    if let Some(ttl) = dead_ttl {
+        let secs = ttl.as_secs() as i64;
+        let res = db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "DELETE FROM agentic_task_queue \
+                 WHERE queue_status IN ('failed', 'dead') \
+                   AND updated_at < now() - ($1 * interval '1 second')",
+                [secs.into()],
+            ))
+            .await?;
+        total += res.rows_affected();
+    }
+
+    Ok(total)
+}
+
 /// A plain DTO for a task queue entry, avoiding leaking entity types.
 pub struct QueueTaskRow {
     pub task_id: String,

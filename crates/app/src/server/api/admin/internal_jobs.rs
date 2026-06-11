@@ -23,6 +23,7 @@ use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, FromQueryResult, Statement,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::server::router::AppState;
 
@@ -41,13 +42,14 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/workers", get(list_workers))
         .route("/scheduled", get(list_scheduled))
         .route("/run-reaper", post(run_reaper))
+        .route("/run-retention", post(run_retention))
 }
 
 // ---------------------------------------------------------------------------
 // Connect-on-demand helper
 // ---------------------------------------------------------------------------
 
-async fn connect() -> Result<DatabaseConnection, Response> {
+pub(crate) async fn connect() -> Result<DatabaseConnection, Response> {
     oxy::database::client::establish_connection()
         .await
         .map_err(|e| {
@@ -154,6 +156,11 @@ fn accumulate(counts: &mut QueueStatusCounts, status: &str, n: i64) {
 // Recent failures
 // ---------------------------------------------------------------------------
 
+/// A failed/dead job, enriched with the tenant + run context an operator needs
+/// to actually debug it. The enriched fields are LEFT-joined from
+/// `agentic_runs → workspaces → organizations` (+ `threads → users`), so they
+/// are `Option` — system jobs or orphaned runs render with nulls rather than
+/// being dropped.
 #[derive(Serialize, Debug)]
 pub struct QueueRowDto {
     pub task_id: String,
@@ -163,11 +170,25 @@ pub struct QueueRowDto {
     pub claim_count: i32,
     pub max_claims: i32,
     pub last_heartbeat: Option<DateTime<FixedOffset>>,
+    pub claimed_at: Option<DateTime<FixedOffset>>,
     pub created_at: DateTime<FixedOffset>,
     pub updated_at: DateTime<FixedOffset>,
     pub task_type: Option<String>,
+    /// Decoded `TaskSpec` JSON so the UI can show agent_id / workflow_ref /
+    /// question / variables without a second round-trip.
+    pub spec: serde_json::Value,
+    // --- enriched tenant + run context (LEFT-joined) ---
+    pub workspace_id: Option<Uuid>,
+    pub workspace_name: Option<String>,
+    pub org_id: Option<Uuid>,
+    pub org_name: Option<String>,
+    pub run_status: Option<String>,
+    pub run_error_message: Option<String>,
+    pub originating_user_email: Option<String>,
 }
 
+/// Basic queue row (no joins) — used by the single-row re-fetch after
+/// re-enqueue, where tenant context is not needed.
 #[derive(Debug, FromQueryResult)]
 struct QueueRowRaw {
     task_id: String,
@@ -177,6 +198,7 @@ struct QueueRowRaw {
     claim_count: i32,
     max_claims: i32,
     last_heartbeat: Option<DateTime<FixedOffset>>,
+    claimed_at: Option<DateTime<FixedOffset>>,
     created_at: DateTime<FixedOffset>,
     updated_at: DateTime<FixedOffset>,
     spec: serde_json::Value,
@@ -193,20 +215,148 @@ impl From<QueueRowRaw> for QueueRowDto {
             claim_count: r.claim_count,
             max_claims: r.max_claims,
             last_heartbeat: r.last_heartbeat,
+            claimed_at: r.claimed_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
             task_type,
+            spec: redact_secrets(r.spec),
+            workspace_id: None,
+            workspace_name: None,
+            org_id: None,
+            org_name: None,
+            run_status: None,
+            run_error_message: None,
+            originating_user_email: None,
         }
     }
 }
+
+/// Enriched queue row — basic columns plus the joined tenant/run context.
+#[derive(Debug, FromQueryResult)]
+struct EnrichedQueueRowRaw {
+    task_id: String,
+    run_id: String,
+    queue_status: String,
+    worker_id: Option<String>,
+    claim_count: i32,
+    max_claims: i32,
+    last_heartbeat: Option<DateTime<FixedOffset>>,
+    claimed_at: Option<DateTime<FixedOffset>>,
+    created_at: DateTime<FixedOffset>,
+    updated_at: DateTime<FixedOffset>,
+    spec: serde_json::Value,
+    workspace_id: Option<Uuid>,
+    workspace_name: Option<String>,
+    org_id: Option<Uuid>,
+    org_name: Option<String>,
+    run_status: Option<String>,
+    run_error_message: Option<String>,
+    originating_user_email: Option<String>,
+}
+
+impl From<EnrichedQueueRowRaw> for QueueRowDto {
+    fn from(r: EnrichedQueueRowRaw) -> Self {
+        let task_type = extract_task_type(&r.spec);
+        Self {
+            task_id: r.task_id,
+            run_id: r.run_id,
+            queue_status: r.queue_status,
+            worker_id: r.worker_id,
+            claim_count: r.claim_count,
+            max_claims: r.max_claims,
+            last_heartbeat: r.last_heartbeat,
+            claimed_at: r.claimed_at,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            task_type,
+            spec: redact_secrets(r.spec),
+            workspace_id: r.workspace_id,
+            workspace_name: r.workspace_name,
+            org_id: r.org_id,
+            org_name: r.org_name,
+            run_status: r.run_status,
+            run_error_message: r.run_error_message,
+            originating_user_email: r.originating_user_email,
+        }
+    }
+}
+
+/// Shared SELECT + JOIN prefix for the enriched failure/dead-letter feeds.
+/// Callers append a `WHERE` clause, `ORDER BY`, and `LIMIT`/`OFFSET`.
+/// All joins are LEFT joins so a job whose run/workspace/org is missing still
+/// appears (with null context) instead of silently vanishing.
+const ENRICHED_SELECT: &str = "\
+    SELECT q.task_id, q.run_id, q.queue_status, q.worker_id, q.claim_count, \
+           q.max_claims, q.last_heartbeat, q.claimed_at, q.created_at, \
+           q.updated_at, q.spec, \
+           r.task_status AS run_status, r.error_message AS run_error_message, \
+           r.workspace_id AS workspace_id, \
+           w.name AS workspace_name, w.org_id AS org_id, \
+           o.name AS org_name, u.email AS originating_user_email \
+    FROM agentic_task_queue q \
+    LEFT JOIN agentic_runs r ON q.run_id = r.id \
+    LEFT JOIN workspaces w ON r.workspace_id = w.id \
+    LEFT JOIN organizations o ON w.org_id = o.id \
+    LEFT JOIN threads t ON r.thread_id = t.id \
+    LEFT JOIN users u ON t.user_id = u.id ";
 
 /// Best-effort extraction of a "task type" tag from the serialized
 /// `TaskSpec` JSON for display in the UI. The spec is a tagged enum so we
 /// peek at the top-level keys; if the shape changes, fall back to None
 /// (the column is purely informational).
+/// Defense-in-depth: blank out obviously secret-shaped values before the
+/// decoded `TaskSpec` is sent to the admin debug panel. Credentials are
+/// supposed to live in the secret manager, but a misconfigured airway/workflow
+/// pipeline could inline a token into `variables`/`payload`; this keeps it from
+/// surfacing verbatim in the UI. Operator-only guard already bounds exposure —
+/// this is the belt to that guard's braces.
+fn redact_secrets(mut spec: serde_json::Value) -> serde_json::Value {
+    redact_in_place(&mut spec);
+    spec
+}
+
+fn redact_in_place(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(map) => {
+            for (k, val) in map.iter_mut() {
+                if is_secret_key(k) {
+                    *val = serde_json::Value::String("***redacted***".to_string());
+                } else {
+                    redact_in_place(val);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => arr.iter_mut().for_each(redact_in_place),
+        _ => {}
+    }
+}
+
+fn is_secret_key(key: &str) -> bool {
+    const NEEDLES: &[&str] = &[
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "credential",
+        "api_key",
+        "apikey",
+        "access_key",
+        "private_key",
+        "authorization",
+    ];
+    let k = key.to_lowercase();
+    NEEDLES.iter().any(|n| k.contains(n))
+}
+
 fn extract_task_type(spec: &serde_json::Value) -> Option<String> {
     if let Some(obj) = spec.as_object() {
-        // Serde's default tagged repr is `{ "VariantName": { ... } }`.
+        // `TaskSpec` is internally tagged (`#[serde(tag = "type")]`), so the
+        // variant name lives under the `type` key (e.g. `"agent"`,
+        // `"workflow"`, `"airway"`). Fall back to the first key for any
+        // legacy/externally-tagged shape.
+        if let Some(t) = obj.get("type").and_then(|v| v.as_str()) {
+            return Some(t.to_string());
+        }
         if let Some((k, _)) = obj.iter().next() {
             return Some(k.clone());
         }
@@ -222,14 +372,15 @@ struct LimitQuery {
 async fn recent_failures(Query(q): Query<LimitQuery>) -> Result<Json<Vec<QueueRowDto>>, Response> {
     let db = connect().await?;
     let limit = q.limit.unwrap_or(50).clamp(1, 500) as i64;
-    let rows = QueueRowRaw::find_by_statement(Statement::from_sql_and_values(
+    let sql = format!(
+        "{ENRICHED_SELECT} \
+         WHERE q.queue_status IN ('failed', 'dead') \
+         ORDER BY q.updated_at DESC \
+         LIMIT $1"
+    );
+    let rows = EnrichedQueueRowRaw::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT task_id, run_id, queue_status, worker_id, claim_count, max_claims, \
-                last_heartbeat, created_at, updated_at, spec \
-         FROM agentic_task_queue \
-         WHERE queue_status IN ('failed', 'dead') \
-         ORDER BY updated_at DESC \
-         LIMIT $1",
+        sql,
         [limit.into()],
     ))
     .all(&db)
@@ -266,14 +417,15 @@ async fn list_dead_letter(
     let limit = q.limit.unwrap_or(50).clamp(1, 500) as i64;
     let offset = q.offset.unwrap_or(0) as i64;
 
-    let rows = QueueRowRaw::find_by_statement(Statement::from_sql_and_values(
+    let sql = format!(
+        "{ENRICHED_SELECT} \
+         WHERE q.queue_status = 'dead' \
+         ORDER BY q.updated_at DESC \
+         LIMIT $1 OFFSET $2"
+    );
+    let rows = EnrichedQueueRowRaw::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT task_id, run_id, queue_status, worker_id, claim_count, max_claims, \
-                last_heartbeat, created_at, updated_at, spec \
-         FROM agentic_task_queue \
-         WHERE queue_status = 'dead' \
-         ORDER BY updated_at DESC \
-         LIMIT $1 OFFSET $2",
+        sql,
         [limit.into(), offset.into()],
     ))
     .all(&db)
@@ -357,7 +509,7 @@ async fn reenqueue_dead(Path(task_id): Path<String>) -> Result<Json<QueueRowDto>
             let row = QueueRowRaw::find_by_statement(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT task_id, run_id, queue_status, worker_id, claim_count, max_claims, \
-                        last_heartbeat, created_at, updated_at, spec \
+                        last_heartbeat, claimed_at, created_at, updated_at, spec \
                  FROM agentic_task_queue WHERE task_id = $1",
                 [task_id.into()],
             ))
@@ -516,6 +668,17 @@ pub(crate) fn scheduled_jobs() -> Vec<ScheduledJobDto> {
             last_known_run_at: None,
             trigger_path: None,
         },
+        ScheduledJobDto {
+            name: "task_queue_retention",
+            // Reflect the live (env-tunable) sweep cadence so the operator sees
+            // the real interval, not a hardcoded guess.
+            interval_secs: agentic_runtime::background::RetentionConfig::from_env()
+                .interval
+                .as_secs(),
+            description: "Prunes old terminal task-queue rows (completed/cancelled after OXY_TASK_QUEUE_RETENTION_DAYS, failed/dead after OXY_TASK_QUEUE_DEAD_RETENTION_DAYS) so internal-job history doesn't clutter the DB.",
+            last_known_run_at: None,
+            trigger_path: Some("/api/admin/internal-jobs/run-retention"),
+        },
     ]
 }
 
@@ -536,6 +699,28 @@ async fn run_reaper() -> Result<Json<RunReaperResponse>, Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Run retention prune now
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Debug)]
+pub struct RunRetentionResponse {
+    pub rows_deleted: u64,
+}
+
+/// Manually sweep old terminal task-queue rows using the same retention
+/// windows the periodic loop uses (read from the environment). Lets an
+/// operator reclaim space immediately instead of waiting for the next cycle.
+async fn run_retention() -> Result<Json<RunRetentionResponse>, Response> {
+    let db = connect().await?;
+    let cfg = agentic_runtime::background::RetentionConfig::from_env();
+    let transport = agentic_runtime::transport::DurableTransport::new(db);
+    let rows_deleted = transport
+        .run_retention(cfg.completed_ttl, cfg.dead_ttl)
+        .await;
+    Ok(Json(RunRetentionResponse { rows_deleted }))
+}
+
+// ---------------------------------------------------------------------------
 // Error helpers
 // ---------------------------------------------------------------------------
 
@@ -550,7 +735,7 @@ fn error_body(status: StatusCode, code: &'static str, message: Option<String>) -
     (status, Json(ErrorBody { code, message })).into_response()
 }
 
-fn db_err(e: DbErr) -> Response {
+pub(crate) fn db_err(e: DbErr) -> Response {
     tracing::error!(?e, "internal-jobs: DB error");
     error_body(
         StatusCode::INTERNAL_SERVER_ERROR,

@@ -6,16 +6,23 @@ import type { OxyAccessGrant } from "@/types/apps";
 /**
  * Jump into a granted workspace's main UI (/home) from the admin browser.
  *
- * We don't hand-hydrate the org/workspace stores — instead we seed the
- * dispatcher's "last org / last workspace" hints and navigate to the org
- * root, letting the normal `OrgGuard` dispatcher resolve the org and land on
- * this exact workspace. That reuses proven routing rather than duplicating
- * it. Caveat (accepted at design time): `OrgGuard` reads the
- * membership-scoped org list, so this only resolves when the admin is a
- * member of the org; otherwise it falls back to the admin's own default.
+ * Navigate DIRECTLY to the workspace home rather than the org root. The old
+ * "land on /:orgSlug and let OrgDispatcher pick a workspace" path had two
+ * failure modes for an operator inspecting a tenant they don't belong to:
+ *   1. `OrgGuard` resolved the slug only against the membership-scoped org
+ *      list, so a non-member operator got bounced to `/` before anything
+ *      loaded (now fixed: OrgGuard resolves orgs for Global Owners/Admins).
+ *   2. The dispatcher's `pickWorkspace` heuristic could land on a *different*
+ *      workspace than the one that granted access.
+ * Going straight to `WORKSPACE(id).HOME` pins the exact workspace. We still
+ * seed the last-org / last-workspace hints so a later dispatcher visit (e.g.
+ * the org switcher) resolves the same way.
+ *
+ * Requires the backend workspace middleware to grant Global Owners/Admins
+ * access to non-member orgs' workspaces (mirrors `org_middleware`).
  */
 export function openWorkspaceHome(grant: OxyAccessGrant, navigate: NavigateFunction): void {
   setLastOrgSlug(grant.org_slug);
   setLastWorkspaceId(grant.org_id, grant.workspace_id);
-  navigate(ROUTES.ORG(grant.org_slug).ROOT);
+  navigate(ROUTES.ORG(grant.org_slug).WORKSPACE(grant.workspace_id).HOME);
 }

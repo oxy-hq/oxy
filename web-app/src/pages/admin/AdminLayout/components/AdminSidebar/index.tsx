@@ -7,6 +7,7 @@ import {
   Inbox,
   LayoutDashboard,
   ShieldCheck,
+  Telescope,
   Users
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -57,6 +58,13 @@ const ADMIN_NAV: AdminNavItem[] = [
     to: ROUTES.ADMIN.INTERNAL_JOBS,
     label: "Internal jobs",
     icon: Activity,
+    adminOrAppAdmin: true,
+    group: "operations"
+  },
+  {
+    to: ROUTES.ADMIN.EXPLORER,
+    label: "Explorer",
+    icon: Telescope,
     adminOrAppAdmin: true,
     group: "operations"
   },
@@ -135,7 +143,7 @@ export function AdminSidebar() {
         <Link to={logoTarget} className='flex shrink-0 items-center'>
           <OxyLogo />
         </Link>
-        <span className='rounded bg-muted px-1.5 py-0.5 font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
+        <span className='rounded-sm border border-sidebar-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground uppercase tracking-[0.2em]'>
           Admin
         </span>
       </div>
@@ -153,10 +161,14 @@ export function AdminSidebar() {
                   const isActive = location.pathname.startsWith(to);
                   return (
                     <SidebarMenuItem key={to}>
-                      <SidebarMenuButton asChild isActive={isActive}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive}
+                        className='gap-2.5 text-[13px] data-[active=true]:font-medium [&>svg]:size-3.5'
+                      >
                         <Link to={to}>
                           <Icon />
-                          <span>{label}</span>
+                          <span className='tracking-tight'>{label}</span>
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

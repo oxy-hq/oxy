@@ -78,6 +78,85 @@ impl Default for BackgroundJobsOptions {
     }
 }
 
+/// How often the retention prune scans `agentic_task_queue` for old terminal
+/// rows. Hourly — pruning is housekeeping, not latency-sensitive like the
+/// reaper.
+pub const RETENTION_INTERVAL: Duration = Duration::from_secs(3600);
+/// Default age after which `completed`/`cancelled` rows are deleted.
+pub const DEFAULT_COMPLETED_RETENTION: Duration = Duration::from_secs(7 * 24 * 3600);
+/// Default age after which `failed`/`dead` rows are deleted — longer, because
+/// they're the dead-letter triage surface.
+pub const DEFAULT_DEAD_RETENTION: Duration = Duration::from_secs(30 * 24 * 3600);
+
+const RETENTION_INTERVAL_ENV: &str = "OXY_TASK_QUEUE_RETENTION_INTERVAL_SECS";
+const COMPLETED_RETENTION_ENV: &str = "OXY_TASK_QUEUE_RETENTION_DAYS";
+const DEAD_RETENTION_ENV: &str = "OXY_TASK_QUEUE_DEAD_RETENTION_DAYS";
+
+/// Operator-tunable retention for the internal-jobs queue. A `None` window
+/// means "keep that class forever" (set the env var to `0`/`off`); both `None`
+/// disables the prune loop entirely.
+#[derive(Debug, Clone)]
+pub struct RetentionConfig {
+    pub interval: Duration,
+    pub completed_ttl: Option<Duration>,
+    pub dead_ttl: Option<Duration>,
+}
+
+impl Default for RetentionConfig {
+    fn default() -> Self {
+        Self {
+            interval: RETENTION_INTERVAL,
+            completed_ttl: Some(DEFAULT_COMPLETED_RETENTION),
+            dead_ttl: Some(DEFAULT_DEAD_RETENTION),
+        }
+    }
+}
+
+impl RetentionConfig {
+    /// Read retention settings from the environment, falling back to
+    /// [`Default`]. `OXY_TASK_QUEUE_RETENTION_DAYS` /
+    /// `OXY_TASK_QUEUE_DEAD_RETENTION_DAYS` accept a day count, or `0`/`off` to
+    /// keep that class forever; `OXY_TASK_QUEUE_RETENTION_INTERVAL_SECS`
+    /// (min 60) sets the sweep cadence.
+    pub fn from_env() -> Self {
+        let d = Self::default();
+        Self {
+            interval: std::env::var(RETENTION_INTERVAL_ENV)
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|&n| n >= 60)
+                .map(Duration::from_secs)
+                .unwrap_or(d.interval),
+            completed_ttl: ttl_days_from_env(COMPLETED_RETENTION_ENV, d.completed_ttl),
+            dead_ttl: ttl_days_from_env(DEAD_RETENTION_ENV, d.dead_ttl),
+        }
+    }
+
+    /// True when at least one class is being pruned.
+    pub fn enabled(&self) -> bool {
+        self.completed_ttl.is_some() || self.dead_ttl.is_some()
+    }
+}
+
+/// Parse a `<env>=<days>` retention window. `0` / `off` / `never` → `None`
+/// (keep forever); unset or unparseable → `default`.
+fn ttl_days_from_env(var: &str, default: Option<Duration>) -> Option<Duration> {
+    match std::env::var(var) {
+        Ok(raw) => {
+            let v = raw.trim().to_lowercase();
+            if v == "0" || v == "off" || v == "never" {
+                return None;
+            }
+            v.parse::<u64>()
+                .ok()
+                .filter(|&n| n > 0)
+                .map(|days| Duration::from_secs(days * 24 * 3600))
+                .or(default)
+        }
+        Err(_) => default,
+    }
+}
+
 /// Spawn the process-level background jobs.
 ///
 /// Call this once at app startup, after migrations have run. Holds
@@ -119,6 +198,19 @@ pub fn start_with_options(
         probe_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         probe_tick.tick().await;
 
+        // Retention prune — only scheduled when at least one class has a
+        // finite window. Drain the immediate first tick so we don't sweep
+        // during the startup storm.
+        let retention = RetentionConfig::from_env();
+        let mut retention_tick = retention.enabled().then(|| {
+            let mut t = tokio::time::interval(retention.interval);
+            t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            t
+        });
+        if let Some(t) = retention_tick.as_mut() {
+            t.tick().await;
+        }
+
         loop {
             tokio::select! {
                 _ = task_cancel.cancelled() => {
@@ -130,6 +222,16 @@ pub fn start_with_options(
                 }
                 _ = probe_tick.tick() => {
                     router.emit_health_probe().await;
+                }
+                // A `None` tick parks forever, so this arm is inert when
+                // retention is disabled.
+                _ = async {
+                    match retention_tick.as_mut() {
+                        Some(t) => { t.tick().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    run_retention_cycle(&db, &retention).await;
                 }
             }
         }
@@ -158,5 +260,85 @@ async fn run_reaper_cycle(db: &DatabaseConnection) {
                 "reaper cycle failed; will retry on next interval"
             );
         }
+    }
+}
+
+async fn run_retention_cycle(db: &DatabaseConnection, cfg: &RetentionConfig) {
+    match crud::purge_old_terminal_tasks(db, cfg.completed_ttl, cfg.dead_ttl).await {
+        Ok(0) => {
+            // Quiet on the happy path.
+        }
+        Ok(n) => {
+            tracing::info!(
+                target: "background",
+                count = n,
+                "retention cycle: pruned old terminal task-queue rows"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "background",
+                error = %e,
+                "retention cycle failed; will retry on next interval"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod retention_tests {
+    use super::{RetentionConfig, ttl_days_from_env};
+    use std::time::Duration;
+
+    #[test]
+    fn default_prunes_both_classes() {
+        let cfg = RetentionConfig::default();
+        assert!(cfg.enabled());
+        assert_eq!(cfg.completed_ttl, Some(Duration::from_secs(7 * 24 * 3600)));
+        assert_eq!(cfg.dead_ttl, Some(Duration::from_secs(30 * 24 * 3600)));
+    }
+
+    #[test]
+    fn ttl_days_parses_off_switches_to_none() {
+        let var = "OXY_TEST_TTL_OFF";
+        let default = Some(Duration::from_secs(99));
+        for off in ["0", "off", "never", " OFF "] {
+            unsafe { std::env::set_var(var, off) };
+            assert_eq!(
+                ttl_days_from_env(var, default),
+                None,
+                "{off} should disable"
+            );
+        }
+        unsafe { std::env::remove_var(var) };
+    }
+
+    #[test]
+    fn ttl_days_parses_day_count() {
+        let var = "OXY_TEST_TTL_DAYS";
+        unsafe { std::env::set_var(var, "3") };
+        assert_eq!(
+            ttl_days_from_env(var, None),
+            Some(Duration::from_secs(3 * 24 * 3600))
+        );
+        unsafe { std::env::remove_var(var) };
+    }
+
+    #[test]
+    fn ttl_days_unset_uses_default() {
+        assert_eq!(
+            ttl_days_from_env("OXY_TEST_TTL_UNSET_XYZ", Some(Duration::from_secs(42))),
+            Some(Duration::from_secs(42))
+        );
+    }
+
+    #[test]
+    fn disabled_when_both_none() {
+        let cfg = RetentionConfig {
+            interval: Duration::from_secs(3600),
+            completed_ttl: None,
+            dead_ttl: None,
+        };
+        assert!(!cfg.enabled());
     }
 }

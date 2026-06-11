@@ -1,4 +1,4 @@
-import { Building2, FolderOpen, Search, User } from "lucide-react";
+import { Building2, FolderOpen, MessageSquare, Search, User } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
@@ -11,6 +11,7 @@ import {
   CommandList,
   CommandSeparator
 } from "@/components/ui/shadcn/command";
+import { useExplorerThreads } from "@/hooks/api/adminExplorer";
 import { useAdminOrgsList } from "@/hooks/api/adminTenants/useAdminOrgs";
 import { useAdminUsersList } from "@/hooks/api/adminTenants/useAdminUsers";
 import { useAdminWorkspacesList } from "@/hooks/api/adminTenants/useAdminWorkspaces";
@@ -56,10 +57,14 @@ export const AdminEntitySearch = () => {
   const orgsQuery = useAdminOrgsList({ search: query }, { enabled: open });
   const usersQuery = useAdminUsersList({ search: query }, { enabled: open });
   const workspacesQuery = useAdminWorkspacesList({ search: query }, { enabled: open });
+  // Only search threads once the operator has typed something — an unfiltered
+  // cross-tenant thread scan on every palette-open isn't worth the round trip.
+  const threadsQuery = useExplorerThreads(query, { enabled: open && query.length > 1 });
 
   const orgs = useMemo(() => orgsQuery.data?.slice(0, 6) ?? [], [orgsQuery.data]);
   const users = useMemo(() => usersQuery.data?.slice(0, 6) ?? [], [usersQuery.data]);
   const workspaces = useMemo(() => workspacesQuery.data?.slice(0, 6) ?? [], [workspacesQuery.data]);
+  const threads = useMemo(() => threadsQuery.data?.slice(0, 6) ?? [], [threadsQuery.data]);
 
   const go = (path: string) => {
     setOpen(false);
@@ -168,6 +173,41 @@ export const AdminEntitySearch = () => {
                 </CommandItem>
               ))}
             </CommandGroup>
+          ) : null}
+
+          {threads.length > 0 ? (
+            <>
+              <CommandSeparator />
+              <CommandGroup heading='Threads'>
+                {threads.map((t) => {
+                  const openable = t.org_slug && t.workspace_id;
+                  return (
+                    <CommandItem
+                      key={`thread-${t.id}`}
+                      value={`thread ${t.title} ${t.workspace_name ?? ""} ${t.org_name ?? ""}`}
+                      disabled={!openable}
+                      onSelect={() => {
+                        if (openable) {
+                          go(
+                            ROUTES.ORG(t.org_slug as string)
+                              .WORKSPACE(t.workspace_id as string)
+                              .THREAD(t.id)
+                          );
+                        }
+                      }}
+                    >
+                      <MessageSquare className='size-4 text-muted-foreground' />
+                      <span className='flex-1 truncate'>{t.title || "(untitled)"}</span>
+                      {t.workspace_name ? (
+                        <span className='hidden truncate font-mono text-[11px] text-muted-foreground sm:inline'>
+                          {t.workspace_name}
+                        </span>
+                      ) : null}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </>
           ) : null}
         </CommandList>
       </CommandDialog>

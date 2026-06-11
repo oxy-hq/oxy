@@ -14,30 +14,29 @@ import type { CustomerApp } from "@/types/apps";
 import { AppDetail } from "./components/AppDetail";
 import { AppList } from "./components/AppList";
 import { CreateCustomerAppDialog } from "./components/CreateCustomerAppDialog";
-import { OrgsPane } from "./components/OxyAccessPanes/OrgsPane";
-import { ProjectsPane } from "./components/OxyAccessPanes/ProjectsPane";
+import { AccessPane } from "./components/OxyAccessPanes/AccessPane";
 
 /**
- * Admin console for customer apps + the Oxy-access org/project browser.
+ * Admin console for customer apps + the Oxy-access browser.
  *
- * Three tabs share the master-detail shell, selected via `?view=`:
- *   apps     (default) → customer-app registry; `/admin/apps/:org/:app` for detail
- *   orgs              → orgs that granted Oxy access → their projects
- *   projects          → flat list of granted workspaces
+ * Two tabs share the master-detail shell, selected via `?view=`:
+ *   apps   (default) → customer-app registry; `/admin/apps/:org/:app` for detail
+ *   access           → orgs that granted Oxy access, with their workspaces +
+ *                      grant metadata inline (replaces the old split
+ *                      "Orgs with access" / "Projects with access" tabs)
  *
  * A selected app (the `/admin/apps/:orgSlug/:appSlug` route) always implies
- * the Apps tab, so deep links keep working regardless of `?view`.
+ * the Apps tab, so deep links keep working regardless of `?view`. Legacy
+ * `?view=orgs` / `?view=projects` links fold into the unified Access tab.
  */
-type View = "apps" | "orgs" | "projects";
+type View = "apps" | "access";
 
-// Labels on the Orgs / Projects tabs intentionally call out *access* so
-// they don't get confused with the cross-cutting tenant directory under
-// /admin/orgs and /admin/workspaces. These panes only list orgs and
-// projects that have granted Oxy access for customer-app management.
+// The Access label intentionally stays distinct from the cross-cutting tenant
+// directory under /admin/orgs and /admin/workspaces — this surface only lists
+// orgs/workspaces that have granted Oxy access for customer-app management.
 const TABS: { view: View; label: string; to: string }[] = [
   { view: "apps", label: "Apps", to: "/admin/apps" },
-  { view: "orgs", label: "Orgs with access", to: "/admin/apps?view=orgs" },
-  { view: "projects", label: "Projects with access", to: "/admin/apps?view=projects" }
+  { view: "access", label: "Access", to: "/admin/apps?view=access" }
 ];
 
 export default function AdminCustomerApps() {
@@ -48,12 +47,16 @@ export default function AdminCustomerApps() {
   return (
     <div className='flex h-[calc(100vh-3.5rem)] flex-col'>
       <AdminTabs active={view} />
-      {view === "apps" ? <AppsPane /> : view === "orgs" ? <OrgsPane /> : <ProjectsPane />}
+      {view === "apps" ? <AppsPane /> : <AccessPane />}
     </div>
   );
 }
 
-const normalizeView = (v: string | null): View => (v === "orgs" || v === "projects" ? v : "apps");
+// `orgs` / `projects` are accepted for backward compatibility with bookmarked
+// links from the previous three-tab layout; both resolve to the merged Access
+// view.
+const normalizeView = (v: string | null): View =>
+  v === "access" || v === "orgs" || v === "projects" ? "access" : "apps";
 
 const AdminTabs = ({ active }: { active: View }) => (
   <div className='flex items-center gap-1 border-border border-b px-2'>

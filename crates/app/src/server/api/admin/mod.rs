@@ -10,7 +10,9 @@
 pub mod app_admins;
 pub mod apps;
 pub mod billing;
+pub mod explorer;
 pub mod internal_jobs;
+pub mod metrics;
 pub mod orgs_admin;
 pub mod oxy_access;
 pub mod users_admin;
@@ -85,6 +87,8 @@ pub(crate) fn router() -> Router<AppState> {
     let strict = middleware::from_fn(oxy_owner_guard::oxy_owner_guard_middleware);
     feature_flags::routes::router()
         .merge(apps::router())
+        .merge(explorer::router())
+        .merge(metrics::router())
         .merge(orgs_admin::router())
         .merge(users_admin::router())
         .merge(workspaces_admin::router())

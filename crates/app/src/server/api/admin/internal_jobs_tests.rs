@@ -9,8 +9,41 @@
 //! available; the unit suite here keeps fast feedback on the parts that
 //! can run without one.
 
-use super::{QueueStatusCounts, accumulate, extract_task_type, scheduled_jobs};
+use super::{QueueStatusCounts, accumulate, extract_task_type, redact_secrets, scheduled_jobs};
 use serde_json::json;
+
+#[test]
+fn redact_secrets_blanks_secret_shaped_keys_recursively() {
+    let spec = json!({
+        "type": "airway",
+        "pipeline_ref": "pipelines/toast.airway.yml",
+        "variables": {
+            "host": "db.internal",
+            "password": "hunter2",
+            "api_key": "sk-live-abc",
+            "nested": { "client_secret": "shh", "rows": 10 }
+        },
+        "list": [{ "token": "t0" }, { "ok": "keep" }]
+    });
+    let out = redact_secrets(spec);
+    assert_eq!(out["pipeline_ref"], json!("pipelines/toast.airway.yml"));
+    assert_eq!(out["variables"]["host"], json!("db.internal"));
+    assert_eq!(out["variables"]["password"], json!("***redacted***"));
+    assert_eq!(out["variables"]["api_key"], json!("***redacted***"));
+    assert_eq!(
+        out["variables"]["nested"]["client_secret"],
+        json!("***redacted***")
+    );
+    assert_eq!(out["variables"]["nested"]["rows"], json!(10));
+    assert_eq!(out["list"][0]["token"], json!("***redacted***"));
+    assert_eq!(out["list"][1]["ok"], json!("keep"));
+}
+
+#[test]
+fn redact_secrets_leaves_clean_specs_untouched() {
+    let spec = json!({"type": "agent", "agent_id": "analytics", "question": "revenue?"});
+    assert_eq!(redact_secrets(spec.clone()), spec);
+}
 
 #[test]
 fn accumulate_routes_each_status_into_the_right_field() {
@@ -50,7 +83,14 @@ fn accumulate_ignores_unknown_statuses() {
 }
 
 #[test]
-fn extract_task_type_returns_first_object_key() {
+fn extract_task_type_reads_the_internal_tag() {
+    // Real `TaskSpec` is internally tagged: the variant lives under `type`.
+    let spec = json!({"type": "agent", "agent_id": "analytics", "question": "hi"});
+    assert_eq!(extract_task_type(&spec), Some("agent".to_string()));
+}
+
+#[test]
+fn extract_task_type_falls_back_to_first_object_key() {
     let spec = json!({"AnalyticsTurn": {"foo": 1}});
     assert_eq!(extract_task_type(&spec), Some("AnalyticsTurn".to_string()));
 }
@@ -68,25 +108,45 @@ fn extract_task_type_returns_none_for_empty_object() {
 }
 
 #[test]
-fn scheduled_jobs_registry_lists_the_three_known_loops() {
+fn scheduled_jobs_registry_lists_the_known_loops() {
     let jobs = scheduled_jobs();
-    assert_eq!(jobs.len(), 3);
+    assert_eq!(jobs.len(), 4);
     let names: Vec<&str> = jobs.iter().map(|j| j.name).collect();
     assert!(names.contains(&"reaper"));
     assert!(names.contains(&"matcher_health_probe"));
     assert!(names.contains(&"worker_recovery_loop"));
+    assert!(names.contains(&"task_queue_retention"));
 }
 
 #[test]
-fn reaper_is_the_only_manually_triggerable_periodic_job() {
+fn manual_triggers_are_reaper_and_retention() {
     let jobs = scheduled_jobs();
+
     let reaper = jobs.iter().find(|j| j.name == "reaper").unwrap();
     assert_eq!(
         reaper.trigger_path,
         Some("/api/admin/internal-jobs/run-reaper")
     );
-    // The other two are observation-only.
-    for j in jobs.iter().filter(|j| j.name != "reaper") {
+    let retention = jobs
+        .iter()
+        .find(|j| j.name == "task_queue_retention")
+        .unwrap();
+    assert_eq!(
+        retention.trigger_path,
+        Some("/api/admin/internal-jobs/run-retention")
+    );
+
+    // Exactly those two are triggerable; the rest are observation-only.
+    let triggerable: Vec<&str> = jobs
+        .iter()
+        .filter(|j| j.trigger_path.is_some())
+        .map(|j| j.name)
+        .collect();
+    assert_eq!(triggerable.len(), 2);
+    for j in jobs
+        .iter()
+        .filter(|j| j.name == "matcher_health_probe" || j.name == "worker_recovery_loop")
+    {
         assert!(
             j.trigger_path.is_none(),
             "{} should not have a trigger_path",

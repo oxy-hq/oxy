@@ -29,14 +29,9 @@ export const WorkerFleetPanel = () => {
   return (
     <section className='space-y-3'>
       <header className='flex items-baseline justify-between'>
-        <div>
-          <h3 className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
-            Worker fleet
-          </h3>
-          <p className='mt-0.5 text-muted-foreground text-xs'>
-            Live from `agentic_task_queue.worker_id` over the last 24h of claims.
-          </p>
-        </div>
+        <h3 className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
+          Worker fleet
+        </h3>
         {data?.workers ? (
           <span className='font-medium text-[11px] text-muted-foreground tabular-nums'>
             {data.workers.length} {data.workers.length === 1 ? "worker" : "workers"}

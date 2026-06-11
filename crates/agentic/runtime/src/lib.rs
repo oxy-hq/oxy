@@ -86,8 +86,8 @@ pub mod crud {
         find_pending_global_runs, find_stuck_runs, find_stuck_workflow_runs, get_active_root_runs,
         get_max_child_counter, get_outcomes_for_parent, get_queue_entry, get_queue_stats,
         get_resumable_root_runs, get_run_answer, increment_attempt, insert_child_run,
-        insert_task_outcome, mark_recovery_failed, reap_stale_tasks, requeue_task,
-        suspend_with_data_txn, update_queue_heartbeat,
+        insert_task_outcome, mark_recovery_failed, purge_old_terminal_tasks, reap_stale_tasks,
+        requeue_task, suspend_with_data_txn, update_queue_heartbeat,
     };
     pub use crate::orchestrator::crud::{outcomes, queue, recovery};
 }

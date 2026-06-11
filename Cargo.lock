@@ -8589,6 +8589,7 @@ dependencies = [
  "agentic-connector",
  "agentic-core",
  "agentic-http",
+ "agentic-llm",
  "agentic-pipeline",
  "agentic-runtime",
  "agentic-semantic",

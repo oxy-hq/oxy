@@ -82,6 +82,73 @@ pub struct DurableTransport {
     router: Arc<dyn TaskRouter>,
 }
 
+/// Build a human-readable worker identity, used as the `worker_id` column of
+/// `agentic_task_queue` and surfaced in the admin "Internal jobs" console.
+///
+/// Format: `{env}·{host}·{short}` — e.g. `prod·ip-10-2-3-4·5f3a9c1b`.
+///
+/// - `env`   — deployment environment from `OXY_ENV` / `ENVIRONMENT`, else
+///   `local`. Lets an operator tell a prod worker from a staging one at a
+///   glance.
+/// - `host`  — pod / container host from `POD_NAME` / `HOSTNAME`. In
+///   Kubernetes `HOSTNAME` defaults to the pod name, so this correlates a
+///   worker straight to real infrastructure (the whole point of the rename
+///   away from the opaque `worker-<uuid>`). Falls back to `unknown`.
+/// - `short` — first 8 hex chars of a fresh UUID, so multiple worker
+///   processes on one host stay distinct.
+///
+/// Legacy `worker-<uuid>` ids already in the DB are unaffected: `worker_id` is
+/// an opaque display string everywhere it is read.
+fn build_worker_id() -> String {
+    let env =
+        first_nonempty_env(&["OXY_ENV", "ENVIRONMENT"]).unwrap_or_else(|| "local".to_string());
+    let host =
+        first_nonempty_env(&["POD_NAME", "HOSTNAME"]).unwrap_or_else(|| "unknown".to_string());
+    let uuid = uuid::Uuid::new_v4().simple().to_string();
+    let short = &uuid[..8];
+    format!(
+        "{}·{}·{}",
+        sanitize_segment(&env),
+        sanitize_segment(&host),
+        short
+    )
+}
+
+/// Return the first env var in `keys` that is set and non-empty (trimmed).
+fn first_nonempty_env(keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|k| {
+        std::env::var(k)
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    })
+}
+
+/// Lowercase and keep only `[a-z0-9._-]`, mapping anything else to `-`,
+/// trimming stray dashes, and capping length so a pathological hostname can't
+/// bloat the id. Empty input collapses to `unknown` so a segment is never
+/// blank.
+fn sanitize_segment(s: &str) -> String {
+    let cleaned: String = s
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let capped: String = cleaned.trim_matches('-').chars().take(40).collect();
+    if capped.is_empty() {
+        "unknown".to_string()
+    } else {
+        capped
+    }
+}
+
 impl DurableTransport {
     /// Create a new durable transport.
     ///
@@ -137,7 +204,7 @@ impl DurableTransport {
         router: Arc<dyn TaskRouter>,
     ) -> Arc<Self> {
         let (message_tx, message_rx) = mpsc::channel(1024);
-        let worker_id = format!("worker-{}", uuid::Uuid::new_v4());
+        let worker_id = build_worker_id();
         Arc::new(Self {
             db,
             worker_id,
@@ -184,6 +251,28 @@ impl DurableTransport {
             }
             Err(e) => {
                 tracing::error!("reaper failed: {e}");
+                0
+            }
+        }
+    }
+
+    /// Prune old terminal rows from `agentic_task_queue`. Mirrors
+    /// [`Self::run_reaper`] for the admin manual-trigger path; the periodic
+    /// version lives in `orchestrator::background`. Returns rows deleted.
+    pub async fn run_retention(
+        &self,
+        completed_ttl: Option<std::time::Duration>,
+        dead_ttl: Option<std::time::Duration>,
+    ) -> u64 {
+        match crud::purge_old_terminal_tasks(&self.db, completed_ttl, dead_ttl).await {
+            Ok(count) => {
+                if count > 0 {
+                    tracing::info!(count, "retention: pruned old terminal task-queue rows");
+                }
+                count
+            }
+            Err(e) => {
+                tracing::error!("retention failed: {e}");
                 0
             }
         }
@@ -509,5 +598,50 @@ impl WorkerTransport for DurableTransport {
             }
         });
         cancel
+    }
+}
+
+#[cfg(test)]
+mod worker_id_tests {
+    use super::{build_worker_id, sanitize_segment};
+
+    #[test]
+    fn sanitize_keeps_safe_chars_and_lowercases() {
+        assert_eq!(sanitize_segment("Prod"), "prod");
+        assert_eq!(sanitize_segment("ip-10-2-3-4"), "ip-10-2-3-4");
+        assert_eq!(sanitize_segment("oxy_worker.1"), "oxy_worker.1");
+    }
+
+    #[test]
+    fn sanitize_maps_unsafe_chars_and_trims_dashes() {
+        assert_eq!(sanitize_segment("a/b:c d"), "a-b-c-d");
+        assert_eq!(sanitize_segment("--edge--"), "edge");
+        assert_eq!(sanitize_segment("staging!!"), "staging");
+    }
+
+    #[test]
+    fn sanitize_empty_becomes_unknown() {
+        assert_eq!(sanitize_segment(""), "unknown");
+        assert_eq!(sanitize_segment("   "), "unknown");
+        assert_eq!(sanitize_segment("///"), "unknown");
+    }
+
+    #[test]
+    fn sanitize_caps_length() {
+        let long = "h".repeat(100);
+        assert_eq!(sanitize_segment(&long).len(), 40);
+    }
+
+    #[test]
+    fn worker_id_has_three_dot_separated_segments() {
+        let id = build_worker_id();
+        let parts: Vec<&str> = id.split('·').collect();
+        assert_eq!(parts.len(), 3, "worker id should be env·host·short: {id}");
+        // short suffix is 8 hex chars
+        assert_eq!(parts[2].len(), 8);
+        assert!(parts[2].chars().all(|c| c.is_ascii_hexdigit()));
+        // env + host segments are never blank
+        assert!(!parts[0].is_empty());
+        assert!(!parts[1].is_empty());
     }
 }

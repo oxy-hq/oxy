@@ -2,15 +2,9 @@ import { Loader2, RotateCcw, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 
 /**
- * Sticky bottom action bar shown when one or more rows are selected
- * in the dead-letter / failures inspector. Slides up from the bottom
- * of the panel container. Modeled on the Sidekiq dead-set bulk bar:
- * the operator triages by failure shape, multi-selects within a
- * group, then bulk-retries or bulk-deletes.
- *
- * `onReenqueue` / `onDelete` receive the full set of selected ids;
- * the caller serializes the per-id mutations and tracks per-row
- * progress so the bar can render a single "Reenqueueing 5…" state.
+ * Sticky bottom action bar shown when one or more dead jobs are selected in
+ * the console. The caller serializes the per-id mutations and tracks progress
+ * so the bar renders a single "Re-enqueueing…" state for the whole batch.
  */
 export const BulkActionBar = ({
   selectedCount,
@@ -18,17 +12,14 @@ export const BulkActionBar = ({
   onReenqueue,
   onDelete,
   isReenqueueing,
-  isDeleting,
-  showReenqueue = true
+  isDeleting
 }: {
   selectedCount: number;
   onClear: () => void;
-  onReenqueue?: () => void;
+  onReenqueue: () => void;
   onDelete: () => void;
   isReenqueueing?: boolean;
   isDeleting?: boolean;
-  /** Hide the re-enqueue action for read-only surfaces (e.g. failures tab). */
-  showReenqueue?: boolean;
 }) => {
   if (selectedCount === 0) return null;
   return (
@@ -43,22 +34,20 @@ export const BulkActionBar = ({
         <X className='size-3.5' />
         Clear
       </Button>
-      {showReenqueue && onReenqueue ? (
-        <Button
-          variant='outline'
-          size='sm'
-          onClick={onReenqueue}
-          disabled={isReenqueueing}
-          className='h-7 gap-1.5'
-        >
-          {isReenqueueing ? (
-            <Loader2 className='size-3.5 animate-spin' />
-          ) : (
-            <RotateCcw className='size-3.5' />
-          )}
-          Re-enqueue
-        </Button>
-      ) : null}
+      <Button
+        variant='outline'
+        size='sm'
+        onClick={onReenqueue}
+        disabled={isReenqueueing}
+        className='h-7 gap-1.5'
+      >
+        {isReenqueueing ? (
+          <Loader2 className='size-3.5 animate-spin' />
+        ) : (
+          <RotateCcw className='size-3.5' />
+        )}
+        Re-enqueue
+      </Button>
       <Button
         variant='outline'
         size='sm'

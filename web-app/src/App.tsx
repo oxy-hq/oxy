@@ -115,6 +115,7 @@ const AdminLayout = React.lazy(() => import("./pages/admin/AdminLayout"));
 const AdminBillingQueue = React.lazy(() => import("./pages/admin/AdminBillingQueue"));
 const AdminFeatureFlags = React.lazy(() => import("./pages/admin/AdminFeatureFlags"));
 const AdminInternalJobs = React.lazy(() => import("./pages/admin/AdminInternalJobs"));
+const AdminExplorer = React.lazy(() => import("./pages/admin/AdminExplorer"));
 // Customer-apps admin surface (new-auth): per-org app admins + the
 // customer-apps registry (Add / Link / Sync / Publish). Lazy-loaded
 // alongside the rest of admin since most users never visit it.
@@ -529,6 +530,8 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/feature-flags' element={<AdminFeatureFlags />} />
             <Route path='admin/internal-jobs' element={<AdminInternalJobs />} />
             {/* ROUTES.ADMIN.INTERNAL_JOBS */}
+            <Route path='admin/explorer' element={<AdminExplorer />} />
+            {/* ROUTES.ADMIN.EXPLORER */}
             <Route path='admin/app-admins' element={<AdminAppAdmins />} />
             {/* Customer-apps admin is mounted at /admin/apps (canonical
                 ROUTES.ADMIN.CUSTOMER_APPS in libs/utils/routes.ts) with an

@@ -43,6 +43,7 @@ agentic-connector = { workspace = true, features = [
 airhouse = { workspace = true, features = ["connector", "rest"] }
 agentic-core = { workspace = true }
 agentic-http = { workspace = true }
+agentic-llm = { workspace = true }
 agentic-pipeline = { workspace = true }
 agentic-runtime = { workspace = true }
 agentic-semantic = { workspace = true }

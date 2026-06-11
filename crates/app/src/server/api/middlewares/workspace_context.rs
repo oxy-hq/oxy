@@ -1,3 +1,5 @@
+use crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin;
+use crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner;
 use crate::server::router::AppState;
 use crate::server::service::retrieval::EnumIndexManager;
 use crate::server::service::secret_manager::SecretManagerService;
@@ -10,6 +12,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use chrono::Utc;
 use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::runs::RunsManager;
 use oxy::adapters::secrets::SecretsManager;
@@ -185,7 +188,7 @@ pub async fn workspace_middleware(
         .as_ref()
         .map(|s| std::sync::Arc::new(s.db.clone()));
 
-    match authorize_workspace(workspace_id, user.id, &mut request).await? {
+    match authorize_workspace(workspace_id, user.id, &user.email, &mut request).await? {
         Some(workspace_row) => {
             try_attach_workspace_manager(
                 &workspace_row,
@@ -222,6 +225,7 @@ pub async fn workspace_middleware(
 async fn authorize_workspace(
     workspace_id: Uuid,
     user_id: Uuid,
+    user_email: &str,
     request: &mut Request<axum::body::Body>,
 ) -> Result<Option<entity::workspaces::Model>, StatusCode> {
     use entity::prelude::Workspaces;
@@ -256,7 +260,7 @@ async fn authorize_workspace(
     request.extensions_mut().insert(workspace_row.clone());
 
     let (org_membership, effective_role) =
-        resolve_effective_role(&db, workspace_id, org_id, user_id).await?;
+        resolve_effective_role(&db, workspace_id, org_id, user_id, user_email).await?;
 
     request
         .extensions_mut()
@@ -279,13 +283,14 @@ async fn resolve_effective_role(
     workspace_id: Uuid,
     org_id: Uuid,
     user_id: Uuid,
+    user_email: &str,
 ) -> Result<(entity::org_members::Model, WorkspaceRole), StatusCode> {
     use entity::org_members::Column as OrgMemberCol;
     use entity::prelude::{OrgMembers, WorkspaceMembers};
     use entity::workspace_members::Column as WsMemberCol;
     use sea_orm::{ColumnTrait, QueryFilter};
 
-    let org_membership = OrgMembers::find()
+    let real_membership = OrgMembers::find()
         .filter(OrgMemberCol::OrgId.eq(org_id))
         .filter(OrgMemberCol::UserId.eq(user_id))
         .one(db)
@@ -299,16 +304,46 @@ async fn resolve_effective_role(
                 e
             );
             StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or_else(|| {
-            tracing::warn!(
-                "User {} denied access to workspace {} (not a member of org {})",
-                user_id,
-                workspace_id,
-                org_id
-            );
-            StatusCode::FORBIDDEN
         })?;
+
+    // Mirror `org_middleware`'s global-operator override: a Global Owner
+    // (OXY_OWNER) or Global Admin (`app_admins`) who is not a real member of
+    // the org gets a synthesized Owner membership so they can open a tenant's
+    // workspace for support/triage (e.g. the admin "Open /home" on a workspace
+    // that granted Oxy access). Without this, `/{workspace_id}/details` 403s
+    // even though the parallel `/orgs/{id}/*` routes already allow operators
+    // through — the inconsistency that bounced operators out of granted
+    // workspaces.
+    let org_membership = match real_membership {
+        Some(m) => m,
+        None => {
+            if is_oxy_owner(user_email) || is_oxy_app_admin(user_email).await {
+                let now = Utc::now().into();
+                tracing::info!(
+                    operator_email = %user_email,
+                    org_id = %org_id,
+                    workspace_id = %workspace_id,
+                    "workspace_context: global override granted (no real membership; user is Global Owner or Global Admin)"
+                );
+                entity::org_members::Model {
+                    id: Uuid::nil(),
+                    org_id,
+                    user_id,
+                    role: entity::org_members::OrgRole::Owner,
+                    created_at: now,
+                    updated_at: now,
+                }
+            } else {
+                tracing::warn!(
+                    "User {} denied access to workspace {} (not a member of org {})",
+                    user_id,
+                    workspace_id,
+                    org_id
+                );
+                return Err(StatusCode::FORBIDDEN);
+            }
+        }
+    };
 
     let ws_override = WorkspaceMembers::find()
         .filter(WsMemberCol::WorkspaceId.eq(workspace_id))

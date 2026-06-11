@@ -17,7 +17,7 @@ pub use outcomes::{
 pub use queue::{
     QueueStats, QueueTaskRow, TaskScope, cancel_queued_task, claim_task, claim_task_under_root,
     complete_queue_task, enqueue_task, fail_queue_task, get_queue_entry, get_queue_stats,
-    reap_stale_tasks, requeue_task, update_queue_heartbeat,
+    purge_old_terminal_tasks, reap_stale_tasks, requeue_task, update_queue_heartbeat,
 };
 pub use recovery::{
     StuckRun, cleanup_stale_runs, find_pending_global_runs, find_stuck_runs,

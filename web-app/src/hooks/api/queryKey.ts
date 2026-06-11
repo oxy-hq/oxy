@@ -509,6 +509,18 @@ const adminOrgsKeys = {
   detail: (orgId: string) => [...adminOrgsKeys.all, "detail", orgId] as const
 };
 
+const adminMetricsKeys = {
+  all: ["admin", "metrics"] as const,
+  llmUsage: (days: number) => [...adminMetricsKeys.all, "llm-usage", days] as const
+};
+
+const adminExplorerKeys = {
+  all: ["admin", "explorer"] as const,
+  threads: (search: string) => [...adminExplorerKeys.all, "threads", search] as const,
+  runs: (search: string, status: string) =>
+    [...adminExplorerKeys.all, "runs", search, status] as const
+};
+
 const adminUsersKeys = {
   all: ["admin", "users"] as const,
   list: (search?: string, status?: string) =>
@@ -618,6 +630,8 @@ const queryKeys = {
   featureFlags: featureFlagKeys,
   internalJobs: internalJobsKeys,
   adminOrgs: adminOrgsKeys,
+  adminMetrics: adminMetricsKeys,
+  adminExplorer: adminExplorerKeys,
   adminUsers: adminUsersKeys,
   adminWorkspaces: adminWorkspacesKeys,
   authConfig: authConfigKeys,

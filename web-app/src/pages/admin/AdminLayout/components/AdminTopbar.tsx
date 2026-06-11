@@ -9,6 +9,7 @@ import {
 import { Separator } from "@/components/ui/shadcn/separator";
 import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
 import { AdminEntitySearch } from "../../components/AdminEntitySearch";
+import { SystemStatus } from "./SystemStatus";
 
 interface AdminTopbarProps {
   title: string;
@@ -35,6 +36,8 @@ export function AdminTopbar({ title }: AdminTopbarProps) {
         </BreadcrumbList>
       </Breadcrumb>
       <div className='ml-auto flex items-center gap-3'>
+        <SystemStatus />
+        <Separator orientation='vertical' className='hidden h-4 md:block' />
         <AdminEntitySearch />
         <Separator orientation='vertical' className='h-4' />
         <VersionBadge />

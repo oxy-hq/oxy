@@ -23,9 +23,20 @@ export interface QueueRow {
   claim_count: number;
   max_claims: number;
   last_heartbeat: string | null;
+  claimed_at: string | null;
   created_at: string;
   updated_at: string;
   task_type: string | null;
+  /** Decoded TaskSpec JSON (agent_id / workflow_ref / question / variables…). */
+  spec: unknown;
+  // Enriched tenant + run context (LEFT-joined; null for system/orphan jobs).
+  workspace_id: string | null;
+  workspace_name: string | null;
+  org_id: string | null;
+  org_name: string | null;
+  run_status: string | null;
+  run_error_message: string | null;
+  originating_user_email: string | null;
 }
 
 export interface DeadLetterResponse {
@@ -101,6 +112,19 @@ export const InternalJobsService = {
 
   async runReaper(): Promise<RunReaperResponse> {
     const response = await apiClient.post<RunReaperResponse>(`${BASE}/run-reaper`);
+    return response.data;
+  },
+
+  /**
+   * Trigger any scheduled job by its registry `trigger_path`. The backend
+   * returns the full path including the `/api` prefix; the axios client already
+   * has `/api` in its baseURL, so strip it before posting.
+   */
+  async runScheduled(
+    triggerPath: string
+  ): Promise<{ rows_affected?: number; rows_deleted?: number }> {
+    const path = triggerPath.replace(/^\/api(?=\/)/, "");
+    const response = await apiClient.post<{ rows_affected?: number; rows_deleted?: number }>(path);
     return response.data;
   }
 };

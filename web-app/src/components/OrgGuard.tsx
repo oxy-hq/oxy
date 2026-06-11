@@ -5,25 +5,28 @@ import { PaywallScreen } from "@/components/billing/PaywallScreen";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrgBillingStatus } from "@/hooks/api/billing";
-import { useOrgs } from "@/hooks/api/organizations";
 import { setLastOrgSlug } from "@/libs/utils/lastWorkspace";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import { usePaywallStore } from "@/stores/usePaywallStore";
+import { useResolveOrgForGuard } from "./useResolveOrgForGuard";
 
 /**
  * Route guard for /:orgSlug/* routes.
  *
- * - Resolves org from slug, verifies user is a member, sets Zustand store.
+ * - Resolves org from slug (member orgs, plus a Global Owner/Admin fallback so
+ *   operators can open a tenant they don't belong to), sets Zustand store.
  * - Mounts `PaywallScreen` instead of the app shell when the org's billing
  *   status doesn't grant access (`incomplete`, `unpaid`, `canceled`, or
- *   `past_due` past grace as observed via the latest 402 response).
+ *   `past_due` past grace as observed via the latest 402 response). Skipped
+ *   for the operator override — an operator inspecting a tenant shouldn't be
+ *   paywalled by that tenant's subscription.
  * - The `/billing/*` sub-routes always pass through so admins can still pay.
  */
 export default function OrgGuard() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
   const location = useLocation();
-  const { data: orgs, isPending } = useOrgs();
+  const { org: matchedOrg, isGlobalOverride, isPending } = useResolveOrgForGuard(orgSlug);
   // Subscribe via selectors so unrelated store fields (e.g. workspace switches)
   // don't re-render the guard on every change.
   const currentOrg = useCurrentOrg((s) => s.org);
@@ -31,14 +34,14 @@ export default function OrgGuard() {
   const setOrg = useCurrentOrg((s) => s.setOrg);
   const clearOrg = useCurrentOrg((s) => s.clearOrg);
   const { authConfig } = useAuth();
-  const billingEnabled = authConfig.billing_enabled;
+  // Operators reaching a tenant via the global override are never paywalled.
+  const billingActive = authConfig.billing_enabled && !isGlobalOverride;
 
-  const matchedOrg = orgs?.find((o) => o.slug === orgSlug);
   const hasWorkspaces = (matchedOrg?.workspace_count ?? 0) > 0;
 
   const { data: billing, isPending: billingPending } = useOrgBillingStatus(
     matchedOrg?.id ?? "",
-    billingEnabled && Boolean(matchedOrg),
+    billingActive && Boolean(matchedOrg),
     // While the org is in the past_due grace window we render BillingBanner,
     // not the paywall. The 402 axios interceptor still flips the paywall
     // store on the first blocked request, but a refetch here closes the
@@ -108,7 +111,7 @@ export default function OrgGuard() {
   // requests that hit `SubscriptionGuard` → 402 before `PaywallScreen`
   // mounts. Most visible after `POST /orgs` lands the user on
   // `/{slug}/onboarding` with the new (Incomplete) org.
-  if (billingEnabled && !onBillingPath && !billing && billingPending) {
+  if (billingActive && !onBillingPath && !billing && billingPending) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
         <Spinner className='size-6' />

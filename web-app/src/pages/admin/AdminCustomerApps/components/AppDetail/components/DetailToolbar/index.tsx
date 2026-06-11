@@ -33,6 +33,12 @@ export interface DetailToolbarProps {
   onDeviceChange: (device: Device) => void;
   onChannelChange: (channel: ChannelView) => void;
   onReload: () => void;
+  /**
+   * Render the section tab strip. The single-surface AppDetail sets this
+   * false — there are no sub-tabs any more, so the bar is just identity +
+   * preview controls.
+   */
+  showTabs?: boolean;
 }
 
 const DEVICE_LABELS: Record<Device, { icon: typeof Smartphone; label: string; size: string }> = {
@@ -80,7 +86,8 @@ export const DetailToolbar = ({
   onTabChange,
   onDeviceChange,
   onChannelChange,
-  onReload
+  onReload,
+  showTabs = true
 }: DetailToolbarProps) => {
   const isPreview = tab === "preview";
   // Holds the channel the user is asking to switch to. AlertDialog is
@@ -116,21 +123,24 @@ export const DetailToolbar = ({
         </Badge>
       </div>
 
-      {/* Section nav — three pills with an active underline. */}
-      <nav className='flex shrink-0 items-center gap-0.5' aria-label='App detail sections'>
-        <TabPill active={tab === "preview"} onClick={() => onTabChange("preview")}>
-          Preview
-        </TabPill>
-        <TabPill active={tab === "info"} onClick={() => onTabChange("info")}>
-          Info
-        </TabPill>
-        <TabPill active={tab === "activity"} onClick={() => onTabChange("activity")}>
-          Activity
-        </TabPill>
-        <TabPill active={tab === "settings"} onClick={() => onTabChange("settings")}>
-          Settings
-        </TabPill>
-      </nav>
+      {/* Section nav — only when the host renders sub-tabs. The
+          single-surface AppDetail hides this entirely. */}
+      {showTabs && (
+        <nav className='flex shrink-0 items-center gap-0.5' aria-label='App detail sections'>
+          <TabPill active={tab === "preview"} onClick={() => onTabChange("preview")}>
+            Preview
+          </TabPill>
+          <TabPill active={tab === "info"} onClick={() => onTabChange("info")}>
+            Info
+          </TabPill>
+          <TabPill active={tab === "activity"} onClick={() => onTabChange("activity")}>
+            Activity
+          </TabPill>
+          <TabPill active={tab === "settings"} onClick={() => onTabChange("settings")}>
+            Settings
+          </TabPill>
+        </nav>
+      )}
 
       {/* Contextual controls. Preview-only items unmount on other tabs
           so the bar visibly compacts when there's nothing to do. */}
