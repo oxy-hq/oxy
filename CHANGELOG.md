@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.73] - 2026-06-11
+
+### 🚀 Features
+
+- *(external-api)* Expose anomaly endpoints on external API surface (#2489)
+- *(airhouse)* Re-mint pipeline credentials on reconnect via CredentialProvider (#2496)
+- *(site-scout)* Procedure-run wiring + airway pin chain + env vars in airway YAMLs (#2433)
+- *(compile)* Compile boundary end-to-end — multi-instance ready (#2494)
+- *(admin)* Cockpit revamp — internal jobs, custom apps, LLM cost dashboard, cross-tenant explorer (#2503)
+
+### 🐛 Bug Fixes
+
+- *(observability)* Add tcp keepalive to airhouse pgwire connection (#2490)
+- *(edge)* Make MediaMTX camera publisher self-heal on stalled feeds (#2493)
+- *(edge)* Use RTSP -timeout instead of -rw_timeout for publisher ffmpeg (#2495)
+
+### 💼 Other
+
+- *(deps)* Bump actions/checkout from 4 to 6 (#2500)
+- *(deps)* Bump docker/metadata-action from 5 to 6 (#2499)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 7 updates (#2502)
+
+## [0.5.72] - 2026-06-10
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.72 (#2488)
+
 ## [0.5.71] - 2026-06-09
 
 ### 🐛 Bug Fixes
