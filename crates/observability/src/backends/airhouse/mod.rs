@@ -167,6 +167,18 @@ fn make_pg_config(
     cfg.user(user);
     cfg.password(password);
     cfg.dbname(database);
+    // Connection hardening. The airhouse data-plane drops a connection
+    // abruptly when its pod is evicted/rolled (no FIN/RST reaches us), and
+    // the reconnect driver below only fires once `conn.await` returns — which,
+    // without TCP keepalive, blocks on the OS default (~2h). These make a dead
+    // peer surface in ~60s so telemetry writes fail over to a fresh connection
+    // promptly instead of silently stalling.
+    cfg.connect_timeout(Duration::from_secs(10));
+    cfg.keepalives(true);
+    cfg.keepalives_idle(Duration::from_secs(30));
+    cfg.keepalives_interval(Duration::from_secs(10));
+    cfg.keepalives_retries(3);
+    cfg.tcp_user_timeout(Duration::from_secs(60));
     cfg
 }
 

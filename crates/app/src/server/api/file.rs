@@ -220,7 +220,7 @@ pub async fn save_file(
 
     let resolved = workspace_manager
         .config_manager
-        .resolve_file(path.clone())
+        .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
     let file_path = PathBuf::from(&resolved);

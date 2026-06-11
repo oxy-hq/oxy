@@ -398,14 +398,6 @@ fn finalize_router(app_routes: Router<AppState>, app_state: AppState) -> Router 
 
     app_routes
         .with_state(app_state)
-        // role_middleware enforces the IDE/serve/all classification per OXY_ROLE.
-        // No-op when OXY_ROLE is unset (single-process default). On a mismatched
-        // process role it returns 421 instead of letting an FS-dependent handler
-        // run on a serve replica. Always stamps X-Oxy-Served-By so the demo
-        // (and `curl -i`) can show who answered.
-        .layer(axum::middleware::from_fn(
-            crate::server::role_middleware::enforce_role,
-        ))
         .layer(build_cors_layer())
         .layer(global_timeout)
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top()))

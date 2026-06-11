@@ -19,7 +19,6 @@ const ROUTES = {
     BILLING_QUEUE: "/admin/billing/queue",
     FEATURE_FLAGS: "/admin/feature-flags",
     INTERNAL_JOBS: "/admin/internal-jobs",
-    COMPILES: "/admin/compiles",
     CUSTOMER_APPS: "/admin/apps",
     APP_ADMINS: "/admin/app-admins",
     TENANTS: "/admin/tenants",

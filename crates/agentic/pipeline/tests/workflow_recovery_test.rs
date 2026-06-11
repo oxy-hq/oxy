@@ -1278,7 +1278,6 @@ impl TaskExecutor for HappyPathExecutor {
             }
 
             TaskSpec::Airway { .. } => Err("airway not exercised by this test".to_string()),
-            TaskSpec::Compile { .. } => Err("compile not exercised by this test".to_string()),
             TaskSpec::Custom { .. } => Err("custom not exercised by this test".to_string()),
         }
     }

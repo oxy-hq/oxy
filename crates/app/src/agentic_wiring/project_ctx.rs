@@ -336,68 +336,6 @@ impl ProjectContext for OxyProjectContext {
         resolve_model_impl(model_ref, has_explicit_model, &self.workspace_manager).await
     }
 
-    async fn resolve_agent_yaml(&self, agent_id: &str) -> Option<String> {
-        // Slice 4.agents: when `compile_runtime_use_postgres` is on AND
-        // the workspace has a promoted revision, hydrate the agent YAML
-        // from `agent_definitions` instead of walking the filesystem.
-        // Branch awareness is coarse (project context doesn't carry
-        // branch state — most agent callers are scheduled jobs or
-        // analytics runs spawned without IDE branch context), so we
-        // pass `None` and serve main. IDE feature-branch users will
-        // see compiled main when the flag is on — opt-in trade-off.
-        //
-        // The `agent_id` here can be a path-like reference (e.g.
-        // `agents/foo.agentic.yml`) or a bare stem (`foo`). The
-        // `agent_definitions` PK is keyed by the strict-typed
-        // `AgenticAgent.name` (stem), so we normalise.
-        if !crate::server::feature_flags::is_enabled("compile_runtime_use_postgres") {
-            return None;
-        }
-        let name = agent_id
-            .trim_end_matches(".agentic.yml")
-            .trim_end_matches(".agentic.yaml")
-            .rsplit('/')
-            .next()
-            .unwrap_or(agent_id);
-        match crate::server::api::compiled_reader::resolve_analytics_agent(
-            self.workspace_manager.workspace_id,
-            None,
-            name,
-        )
-        .await
-        {
-            Ok(Some(artifact)) => match serde_yaml::to_string(&artifact.definition) {
-                Ok(yaml) => {
-                    tracing::debug!(
-                        workspace_id = %self.workspace_manager.workspace_id,
-                        agent_id,
-                        "resolve_agent_yaml served from compile boundary"
-                    );
-                    Some(yaml)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        workspace_id = %self.workspace_manager.workspace_id,
-                        agent_id,
-                        error = ?e,
-                        "compile boundary agent YAML re-serialise failed; falling through to FS"
-                    );
-                    None
-                }
-            },
-            Ok(None) => None,
-            Err(e) => {
-                tracing::warn!(
-                    workspace_id = %self.workspace_manager.workspace_id,
-                    agent_id,
-                    error = ?e,
-                    "compile boundary agent lookup error; falling through to FS"
-                );
-                None
-            }
-        }
-    }
-
     async fn resolve_secret(&self, var_name: &str) -> Option<String> {
         match self
             .workspace_manager
@@ -603,56 +541,6 @@ impl WorkspaceContext for OxyProjectContext {
     }
 
     async fn resolve_workflow_yaml(&self, workflow_ref: &str) -> Result<String, String> {
-        // Slice 4.procedures: when `compile_runtime_use_postgres` is on
-        // AND the workspace has a promoted revision, hydrate the
-        // procedure YAML from `procedure_definitions` instead of
-        // walking the filesystem. Branch awareness here is coarse —
-        // `OxyProjectContext` doesn't carry branch state (most callers
-        // are non-IDE: scheduled jobs, customer-apps, retried runs),
-        // so we pass `None` and let the compile-boundary path serve
-        // whatever main is. IDE feature-branch users won't have edits
-        // here today; the flag is opt-in so operators choose when this
-        // trade-off is acceptable.
-        //
-        // We round-trip JSONB → strict-typed Workflow → YAML so the
-        // downstream parser (which expects YAML) is unchanged.
-        if crate::server::feature_flags::is_enabled("compile_runtime_use_postgres") {
-            match crate::server::api::compiled_reader::resolve_procedure(
-                self.workspace_manager.workspace_id,
-                None,
-                workflow_ref,
-            )
-            .await
-            {
-                Ok(Some(artifact)) => match serde_yaml::to_string(&artifact.definition) {
-                    Ok(yaml) => {
-                        tracing::debug!(
-                            workspace_id = %self.workspace_manager.workspace_id,
-                            workflow_ref,
-                            "resolve_workflow_yaml served from compile boundary"
-                        );
-                        return Ok(yaml);
-                    }
-                    Err(e) => tracing::warn!(
-                        workspace_id = %self.workspace_manager.workspace_id,
-                        workflow_ref,
-                        error = ?e,
-                        "compile boundary procedure YAML re-serialise failed; falling through to FS"
-                    ),
-                },
-                Ok(None) => {
-                    // Branch non-default, workspace not promoted, kill switch on,
-                    // or no matching row — fall through to FS.
-                }
-                Err(e) => tracing::warn!(
-                    workspace_id = %self.workspace_manager.workspace_id,
-                    workflow_ref,
-                    error = ?e,
-                    "compile boundary procedure lookup error; falling through to FS"
-                ),
-            }
-        }
-
         // Authenticated callers can supply an arbitrary `workflow_ref` via
         // the `path_b64` route param (and the queued workflow spec), so we
         // must contain it to the workspace root before reading. A raw

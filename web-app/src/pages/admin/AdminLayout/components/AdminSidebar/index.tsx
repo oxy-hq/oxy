@@ -2,7 +2,6 @@ import {
   Activity,
   AppWindow,
   Building2,
-  FileCheck,
   Flag,
   FolderOpen,
   Inbox,
@@ -58,13 +57,6 @@ const ADMIN_NAV: AdminNavItem[] = [
     to: ROUTES.ADMIN.INTERNAL_JOBS,
     label: "Internal jobs",
     icon: Activity,
-    adminOrAppAdmin: true,
-    group: "operations"
-  },
-  {
-    to: ROUTES.ADMIN.COMPILES,
-    label: "Compile revisions",
-    icon: FileCheck,
     adminOrAppAdmin: true,
     group: "operations"
   },

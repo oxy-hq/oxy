@@ -47,16 +47,3 @@ pub mod users;
 pub mod workspace_members;
 pub mod workspace_oxy_access;
 pub mod workspaces;
-
-// ── compile boundary (Phase 1.6a) ────────────────────────────────────
-pub mod agent_definitions;
-pub mod airway_pipelines;
-pub mod app_definitions;
-pub mod compiled_references;
-pub mod monitor_configs;
-pub mod procedure_definitions;
-pub mod revisions;
-pub mod semantic_topics;
-pub mod semantic_views;
-pub mod verified_queries;
-pub mod workspace_compiled_configs;

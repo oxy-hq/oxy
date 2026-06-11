@@ -39,15 +39,3 @@ pub use super::users::Entity as Users;
 pub use super::workspace_members::Entity as WorkspaceMembers;
 pub use super::workspace_oxy_access::Entity as WorkspaceOxyAccess;
 pub use super::workspaces::Entity as Workspaces;
-
-// ── compile boundary (Phase 1.6a) ────────────────────────────────────
-pub use super::agent_definitions::Entity as AgentDefinitions;
-pub use super::airway_pipelines::Entity as AirwayPipelines;
-pub use super::app_definitions::Entity as AppDefinitions;
-pub use super::compiled_references::Entity as CompiledReferences;
-pub use super::procedure_definitions::Entity as ProcedureDefinitions;
-pub use super::revisions::Entity as Revisions;
-pub use super::semantic_topics::Entity as SemanticTopics;
-pub use super::semantic_views::Entity as SemanticViews;
-pub use super::verified_queries::Entity as VerifiedQueries;
-pub use super::workspace_compiled_configs::Entity as WorkspaceCompiledConfigs;

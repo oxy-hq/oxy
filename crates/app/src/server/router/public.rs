@@ -16,7 +16,6 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         .route("/ready", get(healthcheck::readiness_check))
         .route("/live", get(healthcheck::liveness_check))
         .route("/version", get(healthcheck::version_info))
-        .route("/_internal/routing-manifest", get(routing_manifest))
         .route("/auth/config", get(auth::get_config))
         .route("/auth/oauth/state", post(auth::issue_oauth_state))
         .route("/auth/google", post(auth::google_auth))
@@ -134,26 +133,4 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/projects/{project_id}/agents/runs/{run_id}/events",
             get(projects::agent_run_stream::stream_agent_run),
         )
-}
-
-/// `GET /_internal/routing-manifest` — returns the IdeOnly classification
-/// table plus the current process's role. Used by operators to diff route
-/// classifications across deploys and by the docker-compose split demo to
-/// prove the boundary is being enforced.
-async fn routing_manifest() -> axum::Json<serde_json::Value> {
-    let role = crate::server::role_manifest::current_process_role();
-    let entries: Vec<serde_json::Value> = crate::server::role_manifest::dump_manifest()
-        .into_iter()
-        .map(|(method, path, role_kind)| {
-            serde_json::json!({
-                "method": method,
-                "path": path,
-                "role": role_kind,
-            })
-        })
-        .collect();
-    axum::Json(serde_json::json!({
-        "process_role": role.as_str(),
-        "ide_only": entries,
-    }))
 }

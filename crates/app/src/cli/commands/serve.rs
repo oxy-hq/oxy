@@ -46,10 +46,6 @@ const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 const APIDOC_DESCRIPTION: &str = include_str!("apidoc.md");
 
 pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
-    // OXY_ROLE → ide | serve | worker | all (default). Read once so the
-    // routing middleware can enforce the FS-routing boundary.
-    crate::server::role_manifest::init_process_role_from_env();
-
     // Require OXY_DATABASE_URL to be set
     if std::env::var("OXY_DATABASE_URL").is_err() {
         return Err(OxyError::RuntimeError(

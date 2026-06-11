@@ -52,7 +52,6 @@ oxy-airlayer-compat = { workspace = true }
 oxy-auth = { workspace = true }
 oxy-billing = { workspace = true }
 oxy-cameras = { workspace = true }
-oxy-compile = { workspace = true }
 oxy-project = { workspace = true }
 oxy-thread = { workspace = true }
 oxy-semantic = { workspace = true }
@@ -137,7 +136,6 @@ duckdb = { workspace = true }
 # Utilities
 uuid = { workspace = true }
 chrono = { workspace = true }
-tempfile = { workspace = true }
 minijinja = { workspace = true, features = ["loader"] }
 once_cell = { workspace = true }
 scopeguard = { workspace = true }

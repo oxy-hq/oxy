@@ -23,7 +23,6 @@ agentic-core = { workspace = true }
 agentic-llm = { workspace = true }
 agentic-runtime = { workspace = true }
 agentic-workflow = { workspace = true }
-oxy-compile = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 serde_yaml = { workspace = true }

@@ -47,21 +47,4 @@ impl ConfigBuilder {
         let config = storage.load_config_with_fallback().await;
         Ok(ConfigManager::new(storage, config))
     }
-
-    /// Build a `ConfigManager` with a pre-resolved `Config` instead of
-    /// re-parsing `config.yml` from disk. The storage layer is still
-    /// constructed locally because path-validation, `resolve_file`, and
-    /// other operations need a workspace path even when the runtime
-    /// `Config` came from Postgres. The caller is expected to set
-    /// `config.workspace_path` (which is `#[serde(skip)]` on the
-    /// struct, so it won't have been populated by deserialisation).
-    pub fn build_with_provided_config(
-        self,
-        config: crate::config::model::Config,
-    ) -> Result<ConfigManager, OxyError> {
-        let storage = self.storage.ok_or(OxyError::RuntimeError(
-            "Config source is required".to_string(),
-        ))?;
-        Ok(ConfigManager::new(storage, config))
-    }
 }

@@ -5,7 +5,6 @@ mod api;
 mod app_manifest;
 mod apps;
 mod cameras;
-mod compile;
 pub mod clean;
 pub mod export_chart;
 mod init;
@@ -169,15 +168,6 @@ enum SubCommand {
     /// enhanced semantic search and retrieval functionality. Also synchronizes
     /// configured integrations like Omni and Looker metadata.
     Build(BuildArgs),
-    /// Compile the workspace into the compile-boundary Postgres schema (Phase 1.6a observation mode).
-    ///
-    /// Walks every recognized YAML/SQL file, parses it, and writes a
-    /// `revisions` row plus per-entity rows tagged with the new
-    /// revision_id. Does NOT update `workspaces.current_revision_id`;
-    /// runtime still reads YAML from disk in Phase 1.6a. Useful for
-    /// inspecting what the compile boundary produces before any read
-    /// path depends on it.
-    Compile(compile::CompileArgs),
     /// Synchronize and collect metadata from connected databases
     ///
     /// Extract schema information, table structures, and relationships
@@ -555,7 +545,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Init => "init",
             SubCommand::Run(_) => "run",
             SubCommand::Build(_) => "build",
-            SubCommand::Compile(_) => "compile",
             SubCommand::Sync(_) => "sync",
             SubCommand::Validate(_) => "validate",
             SubCommand::Migrate => "migrate",
@@ -704,13 +693,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             .await?;
 
             println!("✅ Build complete");
-        }
-        Some(SubCommand::Compile(compile_args)) => {
-            sentry_config::add_operation_context("compile", None);
-            if let Err(e) = compile::run_compile(compile_args).await {
-                eprintln!("{}", format!("Compile failed: {e}").error());
-                exit(1);
-            }
         }
         Some(SubCommand::Sync(sync_args)) => {
             sentry_config::add_operation_context("sync", None);

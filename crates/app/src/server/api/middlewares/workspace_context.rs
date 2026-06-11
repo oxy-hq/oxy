@@ -368,70 +368,10 @@ async fn try_attach_workspace_manager(
             StatusCode::BAD_REQUEST
         })?;
 
-    // Compile-boundary fast path: when the workspace has a promoted
-    // revision AND the `compile_runtime_use_postgres` flag is on,
-    // hydrate the workspace `Config` from `workspace_compiled_configs`
-    // instead of re-parsing `config.yml` from disk on every request.
-    // This is the largest single FS hit on the customer hot path —
-    // every chat / thread / data app / workflow request reads
-    // config.yml today.
-    //
-    // On any miss (flag off, no promoted revision, kill switch on,
-    // JSON→Config deserialise fails) we fall through to the FS path,
-    // so the cutover is byte-identical when the flag is off.
-    let compiled_config: Option<oxy::config::model::Config> = if crate::server::feature_flags::is_enabled("compile_runtime_use_postgres") {
-        // Thread the active branch through so the IDE on a feature
-        // branch sees its working-copy `config.yml` edits via FS,
-        // matching the branch-aware contract every other compiled
-        // reader honours (`AppService::get_config`,
-        // `resolve_workflow_yaml`, etc.). Without this the user would
-        // get the promoted main config while `workspace_path` points
-        // at the feature-branch worktree — a content/path mismatch
-        // under any edit to `config.yml`.
-        match crate::server::api::compiled_reader::resolve_workspace_config(workspace_id, branch_name).await {
-            Ok(Some(json)) => match serde_json::from_value::<oxy::config::model::Config>(json) {
-                Ok(mut cfg) => {
-                    // `workspace_path` is `#[serde(skip)]` on Config so we
-                    // populate it manually — downstream resolvers depend on it.
-                    cfg.workspace_path = effective_path.clone();
-                    tracing::debug!(
-                        workspace_id = %workspace_id,
-                        "workspace_context: config.yml served from compile boundary"
-                    );
-                    Some(cfg)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        workspace_id = %workspace_id,
-                        error = ?e,
-                        "compiled config deserialise failed; falling through to FS"
-                    );
-                    None
-                }
-            },
-            Ok(None) => None,
-            Err(e) => {
-                tracing::warn!(
-                    workspace_id = %workspace_id,
-                    error = ?e,
-                    "compiled config lookup failed; falling through to FS"
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    let builder_init = if let Some(cfg) = compiled_config {
-        WorkspaceBuilder::new(workspace_id)
-            .with_workspace_path_and_compiled_config(&effective_path, cfg)
-    } else {
-        WorkspaceBuilder::new(workspace_id)
-            .with_workspace_path_and_fallback_config(&effective_path)
-            .await
-    };
-    let mut builder = match builder_init {
+    let mut builder = match WorkspaceBuilder::new(workspace_id)
+        .with_workspace_path_and_fallback_config(&effective_path)
+        .await
+    {
         Ok(b) => b,
         Err(e) => {
             tracing::warn!(

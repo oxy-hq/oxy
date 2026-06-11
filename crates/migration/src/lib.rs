@@ -110,7 +110,6 @@ mod m20260529_000001_add_vlm_budget_to_workspaces;
 mod m20260601_000001_api_keys_add_app_id;
 mod m20260602_000001_create_quickbooks_oauth_states;
 mod m20260606_000001_create_custom_app_tracking;
-mod m20260606_000002_create_compile_boundary;
 
 pub struct Migrator;
 
@@ -222,7 +221,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260602_000001_create_quickbooks_oauth_states::Migration),
             Box::new(m20260604_000001_metric_anomalies_filters::Migration),
             Box::new(m20260606_000001_create_custom_app_tracking::Migration),
-            Box::new(m20260606_000002_create_compile_boundary::Migration),
         ]
     }
 }

@@ -99,22 +99,6 @@ pub trait ProjectContext: Send + Sync {
         has_explicit_model: bool,
     ) -> Option<ResolvedModelInfo>;
 
-    /// Hook for the compile-boundary read path on the analytics agent
-    /// surface. The pipeline calls this BEFORE `AgentConfig::from_file`;
-    /// when it returns `Some(yaml)`, the pipeline parses that string via
-    /// `AgentConfig::from_yaml` and skips the disk read. Returning `None`
-    /// (the default) is the FS path — adapters that don't participate in
-    /// the compile boundary, plus the path where the boundary's
-    /// per-feature-flag check decides "fall through to FS".
-    ///
-    /// `agent_id` is whatever the caller passed: a workspace-relative
-    /// path (`agents/foo.agentic.yml`), a bare stem (`foo`), or
-    /// anything in between. Hosts are responsible for normalising to
-    /// the form their compiled-definitions table is keyed by.
-    async fn resolve_agent_yaml(&self, _agent_id: &str) -> Option<String> {
-        None
-    }
-
     async fn resolve_secret(&self, var_name: &str) -> Option<String>;
 
     /// Persist (create or overwrite) a secret value under `var_name`.

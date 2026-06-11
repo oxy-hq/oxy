@@ -77,12 +77,6 @@ pub struct Model {
     /// Cameras dashboard projects month-to-date spend forward and
     /// alerts the operator when projection > budget.
     pub monthly_vlm_budget_micros: Option<i64>,
-    /// Pointer to the compile boundary revision the runtime should
-    /// read for this workspace. Phase 1.6a always leaves this NULL —
-    /// `oxy compile` writes a successful `revisions` row but does
-    /// NOT promote it here. Phase 1.6b will start promoting on each
-    /// successful compile (Vercel-style atomic publish).
-    pub current_revision_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

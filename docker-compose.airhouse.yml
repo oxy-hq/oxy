@@ -80,7 +80,6 @@ services:
       - |
         mc alias set myminio http://airhouse-minio:9000 minioadmin minioadmin
         mc mb myminio/airhouse --ignore-existing
-        mc mb myminio/oxy-compile-blobs --ignore-existing
 
   airhouse-createcpdb:
     image: postgres:18
@@ -97,22 +96,6 @@ services:
           "SELECT 1 FROM pg_database WHERE datname='airhouse_cp'" \
           | grep -q 1 \
           || psql -h airhouse-postgres -U airhouse -d airhouse -c "CREATE DATABASE airhouse_cp"
-
-  airhouse-createoxydb:
-    image: postgres:18
-    depends_on:
-      airhouse-postgres:
-        condition: service_healthy
-    environment:
-      PGPASSWORD: airhouse
-    entrypoint:
-      - sh
-      - -c
-      - |
-        psql -h airhouse-postgres -U airhouse -d airhouse -tc \
-          "SELECT 1 FROM pg_database WHERE datname='oxydb'" \
-          | grep -q 1 \
-          || psql -h airhouse-postgres -U airhouse -d airhouse -c "CREATE DATABASE oxydb"
 
   airhouse-cp:
     <<: *airhouse-image

@@ -115,20 +115,24 @@ export default function AdminWorkspaceDetail() {
         icon={FolderOpen}
         title={detail.name}
         subtitle={
-          detail.org_id && detail.org_name ? (
-            <Link
-              to={ROUTES.ADMIN.ORG_DETAIL(detail.org_id)}
-              className='inline-flex items-center gap-1.5 text-foreground/80 hover:text-foreground'
-            >
-              <Building2 className='size-3.5' />
-              <span>{detail.org_name}</span>
-              {detail.org_slug ? (
-                <span className='font-mono text-muted-foreground text-xs'>/{detail.org_slug}</span>
-              ) : null}
-            </Link>
-          ) : (
-            <span className='text-muted-foreground'>No parent organization</span>
-          )
+          <>
+            {detail.org_id && detail.org_name ? (
+              <Link
+                to={ROUTES.ADMIN.ORG_DETAIL(detail.org_id)}
+                className='inline-flex items-center gap-1.5 text-foreground/80 hover:text-foreground'
+              >
+                <Building2 className='size-3.5' />
+                <span>{detail.org_name}</span>
+                {detail.org_slug ? (
+                  <span className='font-mono text-muted-foreground text-xs'>
+                    /{detail.org_slug}
+                  </span>
+                ) : null}
+              </Link>
+            ) : (
+              <span className='text-muted-foreground'>No parent organization</span>
+            )}
+          </>
         }
         status={<AdminStatusPill tone={status.tone} label={status.label} />}
         actions={

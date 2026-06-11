@@ -13,7 +13,7 @@ use axum::routing::{delete, get, post, put};
 use agentic_http::{AgenticState, airway_router, router as agentic_router, workflow_router};
 
 use crate::api::{
-    agent, api_keys, app, apps, artifacts, chart, compile, competitors, data, data_repo, database,
+    agent, api_keys, app, apps, artifacts, chart, competitors, data, data_repo, database,
     execution_analytics, exported_chart, file, foot_traffic, integration, local_setup, message,
     metric_anomalies, metric_tree, metrics, modeling, onboarding, result_files, run, schedules,
     semantic, task, test_file, test_project_run, test_run, thread, traces, video,
@@ -49,11 +49,6 @@ pub(super) fn build_workspace_routes(
         .nest("/agents", build_agent_routes())
         .nest("/api-keys", build_api_key_routes())
         .nest("/files", build_file_routes(include_git_features))
-        // Compile boundary surface: the user-facing Compile button in
-        // the IDE header. Gated by `WorkspaceEditor` and the active
-        // branch must match the workspace's default branch.
-        .route("/compile", post(compile::enqueue_compile))
-        .route("/compile/status", get(compile::compile_status))
         .nest("/databases", build_database_routes())
         .nest("/integrations", build_integration_routes())
         .nest("/secrets", build_secret_routes(app_state))
@@ -266,6 +261,17 @@ pub(super) fn build_external_workspace_routes(
             "/world-model/competitors",
             post(competitors::get_competitors),
         )
+        // Anomaly monitoring: list and update status — used by standalone apps
+        // (e.g. world-model-app) that can't reach the internal /api surface.
+        // Nested with an explicit Extension layer because both handlers extract
+        // Arc<AgenticState> for db access (same pattern as build_metric_anomaly_routes).
+        .nest("/semantic/anomalies", {
+            use axum::Extension;
+            Router::new()
+                .route("/", get(metric_anomalies::list_anomalies))
+                .route("/{id}/status", post(metric_anomalies::update_status))
+                .layer(Extension(agentic_state.clone()))
+        })
         // Agentic analytics: POST /analytics/runs, the SSE events stream,
         // /answer, /cancel, /threads/* — the chat surface external apps drive.
         .nest("/analytics", agentic_router(agentic_state))

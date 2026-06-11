@@ -23,7 +23,6 @@ serde_yaml = { workspace = true }
 tokio = { workspace = true, features = ["sync", "fs", "io-util"] }
 tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true }
-uuid = { workspace = true, features = ["serde", "v4"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "sync", "net", "io-util"] }

@@ -11,7 +11,6 @@ members = [
   "crates/metric-monitoring",
   "crates/integration/unifi",
   "crates/migration",
-  "crates/oxy-compile",
   "crates/integration/omni",
   "crates/observability",
   "crates/project",
@@ -79,7 +78,6 @@ oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }
 oxy-auth = { path = "crates/auth" }
 oxy-billing = { path = "crates/billing" }
 oxy-cameras = { path = "crates/cameras" }
-oxy-compile = { path = "crates/oxy-compile" }
 oxy-gemini = { path = "crates/infrastructure/llm/gemini" }
 oxy-git = { path = "crates/git" }
 oxy-llm = { path = "crates/infrastructure/llm/oxy-llm" }

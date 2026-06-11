@@ -494,6 +494,5 @@ fn chain_label(spec: &TaskSpec) -> &'static str {
         TaskSpec::Resume { .. } => "Resume (chain)",
         TaskSpec::Custom { .. } => "Custom (chain)",
         TaskSpec::Airway { .. } => "Airway (chain)",
-        TaskSpec::Compile { .. } => "Compile (chain)",
     }
 }

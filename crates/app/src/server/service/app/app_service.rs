@@ -45,131 +45,25 @@ pub struct AppService {
     workspace_manager: WorkspaceManager,
     project_ctx: Arc<OxyProjectContext>,
     cache: AppCache,
-    /// Active branch in the IDE / request context. When the workspace
-    /// has a promoted revision AND the active branch is the workspace's
-    /// default branch AND the `compile_apps_use_postgres` feature flag
-    /// is on, `get_config` resolves the AppConfig from
-    /// `app_definitions` instead of walking the YAML file. `None` for
-    /// callers that don't carry branch context (e.g. background sync
-    /// jobs) — those stay on the FS path.
-    branch_hint: Option<String>,
 }
 
 impl AppService {
     pub fn new(workspace_manager: WorkspaceManager, project_ctx: Arc<OxyProjectContext>) -> Self {
-        Self::new_with_branch(workspace_manager, project_ctx, None)
-    }
-
-    pub fn new_with_branch(
-        workspace_manager: WorkspaceManager,
-        project_ctx: Arc<OxyProjectContext>,
-        branch_hint: Option<String>,
-    ) -> Self {
         let config_manager = workspace_manager.config_manager.clone();
         Self {
             workspace_manager,
             project_ctx,
             cache: AppCache::new(config_manager),
-            branch_hint,
         }
     }
 
     pub async fn get_config(&self, app_path: &PathBuf) -> AppResult<AppConfig> {
-        // Slice 4: when `compile_runtime_use_postgres` is on AND the
-        // workspace has a promoted revision AND we're on the default
-        // branch, hydrate the AppConfig from `app_definitions` instead
-        // of walking the YAML file. Falls through to the FS path on
-        // any miss / error so a Postgres hiccup never blanks an app
-        // page. Branch awareness is intentional: the IDE on a feature
-        // branch should always see its working-copy edits.
-        if crate::server::feature_flags::is_enabled("compile_runtime_use_postgres") {
-            let path_str = app_path.to_string_lossy().to_string();
-            match crate::server::api::compiled_reader::resolve_app(
-                self.workspace_manager.workspace_id,
-                self.branch_hint.as_deref(),
-                &path_str,
-            )
-            .await
-            {
-                Ok(Some(artifact)) => match serde_json::from_value::<AppConfig>(artifact.definition)
-                {
-                    Ok(cfg) => {
-                        tracing::debug!(
-                            workspace_id = %self.workspace_manager.workspace_id,
-                            file_path = %path_str,
-                            "AppService::get_config served from compile boundary"
-                        );
-                        return Ok(cfg);
-                    }
-                    Err(e) => tracing::warn!(
-                        workspace_id = %self.workspace_manager.workspace_id,
-                        file_path = %path_str,
-                        error = ?e,
-                        "compile boundary returned an app row but JSON deserialize failed; falling through to FS"
-                    ),
-                },
-                Ok(None) => {
-                    // Workspace not promoted, kill switch on, branch is non-default,
-                    // or no matching row. Fall through to FS.
-                }
-                Err(e) => tracing::warn!(
-                    workspace_id = %self.workspace_manager.workspace_id,
-                    file_path = %path_str,
-                    error = ?e,
-                    "compile boundary error; falling through to FS"
-                ),
-            }
-        }
-
         let config_manager = &self.workspace_manager.config_manager;
         let app = config_manager.resolve_app(app_path).await?;
         Ok(app)
     }
 
     pub async fn get_tasks(&self, app_path: &PathBuf) -> AppResult<Vec<Task>> {
-        // Slice 4: same compile-boundary path as `get_config`. The
-        // app's `tasks:` field is already present on the compiled
-        // JSONB definition, so we can extract it without re-reading
-        // the YAML file. Falls through to FS on any miss.
-        if crate::server::feature_flags::is_enabled("compile_runtime_use_postgres") {
-            let path_str = app_path.to_string_lossy().to_string();
-            match crate::server::api::compiled_reader::resolve_app(
-                self.workspace_manager.workspace_id,
-                self.branch_hint.as_deref(),
-                &path_str,
-            )
-            .await
-            {
-                Ok(Some(artifact)) => {
-                    if let Some(tasks_value) = artifact
-                        .definition
-                        .as_object()
-                        .and_then(|m| m.get(TASKS_KEY))
-                    {
-                        let tasks: Vec<Task> = serde_json::from_value(tasks_value.clone())
-                            .map_err(|e| {
-                                OxyError::ConfigurationError(format!(
-                                    "Failed to parse compiled tasks: {e}"
-                                ))
-                            })?;
-                        tracing::debug!(
-                            workspace_id = %self.workspace_manager.workspace_id,
-                            file_path = %path_str,
-                            "AppService::get_tasks served from compile boundary"
-                        );
-                        return Ok(tasks);
-                    }
-                }
-                Ok(None) => {}
-                Err(e) => tracing::warn!(
-                    workspace_id = %self.workspace_manager.workspace_id,
-                    file_path = %path_str,
-                    error = ?e,
-                    "compile boundary get_tasks error; falling through to FS"
-                ),
-            }
-        }
-
         let yaml_content = self.read_yaml_file(app_path).await?;
         let root_map = self.parse_yaml_to_mapping(&yaml_content)?;
 

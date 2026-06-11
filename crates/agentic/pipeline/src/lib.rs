@@ -6,7 +6,6 @@
 
 pub mod agent_run;
 pub mod airway_run;
-pub mod compile_worker;
 pub mod executor;
 pub mod pipeline_ref;
 pub mod platform;
@@ -512,32 +511,20 @@ impl PipelineBuilder {
         base_dir: &std::path::Path,
         skip_db_insert: bool,
     ) -> Result<StartedPipeline, PipelineError> {
-        // Slice 4.agents — compile-boundary read path. When the host
-        // wires `compile_runtime_use_postgres` on AND the workspace is
-        // promoted, `resolve_agent_yaml` returns the agent definition
-        // straight from `agent_definitions` and skips the disk read.
-        // `None` falls through to the FS path below (the historical
-        // behaviour, byte-identical when the flag is off or the
-        // workspace isn't promoted).
-        let config = match self.platform.resolve_agent_yaml(agent_id).await {
-            Some(yaml) => AgentConfig::from_yaml(&yaml)
-                .map_err(|e| PipelineError::Config(format!("{e}")))?,
-            None => {
-                let config_path = base_dir.join(agent_id);
-                let config_path = if config_path.exists() {
-                    config_path
-                } else {
-                    let with_ext = base_dir.join(format!("{}.agentic.yml", agent_id));
-                    if with_ext.exists() {
-                        with_ext
-                    } else {
-                        config_path // will produce a clear "not found" error
-                    }
-                };
-                AgentConfig::from_file(&config_path)
-                    .map_err(|e| PipelineError::Config(format!("{e}")))?
+        // Load config — try the literal path first, then with `.agentic.yml` extension.
+        let config_path = base_dir.join(agent_id);
+        let config_path = if config_path.exists() {
+            config_path
+        } else {
+            let with_ext = base_dir.join(format!("{}.agentic.yml", agent_id));
+            if with_ext.exists() {
+                with_ext
+            } else {
+                config_path // will produce a clear "not found" error
             }
         };
+        let config = AgentConfig::from_file(&config_path)
+            .map_err(|e| PipelineError::Config(format!("{e}")))?;
 
         // Insert run + extension (skipped for delegation children — the
         // coordinator already created the run via insert_run_with_parent).
@@ -704,28 +691,20 @@ impl PipelineBuilder {
                     .to_string(),
             ));
         }
-        // Same compile-boundary read path as `start_analytics`. The
-        // resume path needs to load the same agent definition the
-        // original run did, so it routes through the same hook.
-        let config = match self.platform.resolve_agent_yaml(agent_id).await {
-            Some(yaml) => AgentConfig::from_yaml(&yaml)
-                .map_err(|e| PipelineError::Config(format!("{e}")))?,
-            None => {
-                let config_path = base_dir.join(agent_id);
-                let config_path = if config_path.exists() {
-                    config_path
-                } else {
-                    let with_ext = base_dir.join(format!("{}.agentic.yml", agent_id));
-                    if with_ext.exists() {
-                        with_ext
-                    } else {
-                        config_path
-                    }
-                };
-                AgentConfig::from_file(&config_path)
-                    .map_err(|e| PipelineError::Config(format!("{e}")))?
+        // Load config (same resolution as start_analytics).
+        let config_path = base_dir.join(agent_id);
+        let config_path = if config_path.exists() {
+            config_path
+        } else {
+            let with_ext = base_dir.join(format!("{}.agentic.yml", agent_id));
+            if with_ext.exists() {
+                with_ext
+            } else {
+                config_path
             }
         };
+        let config = AgentConfig::from_file(&config_path)
+            .map_err(|e| PipelineError::Config(format!("{e}")))?;
 
         // Resolve project model + connectors via the platform port.
         let project_model = self

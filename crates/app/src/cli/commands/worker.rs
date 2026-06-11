@@ -146,31 +146,9 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
     recovery_alive.store(true, std::sync::atomic::Ordering::Relaxed);
     let recovery_handle = spawn_recovery(&runtime, shutdown.clone(), recovery_interval);
 
-    // Optional health probe + Prometheus metrics server (off unless
-    // --health-port / OXY_WORKER_HEALTH_PORT is set). Metrics share the
-    // same listener as the probes — one tiny axum router with three
-    // routes. HPA scrapes `oxy_queue_depth_queued` to size the fleet.
+    // Optional health probe server (off unless --health-port / env set).
     let health_handle = match health_port {
-        Some(port) => {
-            let metrics_state = crate::server::worker_metrics::MetricsState {
-                worker_id: std::sync::Arc::new(worker_id.clone()),
-                version,
-                db: std::sync::Arc::new(
-                    oxy::database::client::establish_connection()
-                        .await
-                        .map_err(|e| {
-                            OxyError::RuntimeError(format!(
-                                "worker metrics: DB connect failed: {e}"
-                            ))
-                        })?,
-                ),
-                capacity: crate::server::worker_metrics::ConcurrencyCaps::from_env(),
-            };
-            Some(
-                worker_health::spawn(port, health_state, Some(metrics_state), shutdown.clone())
-                    .await?,
-            )
-        }
+        Some(port) => Some(worker_health::spawn(port, health_state, shutdown.clone()).await?),
         None => None,
     };
 
