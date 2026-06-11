@@ -88,6 +88,68 @@ fn is_terminal(status: Option<&str>) -> bool {
     )
 }
 
+/// Build the airway `variables` map from the process environment,
+/// filtered to only the variables the rendered YAML actually references
+/// (via a minijinja undeclared-vars scan).
+///
+/// Why filter: the variables we return get persisted in
+/// `agentic_task_queue` AND the run-metadata JSONB. Passing the whole
+/// `std::env::vars()` would bleed unrelated secrets into both stores
+/// indefinitely (AWS_SECRET_ACCESS_KEY, OPENAI_API_KEY, OXY_DATABASE_URL,
+/// the entire *_var surface), bypassing the *_var → secret-manager →
+/// strip flow the rest of agentic-pipeline maintains. Scanning the YAML
+/// for the variables it actually uses keeps the env-pass-through useful
+/// (`{{ YELP_API_KEY }}` still works) without bleeding everything else
+/// into storage.
+///
+/// On any failure (file not readable, template not compilable), we
+/// return an empty map. That surfaces as a clear "airway variable
+/// substitution failed: undefined variable" at render time if the YAML
+/// references something, instead of silently regressing to the old
+/// "pass everything" behaviour.
+fn build_env_vars_for_yaml(
+    project_path: &std::path::Path,
+    pipeline_ref: &str,
+) -> serde_json::Map<String, serde_json::Value> {
+    let yaml_path = project_path.join(pipeline_ref);
+    let yaml = match std::fs::read_to_string(&yaml_path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                path = %yaml_path.display(),
+                "env-var scan: could not read pipeline YAML; passing no env vars. \
+                 If the pipeline references `{{ FOO }}` you'll see a substitution \
+                 error at render time."
+            );
+            return serde_json::Map::new();
+        }
+    };
+
+    // `track_nested = true` returns root variable names for nested accesses
+    // (`{{ config.api.key }}` → returns `config`). For env vars that's
+    // exactly what we want — process env is flat-keyed.
+    let mut env = minijinja::Environment::new();
+    let referenced: std::collections::HashSet<String> =
+        match env.template_from_named_str("pipeline", &yaml) {
+            Ok(tpl) => tpl.undeclared_variables(true).into_iter().collect(),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    path = %yaml_path.display(),
+                    "env-var scan: minijinja could not parse pipeline YAML as a \
+                     template; passing no env vars."
+                );
+                return serde_json::Map::new();
+            }
+        };
+
+    std::env::vars()
+        .filter(|(k, _)| referenced.contains(k))
+        .map(|(k, v)| (k, serde_json::Value::String(v)))
+        .collect()
+}
+
 async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
     let db = connect_db().await?;
     let project_path = resolve_local_workspace_path()?;
@@ -104,9 +166,27 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
     let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = project_ctx.clone();
     let workspace: Arc<dyn agentic_pipeline::WorkflowWorkspaceContext> = project_ctx;
 
+    // Surface process env vars into the airway minijinja context so
+    // pipeline YAMLs can reference secrets with `{{ MY_API_KEY }}`. The
+    // CLI already loaded `.env` via `dotenv::from_path` higher up the
+    // binary, so this picks up project-local secrets too without
+    // re-implementing dotenv parsing. The HTTP path receives variables
+    // from the request body and is unaffected.
+    //
+    // ⚠ Filter to only the variables the YAML actually references via
+    // minijinja's undeclared-vars scan. Dumping the whole process env
+    // unfiltered would persist unrelated secrets (AWS_SECRET_ACCESS_KEY,
+    // OPENAI_API_KEY, OXY_DATABASE_URL, …) in `agentic_task_queue` and
+    // run-metadata JSONB — both indefinitely retained at rest, both
+    // bypassing the `*_var` → secret-manager → strip flow the rest of
+    // the pipeline maintains. Scanning the rendered YAML keeps the
+    // env-pass-through useful (`{{ YELP_API_KEY }}` still works) without
+    // bleeding everything else into storage.
+    let env_vars: serde_json::Map<String, serde_json::Value> =
+        build_env_vars_for_yaml(&project_path, &args.pipeline_ref);
     let request = StartAirwayRequest {
         pipeline_ref: args.pipeline_ref.clone(),
-        variables: None,
+        variables: Some(serde_json::Value::Object(env_vars)),
         thread_id: None,
         resources: Vec::new(),
         schedule_id: None,

@@ -188,35 +188,74 @@ pub async fn start_procedure_run(
         Err(resp) => return resp,
     };
 
-    let workspace_root = proj_ctx
+    // Discover all workflow-like files (.procedure.yml / .workflow.yml /
+    // .automation.yml) recursively under the workspace root, matching
+    // the convention used by `list_workflows` in the config manager.
+    // The customer-app procedure-id is the file's base name without the
+    // double extension; the file may live in any subdirectory (e.g.
+    // `workflows/foo.workflow.yml`), not just the project root.
+    let all_workflows = match proj_ctx
         .workspace_manager()
         .config_manager
-        .workspace_path()
-        .to_path_buf();
-    let candidate_paths = [
-        workspace_root.join(format!("{procedure_id}.procedure.yml")),
-        workspace_root.join(format!("{procedure_id}.workflow.yml")),
-        workspace_root.join(format!("{procedure_id}.automation.yml")),
+        .list_workflows()
+        .await
+    {
+        Ok(w) => w,
+        Err(e) => {
+            error!(error = %e, "list_workflows failed");
+            return err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not enumerate project workflows",
+            );
+        }
+    };
+    let target_basenames = [
+        format!("{procedure_id}.procedure.yml"),
+        format!("{procedure_id}.workflow.yml"),
+        format!("{procedure_id}.automation.yml"),
     ];
-    let procedure_path = match candidate_paths.iter().find(|p| p.exists()) {
-        Some(p) => p.clone(),
+    // Collect *all* matches by basename so we can detect collisions —
+    // `list_workflows()` walks `read_dir` in filesystem-dependent order,
+    // so a bare `.find()` against duplicate basenames in different
+    // subdirectories (`workflows/refresh.workflow.yml` and
+    // `staging/refresh.workflow.yml`) resolves non-deterministically.
+    // Pick the alphabetically-first match for stable behaviour and
+    // `warn!` so the operator notices the collision.
+    let mut matches: Vec<&std::path::PathBuf> = all_workflows
+        .iter()
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| target_basenames.iter().any(|b| b == n))
+                .unwrap_or(false)
+        })
+        .collect();
+    matches.sort();
+    let procedure_path = match matches.first() {
+        Some(p) => {
+            if matches.len() > 1 {
+                let all_paths: Vec<String> =
+                    matches.iter().map(|p| p.display().to_string()).collect();
+                warn!(
+                    procedure_id = %procedure_id,
+                    chosen = %p.display(),
+                    matches = ?all_paths,
+                    "procedure-id resolved to multiple workflow files; picked the \
+                     alphabetically-first one. Consider renaming one of the files \
+                     or passing a qualified path."
+                );
+            }
+            (*p).clone()
+        }
         None => {
-            let tried = candidate_paths
-                .iter()
-                .map(|p| {
-                    p.strip_prefix(&workspace_root)
-                        .unwrap_or(p)
-                        .display()
-                        .to_string()
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
+            let tried = target_basenames.join(", ");
             return err_with_hint(
                 StatusCode::NOT_FOUND,
                 format!("procedure '{procedure_id}' not found"),
                 "procedure_not_found",
                 format!(
-                    "Looked for: {tried}. Pass the procedure's base name without the extension \
+                    "Looked for: {tried} (recursively under the project root). \
+                     Pass the procedure's base name without the extension \
                      (e.g. for `weekly_summary.procedure.yml`, call \
                      `useProcedureRun({{ procedureId: 'weekly_summary' }})`)."
                 ),

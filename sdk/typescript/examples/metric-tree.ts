@@ -9,7 +9,7 @@ async function main() {
   const client = await OxyClient.create({
     baseUrl: process.env.OXY_BASE_URL ?? "https://api.oxy.tech",
     apiKey: process.env.OXY_API_KEY,
-    projectId: process.env.OXY_PROJECT_ID,
+    projectId: process.env.OXY_PROJECT_ID
   });
 
   // 1. Walk the tree
@@ -33,7 +33,7 @@ async function main() {
     target: "financials.operating_profit",
     time_dimension: "financials.month",
     current_period: ["2025-09-01", "2025-09-30"],
-    previous_period: ["2025-08-01", "2025-08-31"],
+    previous_period: ["2025-08-01", "2025-08-31"]
   });
   console.log(
     `\noperating_profit moved ${explain.target_delta.toFixed(0)} ` +
@@ -44,7 +44,7 @@ async function main() {
   const opp = await client.metricTree.findOpportunities({
     target: "orders.net_revenue",
     time_dimension: "orders.order_date",
-    period: ["2025-09-01", "2025-09-30"],
+    period: ["2025-09-01", "2025-09-30"]
   });
   console.log("\nTop opportunities:");
   for (const dim of opp.dimensions.slice(0, 3)) {
@@ -53,7 +53,7 @@ async function main() {
 
   // 5. Predict downstream impact
   const predict = await client.metricTree.predict([
-    { measure: "marketing_spend.total_spend", delta: 10_000 },
+    { measure: "marketing_spend.total_spend", delta: 10_000 }
   ]);
   console.log("\n+$10k of marketing spend would propagate as:");
   for (const impact of predict.impacts.slice(0, 5)) {

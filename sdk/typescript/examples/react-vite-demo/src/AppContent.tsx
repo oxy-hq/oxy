@@ -1,8 +1,8 @@
+import { type DataContainer, useOxy } from "@oxy-hq/sdk";
 import { useState } from "react";
-import { DataContainer, useOxy } from "@oxy-hq/sdk";
 import AnomaliesView from "./components/AnomaliesView";
-import AppList from "./components/AppList";
 import AppDataView from "./components/AppDataView";
+import AppList from "./components/AppList";
 import MetricTreeView from "./components/MetricTreeView";
 import "./App.css";
 
@@ -79,14 +79,14 @@ export default function AppContent() {
 
   if (sdkLoading) {
     return (
-      <div className="app">
-        <header className="header">
+      <div className='app'>
+        <header className='header'>
           <h1>🚀 Oxy SDK React Demo</h1>
           <p>Interactive demo of the Oxy TypeScript SDK with React + Vite</p>
         </header>
-        <div className="container">
-          <div className="alert alert-loading">
-            <div className="spinner"></div>
+        <div className='container'>
+          <div className='alert alert-loading'>
+            <div className='spinner'></div>
             Initializing SDK...
           </div>
         </div>
@@ -96,13 +96,13 @@ export default function AppContent() {
 
   if (sdkError) {
     return (
-      <div className="app">
-        <header className="header">
+      <div className='app'>
+        <header className='header'>
           <h1>🚀 Oxy SDK React Demo</h1>
           <p>Interactive demo of the Oxy TypeScript SDK with React + Vite</p>
         </header>
-        <div className="container">
-          <div className="alert alert-error">
+        <div className='container'>
+          <div className='alert alert-error'>
             <strong>SDK Initialization Error:</strong> {sdkError.message}
           </div>
         </div>
@@ -111,39 +111,35 @@ export default function AppContent() {
   }
 
   return (
-    <div className="container">
+    <div className='container'>
       {error && (
-        <div className="alert alert-error">
+        <div className='alert alert-error'>
           <strong>Error:</strong> {error}
         </div>
       )}
 
       {status === "loading" && (
-        <div className="alert alert-loading">
-          <div className="spinner"></div>
+        <div className='alert alert-loading'>
+          <div className='spinner'></div>
           Loading...
         </div>
       )}
 
-      <div className="section">
-        <div className="section-header">
+      <div className='section'>
+        <div className='section-header'>
           <h2>Apps</h2>
-          <button onClick={handleListApps} className="btn btn-primary">
+          <button onClick={handleListApps} className='btn btn-primary'>
             📋 {apps.length > 0 ? "Refresh Apps" : "List Apps"}
           </button>
         </div>
-        <AppList
-          apps={apps}
-          selectedApp={selectedApp}
-          onSelectApp={handleSelectApp}
-        />
+        <AppList apps={apps} selectedApp={selectedApp} onSelectApp={handleSelectApp} />
       </div>
 
       {selectedApp && (
-        <div className="section">
-          <div className="section-header">
+        <div className='section'>
+          <div className='section-header'>
             <h2>{selectedApp.name}</h2>
-            <button onClick={handleRunApp} className="btn btn-secondary">
+            <button onClick={handleRunApp} className='btn btn-secondary'>
               ▶️ Run App
             </button>
           </div>

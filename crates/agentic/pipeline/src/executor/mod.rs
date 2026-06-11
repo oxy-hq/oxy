@@ -493,6 +493,9 @@ impl PipelineTaskExecutor {
             // Open-Meteo commercial API key → routes the connector to the paid
             // `customer-*` endpoint (the keyless endpoint is non-commercial only).
             "weather" => &[("api_key", "api_key_var")],
+            // BestTime private API key → POSTed as `api_key_private` query
+            // param to `/forecasts` (every call). Same pattern as `weather`.
+            "besttime" => &[("api_key", "api_key_var")],
             _ => return Ok(()),
         };
         let Some(obj) = spec.source.config.as_object_mut() else {

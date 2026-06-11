@@ -23,7 +23,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use airway::connector::SourceConnector;
+use airway::connector::sources::besttime::{BestTimeConfig, besttime_source};
 use airway::connector::sources::filesystem::{FilesystemSource, SourceFileFormat};
+use airway::connector::sources::http_file::{HttpFileConfig, http_file_source};
+use airway::connector::sources::overpass::{OverpassConfig, overpass_source};
+use airway::connector::sources::overture::{OvertureConfig, overture_source};
 use airway::connector::sources::postgres_cdc::PostgresCdcSource;
 use airway::connector::sources::quickbooks::QuickBooksSource;
 use airway::connector::sources::rest_api::{RestApiConfig, RestApiSource};
@@ -92,6 +96,10 @@ pub fn build_source_connector(
         "toast" => build_toast(&config.config),
         "quickbooks" => build_quickbooks(&config.config, refresh_sink),
         "weather" => build_weather(&config.config),
+        "besttime" => build_besttime(&config.config),
+        "overture" => build_overture(&config.config),
+        "http_file" => build_http_file(&config.config),
+        "overpass" => build_overpass(&config.config),
         other => Err(AirwayError::Other(format!(
             "unsupported source kind `{other}`. Wire it up in \
              agentic_airway::source_factory::build_source_connector \
@@ -586,6 +594,75 @@ fn build_weather(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
     Ok(Box::new(source))
 }
 
+// ── besttime (POST-then-extract foot-traffic forecasts) ────────────────────────
+
+fn build_besttime(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    // airway's `BestTimeConfig` derives `Deserialize` and owns its own
+    // validation; we reuse it directly (same shape as `weather`). The
+    // agentic-pipeline executor substitutes `api_key_var` → `api_key` from
+    // the secret manager before dispatch, so the factory only ever sees the
+    // resolved literal — `api_key_var` is therefore not an accepted field
+    // here.
+    let config: BestTimeConfig = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid besttime config: {e}")))?;
+    if config.venue_ids.is_empty() {
+        return Err(AirwayError::Other(
+            "besttime config: `venue_ids` must list at least one BestTime venue_id".into(),
+        ));
+    }
+    let source = besttime_source(config)
+        .map_err(|e| AirwayError::Other(format!("besttime source init failed: {e}")))?;
+    Ok(Box::new(source))
+}
+
+// ── overture (Overture Maps Places, S3 GeoParquet) ─────────────────────────────
+
+fn build_overture(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    let config: OvertureConfig = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid overture config: {e}")))?;
+    // Local empty-bboxes guard with a clear message, sibling to
+    // build_besttime above. The upstream `overture_source` does its own
+    // check but tests assert against this contract's wording; relying on
+    // the upstream string pins our tests to a dependency we don't own.
+    if config.bboxes.is_empty() {
+        return Err(AirwayError::Other(
+            "overture config: `bboxes` must list at least one bounding box".into(),
+        ));
+    }
+    let source = overture_source(config)
+        .map_err(|e| AirwayError::Other(format!("overture source init failed: {e}")))?;
+    Ok(Box::new(source))
+}
+
+// ── http_file (generic HTTP/HTTPS file download via DuckDB) ────────────────────
+
+fn build_http_file(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    // airway's `HttpFileConfig` derives `Deserialize` and owns its own
+    // validation; we reuse it directly (same shape as `weather` / `besttime`).
+    let config: HttpFileConfig = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid http_file config: {e}")))?;
+    let source = http_file_source(config)
+        .map_err(|e| AirwayError::Other(format!("http_file source init failed: {e}")))?;
+    Ok(Box::new(source))
+}
+
+// ── overpass (OpenStreetMap via Overpass API) ─────────────────────────────────
+
+fn build_overpass(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    let config: OverpassConfig = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid overpass config: {e}")))?;
+    // Local empty-bboxes guard with a clear message, sibling to
+    // build_overture above and build_besttime's venue_ids guard.
+    if config.bboxes.is_empty() {
+        return Err(AirwayError::Other(
+            "overpass config: `bboxes` must list at least one bounding box".into(),
+        ));
+    }
+    let source = overpass_source(config)
+        .map_err(|e| AirwayError::Other(format!("overpass source init failed: {e}")))?;
+    Ok(Box::new(source))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,6 +930,182 @@ mod tests {
             .err()
             .expect("expected error");
         assert!(err.to_string().contains("locations"));
+    }
+
+    #[test]
+    fn besttime_builds_with_resolved_credentials() {
+        // Mirrors what the executor hands the factory: literal `api_key`
+        // (no `api_key_var` survives).
+        let source = build(&cfg(
+            "besttime",
+            json!({
+                "api_key": "resolved-secret",
+                "venue_ids": ["ven_abc123", "ven_def456"],
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "besttime");
+    }
+
+    #[test]
+    fn besttime_rejects_empty_venue_ids() {
+        let err = build(&cfg(
+            "besttime",
+            json!({
+                "api_key": "resolved-secret",
+                "venue_ids": [],
+            }),
+        ))
+        .err()
+        .expect("expected error");
+        assert!(err.to_string().contains("venue_ids"));
+    }
+
+    #[test]
+    fn besttime_rejects_unresolved_var_key() {
+        // `api_key_var` must be stripped by the executor; if it leaks
+        // through, deny_unknown_fields catches it.
+        let err = build(&cfg(
+            "besttime",
+            json!({
+                "api_key_var": "BESTTIME_API_KEY",
+                "venue_ids": ["ven_abc"],
+            }),
+        ))
+        .err()
+        .expect("expected error");
+        // Either `api_key` is missing (required) or `api_key_var` is unknown —
+        // both surface as "invalid besttime config".
+        assert!(err.to_string().contains("invalid besttime config"));
+    }
+
+    #[test]
+    fn overture_builds_with_bboxes() {
+        let source = build(&cfg(
+            "overture",
+            json!({
+                "release": "2026-05-21.0",
+                "bboxes": [{
+                    "name": "bay_area",
+                    "min_lat": 36.85, "min_lng": -123.10,
+                    "max_lat": 38.15, "max_lng": -121.55
+                }]
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "overture");
+    }
+
+    #[test]
+    fn overture_rejects_empty_bboxes() {
+        let err = build(&cfg(
+            "overture",
+            json!({ "release": "2026-05-21.0", "bboxes": [] }),
+        ))
+        .err()
+        .expect("expected error");
+        assert!(err.to_string().contains("bbox"));
+    }
+
+    #[test]
+    fn http_file_builds_csv_gz_with_filters_and_columns() {
+        let source = build(&cfg(
+            "http_file",
+            json!({
+                "url": "https://example.com/sample.csv.gz",
+                "format": "csv_gz",
+                "resource_name": "sample_table",
+                "csv_options": {"header": true, "delimiter": ","},
+                "filters": [{"column": "state", "op": "eq", "value": "06"}],
+                "columns": ["w_geocode", "C000"]
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "http_file");
+    }
+
+    #[test]
+    fn http_file_builds_zip_csv() {
+        let source = build(&cfg(
+            "http_file",
+            json!({
+                "url": "https://example.com/places.zip",
+                "format": "zip_csv",
+                "resource_name": "census_places",
+                "zip_inner_glob": "*.csv"
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "http_file");
+    }
+
+    #[test]
+    fn http_file_rejects_unknown_field() {
+        let err = build(&cfg(
+            "http_file",
+            json!({
+                "url": "https://example.com/x.csv",
+                "format": "csv",
+                "resource_name": "x",
+                "bogus_field": true
+            }),
+        ))
+        .err()
+        .expect("expected error");
+        assert!(err.to_string().contains("invalid http_file config"));
+    }
+
+    #[test]
+    fn overpass_builds_with_bbox_and_template() {
+        let source = build(&cfg(
+            "overpass",
+            json!({
+                "bboxes": [{
+                    "name": "bay_area",
+                    "min_lat": 36.85, "min_lng": -123.10,
+                    "max_lat": 38.15, "max_lng": -121.55
+                }],
+                "query_template":
+                    "[out:json][timeout:60];(node[\"amenity\"=\"fast_food\"]({{ bbox }}););out tags center;",
+                "resource_name": "osm_pois"
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "overpass");
+    }
+
+    #[test]
+    fn overpass_rejects_empty_bboxes() {
+        let err = build(&cfg(
+            "overpass",
+            json!({
+                "bboxes": [],
+                "query_template": "[out:json];out;",
+                "resource_name": "x"
+            }),
+        ))
+        .err()
+        .expect("expected error");
+        assert!(err.to_string().to_lowercase().contains("bbox"));
+    }
+
+    #[test]
+    fn overpass_rejects_unknown_field() {
+        let err = build(&cfg(
+            "overpass",
+            json!({
+                "bboxes": [{
+                    "name": "x", "min_lat": 0.0, "min_lng": 0.0,
+                    "max_lat": 1.0, "max_lng": 1.0
+                }],
+                "query_template": "[out:json];out;",
+                "resource_name": "x",
+                "bogus_field": "nope"
+            }),
+        ))
+        .err()
+        .expect("expected error");
+        assert!(err.to_string().contains("invalid overpass config"));
     }
 
     #[test]
