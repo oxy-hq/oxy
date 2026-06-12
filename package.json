@@ -17,7 +17,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
     "prettier": "^3.8.3",
-    "turbo": "^2.9.16",
+    "turbo": "^2.9.18",
     "typescript": "^6.0.3"
   },
   "name": "oxy",
