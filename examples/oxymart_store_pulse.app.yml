@@ -65,3 +65,5 @@ tasks:
       WHERE CAST(Store AS VARCHAR) = {{ controls.store | sqlquote }}
       ORDER BY Date DESC
       LIMIT 12
+
+published: true

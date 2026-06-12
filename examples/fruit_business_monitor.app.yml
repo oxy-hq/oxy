@@ -230,3 +230,5 @@ display:
   - type: table
     title: "Shipment Status Details"
     data: shipments_by_status
+
+published: true

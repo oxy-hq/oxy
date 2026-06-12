@@ -145,3 +145,5 @@ display:
   title: 📦 Avg Weekly Sales by CPI (Consumer Price Index)
   data: sales_by_cpi
   series: null
+
+published: true

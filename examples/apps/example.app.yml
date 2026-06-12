@@ -35,3 +35,5 @@ display:
     title: Explanation
     content: |
       This example demonstrates how to use a semantic query to retrieve data from the `orders` table. The query filters the data to include only orders with an estimated delivery date that is less than one week ago. The results are displayed in a table format, showing the estimated delivery dates for the relevant orders.
+
+published: true

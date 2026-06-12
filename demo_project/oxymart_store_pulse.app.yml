@@ -52,3 +52,5 @@ tasks:
     cache: null
     mode: client
 display: []
+
+published: true

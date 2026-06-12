@@ -39,3 +39,5 @@ display:
   data: monthly_active_users
   series: platform
   title: Monthly Active Users by Platform
+
+published: true

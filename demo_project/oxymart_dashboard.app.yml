@@ -126,3 +126,5 @@ display:
   data: unemployment_vs_sales
   series: null
   title: Impact of Unemployment Rate on Avg Weekly Sales
+
+published: true

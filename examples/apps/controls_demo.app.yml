@@ -215,3 +215,5 @@ display:
   - type: table
     title: Filtered Sales Detail
     data: raw_sales
+
+published: true

@@ -341,3 +341,5 @@ display:
         data: task_bodyfat_trend
         x: Date
         y: "Body Fat %"
+
+published: true

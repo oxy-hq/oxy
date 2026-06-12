@@ -152,3 +152,5 @@ display:
   - type: table
     data: revenue_detail_table
     title: Weekly Sales Detail
+
+published: true
