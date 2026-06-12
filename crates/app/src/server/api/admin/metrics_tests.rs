@@ -44,11 +44,11 @@ fn totals_and_by_day_sum_across_models() {
     assert_eq!(out.total.run_count, 6);
     // All models are priced, so every run counts toward priced_run_count.
     assert_eq!(out.total.priced_run_count, 6);
-    // sonnet: in 3/M, out 15/M → day1 (1M in + 1M out) = 0.003+0.015=0.018;
-    // haiku: 0.8/M in, 4/M out → 0.0008+0.004=0.0048; day1 total ≈ 0.0228.
+    // sonnet: $3/M in, $15/M out → day1 (1M in + 1M out) = 3 + 15 = 18.00;
+    // haiku: $0.80/M in, $4/M out → 0.80 + 4.00 = 4.80; day1 total = 22.80.
     assert_eq!(out.by_day.len(), 2);
     assert_eq!(out.by_day[0].day, "2026-06-01");
-    assert!((out.by_day[0].cost_usd - 0.0228).abs() < 1e-9);
+    assert!((out.by_day[0].cost_usd - 22.8).abs() < 1e-9);
     assert_eq!(out.by_day[0].run_count, 3);
     assert!(out.total.cost_usd > 0.0);
 }
