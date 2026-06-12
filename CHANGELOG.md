@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.74] - 2026-06-12
+
+### 💼 Other
+
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 35 updates (#2501)
+
 ## [0.5.73] - 2026-06-11
 
 ### 🚀 Features
@@ -23,6 +29,10 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump actions/checkout from 4 to 6 (#2500)
 - *(deps)* Bump docker/metadata-action from 5 to 6 (#2499)
 - *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 7 updates (#2502)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.73 (#2492)
 
 ## [0.5.72] - 2026-06-10
 
