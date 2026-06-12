@@ -84,6 +84,15 @@ impl AgentConfigResponse {
     }
 }
 
+#[derive(serde::Deserialize, Default)]
+pub struct GetAgentsQuery {
+    /// Active branch in the IDE. When set and not equal to the
+    /// workspace's default branch, the compile-boundary path is
+    /// bypassed (FS walk) so the user sees their working-copy edits.
+    #[serde(default)]
+    pub branch: Option<String>,
+}
+
 /// List analytics agents (`.agentic.yml`) in a workspace.
 #[utoipa::path(
     method(get),
@@ -100,7 +109,48 @@ impl AgentConfigResponse {
 )]
 pub async fn get_agents(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    extract::Query(query): extract::Query<GetAgentsQuery>,
 ) -> Result<extract::Json<Vec<AgentConfigResponse>>, StatusCode> {
+    // Hybrid path: when the workspace has been promoted on its default
+    // branch, serve the listing from `agent_definitions`. `llm.ref` is
+    // pulled from the JSONB to keep the same response shape without
+    // re-parsing every `.agentic.yml`. `compiled_reader` handles the
+    // branch carve-out internally; on any error we fall through to FS.
+    match crate::server::api::compiled_reader::list_analytics_agents(
+        workspace_manager.workspace_id,
+        query.branch.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(rows)) => {
+            tracing::debug!(
+                workspace_id = %workspace_manager.workspace_id,
+                row_count = rows.len(),
+                "get_agents served from compile boundary"
+            );
+            let items: Vec<AgentConfigResponse> = rows
+                .into_iter()
+                .map(|r| {
+                    let mut resp = AgentConfigResponse::new(r.name, r.file_path, true);
+                    resp.model = r.model_ref;
+                    resp
+                })
+                .collect();
+            return Ok(extract::Json(items));
+        }
+        Ok(None) => {
+            // Branch is non-default, workspace not promoted, kill
+            // switch on, or DB hiccup. Fall through to FS.
+        }
+        Err(e) => {
+            tracing::warn!(
+                workspace_id = %workspace_manager.workspace_id,
+                error = ?e,
+                "get_agents compile-boundary error; falling through to FS"
+            );
+        }
+    }
+
     let config_manager = &workspace_manager.config_manager;
     let workspace_path = config_manager.workspace_path();
 

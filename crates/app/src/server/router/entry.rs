@@ -159,6 +159,14 @@ pub async fn api_router(
         agentic_state.shutdown_token.clone(),
     );
 
+    // Compile-boundary maintenance: reap stuck `compiling` revisions (crashed
+    // compiles) + prune old non-current revisions so the `*_definitions`
+    // tables stay bounded. Pure DB sweeps — runs regardless of --no-workers,
+    // idempotent across replicas.
+    crate::server::compile_maintenance::spawn_compile_maintenance(
+        crate::server::compile_maintenance::CompileMaintenanceConfig::from_env(),
+    );
+
     // Camera fleet stale-checker: flips edge_boxes.status to 'offline'
     // when last_seen_at goes silent past STALE_THRESHOLD. Bound to the
     // same shutdown token as the rest of the agentic state so it exits
@@ -396,6 +404,12 @@ fn finalize_router(app_routes: Router<AppState>, app_state: AppState) -> Router 
     let global_timeout =
         TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(60));
 
+    // role_middleware is applied at the OUTER router in serve.rs::main, not
+    // here — the api_router we return from finalize_router gets nested at
+    // /api on the outer router, but the IDE-page `/ide*` routes are served
+    // by the static `fallback_service` on that same outer router. Wrapping
+    // enforce_role here means it would never fire on /ide requests, which
+    // are exactly what OXY_ROLE=serve must refuse.
     app_routes
         .with_state(app_state)
         .layer(build_cors_layer())

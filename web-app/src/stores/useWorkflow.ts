@@ -18,6 +18,7 @@ export type NodeData = {
 };
 
 export enum TaskType {
+  AGENT = "agent",
   EXECUTE_SQL = "execute_sql",
   SEMANTIC_QUERY = "semantic_query",
   LOOKER_QUERY = "looker_query",

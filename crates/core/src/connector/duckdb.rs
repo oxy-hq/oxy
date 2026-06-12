@@ -10,7 +10,7 @@ use slugify::slugify;
 use super::duckdb_pool::{PoolKey, pool};
 use super::engine::Engine;
 use crate::adapters::secrets::SecretsManager;
-use crate::config::model::DuckDBOptions;
+use crate::config::model::{DuckDBOptions, DuckDbS3Mirror};
 use crate::connector::constants::{
     CREATE_CONN, CREATE_TEMP_TABLE, EXECUTE_QUERY, PREPARE_DUCKDB_STMT, SET_FILE_SEARCH_PATH,
     SET_TEMP_DIRECTORY,
@@ -21,13 +21,22 @@ use oxy_shared::errors::OxyError;
 #[derive(Debug)]
 pub(super) struct DuckDB {
     options: DuckDBOptions,
+    /// Compiled-config-only: present on a stateless replica when the local data
+    /// was mirrored to S3 at compile time. Its presence means "read from S3";
+    /// local/IDE reads never carry it.
+    s3_mirror: Option<DuckDbS3Mirror>,
     secrets_manager: SecretsManager,
 }
 
 impl DuckDB {
-    pub fn new(options: DuckDBOptions, secrets_manager: SecretsManager) -> Self {
+    pub fn new(
+        options: DuckDBOptions,
+        s3_mirror: Option<DuckDbS3Mirror>,
+        secrets_manager: SecretsManager,
+    ) -> Self {
         DuckDB {
             options,
+            s3_mirror,
             secrets_manager,
         }
     }
@@ -50,6 +59,16 @@ impl DuckDB {
     /// busy `oxy serve` process where one slow CSV import would stall every
     /// other future on the same worker.
     pub async fn init_connection(&self) -> Result<Connection, OxyError> {
+        // Stateless-fleet read: the compile worker mirrored this workspace's
+        // local DuckDB data to S3, so the local path doesn't exist here. Read it
+        // over httpfs instead. (config.yml never carries a mirror, so local/IDE
+        // reads fall through to the normal Local/File paths below.)
+        if let Some(mirror) = &self.s3_mirror {
+            let stmts = build_s3_mirror_sql(mirror);
+            return tokio::task::spawn_blocking(move || init_s3_mirror_blocking(stmts))
+                .await
+                .map_err(|e| OxyError::DBError(format!("DuckDB s3-mirror join error: {e}")))?;
+        }
         match &self.options {
             DuckDBOptions::Local { file_search_path } => {
                 let path = file_search_path.clone();
@@ -104,6 +123,95 @@ fn init_ducklake_blocking(attach_stmts: Vec<String>) -> Result<Connection, OxyEr
     Ok(conn)
 }
 
+/// Build the connection-setup SQL for an S3-mirrored DuckDB: load `httpfs`,
+/// create the S3 secret (pod credential chain — no stored keys), then register
+/// each mirrored data file as a view (`Local` mode) or attach the mirrored
+/// database read-only (`File` mode). The views read Parquet/CSV lazily from S3,
+/// so DuckDB still pushes projections/filters down rather than downloading
+/// whole objects.
+fn build_s3_mirror_sql(mirror: &DuckDbS3Mirror) -> Vec<String> {
+    let mut stmts = vec!["INSTALL httpfs".to_string(), "LOAD httpfs".to_string()];
+
+    let region = mirror.region.as_deref().unwrap_or("us-east-1");
+    let mut secret = format!(
+        "CREATE OR REPLACE SECRET duckdb_mirror_s3 (TYPE s3, PROVIDER credential_chain, REGION '{}'",
+        escape_sql_string(region)
+    );
+    if let Some(endpoint) = &mirror.endpoint_url {
+        // Custom endpoint (MinIO / LocalStack) → path-style addressing.
+        secret.push_str(&format!(
+            ", ENDPOINT '{}', URL_STYLE 'path', USE_SSL {}",
+            escape_sql_string(endpoint),
+            !endpoint.starts_with("http://")
+        ));
+    }
+    secret.push(')');
+    stmts.push(secret);
+
+    if let Some(key) = &mirror.attach_key {
+        stmts.push(format!(
+            "ATTACH 's3://{}/{}' AS mirror (READ_ONLY)",
+            escape_sql_string(&mirror.bucket),
+            escape_sql_string(key)
+        ));
+        stmts.push("USE mirror".to_string());
+    }
+    for table in &mirror.tables {
+        let reader = if table.format.eq_ignore_ascii_case("csv") {
+            "read_csv_auto"
+        } else {
+            "read_parquet"
+        };
+        stmts.push(format!(
+            "CREATE OR REPLACE VIEW {} AS SELECT * FROM {}('s3://{}/{}')",
+            quote_sql_identifier(&table.table),
+            reader,
+            escape_sql_string(&mirror.bucket),
+            escape_sql_string(&table.key)
+        ));
+    }
+    stmts
+}
+
+/// Synchronous body of the S3-mirror path. Fresh in-memory connection per
+/// query (like DuckLake) — `INSTALL` is disk-cached after first run, and the
+/// remaining `LOAD` / secret / view statements are cheap.
+fn init_s3_mirror_blocking(stmts: Vec<String>) -> Result<Connection, OxyError> {
+    let conn =
+        Connection::open_in_memory().map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    for stmt in &stmts {
+        tracing::debug!("DuckDB s3-mirror stmt: {}", stmt);
+        conn.execute(stmt, [])
+            .map_err(|err| s3_mirror_setup_error(stmt, &err))?;
+    }
+    install_icu(&conn)?;
+    load_icu(&conn)?;
+    Ok(conn)
+}
+
+/// Turn a DuckDB error from an S3-mirror setup statement into a message that
+/// names the step and what an operator should check. This path only runs on a
+/// stateless replica serving a workspace whose local DuckDB data was mirrored
+/// to S3 at compile time, so the failures are S3/extension-shaped, not the
+/// usual "bad SQL".
+fn s3_mirror_setup_error(stmt: &str, err: &duckdb::Error) -> OxyError {
+    let hint = if stmt.contains("httpfs") {
+        "could not load the DuckDB `httpfs` extension — the node needs outbound network to the \
+         extension repository on first run"
+    } else if stmt.starts_with("ATTACH") {
+        "could not attach the S3-mirrored DuckDB file read-only — the bundled DuckDB may not \
+         support remote ATTACH, the object may be missing, or the pod's IAM role may lack \
+         s3:GetObject on the bucket"
+    } else if stmt.contains("SECRET") {
+        "could not create the S3 credential for the mirrored DuckDB warehouse (expected the pod's \
+         instance role via the credential chain)"
+    } else {
+        "could not register an S3-mirrored DuckDB table — check the mirrored object exists and \
+         the pod's IAM role can read it"
+    };
+    OxyError::DBError(format!("DuckDB S3 mirror: {hint}. Underlying error: {err}"))
+}
+
 /// Synchronous body of [`DuckDB::init_connection`] for `Local` mode. Lives
 /// outside the async fn so it can run inside `spawn_blocking`.
 fn checkout_local_blocking(file_search_path: &str) -> Result<Connection, OxyError> {
@@ -155,6 +263,18 @@ pub fn checkout_file_connection(path: &str) -> Result<Connection, OxyError> {
 
 /// Synchronous body of [`DuckDB::init_connection`] for `File` mode.
 fn checkout_file_blocking(path: &str) -> Result<Connection, OxyError> {
+    // `Connection::open` on a missing path silently CREATES an empty database,
+    // which then fails every query with a confusing "table not found". Catch it
+    // here with an actionable message instead — this is the common shape on a
+    // stateless replica whose `.duckdb` wasn't mirrored to S3.
+    if !Path::new(path).exists() {
+        return Err(OxyError::DBError(format!(
+            "DuckDB database file '{path}' was not found. If this is a stateless / cloud \
+             deployment, the file must be mirrored to S3 by the compile worker — set \
+             OXY_COMPILE_BLOB_S3_BUCKET and recompile (files over 256 MiB are skipped and stay \
+             local-only). Otherwise check the path."
+        )));
+    }
     let key = PoolKey::file(PathBuf::from(path))?;
     let path_owned = path.to_owned();
     let entry = pool().get_or_init(key, move || {
@@ -245,7 +365,11 @@ fn canonicalize_local_dir(file_search_path: &str) -> Result<PathBuf, OxyError> {
     let path = Path::new(file_search_path);
     let canonical = path.canonicalize().map_err(|e| {
         OxyError::DBError(format!(
-            "DuckDB path '{file_search_path}' does not exist or is not accessible: {e}"
+            "DuckDB dataset directory '{file_search_path}' was not found ({e}). If this is a \
+             stateless / cloud deployment, the workspace's local DuckDB data must be mirrored to \
+             S3 by the compile worker — set OXY_COMPILE_BLOB_S3_BUCKET and recompile (note files \
+             over 256 MiB are skipped and stay local-only). Otherwise check that the path exists \
+             and is readable."
         ))
     })?;
     if !canonical.is_dir() {
@@ -324,13 +448,24 @@ impl Engine for DuckDB {
     ) -> Result<(Vec<RecordBatch>, SchemaRef), OxyError> {
         let query = query.to_string();
 
+        // S3-mirror views read Parquet/CSV from S3 lazily, so a missing object
+        // or a credentials problem surfaces here at execution, not at setup.
+        let s3_mirror = self.s3_mirror.is_some();
         let conn = self.init_connection().await?;
         let mut stmt = conn
             .prepare(&query)
             .map_err(|err| connector_internal_error(PREPARE_DUCKDB_STMT, &err))?;
-        let arrow_stream = stmt
-            .query_arrow([])
-            .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
+        let arrow_stream = stmt.query_arrow([]).map_err(|err| {
+            let base = connector_internal_error(EXECUTE_QUERY, &err);
+            if s3_mirror {
+                OxyError::DBError(format!(
+                    "{base} — this DuckDB warehouse is served from S3 on this node; verify the \
+                     mirrored objects exist and the pod's IAM role can read them (s3:GetObject)."
+                ))
+            } else {
+                base
+            }
+        })?;
         let duckdb_chunks: Vec<_> = arrow_stream.collect();
         tracing::debug!("Query results: {:?}", duckdb_chunks);
         // `Interchange::from_arrow_58` indexes `df[0]` without an empty
@@ -394,10 +529,7 @@ mod tests {
         let missing = tmp.path().join("does_not_exist");
         let err = canonicalize_local_dir(missing.to_str().unwrap()).unwrap_err();
         let msg = err.to_string();
-        assert!(
-            msg.contains("does not exist") || msg.contains("not accessible"),
-            "unexpected error: {msg}"
-        );
+        assert!(msg.contains("was not found"), "unexpected error: {msg}");
     }
 
     #[test]
@@ -480,5 +612,81 @@ mod tests {
         let files = collect_supported_files(tmp.path()).unwrap();
         let stems: Vec<&str> = files.iter().map(|(s, _)| s.as_str()).collect();
         assert_eq!(stems, vec!["alpha", "mike", "zeta"]);
+    }
+
+    use crate::config::model::{DuckDbS3Mirror, DuckDbS3Table};
+
+    #[test]
+    fn s3_mirror_local_mode_builds_httpfs_secret_and_views() {
+        let mirror = DuckDbS3Mirror {
+            bucket: "my-bucket".into(),
+            region: Some("us-west-2".into()),
+            endpoint_url: None,
+            tables: vec![
+                DuckDbS3Table {
+                    table: "orders".into(),
+                    key: "ws/duckdb/orders.parquet".into(),
+                    format: "parquet".into(),
+                },
+                DuckDbS3Table {
+                    table: "events".into(),
+                    key: "ws/duckdb/events.csv".into(),
+                    format: "csv".into(),
+                },
+            ],
+            attach_key: None,
+        };
+        let sql = build_s3_mirror_sql(&mirror);
+        assert!(sql.contains(&"INSTALL httpfs".to_string()));
+        assert!(sql.contains(&"LOAD httpfs".to_string()));
+        assert!(
+            sql.iter()
+                .any(|s| s.contains("CREATE OR REPLACE SECRET duckdb_mirror_s3")
+                    && s.contains("PROVIDER credential_chain")
+                    && s.contains("REGION 'us-west-2'"))
+        );
+        assert!(sql.iter().any(|s| s.contains("CREATE OR REPLACE VIEW")
+            && s.contains("orders")
+            && s.contains("read_parquet('s3://my-bucket/ws/duckdb/orders.parquet')")));
+        assert!(sql.iter().any(|s| s.contains("CREATE OR REPLACE VIEW")
+            && s.contains("events")
+            && s.contains("read_csv_auto('s3://my-bucket/ws/duckdb/events.csv')")));
+        // Local mode never attaches a remote database.
+        assert!(!sql.iter().any(|s| s.contains("ATTACH")));
+    }
+
+    #[test]
+    fn s3_mirror_file_mode_attaches_read_only() {
+        let mirror = DuckDbS3Mirror {
+            bucket: "b".into(),
+            region: None,
+            endpoint_url: None,
+            tables: vec![],
+            attach_key: Some("ws/duckdb/data.duckdb".into()),
+        };
+        let sql = build_s3_mirror_sql(&mirror);
+        assert!(
+            sql.iter()
+                .any(|s| s == "ATTACH 's3://b/ws/duckdb/data.duckdb' AS mirror (READ_ONLY)")
+        );
+        assert!(sql.contains(&"USE mirror".to_string()));
+    }
+
+    #[test]
+    fn s3_mirror_custom_endpoint_uses_path_style() {
+        let mirror = DuckDbS3Mirror {
+            bucket: "b".into(),
+            region: Some("us-east-1".into()),
+            endpoint_url: Some("http://localhost:9000".into()),
+            tables: vec![],
+            attach_key: None,
+        };
+        let sql = build_s3_mirror_sql(&mirror);
+        assert!(
+            sql.iter()
+                .any(|s| s.contains("ENDPOINT 'http://localhost:9000'")
+                    && s.contains("URL_STYLE 'path'")
+                    && s.contains("USE_SSL false"))
+        );
     }
 }

@@ -66,6 +66,9 @@ pub struct AdminWorkspaceDetail {
     pub error: Option<String>,
     pub member_count: i64,
     pub members: Vec<WorkspaceMember>,
+    /// Last promoted compile revision (when set). The admin compiles
+    /// page links to this from the workspace detail view.
+    pub current_revision_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -259,6 +262,7 @@ pub async fn get_workspace_detail(
         error: ws.error,
         member_count,
         members,
+        current_revision_id: ws.current_revision_id,
     }))
 }
 

@@ -631,6 +631,7 @@ mod tests {
             options: DuckDBOptions::Local {
                 file_search_path: dir_path.clone(),
             },
+            s3_mirror: None,
         };
         let config = ConfigBuilder::new()
             .with_workspace_path(&dir_path)
@@ -777,6 +778,7 @@ mod tests {
                 options: DuckDBOptions::Local {
                     file_search_path: dir.path().to_str().unwrap().to_string(),
                 },
+                s3_mirror: None,
             }),
         };
         let secrets = SecretsManager::from_environment().unwrap();

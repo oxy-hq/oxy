@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::events::HumanInputQuestion;
 use crate::human_input::SuspendedRunData;
@@ -255,6 +256,37 @@ pub enum TaskSpec {
         /// rows without this key deserialize to empty (backward-compatible).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         resources: Vec<String>,
+    },
+    /// Walk a workspace and write a compile-boundary revision (rows in
+    /// `revisions` + per-entity tables; optionally promotes
+    /// `workspaces.current_revision_id`). Driven by `oxy-compile`.
+    ///
+    /// Atomic from the queue's perspective: one TaskSpec, one revision.
+    /// Webhook-triggered compiles set `promote = true`; observation-mode
+    /// compiles leave it `false`.
+    Compile {
+        /// Workspace UUID whose source to compile.
+        workspace_id: Uuid,
+        /// Git SHA recorded on the revision. When `None`, the worker
+        /// records the literal "local" — useful for working-copy
+        /// invocations.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        git_sha: Option<String>,
+        /// Optional branch name (e.g. `main`, `feature/x`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+        /// When true AND the compile succeeds AND `kind == "main"`,
+        /// atomically updates `workspaces.current_revision_id` inside
+        /// the finalisation transaction.
+        #[serde(default, skip_serializing_if = "is_false")]
+        promote: bool,
+        /// `main` (default) | `draft`. Drafts are scoped to a single
+        /// `owner_user_id` and never promote `current_revision_id`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kind: Option<String>,
+        /// Required when `kind == "draft"`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner_user_id: Option<Uuid>,
     },
 }
 

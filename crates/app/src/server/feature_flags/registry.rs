@@ -13,8 +13,8 @@ pub struct FlagDef {
 pub static FLAGS: &[FlagDef] = &[FlagDef {
     key: "billing",
     description: "Master switch for billing & subscription enforcement. \
-                  When off, paywall and subscription guards are skipped \
-                  for all orgs.",
+                      When off, paywall and subscription guards are skipped \
+                      for all orgs.",
     default_enabled: false,
 }];
 

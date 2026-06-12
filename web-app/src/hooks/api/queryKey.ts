@@ -503,6 +503,26 @@ const preaggKeys = {
     [...preaggKeys.all, projectId, branchName ?? ""] as const
 };
 
+const compilesKeys = {
+  all: ["admin", "compiles"] as const,
+  list: (params: { limit?: number; workspace_id?: string; status?: string }) =>
+    [
+      ...compilesKeys.all,
+      "list",
+      params.limit ?? 50,
+      params.workspace_id ?? "",
+      params.status ?? ""
+    ] as const,
+  detail: (revisionId: string) =>
+    [...compilesKeys.all, "detail", revisionId] as const
+};
+
+const compileKeys = {
+  all: ["compile"] as const,
+  status: (workspaceId: string, branch: string) =>
+    [...compileKeys.all, "status", workspaceId, branch] as const
+};
+
 const adminOrgsKeys = {
   all: ["admin", "orgs"] as const,
   list: (search?: string) => [...adminOrgsKeys.all, "list", search ?? ""] as const,
@@ -629,6 +649,8 @@ const queryKeys = {
   customApps: customAppKeys,
   featureFlags: featureFlagKeys,
   internalJobs: internalJobsKeys,
+  compiles: compilesKeys,
+  compile: compileKeys,
   adminOrgs: adminOrgsKeys,
   adminMetrics: adminMetricsKeys,
   adminExplorer: adminExplorerKeys,

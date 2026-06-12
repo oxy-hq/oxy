@@ -206,10 +206,19 @@ pub async fn get_default_branch(workspace_root: &Path) -> String {
     if let Some(cached) = cache.lock().unwrap().get(workspace_root) {
         return cached.clone();
     }
-    let value = if let Ok(b) = std::env::var("GIT_DEFAULT_BRANCH")
+    // `resolved` distinguishes an authoritative answer (env var or a
+    // successful `symbolic-ref`) from the `"main"` fallback we return when the
+    // git lookup errors (shallow clone, `origin/HEAD` unset, transient failure).
+    // Only authoritative answers are cached: caching the fallback would pin the
+    // wrong default for the whole process lifetime and silently defeat any
+    // caller-side TTL — a repo whose real default is `master` would be stuck on
+    // `main` after a single transient error. Returning (but not caching) the
+    // fallback keeps behaviour unchanged for genuinely git-less paths while
+    // letting a transient error self-heal on the next call.
+    let (resolved, value) = if let Ok(b) = std::env::var("GIT_DEFAULT_BRANCH")
         && !b.is_empty()
     {
-        b
+        (true, b)
     } else {
         match run::run(
             workspace_root,
@@ -219,14 +228,19 @@ pub async fn get_default_branch(workspace_root: &Path) -> String {
         {
             Ok(out) => {
                 let s = out.trim().to_string();
-                s.strip_prefix("origin/").map(str::to_string).unwrap_or(s)
+                (
+                    true,
+                    s.strip_prefix("origin/").map(str::to_string).unwrap_or(s),
+                )
             }
-            Err(_) => "main".to_string(),
+            Err(_) => (false, "main".to_string()),
         }
     };
-    cache
-        .lock()
-        .unwrap()
-        .insert(workspace_root.to_path_buf(), value.clone());
+    if resolved {
+        cache
+            .lock()
+            .unwrap()
+            .insert(workspace_root.to_path_buf(), value.clone());
+    }
     value
 }

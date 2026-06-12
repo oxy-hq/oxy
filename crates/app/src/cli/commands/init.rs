@@ -248,6 +248,7 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
                             Some("Enter the directory where your files are located."),
                         )?,
                     },
+                    s3_mirror: None,
                 }));
             }
             "2" => {

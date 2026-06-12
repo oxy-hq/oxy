@@ -132,6 +132,25 @@ impl TaskExecutor for PipelineTaskExecutor {
                 self.execute_airway(pipeline_ref, variables.as_ref(), resources)
                     .await
             }
+
+            TaskSpec::Compile {
+                workspace_id,
+                git_sha,
+                branch,
+                promote,
+                kind,
+                owner_user_id,
+            } => {
+                self.execute_compile(
+                    *workspace_id,
+                    git_sha.clone(),
+                    branch.clone(),
+                    *promote,
+                    kind.as_deref(),
+                    *owner_user_id,
+                )
+                .await
+            }
         }
     }
 
@@ -460,6 +479,37 @@ impl PipelineTaskExecutor {
             worker = worker.with_credential_provider(provider);
         }
         Ok(worker.execute(spec))
+    }
+
+    /// Dispatch a `TaskSpec::Compile` through the host-supplied
+    /// [`CompileDispatcher`] port. The actual worker (which touches the
+    /// `entity` crate for the compile boundary schema) lives in the host
+    /// — pipeline keeps no `oxy-compile` / `entity` deps per the
+    /// layering rules.
+    async fn execute_compile(
+        &self,
+        workspace_id: uuid::Uuid,
+        git_sha: Option<String>,
+        branch: Option<String>,
+        promote: bool,
+        kind: Option<&str>,
+        owner_user_id: Option<uuid::Uuid>,
+    ) -> Result<ExecutingTask, String> {
+        let dispatcher = self.platform.compile_dispatcher().ok_or_else(|| {
+            "compile: PlatformContext::compile_dispatcher() returned None — the host \
+             needs to wire OxyCompileDispatcher (or equivalent) for compile tasks to run."
+                .to_string()
+        })?;
+        dispatcher
+            .dispatch(
+                workspace_id,
+                git_sha,
+                branch,
+                promote,
+                kind.map(str::to_string),
+                owner_user_id,
+            )
+            .await
     }
 
     /// Substitute a source's `*_var` credential references with values from the

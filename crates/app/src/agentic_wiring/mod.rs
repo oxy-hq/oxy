@@ -15,6 +15,7 @@
 //!   [`agentic_pipeline::platform::ThreadOwnerLookup`].
 
 pub mod builder_bridges;
+pub mod compile_dispatcher;
 pub mod metric_sink;
 pub mod metric_tree_runner;
 pub mod project_ctx;

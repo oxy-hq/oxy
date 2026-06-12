@@ -8,11 +8,12 @@ const CONTROLS_KEY: &str = "controls";
 
 pub async fn get_app_displays(
     workspace_manager: WorkspaceManager,
+    branch_hint: Option<&str>,
     path: &PathBuf,
 ) -> AppResult<(Vec<DisplayWithError>, Vec<ControlConfig>)> {
     let mut displays = Vec::new();
 
-    let yaml_content = match read_app_yaml_file(&workspace_manager, path).await {
+    let yaml_content = match resolve_app_yaml(&workspace_manager, branch_hint, path).await {
         Ok(content) => content,
         Err(e) => {
             displays.push(create_error_display("App config", &e.to_string()));
@@ -50,6 +51,43 @@ pub async fn get_app_displays(
     controls.extend(inline_controls);
 
     Ok((displays, controls))
+}
+
+/// Resolve the app's YAML body, preferring the compile boundary so the
+/// stateless serve fleet (which has no working copy on disk) can render
+/// displays, falling back to the filesystem on any miss/error. The compiled
+/// definition is re-serialised to YAML so the tolerant per-block parser below
+/// is unchanged — one malformed display still degrades to a single error card
+/// instead of blanking the dashboard.
+async fn resolve_app_yaml(
+    workspace_manager: &WorkspaceManager,
+    branch_hint: Option<&str>,
+    path: &PathBuf,
+) -> AppResult<String> {
+    let path_str = path.to_string_lossy().to_string();
+    match crate::server::api::compiled_reader::resolve_app(
+        workspace_manager.workspace_id,
+        branch_hint,
+        &path_str,
+    )
+    .await
+    {
+        Ok(Some(artifact)) => match serde_yaml::to_string(&artifact.definition) {
+            Ok(yaml) => return Ok(yaml),
+            Err(e) => tracing::warn!(
+                file_path = %path_str,
+                error = ?e,
+                "app displays: compiled definition re-serialise failed; falling through to FS"
+            ),
+        },
+        Ok(None) => {}
+        Err(e) => tracing::warn!(
+            file_path = %path_str,
+            error = ?e,
+            "app displays: compile boundary error; falling through to FS"
+        ),
+    }
+    read_app_yaml_file(workspace_manager, path).await
 }
 
 fn parse_controls_section(

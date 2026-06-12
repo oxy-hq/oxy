@@ -161,28 +161,43 @@ impl Connector {
                     dry_run_limit.or(bigquery.dry_run_limit),
                 ))
             }
-            DatabaseType::DuckDB(duckdb) => match &duckdb.options {
-                DuckDBOptions::Local { file_search_path } => {
-                    let search_path = config_manager.resolve_file(file_search_path).await?;
-                    EngineType::DuckDB(DuckDB::new(
-                        DuckDBOptions::Local {
-                            file_search_path: search_path,
-                        },
+            DatabaseType::DuckDB(duckdb) => {
+                // When an S3 mirror is present we're on a stateless replica: the
+                // local path doesn't exist, so skip resolving it (the connector
+                // reads from S3) and thread the mirror through.
+                let mirror = duckdb.s3_mirror.clone();
+                match &duckdb.options {
+                    DuckDBOptions::Local { file_search_path } => {
+                        let options = if mirror.is_some() {
+                            DuckDBOptions::Local {
+                                file_search_path: file_search_path.clone(),
+                            }
+                        } else {
+                            DuckDBOptions::Local {
+                                file_search_path: config_manager
+                                    .resolve_file(file_search_path)
+                                    .await?,
+                            }
+                        };
+                        EngineType::DuckDB(DuckDB::new(options, mirror, secrets_manager.clone()))
+                    }
+                    DuckDBOptions::File { path } => {
+                        let options = if mirror.is_some() {
+                            DuckDBOptions::File { path: path.clone() }
+                        } else {
+                            DuckDBOptions::File {
+                                path: config_manager.resolve_file(path).await?,
+                            }
+                        };
+                        EngineType::DuckDB(DuckDB::new(options, mirror, secrets_manager.clone()))
+                    }
+                    DuckDBOptions::DuckLake(config) => EngineType::DuckDB(DuckDB::new(
+                        DuckDBOptions::DuckLake(config.clone()),
+                        mirror,
                         secrets_manager.clone(),
-                    ))
+                    )),
                 }
-                DuckDBOptions::File { path } => {
-                    let resolved = config_manager.resolve_file(path).await?;
-                    EngineType::DuckDB(DuckDB::new(
-                        DuckDBOptions::File { path: resolved },
-                        secrets_manager.clone(),
-                    ))
-                }
-                DuckDBOptions::DuckLake(config) => EngineType::DuckDB(DuckDB::new(
-                    DuckDBOptions::DuckLake(config.clone()),
-                    secrets_manager.clone(),
-                )),
-            },
+            }
             DatabaseType::Postgres(pg) => {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}",

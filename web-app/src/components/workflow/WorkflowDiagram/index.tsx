@@ -11,6 +11,7 @@ import { useWorkflowLayout } from "./layout/useWorkflowLayout";
 import { restoreOrFit } from "./utils/viewport";
 
 const nodeTypes: Record<NodeType, typeof DiagramNode> = {
+  agent: DiagramNode,
   execute_sql: DiagramNode,
   semantic_query: DiagramNode,
   loop_sequential: DiagramNode,

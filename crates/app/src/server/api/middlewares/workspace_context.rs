@@ -188,30 +188,43 @@ pub async fn workspace_middleware(
         .as_ref()
         .map(|s| std::sync::Arc::new(s.db.clone()));
 
-    match authorize_workspace(workspace_id, user.id, &user.email, &mut request).await? {
-        Some(workspace_row) => {
-            try_attach_workspace_manager(
-                &workspace_row,
-                query.branch.as_deref(),
-                workspace_id,
-                branch_id,
-                user.id,
-                app_state.preagg_cache,
-                app_state.preagg_renewal_threshold_secs,
-                agentic_db,
-                &mut request,
-            )
-            .await?;
-        }
-        None => {
-            tracing::warn!(
-                "No workspace path available for workspace {}, continuing without workspace manager",
-                workspace_id
-            );
-        }
-    }
+    // Resolve the one revision this request reads — ONCE — and pin it for the
+    // whole downstream (config resolution below + every compiled reader the
+    // handler calls). Without this, each reader re-resolves `current_revision_id`
+    // independently and a promotion landing mid-request yields a torn read.
+    let pinned_revision = crate::server::api::compiled_reader::resolve_request_revision(
+        workspace_id,
+        query.branch.as_deref(),
+    )
+    .await;
 
-    Ok(next.run(request).await)
+    crate::server::api::compiled_reader::with_pinned_revision(pinned_revision, async move {
+        match authorize_workspace(workspace_id, user.id, &user.email, &mut request).await? {
+            Some(workspace_row) => {
+                try_attach_workspace_manager(
+                    &workspace_row,
+                    query.branch.as_deref(),
+                    workspace_id,
+                    branch_id,
+                    user.id,
+                    app_state.preagg_cache,
+                    app_state.preagg_renewal_threshold_secs,
+                    agentic_db,
+                    &mut request,
+                )
+                .await?;
+            }
+            None => {
+                tracing::warn!(
+                    "No workspace path available for workspace {}, continuing without workspace manager",
+                    workspace_id
+                );
+            }
+        }
+
+        Ok(next.run(request).await)
+    })
+    .await
 }
 
 /// Looks up the workspace, authorizes the caller, and inserts request extensions
@@ -375,6 +388,71 @@ async fn resolve_effective_role(
     Ok((org_membership, effective_role))
 }
 
+/// Enqueue a promoting compile for an uncompiled workspace, deduped against any
+/// compile already queued/claimed for it. Best-effort — failures are logged,
+/// never surfaced (the caller is on a request hot path).
+async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uuid) {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    // Skip if a compile for this workspace is already in flight — otherwise a
+    // burst of requests to an uncompiled workspace would flood the queue.
+    let already = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT 1 FROM agentic_task_queue \
+             WHERE queue_status IN ('queued', 'claimed') \
+               AND spec->>'type' = 'compile' \
+               AND spec->>'workspace_id' = $1 \
+             LIMIT 1",
+            [workspace_id.to_string().into()],
+        ))
+        .await;
+    if matches!(already, Ok(Some(_))) {
+        return;
+    }
+
+    let task_id = Uuid::new_v4().to_string();
+    // `agentic_task_queue.run_id` FKs to `agentic_runs.id`, so the run row must
+    // exist before the task insert (mirrors `api::compile`). Without this the
+    // enqueue silently FK-violates and the self-heal never fires.
+    if let Err(e) = agentic_runtime::crud::insert_run(
+        db,
+        &task_id,
+        "compile main (lazy self-heal)",
+        None,
+        "compile",
+        Some(serde_json::json!({ "workspace_id": workspace_id, "lazy": true })),
+        workspace_id,
+    )
+    .await
+    {
+        tracing::warn!(?e, %workspace_id, "lazy compile insert_run failed");
+        return;
+    }
+    let spec = agentic_core::delegation::TaskSpec::Compile {
+        workspace_id,
+        git_sha: None,
+        branch: None,
+        promote: true,
+        kind: Some("main".to_string()),
+        owner_user_id: None,
+    };
+    match agentic_runtime::crud::enqueue_task(
+        db,
+        &task_id,
+        &task_id,
+        None,
+        &spec,
+        None,
+        agentic_runtime::orchestrator::crud::queue::TaskScope::Global,
+    )
+    .await
+    {
+        Ok(_) => tracing::info!(%workspace_id, "enqueued lazy compile for uncompiled workspace"),
+        Err(e) => tracing::warn!(?e, %workspace_id, "lazy compile enqueue failed"),
+    }
+}
+
 /// Best-effort: builds the `WorkspaceManager` (with secrets, runs, intent classifier)
 /// and inserts it into request extensions. The only fatal outcome is an invalid
 /// branch query parameter, which yields BAD_REQUEST.
@@ -403,10 +481,65 @@ async fn try_attach_workspace_manager(
             StatusCode::BAD_REQUEST
         })?;
 
-    let mut builder = match WorkspaceBuilder::new(workspace_id)
-        .with_workspace_path_and_fallback_config(&effective_path)
+    // Compile-boundary fast path: when the workspace has a promoted revision,
+    // hydrate the workspace `Config` from `workspace_compiled_configs` instead
+    // of re-parsing `config.yml` from disk on every request. This is the
+    // largest single FS hit on the customer hot path — every chat / thread /
+    // data app / workflow request reads config.yml today.
+    //
+    // Thread the active branch through so the IDE on a feature branch sees its
+    // working-copy `config.yml` edits via FS, matching the branch-aware
+    // contract every other compiled reader honours. On any miss (no promoted
+    // revision, non-default branch, deserialise fails) we fall through to FS.
+    let compiled_config: Option<oxy::config::model::Config> =
+        match crate::server::api::compiled_reader::resolve_workspace_config(
+            workspace_id,
+            branch_name,
+        )
         .await
-    {
+        {
+            Ok(Some(json)) => {
+                match serde_json::from_value::<oxy::config::model::Config>(json) {
+                    Ok(mut cfg) => {
+                        // `workspace_path` is `#[serde(skip)]` on Config so we
+                        // populate it manually — downstream resolvers depend on it.
+                        cfg.workspace_path = effective_path.clone();
+                        tracing::debug!(
+                            workspace_id = %workspace_id,
+                            "workspace_context: config.yml served from compile boundary"
+                        );
+                        Some(cfg)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            workspace_id = %workspace_id,
+                            error = ?e,
+                            "compiled config deserialise failed; falling through to FS"
+                        );
+                        None
+                    }
+                }
+            }
+            Ok(None) => None,
+            Err(e) => {
+                tracing::warn!(
+                    workspace_id = %workspace_id,
+                    error = ?e,
+                    "compiled config lookup failed; falling through to FS"
+                );
+                None
+            }
+        };
+
+    let builder_init = if let Some(cfg) = compiled_config {
+        WorkspaceBuilder::new(workspace_id)
+            .with_workspace_path_and_compiled_config(&effective_path, cfg)
+    } else {
+        WorkspaceBuilder::new(workspace_id)
+            .with_workspace_path_and_fallback_config(&effective_path)
+            .await
+    };
+    let mut builder = match builder_init {
         Ok(b) => b,
         Err(e) => {
             tracing::warn!(
@@ -414,6 +547,17 @@ async fn try_attach_workspace_manager(
                 workspace_id,
                 e
             );
+            // Lazy self-heal for the stateless serve fleet: a workspace that has
+            // never been compiled has no working copy on this replica, so the FS
+            // build above failed. Kick off a (deduped) compile so the next
+            // request can serve it from Postgres. The request itself still fails
+            // via the missing-manager extractor — retry once compiled.
+            if workspace_row.current_revision_id.is_none()
+                && workspace_row.path.is_some()
+                && let Some(agentic_db) = db.as_ref()
+            {
+                enqueue_lazy_compile(agentic_db, workspace_id).await;
+            }
             return Ok(());
         }
     };

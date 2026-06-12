@@ -310,6 +310,7 @@ impl DatabaseConfigBuilder {
                         .file_search_path
                         .unwrap_or_else(|| "data".to_string()),
                 },
+                s3_mirror: None,
             }),
         })
     }

@@ -233,6 +233,44 @@ pub enum DuckDBOptions {
     DuckLake(#[garde(dive)] DuckLakeConfig),
 }
 
+/// Compiler-produced S3 mirror of a **local-file** DuckDB warehouse
+/// (`Local` / `File` modes). Present **only in the compiled config**, never in
+/// `config.yml`: when the compile worker uploads a workspace's on-disk DuckDB
+/// data to S3, it records the location here so a stateless serve replica —
+/// which has no working copy — can read the data over `httpfs` instead of the
+/// absent local path. Its mere presence means "this is a fleet read"; local /
+/// IDE reads come from the filesystem and never carry it.
+///
+/// Credentials are the pod's instance role (S3 `credential_chain`), so nothing
+/// sensitive is stored here.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, PartialEq)]
+pub struct DuckDbS3Mirror {
+    /// Bucket the data was mirrored into (`OXY_COMPILE_BLOB_S3_BUCKET`).
+    pub bucket: String,
+    /// AWS region for the S3 secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// Custom endpoint (MinIO / LocalStack); when set, path-style addressing is
+    /// used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_url: Option<String>,
+    /// `Local` mode: one mirrored data file per table (table name = slugified
+    /// file stem, matching local registration).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tables: Vec<DuckDbS3Table>,
+    /// `File` mode: the mirrored `.duckdb` object key (attached read-only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attach_key: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, PartialEq)]
+pub struct DuckDbS3Table {
+    pub table: String,
+    pub key: String,
+    /// `parquet` | `csv`.
+    pub format: String,
+}
+
 fn default_use_ssl() -> bool {
     false
 }

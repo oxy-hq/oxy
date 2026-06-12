@@ -10,11 +10,13 @@
 pub mod app_admins;
 pub mod apps;
 pub mod billing;
+pub mod compiles;
 pub mod explorer;
 pub mod internal_jobs;
 pub mod metrics;
 pub mod orgs_admin;
 pub mod oxy_access;
+pub mod routing;
 pub mod users_admin;
 pub mod workspaces_admin;
 
@@ -92,6 +94,7 @@ pub(crate) fn router() -> Router<AppState> {
         .merge(orgs_admin::router())
         .merge(users_admin::router())
         .merge(workspaces_admin::router())
+        .merge(routing::router())
         .merge(billing::router().route_layer(strict.clone()))
         .merge(app_admins::router().route_layer(strict))
 }

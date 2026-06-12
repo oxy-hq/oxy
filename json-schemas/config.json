@@ -200,6 +200,17 @@
             "type"
           ],
           "properties": {
+            "s3_mirror": {
+              "description": "Compiler-produced (compiled config only). When set, the connector reads the warehouse data from S3 instead of the local path, so the stateless fleet can serve a workspace whose DuckDB data lives in the working tree. Always `None` in `config.yml` — see [`DuckDbS3Mirror`].",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DuckDbS3Mirror"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -816,6 +827,67 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "DuckDbS3Mirror": {
+      "description": "Compiler-produced S3 mirror of a **local-file** DuckDB warehouse (`Local` / `File` modes). Present **only in the compiled config**, never in `config.yml`: when the compile worker uploads a workspace's on-disk DuckDB data to S3, it records the location here so a stateless serve replica — which has no working copy — can read the data over `httpfs` instead of the absent local path. Its mere presence means \"this is a fleet read\"; local / IDE reads come from the filesystem and never carry it.\n\nCredentials are the pod's instance role (S3 `credential_chain`), so nothing sensitive is stored here.",
+      "type": "object",
+      "required": [
+        "bucket"
+      ],
+      "properties": {
+        "attach_key": {
+          "description": "`File` mode: the mirrored `.duckdb` object key (attached read-only).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bucket": {
+          "description": "Bucket the data was mirrored into (`OXY_COMPILE_BLOB_S3_BUCKET`).",
+          "type": "string"
+        },
+        "endpoint_url": {
+          "description": "Custom endpoint (MinIO / LocalStack); when set, path-style addressing is used.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "region": {
+          "description": "AWS region for the S3 secret.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tables": {
+          "description": "`Local` mode: one mirrored data file per table (table name = slugified file stem, matching local registration).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DuckDbS3Table"
+          }
+        }
+      }
+    },
+    "DuckDbS3Table": {
+      "type": "object",
+      "required": [
+        "format",
+        "key",
+        "table"
+      ],
+      "properties": {
+        "format": {
+          "description": "`parquet` | `csv`.",
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "table": {
+          "type": "string"
         }
       }
     },

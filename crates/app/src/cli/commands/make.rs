@@ -187,6 +187,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
                 options: model::DuckDBOptions::Local {
                     file_search_path: "db/".to_string(),
                 },
+                s3_mirror: None,
             }),
         }],
         defaults: Some(Defaults {

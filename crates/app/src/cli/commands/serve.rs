@@ -46,6 +46,10 @@ const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 const APIDOC_DESCRIPTION: &str = include_str!("apidoc.md");
 
 pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
+    // OXY_ROLE → ide | serve | worker | all (default). Read once so the
+    // routing middleware can enforce the FS-routing boundary.
+    crate::server::role_manifest::init_process_role_from_env();
+
     // Require OXY_DATABASE_URL to be set
     if std::env::var("OXY_DATABASE_URL").is_err() {
         return Err(OxyError::RuntimeError(
@@ -124,21 +128,12 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // is configured in the parsed OxyConfig. Reads the YAML, not just the env
     // vars above (the YAML check is what `BuiltInAuthenticator` historically
     // used). Lifted here so `oxy-auth` can stay free of an `oxy` dep.
-    //
-    // In `--local` mode the authenticator must run guest-mode regardless of
-    // what providers are configured — the local-mode router pins all callers
-    // to the local guest user, and the customer-apps gates (which sit in the
-    // shared public router, not the local-only protected stack) call
-    // `BuiltInAuthenticator` directly without consulting `AuthState`. Without
-    // this override they'd reject the implicit local-guest session and the
-    // bundle's data hooks would 401 in `oxy start --local`.
     {
-        let yaml_provider = !args.local
-            && oxy::config::oxy::get_oxy_config()
-                .ok()
-                .and_then(|c| c.authentication)
-                .map(|a| a.google.is_some() || a.okta.is_some() || a.magic_link.is_some())
-                .unwrap_or(false);
+        let yaml_provider = oxy::config::oxy::get_oxy_config()
+            .ok()
+            .and_then(|c| c.authentication)
+            .map(|a| a.google.is_some() || a.okta.is_some() || a.magic_link.is_some())
+            .unwrap_or(false);
         oxy_auth::built_in::set_auth_configured(yaml_provider);
     }
 
@@ -536,6 +531,13 @@ async fn create_web_application(
         // static fallback, which the browser surfaces as a misleading
         // "CORS error" instead of the real 404. See
         // `crates/app/src/server/router/mod.rs::build_cors_layer`.
+        // role_middleware lives on the OUTER router so it covers the static
+        // `/ide*` SPA fallback in addition to `/api/*`. Compares the request
+        // URI segment-by-segment to the role manifest; no-op when OXY_ROLE is
+        // unset. Stamps X-Oxy-Served-By on every response.
+        .layer(axum::middleware::from_fn(
+            crate::server::role_middleware::enforce_role,
+        ))
         .layer(crate::server::router::build_cors_layer())
         .layer(create_trace_layer());
 

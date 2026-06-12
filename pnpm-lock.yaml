@@ -24,10 +24,10 @@ importers:
         specifier: ^17.0.7
         version: 17.0.7
       prettier:
-        specifier: ^3.8.4
+        specifier: ^3.8.3
         version: 3.8.4
       turbo:
-        specifier: ^2.9.17
+        specifier: ^2.9.16
         version: 2.9.17
       typescript:
         specifier: ^6.0.3
@@ -36,10 +36,10 @@ importers:
   sdk/create-oxy-app:
     devDependencies:
       '@types/node':
-        specifier: ^25.9.3
+        specifier: ^25.9.1
         version: 25.9.3
       tsdown:
-        specifier: ^0.22.2
+        specifier: ^0.22.1
         version: 0.22.2(tsx@4.22.4)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
@@ -81,10 +81,10 @@ importers:
   sdk/vite-plugin:
     devDependencies:
       '@types/node':
-        specifier: ^25.9.3
+        specifier: ^25.9.1
         version: 25.9.3
       tsdown:
-        specifier: ^0.22.2
+        specifier: ^0.22.1
         version: 0.22.2(tsx@4.22.4)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
@@ -331,8 +331,8 @@ importers:
         version: 5.0.14(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
     devDependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.104.1
-        version: 0.104.1
+        specifier: ^0.100.1
+        version: 0.100.1
       '@playwright/test':
         specifier: ^1.60.0
         version: 1.60.0
@@ -352,7 +352,7 @@ importers:
         specifier: ^4.17.24
         version: 4.17.24
       '@types/node':
-        specifier: ^25.9.3
+        specifier: ^25.9.1
         version: 25.9.3
       '@types/nunjucks':
         specifier: 3.2.6
@@ -402,8 +402,8 @@ packages:
   '@adobe/css-tools@4.4.4':
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
-  '@anthropic-ai/sdk@0.104.1':
-    resolution: {integrity: sha512-gGACa/+IaiXzRRmF96aOhamoBgapKRBiFWbmmTFP8aMkpaEcuStF+Q61bjo4vPxBM7gqWJNZqsngslRdnLHv0Q==}
+  '@anthropic-ai/sdk@0.100.1':
+    resolution: {integrity: sha512-RANcEe7LpiLczkKGOwoXOTuFdPhuubS0i4xaAKOMpcqc55YO0mukgxppV7eygx3DXNjxWT6RYOLPyOy0aIAmwg==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -2555,9 +2555,6 @@ packages:
 
   '@types/node@24.13.1':
     resolution: {integrity: sha512-RSpUJGmvsJ1ZeBehQZFhIdpsz+bIpES0nIQXko4Ybq+N+kX6XvOq3Jo+iJ82FWLdblFq85AsMikd3m35jgezYg==}
-
-  '@types/node@25.9.2':
-    resolution: {integrity: sha512-G05zqtJhcDLb8uslf5EjCxXg9G1KQxiV8OS0R26IC//Eoyitzqe8z37I7cqvnZlrlSfgocQRfSn/AHBZJJFyGw==}
 
   '@types/node@25.9.3':
     resolution: {integrity: sha512-603BddQMv3pUcr4U2dhujk83N2tTDVr/34wII2B6bJy6g+8WD6yUb11jszNs0gdi4PesVWl7ABt8nYMVpnLUcg==}
@@ -5373,7 +5370,7 @@ snapshots:
 
   '@adobe/css-tools@4.4.4': {}
 
-  '@anthropic-ai/sdk@0.104.1':
+  '@anthropic-ai/sdk@0.100.1':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
@@ -7365,10 +7362,6 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
-  '@types/node@25.9.2':
-    dependencies:
-      undici-types: 7.24.6
-
   '@types/node@25.9.3':
     dependencies:
       undici-types: 7.24.6
@@ -7377,7 +7370,7 @@ snapshots:
 
   '@types/papaparse@5.5.2':
     dependencies:
-      '@types/node': 25.9.2
+      '@types/node': 25.9.3
 
   '@types/prismjs@1.26.6': {}
 

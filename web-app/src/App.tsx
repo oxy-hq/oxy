@@ -115,6 +115,7 @@ const AdminLayout = React.lazy(() => import("./pages/admin/AdminLayout"));
 const AdminBillingQueue = React.lazy(() => import("./pages/admin/AdminBillingQueue"));
 const AdminFeatureFlags = React.lazy(() => import("./pages/admin/AdminFeatureFlags"));
 const AdminInternalJobs = React.lazy(() => import("./pages/admin/AdminInternalJobs"));
+const AdminCompiles = React.lazy(() => import("./pages/admin/AdminCompiles"));
 const AdminExplorer = React.lazy(() => import("./pages/admin/AdminExplorer"));
 // Customer-apps admin surface (new-auth): per-org app admins + the
 // customer-apps registry (Add / Link / Sync / Publish). Lazy-loaded
@@ -529,6 +530,7 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/billing/queue' element={<AdminBillingQueue />} />
             <Route path='admin/feature-flags' element={<AdminFeatureFlags />} />
             <Route path='admin/internal-jobs' element={<AdminInternalJobs />} />
+            <Route path='admin/compiles' element={<AdminCompiles />} />
             {/* ROUTES.ADMIN.INTERNAL_JOBS */}
             <Route path='admin/explorer' element={<AdminExplorer />} />
             {/* ROUTES.ADMIN.EXPLORER */}

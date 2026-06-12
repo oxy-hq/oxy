@@ -6,6 +6,7 @@ mod app_manifest;
 mod apps;
 mod cameras;
 pub mod clean;
+mod compile;
 pub mod export_chart;
 mod init;
 mod intent;
@@ -168,6 +169,15 @@ enum SubCommand {
     /// enhanced semantic search and retrieval functionality. Also synchronizes
     /// configured integrations like Omni and Looker metadata.
     Build(BuildArgs),
+    /// Compile the workspace into the compile-boundary Postgres schema (Phase 1.6a observation mode).
+    ///
+    /// Walks every recognized YAML/SQL file, parses it, and writes a
+    /// `revisions` row plus per-entity rows tagged with the new
+    /// revision_id. Does NOT update `workspaces.current_revision_id`;
+    /// runtime still reads YAML from disk in Phase 1.6a. Useful for
+    /// inspecting what the compile boundary produces before any read
+    /// path depends on it.
+    Compile(compile::CompileArgs),
     /// Synchronize and collect metadata from connected databases
     ///
     /// Extract schema information, table structures, and relationships
@@ -390,32 +400,13 @@ struct ValidateArgs {
 
 #[derive(Parser, Debug)]
 pub struct SeedArgs {
-    /// Database seeding action to perform
-    #[clap(subcommand)]
-    pub action: SeedAction,
-}
-
-#[derive(Parser, Debug)]
-pub enum SeedAction {
-    /// [DEPRECATED] Create legacy test users for development environment
-    ///
-    /// Legacy helper that predates org/project-aware data flows.
-    /// Prefer creating data through normal app workflows.
-    Users,
-    /// [DEPRECATED] Create legacy sample threads for existing test users
-    ///
-    /// Legacy helper that may not match current org/project models.
-    /// Prefer creating data through normal app workflows.
-    Threads,
-    /// [DEPRECATED] Clear legacy test data (users and threads)
-    ///
-    /// Legacy cleanup helper for old seed data only.
-    Clear,
-    /// [DEPRECATED] Full legacy seed (users + sample threads)
-    ///
-    /// Legacy helper that predates org/project-aware data flows.
-    /// Prefer creating data through normal app workflows.
-    Full,
+    /// Override the workspace path (defaults to `./examples`).
+    #[clap(long)]
+    pub workspace_path: Option<std::path::PathBuf>,
+    /// Drop the demo workspace row instead of seeding. Leaves the org +
+    /// guest user in place.
+    #[clap(long)]
+    pub clear: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -545,6 +536,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Init => "init",
             SubCommand::Run(_) => "run",
             SubCommand::Build(_) => "build",
+            SubCommand::Compile(_) => "compile",
             SubCommand::Sync(_) => "sync",
             SubCommand::Validate(_) => "validate",
             SubCommand::Migrate => "migrate",
@@ -693,6 +685,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             .await?;
 
             println!("✅ Build complete");
+        }
+        Some(SubCommand::Compile(compile_args)) => {
+            sentry_config::add_operation_context("compile", None);
+            if let Err(e) = compile::run_compile(compile_args).await {
+                eprintln!("{}", format!("Compile failed: {e}").error());
+                exit(1);
+            }
         }
         Some(SubCommand::Sync(sync_args)) => {
             sentry_config::add_operation_context("sync", None);
@@ -1162,31 +1161,11 @@ async fn handle_check_for_updates() -> Result<(), OxyError> {
 
 async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
     use seed::*;
-
-    println!(
-        "{} {}",
-        "⚠️".warning(),
-        "`oxy seed` is deprecated and may not match the current org/project data model. Prefer creating test data through normal app workflows.".warning()
-    );
-
-    match seed_args.action {
-        SeedAction::Users => {
-            seed_test_users().await?;
-        }
-        SeedAction::Threads => {
-            create_sample_threads_for_users().await?;
-        }
-        SeedAction::Clear => {
-            clear_test_data().await?;
-        }
-        SeedAction::Full => {
-            println!("🚀 Performing full database seed...");
-            seed_test_users().await?;
-            create_sample_threads_for_users().await?;
-            println!("✨ Full seed completed successfully!");
-        }
+    if seed_args.clear {
+        clear_demo().await
+    } else {
+        seed_demo(seed_args.workspace_path).await
     }
-    Ok(())
 }
 
 async fn handle_clean_command(clean_args: CleanArgs) -> Result<(), OxyError> {

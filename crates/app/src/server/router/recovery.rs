@@ -128,6 +128,21 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
             shutdown.clone(),
             ws_cache.clone(),
         );
+    } else if matches!(mode, ServeMode::Cloud) {
+        // Loud operational signal: in cloud mode with the in-process global
+        // driver off AND no other node draining the queue, `TaskSpec::Compile`
+        // tasks (which the compile boundary depends on) never run, so
+        // workspaces stay uncompiled and unservable by the stateless fleet.
+        // Compile execution needs the workspace working copy on disk, so the
+        // node running the driver must have it (per-worker clone-on-demand is a
+        // later phase). Set OXY_INPROC_GLOBAL_WORKER=1 on such a node.
+        tracing::warn!(
+            target: "recovery",
+            "OXY_INPROC_GLOBAL_WORKER is off on a cloud serve node — queued Global \
+             tasks (compiles in particular) will NOT be drained here. Ensure a node \
+             with the workspace working copy runs the global driver, or compiles \
+             never run. See internal-docs/compile-boundary.md."
+        );
     }
 
     tokio::spawn(async move {

@@ -21,7 +21,10 @@ use crate::config::validate::{
     validate_looker_integration_exists, validate_omni_integration_exists,
     validate_task_data_reference,
 };
-pub use duckdb::{CatalogConfig, DuckDBOptions, DuckLakeConfig, S3StorageSecret, StorageConfig};
+pub use duckdb::{
+    CatalogConfig, DuckDBOptions, DuckDbS3Mirror, DuckDbS3Table, DuckLakeConfig, S3StorageSecret,
+    StorageConfig,
+};
 pub use oxy_llm::{
     AnthropicModelConfig, GeminiModelConfig, HeaderValue, Model, OllamaModelConfig,
     OpenAIModelConfig, default_openai_api_url,
@@ -987,6 +990,13 @@ pub struct DuckDB {
     #[serde(flatten)]
     #[garde(dive)]
     pub options: DuckDBOptions,
+    /// Compiler-produced (compiled config only). When set, the connector reads
+    /// the warehouse data from S3 instead of the local path, so the stateless
+    /// fleet can serve a workspace whose DuckDB data lives in the working tree.
+    /// Always `None` in `config.yml` — see [`DuckDbS3Mirror`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub s3_mirror: Option<DuckDbS3Mirror>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]

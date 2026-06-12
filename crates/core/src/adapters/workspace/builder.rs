@@ -54,6 +54,24 @@ impl WorkspaceBuilder {
         Ok(self)
     }
 
+    /// Compile-boundary fast path: use a pre-resolved `Config` instead
+    /// of parsing `config.yml` from disk on every request. Callers
+    /// (middleware) consult `compiled_reader::resolve_workspace_config`
+    /// first and pass the deserialised `Config` here; on miss they fall
+    /// through to `with_workspace_path_and_fallback_config`.
+    pub fn with_workspace_path_and_compiled_config<P: AsRef<Path>>(
+        mut self,
+        workspace_path: P,
+        config: crate::config::model::Config,
+    ) -> Result<Self, OxyError> {
+        self.config_manager = Some(
+            ConfigBuilder::new()
+                .with_workspace_path(workspace_path)?
+                .build_with_provided_config(config)?,
+        );
+        Ok(self)
+    }
+
     pub fn with_secrets_manager(mut self, secret_manager: SecretsManager) -> Self {
         self.secrets_manager = Some(secret_manager);
         self

@@ -164,6 +164,7 @@ async fn seed_site(db: &DatabaseConnection) -> (Uuid, Uuid) {
         status: ActiveValue::Set(WorkspaceStatus::Ready),
         error: ActiveValue::Set(None),
         monthly_vlm_budget_micros: ActiveValue::Set(None),
+        current_revision_id: ActiveValue::Set(None),
     }
     .insert(db)
     .await

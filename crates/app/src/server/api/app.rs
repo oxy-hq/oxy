@@ -56,6 +56,11 @@ pub struct ListAppsQuery {
     /// Defaults to false so the IDE Objects view keeps seeing everything.
     #[serde(default)]
     pub published_only: bool,
+    /// Active branch in the IDE. When set and not equal to the
+    /// workspace's default branch, the compile-boundary path is
+    /// bypassed (FS walk) so the user sees their working-copy edits.
+    #[serde(default)]
+    pub branch: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -180,6 +185,50 @@ pub async fn list_apps(
         Some(EffectiveWorkspaceRole(r)) => r > WorkspaceRole::Viewer,
         None => true,
     };
+
+    // Hybrid path: when the workspace has been promoted by a successful
+    // Compile TaskSpec (`workspaces.current_revision_id IS NOT NULL`)
+    // AND the request is on the workspace's default branch, serve the
+    // sidebar list from `app_definitions` instead of walking YAML
+    // files. `compiled_reader` handles the branch carve-out internally;
+    // we just pass the active branch hint along.
+    match crate::server::api::compiled_reader::list_apps(
+        workspace_manager.workspace_id,
+        query.branch.as_deref(),
+        query.published_only,
+    )
+    .await
+    {
+        Ok(Some(rows)) => {
+            tracing::debug!(
+                workspace_id = %workspace_manager.workspace_id,
+                row_count = rows.len(),
+                "list_apps served from compile boundary"
+            );
+            let items: Vec<AppItem> = rows
+                .into_iter()
+                .map(|r| AppItem {
+                    name: r.name,
+                    path: r.file_path,
+                    title: r.title,
+                    published: r.published,
+                    can_publish,
+                })
+                .collect();
+            return Ok(extract::Json(items));
+        }
+        Ok(None) => {
+            // Workspace not yet promoted; fall through to FS.
+        }
+        Err(e) => {
+            tracing::warn!(
+                workspace_id = %workspace_manager.workspace_id,
+                error = ?e,
+                "list_apps compile-boundary error; falling through to FS"
+            );
+            // Fall through to FS — compile boundary is best-effort.
+        }
+    }
 
     let apps = config_manager.list_apps().await.map_err(|e| {
         tracing::error!("Failed to list apps: {}", e);
@@ -371,21 +420,24 @@ pub async fn get_displays(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
+    extract::Query(branch): extract::Query<BranchHintQuery>,
 ) -> Result<extract::Json<GetDisplaysResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let (displays, controls) = match get_app_displays(workspace_manager.clone(), &path).await {
-        Ok(result) => result,
-        Err(e) => {
-            tracing::debug!("Failed to get app displays: {:?}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+    let (displays, controls) =
+        match get_app_displays(workspace_manager.clone(), branch.branch.as_deref(), &path).await {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::debug!("Failed to get app displays: {:?}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        };
 
     // Collect SQL templates for execute_sql tasks so the frontend can run them
     // client-side in DuckDB WASM without a server round-trip on control changes.
     let databases = workspace_manager.config_manager.list_databases();
-    let app_service = AppService::new(workspace_manager.clone(), project_ctx);
+    let app_service =
+        AppService::new_with_branch(workspace_manager.clone(), project_ctx, branch.branch);
     let tasks: HashMap<String, TaskClientInfo> = app_service
         .get_config(&path)
         .await
@@ -468,10 +520,12 @@ pub async fn get_app_data(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
+    extract::Query(branch): extract::Query<BranchHintQuery>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let mut app_service = AppService::new(workspace_manager.clone(), project_ctx);
+    let mut app_service =
+        AppService::new_with_branch(workspace_manager.clone(), project_ctx, branch.branch);
 
     let app_tasks = match app_service.get_tasks(&path).await {
         Ok(tasks) => tasks,
@@ -664,12 +718,14 @@ pub async fn run_app(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
+    extract::Query(branch): extract::Query<BranchHintQuery>,
     body: Option<extract::Json<RunAppBody>>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
     let params = body.map(|b| b.0.params).unwrap_or_default();
 
-    let mut app_service = AppService::new(workspace_manager.clone(), project_ctx);
+    let mut app_service =
+        AppService::new_with_branch(workspace_manager.clone(), project_ctx, branch.branch);
     let data = match app_service.run(&path, params).await {
         Ok(data) => data,
         Err(e) => {
@@ -693,6 +749,21 @@ pub struct AppResultQuery {
     /// When false (default), return cached result if available. When true, re-execute the app.
     #[serde(default)]
     pub refresh: bool,
+    /// Active branch in the IDE. Plumbed through to the compile-boundary
+    /// reader so feature-branch users see their working-copy edits
+    /// instead of the promoted main definitions.
+    #[serde(default)]
+    pub branch: Option<String>,
+}
+
+/// Shared branch-only query for handlers that don't carry other query
+/// params. Customer-facing (non-IDE) clients leave this unset; the
+/// compile-boundary reader then has no branch hint and serves Postgres
+/// directly when the workspace is promoted.
+#[derive(Deserialize, Default)]
+pub struct BranchHintQuery {
+    #[serde(default)]
+    pub branch: Option<String>,
 }
 
 fn get_result_cache_filename(app_path: &PathBuf) -> String {
@@ -748,8 +819,11 @@ pub async fn get_app_result(
         return (StatusCode::OK, extract::Json(cached));
     }
 
-    // Execute the app to get task results
-    let mut app_service = AppService::new(workspace_manager.clone(), project_ctx);
+    // Execute the app to get task results. Branch comes from the
+    // existing `AppResultQuery` so feature-branch users see their
+    // working-copy edits when the Postgres-first path is on.
+    let mut app_service =
+        AppService::new_with_branch(workspace_manager.clone(), project_ctx, query.branch.clone());
 
     // Get task names first (needed for response even if execution fails)
     let task_configs = match app_service.get_tasks(&path).await {
@@ -827,13 +901,14 @@ pub async fn get_app_result(
         .collect();
 
     // Get typed displays
-    let typed_displays = match get_app_displays(workspace_manager.clone(), &path).await {
-        Ok((displays, _controls)) => displays,
-        Err(e) => {
-            tracing::debug!("Failed to get app displays: {:?}", e);
-            vec![]
-        }
-    };
+    let typed_displays =
+        match get_app_displays(workspace_manager.clone(), query.branch.as_deref(), &path).await {
+            Ok((displays, _controls)) => displays,
+            Err(e) => {
+                tracing::debug!("Failed to get app displays: {:?}", e);
+                vec![]
+            }
+        };
 
     // Check if there are any chart displays that need PNG export
     let has_charts = typed_displays.iter().any(|d| {

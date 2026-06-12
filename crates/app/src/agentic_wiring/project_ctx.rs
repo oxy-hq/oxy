@@ -336,6 +336,58 @@ impl ProjectContext for OxyProjectContext {
         resolve_model_impl(model_ref, has_explicit_model, &self.workspace_manager).await
     }
 
+    async fn resolve_agent_yaml(&self, agent_id: &str) -> Option<String> {
+        // Serve the agent YAML from `agent_definitions`; the reader returns
+        // None (→ filesystem read) on any miss.
+        //
+        // `agent_id` may be a path-like reference (`agents/foo.agentic.yml`)
+        // or a bare stem (`foo`); `agent_definitions` is keyed by the
+        // strict-typed `AgenticAgent.name` (stem), so we normalise.
+        let name = agent_id
+            .trim_end_matches(".agentic.yml")
+            .trim_end_matches(".agentic.yaml")
+            .rsplit('/')
+            .next()
+            .unwrap_or(agent_id);
+        match crate::server::api::compiled_reader::resolve_analytics_agent(
+            self.workspace_manager.workspace_id,
+            None,
+            name,
+        )
+        .await
+        {
+            Ok(Some(artifact)) => match serde_yaml::to_string(&artifact.definition) {
+                Ok(yaml) => {
+                    tracing::debug!(
+                        workspace_id = %self.workspace_manager.workspace_id,
+                        agent_id,
+                        "resolve_agent_yaml served from compile boundary"
+                    );
+                    Some(yaml)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        workspace_id = %self.workspace_manager.workspace_id,
+                        agent_id,
+                        error = ?e,
+                        "compile boundary agent YAML re-serialise failed; falling through to FS"
+                    );
+                    None
+                }
+            },
+            Ok(None) => None,
+            Err(e) => {
+                tracing::warn!(
+                    workspace_id = %self.workspace_manager.workspace_id,
+                    agent_id,
+                    error = ?e,
+                    "compile boundary agent lookup error; falling through to FS"
+                );
+                None
+            }
+        }
+    }
+
     async fn resolve_secret(&self, var_name: &str) -> Option<String> {
         match self
             .workspace_manager
@@ -421,6 +473,18 @@ impl ProjectContext for OxyProjectContext {
 
     fn as_monitor_scan_port(&self) -> Option<&dyn agentic_pipeline::platform::MonitorScanPort> {
         Some(self)
+    }
+
+    fn compile_dispatcher(
+        &self,
+    ) -> Option<std::sync::Arc<dyn agentic_pipeline::platform::CompileDispatcher>> {
+        // The dispatcher only needs the DB; the rest comes from the
+        // TaskSpec::Compile payload. Background / CLI paths that leave
+        // `db` unset get None and Compile fails with a clear message.
+        let db = self.db.clone()?;
+        Some(std::sync::Arc::new(
+            crate::agentic_wiring::compile_dispatcher::OxyCompileDispatcher::new(db),
+        ))
     }
 }
 
@@ -541,6 +605,45 @@ impl WorkspaceContext for OxyProjectContext {
     }
 
     async fn resolve_workflow_yaml(&self, workflow_ref: &str) -> Result<String, String> {
+        // Serve the procedure YAML from `procedure_definitions`; falls through
+        // to the filesystem read below on any miss. Round-trips JSONB →
+        // strict-typed Workflow → YAML so the downstream parser (which expects
+        // YAML) is unchanged.
+        match crate::server::api::compiled_reader::resolve_procedure(
+            self.workspace_manager.workspace_id,
+            None,
+            workflow_ref,
+        )
+        .await
+        {
+            Ok(Some(artifact)) => match serde_yaml::to_string(&artifact.definition) {
+                Ok(yaml) => {
+                    tracing::debug!(
+                        workspace_id = %self.workspace_manager.workspace_id,
+                        workflow_ref,
+                        "resolve_workflow_yaml served from compile boundary"
+                    );
+                    return Ok(yaml);
+                }
+                Err(e) => tracing::warn!(
+                    workspace_id = %self.workspace_manager.workspace_id,
+                    workflow_ref,
+                    error = ?e,
+                    "compile boundary procedure YAML re-serialise failed; falling through to FS"
+                ),
+            },
+            Ok(None) => {
+                // Branch non-default, workspace not promoted, or no matching
+                // row — fall through to FS.
+            }
+            Err(e) => tracing::warn!(
+                workspace_id = %self.workspace_manager.workspace_id,
+                workflow_ref,
+                error = ?e,
+                "compile boundary procedure lookup error; falling through to FS"
+            ),
+        }
+
         // Authenticated callers can supply an arbitrary `workflow_ref` via
         // the `path_b64` route param (and the queued workflow spec), so we
         // must contain it to the workspace root before reading. A raw

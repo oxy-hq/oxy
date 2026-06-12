@@ -55,6 +55,15 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
             )),
         )
+        // Compile boundary operator surface (Phase 1.6a+). List recent
+        // revisions, drill into one, manually enqueue a Compile task.
+        // Same guard layering as internal-jobs.
+        .nest(
+            "/admin/compiles",
+            admin::compiles::router().layer(middleware::from_fn(
+                oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
+            )),
+        )
         // Parallel customer-apps surface for OXY_GLOBAL_ADMINS. Reuses the same
         // handlers as /admin/apps but gated by a separate role so app admins
         // can manage customer-app registrations without org/billing access.

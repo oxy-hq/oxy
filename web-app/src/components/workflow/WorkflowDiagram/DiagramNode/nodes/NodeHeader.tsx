@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Bot,
   CircleAlert,
   CircleHelp,
   Code,
@@ -30,6 +31,7 @@ import { headerHeight } from "../../layout/constants";
 import { OmniIcon } from "./OmniIcon";
 
 const nodeNameMap: Record<NodeType, string> = {
+  agent: "Agent",
   execute_sql: "SQL",
   semantic_query: "Semantic Query",
   looker_query: "Looker Query",
@@ -44,6 +46,7 @@ const nodeNameMap: Record<NodeType, string> = {
 };
 
 const nodeIconMap: Record<NodeType, ReactElement> = {
+  agent: <Bot size={14} />,
   execute_sql: <Code size={14} />,
   loop_sequential: <RefreshCcw size={14} />,
   formatter: <FileText size={14} />,

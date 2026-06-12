@@ -16,10 +16,16 @@ export function CommitButton({ state, isPushing, onClick }: Props) {
 
   return (
     <CanWorkspaceEditor>
-      <Button size='sm' onClick={onClick} disabled={isPushing} data-testid='ide-commit-button'>
+      <Button
+        size='sm'
+        onClick={onClick}
+        disabled={isPushing}
+        data-testid='ide-commit-button'
+        className='h-7 gap-1 px-2 text-xs [&>svg]:size-3.5'
+      >
         <GitCommitHorizontal />
         {label}
-        <span className='ml-0.5 rounded bg-primary-foreground/20 px-1.5 py-0.5 font-medium text-xs'>
+        <span className='ml-0.5 rounded bg-primary-foreground/20 px-1 py-px font-medium text-[10px]'>
           {state.uncommittedCount}
         </span>
       </Button>

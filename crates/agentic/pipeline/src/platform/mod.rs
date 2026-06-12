@@ -47,6 +47,28 @@ pub trait MonitorScanPort: Send + Sync {
     ) -> Result<String, String>;
 }
 
+/// Host port for dispatching `TaskSpec::Compile`. The compile worker
+/// itself touches the `entity` crate (compile boundary schema), which
+/// agentic-pipeline must not depend on per the layering rules. The host
+/// implements this and `PipelineBuilder::with_compile_dispatcher` wires
+/// it in. When `None`, `TaskSpec::Compile` claims fail with a clear
+/// message — same shape as the other optional ports (BuilderBridges,
+/// MonitorScanPort).
+#[async_trait]
+pub trait CompileDispatcher: Send + Sync {
+    /// Dispatch a compile task. Returns the in-flight `ExecutingTask` so
+    /// the runtime worker can drive it through to completion.
+    async fn dispatch(
+        &self,
+        workspace_id: uuid::Uuid,
+        git_sha: Option<String>,
+        branch: Option<String>,
+        promote: bool,
+        kind: Option<String>,
+        owner_user_id: Option<uuid::Uuid>,
+    ) -> Result<agentic_runtime::worker::ExecutingTask, String>;
+}
+
 /// A `config.yml` database resolved into an airway destination: the
 /// destination `kind` airway should build, plus an already-credentialed
 /// connection string (secrets resolved, `airhouse_managed` minted).
@@ -98,6 +120,22 @@ pub trait ProjectContext: Send + Sync {
         model_ref: Option<&str>,
         has_explicit_model: bool,
     ) -> Option<ResolvedModelInfo>;
+
+    /// Hook for the compile-boundary read path on the analytics agent
+    /// surface. The pipeline calls this BEFORE `AgentConfig::from_file`;
+    /// when it returns `Some(yaml)`, the pipeline parses that string via
+    /// `AgentConfig::from_yaml` and skips the disk read. Returning `None`
+    /// (the default) is the FS path — adapters that don't participate in
+    /// the compile boundary, plus the path where the boundary's
+    /// per-feature-flag check decides "fall through to FS".
+    ///
+    /// `agent_id` is whatever the caller passed: a workspace-relative
+    /// path (`agents/foo.agentic.yml`), a bare stem (`foo`), or
+    /// anything in between. Hosts are responsible for normalising to
+    /// the form their compiled-definitions table is keyed by.
+    async fn resolve_agent_yaml(&self, _agent_id: &str) -> Option<String> {
+        None
+    }
 
     async fn resolve_secret(&self, var_name: &str) -> Option<String>;
 
@@ -162,6 +200,13 @@ pub trait ProjectContext: Send + Sync {
     /// Return a [`MonitorScanPort`] implementation if this context supports
     /// anomaly scanning. Default `None` so existing adapters compile unchanged.
     fn as_monitor_scan_port(&self) -> Option<&dyn MonitorScanPort> {
+        None
+    }
+
+    /// Return a [`CompileDispatcher`] implementation if this context can
+    /// drive `TaskSpec::Compile`. Default `None` so test fakes / adapters
+    /// without the compile boundary compile unchanged.
+    fn compile_dispatcher(&self) -> Option<Arc<dyn CompileDispatcher>> {
         None
     }
 }
