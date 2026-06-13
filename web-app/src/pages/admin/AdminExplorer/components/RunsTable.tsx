@@ -2,6 +2,14 @@ import { ChevronDown, ChevronRight, ExternalLink, Play } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from "@/components/ui/shadcn/table";
 import { cn } from "@/libs/utils/cn";
 import ROUTES from "@/libs/utils/routes";
 import type { ExplorerRun } from "@/services/api/adminExplorer";
@@ -35,18 +43,28 @@ export const RunsTable = ({ rows }: { rows: ExplorerRun[] }) => {
 
   return (
     <div className='overflow-hidden rounded-lg border border-border/60 bg-card'>
-      <div className='grid grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_auto_auto] gap-3 border-border/60 border-b bg-muted/30 px-3 py-2 font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
-        <span className='w-4' aria-hidden />
-        <span>Run · Question</span>
-        <span>Workspace · Org</span>
-        <span>Status</span>
-        <span className='w-16 text-right'>Age</span>
-      </div>
-      <div className='divide-y divide-border/50'>
-        {rows.map((r) => (
-          <RunRow key={r.id} run={r} expanded={open.has(r.id)} onToggle={() => toggle(r.id)} />
-        ))}
-      </div>
+      <Table>
+        <TableHeader>
+          <TableRow className='hover:bg-transparent'>
+            <TableHead className='w-8' aria-hidden />
+            <TableHead className='text-[10px] uppercase tracking-[0.14em]'>
+              Run · Question
+            </TableHead>
+            <TableHead className='text-[10px] uppercase tracking-[0.14em]'>
+              Workspace · Org
+            </TableHead>
+            <TableHead className='text-[10px] uppercase tracking-[0.14em]'>Status</TableHead>
+            <TableHead className='text-right text-[10px] uppercase tracking-[0.14em]'>
+              Age
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((r) => (
+            <RunRow key={r.id} run={r} expanded={open.has(r.id)} onToggle={() => toggle(r.id)} />
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 };
@@ -62,74 +80,93 @@ const RunRow = ({
 }) => {
   const status = run.task_status ?? "unknown";
   const accent = statusAccent(status);
+  const accentBorder = borderForStatus(status);
   const threadOpenable = run.org_slug && run.workspace_id && run.thread_id;
   return (
-    <div className={cn("border-l-2", borderForStatus(status))}>
-      <button
-        type='button'
+    <>
+      <TableRow
+        className='cursor-pointer text-xs'
+        role='button'
+        tabIndex={0}
+        aria-expanded={expanded}
         onClick={onToggle}
-        className='grid w-full grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_auto_auto] items-center gap-3 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/20'
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
       >
-        {expanded ? (
-          <ChevronDown className='size-3.5 text-muted-foreground' />
-        ) : (
-          <ChevronRight className='size-3.5 text-muted-foreground' />
-        )}
-        <div className='flex min-w-0 items-center gap-2'>
-          {run.source_type ? (
-            <span className='shrink-0 rounded-full bg-muted/60 px-1.5 py-0.5 font-mono text-[9px]'>
-              {run.source_type}
-            </span>
-          ) : null}
-          <span className='truncate'>{run.question_snippet || "(no question)"}</span>
-        </div>
-        <span className='truncate text-muted-foreground'>
+        <TableCell className={cn("border-l-2", accentBorder)}>
+          {expanded ? (
+            <ChevronDown className='size-3.5 text-muted-foreground' />
+          ) : (
+            <ChevronRight className='size-3.5 text-muted-foreground' />
+          )}
+        </TableCell>
+        <TableCell className='max-w-0'>
+          <div className='flex min-w-0 items-center gap-2'>
+            {run.source_type ? (
+              <span className='shrink-0 rounded-full bg-muted/60 px-1.5 py-0.5 font-mono text-[9px]'>
+                {run.source_type}
+              </span>
+            ) : null}
+            <span className='truncate'>{run.question_snippet || "(no question)"}</span>
+          </div>
+        </TableCell>
+        <TableCell className='max-w-40 truncate text-muted-foreground'>
           {tenantLabel(run.workspace_name, run.org_name)}
-        </span>
-        <span className='flex items-center gap-1.5'>
-          <span className={cn("size-1.5 rounded-full", accent.dot)} aria-hidden />
-          <span className={cn("font-medium text-[10px] uppercase tracking-wide", accent.text)}>
-            {status}
+        </TableCell>
+        <TableCell>
+          <span className='flex items-center gap-1.5'>
+            <span className={cn("size-1.5 rounded-full", accent.dot)} aria-hidden />
+            <span className={cn("font-medium text-[10px] uppercase tracking-wide", accent.text)}>
+              {status}
+            </span>
           </span>
-        </span>
-        <span className='w-16 text-right text-muted-foreground tabular-nums'>
+        </TableCell>
+        <TableCell className='text-right text-muted-foreground tabular-nums'>
           {ago(run.created_at)}
-        </span>
-      </button>
+        </TableCell>
+      </TableRow>
 
       {expanded ? (
-        <div className='space-y-3 border-border/60 border-t bg-muted/20 px-4 py-3'>
-          {run.error_message ? (
-            <div className='space-y-1'>
-              <span className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
-                Error
-              </span>
-              <pre className='max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/5 p-2 font-mono text-[11px] text-destructive'>
-                {run.error_message}
-              </pre>
+        <TableRow className='hover:bg-transparent'>
+          <TableCell colSpan={5} className={cn("border-l-2 bg-muted/20", accentBorder)}>
+            <div className='space-y-3 py-1'>
+              {run.error_message ? (
+                <div className='space-y-1'>
+                  <span className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
+                    Error
+                  </span>
+                  <pre className='max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/5 p-2 font-mono text-[11px] text-destructive'>
+                    {run.error_message}
+                  </pre>
+                </div>
+              ) : null}
+              <dl className='grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs'>
+                <dt className='text-muted-foreground'>Run id</dt>
+                <dd className='break-all font-mono text-[11px]'>{run.id}</dd>
+                <dt className='text-muted-foreground'>User</dt>
+                <dd>{run.user_email ?? "—"}</dd>
+              </dl>
+              {threadOpenable ? (
+                <Button asChild size='sm' variant='outline' className='h-7 gap-1.5'>
+                  <Link
+                    to={ROUTES.ORG(run.org_slug as string)
+                      .WORKSPACE(run.workspace_id as string)
+                      .THREAD(run.thread_id as string)}
+                  >
+                    Open thread
+                    <ExternalLink className='size-3.5' />
+                  </Link>
+                </Button>
+              ) : null}
             </div>
-          ) : null}
-          <dl className='grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs'>
-            <dt className='text-muted-foreground'>Run id</dt>
-            <dd className='break-all font-mono text-[11px]'>{run.id}</dd>
-            <dt className='text-muted-foreground'>User</dt>
-            <dd>{run.user_email ?? "—"}</dd>
-          </dl>
-          {threadOpenable ? (
-            <Button asChild size='sm' variant='outline' className='h-7 gap-1.5'>
-              <Link
-                to={ROUTES.ORG(run.org_slug as string)
-                  .WORKSPACE(run.workspace_id as string)
-                  .THREAD(run.thread_id as string)}
-              >
-                Open thread
-                <ExternalLink className='size-3.5' />
-              </Link>
-            </Button>
-          ) : null}
-        </div>
+          </TableCell>
+        </TableRow>
       ) : null}
-    </div>
+    </>
   );
 };
 

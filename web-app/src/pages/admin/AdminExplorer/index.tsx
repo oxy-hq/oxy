@@ -1,19 +1,31 @@
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/shadcn/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import TablePagination from "@/components/ui/TablePagination";
 import { useExplorerRuns, useExplorerThreads } from "@/hooks/api/adminExplorer";
 import { cn } from "@/libs/utils/cn";
 import { RunsTable } from "./components/RunsTable";
 import { ThreadsTable } from "./components/ThreadsTable";
+import {
+  ALL,
+  filterValue,
+  PAGE_SIZE,
+  RESOURCES,
+  type Resource,
+  RUN_SOURCE_TYPES,
+  RUN_STATUSES,
+  THREAD_SOURCE_TYPES,
+  THREAD_STATUSES
+} from "./constants";
 import { useDebounced } from "./useDebounced";
-
-type Resource = "threads" | "runs";
-const RESOURCES: { id: Resource; label: string }[] = [
-  { id: "threads", label: "Threads" },
-  { id: "runs", label: "Runs" }
-];
-
-const RUN_STATUSES = ["", "failed", "running", "done", "cancelled"] as const;
 
 /**
  * Cross-tenant data explorer — search the DB resources operators reach for
@@ -25,12 +37,41 @@ const RUN_STATUSES = ["", "failed", "running", "done", "cancelled"] as const;
 export default function AdminExplorer() {
   const [resource, setResource] = useState<Resource>("threads");
   const [raw, setRaw] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(ALL);
+  const [sourceType, setSourceType] = useState(ALL);
+  const [page, setPage] = useState(1);
   const search = useDebounced(raw, 300);
 
-  const threads = useExplorerThreads(search, { enabled: resource === "threads" });
-  const runs = useExplorerRuns(search, status, { enabled: resource === "runs" });
+  // Any change to the filters (or switching tabs) invalidates the current
+  // page — jump back to page 1 rather than showing an out-of-range page.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on filter change
+  useEffect(() => {
+    setPage(1);
+  }, [resource, search, status, sourceType]);
+
+  const params = {
+    search,
+    status: filterValue(status),
+    sourceType: filterValue(sourceType),
+    page,
+    pageSize: PAGE_SIZE
+  };
+  const threads = useExplorerThreads(params, { enabled: resource === "threads" });
+  const runs = useExplorerRuns(params, { enabled: resource === "runs" });
   const active = resource === "threads" ? threads : runs;
+
+  const statusOptions = resource === "threads" ? THREAD_STATUSES : RUN_STATUSES;
+  const sourceOptions = resource === "threads" ? THREAD_SOURCE_TYPES : RUN_SOURCE_TYPES;
+  const total = active.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // If the match set shrank under us (e.g. a concurrent deletion while paging
+  // deep), the current page can fall out of range and the server returns an
+  // empty page. Clamp back into range — this re-fetches the last valid page
+  // instead of stranding the user on an empty one.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   return (
     <div className='mx-auto max-w-7xl space-y-5 p-6 lg:px-10 lg:py-8'>
@@ -48,7 +89,11 @@ export default function AdminExplorer() {
             <button
               key={r.id}
               type='button'
-              onClick={() => setResource(r.id)}
+              onClick={() => {
+                setResource(r.id);
+                setStatus(ALL);
+                setSourceType(ALL);
+              }}
               className={cn(
                 "rounded-md px-3 py-1.5 font-medium text-xs uppercase tracking-wide transition-colors",
                 resource === r.id
@@ -60,24 +105,39 @@ export default function AdminExplorer() {
             </button>
           ))}
         </div>
-        <div className='flex items-center gap-2'>
-          {resource === "runs" ? (
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className='h-8 rounded-md border border-border/60 bg-card px-2 text-xs outline-none focus:border-border'
-              aria-label='Run status filter'
-            >
-              {RUN_STATUSES.map((s) => (
-                <option key={s || "all"} value={s}>
-                  {s === "" ? "All statuses" : s}
-                </option>
-              ))}
-            </select>
+        <div className='flex flex-wrap items-center gap-2'>
+          {!active.isPending ? (
+            <span className='text-muted-foreground text-xs tabular-nums'>
+              {total} {total === 1 ? "result" : "results"}
+            </span>
           ) : null}
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger size='sm' className='w-36 text-xs' aria-label='Status filter'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {statusOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={sourceType} onValueChange={setSourceType}>
+            <SelectTrigger size='sm' className='w-32 text-xs' aria-label='Source filter'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {sourceOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className='relative'>
             <Search className='absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground' />
-            <input
+            <Input
               value={raw}
               onChange={(e) => setRaw(e.target.value)}
               placeholder={
@@ -85,7 +145,7 @@ export default function AdminExplorer() {
                   ? "Search threads by title, content, id…"
                   : "Search runs by question, error, id…"
               }
-              className='h-8 w-80 rounded-md border border-border/60 bg-card pr-2 pl-7 font-mono text-[11px] outline-none placeholder:text-muted-foreground/60 focus:border-border focus:ring-1 focus:ring-ring'
+              className='h-8 w-72 pl-7 font-mono text-[11px]'
               aria-label='Search'
             />
           </div>
@@ -98,10 +158,22 @@ export default function AdminExplorer() {
         <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
           Failed to load {resource}.
         </div>
-      ) : resource === "threads" ? (
-        <ThreadsTable rows={threads.data ?? []} />
       ) : (
-        <RunsTable rows={runs.data ?? []} />
+        <>
+          {resource === "threads" ? (
+            <ThreadsTable rows={threads.data?.items ?? []} />
+          ) : (
+            <RunsTable rows={runs.data?.items ?? []} />
+          )}
+          <TablePagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={total}
+            pageSize={PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel={resource}
+          />
+        </>
       )}
     </div>
   );

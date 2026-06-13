@@ -513,8 +513,7 @@ const compilesKeys = {
       params.workspace_id ?? "",
       params.status ?? ""
     ] as const,
-  detail: (revisionId: string) =>
-    [...compilesKeys.all, "detail", revisionId] as const
+  detail: (revisionId: string) => [...compilesKeys.all, "detail", revisionId] as const
 };
 
 const compileKeys = {
@@ -534,11 +533,19 @@ const adminMetricsKeys = {
   llmUsage: (days: number) => [...adminMetricsKeys.all, "llm-usage", days] as const
 };
 
+interface ExplorerQueryKeyParams {
+  search?: string;
+  status?: string;
+  sourceType?: string;
+  page?: number;
+  pageSize?: number;
+}
+
 const adminExplorerKeys = {
   all: ["admin", "explorer"] as const,
-  threads: (search: string) => [...adminExplorerKeys.all, "threads", search] as const,
-  runs: (search: string, status: string) =>
-    [...adminExplorerKeys.all, "runs", search, status] as const
+  threads: (params: ExplorerQueryKeyParams) =>
+    [...adminExplorerKeys.all, "threads", params] as const,
+  runs: (params: ExplorerQueryKeyParams) => [...adminExplorerKeys.all, "runs", params] as const
 };
 
 const adminUsersKeys = {

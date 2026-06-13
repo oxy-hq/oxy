@@ -31,16 +31,46 @@ export interface ExplorerRun {
   user_email: string | null;
 }
 
+/** A page of explorer rows, with enough metadata to render pagination. */
+export interface ExplorerPage<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ExplorerQueryParams {
+  search?: string;
+  /** Resource-specific: run `task_status`, or "live"/"done" for threads. */
+  status?: string;
+  sourceType?: string;
+  /** 1-indexed. */
+  page?: number;
+  pageSize?: number;
+}
+
 export const AdminExplorerService = {
-  async threads(search: string, limit = 50): Promise<ExplorerThread[]> {
-    const res = await apiClient.get<ExplorerThread[]>("/admin/explorer/threads", {
-      params: { search, limit }
+  async threads(params: ExplorerQueryParams = {}): Promise<ExplorerPage<ExplorerThread>> {
+    const res = await apiClient.get<ExplorerPage<ExplorerThread>>("/admin/explorer/threads", {
+      params: {
+        search: params.search,
+        status: params.status,
+        source_type: params.sourceType,
+        page: params.page,
+        page_size: params.pageSize
+      }
     });
     return res.data;
   },
-  async runs(search: string, status = "", limit = 50): Promise<ExplorerRun[]> {
-    const res = await apiClient.get<ExplorerRun[]>("/admin/explorer/runs", {
-      params: { search, status, limit }
+  async runs(params: ExplorerQueryParams = {}): Promise<ExplorerPage<ExplorerRun>> {
+    const res = await apiClient.get<ExplorerPage<ExplorerRun>>("/admin/explorer/runs", {
+      params: {
+        search: params.search,
+        status: params.status,
+        source_type: params.sourceType,
+        page: params.page,
+        page_size: params.pageSize
+      }
     });
     return res.data;
   }

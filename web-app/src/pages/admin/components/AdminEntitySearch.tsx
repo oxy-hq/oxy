@@ -59,12 +59,12 @@ export const AdminEntitySearch = () => {
   const workspacesQuery = useAdminWorkspacesList({ search: query }, { enabled: open });
   // Only search threads once the operator has typed something — an unfiltered
   // cross-tenant thread scan on every palette-open isn't worth the round trip.
-  const threadsQuery = useExplorerThreads(query, { enabled: open && query.length > 1 });
+  const threadsQuery = useExplorerThreads({ search: query }, { enabled: open && query.length > 1 });
 
   const orgs = useMemo(() => orgsQuery.data?.slice(0, 6) ?? [], [orgsQuery.data]);
   const users = useMemo(() => usersQuery.data?.slice(0, 6) ?? [], [usersQuery.data]);
   const workspaces = useMemo(() => workspacesQuery.data?.slice(0, 6) ?? [], [workspacesQuery.data]);
-  const threads = useMemo(() => threadsQuery.data?.slice(0, 6) ?? [], [threadsQuery.data]);
+  const threads = useMemo(() => threadsQuery.data?.items.slice(0, 6) ?? [], [threadsQuery.data]);
 
   const go = (path: string) => {
     setOpen(false);

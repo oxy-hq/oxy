@@ -7,6 +7,12 @@
 //! Mounted under the permissive `oxy_owner_or_app_admin` guard with the rest
 //! of `/admin/*`. Read-only — no mutations live here.
 //!
+//! Results are paginated (`page`, `page_size`, 1-indexed) and can be narrowed
+//! with `status` and `source_type` filters on top of the free-text `search`.
+//! Each response carries a `total` row count via a `COUNT(*) OVER()` window
+//! function so the frontend can render pagination controls without a second
+//! round trip.
+//!
 //! Perf note: the search uses leading-wildcard `ILIKE '%term%'`, which can't
 //! use a btree index and falls back to a sequential scan across every tenant's
 //! `threads` / `agentic_runs`. The empty-term default is cheap (`ORDER BY
@@ -38,11 +44,37 @@ pub(crate) fn router() -> Router<AppState> {
 struct SearchQuery {
     search: Option<String>,
     status: Option<String>,
-    limit: Option<u64>,
+    source_type: Option<String>,
+    page: Option<u64>,
+    page_size: Option<u64>,
 }
 
-fn clamp_limit(limit: Option<u64>) -> i64 {
-    limit.unwrap_or(50).clamp(1, 200) as i64
+/// A page of rows plus enough metadata to render pagination controls without
+/// a separate `COUNT(*)` round trip.
+#[derive(Serialize, Debug)]
+struct PagedResponse<T> {
+    items: Vec<T>,
+    total: i64,
+    page: u64,
+    page_size: u64,
+}
+
+struct Pagination {
+    page: u64,
+    limit: i64,
+    offset: i64,
+}
+
+/// 1-indexed page, clamped to a sane row count per page.
+fn paginate(page: Option<u64>, page_size: Option<u64>) -> Pagination {
+    let page = page.unwrap_or(1).max(1);
+    let limit = page_size.unwrap_or(25).clamp(1, 100) as i64;
+    let offset = (page - 1) as i64 * limit;
+    Pagination {
+        page,
+        limit,
+        offset,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -63,37 +95,60 @@ pub struct ThreadRow {
     pub org_id: Option<Uuid>,
     pub org_name: Option<String>,
     pub org_slug: Option<String>,
+    #[serde(skip)]
+    pub total_count: i64,
 }
 
-async fn search_threads(Query(q): Query<SearchQuery>) -> Result<Json<Vec<ThreadRow>>, Response> {
+async fn search_threads(
+    Query(q): Query<SearchQuery>,
+) -> Result<Json<PagedResponse<ThreadRow>>, Response> {
     let db = connect().await?;
     let search = q.search.unwrap_or_default();
     let like = format!("%{search}%");
-    let limit = clamp_limit(q.limit);
+    let source_type = q.source_type.unwrap_or_default();
+    // Threads have no `status` column; the explorer's status filter maps onto
+    // `is_processing` ("live" = still running, "done" = finished).
+    let status = q.status.unwrap_or_default();
+    let pagination = paginate(q.page, q.page_size);
 
     let rows = ThreadRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         // $1 = raw term (exact-id match + empty-term passthrough), $2 = ILIKE
-        // pattern, $3 = limit. Threads link to a workspace via `project_id`.
+        // pattern, $3 = source_type filter, $4 = status filter ("live" /
+        // "done" / ""), $5 = limit, $6 = offset. Threads link to a workspace
+        // via `project_id`.
         "SELECT t.id AS id, t.title AS title, left(t.input, 200) AS input_snippet, \
                 t.source_type AS source_type, t.is_processing AS is_processing, \
                 t.created_at AS created_at, u.email AS user_email, \
                 t.project_id AS workspace_id, w.name AS workspace_name, \
-                w.org_id AS org_id, o.name AS org_name, o.slug AS org_slug \
+                w.org_id AS org_id, o.name AS org_name, o.slug AS org_slug, \
+                COUNT(*) OVER() AS total_count \
          FROM threads t \
          LEFT JOIN users u ON t.user_id = u.id \
          LEFT JOIN workspaces w ON t.project_id = w.id \
          LEFT JOIN organizations o ON w.org_id = o.id \
          WHERE ($1 = '' OR t.title ILIKE $2 OR t.input ILIKE $2 OR t.output ILIKE $2 \
                 OR t.id::text = $1) \
+           AND ($3 = '' OR t.source_type = $3) \
+           AND ($4 = '' \
+                OR ($4 = 'live' AND t.is_processing) \
+                OR ($4 = 'done' AND NOT t.is_processing)) \
          ORDER BY t.created_at DESC \
-         LIMIT $3",
-        [search.into(), like.into(), limit.into()],
+         LIMIT $5 OFFSET $6",
+        [
+            search.into(),
+            like.into(),
+            source_type.into(),
+            status.into(),
+            pagination.limit.into(),
+            pagination.offset.into(),
+        ],
     ))
     .all(&db)
     .await
     .map_err(db_err)?;
-    Ok(Json(rows))
+
+    Ok(Json(into_page(rows, &pagination)))
 }
 
 // ---------------------------------------------------------------------------
@@ -115,25 +170,32 @@ pub struct RunRow {
     pub org_name: Option<String>,
     pub org_slug: Option<String>,
     pub user_email: Option<String>,
+    #[serde(skip)]
+    pub total_count: i64,
 }
 
-async fn search_runs(Query(q): Query<SearchQuery>) -> Result<Json<Vec<RunRow>>, Response> {
+async fn search_runs(
+    Query(q): Query<SearchQuery>,
+) -> Result<Json<PagedResponse<RunRow>>, Response> {
     let db = connect().await?;
     let search = q.search.unwrap_or_default();
     let like = format!("%{search}%");
     let status = q.status.unwrap_or_default();
-    let limit = clamp_limit(q.limit);
+    let source_type = q.source_type.unwrap_or_default();
+    let pagination = paginate(q.page, q.page_size);
 
     let rows = RunRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        // $1 = raw term, $2 = ILIKE pattern, $3 = optional status filter,
-        // $4 = limit. Originating user comes via the run's thread.
+        // $1 = raw term, $2 = ILIKE pattern, $3 = task_status filter,
+        // $4 = source_type filter, $5 = limit, $6 = offset. Originating
+        // user comes via the run's thread.
         "SELECT ar.id AS id, left(ar.question, 200) AS question_snippet, \
                 ar.task_status AS task_status, ar.source_type AS source_type, \
                 ar.error_message AS error_message, ar.created_at AS created_at, \
                 ar.thread_id AS thread_id, ar.workspace_id AS workspace_id, \
                 w.name AS workspace_name, w.org_id AS org_id, \
-                o.name AS org_name, o.slug AS org_slug, u.email AS user_email \
+                o.name AS org_name, o.slug AS org_slug, u.email AS user_email, \
+                COUNT(*) OVER() AS total_count \
          FROM agentic_runs ar \
          LEFT JOIN workspaces w ON ar.workspace_id = w.id \
          LEFT JOIN organizations o ON w.org_id = o.id \
@@ -141,12 +203,62 @@ async fn search_runs(Query(q): Query<SearchQuery>) -> Result<Json<Vec<RunRow>>, 
          LEFT JOIN users u ON th.user_id = u.id \
          WHERE ($1 = '' OR ar.question ILIKE $2 OR ar.error_message ILIKE $2 OR ar.id = $1) \
            AND ($3 = '' OR ar.task_status = $3) \
+           AND ($4 = '' OR ar.source_type = $4) \
          ORDER BY ar.created_at DESC \
-         LIMIT $4",
-        [search.into(), like.into(), status.into(), limit.into()],
+         LIMIT $5 OFFSET $6",
+        [
+            search.into(),
+            like.into(),
+            status.into(),
+            source_type.into(),
+            pagination.limit.into(),
+            pagination.offset.into(),
+        ],
     ))
     .all(&db)
     .await
     .map_err(db_err)?;
-    Ok(Json(rows))
+
+    Ok(Json(into_page(rows, &pagination)))
+}
+
+/// Reads the window-function `total_count` off the first row and wraps the
+/// rows into a [`PagedResponse`].
+///
+/// `COUNT(*) OVER()` rides along on each row, so an empty page carries no
+/// count and we report `total = 0`. This only happens when the requested
+/// `OFFSET` lands past the last matching row — i.e. an out-of-range page,
+/// reachable if the match set shrinks (concurrent deletion) while the client
+/// is paging deep. The client clamps back into range on `total = 0`, which
+/// re-fetches a valid page and restores the true count, so the transient
+/// zero never sticks. A separate `SELECT COUNT(*)` would keep the count
+/// accurate on the empty page too, but at the cost of duplicating both WHERE
+/// clauses — not worth it for a self-healing edge case.
+fn into_page<T>(rows: Vec<T>, pagination: &Pagination) -> PagedResponse<T>
+where
+    T: HasTotalCount,
+{
+    let total = rows.first().map(HasTotalCount::total_count).unwrap_or(0);
+    PagedResponse {
+        items: rows,
+        total,
+        page: pagination.page,
+        page_size: pagination.limit as u64,
+    }
+}
+
+trait HasTotalCount {
+    fn total_count(&self) -> i64;
+}
+
+impl HasTotalCount for ThreadRow {
+    fn total_count(&self) -> i64 {
+        self.total_count
+    }
+}
+
+impl HasTotalCount for RunRow {
+    fn total_count(&self) -> i64 {
+        self.total_count
+    }
 }
