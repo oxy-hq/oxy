@@ -82,6 +82,16 @@ pub async fn local_context_middleware(
         .insert(EffectiveWorkspaceRole(WorkspaceRole::Owner));
 
     let user_id = local_user_id(&request);
+    // Same DB handle the cloud-mode `workspace_context` middleware feeds
+    // OxyProjectContext with — required for anomaly tools AND, since
+    // oxygen-internal #2505, for compile_dispatcher() to resolve in this
+    // local-mode HTTP path. None when AgenticState isn't wired (CLI / pure
+    // test paths); the context's db stays None and the gated tools fall
+    // back gracefully.
+    let agentic_db = app_state
+        .agentic_state
+        .as_ref()
+        .map(|s| std::sync::Arc::new(s.db.clone()));
     if resolved_path.is_some() {
         attach_workspace_manager(
             &mut request,
@@ -89,6 +99,7 @@ pub async fn local_context_middleware(
             user_id,
             app_state.preagg_cache.clone(),
             app_state.preagg_renewal_threshold_secs,
+            agentic_db,
         )
         .await?;
     }
@@ -122,6 +133,7 @@ async fn attach_workspace_manager(
     user_id: Option<Uuid>,
     preagg_cache: Option<std::sync::Arc<std::sync::RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: Option<u64>,
+    agentic_db: Option<std::sync::Arc<sea_orm::DatabaseConnection>>,
 ) -> Result<(), StatusCode> {
     let effective_path = effective_workspace_path(workspace_row, None)
         .await
@@ -181,6 +193,11 @@ async fn attach_workspace_manager(
     }
 
     let mut ctx = crate::agentic_wiring::OxyProjectContext::new(workspace_manager.clone());
+    // Mirror the cloud-mode `workspace_context` middleware: anomaly tools
+    // and (since #2505) compile_dispatcher both gate on this handle.
+    if let Some(db) = agentic_db {
+        ctx = ctx.with_db(db);
+    }
     if let Some(uid) = user_id {
         ctx = ctx.with_subject(uid);
     }

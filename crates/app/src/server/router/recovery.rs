@@ -286,7 +286,7 @@ async fn recover_local(
 
     let Some(project_ctx) = ws_cache
         .get_or_build(LOCAL_WORKSPACE_ID, || async {
-            build_local_project_ctx(&cwd).await
+            build_local_project_ctx(&cwd, db).await
         })
         .await
     else {
@@ -393,7 +393,7 @@ async fn recover_all_workspaces(
 
         let Some(project_ctx) = ws_cache
             .get_or_build(ws.id, || async {
-                build_cloud_project_ctx(ws.id, path).await
+                build_cloud_project_ctx(ws.id, path, db).await
             })
             .await
         else {
@@ -602,7 +602,7 @@ async fn tick_local(
     };
     let Some(ctx) = ws_cache
         .get_or_build(LOCAL_WORKSPACE_ID, || async {
-            build_local_project_ctx(&cwd).await
+            build_local_project_ctx(&cwd, db).await
         })
         .await
     else {
@@ -688,7 +688,7 @@ async fn tick_cloud(
 
         let Some(ctx) = ws_cache
             .get_or_build(ws_id, || async {
-                build_cloud_project_ctx(ws_id, &path).await
+                build_cloud_project_ctx(ws_id, &path, db).await
             })
             .await
         else {
@@ -744,7 +744,10 @@ async fn drive_pending(
     .await
 }
 
-async fn build_local_project_ctx(cwd: &std::path::Path) -> Option<Arc<OxyProjectContext>> {
+async fn build_local_project_ctx(
+    cwd: &std::path::Path,
+    db: &DatabaseConnection,
+) -> Option<Arc<OxyProjectContext>> {
     let mut builder = match WorkspaceBuilder::new(LOCAL_WORKSPACE_ID)
         .with_workspace_path_and_fallback_config(cwd)
         .await
@@ -778,7 +781,14 @@ async fn build_local_project_ctx(cwd: &std::path::Path) -> Option<Arc<OxyProject
             return None;
         }
     };
-    Some(Arc::new(OxyProjectContext::new(wm)))
+    // Wire the DB handle exactly like the HTTP workspace middleware does.
+    // The in-process global driver executes `TaskSpec::Compile` through this
+    // context, and `compile_dispatcher()` (like the anomaly tools) is `None`
+    // unless `db` is set — without it every compile fails with
+    // "compile_dispatcher() returned None". See OxyProjectContext::with_db.
+    Some(Arc::new(
+        OxyProjectContext::new(wm).with_db(Arc::new(db.clone())),
+    ))
 }
 
 /// Attach the DB-backed (env-fallback) secrets manager to a workspace
@@ -805,6 +815,7 @@ fn with_db_secrets_manager(
 async fn build_cloud_project_ctx(
     workspace_id: uuid::Uuid,
     path: &str,
+    db: &DatabaseConnection,
 ) -> Option<Arc<OxyProjectContext>> {
     let mut builder = match WorkspaceBuilder::new(workspace_id)
         .with_workspace_path_and_fallback_config(path)
@@ -837,7 +848,14 @@ async fn build_cloud_project_ctx(
             return None;
         }
     };
-    Some(Arc::new(OxyProjectContext::new(wm)))
+    // Wire the DB handle exactly like the HTTP workspace middleware does.
+    // The in-process global driver executes `TaskSpec::Compile` through this
+    // context, and `compile_dispatcher()` (like the anomaly tools) is `None`
+    // unless `db` is set — without it every compile fails with
+    // "compile_dispatcher() returned None". See OxyProjectContext::with_db.
+    Some(Arc::new(
+        OxyProjectContext::new(wm).with_db(Arc::new(db.clone())),
+    ))
 }
 
 /// Read `.monitor.yml`'s `schedule:` block and create `monitor_scan` schedule

@@ -57,9 +57,12 @@ pub struct OxyProjectContext {
     /// `pre_aggregations.refresh_worker.renewal_threshold` so operators who
     /// change one see the matching read-side behaviour.
     preagg_renewal_threshold_secs: u64,
-    /// Database connection for anomaly store queries. Set by the HTTP workspace
-    /// middleware from `AgenticState.db`; background / CLI paths leave it unset
-    /// and anomaly tools are silently disabled.
+    /// Database connection. Set from `AgenticState.db` by the HTTP workspace
+    /// middleware AND the in-process global driver (`recovery.rs`). Powers
+    /// anomaly-store queries and `compile_dispatcher()` — so any path that
+    /// executes `TaskSpec::Compile` (the global driver) MUST set it, or every
+    /// compile fails with "compile_dispatcher() returned None". Pure CLI / test
+    /// paths may leave it unset; anomaly tools + compile are then disabled.
     db: Option<Arc<sea_orm::DatabaseConnection>>,
 }
 
@@ -76,9 +79,10 @@ impl OxyProjectContext {
         }
     }
 
-    /// Attach the database connection. The HTTP workspace middleware sets this
-    /// from `AgenticState.db` so anomaly tools can query the `metric_anomalies`
-    /// table. Background / CLI paths leave it unset — anomaly tools are disabled.
+    /// Attach the database connection. The HTTP workspace middleware and the
+    /// in-process global driver (`recovery.rs`) set this from `AgenticState.db`
+    /// so anomaly tools can query `metric_anomalies` and `compile_dispatcher()`
+    /// can drive `TaskSpec::Compile`. Pure CLI / test paths leave it unset.
     pub fn with_db(mut self, db: Arc<sea_orm::DatabaseConnection>) -> Self {
         self.db = Some(db);
         self
@@ -791,6 +795,51 @@ mod tests {
                 "should accept {ref_str:?}"
             );
         }
+    }
+
+    /// Regression guard for the compile-boundary global-driver bug: a
+    /// `TaskSpec::Compile` runs through an `OxyProjectContext`, and
+    /// `compile_dispatcher()` only resolves when `db` is wired. The HTTP
+    /// workspace middleware sets it; the in-process global driver
+    /// (`server::router::recovery`) once did NOT, so every queued compile
+    /// failed with "compile_dispatcher() returned None". This asserts the
+    /// invariant both ways so a future refactor can't silently drop `db`
+    /// from a compile-executing path again.
+    #[tokio::test]
+    async fn compile_dispatcher_resolves_only_when_db_is_wired() {
+        use agentic_pipeline::platform::ProjectContext;
+        use oxy::adapters::workspace::builder::WorkspaceBuilder;
+        use oxy_test_utils::fixtures::TestFixture;
+        use std::sync::Arc;
+
+        let fixture = TestFixture::new().expect("tempdir");
+        // Same builder path the global driver uses — falls back to a default
+        // config, so an empty workspace dir is enough for this unit test.
+        let wm = WorkspaceBuilder::new(uuid::Uuid::new_v4())
+            .with_workspace_path_and_fallback_config(fixture.path())
+            .await
+            .expect("config builder")
+            .build()
+            .await
+            .expect("workspace manager");
+
+        // No db (the bug): the global driver would get None and the compile
+        // executor fails before dispatching.
+        let ctx_no_db = super::OxyProjectContext::new(wm.clone());
+        assert!(
+            ctx_no_db.compile_dispatcher().is_none(),
+            "a db-less context must not resolve a compile dispatcher"
+        );
+
+        // db wired (the fix): the dispatcher resolves so compiles can run.
+        // `Disconnected` is fine — the dispatcher only stores the handle here,
+        // it never opens a connection.
+        let ctx_db = super::OxyProjectContext::new(wm)
+            .with_db(Arc::new(sea_orm::DatabaseConnection::Disconnected));
+        assert!(
+            ctx_db.compile_dispatcher().is_some(),
+            "a db-wired context (HTTP middleware or global driver) must resolve a compile dispatcher"
+        );
     }
 }
 
