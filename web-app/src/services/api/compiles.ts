@@ -71,7 +71,7 @@ export const CompilesService = {
     workspace_id?: string;
     status?: string;
   }): Promise<ListCompilesResponse> {
-    const res = await apiClient.get<ListCompilesResponse>(`${BASE}/`, {
+    const res = await apiClient.get<ListCompilesResponse>(BASE, {
       params
     });
     return res.data;
