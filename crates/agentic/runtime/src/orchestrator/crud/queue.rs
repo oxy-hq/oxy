@@ -1,7 +1,8 @@
 //! Durable task queue backing the coordinator/worker pipeline.
 
 use sea_orm::{
-    ActiveValue::*, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
+    ActiveValue::*, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    QueryFilter, QueryOrder,
 };
 
 use crate::lifecycle::crud::now;
@@ -34,7 +35,7 @@ impl TaskScope {
 
 /// Insert a new task into the durable queue with status `queued`.
 pub async fn enqueue_task(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     task_id: &str,
     run_id: &str,
     parent_task_id: Option<&str>,

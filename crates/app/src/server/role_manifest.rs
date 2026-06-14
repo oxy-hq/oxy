@@ -190,15 +190,117 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         role: RouteRole::IdeOnly,
     },
     // ── Git operations ──────────────────────────────────────────────────────
+    // IMPORTANT: `build_git_routes()` (router/workspace.rs) `.merge()`s these
+    // FLAT into the workspace tree — there is NO `/git/` path segment. Each
+    // one shells out to git / touches the working copy, so each must be an
+    // explicit IdeOnly entry. A single `/git/{*rest}` wildcard matches NONE
+    // of them. `manifest_covers_every_git_route` asserts a hand-maintained
+    // list classifies IdeOnly — it does NOT introspect the live router, so a
+    // new git route must be added to BOTH the router and that test's list.
     ManifestEntry {
         method: "*",
-        path_pattern: "/api/{workspace_id}/git/{*rest}",
+        path_pattern: "/api/{workspace_id}/branches",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/branches/{branch_name}",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/pull-changes",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/fetch",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/push-changes",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/force-push",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/discard-all",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/abort-rebase",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/continue-rebase",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/resolve-conflict-file",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/unresolve-conflict-file",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/resolve-conflict-with-content",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/reset-to-commit",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/recent-commits",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/revision-info",
+        role: RouteRole::IdeOnly,
+    },
+    // ── Data repositories — git checkouts under modeling/, all FS+git ───────
+    // `.nest("/repositories", build_data_repo_routes())`: list, add, remove,
+    // branch, branches, checkout, diff, commit, files, github. Every handler
+    // operates on a repo working copy on disk. The bare `/repositories` (GET
+    // list / POST add) needs its own entry — `{*rest}` does not match the
+    // empty tail.
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/repositories",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/repositories/{*rest}",
         role: RouteRole::IdeOnly,
     },
     // ── Workspace-level onboarding subtree (clones + scaffolds) ─────────────
     ManifestEntry {
         method: "*",
         path_pattern: "/api/{workspace_id}/onboarding/{*rest}",
+        role: RouteRole::IdeOnly,
+    },
+    // `onboarding-readiness` is mounted FLAT (no `/onboarding/` segment) and
+    // reads config.yml from the working copy via resolve_workspace_path +
+    // ConfigBuilder::with_workspace_path — IdeOnly. (`onboarding/github-setup`
+    // is already covered by the `/onboarding/{*rest}` wildcard above.)
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/onboarding-readiness",
         role: RouteRole::IdeOnly,
     },
     // ── Modeling / Airform — dbt projects live on disk under modeling/ ─────
@@ -378,8 +480,9 @@ mod tests {
             classify("DELETE", "/api/d9830be4-c6a4/files/cGF0aA/delete-file"),
             RouteRole::IdeOnly
         );
+        // Real flat git route (NOT under `/git/` — that segment doesn't exist).
         assert_eq!(
-            classify("POST", "/api/d9830be4-c6a4/git/commit"),
+            classify("POST", "/api/d9830be4-c6a4/pull-changes"),
             RouteRole::IdeOnly
         );
         assert_eq!(
@@ -431,7 +534,75 @@ mod tests {
 
     #[test]
     fn method_wildcard_matches_any_verb() {
-        assert_eq!(classify("GET", "/api/abc/git/status"), RouteRole::IdeOnly);
-        assert_eq!(classify("POST", "/api/abc/git/commit"), RouteRole::IdeOnly);
+        // `/branches` is a `method: "*"` IdeOnly entry — both verbs match.
+        assert_eq!(classify("GET", "/api/abc/branches"), RouteRole::IdeOnly);
+        assert_eq!(
+            classify("DELETE", "/api/abc/branches/feature-x"),
+            RouteRole::IdeOnly
+        );
+    }
+
+    /// Drift guard (hand-maintained — NOT router-introspecting). Every flat
+    /// route mounted by `build_git_routes()` + `build_data_repo_routes()`
+    /// (router/workspace.rs) touches the working copy / shells out to git, so
+    /// each MUST classify IdeOnly; a route that's FleetOk lands on a serve
+    /// replica with no working copy → 500. This test asserts the list below
+    /// classifies IdeOnly, so it catches a route that's in the list but
+    /// missing from the manifest. It does NOT see new routes added to the
+    /// router — so a new git route must be added in THREE places: the router,
+    /// IDE_ONLY_PATTERNS, and this list. (No automated cross-check exists
+    /// across router ⇄ manifest yet.)
+    #[test]
+    fn manifest_covers_every_git_route() {
+        let ws = "/api/d9830be4-c6a4";
+        // (method, flat path) pairs straight from build_git_routes().
+        let git_routes = [
+            ("GET", format!("{ws}/branches")),
+            ("DELETE", format!("{ws}/branches/main")),
+            ("POST", format!("{ws}/switch-branch")),
+            ("POST", format!("{ws}/pull-changes")),
+            ("POST", format!("{ws}/fetch")),
+            ("POST", format!("{ws}/push-changes")),
+            ("POST", format!("{ws}/abort-rebase")),
+            ("POST", format!("{ws}/continue-rebase")),
+            ("POST", format!("{ws}/resolve-conflict-file")),
+            ("POST", format!("{ws}/unresolve-conflict-file")),
+            ("POST", format!("{ws}/resolve-conflict-with-content")),
+            ("POST", format!("{ws}/force-push")),
+            ("POST", format!("{ws}/discard-all")),
+            ("GET", format!("{ws}/recent-commits")),
+            ("GET", format!("{ws}/revision-info")),
+            ("POST", format!("{ws}/reset-to-commit")),
+        ];
+        for (method, path) in &git_routes {
+            assert_eq!(
+                classify(method, path),
+                RouteRole::IdeOnly,
+                "git route {method} {path} must be IdeOnly (touches working copy)"
+            );
+        }
+        // build_data_repo_routes(), nested under /repositories.
+        let repo_routes = [
+            ("GET", format!("{ws}/repositories")),
+            ("POST", format!("{ws}/repositories")),
+            ("DELETE", format!("{ws}/repositories/my-repo")),
+            ("POST", format!("{ws}/repositories/my-repo/checkout")),
+            ("GET", format!("{ws}/repositories/my-repo/diff")),
+            ("POST", format!("{ws}/repositories/my-repo/commit")),
+            ("GET", format!("{ws}/repositories/my-repo/files")),
+            ("POST", format!("{ws}/repositories/github")),
+        ];
+        for (method, path) in &repo_routes {
+            assert_eq!(
+                classify(method, path),
+                RouteRole::IdeOnly,
+                "data-repo route {method} {path} must be IdeOnly (git working copy)"
+            );
+        }
+        // onboarding-readiness is flat (not under /onboarding/).
+        assert_eq!(
+            classify("GET", &format!("{ws}/onboarding-readiness")),
+            RouteRole::IdeOnly
+        );
     }
 }

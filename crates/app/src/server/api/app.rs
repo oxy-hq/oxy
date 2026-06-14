@@ -930,7 +930,23 @@ pub async fn get_app_result(
             .unwrap_or_default();
         let app_path_str = path.to_string_lossy().to_string();
         match export_charts_to_dir(&app_path_str, &charts_dir).await {
-            Ok(map) => map,
+            Ok(map) => {
+                // Mirror each exported PNG to S3 so a DIFFERENT serve replica
+                // can serve it via GET /{ws}/apps/{path}/charts/{file} on the
+                // round-robin fleet — otherwise the dashboard shows blank
+                // charts. Best-effort; no-op without a bucket. See
+                // server::runtime_artifact.
+                for file_name in map.values() {
+                    if let Ok(bytes) = tokio::fs::read(charts_dir.join(file_name)).await {
+                        let key = crate::server::runtime_artifact::chart_key(
+                            workspace_manager.workspace_id,
+                            file_name,
+                        );
+                        crate::server::runtime_artifact::mirror(&key, bytes, "image/png").await;
+                    }
+                }
+                map
+            }
             Err(e) => {
                 tracing::warn!("Failed to export charts: {:?}", e);
                 chart_export_error = Some(e.to_string());
@@ -1146,10 +1162,17 @@ async fn save_cached_result(
     )
 )]
 pub async fn get_chart_image(
-    Path((_workspace_id, pathb64, chart_path)): Path<(Uuid, String, String)>,
+    Path((workspace_id, pathb64, chart_path)): Path<(Uuid, String, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<impl IntoResponse, StatusCode> {
     let _app_path = decode_path(&pathb64)?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("image/png"));
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("private, max-age=3600"),
+    );
 
     // Get charts directory
     let charts_dir = workspace_manager
@@ -1161,32 +1184,32 @@ pub async fn get_chart_image(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let full_chart_path = charts_dir.join(&chart_path).canonicalize().map_err(|e| {
-        tracing::debug!("Chart file not found: {:?} - {}", chart_path, e);
-        StatusCode::NOT_FOUND
-    })?;
-
-    if !full_chart_path.starts_with(&charts_dir) {
-        return Err(StatusCode::FORBIDDEN);
+    // Fast path: the PNG is on THIS node's disk (it ran the export). Keep the
+    // canonicalize + starts_with traversal guard.
+    if let Ok(full_chart_path) = charts_dir.join(&chart_path).canonicalize() {
+        if !full_chart_path.starts_with(&charts_dir) {
+            return Err(StatusCode::FORBIDDEN);
+        }
+        if let Ok(file) = tokio::fs::File::open(&full_chart_path).await {
+            let body = Body::from_stream(ReaderStream::new(file));
+            return Ok((StatusCode::OK, headers, body));
+        }
     }
 
-    // Read the PNG file
-    let file = tokio::fs::File::open(&full_chart_path).await.map_err(|e| {
-        tracing::debug!("Chart file not found: {:?} - {}", full_chart_path, e);
-        StatusCode::NOT_FOUND
-    })?;
+    // Cross-node fallback: on the stateless serve fleet the export ran on a
+    // DIFFERENT replica, so the local file is missing — read the S3 mirror.
+    // Chart files are FLAT names; reject any path separator / traversal before
+    // using `chart_path` as an object key.
+    if chart_path.contains('/') || chart_path.contains("..") {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let key = crate::server::runtime_artifact::chart_key(workspace_id, &chart_path);
+    if let Some(bytes) = crate::server::runtime_artifact::fetch(&key).await {
+        return Ok((StatusCode::OK, headers, Body::from(bytes)));
+    }
 
-    let reader_stream = ReaderStream::new(file);
-    let body = Body::from_stream(reader_stream);
-
-    let mut headers = HeaderMap::new();
-    headers.insert("Content-Type", HeaderValue::from_static("image/png"));
-    headers.insert(
-        "Cache-Control",
-        HeaderValue::from_static("private, max-age=3600"),
-    );
-
-    Ok((StatusCode::OK, headers, body))
+    tracing::debug!("Chart image not found (local + S3): {}", chart_path);
+    Err(StatusCode::NOT_FOUND)
 }
 
 // ── App-builder run → save as app file ──────────────────────────────────────

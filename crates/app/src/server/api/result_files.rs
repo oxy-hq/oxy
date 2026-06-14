@@ -55,6 +55,16 @@ pub async fn store_result_file(
     write_parquet(&dest_path, &batches, schema)
         .map_err(|e| format!("Failed to write Parquet file: {}", e))?;
 
+    // Mirror to S3 so a serve replica OTHER than this one can still serve the
+    // file via GET /{ws}/results/files/{id} (round-robin fleet). Best-effort;
+    // no-op when no bucket (dev/single-node). See server::runtime_artifact.
+    if let Ok(bytes) = tokio::fs::read(&dest_path).await {
+        let key =
+            crate::server::runtime_artifact::result_key(workspace_manager.workspace_id, &file_name);
+        crate::server::runtime_artifact::mirror(&key, bytes, "application/vnd.apache.parquet")
+            .await;
+    }
+
     // Clean up temp file
     let _ = tokio::fs::remove_file(temp_file_path).await;
 
@@ -128,9 +138,30 @@ pub async fn get_result_file(
     // Construct the full file path
     let file_path = results_dir.join(&file_name);
 
-    // Check if file exists
+    // Cross-node read-through: on the stateless serve fleet the file may have
+    // been written on a DIFFERENT replica, so a local miss is expected — fall
+    // back to the S3 mirror before 404ing. No-op store + always-miss fetch in
+    // dev (no bucket) means this collapses to the old "404 on local miss".
     if !file_path.exists() {
-        tracing::warn!("Result file not found: {:?}", file_path);
+        let key =
+            crate::server::runtime_artifact::result_key(workspace_manager.workspace_id, &file_name);
+        if let Some(bytes) = crate::server::runtime_artifact::fetch(&key).await {
+            let len = bytes.len() as u64;
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/vnd.apache.parquet")
+                .header(header::CONTENT_LENGTH, len)
+                .header(
+                    header::CONTENT_DISPOSITION,
+                    format!("attachment; filename=\"{}\"", file_name),
+                )
+                .body(Body::from(bytes))
+                .map_err(|e| {
+                    tracing::error!("Failed to build S3 result response: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                });
+        }
+        tracing::warn!("Result file not found (local + S3): {:?}", file_path);
         return Err(StatusCode::NOT_FOUND);
     }
 

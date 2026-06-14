@@ -134,7 +134,7 @@ pub async fn is_cancel_requested(db: &DatabaseConnection, run_id: &str) -> Resul
 }
 
 pub async fn insert_run(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     run_id: &str,
     question: &str,
     thread_id: Option<Uuid>,
@@ -218,7 +218,7 @@ pub async fn insert_run_with_parent(
 
 #[allow(clippy::too_many_arguments)]
 async fn insert_run_inner(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     run_id: &str,
     question: &str,
     thread_id: Option<Uuid>,

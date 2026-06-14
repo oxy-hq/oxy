@@ -158,6 +158,41 @@ pub async fn run_semantic_query(
                 None
             }
         };
+    // Stateless-fleet guard: on a serve replica there is no working copy, so
+    // the FS fallback below (`semantics_scan_path()`) points at a directory
+    // that doesn't exist — airlayer would compile against an empty dir and
+    // return a misleading empty/500 result. Refuse the FS scan and return the
+    // SAME NeedsRecompile contract the `workspace_context` middleware
+    // established: a 503 with the `X-Oxy-Needs-Recompile` header (the FE's
+    // retry signal) AND a deduped lazy compile. This path is reachable when
+    // the compiled CONFIG is valid (so the middleware didn't short-circuit)
+    // but the semantic materialisation is empty/failed, so the middleware's
+    // own enqueue wouldn't have fired. (`materialise_semantic_scan` downgrades
+    // real DB errors to `None`, so this also covers the transient-DB case — a
+    // 503 retry is the right behavior there too.)
+    if materialised.is_none()
+        && crate::server::role_manifest::current_process_role()
+            == crate::server::role_manifest::Role::Serve
+    {
+        if let Ok(db) = oxy::database::client::establish_connection().await {
+            crate::server::api::middlewares::workspace_context::enqueue_lazy_compile(
+                &db, project_id,
+            )
+            .await;
+        }
+        let mut response = err_with_code(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!(
+                "workspace {project_id} has no compiled semantic layer available on this \
+                 stateless replica; a (re)compile has been enqueued — retry shortly"
+            ),
+            "semantic_needs_recompile",
+        );
+        if let Ok(val) = axum::http::HeaderValue::from_str(&project_id.to_string()) {
+            response.headers_mut().insert("x-oxy-needs-recompile", val);
+        }
+        return response;
+    }
     let scan_path = match materialised.as_ref() {
         Some(m) => m.scan_path.clone(),
         None => proj_ctx

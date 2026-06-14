@@ -330,9 +330,14 @@ mod tests {
         // Wrong path → reject.
         assert!(validate_whep_token("cam-evil", &token, expiry, secret).is_err());
 
-        // Wrong token → reject.
+        // Wrong token → reject. Flip the first char to one it definitely
+        // ISN'T — replacing with a fixed "0" was flaky ~1/16 of runs when the
+        // freshly-minted token already started with '0' (then bad == token and
+        // validation correctly succeeded, failing this assertion).
         let mut bad = token.clone();
-        bad.replace_range(..1, "0");
+        let repl = if bad.starts_with('0') { "1" } else { "0" };
+        bad.replace_range(..1, repl);
+        assert_ne!(bad, token, "tampered token must differ from the original");
         assert!(validate_whep_token(path, &bad, expiry, secret).is_err());
 
         // Stale expiry → reject (use a far-past expiry).

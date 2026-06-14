@@ -461,7 +461,8 @@ async fn open_compiled_revision(
             return Ok(None);
         }
     };
-    if let Some(branch) = branch_hint
+    let effective_branch = normalize_branch_hint(branch_hint);
+    if let Some(branch) = effective_branch
         && !is_default_branch(&db, workspace_id, branch).await
     {
         tracing::debug!(
@@ -478,6 +479,16 @@ async fn open_compiled_revision(
         return Ok(None);
     };
     Ok(Some((db, revision_id)))
+}
+
+/// Treat an empty `branch` query param the same as `None`. Most FE calls
+/// omit the branch from the URL, so they arrive at the middleware as
+/// `Some("")` after axum's query parser. Previously this fell through to
+/// FS (which on a serve replica means a 500 — no working copy). Empty
+/// means "default branch": let `open_compiled_revision` resolve it from
+/// the workspace row instead. Regression context: oxy-hq/oxygen-internal#1619.
+fn normalize_branch_hint(branch_hint: Option<&str>) -> Option<&str> {
+    branch_hint.filter(|b| !b.is_empty())
 }
 
 /// Returns true when `branch` is the workspace's recorded default
@@ -524,4 +535,22 @@ fn extract_model_ref(definition: &Value) -> Option<String> {
         .get("ref")
         .and_then(|v| v.as_str())
         .map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_branch_hint_strips_empty() {
+        // An empty `?branch=` from the FE must NOT trigger the non-default
+        // branch fallthrough — empty means "use the workspace default".
+        assert_eq!(normalize_branch_hint(None), None);
+        assert_eq!(normalize_branch_hint(Some("")), None);
+        assert_eq!(normalize_branch_hint(Some("main")), Some("main"));
+        assert_eq!(normalize_branch_hint(Some("feat/x")), Some("feat/x"));
+        // We don't trim whitespace; a literal space is technically a legal
+        // git branch name, so we treat it as a real branch hint.
+        assert_eq!(normalize_branch_hint(Some(" ")), Some(" "));
+    }
 }

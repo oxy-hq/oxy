@@ -156,6 +156,17 @@ pub async fn typed_stream_to_parquet(
         .await
         .map_err(|e| OxyError::RuntimeError(format!("parquet writer join: {e}")))??;
 
+    // Mirror to S3 so any serve replica can serve this via
+    // GET /{ws}/results/files/{id} on the round-robin fleet (best-effort;
+    // no-op without a bucket). See server::runtime_artifact.
+    let mirror_path = results_dir.join(&file_name);
+    if let Ok(bytes) = tokio::fs::read(&mirror_path).await {
+        let key =
+            crate::server::runtime_artifact::result_key(workspace_manager.workspace_id, &file_name);
+        crate::server::runtime_artifact::mirror(&key, bytes, "application/vnd.apache.parquet")
+            .await;
+    }
+
     Ok(file_name)
 }
 

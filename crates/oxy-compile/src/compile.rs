@@ -137,9 +137,10 @@ pub struct CompileRequest<'a> {
     pub db: &'a DatabaseConnection,
     pub workspace_id: Uuid,
     pub workspace_path: &'a Path,
-    /// The SHA the operator should see on this revision. If None,
-    /// recorded as the literal "local" — useful for `oxy compile`
-    /// runs against a working copy with uncommitted edits.
+    /// The SHA the operator should see on this revision. If None, a unique
+    /// `local-<uuid>` is minted (NOT a constant) so repeated working-copy
+    /// compiles don't collide on the idempotency unique index — useful for
+    /// `oxy compile` runs against a working copy with uncommitted edits.
     pub git_sha: Option<String>,
     pub branch: Option<String>,
     /// Identifies the binary version that produced this revision.
@@ -190,7 +191,21 @@ impl Default for RevisionKind {
 pub async fn compile_workspace(
     request: CompileRequest<'_>,
 ) -> Result<CompileOutcome, CompileError> {
-    let git_sha = request.git_sha.unwrap_or_else(|| "local".to_string());
+    // A compile with no addressable SHA (CLI `oxy compile` on a working tree,
+    // the lazy self-heal) is "local". Mint a UNIQUE `local-<uuid>` rather than
+    // the constant "local": the partial unique index
+    // `idx_revisions_idempotent_ready_main` is keyed on (workspace_id,
+    // git_sha), so two distinct working-tree compiles that both recorded the
+    // constant "local" would collide — the second finalise hits the unique
+    // violation, returns SupersededBy the FIRST, and silently discards the
+    // newer compile (returning stale data). A unique sha makes each local
+    // compile its own revision; `promote_revision`'s started_at causality
+    // clause then promotes the newest. Real-SHA compiles are unaffected and
+    // keep their (correct) idempotent dedup. See oxygen-internal#2520.
+    let is_local = request.git_sha.is_none();
+    let git_sha = request
+        .git_sha
+        .unwrap_or_else(|| format!("local-{}", Uuid::new_v4()));
     let kind_str = request.kind.as_str();
     info!(
         workspace_path = %request.workspace_path.display(),
@@ -220,16 +235,18 @@ pub async fn compile_workspace(
     //   - Multiple workspaces inheriting the same commit (e.g. forks)
     //     that get triggered close together.
     //
-    // Local-CLI compiles (`git_sha = "local"`) opt out — local edits
-    // are not addressable by SHA, so identity is the working tree
-    // itself which can change between invocations.
+    // Local compiles (no addressable SHA — `is_local`, minted as a unique
+    // `local-<uuid>`) opt out: local edits aren't addressable by SHA, so
+    // identity is the working tree itself, which can change between
+    // invocations. The unique sha also keeps them off the idempotency unique
+    // index so two distinct working-tree compiles don't supersede each other.
     //
     // When `promote` is requested AND the existing revision isn't
     // already current, we still execute the lightweight promotion
     // path so `workspaces.current_revision_id` ends up pointing at
     // the matching revision. That keeps "run compile now with
     // promote" semantically correct even when the SHA is unchanged.
-    if git_sha != "local"
+    if !is_local
         && !matches!(request.kind, RevisionKind::Draft)
         && let Some(existing) =
             lookup_idempotent_revision(request.db, request.workspace_id, &git_sha).await?
@@ -527,8 +544,17 @@ fn compile_config(file: &DiscoveredFile, content: &str) -> Result<Vec<CompiledRo
             // come from the filesystem, so they're unaffected — only the
             // stateless cloud fleet reads this compiled copy.
             let mut redacted = redact_inline_secrets(&mut cfg.databases);
+            // EVERY config section that can hold an inline literal must be
+            // redacted. `models` carries LLM `api_key:` (e.g. an inline
+            // Ollama/OpenAI key); `repositories` carries `git_url:` which can
+            // embed credentials inline (https://user:token@host). Omitting
+            // either leaks the secret into the queryable compiled config —
+            // see oxygen-internal#2520. Keep this list exhaustive over the
+            // `map.remove(...)` calls above.
             for field in [
+                &mut cfg.models,
                 &mut cfg.integrations,
+                &mut cfg.repositories,
                 &mut cfg.mcp,
                 &mut cfg.builder_agent,
                 &mut cfg.other,
@@ -569,6 +595,15 @@ fn redact_inline_secrets(value: &mut Value) -> usize {
                 if is_sensitive_key(k) && matches!(v, Value::String(s) if !s.is_empty()) {
                     *v = Value::Null;
                     n += 1;
+                } else if let Value::String(s) = v {
+                    // Non-sensitive key but the value may be a URL with
+                    // embedded credentials (e.g. `git_url:
+                    // https://user:token@host`, or a connection URL). Strip
+                    // the userinfo, keep the URL usable.
+                    if let Some(cleaned) = strip_url_credentials(s) {
+                        *s = cleaned;
+                        n += 1;
+                    }
                 } else {
                     n += redact_inline_secrets(v);
                 }
@@ -578,6 +613,27 @@ fn redact_inline_secrets(value: &mut Value) -> usize {
         Value::Array(arr) => arr.iter_mut().map(redact_inline_secrets).sum(),
         _ => 0,
     }
+}
+
+/// Strip `user[:pass]@` userinfo from a URL-like string so an inline
+/// credential embedded in a `git_url` / connection URL can't survive into
+/// the queryable compiled config. Returns `Some(cleaned)` only when
+/// userinfo was present and removed; `None` for plain strings / URLs with
+/// no credentials, so callers can cheaply detect "was anything redacted".
+fn strip_url_credentials(s: &str) -> Option<String> {
+    let scheme_end = s.find("://")?;
+    let after = scheme_end + 3;
+    // Authority runs from after `://` to the next `/` (or end of string).
+    let authority_end = s[after..].find('/').map(|i| after + i).unwrap_or(s.len());
+    let authority = &s[after..authority_end];
+    // userinfo is everything before the LAST `@` in the authority.
+    let at = authority.rfind('@')?;
+    Some(format!(
+        "{}{}{}",
+        &s[..after],
+        &authority[at + 1..],
+        &s[authority_end..]
+    ))
 }
 
 /// Whether a config key names a secret. Conservative substring match over the
@@ -648,6 +704,55 @@ mod redact_tests {
         assert!(v["nested"]["client_secret"].is_null());
         assert!(v["nested"]["api_key"].is_null());
         assert_eq!(v["nested"]["label"], "ok");
+    }
+
+    /// Regression (oxygen-internal#2520): an inline LLM `api_key` in
+    /// `models` and credentials embedded in a `repositories[].git_url` URL
+    /// must not survive into the compiled config.
+    #[test]
+    fn redacts_model_keys_and_git_url_credentials() {
+        let mut models = json!([
+            { "name": "local-ollama", "api_key": "sk-inline-secret" },
+            { "name": "openai", "api_key_var": "OPENAI_API_KEY" },
+        ]);
+        let n = redact_inline_secrets(&mut models);
+        assert_eq!(n, 1, "inline model api_key redacted; *_var ref kept");
+        assert!(models[0]["api_key"].is_null());
+        assert_eq!(models[1]["api_key_var"], "OPENAI_API_KEY");
+
+        let mut repos = json!([
+            { "name": "dbt", "git_url": "https://x-access-token:ghp_SECRET@github.com/acme/dbt.git" },
+            { "name": "clean", "git_url": "https://github.com/acme/public.git" },
+        ]);
+        let n = redact_inline_secrets(&mut repos);
+        assert_eq!(n, 1, "only the credential-bearing git_url is rewritten");
+        assert_eq!(
+            repos[0]["git_url"], "https://github.com/acme/dbt.git",
+            "userinfo stripped, URL still usable"
+        );
+        assert_eq!(
+            repos[1]["git_url"], "https://github.com/acme/public.git",
+            "credential-free URL untouched"
+        );
+    }
+
+    #[test]
+    fn strip_url_credentials_handles_edge_cases() {
+        assert_eq!(strip_url_credentials("plain string"), None);
+        assert_eq!(strip_url_credentials("https://host/path"), None);
+        assert_eq!(
+            strip_url_credentials("https://user:pass@host:5432/db").as_deref(),
+            Some("https://host:5432/db")
+        );
+        assert_eq!(
+            strip_url_credentials("postgres://u:p@h/d").as_deref(),
+            Some("postgres://h/d")
+        );
+        // userinfo with no password (token-as-user) still stripped.
+        assert_eq!(
+            strip_url_credentials("https://TOKEN@github.com/x").as_deref(),
+            Some("https://github.com/x")
+        );
     }
 }
 

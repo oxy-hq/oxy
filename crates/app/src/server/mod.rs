@@ -12,6 +12,7 @@ pub mod preagg_worker;
 pub mod role_manifest;
 pub mod role_middleware;
 pub mod router;
+pub mod runtime_artifact;
 pub mod serve_mode;
 pub mod service;
 pub mod worker_health;

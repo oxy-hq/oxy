@@ -28,18 +28,66 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct WorkspaceManagerExtractor(pub WorkspaceManager);
 
-pub struct WorkspaceManagerMissing;
+/// Why the workspace manager wasn't attached to this request. The two
+/// flavors carry different operator + UX semantics:
+///
+/// - `NotAvailable`: the workspace path / config.yml is unreachable. The
+///   user needs to fix their setup or the operator needs to debug a real
+///   FS problem.
+/// - `NeedsRecompile`: a serve replica refused to fall through to the
+///   workspace FS (which it doesn't have) because the compile boundary
+///   couldn't produce a usable config. The middleware has already
+///   lazy-enqueued a Compile TaskSpec; the FE should retry shortly.
+///   Triggered by either an absent / stale revision, or a compile-blob
+///   deserialise failure (e.g. workspace `5ce5c011` with a schema-
+///   drifted `DuckDBOptions`). Response carries the
+///   `X-Oxy-Needs-Recompile` header so the FE can distinguish this from
+///   a generic 503.
+pub struct WorkspaceManagerMissing {
+    pub needs_recompile: Option<Uuid>,
+}
 
 impl IntoResponse for WorkspaceManagerMissing {
     fn into_response(self) -> Response {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(serde_json::json!({
-                "error": "Workspace configuration is not available. Check that the workspace path is accessible and config.yml is valid."
-            })),
-        )
-            .into_response()
+        match self.needs_recompile {
+            Some(workspace_id) => {
+                let mut response = (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    axum::Json(serde_json::json!({
+                        "error": "Workspace has no current compiled revision on this replica. A compile has been enqueued; please retry shortly.",
+                        "workspace_id": workspace_id,
+                        "needs_recompile": true,
+                    })),
+                )
+                    .into_response();
+                // FE checks this header to distinguish "compile is stale,
+                // retry me" from "the platform is unhappy". Header value is
+                // the workspace_id so an interceptor can correlate.
+                if let Ok(value) = axum::http::HeaderValue::from_str(&workspace_id.to_string()) {
+                    response
+                        .headers_mut()
+                        .insert("x-oxy-needs-recompile", value);
+                }
+                response
+            }
+            None => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({
+                    "error": "Workspace configuration is not available. Check that the workspace path is accessible and config.yml is valid."
+                })),
+            )
+                .into_response(),
+        }
     }
+}
+
+/// Marker inserted by the workspace middleware when a serve replica
+/// refuses to fall through to FS. The `WorkspaceManagerExtractor`
+/// promotes it to a structured rejection so handlers don't have to
+/// know about role-aware short-circuiting.
+#[derive(Clone)]
+struct NeedsRecompileMarker {
+    workspace_id: Uuid,
 }
 
 impl<S> FromRequestParts<S> for WorkspaceManagerExtractor
@@ -57,7 +105,15 @@ where
             .get::<WorkspaceManager>()
             .cloned()
             .map(WorkspaceManagerExtractor)
-            .ok_or(WorkspaceManagerMissing);
+            .ok_or_else(|| {
+                // A serve replica that short-circuited the FS fallback left
+                // this marker behind; promote it to a structured rejection.
+                let needs_recompile = parts
+                    .extensions
+                    .get::<NeedsRecompileMarker>()
+                    .map(|m| m.workspace_id);
+                WorkspaceManagerMissing { needs_recompile }
+            });
 
         async move { result }
     }
@@ -391,12 +447,58 @@ async fn resolve_effective_role(
 /// Enqueue a promoting compile for an uncompiled workspace, deduped against any
 /// compile already queued/claimed for it. Best-effort — failures are logged,
 /// never surfaced (the caller is on a request hot path).
-async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uuid) {
-    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+pub(crate) async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uuid) {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
-    // Skip if a compile for this workspace is already in flight — otherwise a
-    // burst of requests to an uncompiled workspace would flood the queue.
-    let already = db
+    // Serialise concurrent self-heal enqueues for the SAME workspace across
+    // every replica. A plain "SELECT in-flight? then INSERT" is a TOCTOU
+    // race: N first-hits to an uncompiled/drifted workspace (across N serve
+    // replicas, or a single page's parallel requests) all pass the SELECT
+    // before any INSERT commits, and all enqueue a redundant compile + a
+    // bloat row in agentic_runs. We close the window with a transaction-
+    // scoped advisory lock keyed on the workspace, taken NON-blocking: only
+    // the lock holder runs the dedup-check + inserts; a concurrent caller
+    // that can't get the lock immediately knows someone else is already
+    // doing it and just returns. Using `pg_try_advisory_xact_lock` (not the
+    // blocking variant) matters precisely in the thundering-herd case this
+    // guards — we don't want N request-hot-path connections parked on a lock
+    // for the one workspace that's already unhealthy. The lock auto-releases
+    // on commit/rollback; distinct workspaces hash to distinct keys.
+    let txn = match db.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!(?e, %workspace_id, "lazy compile: begin txn failed");
+            return;
+        }
+    };
+
+    // Deterministic per-workspace lock key (low 63 bits of the UUID). A
+    // collision with another advisory-lock user only adds harmless extra
+    // serialisation; it can't cause incorrectness.
+    let lock_key = (workspace_id.as_u128() as u64 & 0x7fff_ffff_ffff_ffff) as i64;
+    let got_lock = txn
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT pg_try_advisory_xact_lock($1) AS locked",
+            [lock_key.into()],
+        ))
+        .await;
+    match got_lock {
+        Ok(Some(row)) if row.try_get::<bool>("", "locked").unwrap_or(false) => {}
+        Ok(_) => {
+            // Lock held by another caller → it owns the check+insert. Skip.
+            let _ = txn.rollback().await;
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(?e, %workspace_id, "lazy compile: try-advisory-lock failed");
+            let _ = txn.rollback().await;
+            return;
+        }
+    }
+
+    // Re-check for an in-flight compile INSIDE the lock.
+    let already = txn
         .query_one(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT 1 FROM agentic_task_queue \
@@ -408,15 +510,16 @@ async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uu
         ))
         .await;
     if matches!(already, Ok(Some(_))) {
+        let _ = txn.rollback().await;
         return;
     }
 
     let task_id = Uuid::new_v4().to_string();
     // `agentic_task_queue.run_id` FKs to `agentic_runs.id`, so the run row must
-    // exist before the task insert (mirrors `api::compile`). Without this the
-    // enqueue silently FK-violates and the self-heal never fires.
+    // exist before the task insert (mirrors `api::compile`). Both run on the
+    // same txn so the advisory lock covers them.
     if let Err(e) = agentic_runtime::crud::insert_run(
-        db,
+        &txn,
         &task_id,
         "compile main (lazy self-heal)",
         None,
@@ -427,6 +530,7 @@ async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uu
     .await
     {
         tracing::warn!(?e, %workspace_id, "lazy compile insert_run failed");
+        let _ = txn.rollback().await;
         return;
     }
     let spec = agentic_core::delegation::TaskSpec::Compile {
@@ -437,8 +541,8 @@ async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uu
         kind: Some("main".to_string()),
         owner_user_id: None,
     };
-    match agentic_runtime::crud::enqueue_task(
-        db,
+    if let Err(e) = agentic_runtime::crud::enqueue_task(
+        &txn,
         &task_id,
         &task_id,
         None,
@@ -448,8 +552,14 @@ async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uu
     )
     .await
     {
-        Ok(_) => tracing::info!(%workspace_id, "enqueued lazy compile for uncompiled workspace"),
-        Err(e) => tracing::warn!(?e, %workspace_id, "lazy compile enqueue failed"),
+        tracing::warn!(?e, %workspace_id, "lazy compile enqueue failed");
+        let _ = txn.rollback().await;
+        return;
+    }
+
+    match txn.commit().await {
+        Ok(_) => tracing::info!(%workspace_id, "enqueued lazy compile (deduped) for workspace"),
+        Err(e) => tracing::warn!(?e, %workspace_id, "lazy compile commit failed"),
     }
 }
 
@@ -531,6 +641,50 @@ async fn try_attach_workspace_manager(
             }
         };
 
+    // ── Stateless-fleet short-circuit ──────────────────────────────────────
+    // A serve replica has no workspace working copy (emptyDir OXY_STATE_DIR,
+    // no PVC). If the compile boundary couldn't produce a config (no
+    // current_revision_id, schema-drift deserialise failure, DB hiccup),
+    // we must NOT fall through to the FS path below — the FS read would
+    // either return stale data from a different workspace or, more likely,
+    // 500 with "workspace data directory not found". Either is worse than
+    // a structured 503 that tells the FE to retry after the compile lands.
+    //
+    // We still lazy-enqueue a Compile TaskSpec on the way out so the next
+    // request can succeed without operator action. The
+    // `WorkspaceManagerExtractor` promotes `NeedsRecompileMarker` to a 503
+    // with `X-Oxy-Needs-Recompile: <workspace_id>` so the FE can render a
+    // proper "retrying compile" toast instead of a generic platform error.
+    //
+    // Regression context: oxy-hq/oxygen-internal#1619.
+    if compiled_config.is_none()
+        && crate::server::role_manifest::current_process_role()
+            == crate::server::role_manifest::Role::Serve
+    {
+        // Lazy self-heal: enqueue a (deduped) compile whenever the boundary
+        // couldn't produce a usable config for a compilable workspace —
+        // NOT only when `current_revision_id` is null. A workspace that HAS
+        // a revision whose compiled config won't deserialise (a schema
+        // drift, e.g. a stale `DuckDBOptions` shape) also lands here, and it
+        // needs a recompile just as much as a never-compiled one. Gating on
+        // `current_revision_id.is_none()` left drifted workspaces 503ing
+        // forever with no recovery. `path.is_some()` is the real
+        // precondition (a pathless workspace can't be compiled).
+        if workspace_row.path.is_some()
+            && let Some(agentic_db) = db.as_ref()
+        {
+            enqueue_lazy_compile(agentic_db, workspace_id).await;
+        }
+        request
+            .extensions_mut()
+            .insert(NeedsRecompileMarker { workspace_id });
+        tracing::warn!(
+            workspace_id = %workspace_id,
+            "serve replica: compile boundary missed; refusing FS fallback (NeedsRecompile)"
+        );
+        return Ok(());
+    }
+
     let builder_init = if let Some(cfg) = compiled_config {
         WorkspaceBuilder::new(workspace_id)
             .with_workspace_path_and_compiled_config(&effective_path, cfg)
@@ -547,11 +701,16 @@ async fn try_attach_workspace_manager(
                 workspace_id,
                 e
             );
-            // Lazy self-heal for the stateless serve fleet: a workspace that has
-            // never been compiled has no working copy on this replica, so the FS
-            // build above failed. Kick off a (deduped) compile so the next
-            // request can serve it from Postgres. The request itself still fails
-            // via the missing-manager extractor — retry once compiled.
+            // Lazy self-heal for a workspace that has never been compiled and
+            // whose FS config build also failed. NOTE: this path is only
+            // reached by Ide/All/Worker — a serve replica already
+            // short-circuited above (the `Role::Serve` block) with the WIDER
+            // `path.is_some()` gate that also covers schema drift. This
+            // narrower `current_revision_id.is_none()` gate is correct HERE
+            // (these roles have a working copy, so a drifted-but-promoted
+            // workspace still serves from the FS) but is deliberately
+            // different from the serve-mode gate above — don't "align" one
+            // without re-checking the other.
             if workspace_row.current_revision_id.is_none()
                 && workspace_row.path.is_some()
                 && let Some(agentic_db) = db.as_ref()
@@ -643,4 +802,44 @@ async fn try_attach_workspace_manager(
     request.extensions_mut().insert(project_ctx);
     request.extensions_mut().insert(bridges);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    /// Generic 503 — no header, no workspace_id in the body — so legacy
+    /// behavior is preserved when the workspace genuinely has no path.
+    #[test]
+    fn rejection_not_available_has_no_recompile_header() {
+        let response = WorkspaceManagerMissing {
+            needs_recompile: None,
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(
+            response.headers().get("x-oxy-needs-recompile").is_none(),
+            "legacy NotAvailable must not carry the recompile header"
+        );
+    }
+
+    /// Serve-mode short-circuit carries the `X-Oxy-Needs-Recompile`
+    /// header keyed by workspace_id so the FE can route the toast and
+    /// reload-after-compile UX accordingly.
+    #[test]
+    fn rejection_needs_recompile_carries_workspace_header() {
+        let workspace_id = Uuid::new_v4();
+        let response = WorkspaceManagerMissing {
+            needs_recompile: Some(workspace_id),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let header = response
+            .headers()
+            .get("x-oxy-needs-recompile")
+            .expect("NeedsRecompile rejection must set the header");
+        assert_eq!(header.to_str().unwrap(), workspace_id.to_string());
+    }
 }

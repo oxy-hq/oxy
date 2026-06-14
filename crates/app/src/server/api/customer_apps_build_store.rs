@@ -101,6 +101,24 @@ pub async fn put_build(
     if let Some(bad) = files.iter().find(|(rel, _)| !is_safe_rel(rel)) {
         return Err(BuildStoreError::Io(format!("unsafe build path: {}", bad.0)));
     }
+    // Multi-instance guard: the filesystem backend writes the bundle to THIS
+    // node's local disk, but on a multi-replica deployment (OXY_ROLE !=
+    // `all`) the serve path round-robins — a later asset request lands on a
+    // replica whose local disk has no such build → blank page / 404. Refuse
+    // the publish with a clear error instead of silently degrading to
+    // per-node-local storage. Only affects deployments that actually use
+    // customer apps; `all`-mode (local dev / single process) is unaffected.
+    if bucket().is_none()
+        && crate::server::role_manifest::current_process_role()
+            != crate::server::role_manifest::Role::All
+    {
+        return Err(BuildStoreError::Io(
+            "customer-app publish requires a shared object store on a multi-instance \
+             deployment: set OXY_CUSTOMER_APPS_S3_BUCKET (the filesystem backend is \
+             single-node only)"
+                .to_string(),
+        ));
+    }
     match bucket() {
         Some(bucket) => {
             let client = s3_client().await;
