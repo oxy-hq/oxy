@@ -35,6 +35,12 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   RUST_LOG: debug
+  # Incremental compilation only helps warm local rebuilds. In CI it adds
+  # bookkeeping overhead and bloats `target/incremental`, which the rust-cache
+  # action strips before saving anyway — so we pay to produce artifacts that get
+  # thrown away and inflate cache size. Force it off (overrides the global
+  # `incremental = true` in .cargo/config.toml, which is there for local dev).
+  CARGO_INCREMENTAL: "0"
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -198,8 +204,15 @@ jobs:
       GEMINI_API_KEY: "empty"
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       DOMO_DEVELOPER_TOKEN: "empty"
-      # line-tables-only debug: sufficient for llvm-cov, ~60% smaller than default debug = 2
-      CARGO_PROFILE_DEV_DEBUG: "1"
+      # Fast CI builds: omit debug info entirely (this replaces the old `ci`
+      # cargo profile's `debug = false`). Local dev keeps full debug via the
+      # default dev profile — this override only applies in CI.
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      # Restore the old `ci` profile's `strip = true`: shrinks the uploaded
+      # `oxy-binary-ci` artifact and cuts link memory. Trade-off: CI panic
+      # backtraces lose symbol names; drop this var if you need them while
+      # debugging a flaky test.
+      CARGO_PROFILE_DEV_STRIP: "symbols"
     strategy:
       fail-fast: true
       matrix:
@@ -321,12 +334,17 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
           pnpm install --frozen-lockfile --prefer-offline
-          pnpm --filter oxy-web build
+          # Bundle only (skip `tsc -b`): the cargo build just needs the `dist/`
+          # bytes for the `include_dir!` embed. Typechecking is already covered
+          # in parallel by the `build-web` job (full `pnpm build`) and `lint:ts`,
+          # so running `tsc -b` here too would duplicate the slowest part of the
+          # web build on this job's critical path for no added signal.
+          pnpm --filter oxy-web exec vite build
 
       - name: Run task
         env:
           OXY_DATABASE_URL: "postgresql://admin:password@localhost:5432/default"
-          OXY_BIN: "${{ github.workspace }}/target/ci/oxy"
+          OXY_BIN: "${{ github.workspace }}/target/debug/oxy"
           AGENTIC_ONLY: ${{ inputs.agentic_only }}
         run: |
           if [[ "${{ matrix.task }}" == "check" ]]; then
@@ -334,24 +352,29 @@ jobs:
               echo "agentic_only mode: skipping clippy"
               exit 0
             fi
-            cargo clippy --profile ci --verbose --workspace --fix
+            # Dropped `--fix`: in CI the rewrites are never committed, so it was
+            # pure wasted analysis+rewrite work. Matches the documented command
+            # in CLAUDE.md. To start failing the job on lint warnings, append
+            # `-- -D warnings` (deliberate follow-up — verify the tree is clean
+            # first, since `check` runs fail-fast and would block the PR).
+            cargo clippy --workspace
           elif [[ "${{ matrix.task }}" == "test" ]]; then
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 
-            cargo build --profile ci
+            cargo build
 
             if [[ "$AGENTIC_ONLY" == "true" ]]; then
               echo "agentic_only mode: skipping migrate, nextest, gen-config-schema"
               exit 0
             fi
 
-            ./target/ci/oxy migrate
+            ./target/debug/oxy migrate
 
             # Run tests (no coverage instrumentation)
-            cargo nextest run --cargo-profile ci --workspace --no-fail-fast
+            cargo nextest run --workspace --no-fail-fast
 
-            ./target/ci/oxy gen-config-schema --check
+            ./target/debug/oxy gen-config-schema --check
           fi
 
       - name: Upload oxy binary artifact
@@ -359,7 +382,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: oxy-binary-ci
-          path: target/ci/oxy
+          path: target/debug/oxy
           retention-days: 1
 
   smoke-test-enterprise:

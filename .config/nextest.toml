@@ -1,5 +1,11 @@
 # Nextest configuration
 # See https://nexte.st/docs/configuration/
+#
+# A single profile governs test execution everywhere: local (`cargo nextest
+# run`, `just test`) and CI both run nextest without `--profile`, so this
+# `default` profile is always the one in effect. A separate CI-only nextest
+# profile previously existed but was never selected, so its settings silently
+# never applied — keep things unified here instead.
 
 [profile.default]
 # Reduce progress bar noise
@@ -10,19 +16,47 @@ final-status-level = "fail"
 success-output = "never"
 failure-output = "immediate"
 
-# Test execution settings
 retries = 0
-threads-required = "num-cpus"
 
-[profile.ci]
-# CI profile for detailed output
-status-level = "pass"
-final-status-level = "all"
-success-output = "never"
-failure-output = "immediate-final"
-fail-fast = false
+# IMPORTANT: do NOT set `threads-required` at profile scope.
+# `threads-required` is how many slots (out of the `test-threads` pool, which
+# defaults to num-cpus) a *single* test reserves. Setting it to "num-cpus" here
+# makes every test reserve the entire pool, so nextest runs the whole suite
+# serially — one test at a time — both locally and in CI. If a specific test
+# truly needs exclusive resources, scope it with a per-test override or a
+# `[test-groups]` entry instead of serializing all ~2,900 tests.
 
-# Exclude migration and entity from test execution in CI;
-# these are auto-generated crates with no meaningful test coverage.
-# Coverage report exclusion is handled separately via `cargo llvm-cov report --exclude`.
+# Exclude auto-generated crates (no meaningful test coverage) from the default
+# run so local and CI behave identically. Coverage report exclusion is handled
+# separately via `cargo llvm-cov report --exclude`.
 default-filter = "not package(=migration) and not package(=entity)"
+
+# ── Shared-resource serialization ────────────────────────────────────────────
+# The whole suite was previously serialized (via `threads-required = num-cpus`),
+# which silently masked tests that share a *global* resource. With the suite now
+# running in parallel, those tests must be serialized explicitly instead of
+# serializing all ~2,900 tests.
+#
+# `serial-db` runs at most one test at a time (across every matched binary),
+# while every other test in the suite continues to run in parallel alongside it.
+#
+# Why these tests need it:
+#   * DB-backed integration tests connect to a SINGLE shared Postgres
+#     (CI sets `OXY_DATABASE_URL` to one service container; locally they reuse
+#     one testcontainer). They each run sea-orm migrations against the same
+#     `public` schema, so two concurrent runs race on
+#     `CREATE TABLE IF NOT EXISTS seaql_migrations_*` (Postgres surfaces this as
+#     a duplicate-key error on `pg_type_typname_nsp_index`). They also share
+#     run/queue/workflow rows, so a background coordinator/sweeper in one test
+#     observes another test's rows (seen as runs ending "failed" instead of
+#     "done", or the coordinator timing out).
+#   * The `oxy` CLI sync tests mutate the same on-disk example fixture directory
+#     (`.databases/...`); one test's `--overwrite` deletes files another asserts
+#     on. They live under `kind(test)` in the `oxy` package and are covered by
+#     the same group.
+[test-groups]
+serial-db = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "kind(test) & (package(=oxy) | package(=oxy-app) | package(=oxy-cameras) | package(=agentic-pipeline) | package(=agentic-runtime) | package(=agentic-connector) | package(=agentic-airway))"
+test-group = "serial-db"

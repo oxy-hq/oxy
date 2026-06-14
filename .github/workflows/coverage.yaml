@@ -18,6 +18,9 @@ env:
   RUST_LOG: debug
   # line-tables-only debug: sufficient for llvm-cov, ~60% smaller than default debug = 2
   CARGO_PROFILE_DEV_DEBUG: "1"
+  # Disable incremental compilation in CI: it only helps warm local rebuilds and
+  # otherwise just bloats the target dir / cache. (Overrides .cargo/config.toml.)
+  CARGO_INCREMENTAL: "0"
 
 defaults:
   run:
@@ -110,21 +113,22 @@ jobs:
       - name: Run coverage
         env:
           OXY_DATABASE_URL: "postgresql://admin:password@localhost:5432/default"
-          OXY_BIN: "${{ github.workspace }}/target/llvm-cov-target/ci/oxy"
+          OXY_BIN: "${{ github.workspace }}/target/llvm-cov-target/debug/oxy"
         run: |
           touch examples/bigquery-sample.key
           echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 
-          # Run migrations using instrumented binary — same profile as nextest (ci) to avoid double compilation
-          cargo llvm-cov run --profile ci -- migrate
+          # Run migrations using the instrumented binary; the same (default dev)
+          # build is reused by the nextest step below to avoid double compilation.
+          cargo llvm-cov run -- migrate
 
           # Run tests reusing the instrumented build from above (--no-clean preserves migrate profraw)
-          cargo llvm-cov nextest --cargo-profile ci --workspace --no-clean --lcov --output-path lcov.info --no-fail-fast
+          cargo llvm-cov nextest --workspace --no-clean --lcov --output-path lcov.info --no-fail-fast
 
           # Print coverage summary
-          cargo llvm-cov report --profile ci --summary-only
+          cargo llvm-cov report --summary-only
 
-          ./target/llvm-cov-target/ci/oxy gen-config-schema --check
+          ./target/llvm-cov-target/debug/oxy gen-config-schema --check
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2

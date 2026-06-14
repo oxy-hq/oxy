@@ -308,10 +308,5 @@ datafusion-common = {opt-level = 0}
 parquet = {opt-level = 0}
 sqlx-postgres = {opt-level = 0}
 
-[profile.ci]
-debug = false # reduces compilation time and resource usage by omitting debug symbols.
-inherits = "dev"
-strip = true # reduces memory usage during linking
-
 [profile.dev]
 split-debuginfo = "shallow"

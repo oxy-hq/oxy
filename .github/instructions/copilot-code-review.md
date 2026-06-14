@@ -77,12 +77,12 @@ Reviews happen before/alongside CI. Do not flag issues CI reliably catches unles
 ### What CI already checks (`.github/workflows/ci.yaml`)
 
 - Rust lint/check path:
-  - `cargo clippy --profile ci --workspace --fix`
+  - `cargo clippy --workspace`
 - Rust tests:
-  - `cargo nextest run --cargo-profile ci --workspace --no-fail-fast`
+  - `cargo nextest run --workspace --no-fail-fast`
 - Build and schema checks in CI flow:
-  - `cargo build --profile ci`
-  - `./target/ci/oxy gen-config-schema --check`
+  - `cargo build`
+  - `./target/debug/oxy gen-config-schema --check`
 - Web checks/build when relevant changesets are present:
   - `pnpm install --frozen-lockfile --prefer-offline`
   - `pnpm lint-staged ...`

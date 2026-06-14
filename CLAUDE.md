@@ -145,7 +145,7 @@ git commit -m "feat: add feature description"
 ### Rust
 
 - Follow standard `rustfmt` formatting (run `cargo fmt`).
-- Address `clippy` warnings — CI runs `cargo clippy --profile ci --workspace`.
+- Address `clippy` warnings — CI runs `cargo clippy --workspace`.
 - Prefer `thiserror` / `OxyError` for error types — look at existing patterns in `oxy_shared::errors`.
 - Use `tracing` for logging (`info!`, `warn!`, `debug!`), not `println!` in library crates.
 - CLI user-facing output uses the `StyledText` trait from `oxy::theme` (`.text()`, `.success()`, `.error()`, `.tertiary()`, `.secondary()`).
