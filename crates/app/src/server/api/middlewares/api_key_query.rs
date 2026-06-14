@@ -54,7 +54,7 @@ fn strip_query_param(uri: &Uri, name: &str) -> Option<Uri> {
     let query = uri.query()?;
     let filtered = query
         .split('&')
-        .filter(|pair| pair.splitn(2, '=').next() != Some(name))
+        .filter(|pair| pair.split('=').next() != Some(name))
         .collect::<Vec<_>>()
         .join("&");
     let path = uri.path();

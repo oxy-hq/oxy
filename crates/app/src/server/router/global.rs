@@ -12,8 +12,7 @@ use crate::api::billing;
 use crate::api::github::namespaces as github;
 use crate::api::github::{account, callback, installations};
 use crate::api::middlewares::{
-    org_context, oxy_app_admin_guard, oxy_owner_guard, oxy_owner_or_app_admin_guard,
-    subscription_guard,
+    org_context, oxy_app_admin_guard, oxy_owner_or_app_admin_guard, subscription_guard,
 };
 use crate::api::{admin, onboarding, organizations, user, workspaces};
 

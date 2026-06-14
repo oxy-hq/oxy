@@ -161,8 +161,9 @@ pub struct CompileRequest<'a> {
 
 /// `main` vs `draft` revision kinds. Strictly typed so a caller can't
 /// accidentally pass an unrecognised kind string into the writer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RevisionKind {
+    #[default]
     Main,
     Draft,
 }
@@ -173,12 +174,6 @@ impl RevisionKind {
             RevisionKind::Main => "main",
             RevisionKind::Draft => "draft",
         }
-    }
-}
-
-impl Default for RevisionKind {
-    fn default() -> Self {
-        RevisionKind::Main
     }
 }
 
@@ -342,18 +337,15 @@ async fn drive_compile(
         match compile_one(file).await {
             Ok(produced) => {
                 for row in produced {
-                    if let Some(key) = row_dedupe_key(&row, &file.kind) {
-                        if !seen_keys.insert((file.kind, key.clone())) {
-                            failures.push(FileFailure {
-                                path: file.rel_path.clone(),
-                                kind: FailureKind::Duplicate,
-                                message: format!(
-                                    "duplicate identifier '{}' for this entity kind",
-                                    key
-                                ),
-                            });
-                            continue;
-                        }
+                    if let Some(key) = row_dedupe_key(&row, &file.kind)
+                        && !seen_keys.insert((file.kind, key.clone()))
+                    {
+                        failures.push(FileFailure {
+                            path: file.rel_path.clone(),
+                            kind: FailureKind::Duplicate,
+                            message: format!("duplicate identifier '{}' for this entity kind", key),
+                        });
+                        continue;
                     }
                     rows.push(row);
                 }

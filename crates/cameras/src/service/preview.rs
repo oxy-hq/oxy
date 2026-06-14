@@ -511,10 +511,10 @@ pub struct RecordingSegment {
 fn parse_mtx_duration(raw: &str) -> Option<f64> {
     let trimmed = raw.trim();
     // Plain numeric ("3600", "3600.0", "3600.0s") — fast path.
-    if let Some(stripped) = trimmed.strip_suffix('s') {
-        if let Ok(n) = stripped.parse::<f64>() {
-            return Some(n);
-        }
+    if let Some(stripped) = trimmed.strip_suffix('s')
+        && let Ok(n) = stripped.parse::<f64>()
+    {
+        return Some(n);
     }
     if let Ok(n) = trimmed.parse::<f64>() {
         return Some(n);

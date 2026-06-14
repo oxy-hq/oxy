@@ -82,12 +82,12 @@ pub async fn set_budget(
     workspace_id: Uuid,
     budget_micros: Option<i64>,
 ) -> ServiceResult<Option<i64>> {
-    if let Some(v) = budget_micros {
-        if v < 0 {
-            return Err(ServiceError::InvalidInput(
-                "monthly_budget_micros must be >= 0 or null".into(),
-            ));
-        }
+    if let Some(v) = budget_micros
+        && v < 0
+    {
+        return Err(ServiceError::InvalidInput(
+            "monthly_budget_micros must be >= 0 or null".into(),
+        ));
     }
     let existing = workspaces::Entity::find_by_id(workspace_id)
         .one(db)

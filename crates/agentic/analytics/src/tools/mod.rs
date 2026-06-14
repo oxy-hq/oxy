@@ -57,7 +57,7 @@ pub use defs::{
 pub use interpreting::{
     execute_interpreting_tool, validate_chart_column_types, validate_chart_config,
 };
-pub use metric_tree::{execute_metric_tree_tool, no_runner_error as metric_tree_no_runner_error};
+pub use metric_tree::execute_metric_tree_tool;
 pub use solving::execute_solving_tool;
 pub use specifying::execute_specifying_tool;
 

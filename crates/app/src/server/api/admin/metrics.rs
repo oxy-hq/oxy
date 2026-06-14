@@ -12,7 +12,6 @@ use agentic_llm::pricing::cost_for_call;
 use axum::Json;
 use axum::Router;
 use axum::extract::Query;
-use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::get;
 use sea_orm::{DatabaseBackend, DbErr, FromQueryResult, Statement};
