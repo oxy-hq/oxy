@@ -240,9 +240,14 @@ jobs:
           retention-days: 1
 
   # ============================================================================
-  # Job 4: Build CLI (3 targets — Linux x86/arm64 + Apple Silicon)
+  # Job 4a: Build Linux CLI (x86_64 + arm64)
+  #
+  # Split from the macOS build so the Docker image build (which only consumes
+  # the Linux binaries) can start as soon as these finish, without waiting on
+  # the slower macOS job. The shared per-target build steps live in the
+  # ./.github/actions/build-oxy-cli composite action.
   # ============================================================================
-  build-cli:
+  build-cli-linux:
     name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for ${{
       matrix.job.target }}
     needs: [determine-build-type, build-web-app]
@@ -255,27 +260,14 @@ jobs:
       fail-fast: false
       matrix:
         job:
-          - os: macos-latest
-            target: aarch64-apple-darwin
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            generate_schema: "true"
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
+            generate_schema: "false"
     steps:
-      - uses: actions/create-github-app-token@v3
-        name: Create GitHub App Token
-        id: app-token
-        with:
-          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
-          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          permission-contents: read
-          repositories: |
-            airlayer
-            airform
-            airway-internal
-            snowflake-rs
-
+      # Checkout must run before the local composite action can be resolved.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -283,85 +275,49 @@ jobs:
           ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
             needs.determine-build-type.outputs.version || github.sha }}
 
-      - name: Create artifacts folder
-        run: mkdir -p artifacts
-
-      - name: Download web-app dist
-        uses: actions/download-artifact@v8
+      - name: Build oxy CLI
+        uses: ./.github/actions/build-oxy-cli
         with:
-          name: web-app-dist
-          path: web-app/dist/
+          target: ${{ matrix.job.target }}
+          generate_schema: ${{ matrix.job.generate_schema }}
+          cache_os: ${{ matrix.job.os }}
+          app_client_id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          app_private_key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          repo_owner: ${{ github.repository_owner }}
 
-      - uses: rui314/setup-mold@v1
-        if: runner.os == 'Linux'
+  # ============================================================================
+  # Job 4b: Build macOS CLI (Apple Silicon)
+  #
+  # Runs in parallel with build-cli-linux but is not on the Docker critical
+  # path — only the release job waits for it.
+  # ============================================================================
+  build-cli-macos:
+    name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for
+      aarch64-apple-darwin
+    needs: [determine-build-type, build-web-app]
+    if: |
+      always() &&
+      needs.determine-build-type.result == 'success' &&
+      needs.build-web-app.result == 'success'
+    runs-on: macos-latest
+    steps:
+      # Checkout must run before the local composite action can be resolved.
+      - name: Checkout repository
+        uses: actions/checkout@v6
         with:
-          make-default: true
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.95.0
-          targets: ${{ matrix.job.target }}
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Private cargo git deps live under github.com/oxy-hq/* (airway,
-      # airform, airlayer, snowflake-rs). `git-fetch-with-cli` is on
-      # (.cargo/config.toml), so cargo shells out to git, which uses gh
-      # as its credential helper — no token baked into a URL rewrite.
-      # --with-token stores the app token in gh's config so the helper
-      # resolves it during `cargo build` without re-passing it.
-      - name: Authenticate gh for private cargo git deps
-        env:
-          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          echo "$GH_APP_TOKEN" | gh auth login --with-token
-          gh auth setup-git
-
-      # Install protoc from the OS package manager instead of arduino/setup-protoc
-      # to avoid GitHub release rate limits / outages.
-      - name: Install Protoc
-        run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            brew install protobuf
-          else
-            echo "Unsupported runner OS: $RUNNER_OS" >&2
-            exit 1
-          fi
-          protoc --version
+          fetch-depth: 1
+          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
+            needs.determine-build-type.outputs.version || github.sha }}
 
       - name: Build oxy CLI
-        run: |
-          cargo build --release --target ${{ matrix.job.target }}
-          mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
-
-      # Schema generation runs on the fastest target so it doesn't block macOS.
-      - name: Generate config schema (once)
-        if: matrix.job.target == 'x86_64-unknown-linux-gnu'
-        run: |
-          cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
-          cp -a json-schemas/. artifacts/
-          cp Cargo.lock artifacts/
-
-      - name: Create binary checksum
-        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee
-          SHA256SUM-oxy-${{ matrix.job.target }}.txt
-        working-directory: artifacts
-
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/build-oxy-cli
         with:
-          name: cli-${{ matrix.job.target }}
-          path: artifacts/**/*
-          if-no-files-found: error
-          retention-days: 1
+          target: aarch64-apple-darwin
+          generate_schema: "false"
+          cache_os: macos-latest
+          app_client_id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          app_private_key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          repo_owner: ${{ github.repository_owner }}
 
   # ============================================================================
   # Job 5: Release CLI
@@ -369,7 +325,7 @@ jobs:
   release-cli:
     name: Release ${{ needs.determine-build-type.outputs.channel }} CLI
     runs-on: ubuntu-latest
-    needs: [determine-build-type, build-cli]
+    needs: [determine-build-type, build-cli-linux, build-cli-macos]
     # Concurrency: Lock releases per channel and version/ref; queue (don't cancel)
     # so commits release in push order.
     concurrency:
@@ -380,7 +336,8 @@ jobs:
     if: |
       always() &&
       needs.determine-build-type.result == 'success' &&
-      needs.build-cli.result == 'success'
+      needs.build-cli-linux.result == 'success' &&
+      needs.build-cli-macos.result == 'success'
     steps:
       - uses: actions/create-github-app-token@v3
         name: Create GitHub App Token
@@ -483,10 +440,12 @@ jobs:
   build-docker-images:
     name: Build ${{ needs.determine-build-type.outputs.channel }} Docker for ${{
       matrix.arch }}
-    needs: [determine-build-type, build-cli]
+    # Only depends on the Linux binaries — Docker images consume just the two
+    # linux/amd64 + linux/arm64 builds, so it must not wait for the macOS job.
+    needs: [determine-build-type, build-cli-linux]
     if: |
       always() &&
-      needs.build-cli.result == 'success' &&
+      needs.build-cli-linux.result == 'success' &&
       needs.determine-build-type.outputs.should_build_docker == 'true'
     concurrency:
       group: docker-${{ needs.determine-build-type.outputs.channel }}-${{

@@ -1,0 +1,134 @@
+name: Build oxy CLI
+description: >-
+  Build the release `oxy` CLI binary for a single Rust target: authenticate gh
+  for private cargo git deps, set up Rust + protoc, compile, optionally generate
+  the config schema, checksum, and upload the per-target artifact. Assumes the
+  repo is already checked out at the desired ref and that the `web-app-dist`
+  artifact has been published by an upstream job.
+
+inputs:
+  target:
+    description: Rust target triple to build (e.g. x86_64-unknown-linux-gnu).
+    required: true
+  generate_schema:
+    description: >-
+      Whether to generate and bundle the config JSON schema. Run on exactly one
+      target so the work isn't duplicated across the build matrix.
+    required: false
+    default: "false"
+  cache_os:
+    description: >-
+      OS label used in the Rust cache shared-key. Passed explicitly so the key
+      stays stable (matches the historical build-cli-<os>-<target> key).
+    required: true
+  app_client_id:
+    description: GitHub App client id used to mint a token for private cargo git deps.
+    required: true
+  app_private_key:
+    description: GitHub App private key used to mint a token for private cargo git deps.
+    required: true
+  repo_owner:
+    description: Repository owner used to scope the GitHub App token.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/create-github-app-token@v3
+      name: Create GitHub App Token
+      id: app-token
+      with:
+        client-id: ${{ inputs.app_client_id }}
+        private-key: ${{ inputs.app_private_key }}
+        owner: ${{ inputs.repo_owner }}
+        permission-contents: read
+        repositories: |
+          airlayer
+          airform
+          airway-internal
+          snowflake-rs
+
+    - name: Create artifacts folder
+      shell: bash
+      run: mkdir -p artifacts
+
+    - name: Download web-app dist
+      uses: actions/download-artifact@v8
+      with:
+        name: web-app-dist
+        path: web-app/dist/
+
+    - uses: rui314/setup-mold@v1
+      if: runner.os == 'Linux'
+      with:
+        make-default: true
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: 1.95.0
+        targets: ${{ inputs.target }}
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: build-cli-${{ inputs.cache_os }}-${{ inputs.target }}
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    # Private cargo git deps live under github.com/oxy-hq/* (airway,
+    # airform, airlayer, snowflake-rs). `git-fetch-with-cli` is on
+    # (.cargo/config.toml), so cargo shells out to git, which uses gh
+    # as its credential helper — no token baked into a URL rewrite.
+    # --with-token stores the app token in gh's config so the helper
+    # resolves it during `cargo build` without re-passing it.
+    - name: Authenticate gh for private cargo git deps
+      shell: bash
+      env:
+        GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+      run: |
+        echo "$GH_APP_TOKEN" | gh auth login --with-token
+        gh auth setup-git
+
+    # Install protoc from the OS package manager instead of arduino/setup-protoc
+    # to avoid GitHub release rate limits / outages.
+    - name: Install Protoc
+      shell: bash
+      run: |
+        if [[ "$RUNNER_OS" == "Linux" ]]; then
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+        elif [[ "$RUNNER_OS" == "macOS" ]]; then
+          brew install protobuf
+        else
+          echo "Unsupported runner OS: $RUNNER_OS" >&2
+          exit 1
+        fi
+        protoc --version
+
+    - name: Build oxy CLI
+      shell: bash
+      run: |
+        cargo build --release --target ${{ inputs.target }}
+        mv target/${{ inputs.target }}/release/oxy artifacts/oxy-${{ inputs.target }}
+
+    - name: Generate config schema (once)
+      if: inputs.generate_schema == 'true'
+      shell: bash
+      run: |
+        cargo run --release --target ${{ inputs.target }} -- gen-config-schema
+        cp -a json-schemas/. artifacts/
+        cp Cargo.lock artifacts/
+
+    - name: Create binary checksum
+      shell: bash
+      working-directory: artifacts
+      run: shasum --algorithm 256 --binary oxy-${{ inputs.target }} | tee
+        SHA256SUM-oxy-${{ inputs.target }}.txt
+
+    - name: Upload release artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: cli-${{ inputs.target }}
+        path: artifacts/**/*
+        if-no-files-found: error
+        retention-days: 1
