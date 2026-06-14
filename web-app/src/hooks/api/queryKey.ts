@@ -513,7 +513,16 @@ const compilesKeys = {
       params.workspace_id ?? "",
       params.status ?? ""
     ] as const,
-  detail: (revisionId: string) => [...compilesKeys.all, "detail", revisionId] as const
+  detail: (revisionId: string) => [...compilesKeys.all, "detail", revisionId] as const,
+  workspaces: (params: { limit?: number; offset?: number; q?: string; status?: string }) =>
+    [
+      ...compilesKeys.all,
+      "workspaces",
+      params.limit ?? 50,
+      params.offset ?? 0,
+      params.q ?? "",
+      params.status ?? ""
+    ] as const
 };
 
 const compileKeys = {

@@ -38,6 +38,56 @@ export interface ListCompilesResponse {
   total_returned: number;
 }
 
+/**
+ * One aggregated row in the "By workspace" view. Mirrors the backend's
+ * `admin::compiles::WorkspaceCompileRow`: a rollup of a workspace's
+ * compile history (current vs. latest revision, ready/failed counts)
+ * so operators can scan tenants without expanding every revision list.
+ */
+export interface WorkspaceCompileRow {
+  workspace_id: string;
+  workspace_name: string | null;
+  workspace_path: string | null;
+  current_revision_id: string | null;
+  current_status: string | null;
+  current_git_sha: string | null;
+  latest_revision_id: string | null;
+  latest_status: string | null;
+  latest_started_at: string | null;
+  last_ready_at: string | null;
+  revision_count: number;
+  ready_count: number;
+  failed_count: number;
+  current_is_latest_ready: boolean;
+}
+
+export interface ListWorkspaceCompilesResponse {
+  rows: WorkspaceCompileRow[];
+  total_returned: number;
+}
+
+export interface BatchRunResult {
+  workspace_id: string;
+  task_id: string | null;
+  error: string | null;
+}
+
+export interface BatchRunResponse {
+  enqueued: number;
+  results: BatchRunResult[];
+}
+
+export interface BatchPromoteResult {
+  revision_id: string;
+  workspace_id: string | null;
+  error: string | null;
+}
+
+export interface BatchPromoteResponse {
+  promoted: number;
+  results: BatchPromoteResult[];
+}
+
 export interface RunCompileRequest {
   workspace_id: string;
   git_sha?: string;
@@ -73,6 +123,36 @@ export const CompilesService = {
   }): Promise<ListCompilesResponse> {
     const res = await apiClient.get<ListCompilesResponse>(BASE, {
       params
+    });
+    return res.data;
+  },
+
+  /** Aggregated "By workspace" rollup — one row per workspace. */
+  async listWorkspaces(params: {
+    limit?: number;
+    offset?: number;
+    q?: string;
+    status?: string;
+  }): Promise<ListWorkspaceCompilesResponse> {
+    const res = await apiClient.get<ListWorkspaceCompilesResponse>(`${BASE}/workspaces`, {
+      params
+    });
+    return res.data;
+  },
+
+  /** Enqueue a promoting compile for each selected workspace. */
+  async batchRun(workspaceIds: string[], promote: boolean): Promise<BatchRunResponse> {
+    const res = await apiClient.post<BatchRunResponse>(`${BASE}/batch/run`, {
+      workspace_ids: workspaceIds,
+      promote
+    });
+    return res.data;
+  },
+
+  /** Repoint each selected revision's workspace at that revision. */
+  async batchPromote(revisionIds: string[]): Promise<BatchPromoteResponse> {
+    const res = await apiClient.post<BatchPromoteResponse>(`${BASE}/batch/promote`, {
+      revision_ids: revisionIds
     });
     return res.data;
   },

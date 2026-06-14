@@ -8,7 +8,15 @@
 //! Examples:
 //!   oxy api user --env local
 //!   oxy api projects/<id>/query --env local -f sql='select 1'
+//!   oxy api admin/compiles/run -X POST -F workspace_id=<id> -F promote=true --env dev
+//!   oxy api admin/compiles/batch/run -X POST -F promote=true -F 'workspace_ids=["<id1>","<id2>"]' --env dev
 //!   oxy api --print-token --env local        # echo the bearer for raw curl
+//!
+//! `-f`/`--field` sends every value as a JSON string; `-F`/`--field-typed`
+//! parses the value as JSON (so `promote=true` is a bool, `n=3` a number,
+//! `'ids=["a","b"]'` an array) and falls back to a string when the value
+//! isn't valid JSON (e.g. a bare UUID). Both assemble into one JSON object;
+//! on a key clash the typed `-F` value wins.
 
 use std::io::Read;
 
@@ -33,13 +41,20 @@ pub struct ApiArgs {
     method: Option<String>,
 
     /// Request body: a raw string, `@file` to read a file, or `-` for stdin.
-    #[arg(short = 'd', long, conflicts_with = "field")]
+    #[arg(short = 'd', long, conflicts_with_all = ["field", "field_typed"])]
     data: Option<String>,
 
-    /// Typed JSON field `key=value`, repeatable; assembled into a JSON object
-    /// body. Values are sent as strings.
+    /// String field `key=value`, repeatable; assembled into a JSON object body.
+    /// The value is always sent as a JSON string (use `-F` for typed values).
     #[arg(short = 'f', long = "field")]
     field: Vec<String>,
+
+    /// Typed field `key=value`, repeatable; the value is parsed as JSON
+    /// (`true`/`123`/`["a","b"]`) and falls back to a string when it isn't
+    /// valid JSON (e.g. a bare UUID). Merged with `-f` into one object; on a
+    /// key clash the typed value wins.
+    #[arg(short = 'F', long = "field-typed")]
+    field_typed: Vec<String>,
 
     /// Extra header `Name: value`, repeatable.
     #[arg(short = 'H', long = "header")]
@@ -99,17 +114,40 @@ fn read_data(data: &str) -> Result<String, OxyError> {
     }
 }
 
-/// Build a JSON object body from `key=value` `--field` pairs.
-fn fields_to_json(fields: &[String]) -> Result<String, OxyError> {
-    let mut map = Map::new();
-    for f in fields {
-        let (k, v) = f.split_once('=').ok_or_else(|| {
-            OxyError::RuntimeError(format!("invalid --field '{f}', expected key=value"))
-        })?;
-        map.insert(k.to_string(), Value::String(v.to_string()));
-    }
+/// Split a `key=value` field flag, erroring with the flag name on a missing `=`.
+fn split_field<'a>(flag: &str, f: &'a str) -> Result<(&'a str, &'a str), OxyError> {
+    f.split_once('=')
+        .ok_or_else(|| OxyError::RuntimeError(format!("invalid {flag} '{f}', expected key=value")))
+}
+
+/// Parse a typed `-F` value: try JSON, falling back to a plain string when the
+/// value isn't valid JSON (so a bare UUID stays a string, `true` becomes a
+/// bool, `123` a number, `["a","b"]` an array).
+fn parse_typed_value(v: &str) -> Value {
+    serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.to_string()))
+}
+
+/// Build a JSON object body from `-f` (string) and `-F` (typed) field pairs,
+/// merged into one map. On a key clash the typed `-F` value wins, so it is
+/// applied second.
+fn fields_to_json(fields: &[String], typed: &[String]) -> Result<String, OxyError> {
+    let map = build_fields_map(fields, typed)?;
     serde_json::to_string(&Value::Object(map))
         .map_err(|e| OxyError::RuntimeError(format!("serialize fields: {e}")))
+}
+
+fn build_fields_map(fields: &[String], typed: &[String]) -> Result<Map<String, Value>, OxyError> {
+    let mut map = Map::new();
+    for f in fields {
+        let (k, v) = split_field("--field", f)?;
+        map.insert(k.to_string(), Value::String(v.to_string()));
+    }
+    // Typed fields are applied after string fields so they win on key clash.
+    for f in typed {
+        let (k, v) = split_field("--field-typed", f)?;
+        map.insert(k.to_string(), parse_typed_value(v));
+    }
+    Ok(map)
 }
 
 fn resolve_token(args: &ApiArgs, target: &str) -> Result<String, OxyError> {
@@ -149,7 +187,9 @@ pub async fn handle_api_command(args: ApiArgs) -> Result<(), OxyError> {
 
     let body = match &args.data {
         Some(d) => Some(read_data(d)?),
-        None if !args.field.is_empty() => Some(fields_to_json(&args.field)?),
+        None if !args.field.is_empty() || !args.field_typed.is_empty() => {
+            Some(fields_to_json(&args.field, &args.field_typed)?)
+        }
         None => None,
     };
 
@@ -239,7 +279,7 @@ mod tests {
 
     #[test]
     fn fields_to_json_builds_object() {
-        let out = fields_to_json(&["sql=select 1".to_string(), "k=v".to_string()]).unwrap();
+        let out = fields_to_json(&["sql=select 1".to_string(), "k=v".to_string()], &[]).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["sql"], "select 1");
         assert_eq!(v["k"], "v");
@@ -247,6 +287,74 @@ mod tests {
 
     #[test]
     fn fields_to_json_rejects_missing_equals() {
-        assert!(fields_to_json(&["bad".to_string()]).is_err());
+        assert!(fields_to_json(&["bad".to_string()], &[]).is_err());
+    }
+
+    #[test]
+    fn fields_to_json_rejects_missing_equals_in_typed() {
+        assert!(fields_to_json(&[], &["bad".to_string()]).is_err());
+    }
+
+    #[test]
+    fn parse_typed_value_bool() {
+        assert_eq!(parse_typed_value("true"), Value::Bool(true));
+        assert_eq!(parse_typed_value("false"), Value::Bool(false));
+    }
+
+    #[test]
+    fn parse_typed_value_number() {
+        assert_eq!(parse_typed_value("123"), serde_json::json!(123));
+        assert_eq!(parse_typed_value("3"), serde_json::json!(3));
+    }
+
+    #[test]
+    fn parse_typed_value_uuid_falls_back_to_string() {
+        // A bare UUID is not valid JSON — it must stay a string, not error.
+        let uuid = "5ce5c011-1234-4abc-9def-0123456789ab";
+        assert_eq!(parse_typed_value(uuid), Value::String(uuid.to_string()));
+    }
+
+    #[test]
+    fn parse_typed_value_json_array() {
+        assert_eq!(
+            parse_typed_value(r#"["a","b"]"#),
+            serde_json::json!(["a", "b"])
+        );
+    }
+
+    #[test]
+    fn fields_to_json_typed_produces_native_types() {
+        let out = fields_to_json(
+            &[],
+            &[
+                "promote=true".to_string(),
+                "n=3".to_string(),
+                "workspace_ids=[\"a\",\"b\"]".to_string(),
+            ],
+        )
+        .unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["promote"], Value::Bool(true));
+        assert_eq!(v["n"], serde_json::json!(3));
+        assert_eq!(v["workspace_ids"], serde_json::json!(["a", "b"]));
+    }
+
+    #[test]
+    fn fields_to_json_merges_string_and_typed() {
+        // -f sql='select 1' merged with -F promote=true into one object.
+        let out =
+            fields_to_json(&["sql=select 1".to_string()], &["promote=true".to_string()]).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["sql"], Value::String("select 1".to_string()));
+        assert_eq!(v["promote"], Value::Bool(true));
+    }
+
+    #[test]
+    fn fields_to_json_typed_wins_on_key_clash() {
+        // Same key from -f (string) and -F (typed): the typed value wins.
+        let out =
+            fields_to_json(&["promote=true".to_string()], &["promote=true".to_string()]).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["promote"], Value::Bool(true));
     }
 }
