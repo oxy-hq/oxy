@@ -136,6 +136,9 @@ async fn drive(
         promote: spec.promote,
         kind: spec.kind,
         owner_user_id: spec.owner_user_id,
+        // Reject a compiled config the stateless fleet couldn't read (#2520):
+        // it fails the compile instead of promoting a revision that 503s.
+        config_gate: Some(crate::server::compile_config_gate::runtime_config_gate()),
     })
     .await;
 

@@ -118,6 +118,9 @@ pub async fn run_compile(args: CompileArgs) -> Result<(), OxyError> {
         promote: args.promote,
         kind: RevisionKind::Main,
         owner_user_id: None,
+        // Same read-time deserialisation gate the worker installs, so `oxy
+        // compile` on a working copy catches an unreadable config locally too.
+        config_gate: Some(crate::server::compile_config_gate::runtime_config_gate()),
     })
     .await
     .map_err(compile_error_to_oxy)?;
@@ -194,6 +197,7 @@ fn kind_label(kind: &FailureKind) -> &'static str {
         FailureKind::Io => "[io]",
         FailureKind::Shape => "[shape]",
         FailureKind::Duplicate => "[dup]",
+        FailureKind::Validation => "[invalid]",
     }
 }
 

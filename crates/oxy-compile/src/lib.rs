@@ -49,7 +49,10 @@ pub mod walker;
 pub mod workspace_path;
 pub mod writer;
 
-pub use compile::{CURRENT_SCHEMA_VERSION, CompileRequest, RevisionKind, compile_workspace};
+pub use compile::{
+    CURRENT_SCHEMA_VERSION, CompileRequest, CompiledConfig, ConfigGate, RevisionKind,
+    build_compiled_config, compile_workspace, merge_compiled_config,
+};
 pub use errors::CompileError;
 pub use outcome::{CompileOutcome, FailureKind, FileFailure, RevisionStatus};
 pub use workspace_path::resolve_workspace_path;

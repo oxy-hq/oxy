@@ -68,4 +68,11 @@ pub enum FailureKind {
     /// (e.g. two agents named "foo"). Both are recorded as failures
     /// so the operator sees both paths.
     Duplicate,
+    /// The file parsed and had the right shape, but the compiled output
+    /// would not deserialise into the runtime type at read time (e.g. a
+    /// `config.yml` whose compiled form fails `from_value::<Config>`).
+    /// Recorded as a failure so the revision is NOT promoted — a config
+    /// the fleet can't read must never become the active revision. See the
+    /// round-trip gate in `compile::drive_compile`.
+    Validation,
 }

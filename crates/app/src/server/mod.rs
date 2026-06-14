@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod builder_test_runner;
+pub mod compile_config_gate;
 pub mod compile_maintenance;
 pub mod compile_worker;
 pub mod default_branch;

@@ -22,8 +22,10 @@
 //! 3. Read `workspaces.current_revision_id`. If null → `Ok(None)`.
 //! 4. Query the per-entity table keyed by that revision_id.
 
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use uuid::Uuid;
 
 tokio::task_local! {
@@ -62,10 +64,106 @@ pub async fn resolve_request_revision(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
 ) -> Option<Uuid> {
-    match open_compiled_revision(workspace_id, branch_hint).await {
-        Ok(Some((_db, revision_id))) => Some(revision_id),
-        _ => None,
+    let (db, candidate) = match open_compiled_revision(workspace_id, branch_hint).await {
+        Ok(Some(pair)) => pair,
+        _ => return None,
+    };
+
+    // Fail-safe: never pin a revision whose compiled config won't deserialise
+    // into the runtime `Config` — that revision 503s every request for this
+    // workspace. Prefer the most recent prior revision that DOES deserialise
+    // (last-known-good), degrading one bad promote to slightly-stale-but-working
+    // data instead of an outage. The compile-time round-trip gate keeps
+    // `current_revision_id` good going forward; this covers revisions promoted
+    // before the gate existed (the #2520 transition) and any gate bypass.
+    if revision_config_loads(&db, candidate).await {
+        return Some(candidate);
     }
+    tracing::warn!(
+        workspace_id = %workspace_id,
+        broken_revision = %candidate,
+        "pinned revision config does not deserialise; searching for last-known-good"
+    );
+    last_known_good_revision(&db, workspace_id, candidate).await
+}
+
+/// Process-local memo of "revision R's compiled config deserialises into
+/// `Config`". Revision IDs are immutable, so the answer is stable for a
+/// revision's lifetime; this keeps the happy path O(1) after the first check.
+fn config_validity_cache() -> &'static Mutex<HashMap<Uuid, bool>> {
+    static CACHE: OnceLock<Mutex<HashMap<Uuid, bool>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// True when this revision's compiled config deserialises into the runtime
+/// `Config` (i.e. the request hot path can serve it). A revision with NO config
+/// row is treated as valid — there's no config to 503 on, and the existing
+/// FS/NeedsRecompile fallthrough handles it; we only walk back on an actual
+/// deserialise failure. DB errors are treated as valid (fail open to the
+/// existing behaviour rather than blanking a workspace on a transient hiccup).
+async fn revision_config_loads(db: &DatabaseConnection, revision_id: Uuid) -> bool {
+    if let Some(v) = config_validity_cache()
+        .lock()
+        .ok()
+        .and_then(|c| c.get(&revision_id).copied())
+    {
+        return v;
+    }
+    let valid = match load_config_value(db, revision_id).await {
+        Ok(Some(value)) => serde_json::from_value::<oxy::config::model::Config>(value).is_ok(),
+        Ok(None) => true,
+        Err(e) => {
+            // Fail OPEN (don't blank a workspace on a transient hiccup) but do
+            // NOT cache it: memoising `true` here would permanently mark a
+            // genuinely-broken revision valid for this process, defeating the
+            // last-known-good fallback whose whole job is preventing 503s.
+            // Re-evaluate on the next request instead. (#2524 review)
+            tracing::warn!(
+                ?e, %revision_id,
+                "config validity check: DB error; treating as valid for this request only (not cached)"
+            );
+            return true;
+        }
+    };
+    if let Ok(mut c) = config_validity_cache().lock() {
+        c.insert(revision_id, valid);
+    }
+    valid
+}
+
+/// Walk recent `ready` `main` revisions newest-first and return the first whose
+/// compiled config deserialises. Bounded scan so a long broken history can't
+/// turn one request into a long sweep. `None` → no good revision found (caller
+/// falls through to FS / NeedsRecompile, matching today's behaviour).
+async fn last_known_good_revision(
+    db: &DatabaseConnection,
+    workspace_id: Uuid,
+    exclude: Uuid,
+) -> Option<Uuid> {
+    const SCAN_LIMIT: u64 = 10;
+    let rows = entity::revisions::Entity::find()
+        .filter(entity::revisions::Column::WorkspaceId.eq(workspace_id))
+        .filter(entity::revisions::Column::Kind.eq("main"))
+        .filter(entity::revisions::Column::Status.eq("ready"))
+        .order_by_desc(entity::revisions::Column::FinishedAt)
+        .limit(SCAN_LIMIT)
+        .all(db)
+        .await
+        .unwrap_or_default();
+    for r in rows {
+        if r.revision_id == exclude {
+            continue;
+        }
+        if revision_config_loads(db, r.revision_id).await {
+            tracing::info!(
+                workspace_id = %workspace_id,
+                good_revision = %r.revision_id,
+                "serving last-known-good compiled revision (current revision config is unreadable)"
+            );
+            return Some(r.revision_id);
+        }
+    }
+    None
 }
 
 /// Lightweight row shape carrying the fields the apps endpoint needs.
@@ -271,38 +369,33 @@ pub async fn resolve_workspace_config(
     let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
         return Ok(None);
     };
-    let row = entity::workspace_compiled_configs::Entity::find_by_id(revision_id)
-        .one(&db)
-        .await?;
-    let Some(row) = row else {
+    load_config_value(&db, revision_id).await
+}
+
+/// Load and merge the compiled config for a specific revision into the single
+/// top-level object `config.yml` deserialises from. Uses the SAME merge as the
+/// compile-time gate (`oxy_compile::merge_compiled_config`) so the shape the
+/// gate validated and the shape the reader serves can never drift.
+async fn load_config_value(
+    db: &DatabaseConnection,
+    revision_id: Uuid,
+) -> Result<Option<Value>, sea_orm::DbErr> {
+    let Some(row) = entity::workspace_compiled_configs::Entity::find_by_id(revision_id)
+        .one(db)
+        .await?
+    else {
         return Ok(None);
     };
-
-    // Rebuild the original config.yml top-level object by merging the
-    // split columns. Start from `other` (catch-all for unrecognised
-    // keys) and layer the typed columns on top, preserving the
-    // canonical ordering downstream readers might rely on.
-    let mut merged = match row.other {
-        Some(Value::Object(map)) => map,
-        _ => serde_json::Map::new(),
+    let cfg = oxy_compile::CompiledConfig {
+        databases: row.databases,
+        models: row.models,
+        integrations: row.integrations,
+        repositories: row.repositories,
+        builder_agent: row.builder_agent,
+        mcp: row.mcp,
+        other: row.other,
     };
-    merged.insert("databases".into(), row.databases);
-    if let Some(v) = row.models {
-        merged.insert("models".into(), v);
-    }
-    if let Some(v) = row.integrations {
-        merged.insert("integrations".into(), v);
-    }
-    if let Some(v) = row.repositories {
-        merged.insert("repositories".into(), v);
-    }
-    if let Some(v) = row.builder_agent {
-        merged.insert("builder_agent".into(), v);
-    }
-    if let Some(v) = row.mcp {
-        merged.insert("mcp".into(), v);
-    }
-    Ok(Some(Value::Object(merged)))
+    Ok(Some(oxy_compile::merge_compiled_config(&cfg)))
 }
 
 /// Resolve the workspace's compiled `.monitor.yml`. Singleton per

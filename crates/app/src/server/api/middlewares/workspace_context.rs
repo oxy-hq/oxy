@@ -447,8 +447,18 @@ async fn resolve_effective_role(
 /// Enqueue a promoting compile for an uncompiled workspace, deduped against any
 /// compile already queued/claimed for it. Best-effort — failures are logged,
 /// never surfaced (the caller is on a request hot path).
+/// How long to wait after a FAILED compile before the lazy self-heal will
+/// auto-retry the same workspace. Without this, a persistently-broken workspace
+/// (e.g. a config the round-trip gate rejects) becomes a recompile storm: every
+/// failed compile clears the in-flight dedup, so the very next request
+/// re-enqueues. Operators can still force an immediate compile via the admin
+/// "Run compile now". A const, not an env flag — keep the surface small.
+const LAZY_COMPILE_BACKOFF_SECS: i64 = 300;
+
 pub(crate) async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uuid) {
-    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+    use sea_orm::{
+        ColumnTrait, ConnectionTrait, DatabaseBackend, QueryFilter, Statement, TransactionTrait,
+    };
 
     // Serialise concurrent self-heal enqueues for the SAME workspace across
     // every replica. A plain "SELECT in-flight? then INSERT" is a TOCTOU
@@ -495,6 +505,29 @@ pub(crate) async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, works
             let _ = txn.rollback().await;
             return;
         }
+    }
+
+    // Backoff: if a compile for this workspace FAILED recently, don't auto-retry
+    // on every request. A persistently-broken workspace would otherwise become a
+    // recompile storm (each failed compile clears the in-flight dedup below, so
+    // the next request re-enqueues). Wait out the window. Checked INSIDE the lock
+    // alongside the in-flight dedup so concurrent first-hits agree.
+    let backoff_cutoff =
+        (Utc::now() - chrono::Duration::seconds(LAZY_COMPILE_BACKOFF_SECS)).fixed_offset();
+    let recently_failed = entity::revisions::Entity::find()
+        .filter(entity::revisions::Column::WorkspaceId.eq(workspace_id))
+        .filter(entity::revisions::Column::Kind.eq("main"))
+        .filter(entity::revisions::Column::Status.eq("failed"))
+        .filter(entity::revisions::Column::FinishedAt.gte(backoff_cutoff))
+        .one(&txn)
+        .await;
+    if matches!(recently_failed, Ok(Some(_))) {
+        tracing::debug!(
+            %workspace_id,
+            "lazy compile: backing off (a compile failed within the backoff window)"
+        );
+        let _ = txn.rollback().await;
+        return;
     }
 
     // Re-check for an in-flight compile INSIDE the lock.

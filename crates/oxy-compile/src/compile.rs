@@ -132,6 +132,23 @@ pub struct CompiledReference {
     pub to_name: String,
 }
 
+/// Veto hook for a compiled `config.yml` that would not deserialise at read
+/// time. Implemented by `oxy-app` (which owns the strict `Config` type — this
+/// crate deliberately has no platform deps); `None` for callers/tests that
+/// don't need the gate.
+///
+/// The point is to convert the entire "compiled config won't deserialise"
+/// failure class from a runtime fleet-wide 503 into a compile-time failure:
+/// when `check` returns `Err`, the config becomes a `FailureKind::Validation`
+/// failure, the revision is marked `Failed`, and it is never promoted — so the
+/// previous good revision keeps serving. It backstops ANY compile transform
+/// (today: secret redaction + the DuckDB→S3 mirror), not just one known bug.
+/// See oxygen-internal#2520 (the `s3_secret_type` outage this prevents).
+pub trait ConfigGate: Send + Sync {
+    /// `Ok(())` to accept, `Err(message)` to reject (operator-facing reason).
+    fn check(&self, cfg: &CompiledConfig) -> Result<(), String>;
+}
+
 /// Public inputs to a compile run.
 pub struct CompileRequest<'a> {
     pub db: &'a DatabaseConnection,
@@ -157,6 +174,10 @@ pub struct CompileRequest<'a> {
     pub kind: RevisionKind,
     /// Required when `kind == Draft`; ignored otherwise.
     pub owner_user_id: Option<Uuid>,
+    /// Optional read-time-deserialisation gate (see [`ConfigGate`]). Supplied
+    /// by oxy-app on the production compile paths (worker + CLI); `None` in
+    /// tests and callers that don't have the strict `Config` type to hand.
+    pub config_gate: Option<std::sync::Arc<dyn ConfigGate>>,
 }
 
 /// `main` vs `draft` revision kinds. Strictly typed so a caller can't
@@ -300,6 +321,7 @@ pub async fn compile_workspace(
         request.branch,
         request.promote,
         kind_str,
+        request.config_gate.as_deref(),
     )
     .await;
 
@@ -316,6 +338,7 @@ pub async fn compile_workspace(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn drive_compile(
     db: &DatabaseConnection,
     ctx: &RevisionContext,
@@ -324,6 +347,7 @@ async fn drive_compile(
     branch: Option<String>,
     promote: bool,
     kind: &str,
+    config_gate: Option<&dyn ConfigGate>,
 ) -> Result<CompileOutcome, CompileError> {
     let files = discover(workspace_path)?;
     debug!(file_count = files.len(), "files discovered");
@@ -378,6 +402,31 @@ async fn drive_compile(
             &mut cfg.databases,
         )
         .await;
+    }
+
+    // Round-trip gate. Runs AFTER every config transform (redaction + the
+    // DuckDB→S3 mirror) so we validate exactly what will be served. A compiled
+    // config that won't deserialise into the runtime `Config` must never be
+    // promoted: that would 503 the whole stateless fleet for this workspace
+    // (oxygen-internal#2520). Failing the compile here keeps the previous good
+    // revision serving and surfaces a clear `[invalid]` failure to the
+    // operator, instead of a silent runtime outage.
+    if let Some(gate) = config_gate
+        && let Some(CompiledRow::Config(cfg)) =
+            rows.iter().find(|r| matches!(r, CompiledRow::Config(_)))
+        && let Err(message) = gate.check(cfg)
+    {
+        let config_path = files
+            .iter()
+            .find(|f| matches!(f.kind, FileKind::Config))
+            .map(|f| f.rel_path.clone())
+            .unwrap_or_else(|| "config.yml".to_string());
+        warn!(path = %config_path, %message, "compile: config failed the read-time deserialise gate");
+        failures.push(FileFailure {
+            path: config_path,
+            kind: FailureKind::Validation,
+            message,
+        });
     }
 
     let status = if failures.is_empty() {
@@ -513,74 +562,117 @@ fn compile_monitor_config(
 
 fn compile_config(file: &DiscoveredFile, content: &str) -> Result<Vec<CompiledRow>, FileFailure> {
     let value = parse_yaml(file, content)?;
-    let mut cfg = CompiledConfig::default();
-    let mut remaining = value.clone();
-    match remaining {
-        Value::Object(ref mut map) => {
-            // Databases is the only field we require to exist; the
-            // rest are optional. Empty array is valid because a
-            // workspace with no databases yet is a real state during
-            // onboarding.
-            cfg.databases = map.remove("databases").unwrap_or(Value::Array(vec![]));
-            cfg.models = map.remove("models");
-            cfg.integrations = map.remove("integrations");
-            cfg.repositories = map.remove("repositories");
-            cfg.builder_agent = map.remove("builder_agent");
-            cfg.mcp = map.remove("mcp");
-            cfg.other = if map.is_empty() {
-                None
-            } else {
-                Some(Value::Object(std::mem::take(map)))
-            };
-
-            // Strip inline secret literals before they hit Postgres. The
-            // compiled config lands in `workspace_compiled_configs` — a
-            // central, queryable, multi-tenant, per-revision-retained table —
-            // so a plaintext `password:` in config.yml would be a far worse
-            // resting place than the old per-worker FS read. `*_var` references
-            // are preserved; the runtime resolves those from the encrypted
-            // secret store at query time. Workspaces that used inline literals
-            // must migrate to `*_var` (the documented pattern). Local/IDE reads
-            // come from the filesystem, so they're unaffected — only the
-            // stateless cloud fleet reads this compiled copy.
-            let mut redacted = redact_inline_secrets(&mut cfg.databases);
-            // EVERY config section that can hold an inline literal must be
-            // redacted. `models` carries LLM `api_key:` (e.g. an inline
-            // Ollama/OpenAI key); `repositories` carries `git_url:` which can
-            // embed credentials inline (https://user:token@host). Omitting
-            // either leaks the secret into the queryable compiled config —
-            // see oxygen-internal#2520. Keep this list exhaustive over the
-            // `map.remove(...)` calls above.
-            for field in [
-                &mut cfg.models,
-                &mut cfg.integrations,
-                &mut cfg.repositories,
-                &mut cfg.mcp,
-                &mut cfg.builder_agent,
-                &mut cfg.other,
-            ]
-            .into_iter()
-            .flatten()
-            {
-                redacted += redact_inline_secrets(field);
-            }
-            if redacted > 0 {
-                tracing::warn!(
-                    path = ?file.rel_path,
-                    redacted,
-                    "compile: redacted inline secret literal(s) from config.yml — move them to \
-                     the encrypted secret store via `*_var` references; inline secrets are not \
-                     carried into the compiled config served to the runtime"
-                );
-            }
-            Ok(vec![CompiledRow::Config(cfg)])
-        }
-        _ => Err(FileFailure {
+    let cfg =
+        build_compiled_config(value, Some(&file.rel_path)).map_err(|message| FileFailure {
             path: file.rel_path.clone(),
             kind: FailureKind::Shape,
-            message: "config.yml must be a YAML mapping at the top level".into(),
-        }),
+            message,
+        })?;
+    Ok(vec![CompiledRow::Config(cfg)])
+}
+
+/// Pure config compilation: split the top-level `config.yml` mapping into the
+/// per-column [`CompiledConfig`] shape and strip inline secret literals. No FS,
+/// no DB — so it's directly unit-testable and is the single seam the round-trip
+/// gate ([`ConfigGate`]) and the round-trip property test exercise. `rel_path`
+/// only labels the redaction warning. `Err` carries an operator-facing message.
+pub fn build_compiled_config(
+    value: Value,
+    rel_path: Option<&str>,
+) -> Result<CompiledConfig, String> {
+    let Value::Object(mut map) = value else {
+        return Err("config.yml must be a YAML mapping at the top level".into());
+    };
+
+    // Databases is the only field we require to exist; the rest are optional.
+    // Empty array is valid — a workspace with no databases yet is a real state
+    // during onboarding.
+    let mut cfg = CompiledConfig {
+        databases: map.remove("databases").unwrap_or(Value::Array(vec![])),
+        models: map.remove("models"),
+        integrations: map.remove("integrations"),
+        repositories: map.remove("repositories"),
+        builder_agent: map.remove("builder_agent"),
+        mcp: map.remove("mcp"),
+        other: None,
+    };
+    cfg.other = if map.is_empty() {
+        None
+    } else {
+        Some(Value::Object(map))
+    };
+
+    // Strip inline secret literals before they hit Postgres. The compiled
+    // config lands in `workspace_compiled_configs` — a central, queryable,
+    // multi-tenant, per-revision-retained table — so a plaintext `password:` in
+    // config.yml would be a worse resting place than the old per-worker FS read.
+    // `*_var` references and bare env-var-style references (UPPER_SNAKE values
+    // typed as `ManagedSecret`, e.g. ducklake `secret: AWS_S3_SECRET`) are
+    // preserved — they NAME a secret in the encrypted store, they aren't the
+    // secret, and nulling them would corrupt a structurally-required field. The
+    // runtime resolves them from the encrypted secret store at query time.
+    //
+    // This redaction is best-effort; the round-trip gate (see `drive_compile`)
+    // is the actual safety net — it guarantees nothing redaction does can ship a
+    // config the fleet can't read.
+    let mut redacted = redact_inline_secrets(&mut cfg.databases);
+    // EVERY config section that can hold an inline literal must be redacted.
+    // `models` carries LLM `api_key:` (e.g. an inline Ollama/OpenAI key);
+    // `repositories` carries `git_url:` which can embed credentials inline
+    // (https://user:token@host). Keep this list exhaustive over the
+    // `map.remove(...)` calls above. See oxygen-internal#2520.
+    for field in [
+        &mut cfg.models,
+        &mut cfg.integrations,
+        &mut cfg.repositories,
+        &mut cfg.mcp,
+        &mut cfg.builder_agent,
+        &mut cfg.other,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        redacted += redact_inline_secrets(field);
     }
+    if redacted > 0 {
+        tracing::warn!(
+            path = ?rel_path,
+            redacted,
+            "compile: redacted inline secret literal(s) from config.yml — move them to \
+             the encrypted secret store via `*_var` references; inline secrets are not \
+             carried into the compiled config served to the runtime"
+        );
+    }
+    Ok(cfg)
+}
+
+/// Merge the split config columns back into the single top-level object that
+/// `config.yml` deserialises from. ONE canonical merge shared by the runtime
+/// reader (`compiled_reader::resolve_workspace_config`), the compile-time gate,
+/// and the round-trip test — so the three can never drift. Field order mirrors
+/// the reader exactly.
+pub fn merge_compiled_config(cfg: &CompiledConfig) -> Value {
+    let mut merged = match &cfg.other {
+        Some(Value::Object(map)) => map.clone(),
+        _ => serde_json::Map::new(),
+    };
+    merged.insert("databases".into(), cfg.databases.clone());
+    if let Some(v) = &cfg.models {
+        merged.insert("models".into(), v.clone());
+    }
+    if let Some(v) = &cfg.integrations {
+        merged.insert("integrations".into(), v.clone());
+    }
+    if let Some(v) = &cfg.repositories {
+        merged.insert("repositories".into(), v.clone());
+    }
+    if let Some(v) = &cfg.builder_agent {
+        merged.insert("builder_agent".into(), v.clone());
+    }
+    if let Some(v) = &cfg.mcp {
+        merged.insert("mcp".into(), v.clone());
+    }
+    Value::Object(merged)
 }
 
 /// Recursively replace inline secret *literals* with `null` in a compiled
@@ -592,7 +684,9 @@ fn redact_inline_secrets(value: &mut Value) -> usize {
         Value::Object(map) => {
             let mut n = 0;
             for (k, v) in map.iter_mut() {
-                if is_sensitive_key(k) && matches!(v, Value::String(s) if !s.is_empty()) {
+                if is_sensitive_key(k)
+                    && matches!(v, Value::String(s) if !s.is_empty() && !looks_like_env_var_ref(s))
+                {
                     *v = Value::Null;
                     n += 1;
                 } else if let Value::String(s) = v {
@@ -613,6 +707,34 @@ fn redact_inline_secrets(value: &mut Value) -> usize {
         Value::Array(arr) => arr.iter_mut().map(redact_inline_secrets).sum(),
         _ => 0,
     }
+}
+
+/// A bare environment-variable-style reference (`AWS_S3_SECRET`,
+/// `DUCKLAKE_S3_SECRET`): UPPER_SNAKE, no lowercase, no spaces/punctuation.
+/// Fields typed as `ManagedSecret` (e.g. ducklake `secret:` / `catalog_path:`)
+/// hold one of these — the value NAMES a secret in the encrypted store, it is
+/// NOT itself a secret, and it's structurally required. Nulling it would corrupt
+/// the config (the `s3_secret_type: config` variant fails to deserialise without
+/// `secret`), so redaction must leave it intact. A real inline secret
+/// (`hunter2`, `sk-…`, `ghp_…`) is mixed-case / punctuated and won't match, so
+/// it is still redacted. The round-trip gate backstops any miss either way.
+fn looks_like_env_var_ref(s: &str) -> bool {
+    match s.chars().next() {
+        Some(c) if c.is_ascii_uppercase() || c == '_' => {}
+        _ => return false,
+    }
+    // Require at least one underscore — env-var word structure. This narrows the
+    // preserve set to genuine UPPER_SNAKE names and excludes high-entropy
+    // uppercase blobs that are real inline secrets, not references: base32 TOTP
+    // seeds (JBSWY3DPEHPK3PXP) and uppercase-hex tokens have no underscores, so
+    // they are still redacted. Over-preservation is a SILENT leak (the round-trip
+    // gate does NOT catch it), so we bias toward redacting; over-redaction is
+    // caught loudly by the gate. The durable fix is entity-aware redaction
+    // (knowing a field is `ManagedSecret`-typed) instead of value-shape guessing
+    // — tracked as a follow-up (#2524 review).
+    s.contains('_')
+        && s.chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// Strip `user[:pass]@` userinfo from a URL-like string so an inline
@@ -643,6 +765,17 @@ fn strip_url_credentials(s: &str) -> Option<String> {
 fn is_sensitive_key(key: &str) -> bool {
     let k = key.to_ascii_lowercase();
     if k.ends_with("_var") {
+        return false;
+    }
+    // Type-discriminator keys (serde internal tags like `s3_secret_type`,
+    // `database_type`) merely NAME a variant ("credential_chain", "duckdb") —
+    // their value is never a secret. Critically, nulling such a key corrupts
+    // the compiled config: e.g. `s3_secret_type` is the internal tag for the
+    // ducklake `S3StorageSecret` enum, so redacting it to null makes the whole
+    // untagged `DuckDBOptions` fail to deserialise at runtime → the workspace
+    // 503s on the stateless fleet. Exclude `_type` keys (they'd otherwise
+    // match the `secret` substring needle). See oxygen-internal#2520.
+    if k.ends_with("_type") {
         return false;
     }
     const NEEDLES: &[&str] = &[
@@ -734,6 +867,141 @@ mod redact_tests {
             repos[1]["git_url"], "https://github.com/acme/public.git",
             "credential-free URL untouched"
         );
+    }
+
+    /// Regression (oxygen-internal#2520): a serde internal-tag key like
+    /// `s3_secret_type` (ducklake `S3StorageSecret` discriminator) must NOT be
+    /// redacted just because its name contains "secret" — nulling it corrupts
+    /// the compiled config so the untagged `DuckDBOptions` fails to
+    /// deserialise and the workspace 503s on the fleet.
+    #[test]
+    fn type_discriminator_keys_are_not_redacted() {
+        assert!(!is_sensitive_key("s3_secret_type"));
+        assert!(!is_sensitive_key("database_type"));
+        // Real secrets still redacted.
+        assert!(is_sensitive_key("client_secret"));
+        assert!(is_sensitive_key("secret"));
+        assert!(is_sensitive_key("api_key"));
+
+        // End-to-end: a ducklake database keeps its s3_secret_type tag.
+        let mut dbs = json!([{
+            "name": "ducklake",
+            "type": "duckdb",
+            "s3_secret_type": "credential_chain",
+            "chain": "sso;config",
+            "region": "us-west-2",
+            "secret": "should-be-nulled"
+        }]);
+        redact_inline_secrets(&mut dbs);
+        assert_eq!(
+            dbs[0]["s3_secret_type"], "credential_chain",
+            "tag preserved"
+        );
+        assert!(dbs[0]["secret"].is_null(), "real secret still redacted");
+    }
+
+    /// Regression (oxygen-internal#2520, follow-up): a `ManagedSecret` field
+    /// holds a bare env-var reference (UPPER_SNAKE) — ducklake
+    /// `secret: AWS_S3_SECRET`, `catalog_path: DUCKLAKE_CATALOG_PATH`. These
+    /// NAME a secret in the encrypted store; they are structurally required and
+    /// must NOT be nulled (the `s3_secret_type: config` variant won't
+    /// deserialise without `secret`). Mixed-case / punctuated literals are still
+    /// redacted.
+    #[test]
+    fn env_var_style_references_are_preserved() {
+        let mut v = json!({
+            "secret": "AWS_S3_SECRET",                // ManagedSecret ref → keep
+            "catalog_path": "DUCKLAKE_CATALOG_PATH",  // ManagedSecret ref → keep
+            "password": "hunter2",                    // literal → redact
+            "api_key": "sk-abc123",                   // literal → redact
+            "token": "GHP_lowerMixed",                // mixed-case literal → redact
+        });
+        let n = redact_inline_secrets(&mut v);
+        assert_eq!(v["secret"], "AWS_S3_SECRET", "env-var ref preserved");
+        assert_eq!(
+            v["catalog_path"], "DUCKLAKE_CATALOG_PATH",
+            "env-var ref preserved"
+        );
+        assert!(v["password"].is_null(), "inline literal redacted");
+        assert!(v["api_key"].is_null(), "inline literal redacted");
+        assert!(v["token"].is_null(), "mixed-case literal redacted");
+        assert_eq!(n, 3);
+    }
+
+    #[test]
+    fn looks_like_env_var_ref_classifies() {
+        assert!(looks_like_env_var_ref("AWS_S3_SECRET"));
+        assert!(looks_like_env_var_ref("DUCKLAKE_CATALOG_PATH"));
+        assert!(looks_like_env_var_ref("_PRIVATE"));
+        assert!(looks_like_env_var_ref("X1_Y2"));
+        assert!(!looks_like_env_var_ref("hunter2")); // lowercase
+        assert!(!looks_like_env_var_ref("sk-abc")); // punctuation
+        assert!(!looks_like_env_var_ref("Mixed_Case")); // lowercase
+        assert!(!looks_like_env_var_ref("")); // empty
+        assert!(!looks_like_env_var_ref("1ABC")); // leading digit
+        // High-entropy uppercase blobs with NO underscore are real inline
+        // secrets, not var-name references — must NOT be preserved (#2524 review).
+        assert!(!looks_like_env_var_ref("JBSWY3DPEHPK3PXP")); // base32 TOTP seed
+        assert!(!looks_like_env_var_ref("DEADBEEFCAFE1234")); // uppercase hex token
+        assert!(!looks_like_env_var_ref("TOKEN")); // single word, no underscore
+    }
+
+    /// Golden snapshot (safety-harness item 5): pins the column split + redaction
+    /// of a representative `config.yml` so any unintended change to compile
+    /// OUTPUT shape shows up as a diff in review. The round-trip gate covers
+    /// semantic correctness; this covers shape stability. `config.yml` is the
+    /// only file kind with a non-identity transform (redaction), so it's the one
+    /// that warrants a golden test.
+    #[test]
+    fn golden_config_compile_output() {
+        let yaml = r#"
+databases:
+  - name: lake
+    type: duckdb
+    schema_name: main
+    data_path: s3://bucket/lake
+    s3_secret_type: config
+    key_id: AKIAEXAMPLE
+    secret: AWS_S3_SECRET
+    region: us-west-2
+  - name: pg
+    type: postgres
+    password: hunter2
+    password_var: PG_PASSWORD
+models:
+  - name: openai
+    api_key_var: OPENAI_API_KEY
+custom_section:
+  foo: bar
+"#;
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let cfg = build_compiled_config(value, None).unwrap();
+        let merged = merge_compiled_config(&cfg);
+        let expected = json!({
+            "databases": [
+                {
+                    "name": "lake",
+                    "type": "duckdb",
+                    "schema_name": "main",
+                    "data_path": "s3://bucket/lake",
+                    "s3_secret_type": "config",
+                    "key_id": "AKIAEXAMPLE",
+                    "secret": "AWS_S3_SECRET",
+                    "region": "us-west-2"
+                },
+                {
+                    "name": "pg",
+                    "type": "postgres",
+                    "password": null,
+                    "password_var": "PG_PASSWORD"
+                }
+            ],
+            "models": [
+                { "name": "openai", "api_key_var": "OPENAI_API_KEY" }
+            ],
+            "custom_section": { "foo": "bar" }
+        });
+        assert_eq!(merged, expected);
     }
 
     #[test]
