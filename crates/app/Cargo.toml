@@ -108,8 +108,9 @@ utoipa = { workspace = true, features = ["uuid", "chrono", "axum_extras"] }
 utoipa-axum = { workspace = true }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 
-# HTTP client
-reqwest = { workspace = true }
+# HTTP client. `stream` enables reqwest::Body::wrap_stream for the ide_proxy
+# reverse-proxy (forwards IdeOnly request bodies without buffering).
+reqwest = { workspace = true, features = ["stream"] }
 
 # Code utilities
 enum_dispatch = { workspace = true }

@@ -7,6 +7,7 @@ pub mod compile_maintenance;
 pub mod compile_worker;
 pub mod default_branch;
 pub mod feature_flags;
+pub mod ide_proxy;
 pub mod preagg_executor;
 pub(super) mod preagg_rebuild;
 pub mod preagg_worker;

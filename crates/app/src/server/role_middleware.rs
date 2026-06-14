@@ -25,6 +25,9 @@ use crate::server::role_manifest::{Role, RouteRole, classify, current_process_ro
 
 const HEADER_SERVED_BY: &str = "x-oxy-served-by";
 const HEADER_REQUIRED_ROLE: &str = "x-oxy-required-role";
+/// Records the serve proxy hop on a forwarded IdeOnly response (the upstream's
+/// `X-Oxy-Served-By` is preserved as who actually answered).
+const HEADER_FORWARDED_VIA: &str = "x-oxy-forwarded-via";
 
 pub async fn enforce_role(req: Request, next: Next) -> Response {
     let role = current_process_role();
@@ -39,13 +42,60 @@ pub async fn enforce_role(req: Request, next: Next) -> Response {
         return stamp(next.run(req).await, role);
     }
 
+    // Self-routing: a SERVE replica forwards an `IdeOnly` route to the ide pod
+    // instead of rejecting it, when an ide upstream is wired (`OXY_IDE_UPSTREAM`).
+    // `role_manifest` is then the routing AUTHORITY — the edge LB round-robins
+    // and there is no external ingress route table to drift from the code (the
+    // cause of three prior outages). With no upstream (local / single instance /
+    // not-yet-wired fleet) we keep the legacy 421, so behaviour is unchanged.
+    //
+    // Gated on `Role::Serve` specifically: a Worker process also fails
+    // `accepted_by` for IdeOnly, but a worker must NEVER act as an IDE proxy
+    // (no customer HTTP surface) — it keeps the 421 path.
+    //
+    // RESIDUAL RISK (tracked fast-follow): `classify` still defaults an
+    // *unlisted* route to FleetOk, so a NEW IdeOnly route added to the router
+    // without a manifest entry would be served locally and fail. The durable
+    // fixes are (a) inverting the per-workspace default to forward-on-doubt and
+    // (b) a router-introspecting drift test — see internal-docs. So this is the
+    // routing authority, not yet a drift-proof guarantee.
+    if matches!(role, Role::Serve)
+        && matches!(route_role, RouteRole::IdeOnly)
+        && let Some(upstream) = crate::server::ide_proxy::ide_upstream()
+    {
+        if crate::server::ide_proxy::already_forwarded(&req) {
+            // A request we already forwarded came back to a serve replica — the
+            // OXY_IDE_UPSTREAM Service is (mis)selecting serve pods. Break the
+            // loop with a 421 (fall through) rather than forward a second time.
+            tracing::error!(
+                method = %method,
+                path = %path,
+                "ide_proxy loop guard: re-forwarded request reached a serve replica — \
+                 OXY_IDE_UPSTREAM must target ide-only pods; rejecting"
+            );
+        } else {
+            tracing::debug!(
+                method = %method,
+                path = %path,
+                "serve replica: forwarding IdeOnly route to ide upstream"
+            );
+            // Do NOT re-stamp X-Oxy-Served-By: the upstream response already
+            // carries the ide pod's `ide@...` (who actually answered). Record
+            // the serve proxy hop separately so both are visible in `curl -i`.
+            return stamp_forwarded_via(
+                crate::server::ide_proxy::forward_to_ide(upstream, req).await,
+                role,
+            );
+        }
+    }
+
     let required = required_role_for(route_role);
     tracing::warn!(
         method = %method,
         path = %path,
         process_role = role.as_str(),
         required_role = required,
-        "misroute: process role does not accept this route"
+        "misroute: process role does not accept this route (no ide upstream to forward to)"
     );
     let body = format!(
         "this oxy server runs as role '{}'; route '{} {}' is classified '{}' and must be served by role '{}'",
@@ -73,6 +123,23 @@ fn required_role_for(route_role: RouteRole) -> &'static str {
 fn stamp(mut resp: Response<Body>, role: Role) -> Response<Body> {
     let header = format!("{}@{}", role.as_str(), worker_id());
     if let Ok(v) = HeaderValue::from_str(&header) {
+        resp.headers_mut().insert(HEADER_SERVED_BY, v);
+    }
+    resp
+}
+
+/// Stamp a FORWARDED response. Records the serve proxy hop in
+/// `X-Oxy-Forwarded-Via`. On the success path the upstream (ide) already set
+/// `X-Oxy-Served-By` to who actually answered, so we preserve it; only when it's
+/// absent (the upstream-unreachable 502, which serve generated itself) do we
+/// stamp `serve@...` — so every forwarded response, success or failure, says who
+/// answered.
+fn stamp_forwarded_via(mut resp: Response<Body>, role: Role) -> Response<Body> {
+    let Ok(v) = HeaderValue::from_str(&format!("{}@{}", role.as_str(), worker_id())) else {
+        return resp;
+    };
+    resp.headers_mut().insert(HEADER_FORWARDED_VIA, v.clone());
+    if !resp.headers().contains_key(HEADER_SERVED_BY) {
         resp.headers_mut().insert(HEADER_SERVED_BY, v);
     }
     resp
@@ -135,6 +202,63 @@ mod tests {
         );
 
         unsafe { std::env::remove_var("OXY_ROLE") };
+    }
+
+    /// A WORKER process must never act as an IDE proxy, even with an ide
+    /// upstream configured. The forward is gated on `Role::Serve`; without that
+    /// gate a worker would reverse-proxy IdeOnly traffic and this would 502
+    /// against the bogus upstream instead of 421.
+    #[tokio::test]
+    async fn worker_with_upstream_does_not_forward_ide_route() {
+        unsafe {
+            std::env::set_var("OXY_ROLE", "worker");
+            std::env::set_var("OXY_IDE_UPSTREAM", "http://ide.invalid:80");
+        }
+        crate::server::role_manifest::init_process_role_from_env();
+
+        let resp = nested_router()
+            .oneshot(
+                HttpRequest::post("/api/some-uuid/compile")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST);
+        unsafe {
+            std::env::remove_var("OXY_ROLE");
+            std::env::remove_var("OXY_IDE_UPSTREAM");
+        }
+    }
+
+    /// Loop guard: a request already marked forwarded that lands back on a
+    /// serve replica (an OXY_IDE_UPSTREAM Service mistakenly selecting serve
+    /// pods) must break with 421 — not forward a second time (which would 502
+    /// against the bogus upstream).
+    #[tokio::test]
+    async fn already_forwarded_ide_route_on_serve_breaks_loop() {
+        unsafe {
+            std::env::set_var("OXY_ROLE", "serve");
+            std::env::set_var("OXY_IDE_UPSTREAM", "http://ide.invalid:80");
+        }
+        crate::server::role_manifest::init_process_role_from_env();
+
+        let resp = nested_router()
+            .oneshot(
+                HttpRequest::post("/api/some-uuid/compile")
+                    .header("x-oxy-forwarded-by", "serve")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST);
+        unsafe {
+            std::env::remove_var("OXY_ROLE");
+            std::env::remove_var("OXY_IDE_UPSTREAM");
+        }
     }
 
     #[tokio::test]
