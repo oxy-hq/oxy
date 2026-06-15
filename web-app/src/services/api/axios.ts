@@ -2,6 +2,7 @@ import axios from "axios";
 import { toast } from "sonner";
 
 import { clearAuthScopedStorage } from "@/libs/utils/authStorage";
+import { reportIdeReachable, reportIdeUnavailable } from "@/libs/utils/ideHealth";
 import { usePaywallStore } from "@/stores/usePaywallStore";
 import { apiBaseURL } from "../env";
 
@@ -46,6 +47,7 @@ const makeResponseErrorHandler = () => {
   return (error: {
     response?: {
       status?: number;
+      headers?: Record<string, string | undefined>;
       data?: {
         code?: string;
         status?: "incomplete" | "unpaid" | "canceled";
@@ -78,8 +80,25 @@ const makeResponseErrorHandler = () => {
       usePaywallStore.getState().show(billingStatus, contactRequired);
     }
 
+    // The developer-environment singleton is unreachable: the serving replica
+    // stamps `x-oxy-required-role: ide` on its 502 so this is distinguishable
+    // from a generic gateway error. Surface the global IDE-unavailable banner.
+    if (status === 502 && error.response?.headers?.["x-oxy-required-role"] === "ide") {
+      reportIdeUnavailable(url);
+    }
+
     return Promise.reject(error);
   };
 };
 
-apiClient.interceptors.response.use((response) => response, makeResponseErrorHandler());
+apiClient.interceptors.response.use((response) => {
+  // A response served by the IDE backend — directly, or forwarded to it by a
+  // serve replica — proves it's reachable again, so retire any IDE-down banner.
+  // The header is `<role>@<host>#<pid>` (e.g. `ide@box#42`), so match on the
+  // role prefix, not the whole value.
+  const servedBy = (response.headers as Record<string, string | undefined> | undefined)?.[
+    "x-oxy-served-by"
+  ];
+  if (servedBy?.split("@")[0] === "ide") reportIdeReachable();
+  return response;
+}, makeResponseErrorHandler());

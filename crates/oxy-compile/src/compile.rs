@@ -675,10 +675,23 @@ pub fn merge_compiled_config(cfg: &CompiledConfig) -> Value {
     Value::Object(merged)
 }
 
-/// Recursively replace inline secret *literals* with `null` in a compiled
-/// config sub-tree. Returns the number of fields redacted. `*_var` references
-/// are preserved (they're env-var names, not secrets); only non-empty string
-/// values under a sensitive key are stripped.
+/// Value written over a stripped inline secret literal: the EMPTY STRING, never
+/// `null`. Two properties matter, and only `""` has both:
+///   1. It deserialises into a REQUIRED `String`/`PathBuf` field (Ollama
+///      `api_key`, BigQuery `key_path`). `null` does not — it fails the
+///      round-trip gate, which sinks the ENTIRE compile and leaves the
+///      workspace unservable on the stateless fleet (oxygen-internal#2528).
+///   2. `SecretsManager::resolve_config_value` treats an empty inline value as
+///      ABSENT (`!value.is_empty()`), so a field that ALSO carries a `*_var`
+///      reference still resolves from the encrypted store. A NON-EMPTY
+///      placeholder would break that — the runtime would hand the placeholder
+///      back as the credential instead of resolving the var.
+const REDACTED_VALUE: &str = "";
+
+/// Recursively replace inline secret *literals* with [`REDACTED_VALUE`] in a
+/// compiled config sub-tree. Returns the number of fields redacted. `*_var`
+/// references are preserved (they're env-var names, not secrets); only
+/// non-empty string values under a sensitive key are stripped.
 fn redact_inline_secrets(value: &mut Value) -> usize {
     match value {
         Value::Object(map) => {
@@ -687,7 +700,7 @@ fn redact_inline_secrets(value: &mut Value) -> usize {
                 if is_sensitive_key(k)
                     && matches!(v, Value::String(s) if !s.is_empty() && !looks_like_env_var_ref(s))
                 {
-                    *v = Value::Null;
+                    *v = Value::String(REDACTED_VALUE.to_string());
                     n += 1;
                 } else if let Value::String(s) = v {
                     // Non-sensitive key but the value may be a URL with
@@ -818,7 +831,7 @@ mod redact_tests {
         let n = redact_inline_secrets(&mut v);
         assert_eq!(n, 1, "only the inline password literal should be redacted");
         let db = &v["databases"][0];
-        assert!(db["password"].is_null(), "inline password stripped");
+        assert_eq!(db["password"], "", "inline password stripped");
         assert_eq!(db["password_var"], "WH_PASSWORD", "var reference kept");
         assert_eq!(db["host"], "db.example.com", "non-secret kept");
         assert_eq!(db["name"], "wh");
@@ -833,9 +846,9 @@ mod redact_tests {
         });
         let n = redact_inline_secrets(&mut v);
         assert_eq!(n, 3);
-        assert!(v["service_account_json"].is_null());
-        assert!(v["nested"]["client_secret"].is_null());
-        assert!(v["nested"]["api_key"].is_null());
+        assert_eq!(v["service_account_json"], "");
+        assert_eq!(v["nested"]["client_secret"], "");
+        assert_eq!(v["nested"]["api_key"], "");
         assert_eq!(v["nested"]["label"], "ok");
     }
 
@@ -850,7 +863,7 @@ mod redact_tests {
         ]);
         let n = redact_inline_secrets(&mut models);
         assert_eq!(n, 1, "inline model api_key redacted; *_var ref kept");
-        assert!(models[0]["api_key"].is_null());
+        assert_eq!(models[0]["api_key"], "");
         assert_eq!(models[1]["api_key_var"], "OPENAI_API_KEY");
 
         let mut repos = json!([
@@ -890,14 +903,14 @@ mod redact_tests {
             "s3_secret_type": "credential_chain",
             "chain": "sso;config",
             "region": "us-west-2",
-            "secret": "should-be-nulled"
+            "secret": "should-be-redacted"
         }]);
         redact_inline_secrets(&mut dbs);
         assert_eq!(
             dbs[0]["s3_secret_type"], "credential_chain",
             "tag preserved"
         );
-        assert!(dbs[0]["secret"].is_null(), "real secret still redacted");
+        assert_eq!(dbs[0]["secret"], "", "real secret still redacted");
     }
 
     /// Regression (oxygen-internal#2520, follow-up): a `ManagedSecret` field
@@ -922,10 +935,39 @@ mod redact_tests {
             v["catalog_path"], "DUCKLAKE_CATALOG_PATH",
             "env-var ref preserved"
         );
-        assert!(v["password"].is_null(), "inline literal redacted");
-        assert!(v["api_key"].is_null(), "inline literal redacted");
-        assert!(v["token"].is_null(), "mixed-case literal redacted");
+        assert_eq!(v["password"], "", "inline literal redacted");
+        assert_eq!(v["api_key"], "", "inline literal redacted");
+        assert_eq!(v["token"], "", "mixed-case literal redacted");
         assert_eq!(n, 3);
+    }
+
+    /// Regression (oxygen-internal#2528): a redacted inline secret on a
+    /// REQUIRED `String` field (Ollama `api_key` is `String`, not
+    /// `Option<String>`) must stay a STRING — never `null`. If redaction nulls
+    /// it, the compiled config fails to deserialise into the runtime `Config`,
+    /// the round-trip gate rejects the revision, and the WHOLE compile fails —
+    /// 0 revisions, every read 503s with `needs_recompile`. The empty string
+    /// both deserialises AND is treated as absent by `resolve_config_value`, so
+    /// a `*_var` fallback still resolves from the encrypted store.
+    #[test]
+    fn redacted_required_string_stays_a_nonempty_string() {
+        let mut models = json!([{
+            "name": "llama3.2",
+            "vendor": "ollama",
+            "api_url": "http://localhost:11434/v1",
+            "api_key": "secret",
+        }]);
+        let n = redact_inline_secrets(&mut models);
+        assert_eq!(n, 1, "the inline api_key literal is redacted");
+        let redacted = &models[0]["api_key"];
+        assert!(
+            redacted.is_string(),
+            "must stay a string so a required `String` field deserialises (was null → gate failure)"
+        );
+        assert_eq!(
+            redacted, "",
+            "empty so resolve_config_value treats it as absent and any *_var fallback still resolves"
+        );
     }
 
     #[test]
@@ -992,7 +1034,7 @@ custom_section:
                 {
                     "name": "pg",
                     "type": "postgres",
-                    "password": null,
+                    "password": "",
                     "password_var": "PG_PASSWORD"
                 }
             ],

@@ -8,7 +8,7 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use futures::TryFutureExt;
 use oxy::github::default_git_client;
-use oxy_git::{FileStatus, GitClient};
+use oxy_git::{FileStatus, GitClient, cli::repo::find_git_root};
 use oxy_project::data_repo_service::{parse_data_repo_path, resolve_data_repo_path};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
@@ -328,13 +328,19 @@ pub async fn get_file_from_git(
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
+    // The workspace may live in a SUBDIRECTORY of the git repo. git resolves
+    // `<rev>:<path>` relative to the repo ROOT, so strip the git root — not the
+    // workspace dir — or a subdir workspace asks git for `workflows/…` when the
+    // tree actually has `<subdir>/workflows/…` and the read 500s. (Repo-root
+    // workspaces are unaffected: git_root == workspace_path.)
+    let git_root = find_git_root(repo_path).unwrap_or_else(|| repo_path.to_path_buf());
     let relative_file_path = PathBuf::from(&file_path)
-        .strip_prefix(repo_path)
+        .strip_prefix(&git_root)
         .map_err(|_| StatusCode::BAD_REQUEST)?
         .to_string_lossy()
         .to_string();
     let file_content = default_git_client()
-        .file_at_rev(repo_path, &relative_file_path, None)
+        .file_at_rev(&git_root, &relative_file_path, None)
         .await?;
     Ok(extract::Json(file_content))
 }

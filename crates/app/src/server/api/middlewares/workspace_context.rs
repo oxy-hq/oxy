@@ -278,6 +278,42 @@ pub async fn workspace_middleware(
             }
         }
 
+        // ── Fail-safe fallback (oxygen-internal#2528 follow-up) ────────────
+        // If this serve replica has no compiled config for the workspace,
+        // `try_attach_workspace_manager` set `NeedsRecompileMarker` (and
+        // lazy-enqueued a compile). Rather than 503 the request, forward it to
+        // the ide node — it owns the working copy and serves the workspace from
+        // disk — so the workspace stays AVAILABLE (one in-cluster hop, degraded)
+        // until the compile lands and the fleet can serve it from Postgres. This
+        // turns "uncompiled / mid-compile = outage" into "= slower", which is the
+        // whole point of an HA fleet. Loop-guarded; a no-op without
+        // OXY_IDE_UPSTREAM (local / single-node), where the marker stays a 503.
+        if request.extensions().get::<NeedsRecompileMarker>().is_some()
+            && let Some(upstream) = crate::server::ide_proxy::ide_upstream()
+            && !crate::server::ide_proxy::already_forwarded(&request)
+        {
+            tracing::info!(
+                workspace_id = %workspace_id,
+                "serve replica: no compiled config — forwarding to ide node (fail-safe) \
+                 while the lazy compile lands"
+            );
+            // This middleware runs INSIDE the `/api/{workspace_id}` nest, where
+            // axum has rewritten the request URI to the stripped remainder
+            // (`/agents`, not `/api/{ws}/agents`). `forward_to_ide` proxies
+            // `req.uri()` verbatim, so restore the original full URI first — else
+            // the ide receives the bare `/agents` and serves the SPA fallback.
+            // (The enforce_role self-proxy needs no such fix: it runs at the top
+            // level where the URI is already the full path.)
+            if let Some(original) = request
+                .extensions()
+                .get::<axum::extract::OriginalUri>()
+                .map(|o| o.0.clone())
+            {
+                *request.uri_mut() = original;
+            }
+            return Ok(crate::server::ide_proxy::forward_to_ide(upstream, request).await);
+        }
+
         Ok(next.run(request).await)
     })
     .await
@@ -687,7 +723,11 @@ async fn try_attach_workspace_manager(
     // request can succeed without operator action. The
     // `WorkspaceManagerExtractor` promotes `NeedsRecompileMarker` to a 503
     // with `X-Oxy-Needs-Recompile: <workspace_id>` so the FE can render a
-    // proper "retrying compile" toast instead of a generic platform error.
+    // proper "retrying compile" toast instead of a generic platform error —
+    // UNLESS `OXY_IDE_UPSTREAM` is set (the serve fleet), in which case
+    // `workspace_middleware` intercepts this marker and forwards the request to
+    // the ide node (which serves from disk) instead of 503ing. The 503 is the
+    // local / single-node fallback when there's no ide upstream to forward to.
     //
     // Regression context: oxy-hq/oxygen-internal#1619.
     if compiled_config.is_none()

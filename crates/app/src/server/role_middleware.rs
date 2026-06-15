@@ -73,6 +73,30 @@ pub async fn enforce_role(req: Request, next: Next) -> Response {
                 "ide_proxy loop guard: re-forwarded request reached a serve replica — \
                  OXY_IDE_UPSTREAM must target ide-only pods; rejecting"
             );
+        } else if crate::server::role_manifest::degrades_when_ide_unreachable(&method, &path) {
+            // Read-only git STATE (GET /details, /status): forward for the live
+            // value, but if the ide is UNREACHABLE serve it LOCALLY instead of
+            // 502ing — the handler degrades to `git_mode: None` (git ops shown
+            // unavailable), so a dead ide never takes the workspace page down.
+            // `forward_to_ide_opt` hands the request back (extensions intact) on
+            // unreachable, so we fall through to the local handler.
+            match crate::server::ide_proxy::forward_to_ide_opt(upstream, req).await {
+                Ok(resp) => return stamp_forwarded_via(resp, role),
+                Err(mut rebuilt) => {
+                    tracing::info!(
+                        method = %method,
+                        path = %path,
+                        "ide unreachable — serving degradable git-state route locally (graceful HA)"
+                    );
+                    // Mark forwarded so workspace_middleware's fail-safe fallback
+                    // doesn't try to re-forward this to the (down) ide.
+                    rebuilt.headers_mut().insert(
+                        "x-oxy-forwarded-by",
+                        HeaderValue::from_static("serve-degraded"),
+                    );
+                    return stamp(next.run(rebuilt).await, role);
+                }
+            }
         } else {
             tracing::debug!(
                 method = %method,

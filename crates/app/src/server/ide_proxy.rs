@@ -105,13 +105,18 @@ pub fn already_forwarded(req: &Request) -> bool {
     req.headers().contains_key(HEADER_FORWARDED_BY)
 }
 
-/// Reverse-proxy `req` to the ide upstream. Preserves method, path, query, and
-/// auth headers; STREAMS both the request and response bodies (SSE-safe, and the
-/// upstream's own per-route body limit is the only ceiling — nothing is buffered
-/// on the serve replica). On upstream failure returns `502` with
-/// `X-Oxy-Required-Role: ide` so the failure is legible rather than a silent
-/// hang.
-pub async fn forward_to_ide(upstream_base: &str, req: Request) -> Response {
+/// Reverse-proxy `req` to the ide upstream. `Ok(resp)` = the ide answered (any
+/// status). `Err(req)` = the ide could not be REACHED (connect / transport
+/// error); the request is handed BACK, rebuilt from its own parts so the
+/// extensions (path params, OriginalUri) survive — the caller can fall through
+/// to a local handler. The body is emptied, which is fine because the only
+/// callers that use `Err` are read-only GET routes. Callers that can degrade
+/// gracefully (`/details`, `/status`) do exactly that; [`forward_to_ide`] maps
+/// `Err` to the 502 for everyone else.
+///
+/// Preserves method, path, query, and auth headers; STREAMS both bodies
+/// (SSE-safe; the upstream's own per-route body limit is the only ceiling).
+pub async fn forward_to_ide_opt(upstream_base: &str, req: Request) -> Result<Response, Request> {
     let (parts, body) = req.into_parts();
     let path_and_query = parts
         .uri
@@ -121,7 +126,7 @@ pub async fn forward_to_ide(upstream_base: &str, req: Request) -> Response {
     let url = format!("{upstream_base}{path_and_query}");
 
     let Ok(method) = reqwest::Method::from_bytes(parts.method.as_str().as_bytes()) else {
-        return (StatusCode::METHOD_NOT_ALLOWED, "bad method").into_response();
+        return Ok((StatusCode::METHOD_NOT_ALLOWED, "bad method").into_response());
     };
 
     // STREAM the request body through — do NOT buffer. Buffering with a fixed
@@ -148,10 +153,11 @@ pub async fn forward_to_ide(upstream_base: &str, req: Request) -> Response {
         Ok(r) => r,
         Err(err) => {
             tracing::warn!(%url, ?err, "ide_proxy: ide upstream unreachable");
-            let mut resp = (StatusCode::BAD_GATEWAY, "ide backend unreachable").into_response();
-            resp.headers_mut()
-                .insert(HEADER_REQUIRED_ROLE, HeaderValue::from_static("ide"));
-            return resp;
+            // Hand the request back rebuilt from its parts — the extensions
+            // (path params, OriginalUri) ride along so a caller that falls
+            // through to a local handler keeps working. Body is empty (the
+            // only callers that use this are read-only GETs).
+            return Err(Request::from_parts(parts, Body::empty()));
         }
     };
 
@@ -176,7 +182,24 @@ pub async fn forward_to_ide(upstream_base: &str, req: Request) -> Response {
     let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
     *response.status_mut() = status;
     *response.headers_mut() = resp_headers;
-    response
+    Ok(response)
+}
+
+/// Reverse-proxy `req`, mapping an unreachable ide to the legible `502` with
+/// `X-Oxy-Required-Role: ide`. The default for IdeOnly routes that CANNOT
+/// degrade — file content, compile, git writes. Routes that CAN degrade
+/// (read-only git state) call [`forward_to_ide_opt`] and serve a local fallback
+/// on `Err` instead.
+pub async fn forward_to_ide(upstream_base: &str, req: Request) -> Response {
+    match forward_to_ide_opt(upstream_base, req).await {
+        Ok(resp) => resp,
+        Err(_unreachable) => {
+            let mut resp = (StatusCode::BAD_GATEWAY, "ide backend unreachable").into_response();
+            resp.headers_mut()
+                .insert(HEADER_REQUIRED_ROLE, HeaderValue::from_static("ide"));
+            resp
+        }
+    }
 }
 
 /// Copy request headers, dropping:

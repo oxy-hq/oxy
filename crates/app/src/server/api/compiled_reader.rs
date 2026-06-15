@@ -16,12 +16,15 @@
 //! 1. If the workspace is the nil-UUID local/single-instance workspace →
 //!    `Ok(None)`. Local mode has the live working copy on disk and no
 //!    compile-on-save, so it always reads FS.
-//! 2. If `branch_hint` is `Some(name)` and that name is not the workspace's
-//!    default branch → `Ok(None)`. Non-default branches are by definition
-//!    drafts; the FS working copy is freshest.
+//! 2. **IDE / single-process only:** if `branch_hint` is `Some(name)` and that
+//!    name is not the workspace's default branch → `Ok(None)`. Non-default
+//!    branches are drafts; the FS working copy (with uncommitted edits) is
+//!    freshest. A stateless `serve` replica SKIPS this gate — it has no working
+//!    copy, so it serves the latest promoted revision regardless of branch.
 //! 3. Read `workspaces.current_revision_id`. If null → `Ok(None)`.
 //! 4. Query the per-entity table keyed by that revision_id.
 
+use crate::server::role_manifest::{Role, current_process_role};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -554,14 +557,24 @@ async fn open_compiled_revision(
             return Ok(None);
         }
     };
+    // Branch gate — only on a node that HAS a working copy (IDE / single
+    // process). There, a non-default branch is a draft and the on-disk working
+    // copy (with uncommitted edits) is freshest, so fall through to FS. A
+    // stateless `serve` replica has NO working copy: "fall back to FS" there
+    // degrades to a useless `needs_recompile` 503, and pinning a per-workspace
+    // default branch is fragile. So a serve replica skips the gate and serves
+    // the latest promoted revision regardless of which branch the FE tagged —
+    // the compiled revision is the only (and freshest) thing it can serve.
+    // See oxygen-internal#2528.
     let effective_branch = normalize_branch_hint(branch_hint);
-    if let Some(branch) = effective_branch
+    if current_process_role() != Role::Serve
+        && let Some(branch) = effective_branch
         && !is_default_branch(&db, workspace_id, branch).await
     {
         tracing::debug!(
             workspace_id = %workspace_id,
             branch,
-            "compiled_reader: non-default branch — using FS"
+            "compiled_reader: non-default branch on a working-copy node — using FS"
         );
         return Ok(None);
     }

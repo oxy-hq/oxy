@@ -9,6 +9,7 @@ import type { UseAnalyticsRunResult } from "@/hooks/useAnalyticsRun";
 import type { BuilderActivityItem } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
+import { markOnboardingDismissedForStorageKey } from "@/libs/utils/onboardingStorage";
 import AnalyticsArtifactSidebar from "@/pages/thread/analytics/AnalyticsArtifactSidebar";
 import type { UiBlock } from "@/services/api/analytics";
 import type { AppItem } from "@/types/app";
@@ -101,6 +102,14 @@ function selectionCardsTestIdPrefix(messageId: string): string | undefined {
 
 /** Advance past a skipped prompt in GitHub mode by dispatching the cursor move. */
 function handleSkip(messageId: string, orchestrator: Orchestrator) {
+  // Remember that the user deferred setup for this workspace. Without this,
+  // Home re-redirects into the wizard on every visit — skipping advances the
+  // step but never satisfies the missing-credential check that drives the
+  // redirect, so the user gets bounced straight back. The gap still shows as a
+  // dismissible row on Home and the wizard stays reachable from there.
+  if (orchestrator.state.storageKey) {
+    markOnboardingDismissedForStorageKey(orchestrator.state.storageKey);
+  }
   if (messageId.startsWith(GITHUB_LLM_KEY_PREFIX)) {
     orchestrator.advanceGithubLlmKey();
     return;

@@ -10,7 +10,10 @@ import useDatabases from "@/hooks/api/databases/useDatabases";
 import useGithubSetup from "@/hooks/api/onboarding/useGithubSetup";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
-import { hasPendingOnboardingForStorageKey } from "@/libs/utils/onboardingStorage";
+import {
+  hasPendingOnboardingForStorageKey,
+  isOnboardingDismissedForStorageKey
+} from "@/libs/utils/onboardingStorage";
 import ROUTES from "@/libs/utils/routes";
 import { getAgentNameFromPath } from "@/libs/utils/string";
 import useCurrentOrg from "@/stores/useCurrentOrg";
@@ -184,10 +187,16 @@ const Home = () => {
   // toast below points the user at the IDE / Settings instead.
   const projectStorageKey = project.storage_key ?? project.id;
   const hasPendingWizardState = hasPendingOnboardingForStorageKey(projectStorageKey);
+  const onboardingDismissed = isOnboardingDismissedForStorageKey(projectStorageKey);
   const hasMissingCredentials = !anyApiError && (llmKeyMissingForAgent || !hasWarehouseCredentials);
   // Absolute path: `home` and `onboarding` are siblings in WorkspaceLayout,
   // so relative `to='onboarding'` resolves to `/home/onboarding` (404).
-  if (hasPendingWizardState || hasMissingCredentials) {
+  //
+  // Don't force the wizard when (a) an endpoint is down — we can't trust the
+  // setup state, e.g. github-setup 502s while the IDE is unreachable, and the
+  // wizard would just error too; or (b) the user explicitly deferred setup via
+  // "Skip for now". In both cases the gaps still surface as rows below.
+  if (!anyApiError && !onboardingDismissed && (hasPendingWizardState || hasMissingCredentials)) {
     return <Navigate to={routes.ONBOARDING} replace />;
   }
   const isSetupComplete = hasDatabases && hasPublicAgents;

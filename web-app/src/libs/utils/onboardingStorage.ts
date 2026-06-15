@@ -16,12 +16,22 @@ import type {
 } from "@/components/workspaces/components/CreateWorkspaceDialog/components/types";
 
 const STORAGE_KEY_PREFIX = "oxy_onboarding_state:";
+/**
+ * Marks that the user chose to leave setup incomplete for a workspace (e.g.
+ * clicked "Skip for now"). Separate from the wizard-state key so dismissing
+ * the redirect doesn't disturb any in-progress step the user may resume.
+ */
+const DISMISS_KEY_PREFIX = "oxy_onboarding_dismissed:";
 export const LEGACY_GLOBAL_KEY = "oxy_onboarding_state";
 /** Pre-`storage_key` local-mode entries were keyed under the nil UUID. */
 const LEGACY_LOCAL_NIL_UUID_KEY = `${STORAGE_KEY_PREFIX}00000000-0000-0000-0000-000000000000`;
 
 export function storageKey(storageKeyId: string): string {
   return `${STORAGE_KEY_PREFIX}${storageKeyId}`;
+}
+
+function dismissKey(storageKeyId: string): string {
+  return `${DISMISS_KEY_PREFIX}${storageKeyId}`;
 }
 
 /** Fields safe to persist (no credentials). */
@@ -93,8 +103,35 @@ export function clearOnboardingStateForStorageKey(storageKeyId: string): void {
   if (!storageKeyId) return;
   try {
     localStorage.removeItem(storageKey(storageKeyId));
+    // Keep the two in sync: clearing wizard state (e.g. "Start over") should
+    // re-enable the setup redirect rather than leave a stale dismissal.
+    localStorage.removeItem(dismissKey(storageKeyId));
   } catch {
     // ignore
+  }
+}
+
+/**
+ * Record that the user deferred setup for this workspace. Home reads this to
+ * stop force-redirecting into the wizard — the missing-credential check alone
+ * keeps re-triggering the redirect on every visit otherwise. The gaps still
+ * surface as dismissible rows on Home, and the wizard stays reachable.
+ */
+export function markOnboardingDismissedForStorageKey(storageKeyId: string): void {
+  if (!storageKeyId) return;
+  try {
+    localStorage.setItem(dismissKey(storageKeyId), "1");
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
+export function isOnboardingDismissedForStorageKey(storageKeyId: string): boolean {
+  if (!storageKeyId) return false;
+  try {
+    return localStorage.getItem(dismissKey(storageKeyId)) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -104,7 +141,7 @@ export function clearAllOnboardingState(): void {
     const toRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k?.startsWith(STORAGE_KEY_PREFIX)) toRemove.push(k);
+      if (k?.startsWith(STORAGE_KEY_PREFIX) || k?.startsWith(DISMISS_KEY_PREFIX)) toRemove.push(k);
     }
     for (const k of toRemove) localStorage.removeItem(k);
   } catch {

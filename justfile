@@ -141,8 +141,8 @@ test-customer-apps-publish org slug bundle project_id:
     TARGET="${OXY_TARGET:-http://localhost:3000}"
     CREDS="${XDG_CONFIG_HOME:-$HOME/.config}/oxy/credentials.json"
 
-    if [ ! -f "{{bundle}}/index.html" ]; then
-        echo "ERROR: {{bundle}}/index.html missing — every bundle must have one" >&2
+    if [ ! -f "{{ bundle }}/index.html" ]; then
+        echo "ERROR: {{ bundle }}/index.html missing — every bundle must have one" >&2
         exit 1
     fi
     if [ ! -x "./target/debug/oxy" ]; then
@@ -166,17 +166,17 @@ test-customer-apps-publish org slug bundle project_id:
         exit 1
     fi
 
-    echo "==> [1/2] Publishing {{org}}/{{slug}} → $TARGET (filesystem build store, live channel)…"
+    echo "==> [1/2] Publishing {{ org }}/{{ slug }} → $TARGET (filesystem build store, live channel)…"
     ./target/debug/oxy publish \
         --target "$TARGET" \
-        --org {{org}} \
-        --app {{slug}} \
-        --project {{project_id}} \
-        --dir "{{bundle}}" \
+        --org {{ org }} \
+        --app {{ slug }} \
+        --project {{ project_id }} \
+        --dir "{{ bundle }}" \
         --promote
 
     echo "==> [2/2] Fetching the served bundle…"
-    URL="$TARGET/customer-apps/{{org}}/{{slug}}/"
+    URL="$TARGET/customer-apps/{{ org }}/{{ slug }}/"
     BODY="$(curl -sf -H "Authorization: Bearer $TOKEN" "$URL")"
     if ! echo "$BODY" | grep -qiE "<html|<!doctype|__OXY_APP__"; then
         echo "ERROR: $URL did not return recognizable HTML" >&2
@@ -200,7 +200,7 @@ release-preview:
 # Example: just release-changelog-preview 0.5.34
 # Example: just release-changelog-preview 0.5.33 0.5.34 0.5.35
 release-changelog-preview +VERSIONS:
-    uv run scripts/release/update-content-changelog.py --dry-run {{VERSIONS}}
+    uv run scripts/release/update-content-changelog.py --dry-run {{ VERSIONS }}
 
 # Manually trigger the release PR workflow on GitHub (requires gh CLI + auth).
 release-trigger:
@@ -212,14 +212,70 @@ release-trigger:
 airhouse-up:
     docker compose -f docker-compose.airhouse.yml up -d
     @echo
-    @echo "Next:"
+    @echo "Next — streamlined (recommended), two commands:"
+    @echo "  just airhouse-precompile   # migrate + seed + compile+PROMOTE the demo workspace"
+    @echo "  just airhouse-fleet        # build + run ide :3000 + serve :3002 (env auto-set)"
+    @echo "  # then: just routing-check 3002"
+    @echo
+    @echo "Or step-by-step:"
     @echo "  set -a; source .env.airhouse; set +a"
     @echo "  cargo run -p migration --bin migration                                     # one-shot"
     @echo "  cargo run -p oxy-app -- seed                                               # guest user + Local org + workspace at ./examples + OXY_GLOBAL_ADMINS as Owners"
-    @echo "  cargo run -p oxy-app -- compile --workspace-path ./examples               # if testing compile boundary"
-    @echo "  OXY_ROLE=ide   cargo run -p oxy-app -- serve --enterprise --port 3000     # full FS access"
-    @echo "  OXY_ROLE=serve cargo run -p oxy-app -- serve --enterprise --port 3000     # 421s on ide-only routes"
-    @echo "  just routing-check                                                        # curl the running server"
+    @echo "  # Compile+PROMOTE the seeded workspace. ABSOLUTE path: a RELATIVE --workspace-path"
+    @echo "  # silently under-compiles (the discover globs miss → only config.yml). --promote sets"
+    @echo "  # current_revision_id so the serve fleet can actually read it."
+    @echo "  cargo run -p oxy-app -- compile --workspace-path $PWD/examples --workspace-id 70787bb2-e11b-5488-b2c3-02e60d5fc7d3 --enterprise --promote"
+    @echo "  # Split fleet — run BOTH (the serve node self-proxies IdeOnly → the ide node)."
+    @echo "  # The serve node's --internal-port 0 turns OFF its internal API (which also"
+    @echo "  # defaults to 3001) so it can't clash with the ide node's internal API on :3001."
+    @echo "  # OXY_INPROC_GLOBAL_WORKER=1 on the IDE node is REQUIRED: it runs the global"
+    @echo "  # driver that DRAINS the compile queue. Without it, admin/auto compiles sit"
+    @echo "  # 'queued' forever, no revision is produced, and the serve node 503s every"
+    @echo "  # compiled read with needs_recompile. The serve node must NOT have it (it has"
+    @echo "  # no working copy; --no-workers keeps it a pure reader). Mirrors oxy-dev, where"
+    @echo "  # the StatefulSet sets OXY_INPROC_GLOBAL_WORKER=1 and the serve fleet strips it."
+    @echo "  OXY_ROLE=ide   OXY_INPROC_GLOBAL_WORKER=1 cargo run -p oxy-app -- serve --enterprise  # ide node (full FS + drains compiles; main :3000, internal :3001)"
+    @echo "  OXY_ROLE=serve OXY_IDE_UPSTREAM=http://localhost:3000 cargo run -p oxy-app -- serve --enterprise --no-workers --port 3002 --internal-port 0   # stateless serve node"
+    @echo "  just routing-check 3002                                                   # probe serve → IdeOnly shows Forwarded-Via: serve + Served-By: ide"
+
+# One-shot precompile: migrate + seed + compile+PROMOTE the demo workspace into
+# Postgres so the stateless serve fleet can read it. Idempotent — re-run freely.
+# Run after `just airhouse-up`. The workspace UUID is deterministic:
+# Uuid::new_v5(NAMESPACE_DNS, "demo.oxy.local") = 70787bb2-… (seed.rs).
+airhouse-precompile:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source .env.airhouse; set +a
+    echo "→ waiting for postgres"
+    for _ in $(seq 1 60); do
+      docker compose -f docker-compose.airhouse.yml exec -T airhouse-postgres \
+        pg_isready -U airhouse -d oxydb >/dev/null 2>&1 && break || sleep 1
+    done
+    echo "→ migrate"; cargo run -p migration --bin migration
+    echo "→ seed";    cargo run -p oxy-app -- seed
+    echo "→ compile + promote (ABSOLUTE path — a relative --workspace-path under-compiles)"
+    cargo run -p oxy-app -- compile --workspace-path "$PWD/examples" \
+      --workspace-id 70787bb2-e11b-5488-b2c3-02e60d5fc7d3 --enterprise --promote --skip-migrations
+    echo "✓ demo workspace compiled + promoted. Next: just airhouse-fleet"
+
+# Build once, then run the split fleet (ide :3000 + serve :3002) backgrounded.
+# OXY_INPROC_GLOBAL_WORKER on the ide node drains the compile queue; the serve
+# node serves the latest compiled revision regardless of branch (no per-node
+# default-branch config needed). Ctrl-C stops both. Logs: tail -f /tmp/oxy-*.log.
+airhouse-fleet:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source .env.airhouse; set +a
+    echo "→ build"; cargo build -p oxy-app
+    bin=./target/debug/oxy
+    echo "→ ide :3000 + serve :3002"
+    OXY_ROLE=ide OXY_INPROC_GLOBAL_WORKER=1 "$bin" serve --enterprise >/tmp/oxy-ide.log 2>&1 &
+    ide=$!
+    OXY_ROLE=serve OXY_IDE_UPSTREAM=http://localhost:3000 "$bin" serve --enterprise --no-workers --port 3002 --internal-port 0 >/tmp/oxy-serve.log 2>&1 &
+    serve=$!
+    trap 'echo; echo stopping; kill $ide $serve 2>/dev/null || true' INT TERM EXIT
+    echo "ide pid=$ide  serve pid=$serve  |  tail -f /tmp/oxy-ide.log /tmp/oxy-serve.log  |  just routing-check 3002"
+    wait
 
 # Tear it down (drops volumes; pass --keep-data to retain).
 airhouse-down *FLAGS:
@@ -227,7 +283,7 @@ airhouse-down *FLAGS:
 
 # Tail logs; pass a service name to focus.
 airhouse-logs *SERVICE:
-    docker compose -f docker-compose.airhouse.yml logs -f {{SERVICE}}
+    docker compose -f docker-compose.airhouse.yml logs -f {{ SERVICE }}
 
 # Show services, buckets, and DBs.
 airhouse-status:
@@ -263,15 +319,56 @@ airhouse-verify-blobs:
 
 # ── Routing boundary check ─────────────────────────────────────────────────────
 
-# Curl :3000 to confirm the role + show what an ide-only route does.
-routing-check port="3000":
+# Probe a running node and show how each route ROLE is handled, by dumping the
+# x-oxy-* headers (enforce_role stamps them before the handler, so even an
+# unauth 401/421 reveals the routing). Run against:
+#   the IDE node   (OXY_ROLE=ide,   :3000)  → everything Served-By: ide
+#   the SERVE node (OXY_ROLE=serve, :3002)  → FleetOk Served-By: serve, and on
+#       IdeOnly routes: Forwarded-Via: serve + Served-By: ide  (OXY_IDE_UPSTREAM set)
+#       or 421 + Required-Role: ide                            (OXY_IDE_UPSTREAM unset)
+# Default ws is the deterministic `oxy seed` demo workspace; any uuid works
+# (classification is path-based, so the headers show even on a 404).
+routing-check port="3000" ws="70787bb2-e11b-5488-b2c3-02e60d5fc7d3":
     #!/usr/bin/env bash
     set -eu
-    WS=$(uuidgen | tr A-Z a-z)
-    echo "==> GET /api/health  (always FleetOk; reveals X-Oxy-Served-By)"
-    curl -s -o /dev/null -D - http://localhost:{{port}}/api/health | grep -iE 'HTTP/|x-oxy-' || true
+    base="http://localhost:{{ port }}"
+    tally=$(mktemp)
+    probe() {  # METHOD PATH
+      local code by fwd
+      code=$(curl -s -o /dev/null -w '%{http_code}' -D /tmp/_rch --max-time 5 -X "$1" "$base$2" || echo "---")
+      by=$(grep -i '^x-oxy-served-by:' /tmp/_rch | sed 's/.*: *//; s/@.*//; s/\r//')
+      grep -iq '^x-oxy-forwarded-via:' /tmp/_rch && fwd="  (serve→ide)" || fwd=""
+      printf '  %-4s %-42s %-5s %s%s\n' "$1" "$2" "$code" "${by:-?}" "$fwd"
+      echo "${by:-?}" >> "$tally"
+    }
+    echo "Routing check → $base  (ws={{ ws }})"
+    echo "  401/200 is fine — x-oxy-served-by is stamped before auth; we're checking ROUTING."
     echo
-    echo "==> POST /api/$WS/compile  (IdeOnly)"
-    echo "    OXY_ROLE=ide   → 401 unauth + X-Oxy-Served-By: ide@..."
-    echo "    OXY_ROLE=serve → 421 + X-Oxy-Required-Role: ide"
-    curl -s -o /dev/null -D - -X POST http://localhost:{{port}}/api/$WS/compile | grep -iE 'HTTP/|x-oxy-' || true
+    echo "FleetOk — no filesystem → the stateless serve fleet answers directly:"
+    probe GET  /api/health
+    probe GET  /api/{{ ws }}/threads
+    probe GET  /api/{{ ws }}/apps
+    probe GET  /api/{{ ws }}/agents
+    probe GET  /api/{{ ws }}/databases
+    probe GET  /api/{{ ws }}/tests
+    probe GET  /api/{{ ws }}/traces
+    probe GET  /api/{{ ws }}/semantic/monitors
+    probe GET  /api/{{ ws }}/analytics/runs/r1/events
+    probe GET  /api/{{ ws }}/blocks
+    probe GET  /api/{{ ws }}/world-model/cameras
+    probe GET  /api/{{ ws }}/results/files/abc.parquet
+    echo
+    echo "IdeOnly — genuinely needs the working copy / .git / node-local state → ide:"
+    probe GET  /ide
+    probe GET  /api/{{ ws }}/files
+    probe POST /api/{{ ws }}/compile
+    probe GET  /api/{{ ws }}/branches
+    probe GET  /api/{{ ws }}/details
+    probe GET  /api/{{ ws }}/status
+    probe GET  /api/{{ ws }}/events
+    probe GET  /api/{{ ws }}/world-model/events
+    probe GET  /api/{{ ws }}/charts/x.json
+    echo
+    echo "── tally (this sample) ──  served-by serve: $(grep -c '^serve$' "$tally" || true)   ide: $(grep -c '^ide$' "$tally" || true)"
+    echo "  (the FleetOk set is the BULK of the real API — apps/agents/semantic/analytics/orgs/users/billing/… all serve)"
+    rm -f "$tally" /tmp/_rch

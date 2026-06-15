@@ -33,9 +33,9 @@ import type { CompileStatus, RevisionSummary } from "@/services/api/compile";
  * collapse into a single "Compile working tree" affordance with no
  * freshness concept.
  *
- * Disabled when the active branch isn't the workspace's default —
- * non-default branches read from FS, so compiling them would just
- * pollute the revision history.
+ * Hidden entirely when the active branch isn't the workspace's default —
+ * compile ships only from the default branch, so the button would do nothing
+ * useful on a draft branch (which reads from FS). See oxygen-internal#2528.
  */
 export function CompileButton() {
   const { project, branchName } = useCurrentProjectBranch();
@@ -44,7 +44,19 @@ export function CompileButton() {
   const { data: status, isLoading } = useCompileStatus(workspaceId, branchName);
   const enqueue = useEnqueueCompile(workspaceId, branchName);
 
-  const view = deriveView(status, branchName);
+  // Compile ships only from the default branch — on any other branch the button
+  // can't do anything useful, so don't render it at all. (`can_compile` is false
+  // here specifically because of the branch.)
+  if (
+    status &&
+    !status.can_compile &&
+    status.default_branch &&
+    branchName !== status.default_branch
+  ) {
+    return null;
+  }
+
+  const view = deriveView(status);
   const isDisabled = !status?.can_compile || view.kind === "compiling" || enqueue.isPending;
 
   const handleClick = () => {
@@ -100,7 +112,7 @@ export function CompileButton() {
             <span>{button}</span>
           </TooltipTrigger>
           <TooltipContent side='bottom' className='max-w-xs'>
-            <CompileTooltipBody view={view} status={status} branchName={branchName} />
+            <CompileTooltipBody view={view} status={status} />
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -119,18 +131,9 @@ interface View {
   sha: string | null;
 }
 
-function deriveView(status: CompileStatus | undefined, branchName: string): View {
+function deriveView(status: CompileStatus | undefined): View {
   if (!status) {
     return { kind: "never", verb: "Compile", sha: null };
-  }
-  // Disabled-on-non-default branch is a status the button still
-  // shows, but the verb explains why the click won't help.
-  if (!status.can_compile && status.default_branch && branchName !== status.default_branch) {
-    return {
-      kind: "fresh",
-      verb: "Compile (main only)",
-      sha: status.head_sha ? short(status.head_sha) : null
-    };
   }
 
   const latest = status.latest;
@@ -217,31 +220,7 @@ function stripeClassName(kind: ViewKind): string {
 
 // ── tooltip body ────────────────────────────────────────────────────
 
-function CompileTooltipBody({
-  view,
-  status,
-  branchName
-}: {
-  view: View;
-  status: CompileStatus | undefined;
-  branchName: string;
-}) {
-  if (
-    status &&
-    !status.can_compile &&
-    status.default_branch &&
-    branchName !== status.default_branch
-  ) {
-    return (
-      <div className='space-y-1 text-xs'>
-        <div>Compile ships from the default branch ({status.default_branch}).</div>
-        <div className='text-muted-foreground'>
-          You're on <span className='font-mono'>{branchName}</span>. Switch branches to compile.
-        </div>
-      </div>
-    );
-  }
-
+function CompileTooltipBody({ view, status }: { view: View; status: CompileStatus | undefined }) {
   switch (view.kind) {
     case "compiling":
       return (

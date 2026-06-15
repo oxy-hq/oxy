@@ -34,10 +34,7 @@ pub fn get_oxy_binary() -> PathBuf {
         .unwrap()
         .to_path_buf();
 
-    for subdir in [
-        "target/llvm-cov-target/debug/oxy",
-        "target/debug/oxy",
-    ] {
+    for subdir in ["target/llvm-cov-target/debug/oxy", "target/debug/oxy"] {
         let p = workspace_dir.join(subdir);
         if p.exists() {
             return p;

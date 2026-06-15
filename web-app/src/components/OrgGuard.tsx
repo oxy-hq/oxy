@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { BillingBanner } from "@/components/billing/BillingBanner";
 import { PaywallScreen } from "@/components/billing/PaywallScreen";
+import IdeUnavailableBanner from "@/components/IdeUnavailableBanner";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrgBillingStatus } from "@/hooks/api/billing";
@@ -128,6 +129,7 @@ export default function OrgGuard() {
     <>
       <BillingBanner />
       <Outlet />
+      <IdeUnavailableBanner />
     </>
   );
 }

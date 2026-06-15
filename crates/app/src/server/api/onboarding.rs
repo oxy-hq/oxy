@@ -598,11 +598,34 @@ pub async fn setup_github(
             }
         };
 
+        let is_ready = matches!(new_status, entity::workspaces::WorkspaceStatus::Ready);
         if let Err(e) = update_workspace_status(workspace_id, new_status, new_error).await {
             error!(
                 "Failed to persist clone status for workspace {}: {}",
                 workspace_id, e
             );
+        }
+
+        // Compile-on-import: a freshly-cloned workspace has no compiled revision,
+        // so the serve fleet would fall back to the ide node on first open.
+        // Enqueue a promoting compile now (deduped) so it's servable from Postgres
+        // ASAP — the fail-safe fallback only has to cover the brief window until
+        // this lands. Best-effort: a connect failure just defers compilation to
+        // the lazy self-heal on first serve.
+        if is_ready {
+            match oxy::database::client::establish_connection().await {
+                Ok(db) => {
+                    crate::server::api::middlewares::workspace_context::enqueue_lazy_compile(
+                        &db,
+                        workspace_id,
+                    )
+                    .await;
+                }
+                Err(e) => tracing::warn!(
+                    ?e, %workspace_id,
+                    "compile-on-import: db connect failed; deferring to lazy self-heal"
+                ),
+            }
         }
     });
 
