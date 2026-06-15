@@ -66,6 +66,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Airway ELT** (`.airway.yml`) — a `source` → a `destination` defined in `config.yml`; credentials live in the secret manager, never in the YAML. Partial failures are recorded as `completed_with_errors`, not full-run failures.
 - **Universal Slack Bot** — one shared multi-tenant app (OAuth; no per-customer installs); Slack users matched to Oxy users by email; bot tokens encrypted per-org.
 - **Airhouse** — first-class connector with **ephemeral** credentials (workspaces mint short-lived creds from a service account; no rotation surface).
+- **Metric Tree & Anomaly Monitoring** — a `.monitor.yml` defines monitors that watch a measure over time (per-segment via `filters`/`group_by`); detected anomalies land in the **Insights Inbox** with AI root-cause, and the analytics agent can list/run/explain them in chat. The **Metric Tree** (a Semantic Layer IDE tab consolidating the semantic explorer) decomposes a top-line metric into driver metrics. Scans exclude the current *incomplete* period, so a partial day/week never reads as a false drop.
 - **Authentication** — magic-link only (passwordless, AWS SES); legacy password auth removed.
 - **Design system** — three-layer tokens; Light / Dark / System (Light default). Use semantic tokens, not raw hex; brand-blue chart ramps auto-invert in dark mode; **emerald is reserved for workflow-node success only**.
 
@@ -77,7 +78,8 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **DuckLake has no indexes** — the Airhouse observability backend must not `CREATE INDEX`, or capture silently goes inert after the first table.
 - **Empty-result warehouse queries** can panic in the shared Arrow bridge (DuckDB / Snowflake / MotherDuck / connectorx); each path must short-circuit its empty shape.
 - **Semantic file discovery** must skip hidden/build dirs (`.worktrees`, `.git`, `.oxy_state`, `target`, `node_modules`, `dist`, `build`); stray copies there trigger spurious "duplicate view name" errors.
-- **Scheduled firing is gated behind `OXY_INPROC_GLOBAL_WORKER`** — with it off, schedule CRUD works but nothing actually fires. Multi-replica safety relies on a CAS `next_run_at` claim (no double-fire; missed runs collapse to a single execution); cross-process cancel uses a polled `cancel_requested_at` flag.
+- **Two distinct worker concepts, easy to conflate** — the *durable task fleet* (runs in-process by default; can run standalone via `oxy worker`, disabled with `oxy serve --no-workers` / `OXY_DISABLE_INPROCESS_WORKERS`) executes queued `TaskSpec` jobs; the *global singleton worker* (`OXY_INPROC_GLOBAL_WORKER`) drives schedules, monitor scans, and pre-aggregation. Toggling one does not affect the other.
+- **Scheduled/monitor firing is gated behind `OXY_INPROC_GLOBAL_WORKER`** — with it off, schedule CRUD works but nothing actually fires. Multi-replica safety relies on a CAS `next_run_at` claim (no double-fire; missed runs collapse to a single execution); cross-process cancel uses a polled `cancel_requested_at` flag.
 - **The Builder/analytics/workflow SSE stream must always emit a terminal event** (`done` / `error` / `cancelled`) — even when it fails before the orchestrator loop starts (e.g. a broken `.view.yml`) — or the frontend hangs forever.
 - **Multi-tenant scoping is a correctness invariant**: orchestrator and pre-aggregation endpoints must filter by `workspace_id`, and secret lookups must filter by project, or runs/secrets leak across tenants.
 - **Mode-dependent LLM-key check** — the home readiness check reads env-var secrets in local mode (e.g. `OPENAI_API_KEY` in `.env`) but the workspace secrets store in cloud mode, and only for the *selected agent's* provider; getting this wrong shows a false "LLM key not set" and disables the chat panel.
@@ -98,4 +100,5 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 | `.view.yml` / `.topic.yml` | Semantic View / Topic | Compiled by airlayer |
 | `.sql` | Verified Query | Auto-discovered, run as-is when matched; shows a Verified badge |
 | `.airway.yml` | Airway ELT pipeline | Source + destination; never holds credentials |
+| `.monitor.yml` | Anomaly monitor | Watches a measure over time; per-granularity `schedule:`; gated by `OXY_INPROC_GLOBAL_WORKER` |
 | `oxy.yml` (under `modeling/<project>/`) | Modeling project config | Maps dbt targets to Oxy connections |
