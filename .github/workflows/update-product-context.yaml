@@ -57,67 +57,68 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: >-
             --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(gh pr
-            create:*),Bash(gh pr list:*),Bash(date:*),Bash(ls:*)"
+            create:*),Bash(gh pr list:*),Bash(date:*),Bash(ls:*),Bash(wc:*)"
           prompt: |
-            You are maintaining the `product-context.md` file in oxy-hq/oxygen-internal.
-            This file is a living reference document that describes Oxy's product features,
-            pages, components, bug areas, and design system. It is injected into every
-            Claude API call to provide product context.
+            You are maintaining `product-context.md` in oxy-hq/oxygen-internal.
+            This file is injected into every Claude API call. Its ONLY job is to
+            clarify things a coding agent CANNOT cheaply retrieve by reading the
+            code: renamed concepts, confusing distinctions between similar
+            features, product intent for bug triage, and a few counterintuitive
+            gotchas. It is NOT a feature catalog and NOT a changelog.
 
-            ## Your task
+            ## Guiding principle
 
-            Enrich `product-context.md` with critical information from recent changelogs
-            in the `oxygen-content/changelog/` directory.
+            Every line must earn its place by being something an agent could not
+            find in a minute by grepping the codebase. Before adding anything,
+            ask: "Could an agent retrieve this from the code?" If yes, do NOT add
+            it. Prefer a short, dense file over a complete one. Treat ~12,000
+            characters as a soft budget and ~20,000 as a hard ceiling (check with
+            `wc -c product-context.md`); if an edit would push past the budget,
+            prune lower-value lines to make room rather than letting the file
+            grow. A net-negative diff is a perfectly good outcome.
 
             ## Steps
 
             ### Step 1 — Read existing context
 
-            Read `product-context.md` carefully. Understand what is already documented.
+            Read `product-context.md` and note its sections and terse tone.
 
             ### Step 2 — Read the 10 most recent changelogs
 
-            1. Use Glob to find all `oxygen-content/changelog/*.mdx` files.
-            2. Sort by filename (date-based) and read the 10 most recent ones.
-            3. Extract new features, renamed concepts, new pages/UI sections, new agent
-               types, new API endpoints, new file extensions, new deployment modes,
-               authentication changes, and new bug-prone areas.
+            1. Glob `oxygen-content/changelog/*.mdx`.
+            2. Sort by filename (date-based) and read the 10 most recent.
+            3. From them, extract ONLY: renamed or removed concepts; new
+               confusing distinctions between similar features; new deployment
+               modes or auth changes; genuinely non-obvious cross-cutting
+               conventions; and counterintuitive, high-cost gotchas (footguns you
+               could not guess). Ignore routine features, UI polish, and anything
+               an agent would discover by reading the relevant module.
 
-            ### Step 3 — Identify gaps
+            ### Step 3 — Decide edits (add, rewrite, AND prune)
 
-            Compare what the changelogs describe against what `product-context.md` already
-            covers. Only add or update information that is:
-            - **Missing entirely** — a new feature, page, concept, or component not mentioned
-            - **Outdated** — a renamed concept, removed feature, or changed behavior
-            - **A new common bug area** — explicitly mentioned bug fixes that suggest
-              recurring fragile areas
+            - ADD a fact only if it passes the "couldn't grep it" test above and
+              is not already covered.
+            - REWRITE lines a changelog renamed or made stale.
+            - PRUNE aggressively. Remove lines that describe obvious default
+              behavior, merely restate how a feature works, duplicate another
+              line, have become retrievable, or read like a changelog entry.
+              Pruning to stay lean is expected, not a violation.
 
             Do NOT:
-            - Remove existing content that is still accurate
-            - Add changelog entries verbatim — synthesize into the existing document style
-            - Add version numbers or dates — the document should be evergreen
-            - Add implementation details (crate names, internal function names)
-            - Duplicate information already present
+            - Turn this into a feature catalog or paste changelog prose verbatim.
+            - Add version numbers, dates, file paths, crate names, or internal
+              function names — keep it product-level and evergreen.
+            - Add obvious behavior ("a list paginates", "Save appears when there
+              are unsaved changes", "a spinner shows while loading").
 
             ### Step 4 — Edit product-context.md
 
-            Use the Edit tool to make targeted updates to each section:
-            - **Product Overview** — update if deployment modes, supported databases, or
-              core capabilities have changed
-            - **Main Pages / Features** — add new pages, update existing descriptions
-            - **Key Components / Concepts** — add new agent types, renamed concepts,
-              new integrations
-            - **Common Bug Areas** — add newly discovered fragile areas from bug fixes
-            - **Key API Endpoints** — add new endpoint groups if introduced
-            - **Key File Extensions** — add new file types if introduced
-            - **Design System** — update only if color scale or usage rules changed
-
-            Keep the document concise and well-organized. Match the existing tone and
-            formatting style.
+            Make targeted edits that preserve the existing section structure and
+            terse tone. Keep each entry to one or two sentences.
 
             ### Step 5 — Commit and create PR
 
-            1. Check if there are actual changes: `git diff --stat product-context.md`
+            1. Check for changes: `git diff --stat product-context.md`
             2. If no changes, stop here — the document is already up to date.
             3. If changes exist:
                - Create a new branch: `git checkout -b update-product-context/$(date +%Y-%m-%d)`
@@ -128,7 +129,7 @@ jobs:
                  ```
                  gh pr create --repo oxy-hq/oxygen-internal \
                    --title "docs: update product-context.md from recent changelogs" \
-                   --body "Weekly automated update of product-context.md based on the 10 most recent entries in oxygen-content/changelog/.
+                   --body "Weekly automated update of product-context.md from the 10 most recent entries in oxygen-content/changelog/. This file is a lean clarifier — things an agent can't retrieve from the code, not a feature catalog — so the diff may prune as well as add.
 
-            **Review before merging** — verify that new entries are accurate, well-organized, and don't duplicate existing content."
+            **Review before merging** — verify that new lines are non-obvious and non-retrievable, and that any pruned lines were genuinely low-value."
                  ```
