@@ -521,6 +521,12 @@ impl PipelineTaskExecutor {
         spec: &mut agentic_airway::AirwayPipelineSpec,
     ) -> Result<(), String> {
         let kind = spec.source.kind.clone();
+        // rest_api carries its credential nested under `config.auth`
+        // (`token_var`/`key_var`), not as a flat `config` field like the kinds
+        // below, so it resolves through its own helper.
+        if kind == "rest_api" {
+            return self.resolve_rest_api_auth_secrets(spec).await;
+        }
         // (field, var-key) pairs each source kind supports as managed secrets.
         // `client_id` / `realm_id` are identifiers, not secrets. Kinds not
         // listed here carry no managed credentials.
@@ -577,6 +583,28 @@ impl PipelineTaskExecutor {
                 obj.insert((*field).to_string(), serde_json::Value::String(secret));
             }
             obj.remove(*var_key);
+        }
+        Ok(())
+    }
+
+    /// rest_api credentials live nested under `config.auth` as `token_var`
+    /// (bearer) / `key_var` (`api_key` header + `api_key_query`), unlike the
+    /// flat-config kinds in [`Self::resolve_airway_source_secrets`]. Resolve
+    /// each from the platform secret manager into its literal `auth.{token,key}`
+    /// field, then strip the `*_var` indirection so the connector factory sees
+    /// only resolved literals.
+    async fn resolve_rest_api_auth_secrets(
+        &self,
+        spec: &mut agentic_airway::AirwayPipelineSpec,
+    ) -> Result<(), String> {
+        for (field, var_key, var_name) in rest_api_secret_var_refs(&spec.source.config)? {
+            let secret = self.platform.resolve_secret(&var_name).await.ok_or_else(|| {
+                format!(
+                    "airway rest_api: secret `{var_name}` (referenced by `auth.{var_key}`) \
+                     could not be resolved from the secret manager"
+                )
+            })?;
+            set_rest_api_auth_secret(&mut spec.source.config, field, var_key, &secret);
         }
         Ok(())
     }
@@ -639,6 +667,56 @@ impl PipelineTaskExecutor {
             });
         Ok(is_airhouse.then_some(database))
     }
+}
+
+/// Collect `(target_field, var_key, secret_name)` triples for `*_var`
+/// credential references nested under a rest_api source's `config.auth`:
+/// `token_var` → `token` (bearer) and `key_var` → `key` (`api_key` header +
+/// `api_key_query`). Pure — performs no secret lookup; the async resolution
+/// happens in [`PipelineTaskExecutor::resolve_rest_api_auth_secrets`].
+///
+/// A present-but-non-string `*_var` is a hard error (matching the flat-config
+/// path in [`PipelineTaskExecutor::resolve_airway_source_secrets`]); an absent
+/// one is simply skipped.
+fn rest_api_secret_var_refs(
+    config: &serde_json::Value,
+) -> Result<Vec<(&'static str, &'static str, String)>, String> {
+    let mut refs = Vec::new();
+    let Some(auth) = config.get("auth").and_then(|a| a.as_object()) else {
+        return Ok(refs);
+    };
+    for (field, var_key) in [("token", "token_var"), ("key", "key_var")] {
+        if let Some(value) = auth.get(var_key) {
+            let name = value.as_str().ok_or_else(|| {
+                format!("airway rest_api: `auth.{var_key}` must be a string secret name")
+            })?;
+            refs.push((field, var_key, name.to_string()));
+        }
+    }
+    Ok(refs)
+}
+
+/// Apply one resolved rest_api auth secret in place: set `config.auth[field]`
+/// to the resolved literal (skipped when empty — treated as "unset", mirroring
+/// the flat-config kinds in [`PipelineTaskExecutor::resolve_airway_source_secrets`])
+/// and always strip `config.auth[var_key]` so the rendered spec never leaks the
+/// `*_var` indirection to the connector factory.
+fn set_rest_api_auth_secret(
+    config: &mut serde_json::Value,
+    field: &str,
+    var_key: &str,
+    secret: &str,
+) {
+    let Some(auth) = config.get_mut("auth").and_then(|a| a.as_object_mut()) else {
+        return;
+    };
+    if !secret.is_empty() {
+        auth.insert(
+            field.to_string(),
+            serde_json::Value::String(secret.to_string()),
+        );
+    }
+    auth.remove(var_key);
 }
 
 /// Persists a rotated OAuth refresh token back to the platform secret
@@ -715,5 +793,74 @@ mod tests {
         assert!(!is_builder_agent("revenue"));
         assert!(!is_builder_agent("duckdb"));
         assert!(!is_builder_agent(""));
+    }
+
+    #[test]
+    fn rest_api_bearer_token_var_is_collected() {
+        let config = serde_json::json!({
+            "base_url": "https://api.yelp.com/v3",
+            "auth": { "type": "bearer", "token_var": "YELP_API_KEY" }
+        });
+        assert_eq!(
+            rest_api_secret_var_refs(&config).unwrap(),
+            vec![("token", "token_var", "YELP_API_KEY".to_string())]
+        );
+    }
+
+    #[test]
+    fn rest_api_api_key_query_key_var_is_collected() {
+        let config = serde_json::json!({
+            "auth": { "type": "api_key_query", "key_var": "CENSUS_API_KEY", "param": "key" }
+        });
+        assert_eq!(
+            rest_api_secret_var_refs(&config).unwrap(),
+            vec![("key", "key_var", "CENSUS_API_KEY".to_string())]
+        );
+    }
+
+    #[test]
+    fn rest_api_literal_or_absent_auth_collects_no_refs() {
+        // already-literal token (no `*_var` indirection) → nothing to resolve
+        let literal = serde_json::json!({ "auth": { "type": "bearer", "token": "sk-literal" } });
+        assert!(rest_api_secret_var_refs(&literal).unwrap().is_empty());
+        // no auth block at all (e.g. keyless public API like nces_schools)
+        let none = serde_json::json!({ "base_url": "https://example.com" });
+        assert!(rest_api_secret_var_refs(&none).unwrap().is_empty());
+    }
+
+    #[test]
+    fn rest_api_non_string_var_is_a_hard_error() {
+        // A present-but-non-string `*_var` is a config typo; error loudly like
+        // the flat-config path rather than silently skipping the credential.
+        let config = serde_json::json!({
+            "auth": { "type": "bearer", "token_var": 123 }
+        });
+        let err = rest_api_secret_var_refs(&config).unwrap_err();
+        assert!(err.contains("must be a string secret name"), "got: {err}");
+    }
+
+    #[test]
+    fn set_rest_api_auth_secret_writes_field_and_strips_var() {
+        let mut config = serde_json::json!({
+            "auth": { "type": "bearer", "token_var": "YELP_API_KEY" }
+        });
+        set_rest_api_auth_secret(&mut config, "token", "token_var", "sk-abc123");
+        assert_eq!(config["auth"]["token"], "sk-abc123");
+        assert!(
+            config["auth"].get("token_var").is_none(),
+            "the `*_var` indirection must be stripped so the connector never sees it"
+        );
+    }
+
+    #[test]
+    fn set_rest_api_auth_secret_empty_secret_skips_field_and_strips_var() {
+        // An empty resolved secret is "unset": don't write an empty token, but
+        // still strip the var so the rendered spec carries no indirection.
+        let mut config = serde_json::json!({
+            "auth": { "type": "bearer", "token_var": "YELP_API_KEY" }
+        });
+        set_rest_api_auth_secret(&mut config, "token", "token_var", "");
+        assert!(config["auth"].get("token").is_none());
+        assert!(config["auth"].get("token_var").is_none());
     }
 }

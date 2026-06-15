@@ -669,6 +669,8 @@ mod tests {
     use crate::config::SourceConfig;
     use serde_json::json;
 
+    use airway::connector::auth::AuthConfig;
+
     fn cfg(kind: &str, config: Value) -> SourceConfig {
         SourceConfig {
             kind: kind.to_string(),
@@ -692,6 +694,82 @@ mod tests {
         ))
         .expect("build");
         assert_eq!(source.name(), "rest_api");
+    }
+
+    // The agentic-pipeline executor resolves a rest_api credential into
+    // `auth.token` (bearer) / `auth.key` (`api_key` header, `api_key_query`).
+    // RestApiConfig does NOT `deny_unknown_fields`, so if airway ever renamed
+    // those fields the resolved secret would land in an ignored field and the
+    // request would go out unauthenticated. These round-trips pin the contract
+    // so a rename in airway-internal fails here at CI instead.
+    #[test]
+    fn rest_api_bearer_reads_resolved_token() {
+        let config: RestApiConfig = serde_json::from_value(json!({
+            "base_url": "https://api.yelp.com/v3",
+            "auth": { "type": "bearer", "token": "resolved-secret" },
+            "endpoints": [],
+        }))
+        .expect("deserialize");
+        match config.auth {
+            AuthConfig::Bearer { token } => assert_eq!(token, "resolved-secret"),
+            other => panic!("expected bearer carrying the resolved token, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rest_api_api_key_query_reads_resolved_key() {
+        let config: RestApiConfig = serde_json::from_value(json!({
+            "base_url": "https://api.census.gov/data/2023/acs/acs5",
+            "auth": { "type": "api_key_query", "key": "resolved-secret", "param": "key" },
+            "endpoints": [],
+        }))
+        .expect("deserialize");
+        match config.auth {
+            AuthConfig::ApiKeyQuery { key, param } => {
+                assert_eq!(key, "resolved-secret");
+                assert_eq!(param, "key");
+            }
+            other => panic!("expected api_key_query carrying the resolved key, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rest_api_api_key_header_reads_resolved_key() {
+        // The header variant's serde tag is `api_key` (not `api_key_header`); it
+        // also carries the secret in `key`, so the executor's `key_var` -> `key`
+        // mapping covers it.
+        let config: RestApiConfig = serde_json::from_value(json!({
+            "base_url": "https://example.com",
+            "auth": { "type": "api_key", "key": "resolved-secret" },
+            "endpoints": [],
+        }))
+        .expect("deserialize");
+        match config.auth {
+            AuthConfig::ApiKey { key, .. } => assert_eq!(key, "resolved-secret"),
+            other => panic!("expected api_key carrying the resolved key, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rest_api_rejects_unresolved_token_var() {
+        // If an old binary fails to resolve `token_var` -> `token`, airway's
+        // Bearer is missing its required `token`, so the build fails loudly (a
+        // clear deserialize error) rather than silently sending an empty
+        // credential.
+        let err = build(&cfg(
+            "rest_api",
+            json!({
+                "base_url": "https://x",
+                "auth": { "type": "bearer", "token_var": "YELP_API_KEY" },
+                "endpoints": [],
+            }),
+        ))
+        .err()
+        .expect("expected error");
+        assert!(
+            err.to_string().contains("invalid rest_api config"),
+            "got: {err}"
+        );
     }
 
     #[test]
