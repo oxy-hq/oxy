@@ -1,11 +1,12 @@
 import { AppWindow, ArrowRight, Bot, Check, ChevronDown, Eye, Network } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import useApps from "@/hooks/api/apps/useApps";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
+import { markOnboardingDismissedForStorageKey } from "@/libs/utils/onboardingStorage";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { AppItem } from "@/types/app";
@@ -53,6 +54,18 @@ export default function CompletionCard({
   const { project } = useCurrentProjectBranch();
   const projectId = project?.id ?? "00000000-0000-0000-0000-000000000000";
   const routes = ROUTES.ORG(orgSlug).WORKSPACE(projectId);
+
+  // Reaching the completion card means onboarding has been dealt with — built
+  // or connected, possibly with credentials intentionally skipped. Persist that
+  // per workspace so Home's setup-gap check stops bouncing the user back into
+  // the wizard on a still-missing key. We mark it here (rather than relying on
+  // the per-step "Skip for now") because the credential-driven Home → onboarding
+  // redirect never seeds the orchestrator's storageKey, whereas `project` is
+  // reliably available in this component.
+  const onboardingStorageKey = project?.storage_key ?? project?.id;
+  useEffect(() => {
+    if (onboardingStorageKey) markOnboardingDismissedForStorageKey(onboardingStorageKey);
+  }, [onboardingStorageKey]);
 
   // Always load the workspace app list: in blank mode it carries the
   // LLM-authored `title:` for each dashboard we just built, which we prefer

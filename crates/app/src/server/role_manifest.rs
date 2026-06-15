@@ -142,6 +142,20 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/files/{pathb64}/from-git",
         role: RouteRole::IdeOnly,
     },
+    // ── App data/source file reads hit local disk on the singleton ──────────
+    // `get_source_file` searches `workspace_path`; `get_data` reads the local
+    // state dir (stripped from the serve fleet env). Neither exists on a
+    // stateless replica, so forward both to the ide instead of 404ing locally.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/apps/source/{pathb64}",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/apps/file/{pathb64}",
+        role: RouteRole::IdeOnly,
+    },
     // ── Compile trigger reads the working copy on the singleton ─────────────
     ManifestEntry {
         method: "POST",
@@ -668,6 +682,28 @@ mod tests {
         assert_eq!(
             classify("DELETE", "/api/abc/branches/feature-x"),
             RouteRole::IdeOnly
+        );
+    }
+
+    #[test]
+    fn app_data_and_source_file_reads_are_ide_only() {
+        // `/apps/source/{pathb64}` (get_source_file → workspace_path) and
+        // `/apps/file/{pathb64}` (get_data → local state dir) read local disk
+        // the stateless serve fleet lacks; they must forward to the ide, not
+        // 404 locally. The 2-segment patterns must not be shadowed by the
+        // 1-segment `/apps/{pathb64}` fetch, which stays fleet-served.
+        let ws = "/api/d9830be4-c6a4";
+        assert_eq!(
+            classify("GET", &format!("{ws}/apps/source/b3h5bWFydA")),
+            RouteRole::IdeOnly
+        );
+        assert_eq!(
+            classify("GET", &format!("{ws}/apps/file/b3h5bWFydA")),
+            RouteRole::IdeOnly
+        );
+        assert_eq!(
+            classify("GET", &format!("{ws}/apps/b3h5bWFydA")),
+            RouteRole::FleetOk
         );
     }
 
