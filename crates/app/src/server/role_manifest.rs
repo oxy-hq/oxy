@@ -156,14 +156,29 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/apps/file/{pathb64}",
         role: RouteRole::IdeOnly,
     },
-    // Data-app RUN executes the app's inline workflow (`run_app`), whose
-    // `execute_sql` tasks emit authored file-path SQL (`FROM 'oxymart.csv'`).
-    // Same as /agentic-workflows: needs the working copy + the local DuckDB
-    // connector's file_search_path, so pin to the ide. The /apps READ surface
-    // (list/config/get, served from the compile boundary) stays FleetOk.
+    // Data-app EXECUTION runs the app's inline workflow, whose `execute_sql`
+    // tasks emit authored file-path SQL (`FROM 'oxymart.csv'`). That needs the
+    // working copy + the local DuckDB connector's file_search_path, so every
+    // handler that calls `AppService::run()` is pinned to the ide:
+    //   • GET  /apps/{pathb64}          → get_app_data   (auto-run on load)
+    //   • POST /apps/{pathb64}/run      → run_app
+    //   • POST /apps/{pathb64}/result   → get_app_result
+    // The non-executing surface stays FleetOk: GET /apps/ (list), GET
+    // /apps/{pathb64}/displays (returns SQL templates for the FE to run), and
+    // GET /apps/{pathb64}/charts/... (local-file read with an S3 fallback).
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/apps/{pathb64}",
+        role: RouteRole::IdeOnly,
+    },
     ManifestEntry {
         method: "POST",
         path_pattern: "/api/{workspace_id}/apps/{pathb64}/run",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/apps/{pathb64}/result",
         role: RouteRole::IdeOnly,
     },
     // ── Compile trigger reads the working copy on the singleton ─────────────
@@ -741,11 +756,13 @@ mod tests {
 
     #[test]
     fn app_data_and_source_file_reads_are_ide_only() {
-        // `/apps/source/{pathb64}` (get_source_file → workspace_path) and
-        // `/apps/file/{pathb64}` (get_data → local state dir) read local disk
-        // the stateless serve fleet lacks; they must forward to the ide, not
-        // 404 locally. The 2-segment patterns must not be shadowed by the
-        // 1-segment `/apps/{pathb64}` fetch, which stays fleet-served.
+        // Every handler that calls `AppService::run()` (executes the inline
+        // workflow's file-path SQL) is ide-pinned: get_app_data (GET
+        // /apps/{pathb64}, the auto-run on load), run_app (POST .../run) and
+        // get_app_result (POST .../result). The file/source reads
+        // (get_source_file → workspace_path; get_data → local state dir) are
+        // ide-pinned too. The non-executing surface stays fleet-served:
+        // get_displays returns SQL templates for the FE to run.
         let ws = "/api/d9830be4-c6a4";
         assert_eq!(
             classify("GET", &format!("{ws}/apps/source/b3h5bWFydA")),
@@ -755,15 +772,24 @@ mod tests {
             classify("GET", &format!("{ws}/apps/file/b3h5bWFydA")),
             RouteRole::IdeOnly
         );
+        // get_app_data runs the inline workflow on a cold cache → ide.
         assert_eq!(
             classify("GET", &format!("{ws}/apps/b3h5bWFydA")),
-            RouteRole::FleetOk
+            RouteRole::IdeOnly
         );
-        // The data-app RUN (run_app → inline workflow → file-path SQL) is
-        // ide-pinned; the 1-segment fetch above stays fleet-served.
         assert_eq!(
             classify("POST", &format!("{ws}/apps/b3h5bWFydA/run")),
             RouteRole::IdeOnly
+        );
+        assert_eq!(
+            classify("POST", &format!("{ws}/apps/b3h5bWFydA/result")),
+            RouteRole::IdeOnly
+        );
+        // get_displays only emits SQL templates — no server-side run — so the
+        // 4-segment GET pin above must NOT shadow it; it stays fleet-served.
+        assert_eq!(
+            classify("GET", &format!("{ws}/apps/b3h5bWFydA/displays")),
+            RouteRole::FleetOk
         );
     }
 
