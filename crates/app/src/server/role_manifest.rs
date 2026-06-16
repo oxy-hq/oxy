@@ -383,10 +383,9 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
     // in-memory `BROADCASTER` (`api/{run,task,world_model}.rs`). The producing
     // run lives on a DIFFERENT process, so a worker-less serve replica's
     // broadcaster is empty and the stream truncates silently. Pin to the ide
-    // singleton (the in-process run owner). NB: the MODERN agentic streams
-    // (/analytics, /agentic-workflows, /agentic-airway) use the cross-process
-    // Postgres task router (LISTEN/NOTIFY) and are FleetOk — deliberately not
-    // listed here.
+    // singleton (the in-process run owner). The MODERN agentic surfaces
+    // (/analytics, /agentic-workflows, /agentic-airway) are pinned to the ide
+    // too — see the "agentic run/exec surface" section just below.
     ManifestEntry {
         method: "GET",
         path_pattern: "/api/{workspace_id}/events",
@@ -400,6 +399,36 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
     ManifestEntry {
         method: "GET",
         path_pattern: "/api/{workspace_id}/world-model/events",
+        role: RouteRole::IdeOnly,
+    },
+    // ── Agentic run/exec surface → ide singleton (ephemeral-env tier 1) ──────
+    // An analytics run delegates to procedure subruns enqueued `TaskScope::
+    // Scoped`, so a subrun's `execute_sql` runs IN-PROCESS on whichever node
+    // drives the analytics run (co-located coordinator; see
+    // `agentic-pipeline::workflow_run`). A stateless serve replica has no working
+    // copy, so authored file-path SQL (`FROM 'oxymart.csv'`, resolved via DuckDB
+    // `file_search_path`) and any FS-touching procedure / airway step fail there.
+    // Per the ephemeral-env tier-1 posture (one ide owns the FS; the fleet serves
+    // reads), pin the whole run/exec surface to the ide — the serve fleet
+    // self-proxies via `OXY_IDE_UPSTREAM`. This DELIBERATELY reverts the earlier
+    // "modern agentic streams are FleetOk via Postgres LISTEN/NOTIFY" decision
+    // for these surfaces; the cross-process plumbing still exists but is unused
+    // while runs are ide-pinned. Revisit when a fleet replica can run file-SQL
+    // (compile-time rewrite of file refs → mirrored views, or a per-connection
+    // S3→tmp materialise with `file_search_path`).
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/analytics/{*rest}",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/agentic-workflows/{*rest}",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/agentic-airway/{*rest}",
         role: RouteRole::IdeOnly,
     },
     // ── Generated chart files (local disk, NO cross-node fallback) ──────────
@@ -645,19 +674,20 @@ mod tests {
         assert_eq!(classify("POST", "/api/analytics/runs"), RouteRole::FleetOk);
         assert_eq!(classify("GET", "/health"), RouteRole::FleetOk);
         assert_eq!(classify("GET", "/healthz"), RouteRole::FleetOk);
-        // Guard against OVER-classification: the modern agentic streams use the
-        // cross-process Postgres task router (LISTEN/NOTIFY), so they're
-        // fleet-safe and must stay FleetOk even though they end in /events.
+        // The agentic run/exec surface (/analytics, /agentic-workflows,
+        // /agentic-airway) is pinned to the ide for ephemeral-env tier 1 —
+        // subruns execute in-process where the run drives and touch the FS — so
+        // even the cross-process /events streams under it now classify IdeOnly.
         assert_eq!(
             classify("GET", "/api/d9830be4-c6a4/analytics/runs/abc/events"),
-            RouteRole::FleetOk
+            RouteRole::IdeOnly
         );
         assert_eq!(
             classify(
                 "GET",
                 "/api/d9830be4-c6a4/agentic-workflows/runs/abc/events"
             ),
-            RouteRole::FleetOk
+            RouteRole::IdeOnly
         );
         // /blocks reads persisted blocks from Postgres (no broadcaster) — FleetOk.
         assert_eq!(
@@ -815,6 +845,13 @@ mod tests {
             ("GET", format!("{ws}/modeling")),
             ("GET", format!("{ws}/modeling/myproj/lineage")),
             ("POST", format!("{ws}/modeling/myproj/run")),
+            // Agentic run/exec surface — ide-pinned for tier 1 (subruns run
+            // in-process where the analytics run drives and touch the FS).
+            ("POST", format!("{ws}/analytics/runs")),
+            ("GET", format!("{ws}/analytics/runs/r1/events")),
+            ("GET", format!("{ws}/agentic-workflows/files")),
+            ("GET", format!("{ws}/agentic-workflows/runs/r1/events")),
+            ("GET", format!("{ws}/agentic-airway/runs/r1/events")),
         ];
         for (method, path) in &ide_only {
             assert_eq!(
@@ -826,11 +863,10 @@ mod tests {
         }
         // Counter-guard: routes that LOOK similar but are cross-process safe
         // must stay FleetOk, or we needlessly pin the chat data plane to the
-        // ide singleton. Modern agentic streams ride the Postgres task router.
+        // ide singleton. (The agentic run/exec surface — /analytics,
+        // /agentic-workflows, /agentic-airway — is now ide-pinned for tier 1;
+        // see the `ide_only` set above.)
         let fleet_ok = [
-            ("GET", format!("{ws}/analytics/runs/r1/events")),
-            ("GET", format!("{ws}/agentic-workflows/runs/r1/events")),
-            ("GET", format!("{ws}/agentic-airway/runs/r1/events")),
             ("GET", format!("{ws}/blocks")), // persisted Postgres read
             ("GET", format!("{ws}/world-model/cameras")),
             // parquet result cache — fleet-safe via the S3 read-through in
@@ -885,9 +921,9 @@ mod tests {
         "/blocks",
         "/runs/{source_id}/{run_index}",
         "/logs",
-        "/analytics",
-        "/agentic-workflows",
-        "/agentic-airway",
+        // NB: /analytics, /agentic-workflows, /agentic-airway are NOT here —
+        // they're ide-pinned (IDE_ONLY_PATTERNS) for tier 1 (subruns run
+        // in-process where the run drives and touch the FS).
         "/agentic-schedules",
         "/tests",
         "/traces",
