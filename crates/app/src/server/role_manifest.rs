@@ -318,8 +318,16 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         role: RouteRole::IdeOnly,
     },
     // ── Modeling / Airform — dbt projects live on disk under modeling/ ─────
+    // EVERY method, and the bare `/modeling` list root, read the working copy —
+    // not just POST. A method-specific entry silently left the GETs
+    // (list/info/nodes/lineage) FleetOk → 404 on a serve replica with no checkout.
     ManifestEntry {
-        method: "POST",
+        method: "*",
+        path_pattern: "/api/{workspace_id}/modeling",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
         path_pattern: "/api/{workspace_id}/modeling/{*rest}",
         role: RouteRole::IdeOnly,
     },
@@ -796,6 +804,11 @@ mod tests {
             // generated chart files on local disk (no S3 read-through)
             ("GET", format!("{ws}/charts/abc.json")),
             ("GET", format!("{ws}/exported-charts/abc.png")),
+            // modeling/airform — dbt projects on disk; ALL methods + the bare
+            // list root are IdeOnly (regression for the POST-only-manifest gap).
+            ("GET", format!("{ws}/modeling")),
+            ("GET", format!("{ws}/modeling/myproj/lineage")),
+            ("POST", format!("{ws}/modeling/myproj/run")),
         ];
         for (method, path) in &ide_only {
             assert_eq!(
