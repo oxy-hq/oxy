@@ -156,6 +156,16 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/apps/file/{pathb64}",
         role: RouteRole::IdeOnly,
     },
+    // Data-app RUN executes the app's inline workflow (`run_app`), whose
+    // `execute_sql` tasks emit authored file-path SQL (`FROM 'oxymart.csv'`).
+    // Same as /agentic-workflows: needs the working copy + the local DuckDB
+    // connector's file_search_path, so pin to the ide. The /apps READ surface
+    // (list/config/get, served from the compile boundary) stays FleetOk.
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/apps/{pathb64}/run",
+        role: RouteRole::IdeOnly,
+    },
     // ── Compile trigger reads the working copy on the singleton ─────────────
     ManifestEntry {
         method: "POST",
@@ -748,6 +758,12 @@ mod tests {
         assert_eq!(
             classify("GET", &format!("{ws}/apps/b3h5bWFydA")),
             RouteRole::FleetOk
+        );
+        // The data-app RUN (run_app → inline workflow → file-path SQL) is
+        // ide-pinned; the 1-segment fetch above stays fleet-served.
+        assert_eq!(
+            classify("POST", &format!("{ws}/apps/b3h5bWFydA/run")),
+            RouteRole::IdeOnly
         );
     }
 
