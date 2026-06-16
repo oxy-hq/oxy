@@ -967,14 +967,30 @@ pub async fn database_to_connector_config(
     workspace_manager: &WorkspaceManager,
 ) -> Option<ConnectorConfig> {
     match &db.database_type {
-        // Stateless serve fleet: the local DuckDB data file is absent. The
-        // compile worker mirrored this local-file warehouse to S3 and recorded
-        // an `s3_mirror` block; attach from S3 via the same httpfs SQL the core
-        // connector uses, instead of resolving the (nonexistent) local path.
-        // Without this the connector silently drops the DB and the agent run
-        // fails "no databases configured" on cloud while working locally.
-        // (DuckLake / MotherDuck are already remote and carry no mirror.)
-        DatabaseType::DuckDB(duck) if duck.s3_mirror.is_some() => {
+        // Stateless fleet only (Serve/Worker): the local DuckDB data file is
+        // absent here. The compile worker mirrored this local-file warehouse to
+        // S3 and recorded an `s3_mirror` block; attach from S3 via the same
+        // httpfs SQL the core connector uses, instead of resolving the
+        // (nonexistent) local path. Without this the connector silently drops
+        // the DB and the agent run fails "no databases configured" on cloud
+        // while working locally. (DuckLake / MotherDuck are already remote and
+        // carry no mirror.)
+        //
+        // Gated on the stateless roles: a node WITH the working copy (ide /
+        // all-in-one) reads the SAME compiled config (which carries `s3_mirror`)
+        // but DOES have the files, so it must fall through to the `Local` arm
+        // below. The S3-mirror connector exposes data as views only and has no
+        // `file_search_path`, so it can't resolve authored file-path SQL
+        // (`FROM 'oxymart.csv'`) — which workflow/procedure steps emit and which
+        // is exactly what runs on the ide once /agentic-workflows is ide-pinned.
+        DatabaseType::DuckDB(duck)
+            if duck.s3_mirror.is_some()
+                && matches!(
+                    crate::server::role_manifest::current_process_role(),
+                    crate::server::role_manifest::Role::Serve
+                        | crate::server::role_manifest::Role::Worker
+                ) =>
+        {
             let mirror = duck.s3_mirror.as_ref().expect("guarded by is_some()");
             Some(ConnectorConfig::DuckDbRaw(DuckDbRawConfig {
                 init_statements: oxy::connector::build_s3_mirror_sql(mirror),
