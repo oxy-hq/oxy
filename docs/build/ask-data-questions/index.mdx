@@ -1,0 +1,49 @@
+---
+title: Ask data questions
+description: Ask questions in plain language and get back SQL-backed answers
+type: concept
+audience: end-user
+tier: standard
+---
+
+**Ask** mode is the fastest way to get an answer from your data. Type a
+question in plain language on the Oxygen home page and an agent picks the
+right context, writes the SQL, runs it against your warehouse, and streams
+the results back — no YAML, no terminal.
+
+## How it works
+
+1. From the home page at [app.oxy.tech](https://app.oxy.tech), make sure the
+   chat panel mode toggle is set to **Ask**, then type your question.
+2. Submitting creates a **Thread** — a conversation you can return to and
+   keep refining.
+3. The agent resolves the relevant tables and [semantic layer](/build/semantic-layer)
+   definitions, generates a query, and runs it.
+4. Results stream back inline. Every answer that ran SQL includes an
+   `execute_sql` artifact so you can see the exact query the agent ran and
+   open it in the SQL IDE.
+
+{/* TODO: Screenshot — Ask mode thread with an execute_sql artifact. */}
+
+## Verified queries
+
+When a question matches a [Verified Query](/reference/yaml) — a plain `.sql`
+file in your project — the agent runs that query **as-is** instead of
+generating new SQL, and the answer carries a **Verified** badge. This keeps
+trusted, business-critical questions consistent every time they are asked.
+
+## Pick the right agent
+
+Each Thread runs against a selected agent. Switch agents from the chat panel
+to change which data, instructions, and tools are in scope. To shape how an
+agent answers, give it [context](/build/agents/provide-context) and tune its
+instructions from the IDE.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build an agent" href="/build/agents" />
+  <Card title="Provide context" href="/build/agents/provide-context" />
+  <Card title="Model your data" href="/build/semantic-layer" />
+  <Card title="Build with chat" href="/start/build-with-chat" />
+</CardGroup>

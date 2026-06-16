@@ -1,0 +1,61 @@
+---
+title: Set up your project
+description: Create a project, connect a model, and connect your data — all from the IDE
+type: tutorial
+audience: end-user
+tier: standard
+---
+
+A **project** is the unit of work inside an Oxygen workspace — it holds
+your agents, procedures, data apps, and the `config.yml` that wires them
+to data sources and models.
+
+<Steps>
+
+  <Step title="Create the project">
+    From [app.oxy.tech](https://app.oxy.tech), open your workspace and
+    click **+ New project** in the sidebar. Give it a name and Oxygen
+    scaffolds a starter `config.yml` for you.
+  </Step>
+
+  <Step title="Connect a model">
+    Open **Manage → Models** (or edit `config.yml` directly in the
+    IDE) and add the LLM you want to use. The secret comes from
+    [Manage → Secrets](/manage/secrets).
+
+    ```yaml config.yml
+    models:
+      - name: openai-4.1
+        vendor: openai
+        model_ref: gpt-4.1
+        key_var: OPENAI_API_KEY
+    ```
+  </Step>
+
+  <Step title="Connect a data source">
+    Add the warehouse the agents will query. The simplest option is to
+    drop a CSV or Parquet file into the project and let Oxygen's
+    in-cloud DuckDB engine read it; switching to BigQuery, Snowflake,
+    Postgres, or any other warehouse is a one-block change.
+
+    ```yaml config.yml
+    databases:
+      - name: local
+        type: duckdb
+        dataset: ./
+    ```
+
+    See [Connect your data](/start/connect-your-data) for the full
+    decision tree across warehouses.
+  </Step>
+
+  <Step title="Save and proceed">
+    Save the `config.yml`. Oxygen validates the file and surfaces any
+    schema errors inline.
+  </Step>
+
+</Steps>
+
+Now you're ready to [build your first agent](/start/first-agent), or
+let the Builder copilot do it for you in
+[Build with chat first](/start/build-with-chat).

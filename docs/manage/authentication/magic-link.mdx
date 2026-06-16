@@ -1,0 +1,33 @@
+---
+title: Magic link
+description: Passwordless email sign-in (the default)
+sidebarTitle: Magic link
+type: how-to
+audience: admin
+tier: standard
+---
+
+Magic link is Oxygen Cloud's default sign-in method. Users enter their
+email, click the one-time link Oxygen sends them, and land in their
+workspace — no passwords, no extra setup.
+
+## How it works for users
+
+1. The user enters their email on the sign-in screen.
+2. Oxygen emails them a one-time sign-in link (valid for 15 minutes).
+3. They click the link and land in the workspace they were invited to.
+
+## What admins control
+
+From **Manage → Authentication → Magic link** you can:
+
+- Restrict sign-ins to specific email domains (e.g. `@acme.com`).
+- Disable magic link entirely if you only want SSO sign-ins.
+
+{/* TODO: Screenshot — Magic link settings panel. */}
+
+## Inviting teammates
+
+Magic link works hand-in-hand with the invitation flow:
+**Manage → Members → Invite**. Each invited email receives a magic
+link that pre-populates the right role and workspace.

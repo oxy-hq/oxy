@@ -1,0 +1,30 @@
+---
+title: Google OAuth
+description: One-click sign-in with Google accounts
+sidebarTitle: Google OAuth
+type: how-to
+audience: admin
+tier: standard
+---
+
+Google OAuth lets your team sign in to Oxygen with their existing
+Google account. There's no password to manage — the Google sign-in
+flow handles identity and MFA.
+
+## Set it up
+
+1. Go to **Manage → Authentication → Google** in your workspace.
+2. Toggle **Enable Google sign-in**.
+3. (Optional) Restrict sign-ins to specific Google Workspace domains —
+   useful for keeping access scoped to `@acme.com` employees only.
+
+{/* TODO: Screenshot — Google config panel. */}
+
+After enabling, the workspace sign-in screen shows a **Sign in with
+Google** button. New users land in your workspace with the default
+role you configured in **Manage → Members**.
+
+## Coexisting with magic link
+
+Google OAuth can run alongside [magic link](/manage/authentication/magic-link).
+Users see both options and pick one.

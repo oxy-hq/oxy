@@ -1,0 +1,28 @@
+---
+title: Architecture
+description: How Oxygen Cloud fits together at a glance
+type: concept
+audience: end-user
+tier: standard
+---
+
+Oxygen Cloud has three surfaces a user interacts with:
+
+- **`app.oxy.tech`** — the IDE, chat panel, dashboards, and admin UI.
+- **`api.oxy.tech`** — the REST API that powers automation and embedded
+  integrations.
+- **The MCP server** — exposes Oxygen as a tool surface for MCP clients
+  like Claude Desktop and Cursor. ([MCP →](/build/embed-extend/mcp))
+
+{/* TODO: Annotated diagram. */}
+
+Inside a workspace, Oxygen organizes work into:
+
+- **Agents** that answer questions
+- **Procedures** that automate multi-step workflows
+- **Data Apps** that render dashboards
+- A **Semantic Layer** that backs all of the above with shared models
+
+Authentication, billing, and team-management live in **Manage**.
+Configuration lives in workspace files that Oxygen edits for you
+through the Builder agent (you can also edit them by hand in the IDE).

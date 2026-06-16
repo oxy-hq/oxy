@@ -1,0 +1,51 @@
+---
+title: Build with chat first
+description: Go from sign-up to a working agent in 5 minutes — no YAML, no terminal
+type: tutorial
+audience: end-user
+tier: standard
+---
+
+This tutorial takes a brand-new Oxygen user from sign-up to a working
+agent **without writing a line of YAML**. The Oxygen Builder agent
+generates the agent for you from a natural-language description.
+
+## 1. Sign up
+
+Go to [app.oxy.tech](https://app.oxy.tech) and create a workspace.
+First-time onboarding will prompt you for an LLM API key and a database
+connection.
+
+{/* TODO: Screenshot — onboarding wizard. */}
+
+## 2. Open the Builder
+
+From the home page, click **Build** in the chat panel mode toggle. The
+Builder is a copilot that edits your workspace files for you.
+
+{/* TODO: Screenshot — chat panel with Build mode selected. */}
+
+## 3. Describe the agent you want
+
+Type something like:
+
+> Build an agent that answers questions about my orders table. It
+> should be able to filter by region and date.
+
+The Builder will scaffold a new agent file, propose the SQL tools, and
+show you a single "Approve" prompt to commit the changes to your
+workspace.
+
+## 4. Test it
+
+Switch back to **Ask** mode, pick the new agent, and ask it a question.
+Refine the system instructions from the IDE if needed.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Provide context" href="/build/agents/provide-context" />
+  <Card title="Test agents" href="/build/test-evaluate" />
+  <Card title="Connect more data" href="/build/connect-data" />
+  <Card title="Build a Data App" href="/build/data-apps" />
+</CardGroup>

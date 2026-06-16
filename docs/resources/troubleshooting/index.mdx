@@ -1,0 +1,31 @@
+---
+title: Troubleshooting
+description: Symptom → cause → fix for the most common Oxygen issues
+type: troubleshooting
+---
+
+<Note>
+This is the single canonical troubleshooting hub. If you can't find your
+issue here, ping us in [Discord](https://discord.gg/m677N4EcRK) or open a
+ticket from **Manage → Support**.
+</Note>
+
+## Common errors
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| "LLM key not set" banner on the home page | The agent you selected uses a provider with no key configured for this workspace | **Manage → Secrets** → add the relevant provider key |
+| Chat answer stops mid-stream | Connection dropped or the Stop button was hit | Click **Retry** on the assistant message; the thread is preserved |
+| "No data found" on every chart after switching apps | Stale cache from the previous app | Reload the page or append `?refresh` to the app URL |
+| Slack bot doesn't post | Workspace not linked, or the channel isn't a member of the bot | Re-run **Manage → Integrations → Slack → Reauthorize** |
+| Schema browser shows no Snowflake columns | A numeric/date column failed the type-cast probe | Refresh the connection; if it persists, contact support |
+
+## Topic pages
+
+- [Authentication issues](/resources/troubleshooting/auth-issues)
+- [Database connectivity](/resources/troubleshooting/database-connectivity)
+- [Streaming & cancellation](/resources/troubleshooting/streaming)
+- [IDE & Git](/resources/troubleshooting/ide-git)
+- [Debugging agents](/resources/troubleshooting/debugging)
+
+{/* TODO: Author the topic pages above. */}

@@ -1,0 +1,40 @@
+---
+title: Authentication
+description: Sign-in options for Oxygen Cloud workspaces
+sidebarTitle: Overview
+type: concept
+audience: admin
+tier: standard
+---
+
+import { EnterpriseTag } from "/snippets/enterprise-tag.mdx";
+
+Workspaces choose how their team signs in. The default is
+**Magic link** (passwordless email). Workspaces can also enable
+**Google OAuth** for one-click social sign-in, or — on the
+[Enterprise tier](/manage/enterprise) — **Okta SSO** with their
+corporate identity provider.
+
+<CardGroup cols={2}>
+  <Card title="Magic link (default)" icon="envelope" href="/manage/authentication/magic-link" />
+  <Card title="Google OAuth" icon="google" href="/manage/authentication/google" />
+  <Card title="Okta SSO" icon="building" href="/manage/authentication/okta" />
+  <Card title="API keys" icon="key" href="/manage/api-keys" />
+</CardGroup>
+
+## Tier comparison
+
+| Method | Standard Cloud | Enterprise |
+| --- | --- | --- |
+| Magic link | ✅ | ✅ |
+| Google OAuth | ✅ | ✅ |
+| Okta SSO <EnterpriseTag /> | — | ✅ |
+| SAML <EnterpriseTag /> | — | ✅ |
+| Azure AD <EnterpriseTag /> | — | ✅ |
+
+## Multiple methods
+
+You can enable multiple sign-in methods on a workspace at once. Users
+see all enabled options on the sign-in screen.
+
+Method preferences are managed from **Manage → Authentication**.

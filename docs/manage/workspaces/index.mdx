@@ -1,0 +1,53 @@
+---
+title: Workspaces
+description: How Oxygen Cloud organizes work — workspaces, projects, and branches
+sidebarTitle: Workspaces
+type: concept
+audience: admin
+tier: standard
+---
+
+A **workspace** is the top-level container for your team's work in
+Oxygen Cloud. Each workspace has its own data connections, secrets,
+member roster, and projects. Most organizations run one workspace per
+business unit (or one per team).
+
+## Create a workspace
+
+From the workspace switcher in the top-left, choose **Create
+workspace** and give it a name. The new workspace lands you in an
+onboarding wizard for connecting data and inviting teammates.
+
+{/* TODO: Screenshot — workspace switcher with "Create workspace". */}
+
+## Import from GitHub
+
+Workspaces can be backed by a GitHub repository — Oxygen reads your
+project files from the repo and pushes edits back as branches and
+pull requests. To import:
+
+1. **Manage → Workspace → GitHub** → click **Connect GitHub**.
+2. Pick the repository and (optionally) a default branch.
+3. Set protected branches and a base branch — see
+   [Branch-aware editing](/manage/workspaces/branches).
+
+[Full guide →](/manage/workspaces/github-integration)
+
+## Switching workspaces
+
+Members can belong to multiple workspaces. The workspace switcher in
+the sidebar shows every workspace you have access to plus its member
+and project counts. Click any name to switch.
+
+## Workspace settings
+
+All admin-level settings live in **Manage**:
+
+<CardGroup cols={2}>
+  <Card title="Teams & roles" href="/manage/teams" />
+  <Card title="Authentication" href="/manage/authentication" />
+  <Card title="Secrets" href="/manage/secrets" />
+  <Card title="Branch-aware editing" href="/manage/workspaces/branches" />
+  <Card title="GitHub integration" href="/manage/workspaces/github-integration" />
+  <Card title="Billing & plans" href="/manage/billing" />
+</CardGroup>

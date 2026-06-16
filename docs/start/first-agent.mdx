@@ -1,0 +1,105 @@
+---
+title: Creating your first agent
+type: tutorial
+audience: end-user
+tier: standard
+---
+
+<Note>
+For the conceptual overview, see [Agents](/build/agents). For the
+chat-driven path, see [Build with chat first](/start/build-with-chat).
+This tutorial walks through creating an agent by hand in the IDE.
+</Note>
+
+In this guide, you'll create an agent that answers SQL questions about
+a sample dataset. Agents are saved as `.agent.yml` files inside your
+workspace. You can either let the Builder copilot scaffold one for you
+(easiest) or create one manually in the IDE (this guide).
+
+<Steps>
+
+  <Step title="Open the IDE">
+    From [app.oxy.tech](https://app.oxy.tech), open your workspace and
+    click **Developer Portal** in the sidebar.
+  </Step>
+
+  <Step title="Create the agent file">
+    In the file tree, right-click your workspace root and choose **New
+    file**. Name it `my-agent.agent.yml`. Anything ending in
+    `.agent.yml` is auto-discovered as an agent.
+  </Step>
+
+  <Step title="Pick a model">
+    Add the model field — Oxygen recognizes the models you've
+    configured in **Manage → Models**.
+
+    ```yaml
+    model: openai-4.1
+    ```
+  </Step>
+
+  <Step title="Write system instructions">
+    System instructions tell the LLM how to behave. Keep them short
+    and focused.
+
+    ```yaml
+    system_instructions: |
+      You are a data analyst. Write and execute SQL to answer the given question.
+    ```
+  </Step>
+
+  <Step title="Give the agent SQL execution">
+    Add the `execute_sql` tool so the agent can actually run SQL
+    against your connected warehouse:
+
+    ```yaml
+    tools:
+      - name: execute_sql
+        type: execute_sql
+        database: local
+    ```
+  </Step>
+
+  <Step title="Provide schema context">
+    Help the agent understand your data by creating a `schema.txt`
+    file alongside the agent and listing your tables/columns. A useful
+    pattern is one row per file with columns and a sample row:
+
+    ```text schema.txt
+    - `sleeps.csv`
+      columns: Cycle start time, Cycle end time, Cycle timezone
+      sample row: 2025-02-03 22:33:01, 2025-02-04 08:33:01, UTC-08:00
+    ```
+
+    Then reference it from the agent:
+
+    ```yaml
+    context:
+      - name: schema_information
+        type: file
+        src:
+          - schema.txt
+
+    system_instructions: |
+      You are a data analyst. Write and execute SQL to answer the given question.
+
+      {{ context.schema_information }}
+    ```
+  </Step>
+
+  <Step title="Test from the chat panel">
+    Click **Save**, return to the home page, pick your agent from the
+    agent selector, and ask a question:
+
+    > How many cycles started before noon?
+
+    Oxygen streams the SQL it writes and the answer it produces.
+  </Step>
+
+</Steps>
+
+## Next steps
+
+- [Provide more context →](/build/agents/provide-context)
+- [Agentic agents (multi-step reasoning)](/build/agents/agentic)
+- [Test agents →](/build/test-evaluate)

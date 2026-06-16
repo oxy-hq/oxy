@@ -1,0 +1,72 @@
+---
+title: Agents
+description: Saved, named AI assistants that reason about your data
+type: concept
+audience: end-user
+tier: standard
+---
+
+An **Agent** in Oxygen is a saved, named AI assistant that can answer
+questions about your data — writing SQL, executing it, and explaining
+the result.
+
+{/* TODO: Hero screenshot — chat panel with an agent answering a question. */}
+
+You build agents in the IDE: open **Objects → Agents**, click **+ New
+Agent**, give it a name, and Oxygen generates a starter agent
+connected to your default database. From there you refine the system
+instructions and choose which tools it has access to (SQL execution,
+semantic-layer queries, etc.).
+
+There are two flavors:
+
+- **Classic agents** — a single LLM call with tools. Best for focused
+  Q&A.
+- **Agentic agents** — a multi-step reasoning pipeline (FSM-based) that
+  clarifies, plans, generates SQL, executes, and interprets results.
+  Best for open-ended exploration.
+  ([Build an agentic agent →](/build/agents/agentic))
+
+If your project has a `_routing` agent, it becomes the default entry
+point for chat questions and routes to other agents based on the
+question. ([Routing agents →](/build/agents/routing))
+
+## What an agent contains
+
+- A **model** to call (e.g. `openai-4.1`).
+- **System instructions** that tell the LLM how to behave.
+- **Context** files (schemas, sample SQL, semantic models) injected
+  into the prompt.
+- **Tools** like `execute_sql` that let the agent take action.
+- Optional **variables** with JSON-Schema validation, used to template
+  the system instructions.
+
+See [Provide context](/build/agents/provide-context) for how to feed
+schema information and semantic models into an agent.
+
+## You can also write this in YAML
+
+Every agent is stored as a `.agent.yml` file in your workspace. If you
+prefer to edit YAML directly:
+
+```yaml my-agent.agent.yml
+model: openai-4.1
+system_instructions: |
+  You are a sales analyst. Answer questions using the orders table.
+tools:
+  - name: execute_sql
+    type: execute_sql
+    database: warehouse
+```
+
+Full schema reference: [.agent.yml →](/reference/yaml/config)
+{/* TODO: Replace target with /reference/yaml/agent once that page is generated. */}
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build your first agent" href="/start/first-agent" />
+  <Card title="Provide context" href="/build/agents/provide-context" />
+  <Card title="Agentic agents" href="/build/agents/agentic" />
+  <Card title="Test agents" href="/build/test-evaluate" />
+</CardGroup>

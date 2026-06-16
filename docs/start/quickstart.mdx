@@ -1,0 +1,65 @@
+---
+title: Quickstart
+description: From sign-up to your first answer in 5 minutes
+---
+
+## Overview
+
+Sign up for Oxygen Cloud, connect a data source, and ask your first
+question — all from the web app. No install, no terminal.
+
+<Steps>
+  <Step title="Create a workspace">
+    Go to [app.oxy.tech](https://app.oxy.tech) and sign in. Choose
+    **Create workspace** and give it a name (e.g. *Acme Analytics*).
+
+    {/* TODO: Screenshot — onboarding wizard step 1. */}
+  </Step>
+
+  <Step title="Add an LLM key">
+    Open **Manage → Secrets** and paste your OpenAI or Anthropic API
+    key. Oxygen needs this to run the agents you'll build.
+
+    The home page shows a green check next to "LLM key" once the key
+    is set.
+  </Step>
+
+  <Step title="Connect your data">
+    From **Manage → Workspace → Connections**, click **+ Add
+    connection** and pick your warehouse: BigQuery, Snowflake,
+    Postgres, ClickHouse, Redshift, MotherDuck, MySQL, or DuckDB.
+    Paste the credentials Oxygen asks for and click **Test**.
+
+    Need help picking a connector? See
+    [Connect your data →](/start/connect-your-data).
+  </Step>
+
+  <Step title="Ask your first question">
+    Open the chat panel on the home page, pick the default agent, and
+    type a question about your data — for example:
+
+    > How many orders did we get last week?
+
+    Oxygen will generate the SQL, run it, and stream the answer back
+    with the chart and the underlying query.
+
+    {/* TODO: Screenshot — chat panel with an answered question. */}
+  </Step>
+
+  <Step title="Save and share">
+    Click **Share** on any answer to copy a link. Pin useful threads
+    to your workspace sidebar, or turn one into a saved
+    [agent](/build/agents),
+    [procedure](/build/procedures), or
+    [data app](/build/data-apps).
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build with chat first" href="/start/build-with-chat" />
+  <Card title="Build your first agent" href="/start/first-agent" />
+  <Card title="Connect your data" href="/start/connect-your-data" />
+  <Card title="AI prompts for your editor" href="/start/ai-prompts" />
+</CardGroup>

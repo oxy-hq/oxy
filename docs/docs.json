@@ -1,6 +1,6 @@
 {
   "theme": "willow",
-  "name": "Oxy",
+  "name": "Oxygen",
   "colors": {
     "primary": "#030712",
     "light": "#ffffff",
@@ -8,137 +8,237 @@
   },
   "favicon": "favicon.svg",
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Get Started",
-        "pages": [
-          "welcome",
-          "quickstart",
-          "prerequisites"
+        "tab": "Start",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "start/index",
+              "start/what-is-oxygen",
+              "start/architecture",
+              "start/quickstart",
+              "start/build-with-chat",
+              "start/first-project",
+              "start/first-agent",
+              "start/connect-your-data",
+              "start/ai-prompts"
+            ]
+          }
         ]
       },
       {
-        "group": "Core Concepts",
-        "pages": [
-          "learn-about-oxy/cache",
-          "learn-about-oxy/config",
-          "learn-about-oxy/data-apps",
-          "learn-about-oxy/debugging",
-          "learn-about-oxy/context-graph",
-          "learn-about-oxy/observability",
-          "learn-about-oxy/semantic-model",
-          "learn-about-oxy/modeling",
-          "learn-about-oxy/workflows"
+        "tab": "Build",
+        "groups": [
+          {
+            "group": "Ask data questions",
+            "pages": [
+              "build/ask-data-questions/index"
+            ]
+          },
+          {
+            "group": "Agents",
+            "pages": [
+              "build/agents/index",
+              "build/agents/agentic",
+              "build/agents/routing",
+              "build/agents/provide-context"
+            ]
+          },
+          {
+            "group": "Procedures",
+            "pages": [
+              "build/procedures/index"
+            ]
+          },
+          {
+            "group": "Data Apps",
+            "pages": [
+              "build/data-apps/index",
+              "build/data-apps/caching"
+            ]
+          },
+          {
+            "group": "Semantic Layer",
+            "pages": [
+              "build/semantic-layer/index",
+              "build/semantic-layer/simple-model",
+              "build/semantic-layer/views",
+              "build/semantic-layer/entities",
+              "build/semantic-layer/dimensions",
+              "build/semantic-layer/measures",
+              "build/semantic-layer/topics",
+              "build/semantic-layer/use-in-agents",
+              "build/semantic-layer/modeling"
+            ]
+          },
+          {
+            "group": "Connect data",
+            "pages": [
+              "build/connect-data/index",
+              "build/connect-data/bigquery",
+              "build/connect-data/snowflake",
+              "build/connect-data/postgres",
+              "build/connect-data/redshift",
+              "build/connect-data/clickhouse",
+              "build/connect-data/duckdb",
+              "build/connect-data/motherduck",
+              "build/connect-data/mysql",
+              "build/connect-data/looker",
+              "build/connect-data/domo",
+              "build/connect-data/sync-schema"
+            ]
+          },
+          {
+            "group": "Connect models",
+            "pages": [
+              "build/connect-models/openai",
+              "build/connect-models/anthropic",
+              "build/connect-models/gemini"
+            ]
+          },
+          {
+            "group": "Embed & extend",
+            "pages": [
+              "build/embed-extend/mcp",
+              "build/embed-extend/slack",
+              "build/embed-extend/a2a",
+              "build/embed-extend/v0",
+              "build/embed-extend/lovable",
+              "build/embed-extend/lovable-starter-prompt"
+            ]
+          },
+          {
+            "group": "Test & evaluate",
+            "pages": [
+              "build/test-evaluate/index",
+              "build/test-evaluate/testing"
+            ]
+          },
+          {
+            "group": "Edge fleet",
+            "pages": [
+              "edge/index",
+              "edge/install",
+              "edge/runbook"
+            ]
+          },
+          {
+            "group": "More",
+            "pages": [
+              "build/context-graph"
+            ]
+          }
         ]
       },
       {
-        "group": "Edge fleet",
-        "pages": [
-          "edge/index",
-          "edge/install",
-          "edge/runbook"
+        "tab": "Manage",
+        "groups": [
+          {
+            "group": "Manage",
+            "pages": [
+              "manage/index",
+              "manage/teams",
+              "manage/secrets",
+              "manage/api-keys",
+              "manage/billing",
+              "manage/usage-limits",
+              "manage/support"
+            ]
+          },
+          {
+            "group": "Workspaces",
+            "pages": [
+              "manage/workspaces/index",
+              "manage/workspaces/github-integration",
+              "manage/workspaces/branches"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "manage/authentication/index",
+              "manage/authentication/magic-link",
+              "manage/authentication/google",
+              "manage/authentication/okta"
+            ]
+          },
+          {
+            "group": "Observability",
+            "pages": [
+              "manage/observability/index"
+            ]
+          },
+          {
+            "group": "Enterprise",
+            "pages": [
+              "manage/enterprise/index"
+            ]
+          }
         ]
       },
       {
-        "group": "Semantic Layer",
-        "pages": [
-          "learn-about-oxy/semantic-layer",
-          "learn-about-oxy/semantic-layer/views",
-          "learn-about-oxy/semantic-layer/entities",
-          "learn-about-oxy/semantic-layer/dimensions",
-          "learn-about-oxy/semantic-layer/measures",
-          "learn-about-oxy/semantic-layer/topics"
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/index"
+            ]
+          },
+          {
+            "group": "YAML schemas",
+            "pages": [
+              "reference/yaml/index",
+              "reference/yaml/config"
+            ]
+          },
+          {
+            "group": "REST API",
+            "pages": [
+              "reference/rest-api/index"
+            ]
+          },
+          {
+            "group": "MCP tools",
+            "pages": [
+              "reference/mcp-tools/index"
+            ]
+          }
         ]
       },
       {
-        "group": "Deployment",
-        "pages": [
-          "deployment/overview",
-          "deployment/cloud-mode",
-          "deployment/github-app",
-          "deployment/create-machine",
-          "deployment/install-oxy",
-          "deployment/workspace-setup",
-          "deployment/environment",
-          "deployment/container-runtimes",
-          "deployment/docker",
-          "deployment/kubernetes-helm",
-          "deployment/kubernetes-raw"
-        ]
-      },
-      {
-        "group": "AWS Deployment",
-        "pages": [
-          "deployment/reference-architecture/aws/architecture",
-          "deployment/reference-architecture/aws/ec2-architecture",
-          "deployment/reference-architecture/aws/ecs-architecture",
-          "deployment/reference-architecture/aws/step-by-step/ec2",
-          "deployment/reference-architecture/aws/step-by-step/ecs",
-          "deployment/hands-on/aws"
-        ]
-      },
-      {
-        "group": "Authentication",
-        "pages": [
-          "authentication/overview",
-          "authentication/magic-link",
-          "authentication/google",
-          "authentication/okta",
-          "api-keys/API-Keys"
-        ]
-      },
-      {
-        "group": "Data Sources",
-        "pages": [
-          "integrations/overview",
-          "integrations/data-sources/bigquery",
-          "integrations/data-sources/clickhouse",
-          "integrations/data-sources/domo",
-          "integrations/data-sources/duckdb",
-          "integrations/data-sources/motherduck",
-          "integrations/data-sources/mysql",
-          "integrations/data-sources/postgres",
-          "integrations/data-sources/redshift",
-          "integrations/data-sources/snowflake"
-        ]
-      },
-      {
-        "group": "Models",
-        "pages": [
-          "integrations/models/ollama",
-          "integrations/models/openai",
-          "integrations/models/gemini",
-          "integrations/models/anthropic"
-        ]
-      },
-      {
-        "group": "Analytics",
-        "pages": [
-          "integrations/analytics/looker"
-        ]
-      },
-      {
-        "group": "Reference",
-        "pages": [
-          "reference/oxy-commands",
-          "reference/oxy-start",
-          "reference/readonly-mode",
-          "reference/branch-configuration",
-          "reference/database-sync",
-          "reference/environment-variables",
-          "reference/semantic-layer-reference"
-        ]
-      },
-      {
-        "group": "MCP Server",
-        "pages": [
-          "mcp-server/mcp-usage"
-        ]
-      },
-      {
-        "group": "Migration",
-        "pages": [
-          "migration/migration-guide"
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/index",
+              "resources/changelog",
+              "resources/community",
+              "resources/showcase"
+            ]
+          },
+          {
+            "group": "Troubleshooting",
+            "pages": [
+              "resources/troubleshooting/index",
+              "resources/troubleshooting/debugging"
+            ]
+          },
+          {
+            "group": "Migrate to Oxygen",
+            "pages": [
+              "resources/migrations/index"
+            ]
+          },
+          {
+            "group": "Recipes",
+            "pages": [
+              "resources/recipes/index"
+            ]
+          }
         ]
       }
     ]
