@@ -647,6 +647,37 @@ impl WorkspaceContext for OxyProjectContext {
     }
 
     async fn list_workflow_files(&self) -> Result<Vec<PathBuf>, String> {
+        // Boundary-first (mirrors `resolve_workflow_yaml` just below): a stateless
+        // fleet replica has no working copy, so list runnable procedures from
+        // `procedure_definitions` instead of globbing an absent filesystem —
+        // otherwise `/agentic-workflows/files` returns `[]` and the procedures
+        // sidebar is empty. Fall through to the FS walk on a miss (workspace not
+        // promoted / non-default branch). Paths are returned workspace-absolute to
+        // preserve the FS walk's contract — the HTTP handler and the subrun runner
+        // relativise against `workspace_path()` themselves.
+        match crate::server::api::compiled_reader::list_procedures(
+            self.workspace_manager.workspace_id,
+            None,
+        )
+        .await
+        {
+            Ok(Some(rows)) => {
+                let root = self.workspace_manager.config_manager.workspace_path();
+                tracing::debug!(
+                    workspace_id = %self.workspace_manager.workspace_id,
+                    count = rows.len(),
+                    "list_workflow_files served from compile boundary"
+                );
+                return Ok(rows.into_iter().map(|r| root.join(r.file_path)).collect());
+            }
+            // Workspace not promoted / non-default branch — fall through to FS.
+            Ok(None) => {}
+            Err(e) => tracing::warn!(
+                workspace_id = %self.workspace_manager.workspace_id,
+                error = ?e,
+                "compile boundary procedure list error; falling through to FS"
+            ),
+        }
         self.workspace_manager
             .config_manager
             .list_workflows()
