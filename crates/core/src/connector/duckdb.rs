@@ -129,7 +129,7 @@ fn init_ducklake_blocking(attach_stmts: Vec<String>) -> Result<Connection, OxyEr
 /// database read-only (`File` mode). The views read Parquet/CSV lazily from S3,
 /// so DuckDB still pushes projections/filters down rather than downloading
 /// whole objects.
-fn build_s3_mirror_sql(mirror: &DuckDbS3Mirror) -> Vec<String> {
+pub fn build_s3_mirror_sql(mirror: &DuckDbS3Mirror) -> Vec<String> {
     let mut stmts = vec!["INSTALL httpfs".to_string(), "LOAD httpfs".to_string()];
 
     let region = mirror.region.as_deref().unwrap_or("us-east-1");

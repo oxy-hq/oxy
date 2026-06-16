@@ -882,6 +882,19 @@ pub async fn database_to_connector_config(
     workspace_manager: &WorkspaceManager,
 ) -> Option<ConnectorConfig> {
     match &db.database_type {
+        // Stateless serve fleet: the local DuckDB data file is absent. The
+        // compile worker mirrored this local-file warehouse to S3 and recorded
+        // an `s3_mirror` block; attach from S3 via the same httpfs SQL the core
+        // connector uses, instead of resolving the (nonexistent) local path.
+        // Without this the connector silently drops the DB and the agent run
+        // fails "no databases configured" on cloud while working locally.
+        // (DuckLake / MotherDuck are already remote and carry no mirror.)
+        DatabaseType::DuckDB(duck) if duck.s3_mirror.is_some() => {
+            let mirror = duck.s3_mirror.as_ref().expect("guarded by is_some()");
+            Some(ConnectorConfig::DuckDbRaw(DuckDbRawConfig {
+                init_statements: oxy::connector::build_s3_mirror_sql(mirror),
+            }))
+        }
         DatabaseType::DuckDB(duck) => match &duck.options {
             DuckDBOptions::Local { file_search_path } => {
                 let path = match workspace_manager
