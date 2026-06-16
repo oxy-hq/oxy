@@ -247,7 +247,8 @@ pub async fn compile_workspace(
 
     // Idempotency short-circuit. Skip the heavy work when a recent
     // successful revision already exists for this (workspace_id,
-    // git_sha) pair and the request isn't trying to overwrite via
+    // git_sha, compiler_version, schema_version) tuple and the request
+    // isn't trying to overwrite via
     // a different kind/owner_user_id. Two callers want this:
     //
     //   - Operator-triggered re-runs against an unchanged SHA from
@@ -269,8 +270,14 @@ pub async fn compile_workspace(
     // promote" semantically correct even when the SHA is unchanged.
     if !is_local
         && !matches!(request.kind, RevisionKind::Draft)
-        && let Some(existing) =
-            lookup_idempotent_revision(request.db, request.workspace_id, &git_sha).await?
+        && let Some(existing) = lookup_idempotent_revision(
+            request.db,
+            request.workspace_id,
+            &git_sha,
+            &request.compiler_version,
+            CURRENT_SCHEMA_VERSION,
+        )
+        .await?
     {
         info!(
             workspace_id = %request.workspace_id,
@@ -1284,6 +1291,8 @@ async fn lookup_idempotent_revision(
     db: &DatabaseConnection,
     workspace_id: Uuid,
     git_sha: &str,
+    compiler_version: &str,
+    schema_version: i32,
 ) -> Result<Option<IdempotentRevision>, CompileError> {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
@@ -1295,6 +1304,16 @@ async fn lookup_idempotent_revision(
         .filter(entity::revisions::Column::GitSha.eq(git_sha))
         .filter(entity::revisions::Column::Status.eq("ready"))
         .filter(entity::revisions::Column::Kind.eq("main"))
+        // Reuse is only sound when the SAME compiler produced the revision. A
+        // newer binary may compile the same SHA differently — e.g. it now
+        // injects the DuckDB→S3 `s3_mirror` block, or fixes a config transform.
+        // Without these two filters a same-SHA re-compile within the window
+        // silently reuses an OLD-binary revision, so a deploy that changes
+        // compile output never takes effect until the window lapses (the
+        // customer-demo "no databases configured" recurrence after the
+        // s3_mirror deploy).
+        .filter(entity::revisions::Column::CompilerVersion.eq(compiler_version))
+        .filter(entity::revisions::Column::SchemaVersion.eq(schema_version))
         .filter(entity::revisions::Column::FinishedAt.gte(cutoff_offset))
         .order_by_desc(entity::revisions::Column::FinishedAt)
         .one(db)
