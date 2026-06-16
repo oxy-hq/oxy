@@ -138,11 +138,23 @@ pub fn build_s3_mirror_sql(mirror: &DuckDbS3Mirror) -> Vec<String> {
         escape_sql_string(region)
     );
     if let Some(endpoint) = &mirror.endpoint_url {
-        // Custom endpoint (MinIO / LocalStack) → path-style addressing.
+        // Custom endpoint (MinIO / LocalStack) → path-style addressing. DuckDB's
+        // S3 secret ENDPOINT is host[:port] WITHOUT a scheme — it prepends
+        // http(s):// itself based on USE_SSL. The mirror records the SDK's
+        // `AWS_ENDPOINT_URL` verbatim (e.g. `http://localhost:9000`), so strip the
+        // scheme here; otherwise DuckDB builds `http://http://localhost:9000` and
+        // fails with "Could not resolve hostname", which silently drops the
+        // connector and surfaces as "no databases configured".
+        let use_ssl = !endpoint.starts_with("http://");
+        let host = endpoint
+            .strip_prefix("http://")
+            .or_else(|| endpoint.strip_prefix("https://"))
+            .unwrap_or(endpoint)
+            .trim_end_matches('/');
         secret.push_str(&format!(
             ", ENDPOINT '{}', URL_STYLE 'path', USE_SSL {}",
-            escape_sql_string(endpoint),
-            !endpoint.starts_with("http://")
+            escape_sql_string(host),
+            use_ssl
         ));
     }
     secret.push(')');
@@ -162,12 +174,33 @@ pub fn build_s3_mirror_sql(mirror: &DuckDbS3Mirror) -> Vec<String> {
         } else {
             "read_parquet"
         };
-        stmts.push(format!(
-            "CREATE OR REPLACE VIEW {} AS SELECT * FROM {}('s3://{}/{}')",
-            quote_sql_identifier(&table.table),
+        let source = format!(
+            "{}('s3://{}/{}')",
             reader,
             escape_sql_string(&mirror.bucket),
             escape_sql_string(&table.key)
+        );
+        // 1) Slug-named view (`oxymart`) — matches the local connector's pooled
+        //    table registration; used by direct references / list_tables.
+        stmts.push(format!(
+            "CREATE OR REPLACE VIEW {} AS SELECT * FROM {source}",
+            quote_sql_identifier(&table.table),
+        ));
+        // 2) Filename-qualified view. The semantic layer references the table by
+        //    its source filename (`table: "oxymart.csv"`); in local mode that
+        //    resolves through DuckDB's `file_search_path` replacement scan, which
+        //    the stateless fleet has no equivalent for. DuckDB parses
+        //    `FROM oxymart.csv` as schema.table, so register a matching
+        //    `"<stem>"."<ext>"` view (stem = slug, ext = format), or `FROM
+        //    oxymart.csv` finds nothing and fails "No files found".
+        stmts.push(format!(
+            "CREATE SCHEMA IF NOT EXISTS {}",
+            quote_sql_identifier(&table.table)
+        ));
+        stmts.push(format!(
+            "CREATE OR REPLACE VIEW {}.{} AS SELECT * FROM {source}",
+            quote_sql_identifier(&table.table),
+            quote_sql_identifier(&table.format),
         ));
     }
     stmts
@@ -651,6 +684,33 @@ mod tests {
         assert!(sql.iter().any(|s| s.contains("CREATE OR REPLACE VIEW")
             && s.contains("events")
             && s.contains("read_csv_auto('s3://my-bucket/ws/duckdb/events.csv')")));
+        // Filename-qualified views so the semantic layer's `FROM orders.parquet`
+        // / `FROM events.csv` (which DuckDB parses as schema.table) resolve to the
+        // mirrored data — local mode gets this from file_search_path; the fleet
+        // can't, so register `"<stem>"."<ext>"` explicitly.
+        assert!(
+            sql.iter()
+                .any(|s| s == "CREATE SCHEMA IF NOT EXISTS \"orders\""),
+            "missing schema for orders: {sql:?}"
+        );
+        assert!(
+            sql.iter().any(
+                |s| s.contains("CREATE OR REPLACE VIEW \"orders\".\"parquet\"")
+                    && s.contains("read_parquet('s3://my-bucket/ws/duckdb/orders.parquet')")
+            ),
+            "missing filename-qualified view for orders.parquet: {sql:?}"
+        );
+        assert!(
+            sql.iter()
+                .any(|s| s == "CREATE SCHEMA IF NOT EXISTS \"events\""),
+            "missing schema for events: {sql:?}"
+        );
+        assert!(
+            sql.iter()
+                .any(|s| s.contains("CREATE OR REPLACE VIEW \"events\".\"csv\"")
+                    && s.contains("read_csv_auto('s3://my-bucket/ws/duckdb/events.csv')")),
+            "missing filename-qualified view for events.csv: {sql:?}"
+        );
         // Local mode never attaches a remote database.
         assert!(!sql.iter().any(|s| s.contains("ATTACH")));
     }
@@ -682,11 +742,35 @@ mod tests {
             attach_key: None,
         };
         let sql = build_s3_mirror_sql(&mirror);
+        // The ENDPOINT must be host[:port] with NO scheme — DuckDB prepends
+        // http(s):// from USE_SSL. Passing the scheme yields `http://http://…`,
+        // which fails to resolve and silently drops the connector.
+        assert!(
+            sql.iter().any(|s| s.contains("ENDPOINT 'localhost:9000'")
+                && s.contains("URL_STYLE 'path'")
+                && s.contains("USE_SSL false")),
+            "expected scheme-stripped endpoint, got: {sql:?}"
+        );
+        assert!(
+            !sql.iter().any(|s| s.contains("ENDPOINT 'http://")),
+            "endpoint must not carry a scheme: {sql:?}"
+        );
+    }
+
+    #[test]
+    fn s3_mirror_https_endpoint_strips_scheme_and_enables_ssl() {
+        let mirror = DuckDbS3Mirror {
+            bucket: "b".into(),
+            region: Some("us-east-1".into()),
+            endpoint_url: Some("https://minio.example.com/".into()),
+            tables: vec![],
+            attach_key: None,
+        };
+        let sql = build_s3_mirror_sql(&mirror);
         assert!(
             sql.iter()
-                .any(|s| s.contains("ENDPOINT 'http://localhost:9000'")
-                    && s.contains("URL_STYLE 'path'")
-                    && s.contains("USE_SSL false"))
+                .any(|s| s.contains("ENDPOINT 'minio.example.com'") && s.contains("USE_SSL true")),
+            "https endpoint should strip scheme + trailing slash and enable SSL: {sql:?}"
         );
     }
 }

@@ -202,6 +202,139 @@ fn derive_target_path(
     target_dir.join(trimmed)
 }
 
+/// Tempdir holding a workspace's compiled context entities, laid out at their
+/// workspace-relative paths so an analytics agent's `context:` globs resolve.
+/// Drop to clean up.
+pub struct MaterialisedContext {
+    _dir: TempDir,
+    pub root: PathBuf,
+}
+
+/// Materialise the workspace's promoted-revision **context** entities into a
+/// tempdir at their workspace-relative `file_path`, e.g.
+/// `<tmp>/semantics/views/orders.view.yml`. The analytics run resolves an
+/// agent's `context:` globs (`./semantics/**/*`) against this root, which lets a
+/// stateless serve replica — with no working copy — build the semantic catalog
+/// and discover the databases the views reference (`datasource:`), instead of
+/// globbing an absent filesystem and silently ending up with "no databases
+/// configured".
+///
+/// Scope: semantic views + topics (the entities that carry the agent's database
+/// references). Procedures and verified `.sql` are a follow-up — `list_procedures`
+/// returns no body and verified queries have no compiled reader yet, so on the
+/// fleet they're simply absent from context (subruns degrade; the IDE, which
+/// reads the FS, is unaffected).
+///
+/// `Ok(None)` when the workspace isn't promoted or has no semantic rows — the
+/// caller then falls through to the FS workspace path.
+pub async fn materialise_agent_context(
+    workspace_id: Uuid,
+) -> Result<Option<MaterialisedContext>, std::io::Error> {
+    let views = match compiled_reader::list_semantic_views(workspace_id, None).await {
+        Ok(Some(rows)) => rows,
+        Ok(None) => return Ok(None),
+        Err(e) => {
+            tracing::warn!(workspace_id = %workspace_id, error = ?e,
+                "context materialise: views lookup failed; falling through to FS");
+            return Ok(None);
+        }
+    };
+    // Topics are optional — a workspace can ship views without topics.
+    let topics = match compiled_reader::list_semantic_topics(workspace_id, None).await {
+        Ok(Some(rows)) => rows,
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            tracing::warn!(workspace_id = %workspace_id, error = ?e,
+                "context materialise: topics lookup failed; continuing with views only");
+            Vec::new()
+        }
+    };
+    if views.is_empty() && topics.is_empty() {
+        return Ok(None);
+    }
+
+    let dir = TempDir::new()?;
+    let root = dir.path().to_path_buf();
+    write_context_artifacts(&views, &root).await?;
+    write_context_artifacts(&topics, &root).await?;
+
+    // info (not debug like the per-request boundary reads): this is a per-run
+    // operation on the stateless fleet and the single confirmation that the
+    // boundary context path — not an absent FS — served the run.
+    tracing::info!(
+        workspace_id = %workspace_id,
+        views = views.len(),
+        topics = topics.len(),
+        root = %root.display(),
+        "context materialise: materialised agent context from compile boundary"
+    );
+    Ok(Some(MaterialisedContext { _dir: dir, root }))
+}
+
+/// Write each artifact's resolved body to `<root>/<file_path>`, recreating the
+/// workspace-relative directory layout so the agent's globs match. Paths that
+/// are absolute or escape the root (`..`) are skipped defensively — `file_path`
+/// is compiler-produced and workspace-relative, but we never trust it into a
+/// `join` blindly.
+async fn write_context_artifacts(
+    rows: &[CompiledArtifact],
+    root: &std::path::Path,
+) -> Result<(), std::io::Error> {
+    use futures::stream::TryStreamExt;
+
+    // Resolve target paths up front: drop unsafe paths (absolute / `..`) and
+    // dedup by target. The compile PK is (revision_id, name), so two named
+    // entities can share one physical `file_path`; without deduping, the
+    // concurrent writes below would race on that path (truncated / interleaved
+    // output) instead of the serial version's clean last-writer-wins. Mirrors
+    // the sibling `write_artifacts` collision guard.
+    let mut seen = std::collections::HashSet::new();
+    let targets: Vec<(std::path::PathBuf, &CompiledArtifact)> = rows
+        .iter()
+        .filter_map(|row| {
+            let rel = std::path::Path::new(&row.file_path);
+            if rel.is_absolute()
+                || rel
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                tracing::warn!(file_path = %row.file_path,
+                    "context materialise: skipping unsafe file_path");
+                return None;
+            }
+            let target = root.join(rel);
+            if !seen.insert(target.clone()) {
+                tracing::warn!(file_path = %row.file_path,
+                    "context materialise: two rows materialise to the same path — dropping duplicate");
+                return None;
+            }
+            Some((target, row))
+        })
+        .collect();
+
+    // Resolve each body (possibly an S3 GET for blob-keyed rows) + write it
+    // concurrently, bounded so a large semantic layer can't open unbounded S3
+    // connections at once. Doing this serially would add every row's blob-fetch
+    // latency to the run's startup; in-row JSONB rows resolve without any S3.
+    const MAX_CONCURRENT: usize = 16;
+    futures::stream::iter(targets.into_iter().map(Ok::<_, std::io::Error>))
+        .try_for_each_concurrent(MAX_CONCURRENT, |(target, row)| async move {
+            // create_dir_all is idempotent, so concurrent callers writing into
+            // the same `semantics/views` dir don't race destructively.
+            if let Some(parent) = target.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+            let body = resolve_body(row).await.map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("resolve body for context row {}: {e}", row.name),
+                )
+            })?;
+            tokio::fs::write(target, body).await
+        })
+        .await
+}
+
 /// Tempdir + path to a materialised `.monitor.yml`. Drop the wrapper
 /// to clean up.
 pub struct MaterialisedMonitorConfig {

@@ -33,7 +33,7 @@ pub use runner::OxyProcedureRunner;
 pub use step_decider::{WorkflowDecider, WorkflowDecision};
 pub use step_executor::{extract_workflow_steps, run_workflow_step};
 pub use step_orchestrator::WorkflowStepOrchestrator;
-pub use workspace::WorkspaceContext;
+pub use workspace::{ContextRoot, WorkspaceContext};
 
 /// `source_type` to register this domain under in the runtime event registry.
 /// Used by the SSE layer to look up the right processor for a run's events.

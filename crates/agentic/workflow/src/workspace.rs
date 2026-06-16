@@ -27,6 +27,41 @@ pub enum IntegrationConfig {
     },
 }
 
+/// The directory an agent's `context:` globs resolve against.
+///
+/// FS-backed hosts (the IDE working copy) return their workspace path with no
+/// guard. A stateless host (the serve fleet, which has no working copy)
+/// materialises the compiled context entities into a tempdir and returns a
+/// guard that owns it. `path()` is valid only while the `ContextRoot` is alive,
+/// so the caller MUST keep it in scope until context resolution (glob +
+/// semantic-catalog load) has finished.
+pub struct ContextRoot {
+    path: PathBuf,
+    // Opaque so this crate needn't depend on `tempfile`; the host boxes the
+    // `TempDir` guard in here and it drops (cleaning up) with the `ContextRoot`.
+    _guard: Option<Box<dyn std::any::Any + Send + Sync>>,
+}
+
+impl ContextRoot {
+    /// Resolve context from an on-disk workspace path (IDE / shared-FS).
+    pub fn fs(path: PathBuf) -> Self {
+        Self { path, _guard: None }
+    }
+
+    /// Resolve context from a materialised tempdir; `guard` owns it for the
+    /// `ContextRoot`'s lifetime (typically a `tempfile::TempDir`).
+    pub fn materialised(path: PathBuf, guard: Box<dyn std::any::Any + Send + Sync>) -> Self {
+        Self {
+            path,
+            _guard: Some(guard),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// Minimal workspace interface needed by the workflow engine.
 ///
 /// Implemented by the pipeline layer for `oxy::adapters::workspace::WorkspaceManager`.
@@ -34,6 +69,14 @@ pub enum IntegrationConfig {
 pub trait WorkspaceContext: Send + Sync {
     /// Root path of the workspace/project.
     fn workspace_path(&self) -> &Path;
+
+    /// Directory an agent's `context:` globs resolve against. Defaults to the
+    /// on-disk workspace path; the host adapter overrides it to materialise the
+    /// compiled context from the boundary on a stateless replica that has no
+    /// working copy. The returned guard must outlive context resolution.
+    async fn context_root(&self) -> ContextRoot {
+        ContextRoot::fs(self.workspace_path().to_path_buf())
+    }
 
     /// Database configurations for dialect mapping.
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig>;

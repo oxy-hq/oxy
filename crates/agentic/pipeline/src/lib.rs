@@ -425,7 +425,11 @@ impl PipelineBuilder {
             Some(id) => (id, true),
             None => (Uuid::new_v4().to_string(), false),
         };
-        let base_dir = self.platform.workspace_path().to_path_buf();
+        let ctx_root = self.platform.context_root().await;
+        // `ctx_root` owns the materialised tempdir (stateless fleet) and must
+        // outlive the resolve_context + semantic-catalog load below — keep it
+        // bound in this scope.
+        let base_dir = ctx_root.path().to_path_buf();
 
         let result = match domain {
             Domain::Analytics { agent_id } => {
@@ -475,7 +479,11 @@ impl PipelineBuilder {
         resume_data: agentic_core::human_input::SuspendedRunData,
         answer: String,
     ) -> Result<StartedPipeline, PipelineError> {
-        let base_dir = self.platform.workspace_path().to_path_buf();
+        let ctx_root = self.platform.context_root().await;
+        // `ctx_root` owns the materialised tempdir (stateless fleet) and must
+        // outlive the resolve_context + semantic-catalog load below — keep it
+        // bound in this scope.
+        let base_dir = ctx_root.path().to_path_buf();
 
         // Update DB status back to running.
         agentic_runtime::crud::update_run_running(db, run_id).await?;
@@ -1727,7 +1735,9 @@ async fn run_agentic_headless(
     use agentic_core::events::{Event, EventStream};
     use agentic_core::orchestrator::{Orchestrator, OrchestratorError};
 
-    let base_dir = platform.workspace_path().to_path_buf();
+    let ctx_root = platform.context_root().await;
+    // See `start_analytics`: keep `ctx_root` alive across context resolution.
+    let base_dir = ctx_root.path().to_path_buf();
 
     let config = AgentConfig::from_file(config_path).map_err(|e| {
         format!(

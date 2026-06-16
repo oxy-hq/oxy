@@ -32,6 +32,13 @@ pub(super) fn build_workspace_routes(
     let mut router = Router::new()
         .route("/details", get(workspaces::get_workspace))
         .route("/status", get(workspaces::get_workspace_status))
+        // Diagnostic: the workspace's live git-worktree lifecycle on the ide
+        // (branch / idle / clean / would-reap). IdeOnly — the registry is
+        // ide-local, so the serve fleet forwards here.
+        .route(
+            "/worktrees",
+            get(crate::server::worktree_registry::get_worktree_status),
+        )
         // Camera fleet operator endpoints (sites / cameras / edge-boxes /
         // UniFi integration). Mounted here so `workspace_middleware`
         // (cloud) / `local_context_middleware` (local) gate them, and

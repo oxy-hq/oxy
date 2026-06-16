@@ -20,5 +20,6 @@ pub mod service;
 pub mod worker_health;
 pub mod worker_metrics;
 pub mod worker_runtime;
+pub mod worktree_registry;
 
 pub use router::{AppState, WorkspaceExtractor, api_router, openapi_router};

@@ -15,8 +15,8 @@ use agentic_connector::{
 };
 use agentic_pipeline::SharedMetricSink;
 use agentic_pipeline::platform::{MonitorScanPort, ProjectContext, ResolvedPipelineDestination};
-use agentic_workflow::WorkspaceContext;
 use agentic_workflow::workspace::IntegrationConfig;
+use agentic_workflow::{ContextRoot, WorkspaceContext};
 use async_trait::async_trait;
 use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::workspace::manager::WorkspaceManager;
@@ -520,6 +520,36 @@ impl ProjectContext for OxyProjectContext {
 impl WorkspaceContext for OxyProjectContext {
     fn workspace_path(&self) -> &Path {
         self.workspace_manager.config_manager.workspace_path()
+    }
+
+    /// On the stateless fleet roles (`Serve` and `Worker`) there's no working
+    /// copy, so resolve an agent's `context:` globs from the compile boundary
+    /// (materialised into a tempdir) instead of globbing an absent filesystem —
+    /// otherwise context resolution finds nothing and the run fails "no
+    /// databases configured". `Ide` / `All` keep the FS path (they hold the
+    /// working copy), so context the boundary doesn't serve yet (verified
+    /// `.sql`, `.md`, procedures) isn't lost there.
+    async fn context_root(&self) -> ContextRoot {
+        use crate::server::role_manifest::{Role, current_process_role};
+        if matches!(current_process_role(), Role::Serve | Role::Worker) {
+            let workspace_id = self.workspace_manager.workspace_id;
+            match crate::server::api::semantic_scan::materialise_agent_context(workspace_id).await {
+                Ok(Some(materialised)) => {
+                    let root = materialised.root.clone();
+                    return ContextRoot::materialised(root, Box::new(materialised));
+                }
+                // Not promoted / no semantic rows — fall through to the FS path.
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        workspace_id = %workspace_id,
+                        error = ?e,
+                        "context_root: compile-boundary materialise failed; falling through to FS"
+                    );
+                }
+            }
+        }
+        ContextRoot::fs(self.workspace_path().to_path_buf())
     }
 
     fn refresh_key_cache(

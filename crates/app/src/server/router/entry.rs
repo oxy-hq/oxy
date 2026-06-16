@@ -207,6 +207,20 @@ pub async fn api_router(
         agentic_state.shutdown_token.clone(),
     );
 
+    // Worktree reaper (plan-2 lifecycle broker, step 1): on the `ide`
+    // singleton, reclaim git worktrees that are idle AND clean so the
+    // working-copy disk stays bounded. Clean-gated, so it never discards
+    // uncommitted work, and a reaped worktree's branch ref survives. Ide-only:
+    // no other role has the worktrees on local disk.
+    if crate::server::role_manifest::current_process_role()
+        == crate::server::role_manifest::Role::Ide
+    {
+        crate::server::worktree_registry::spawn_worktree_reaper(
+            crate::server::worktree_registry::registry(),
+            agentic_state.shutdown_token.clone(),
+        );
+    }
+
     // Bridge camera domain events (compliance ingest, health transitions)
     // onto the world-model SSE bus.
     oxy_cameras::service::events::set_sink(Box::new(

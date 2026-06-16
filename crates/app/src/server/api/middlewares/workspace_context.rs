@@ -660,6 +660,17 @@ async fn try_attach_workspace_manager(
             StatusCode::BAD_REQUEST
         })?;
 
+    // Record worktree access for the lifecycle reaper (ide-local; see
+    // server::worktree_registry). Only worktree paths are tracked — the main
+    // working copy (default branch) resolves to the workspace root, which is
+    // never reaped.
+    if effective_path
+        .components()
+        .any(|c| c.as_os_str().to_str() == Some(oxy_git::cli::worktree::WORKTREES_DIR))
+    {
+        crate::server::worktree_registry::registry().touch(&effective_path);
+    }
+
     // Compile-boundary fast path: when the workspace has a promoted revision,
     // hydrate the workspace `Config` from `workspace_compiled_configs` instead
     // of re-parsing `config.yml` from disk on every request. This is the

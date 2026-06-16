@@ -372,6 +372,12 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/status",
         role: RouteRole::IdeOnly,
     },
+    // Worktree lifecycle diagnostic — reads the ide-local worktree registry.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/worktrees",
+        role: RouteRole::IdeOnly,
+    },
     // ── Process-local live SSE (BROADCASTER) ────────────────────────────────
     // The legacy workflow / agentic-task live streams subscribe to an
     // in-memory `BROADCASTER` (`api/{run,task,world_model}.rs`). The producing

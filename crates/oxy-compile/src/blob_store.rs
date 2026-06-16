@@ -54,6 +54,25 @@ static S3_CLIENT: OnceCell<S3Client> = OnceCell::const_new();
 
 const ENV_BUCKET: &str = "OXY_COMPILE_BLOB_S3_BUCKET";
 
+/// Whether a custom S3 endpoint is configured (`AWS_ENDPOINT_URL`). Set for
+/// S3-compatible stores — MinIO / LocalStack / Ceph — and unset for real AWS S3.
+/// Drives two endpoint-specific behaviours: path-style addressing (below) and
+/// skipping the forced SSE header (see [`force_sse_aes256`]).
+fn has_custom_endpoint() -> bool {
+    std::env::var("AWS_ENDPOINT_URL").is_ok_and(|v| !v.trim().is_empty())
+}
+
+/// Whether to set `ServerSideEncryption::AES256` on PutObject. Real AWS S3
+/// applies SSE-S3 by default, so forcing the header is harmless defence-in-depth
+/// there. But an S3-compatible store reached via a custom endpoint (MinIO without
+/// KMS) rejects `x-amz-server-side-encryption: AES256` with `NotImplemented`,
+/// failing EVERY upload — semantic blobs AND the DuckDB mirror, which silently
+/// drops `s3_mirror` and leaves the stateless fleet with "no databases
+/// configured". So only force it when talking to real AWS.
+fn force_sse_aes256() -> bool {
+    !has_custom_endpoint()
+}
+
 /// Returns the configured bucket name, trimmed; `None` when unset or
 /// empty. Cheap env-var read; callers may call it once per row.
 pub fn bucket() -> Option<String> {
@@ -121,17 +140,20 @@ pub async fn put_blob(
     };
     let key = canonical_key(workspace_id, kind, name, body);
     let client = s3_client().await;
-    let send = client
+    let mut req = client
         .put_object()
         .bucket(&bucket)
         .key(&key)
         .body(ByteStream::from(body.to_vec()))
-        .content_type("application/yaml")
+        .content_type("application/yaml");
+    if force_sse_aes256() {
         // Defense-in-depth: encrypt at rest even if the bucket lacks a default
         // SSE policy. Semantic bodies are business logic (table names, metric
         // definitions), so we don't rely on the bucket being configured right.
-        .server_side_encryption(ServerSideEncryption::Aes256)
-        .send();
+        // Skipped for custom-endpoint S3-compatible stores — see force_sse_aes256.
+        req = req.server_side_encryption(ServerSideEncryption::Aes256);
+    }
+    let send = req.send();
     tokio::time::timeout(BLOB_OP_TIMEOUT, send)
         .await
         .map_err(|_| BlobError::Transport(format!("S3 put timed out after {BLOB_OP_TIMEOUT:?}")))?
@@ -211,14 +233,18 @@ pub async fn put_object_at_key(
         return Ok(None);
     };
     let client = s3_client().await;
-    let send = client
+    let mut req = client
         .put_object()
         .bucket(&bucket)
         .key(key)
         .body(ByteStream::from(body))
-        .content_type(content_type.to_string())
-        .server_side_encryption(ServerSideEncryption::Aes256)
-        .send();
+        .content_type(content_type.to_string());
+    if force_sse_aes256() {
+        // See force_sse_aes256: real AWS only — MinIO/LocalStack without KMS
+        // reject the SSE header and the mirror upload fails, dropping s3_mirror.
+        req = req.server_side_encryption(ServerSideEncryption::Aes256);
+    }
+    let send = req.send();
     tokio::time::timeout(BLOB_OP_TIMEOUT, send)
         .await
         .map_err(|_| BlobError::Transport(format!("S3 put timed out after {BLOB_OP_TIMEOUT:?}")))?
@@ -246,10 +272,7 @@ async fn s3_client() -> &'static S3Client {
         .get_or_init(|| async {
             let shared = aws_config::load_defaults(BehaviorVersion::latest()).await;
             let mut builder = aws_sdk_s3::config::Builder::from(&shared);
-            if std::env::var("AWS_ENDPOINT_URL")
-                .ok()
-                .is_some_and(|v| !v.trim().is_empty())
-            {
+            if has_custom_endpoint() {
                 builder = builder.force_path_style(true);
             }
             S3Client::from_conf(builder.build())
