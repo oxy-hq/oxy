@@ -2,11 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.75] - 2026-06-16
+
+### 🚀 Features
+
+- *(compile)* Compile boundary end-to-end + routing guardrail (re-open of #2494 after revert) (#2505)
+- Publish all app definitions (#2510)
+- Add pagination and filtering to admin explorer (#2511)
+- *(compile)* Compile-boundary production-safety harness (#2524)
+- *(admin)* Compile console — aggregate by workspace, full IDs, batch ops + oxy api typed fields (#2525)
+- *(serve)* Self-route IdeOnly requests to the ide pod (kill the external route table) (#2526)
+- *(ci)* Create composite action for building oxy CLI with multi-target support
+
+### 🐛 Bug Fixes
+
+- *(compile)* Wire db into the global-driver project context (#2514)
+- *(admin)* Drop trailing slash on admin/compiles list URL (#2516)
+- *(compile)* Make the stateless serve fleet safe (no FS fallthrough) (#2520)
+- *(vscode)* Change default formatter for JSONC files to Prettier
+- Resolve airway rest_api auth secrets from the secret manager (#2527)
+- *(serve)* Classify node-local-state routes IdeOnly for self-routing (#2528)
+- /apps/source 404 on serve fleet + onboarding redirect on 'Start asking questions' (#2531)
+- *(serve)* S3-mirrored DuckDB fails on the fleet (agent runs: 'no databases configured') (#2533)
+- *(compile)* Key idempotent revision reuse on compiler + schema version (#2534)
+- *(serve)* Classify all /modeling routes IdeOnly (GET + bare root) (#2536)
+- *(agentic)* Resolve relative dates in a configured timezone, not UTC (#2539)
+- *(serve)* Make agentic analytics runs work on the stateless serve fleet (#2543)
+- *(serve)* List procedures from the compile boundary on the stateless fleet (#2544)
+- *(airway)* Use the ***bbox*** placeholder in the overpass source test (#2545)
+- *(serve)* Pin the agentic run/exec surface to the ide (tier 1) (#2547)
+- *(serve)* Use the local DuckDB connector on FS-backed nodes (ide/all) (#2548)
+- *(serve)* Route data-app run to the ide instance (#2549)
+- *(serve)* Pin data-app load + result execution to the ide (#2550)
+
+### 📚 Documentation
+
+- Refocus product-context.md as a lean clarifier, not a catalog (#2529)
+- Update product-context.md from recent changelogs (#2530)
+- Restructure documentation for Oxygen Cloud platform (#2535)
+- Use oxygen-hq.com domain and /guide deploy path (#2540)
+
+### 🧪 Testing
+
+- *(serve)* Router-derived completeness gate for workspace route classification (#2537)
+
+### ⚙️ Miscellaneous Tasks
+
+- Unify nextest profile and disable incremental compilation (#2515)
+- Bump airway to 0.1.7 (#2517)
+
 ## [0.5.74] - 2026-06-12
 
 ### 💼 Other
 
 - *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 35 updates (#2501)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.74 (#2508)
 
 ## [0.5.73] - 2026-06-11
 
