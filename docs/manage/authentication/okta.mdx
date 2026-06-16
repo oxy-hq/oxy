@@ -13,19 +13,19 @@ import { EnterpriseTag } from "/snippets/enterprise-tag.mdx";
 Enterprise workspaces can sign in with their corporate Okta identity
 provider. Okta SSO supports group-based provisioning, MFA, and
 centralized lifecycle management. Standard workspaces can use
-[magic link](/manage/authentication/magic-link) or
-[Google OAuth](/manage/authentication/google).
+[magic link](/guide/manage/authentication/magic-link) or
+[Google OAuth](/guide/manage/authentication/google).
 
 ## Set it up
 
 1. **In Okta**, create a new **OIDC Web Application** integration.
-2. Set the sign-in redirect URI to `https://app.oxy.tech/auth/okta/callback`.
+2. Set the sign-in redirect URI to `https://app.oxygen-hq.com/auth/okta/callback`.
 3. Copy the **Client ID** and **Client Secret**.
 4. **In Oxygen**, go to **Manage → Authentication → Okta**.
 5. Paste the Client ID, Client Secret, and your Okta domain
    (e.g. `acme.okta.com`). Save.
 6. Test the flow from an incognito window: clicking **Sign in with Okta**
-   on `app.oxy.tech` should redirect through Okta and back into your
+   on `app.oxygen-hq.com` should redirect through Okta and back into your
    workspace.
 
 {/* TODO: Screenshot — Okta config panel in Manage → Authentication. */}
@@ -37,5 +37,5 @@ centralized lifecycle management. Standard workspaces can use
   **Manage → Authentication → Defaults**).
 - Whether magic link sign-in stays enabled alongside Okta as a fallback.
 
-[Contact sales →](https://oxy.tech/contact) to enable Okta SSO on your
+[Contact sales →](https://oxygen-hq.com/contact) to enable Okta SSO on your
 workspace.

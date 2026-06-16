@@ -25,11 +25,11 @@ There are two flavors:
 - **Agentic agents** — a multi-step reasoning pipeline (FSM-based) that
   clarifies, plans, generates SQL, executes, and interprets results.
   Best for open-ended exploration.
-  ([Build an agentic agent →](/build/agents/agentic))
+  ([Build an agentic agent →](/guide/build/agents/agentic))
 
 If your project has a `_routing` agent, it becomes the default entry
 point for chat questions and routes to other agents based on the
-question. ([Routing agents →](/build/agents/routing))
+question. ([Routing agents →](/guide/build/agents/routing))
 
 ## What an agent contains
 
@@ -41,7 +41,7 @@ question. ([Routing agents →](/build/agents/routing))
 - Optional **variables** with JSON-Schema validation, used to template
   the system instructions.
 
-See [Provide context](/build/agents/provide-context) for how to feed
+See [Provide context](/guide/build/agents/provide-context) for how to feed
 schema information and semantic models into an agent.
 
 ## You can also write this in YAML
@@ -59,14 +59,14 @@ tools:
     database: warehouse
 ```
 
-Full schema reference: [.agent.yml →](/reference/yaml/config)
+Full schema reference: [.agent.yml →](/guide/reference/yaml/config)
 {/* TODO: Replace target with /reference/yaml/agent once that page is generated. */}
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Build your first agent" href="/start/first-agent" />
-  <Card title="Provide context" href="/build/agents/provide-context" />
-  <Card title="Agentic agents" href="/build/agents/agentic" />
-  <Card title="Test agents" href="/build/test-evaluate" />
+  <Card title="Build your first agent" href="/guide/start/first-agent" />
+  <Card title="Provide context" href="/guide/build/agents/provide-context" />
+  <Card title="Agentic agents" href="/guide/build/agents/agentic" />
+  <Card title="Test agents" href="/guide/build/test-evaluate" />
 </CardGroup>
