@@ -840,4 +840,177 @@ mod tests {
             );
         }
     }
+
+    // ── Stage 0b: router-derived completeness gate ─────────────────────────
+    //
+    // The FIRST test that derives its route set FROM the router source rather
+    // than a hand-maintained list. It parses every `.route()` / `.nest()` mount
+    // in `build_workspace_routes` (router/workspace.rs) and asserts each is
+    // EXPLICITLY classified — IdeOnly in IDE_ONLY_PATTERNS, or acknowledged
+    // FleetOk below. A new mount nobody classified fails CI here instead of
+    // silently defaulting to FleetOk and 404ing on a serve replica that has no
+    // working copy (the `/apps/source` outage class, oxygen-internal#2531).
+    //
+    // Scope/limits (honest): it guards the top-level mount surface. It does not
+    // introspect nested builders' sub-routes (axum exposes no route table) nor
+    // per-method gaps inside a builder — those stay guarded by the per-builder
+    // tests above + the behavioral canary (internal-docs/compile-boundary.md).
+    // `.merge(...)` mounts carry no path literal (git: see
+    // `manifest_covers_every_git_route`).
+
+    /// Workspace mounts that are intentionally FleetOk: every handler under them
+    /// is served statelessly (compile boundary + Postgres + S3), never the
+    /// working copy / `.git` / node-local disk / process-local state. Kept in
+    /// sync with `build_workspace_routes` — the test rejects stale entries.
+    /// REVIEW before adding one: if ANY handler under the mount reads local
+    /// disk, it belongs in IDE_ONLY_PATTERNS, not here.
+    const FLEET_OK_ACKNOWLEDGED: &[&str] = &[
+        // workspace metadata + access control (Postgres)
+        "/compile/status",
+        "/members",
+        "/members/{user_id}",
+        "/oxy-access",
+        "/custom-apps",
+        "/builder-availability",
+        // run/thread/agent data planes (Postgres task router + persisted rows)
+        "/threads",
+        "/agents",
+        "/api-keys",
+        "/blocks",
+        "/runs/{source_id}/{run_index}",
+        "/logs",
+        "/analytics",
+        "/agentic-workflows",
+        "/agentic-airway",
+        "/agentic-schedules",
+        "/tests",
+        "/traces",
+        "/metrics",
+        "/execution-analytics",
+        // config-boundary-served entities (Postgres definitions, no FS)
+        "/databases",
+        "/integrations",
+        "/secrets",
+        "/apps",
+        "/app-integrations",
+        "/artifacts/{id}",
+        // query + semantic layer (warehouse + compiled artifacts, stateless)
+        "/sql/{pathb64}",
+        "/sql/query",
+        "/semantic",
+        "/semantic/topic/{file_path_b64}",
+        "/semantic/view/{file_path_b64}",
+        "/semantic/preagg-status",
+        "/semantic/compile",
+        "/semantic/monitors",
+        "/semantic/anomalies",
+        "/semantic/metric-tree",
+        "/semantic/metric-tree/{measure_id}/sensitivity",
+        "/semantic/metric-tree/predict",
+        "/semantic/metric-tree/explain",
+        "/semantic/metric-tree/opportunity",
+        "/semantic/metric-tree/time-dimensions",
+        "/semantic/metric-tree/distribution",
+        // world-model (Postgres + S3, read-through cached)
+        "/world-model/cameras",
+        "/world-model/weather/{layer}/{z}/{x}/{y}",
+        "/world-model/weather/current",
+        "/world-model/foot-traffic/current",
+        "/world-model/foot-traffic/radar",
+        "/world-model/competitors",
+        // parquet result cache — fleet-safe via S3 read-through
+        "/results/files/{file_id}",
+        // local-mode-only scaffolding (no fleet exists in local mode)
+        "/setup/empty",
+        "/setup/demo",
+    ];
+
+    /// Extracts `(is_nest, path)` for every `.route("…")` / `.nest("…")` mount
+    /// in `body` (handles the multi-line `.route(\n  "…"` form).
+    fn parse_mounts(body: &str) -> Vec<(bool, String)> {
+        let mut out = Vec::new();
+        for (is_nest, marker) in [(false, ".route("), (true, ".nest(")] {
+            let mut hay = body;
+            while let Some(i) = hay.find(marker) {
+                let after = hay[i + marker.len()..].trim_start();
+                if let Some(rest) = after.strip_prefix('"')
+                    && let Some(end) = rest.find('"')
+                {
+                    out.push((is_nest, rest[..end].to_string()));
+                }
+                hay = &hay[i + marker.len()..];
+            }
+        }
+        out
+    }
+
+    /// A concrete probe URI for a mount: `{param}` segments become `x`, and a
+    /// nest prefix gets one trailing segment (the manifest's `{*rest}` wildcards
+    /// need ≥1 segment to match).
+    fn probe_uri(path: &str, is_nest: bool) -> String {
+        let mut uri = String::from("/api/d9830be4-c6a4");
+        for seg in path.split('/').filter(|s| !s.is_empty()) {
+            uri.push('/');
+            if seg.starts_with('{') {
+                uri.push('x');
+            } else {
+                uri.push_str(seg);
+            }
+        }
+        if is_nest {
+            uri.push_str("/probe");
+        }
+        uri
+    }
+
+    #[test]
+    fn every_workspace_mount_is_classified() {
+        let src = include_str!("router/workspace.rs");
+        // Only build_workspace_routes' body — not the nested builder fns later
+        // in the file (their sub-routes carry no prefix at this layer).
+        let start = src
+            .find("fn build_workspace_routes")
+            .expect("build_workspace_routes fn present");
+        let body = &src[start..];
+        let end = body.find("\n}\n").unwrap_or(body.len());
+        let body = &body[..end];
+
+        let mounts = parse_mounts(body);
+        assert!(
+            mounts.len() > 30,
+            "parser found only {} mounts — the router shape changed; fix parse_mounts",
+            mounts.len()
+        );
+
+        const METHODS: [&str; 5] = ["GET", "POST", "PUT", "DELETE", "PATCH"];
+        for (is_nest, path) in &mounts {
+            if FLEET_OK_ACKNOWLEDGED.contains(&path.as_str()) {
+                continue; // intentional, reviewed FleetOk
+            }
+            let probe = probe_uri(path, *is_nest);
+            let ide_only = METHODS
+                .iter()
+                .any(|m| classify(m, &probe) == RouteRole::IdeOnly);
+            assert!(
+                ide_only,
+                "workspace mount {path:?} is UNCLASSIFIED: not in IDE_ONLY_PATTERNS \
+                 and not in FLEET_OK_ACKNOWLEDGED, so it defaults to FleetOk and will \
+                 404 on a serve replica if any handler under it reads the working \
+                 copy / .git / local disk. Add an IdeOnly entry to IDE_ONLY_PATTERNS, \
+                 or (if it is stateless) add {path:?} to FLEET_OK_ACKNOWLEDGED.",
+            );
+        }
+
+        // No stale acknowledgements: every entry must be a current mount, so the
+        // list rots loudly when a route is removed or renamed.
+        let mount_paths: std::collections::HashSet<&str> =
+            mounts.iter().map(|(_, p)| p.as_str()).collect();
+        for ack in FLEET_OK_ACKNOWLEDGED {
+            assert!(
+                mount_paths.contains(ack),
+                "FLEET_OK_ACKNOWLEDGED lists {ack:?} but build_workspace_routes has no \
+                 such mount — remove the stale entry."
+            );
+        }
+    }
 }
