@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use chrono_tz::Tz;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -48,6 +49,9 @@ pub struct PipelineParams {
     pub prior_spec_hint: Option<SpecHint>,
     pub schema_cache: Option<Arc<Mutex<HashMap<String, SchemaCatalog>>>>,
     pub project_model: Option<ResolvedModelInfo>,
+    /// Project-level timezone (from `config.yml` `timezone:`), forwarded into
+    /// [`BuildContext`] as the fallback for the agent's date hint.
+    pub timezone: Option<Tz>,
     /// When `true`, thinking override and model override are derived from
     /// `config.llm.extended_thinking`.  The caller no longer needs to extract
     /// these values manually.
@@ -154,6 +158,7 @@ pub async fn start_pipeline(
         preagg_cache: params.preagg_cache,
         preagg_renewal_threshold_secs: params.preagg_renewal_threshold_secs,
         semantic_scan_path: params.semantic_scan_path,
+        timezone: params.timezone,
     };
 
     let (solver, _procedure_files) = params
@@ -328,6 +333,7 @@ pub async fn resume_pipeline(
         preagg_cache: params.preagg_cache,
         preagg_renewal_threshold_secs: params.preagg_renewal_threshold_secs,
         semantic_scan_path: params.semantic_scan_path,
+        timezone: params.timezone,
     };
 
     let (solver, _procedure_files) = params

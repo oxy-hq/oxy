@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use chrono_tz::Tz;
+
 use agentic_connector::DatabaseConnector;
 use agentic_core::{
     events::EventStream,
@@ -39,6 +41,10 @@ pub struct AnalyticsSolver {
     pub(crate) event_tx: Option<EventStream<AnalyticsEvent>>,
     /// Global instructions injected into every LLM call.
     pub(crate) global_instructions: Option<String>,
+    /// Timezone used to format the "Today is …" date hint and to resolve
+    /// relative dates ("yesterday", "last week"). Sourced from `timezone:`
+    /// in the agent YAML. `None` falls back to UTC (legacy behavior).
+    pub(crate) timezone: Option<Tz>,
     /// SQL example files appended to the Solving prompt.
     pub(crate) sql_examples: Vec<String>,
     /// Markdown domain docs injected into Clarifying and Interpreting prompts.
@@ -156,6 +162,7 @@ impl AnalyticsSolver {
             default_connector: "default".to_string(),
             event_tx: None,
             global_instructions: None,
+            timezone: None,
             sql_examples: vec![],
             domain_docs: vec![],
             state_configs: HashMap::new(),
@@ -198,6 +205,7 @@ impl AnalyticsSolver {
             default_connector,
             event_tx: None,
             global_instructions: None,
+            timezone: None,
             sql_examples: vec![],
             domain_docs: vec![],
             state_configs: HashMap::new(),
@@ -269,6 +277,14 @@ impl AnalyticsSolver {
     /// Set global instructions injected into every LLM call.
     pub fn with_global_instructions(mut self, instructions: Option<String>) -> Self {
         self.global_instructions = instructions;
+        self
+    }
+
+    /// Set the timezone used to resolve the "Today is …" date hint.
+    ///
+    /// `None` falls back to UTC (legacy behavior).
+    pub fn with_timezone(mut self, tz: Option<Tz>) -> Self {
+        self.timezone = tz;
         self
     }
 
@@ -439,8 +455,29 @@ impl AnalyticsSolver {
     /// separate, uncached content block (Anthropic) or concatenated
     /// (other providers).  Kept out of the cached prefix so cross-thread
     /// runs can share the system+tools cache.
-    pub(crate) fn current_date_hint() -> String {
-        chrono::Utc::now().format("Today is %Y-%m-%d.").to_string()
+    ///
+    /// Formatted in `tz` when set, otherwise UTC. Using UTC unconditionally
+    /// (the historical behavior) makes the hint a calendar day ahead of the
+    /// user's local date during the evening — e.g. 9pm Pacific is already
+    /// "tomorrow" in UTC — so relative dates like "yesterday" resolve to the
+    /// wrong day. Set `timezone:` in the agent YAML to pin it to the
+    /// operating timezone.
+    pub(crate) fn current_date_hint(tz: Option<Tz>) -> String {
+        Self::format_date_hint(chrono::Utc::now(), tz)
+    }
+
+    /// Pure formatting core of [`current_date_hint`](Self::current_date_hint),
+    /// split out so the timezone handling can be exercised against a fixed
+    /// instant in tests.
+    pub(crate) fn format_date_hint(
+        now_utc: chrono::DateTime<chrono::Utc>,
+        tz: Option<Tz>,
+    ) -> String {
+        let date = match tz {
+            Some(tz) => now_utc.with_timezone(&tz).format("%Y-%m-%d").to_string(),
+            None => now_utc.format("%Y-%m-%d").to_string(),
+        };
+        format!("Today is {date}.")
     }
 
     /// Build a composite system prompt for a given state.
@@ -561,5 +598,51 @@ impl AnalyticsSolver {
             .get(state)
             .and_then(|c| c.max_retries)
             .unwrap_or(default)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    /// 2026-06-16T04:28:00Z is 2026-06-15 21:28 in America/Los_Angeles (PDT,
+    /// UTC-7): the UTC calendar date (the 16th) is already a day ahead of the
+    /// Pacific date (the 15th). This is exactly the evening window where the
+    /// old UTC-only hint told the model "today is the 16th", so "yesterday"
+    /// resolved to the 15th — the user's actual today.
+    fn evening_instant() -> chrono::DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 6, 16, 4, 28, 0).unwrap()
+    }
+
+    #[test]
+    fn date_hint_without_timezone_uses_utc() {
+        assert_eq!(
+            AnalyticsSolver::format_date_hint(evening_instant(), None),
+            "Today is 2026-06-16.",
+        );
+    }
+
+    #[test]
+    fn date_hint_with_timezone_uses_local_calendar_day() {
+        // Pacific is still the 15th when UTC has already rolled to the 16th —
+        // this is the regression the timezone config fixes.
+        assert_eq!(
+            AnalyticsSolver::format_date_hint(
+                evening_instant(),
+                Some(chrono_tz::America::Los_Angeles),
+            ),
+            "Today is 2026-06-15.",
+        );
+    }
+
+    #[test]
+    fn date_hint_with_timezone_agrees_with_utc_before_rollover() {
+        // 2026-06-15T18:00:00Z is 11:00 Pacific the same day: no date skew.
+        let midday = Utc.with_ymd_and_hms(2026, 6, 15, 18, 0, 0).unwrap();
+        assert_eq!(
+            AnalyticsSolver::format_date_hint(midday, Some(chrono_tz::America::Los_Angeles)),
+            "Today is 2026-06-15.",
+        );
     }
 }

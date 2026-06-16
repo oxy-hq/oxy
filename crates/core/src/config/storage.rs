@@ -231,6 +231,7 @@ impl ConfigStorage for LocalSource {
             models: [].to_vec(),
             databases: [].to_vec(),
             builder_agent: None,
+            timezone: None,
             integrations: vec![],
             slack_legacy: None,
             mcp: None,

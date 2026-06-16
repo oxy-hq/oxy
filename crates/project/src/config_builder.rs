@@ -33,6 +33,7 @@ impl ConfigBuilder {
             models: config_models,
             databases: config_databases,
             builder_agent: None,
+            timezone: None,
             workspace_path: repo_path.to_path_buf(),
             integrations: Vec::new(),
             slack_legacy: None,

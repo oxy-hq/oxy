@@ -116,6 +116,10 @@ pub struct AgentConfig {
     #[serde(default)]
     pub instructions: Option<String>,
 
+    /// IANA timezone (e.g. `America/Los_Angeles`) used to resolve the Today-is date hint and relative dates like `yesterday` or `last week`. Defaults to UTC when unset.
+    #[serde(default)]
+    pub timezone: Option<String>,
+
     /// Database names from config.yml to use as connectors.
     ///
     /// Each string is the `name:` of a database entry in the project's

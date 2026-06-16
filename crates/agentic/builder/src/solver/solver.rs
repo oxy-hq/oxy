@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use chrono_tz::Tz;
+
 use agentic_core::{
     events::{Event, EventStream},
     human_input::{DeferredInputProvider, HumanInputHandle, ResumeInput, SuspendedRunData},
@@ -61,6 +63,9 @@ pub struct BuilderSolver {
     /// 15+ irrelevant tools off the per-phase tool list.  Default
     /// `None` exposes the full tool set (the chat-builder behavior).
     pub(crate) tool_allowlist: Option<Vec<String>>,
+    /// Timezone used to format the "Today is …" date hint. Sourced from the
+    /// project `config.yml` `timezone:`. `None` falls back to UTC.
+    pub(crate) timezone: Option<Tz>,
 }
 
 impl BuilderSolver {
@@ -82,7 +87,16 @@ impl BuilderSolver {
             knowledge_cards: Vec::new(),
             skip_interpreting: false,
             tool_allowlist: None,
+            timezone: None,
         }
+    }
+
+    /// Set the timezone used to resolve the "Today is …" date hint.
+    ///
+    /// `None` falls back to UTC.
+    pub fn with_timezone(mut self, tz: Option<Tz>) -> Self {
+        self.timezone = tz;
+        self
     }
 
     pub fn with_db_provider(mut self, provider: Arc<dyn BuilderDatabaseProvider>) -> Self {
@@ -424,8 +438,24 @@ Do not call any tools."#
     /// Build the day-only date hint that is appended to the system prompt as
     /// a separate, uncached content block.  Kept here so the format stays
     /// in sync between Solving and Interpreting calls.
-    pub(crate) fn current_date_hint() -> String {
-        chrono::Utc::now().format("Today is %Y-%m-%d.").to_string()
+    pub(crate) fn current_date_hint(tz: Option<Tz>) -> String {
+        Self::format_date_hint(chrono::Utc::now(), tz)
+    }
+
+    /// Pure formatting core of [`current_date_hint`](Self::current_date_hint),
+    /// split out so the timezone handling can be tested against a fixed
+    /// instant. Formats in `tz` when set, otherwise UTC. UTC unconditionally
+    /// (the historical behavior) is a calendar day ahead of the user's local
+    /// date in the evening, skewing relative-date resolution.
+    pub(crate) fn format_date_hint(
+        now_utc: chrono::DateTime<chrono::Utc>,
+        tz: Option<Tz>,
+    ) -> String {
+        let date = match tz {
+            Some(tz) => now_utc.with_timezone(&tz).format("%Y-%m-%d").to_string(),
+            None => now_utc.format("%Y-%m-%d").to_string(),
+        };
+        format!("Today is {date}.")
     }
 
     /// Per-call uncached system suffix: project root + day-only date hint.
@@ -436,7 +466,7 @@ Do not call any tools."#
         format!(
             "Project root: {root}\n\n{date}",
             root = self.project_root.display(),
-            date = Self::current_date_hint(),
+            date = Self::current_date_hint(self.timezone),
         )
     }
 
@@ -1108,6 +1138,27 @@ mod tests {
         let suffix = solver_with_root("/tmp/proj").system_suffix();
         assert!(suffix.contains("Project root: /tmp/proj"));
         assert!(suffix.contains("Today is "));
+    }
+
+    #[test]
+    fn date_hint_without_timezone_uses_utc() {
+        use chrono::{TimeZone, Utc};
+        let instant = Utc.with_ymd_and_hms(2026, 6, 16, 4, 28, 0).unwrap();
+        assert_eq!(
+            BuilderSolver::format_date_hint(instant, None),
+            "Today is 2026-06-16.",
+        );
+    }
+
+    #[test]
+    fn date_hint_with_timezone_uses_local_calendar_day() {
+        use chrono::{TimeZone, Utc};
+        // 04:28 UTC on the 16th is still 21:28 on the 15th in Los Angeles.
+        let instant = Utc.with_ymd_and_hms(2026, 6, 16, 4, 28, 0).unwrap();
+        assert_eq!(
+            BuilderSolver::format_date_hint(instant, Some(chrono_tz::America::Los_Angeles)),
+            "Today is 2026-06-15.",
+        );
     }
 
     #[test]

@@ -273,6 +273,7 @@ mod tests {
                 models: vec![],
                 databases: vec![],
                 builder_agent: None,
+                timezone: None,
                 workspace_path: project_path,
                 repositories: vec![],
                 integrations: vec![],

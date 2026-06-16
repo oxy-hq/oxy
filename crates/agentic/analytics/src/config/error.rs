@@ -34,6 +34,8 @@ pub enum ConfigError {
     /// resolved — neither `llm.api_key` + `llm.model` on the agent YAML
     /// nor a project-resolved model from `config.yml`.
     MissingLlmConfig,
+    /// The `timezone:` value is not a valid IANA timezone name.
+    InvalidTimezone(String),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -67,6 +69,11 @@ impl std::fmt::Display for ConfigError {
                 f,
                 "no LLM model resolvable for the brief agent path — set `llm.ref:` in the \
                  agent YAML or define a default model in config.yml"
+            ),
+            ConfigError::InvalidTimezone(tz) => write!(
+                f,
+                "invalid timezone '{tz}': expected an IANA timezone name such as \
+                 'America/Los_Angeles' or 'UTC'"
             ),
         }
     }

@@ -196,6 +196,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         models: vec![model.clone()],
         workspace_path: PathBuf::from("."),
         builder_agent: None,
+        timezone: None,
         integrations: vec![],
         slack_legacy: None,
         mcp: None,

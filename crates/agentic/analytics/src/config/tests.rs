@@ -406,3 +406,73 @@ llm:
         ThinkingConfig::Effort(ReasoningEffort::High)
     ));
 }
+
+// ── timezone parsing ──────────────────────────────────────────────────────
+
+#[test]
+fn timezone_absent_by_default() {
+    let config = AgentConfig::from_yaml("{}").unwrap();
+    assert!(config.timezone.is_none());
+}
+
+#[test]
+fn timezone_parses_from_yaml() {
+    let yaml = "timezone: America/Los_Angeles\n";
+    let config = AgentConfig::from_yaml(yaml).unwrap();
+    assert_eq!(config.timezone.as_deref(), Some("America/Los_Angeles"));
+}
+
+#[test]
+fn parse_timezone_accepts_iana_name() {
+    assert_eq!(
+        parse_timezone(Some("America/Los_Angeles")).unwrap(),
+        Some(chrono_tz::America::Los_Angeles)
+    );
+}
+
+#[test]
+fn parse_timezone_none_is_ok() {
+    assert_eq!(parse_timezone(None).unwrap(), None);
+}
+
+#[test]
+fn parse_timezone_rejects_invalid_name() {
+    let err = parse_timezone(Some("Not/AZone")).unwrap_err();
+    assert!(matches!(err, ConfigError::InvalidTimezone(ref tz) if tz == "Not/AZone"));
+}
+
+#[test]
+fn resolve_timezone_per_agent_overrides_project() {
+    // A per-agent `.agentic.yml` timezone wins over the project config.yml one.
+    assert_eq!(
+        resolve_timezone(
+            Some("America/New_York"),
+            Some(chrono_tz::America::Los_Angeles)
+        )
+        .unwrap(),
+        Some(chrono_tz::America::New_York)
+    );
+}
+
+#[test]
+fn resolve_timezone_falls_back_to_project() {
+    // The headline fix: with no per-agent value, the project config.yml
+    // timezone is used instead of silently defaulting to UTC.
+    assert_eq!(
+        resolve_timezone(None, Some(chrono_tz::America::Los_Angeles)).unwrap(),
+        Some(chrono_tz::America::Los_Angeles)
+    );
+}
+
+#[test]
+fn resolve_timezone_none_when_both_unset() {
+    assert_eq!(resolve_timezone(None, None).unwrap(), None);
+}
+
+#[test]
+fn resolve_timezone_rejects_invalid_agent_value() {
+    assert!(matches!(
+        resolve_timezone(Some("Not/AZone"), Some(chrono_tz::America::Los_Angeles)),
+        Err(ConfigError::InvalidTimezone(_))
+    ));
+}

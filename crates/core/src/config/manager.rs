@@ -96,6 +96,11 @@ impl ConfigManager {
         self.config.base_branch.as_deref()
     }
 
+    /// Returns the configured project timezone (IANA name), if any.
+    pub fn timezone(&self) -> Option<&str> {
+        self.config.timezone.as_deref()
+    }
+
     pub async fn resolve_file<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError> {
         self.storage.fs_link(file_ref).await
     }

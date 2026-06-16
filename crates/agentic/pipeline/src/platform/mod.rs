@@ -161,6 +161,15 @@ pub trait ProjectContext: Send + Sync {
         uuid::Uuid::nil()
     }
 
+    /// IANA timezone the host project resolves relative dates in, sourced
+    /// from `config.yml` `timezone:`. Threaded into the builder's "Today is …"
+    /// date hint so "today"/"yesterday" match the operating timezone instead
+    /// of UTC. Default `None` (UTC) so test fakes and non-Oxy adapters compile
+    /// unchanged.
+    fn timezone(&self) -> Option<chrono_tz::Tz> {
+        None
+    }
+
     /// Optional sink for Tier 1 analytics metric usage. Hosts with an
     /// observability backend return an adapter that writes into it;
     /// hosts without one (tests, embedded use) return `None` and

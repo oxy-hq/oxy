@@ -25,6 +25,7 @@ agentic-runtime = { workspace = true }
 agentic-workflow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 serde_yaml = { workspace = true }
 
 sea-orm = { workspace = true }

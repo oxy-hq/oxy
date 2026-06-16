@@ -92,6 +92,14 @@ pub struct Config {
     #[garde(skip)]
     pub builder_agent: Option<BuilderAgentConfig>,
 
+    /// IANA timezone (e.g. `America/Los_Angeles`) for resolving relative
+    /// dates ("yesterday", "last week") in agentic runs. When unset, dates
+    /// resolve in UTC. A per-agent `.agentic.yml` `timezone:` overrides this
+    /// for that agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub timezone: Option<String>,
+
     #[serde(skip)]
     #[garde(skip)]
     #[schemars(skip)]

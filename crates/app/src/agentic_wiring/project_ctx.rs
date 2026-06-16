@@ -254,6 +254,30 @@ impl ProjectContext for OxyProjectContext {
         self.workspace_manager.workspace_id
     }
 
+    /// Project timezone from `config.yml`, parsed to a [`chrono_tz::Tz`].
+    ///
+    /// Deliberately lenient: an unrecognized IANA name warns and falls back to
+    /// UTC rather than failing. `config.yml` is project-wide, so a typo here
+    /// should not take down every agent and the server. (The per-agent
+    /// `.agentic.yml` `timezone:` is validated strictly instead — a bad value
+    /// fails just that agent at build time via `ConfigError::InvalidTimezone`.)
+    fn timezone(&self) -> Option<chrono_tz::Tz> {
+        let raw = self.workspace_manager.config_manager.timezone()?;
+        match raw.parse::<chrono_tz::Tz>() {
+            Ok(tz) => Some(tz),
+            Err(_) => {
+                tracing::warn!(
+                    timezone = raw,
+                    "config.yml `timezone:` is not a valid IANA timezone name \
+                     (expected e.g. `America/Los_Angeles`); falling back to UTC. \
+                     Relative dates like \"yesterday\" may resolve a day off until \
+                     the value is corrected in config.yml."
+                );
+                None
+            }
+        }
+    }
+
     async fn resolve_connector(&self, db_name: &str) -> Option<ConnectorConfig> {
         resolve_connector_impl(db_name, &self.workspace_manager).await
     }

@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use chrono_tz::Tz;
+
 use agentic_connector::DatabaseConnector;
 use agentic_core::{
     BackTarget,
@@ -40,6 +42,8 @@ pub struct AnalyticsFanoutWorker {
     default_connector: String,
     event_tx: Option<EventStream<AnalyticsEvent>>,
     global_instructions: Option<String>,
+    /// Timezone for the "Today is …" date hint; mirrors the parent solver.
+    timezone: Option<Tz>,
     sql_examples: Vec<String>,
     state_configs: HashMap<String, StateConfig>,
     state_clients: HashMap<String, LlmClient>,
@@ -71,6 +75,7 @@ impl AnalyticsFanoutWorker {
             default_connector: solver.default_connector.clone(),
             event_tx: solver.event_tx.clone(),
             global_instructions: solver.global_instructions.clone(),
+            timezone: solver.timezone,
             sql_examples: solver.sql_examples.clone(),
             state_configs: solver.state_configs.clone(),
             state_clients: solver.state_clients.clone(),
@@ -367,7 +372,7 @@ impl AnalyticsFanoutWorker {
                     response_schema: Some(solve_response_schema()),
                     max_tokens_override: self.max_tokens,
                     sub_spec_index,
-                    system_date_hint: Some(AnalyticsSolver::current_date_hint()),
+                    system_date_hint: Some(AnalyticsSolver::current_date_hint(self.timezone)),
                 },
             )
             .await

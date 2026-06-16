@@ -68,6 +68,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use chrono_tz::Tz;
+
 use crate::catalog::SchemaCatalog;
 use crate::engine::cube::CubeEngine;
 use crate::engine::looker::LookerEngine;
@@ -231,6 +233,9 @@ pub struct BuildContext {
     pub extra_default_connector: Option<String>,
     /// Resolved project model info (model name, vendor, API key, base URL).
     pub project_model_info: Option<ResolvedModelInfo>,
+    /// Project-level timezone (from `config.yml` `timezone:`). Used as the
+    /// fallback for the date hint when the agent YAML omits `timezone:`.
+    pub timezone: Option<Tz>,
     /// Optional schema cache shared across requests.
     pub schema_cache: Option<Arc<Mutex<HashMap<String, SchemaCatalog>>>>,
     /// Runtime thinking config override (from UI "extended thinking" mode toggle).
@@ -333,6 +338,34 @@ pub(crate) fn build_llm_client(
             LlmClient::with_provider(OpenAiCompatProvider::new(api_key, model, url))
         }
     }
+}
+
+/// Parse the optional `timezone:` config value into a [`Tz`].
+///
+/// Returns `Ok(None)` when unset (callers fall back to UTC). An unrecognized
+/// name yields [`ConfigError::InvalidTimezone`] so misconfiguration fails at
+/// solver-build time rather than silently resolving relative dates to the
+/// wrong day.
+pub(crate) fn parse_timezone(name: Option<&str>) -> Result<Option<Tz>, ConfigError> {
+    match name {
+        Some(n) => n
+            .parse::<Tz>()
+            .map(Some)
+            .map_err(|_| ConfigError::InvalidTimezone(n.to_string())),
+        None => Ok(None),
+    }
+}
+
+/// Resolve the effective timezone for the date hint.
+///
+/// The per-agent `.agentic.yml` `timezone:` (`agent_tz`) takes precedence and
+/// hard-errors on a bad IANA name; otherwise the project-level `config.yml`
+/// timezone (`project_tz`, already parsed) is used; otherwise `None` (UTC).
+pub(crate) fn resolve_timezone(
+    agent_tz: Option<&str>,
+    project_tz: Option<Tz>,
+) -> Result<Option<Tz>, ConfigError> {
+    Ok(parse_timezone(agent_tz)?.or(project_tz))
 }
 
 impl AgentConfig {
@@ -586,8 +619,13 @@ impl AgentConfig {
             };
 
         // 8. Construct solver with all connectors.
+        // Per-agent `.agentic.yml` `timezone:` wins; otherwise fall back to
+        // the project-level `config.yml` timezone threaded in via BuildContext;
+        // otherwise UTC. An invalid per-agent value hard-errors.
+        let timezone = resolve_timezone(self.timezone.as_deref(), build_ctx.timezone)?;
         let mut solver = AnalyticsSolver::new_multi(client, catalog, connectors, default_connector)
             .with_global_instructions(self.instructions.clone())
+            .with_timezone(timezone)
             .with_sql_examples(ctx.sql_examples)
             .with_domain_docs(ctx.domain_docs)
             .with_state_configs(self.states.clone())

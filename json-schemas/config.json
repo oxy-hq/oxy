@@ -91,6 +91,13 @@
       "items": {
         "$ref": "#/definitions/Repository"
       }
+    },
+    "timezone": {
+      "description": "IANA timezone (e.g. `America/Los_Angeles`) for resolving relative dates (\"yesterday\", \"last week\") in agentic runs. When unset, dates resolve in UTC. A per-agent `.agentic.yml` `timezone:` overrides this for that agent.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "additionalProperties": false,

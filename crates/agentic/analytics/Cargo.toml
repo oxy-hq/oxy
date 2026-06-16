@@ -44,6 +44,7 @@ oxy-shared = { workspace = true }
 oxy-airlayer-compat = { workspace = true }
 strsim = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 

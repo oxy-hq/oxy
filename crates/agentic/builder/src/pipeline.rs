@@ -7,6 +7,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use chrono_tz::Tz;
+
 use agentic_core::events::{CoreEvent, Event, EventStream};
 use agentic_core::human_input::SuspendedRunData;
 use agentic_core::orchestrator::{Orchestrator, OrchestratorError};
@@ -64,6 +66,9 @@ pub struct BuilderPipelineParams {
     /// Onboarding sets a per-phase allowlist so dbt / search_text /
     /// run_tests etc. aren't surfaced to phases that don't need them.
     pub tool_allowlist: Option<Vec<String>>,
+    /// Timezone for the "Today is …" date hint, sourced from the project
+    /// `config.yml` `timezone:` via `ProjectContext::timezone`. `None` → UTC.
+    pub timezone: Option<Tz>,
 }
 
 /// Build the solver, create the orchestrator, and start the builder pipeline.
@@ -87,6 +92,7 @@ pub fn start_pipeline(params: BuilderPipelineParams) -> PipelineHandle<BuilderEv
     let mut solver = BuilderSolver::new(params.client, project_root.clone())
         .with_events(event_stream.clone())
         .with_knowledge_cards(params.knowledge_cards)
+        .with_timezone(params.timezone)
         .with_skip_interpreting(params.skip_interpreting);
     if let Some(allowlist) = params.tool_allowlist {
         solver = solver.with_tool_allowlist(allowlist);
@@ -208,6 +214,7 @@ pub fn resume_pipeline(
     let mut solver = BuilderSolver::new(params.client, project_root.clone())
         .with_events(event_stream.clone())
         .with_knowledge_cards(params.knowledge_cards)
+        .with_timezone(params.timezone)
         .with_skip_interpreting(params.skip_interpreting);
     if let Some(allowlist) = params.tool_allowlist {
         solver = solver.with_tool_allowlist(allowlist);

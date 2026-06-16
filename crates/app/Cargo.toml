@@ -139,6 +139,7 @@ duckdb = { workspace = true }
 # Utilities
 uuid = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 tempfile = { workspace = true }
 minijinja = { workspace = true, features = ["loader"] }
 once_cell = { workspace = true }

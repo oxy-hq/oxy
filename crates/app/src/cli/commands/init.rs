@@ -435,6 +435,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         }),
         workspace_path: PathBuf::new(),
         builder_agent: None,
+        timezone: None,
         integrations: vec![],
         slack_legacy: None,
         mcp: None,

@@ -637,6 +637,7 @@ impl PipelineBuilder {
             prior_spec_hint,
             schema_cache: self.schema_cache,
             project_model,
+            timezone: self.platform.timezone(),
             use_extended_thinking: self.thinking_mode.is_extended(),
             subrun_runner,
             metric_tree_runner: self.platform.metric_tree_runner(),
@@ -803,6 +804,7 @@ impl PipelineBuilder {
             prior_spec_hint,
             schema_cache: self.schema_cache,
             project_model,
+            timezone: self.platform.timezone(),
             use_extended_thinking: self.thinking_mode.is_extended(),
             subrun_runner,
             metric_tree_runner: self.platform.metric_tree_runner(),
@@ -881,6 +883,7 @@ impl PipelineBuilder {
             agentic_builder::BuilderPipelineParams {
                 client,
                 project_root: base_dir.to_path_buf(),
+                timezone: self.platform.timezone(),
                 question: self.question,
                 history,
                 db_provider: Some(bridges.db_provider),
@@ -1001,6 +1004,7 @@ impl PipelineBuilder {
         let handle = agentic_builder::start_pipeline(agentic_builder::BuilderPipelineParams {
             client,
             project_root: base_dir.to_path_buf(),
+            timezone: self.platform.timezone(),
             question: self.question,
             history,
             db_provider: Some(bridges.db_provider),
@@ -1736,6 +1740,7 @@ async fn run_agentic_headless(
     ctx.project_model_info = platform
         .resolve_model(config.llm.model_ref.as_deref(), config.llm.model.is_some())
         .await;
+    ctx.timezone = platform.timezone();
 
     let mut effective_databases: Vec<String> = config.databases.clone();
     if let Ok(resolved) = config.resolve_context(&base_dir) {

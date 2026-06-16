@@ -65,6 +65,14 @@
         }
       ]
     },
+    "timezone": {
+      "description": "IANA timezone (e.g. `America/Los_Angeles`) used to resolve the Today-is date hint and relative dates like `yesterday` or `last week`. Defaults to UTC when unset.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "validation": {
       "description": "Validation rule configuration.\n\nWhen absent, all built-in rules run with their default parameters. Use this section to disable specific rules or tune parameters such as the outlier detection threshold:\n\n```yaml validation: rules: solved: - name: outlier_detection enabled: true threshold_sigma: 3.0 min_rows: 6 ```",
       "default": null,
