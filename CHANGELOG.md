@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.76] - 2026-06-17
+
+### 🐛 Bug Fixes
+
+- *(airway)* Align overpass test to airway's {bbox} placeholder (#2552)
+- Custom-app auth — clear cookie on logout + honor return_to after OAuth (#2555)
+
 ## [0.5.75] - 2026-06-16
 
 ### 🚀 Features
@@ -50,6 +57,7 @@ All notable changes to this project will be documented in this file.
 
 - Unify nextest profile and disable incremental compilation (#2515)
 - Bump airway to 0.1.7 (#2517)
+- Release 0.5.75 (#2509)
 
 ## [0.5.74] - 2026-06-12
 
