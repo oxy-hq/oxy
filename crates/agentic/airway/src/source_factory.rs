@@ -1144,7 +1144,7 @@ mod tests {
                     "max_lat": 38.15, "max_lng": -121.55
                 }],
                 "query_template":
-                    "[out:json][timeout:60];(node[\"amenity\"=\"fast_food\"](***bbox***););out tags center;",
+                    "[out:json][timeout:60];(node[\"amenity\"=\"fast_food\"]({bbox}););out tags center;",
                 "resource_name": "osm_pois"
             }),
         ))
