@@ -4,7 +4,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
 import { AuthService } from "@/services/api";
 import type { AuthResponse, OktaAuthRequest } from "@/types/auth";
-import { handlePostLoginOrgs } from "./postLoginRedirect";
+import {
+  consumeReturnTo,
+  handlePostLoginOrgs,
+  resolveReturnTo,
+  returnToFromUrl,
+  stashReturnTo
+} from "./postLoginRedirect";
 
 const OKTA_REDIRECT_URI = `${window.location.origin}/auth/okta/callback`;
 const OKTA_STATE_KEY = "okta_oauth_state";
@@ -15,10 +21,17 @@ export const useOktaAuth = () => {
 
   return useMutation<AuthResponse, Error, OktaAuthRequest>({
     mutationFn: AuthService.oktaAuth,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       // Clear state after successful authentication
       sessionStorage.removeItem(OKTA_STATE_KEY);
       login(data.token, data.user);
+      // Honor a stashed `return_to` (e.g. a custom-app subdomain the user was
+      // bounced from) before the default org/workspace destination.
+      const returnTo = await resolveReturnTo(consumeReturnTo());
+      if (returnTo) {
+        window.location.href = returnTo;
+        return;
+      }
       const destination = handlePostLoginOrgs(data.user, data.orgs);
       navigate(destination);
     },
@@ -35,6 +48,9 @@ export const initiateOktaAuth = async (client_id: string, domain: string) => {
   // See useGoogleAuth.initiateGoogleAuth for CSRF design notes.
   const { state } = await AuthService.issueOAuthState();
   sessionStorage.setItem(OKTA_STATE_KEY, state);
+  // Carry the login page's `return_to` across the provider round-trip so the
+  // callback can send the user back where they came from.
+  stashReturnTo(returnToFromUrl());
 
   const url = new URL(`https://${domain}/oauth2/v1/authorize`);
   url.searchParams.set("client_id", client_id);

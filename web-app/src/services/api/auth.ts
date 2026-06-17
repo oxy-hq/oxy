@@ -67,4 +67,20 @@ export class AuthService {
       return false;
     }
   }
+
+  /**
+   * Tell the server to clear the `oxy_session` session cookie. That cookie is
+   * HttpOnly, so the browser only drops it when the server replies with
+   * `Set-Cookie: oxy_session=; Max-Age=0` — JS cannot delete it. Without this
+   * round-trip the cookie survives logout and custom-app subdomains keep
+   * loading with a still-valid session.
+   *
+   * Must be called while the bearer token is still in `localStorage`: this
+   * route sits behind the auth middleware and the axios interceptor needs that
+   * token to authenticate the request. Cloud-only route (404s in local mode),
+   * so callers must tolerate failure.
+   */
+  static async logout(): Promise<void> {
+    await apiClient.get("/logout");
+  }
 }

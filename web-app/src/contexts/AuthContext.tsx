@@ -6,6 +6,7 @@ import {
   clearAllOnboardingState,
   clearLegacyLocalOnboardingState
 } from "@/libs/utils/onboardingStorage";
+import { AuthService } from "@/services/api/auth";
 import type { AuthConfigResponse, UserInfo } from "@/types/auth";
 
 interface AuthContextType {
@@ -13,7 +14,9 @@ interface AuthContextType {
   getToken: () => string | null;
   isAuthenticated: () => boolean;
   login: (token: string, user: UserInfo) => void;
-  logout: () => void;
+  // Async: awaits the backend `/logout` (clears the HttpOnly `oxy_session`
+  // cookie) before tearing down local state. Callers may await the teardown.
+  logout: () => Promise<void>;
   authConfig: AuthConfigResponse;
   isLocalMode: boolean;
 }
@@ -39,7 +42,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, authConfig
     localStorage.setItem("user", JSON.stringify(newUser));
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Clear the server-set `oxy_session` cookie FIRST, while the bearer token
+    // is still in localStorage so the auth-gated `/logout` request
+    // authenticates. The cookie is HttpOnly — JS cannot delete it — so without
+    // this round-trip it survives logout and custom-app subdomains keep
+    // loading with a still-valid session. Tolerate any failure (network,
+    // expired token, local-mode 404) so we never trap the user in a
+    // half-logged-out state.
+    try {
+      await AuthService.logout();
+    } catch (error) {
+      console.error("Backend logout failed; clearing local session anyway.", error);
+    }
     clearAuthScopedStorage();
     // Clear any in-flight wizard state so a different user signing in on the
     // same browser doesn't inherit it (and so the same user can't be re-trapped

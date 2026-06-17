@@ -8,7 +8,7 @@ import type {
   MagicLinkVerifyRequest,
   MessageResponse
 } from "@/types/auth";
-import { handlePostLoginOrgs } from "./postLoginRedirect";
+import { handlePostLoginOrgs, resolveReturnTo } from "./postLoginRedirect";
 
 export const useRequestMagicLink = () => {
   return useMutation<MessageResponse, Error, MagicLinkRequest>({
@@ -35,13 +35,10 @@ export const useVerifyMagicLink = (returnTo?: string) => {
     onSuccess: async (data) => {
       login(data.token, data.user);
 
-      if (returnTo) {
-        const isAllowed = await AuthService.validateReturnTo(returnTo);
-        if (isAllowed) {
-          window.location.href = returnTo;
-          return;
-        }
-        console.warn("return_to URL rejected by server; falling back to default destination");
+      const resolved = await resolveReturnTo(returnTo);
+      if (resolved) {
+        window.location.href = resolved;
+        return;
       }
 
       const destination = handlePostLoginOrgs(data.user, data.orgs);

@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AuthService } from "@/services/api";
 import { openSecureWindow } from "@/utils/githubAppInstall";
 import { waitForGitHubCallback } from "@/utils/githubCallbackMessage";
-import { handlePostLoginOrgs } from "./postLoginRedirect";
+import { handlePostLoginOrgs, resolveReturnTo, returnToFromUrl } from "./postLoginRedirect";
 
 const GITHUB_AUTH_REDIRECT_URI = `${window.location.origin}/github/callback`;
 const GITHUB_STATE_KEY = "github_oauth_login_state";
@@ -28,6 +28,9 @@ export const useGitHubAuth = (clientId: string) => {
 
   return useMutation<void, Error, void>({
     mutationFn: async () => {
+      // The whole flow runs in this (opener) window, so the login page's
+      // `return_to` is still readable when the popup resolves — no stash needed.
+      const returnTo = returnToFromUrl();
       const { state } = await AuthService.issueOAuthState();
       sessionStorage.setItem(GITHUB_STATE_KEY, state);
 
@@ -35,6 +38,12 @@ export const useGitHubAuth = (clientId: string) => {
       try {
         const result = await waitForGitHubCallback(popup, "auth");
         login(result.auth.token, result.auth.user);
+        // Honor a `return_to` (e.g. a custom-app subdomain) before the default.
+        const resolved = await resolveReturnTo(returnTo);
+        if (resolved) {
+          window.location.href = resolved;
+          return;
+        }
         navigate(handlePostLoginOrgs(result.auth.user, result.auth.orgs));
       } finally {
         sessionStorage.removeItem(GITHUB_STATE_KEY);

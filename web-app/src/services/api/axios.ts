@@ -12,6 +12,11 @@ const publicAPIPaths = [
   "/auth/config",
   "/auth/magic-link/request",
   "/auth/magic-link/verify",
+  // Logging out with an already-expired token 401s; let AuthContext.logout's
+  // own teardown + home redirect own the outcome instead of this interceptor
+  // racing a redirect to /login. (Only gates the 401 handler — the request
+  // interceptor still attaches the token, so a valid-token logout works.)
+  "/logout",
   "/health",
   "/ready",
   "/live"
