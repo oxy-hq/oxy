@@ -36,12 +36,6 @@ export const useAppDebug = (orgSlug: string | undefined, appSlug: string | undef
     staleTime: 30_000
   });
 
-export const useMyApps = () =>
-  useQuery({
-    queryKey: queryKeys.customerApps.mine(),
-    queryFn: CustomerAppsService.listMine
-  });
-
 /**
  * List the curated scaffold templates. Templates are baked into the
  * server binary and never change at runtime, so we cache them forever.
@@ -72,7 +66,6 @@ export const useUpdateApp = () => {
       CustomerAppsService.update(args.id, args.req),
     onSuccess: (app) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.customerApps.all() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.customerApps.mine() });
       toast.success("App updated");
       for (const warning of app.warnings ?? []) {
         toast.warning(warning, { duration: 8000 });

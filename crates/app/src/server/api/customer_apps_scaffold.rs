@@ -560,6 +560,8 @@ mod tests {
             id: uuid::Uuid::nil(),
             slug: slug.to_string(),
             name: slug.to_string(),
+            logo: None,
+            logo_content_type: None,
             created_at: chrono::Utc::now().fixed_offset(),
             updated_at: chrono::Utc::now().fixed_offset(),
         }

@@ -60,6 +60,8 @@ async fn seed_installation() -> (Uuid, Uuid, Uuid) {
         id: ActiveValue::Set(org_id),
         name: ActiveValue::Set(format!("Test Org {}", org_id)),
         slug: ActiveValue::Set(format!("test-org-{}", org_id)),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::NotSet,
         updated_at: ActiveValue::NotSet,
     }

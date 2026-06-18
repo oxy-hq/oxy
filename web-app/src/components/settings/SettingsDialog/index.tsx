@@ -11,6 +11,7 @@ import {
   Plug,
   Settings as SettingsIcon,
   ShieldCheck,
+  SunMoon,
   Users
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -82,9 +83,13 @@ const CLOUD_NAV: NavGroup[] = [
       },
       { value: "workspace.activity_logs", label: "Activity Logs", icon: Activity }
     ]
-  }
+  },
   // Customer-apps management used to live here. It now has its own
   // top-level surface at `/admin/apps`, gated by `is_app_admin`.
+  {
+    label: "Preferences",
+    items: [{ value: "preferences.appearance", label: "Appearance", icon: SunMoon }]
+  }
 ];
 
 const LOCAL_NAV: NavGroup[] = [
@@ -98,6 +103,10 @@ const LOCAL_NAV: NavGroup[] = [
       { value: "workspace.apps", label: "Apps", icon: AppWindow },
       { value: "workspace.activity_logs", label: "Activity Logs", icon: Activity }
     ]
+  },
+  {
+    label: "Preferences",
+    items: [{ value: "preferences.appearance", label: "Appearance", icon: SunMoon }]
   }
 ];
 

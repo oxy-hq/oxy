@@ -23,7 +23,6 @@ export const usePublishApp = () => {
     mutationFn: CustomerAppsService.publish,
     onSuccess: (app) => {
       qc.invalidateQueries({ queryKey: queryKeys.customerApps.all() });
-      qc.invalidateQueries({ queryKey: queryKeys.customerApps.mine() });
       // Workspace-scoped list — invalidate the one for this app's workspace
       // so the sidebar picks up the new entry immediately.
       qc.invalidateQueries({ queryKey: queryKeys.customApps.list(app.project_id) });
@@ -46,7 +45,6 @@ export const useUnpublishApp = () => {
     mutationFn: CustomerAppsService.unpublish,
     onSuccess: (app) => {
       qc.invalidateQueries({ queryKey: queryKeys.customerApps.all() });
-      qc.invalidateQueries({ queryKey: queryKeys.customerApps.mine() });
       qc.invalidateQueries({ queryKey: queryKeys.customApps.list(app.project_id) });
       toast.success(`${app.name} unpublished`);
     },

@@ -2,8 +2,6 @@ import { Home } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { Card } from "@/components/ui/shadcn/card";
-import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
-import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import useRevisionInfo from "@/hooks/api/workspaces/useRevisionInfo";
 import { FEATURES } from "@/libs/features";
 import ROUTES from "@/libs/utils/routes";
@@ -28,7 +26,6 @@ const Header = () => {
   const { selectedRepo } = useSelectedRepo();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const isLinkedRepo = selectedRepo !== "primary";
-  const { setOpen } = useSidebar();
   const navigate = useNavigate();
 
   // `useCurrentWorkspaceBranch` throws without a workspace; Header renders
@@ -55,13 +52,11 @@ const Header = () => {
   });
 
   const handleHomeClick = () => {
-    setOpen(true);
     navigate(project?.id ? ROUTES.ORG(orgSlug).WORKSPACE(project.id).HOME : ROUTES.ROOT);
   };
 
   return (
     <Card className='flex gap-2 rounded-none border-y-0 border-t-0 border-b bg-sidebar-background p-1 shadow-none'>
-      <SidebarTrigger className='h-8 w-8 md:hidden' />
       <Button
         variant='ghost'
         size='sm'

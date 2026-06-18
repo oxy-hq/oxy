@@ -206,6 +206,8 @@ async fn seed_user_workspace_with_role(
         id: ActiveValue::Set(org_id),
         name: ActiveValue::Set("Acme".into()),
         slug: ActiveValue::Set(format!("acme-{}", &org_id.simple().to_string()[..8])),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     }

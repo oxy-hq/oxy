@@ -1,5 +1,5 @@
 import { Monitor } from "lucide-react";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import ProjectStatus from "@/components/ProjectStatus";
 import {
@@ -75,17 +75,6 @@ const MobileIdeWarning = () => {
 };
 
 const Ide = () => {
-  const { open, setOpen } = useSidebar();
-
-  const hasClosedSidebar = useRef(false);
-
-  useEffect(() => {
-    if (open && !hasClosedSidebar.current) {
-      setOpen(false);
-      hasClosedSidebar.current = true;
-    }
-  }, [open, setOpen]);
-
   return (
     <IDEContext.Provider value={{ insideIDE: true }}>
       <div className='flex h-full flex-1 flex-col overflow-hidden'>

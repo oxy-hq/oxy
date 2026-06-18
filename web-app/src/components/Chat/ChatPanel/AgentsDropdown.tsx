@@ -1,5 +1,5 @@
 import { Bot, ChevronDown } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   DropdownMenu,
@@ -10,9 +10,8 @@ import {
 } from "@/components/ui/shadcn/dropdown-menu";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Switch } from "@/components/ui/shadcn/switch";
-import useAgents from "@/hooks/api/agents/useAgents";
-import { getAgentNameFromPath } from "@/libs/utils/string";
 import type { ThinkingMode } from "@/services/api/analytics";
+import { useAgentOptions } from "./useAgentOptions";
 
 export type Agent = {
   id: string;
@@ -38,29 +37,16 @@ const AgentsDropdown = ({
   onThinkingModeChange,
   disabled = false
 }: Props) => {
-  const { data: agents, isPending, isSuccess } = useAgents();
-
-  const agentOptions = useMemo(
-    () =>
-      agents
-        ?.filter((agent) => agent.public)
-        ?.map((agent) => ({
-          id: agent.path,
-          isAnalytics: agent.path.endsWith(".agentic.yml") || agent.path.endsWith(".agentic.yaml"),
-          name: agent.name ?? getAgentNameFromPath(agent.path)
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name)) ?? [],
-    [agents]
-  );
+  const { agentOptions, isPending, isSuccess } = useAgentOptions();
 
   useEffect(() => {
-    if (isSuccess && agents && agents.length > 0 && !agentSelected) {
+    if (isSuccess && agentOptions.length > 0 && !agentSelected) {
       const preferred = preferAgentPath
         ? agentOptions.find((a) => a.id === preferAgentPath)
         : undefined;
       onSelect(preferred ?? agentOptions[0]);
     }
-  }, [isSuccess, agents, agentOptions, onSelect, agentSelected, preferAgentPath]);
+  }, [isSuccess, agentOptions, onSelect, agentSelected, preferAgentPath]);
 
   return (
     <DropdownMenu>

@@ -128,12 +128,21 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // is configured in the parsed OxyConfig. Reads the YAML, not just the env
     // vars above (the YAML check is what `BuiltInAuthenticator` historically
     // used). Lifted here so `oxy-auth` can stay free of an `oxy` dep.
+    //
+    // In `--local` mode the authenticator must run guest-mode regardless of
+    // what providers are configured — the local-mode router pins all callers
+    // to the local guest user, and the customer-apps gates (which sit in the
+    // shared public router, not the local-only protected stack) call
+    // `BuiltInAuthenticator` directly without consulting `AuthState`. Without
+    // this override they'd reject the implicit local-guest session and the
+    // bundle's data hooks would 401 in `oxy start --local`.
     {
-        let yaml_provider = oxy::config::oxy::get_oxy_config()
-            .ok()
-            .and_then(|c| c.authentication)
-            .map(|a| a.google.is_some() || a.okta.is_some() || a.magic_link.is_some())
-            .unwrap_or(false);
+        let yaml_provider = !args.local
+            && oxy::config::oxy::get_oxy_config()
+                .ok()
+                .and_then(|c| c.authentication)
+                .map(|a| a.google.is_some() || a.okta.is_some() || a.magic_link.is_some())
+                .unwrap_or(false);
         oxy_auth::built_in::set_auth_configured(yaml_provider);
     }
 

@@ -29,6 +29,17 @@ export class OrganizationService {
     await apiClient.delete(`/orgs/${orgId}`);
   }
 
+  /** Upload the org logo as raw image bytes (Content-Type drives the kind). */
+  static async uploadLogo(orgId: string, file: File): Promise<void> {
+    await apiClient.put(`/orgs/${orgId}/logo`, file, {
+      headers: { "Content-Type": file.type }
+    });
+  }
+
+  static async deleteLogo(orgId: string): Promise<void> {
+    await apiClient.delete(`/orgs/${orgId}/logo`);
+  }
+
   static async listMembers(orgId: string): Promise<OrgMember[]> {
     const response = await apiClient.get<OrgMember[]>(`/orgs/${orgId}/members`);
     return response.data;

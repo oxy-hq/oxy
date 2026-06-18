@@ -60,6 +60,8 @@ async fn seed_org_with_admin() -> (Uuid, Uuid) {
         id: ActiveValue::Set(org_id),
         name: ActiveValue::Set(format!("Uninstall Test Org {}", org_id)),
         slug: ActiveValue::Set(format!("uninstall-test-{}", org_id)),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::NotSet,
         updated_at: ActiveValue::NotSet,
     }

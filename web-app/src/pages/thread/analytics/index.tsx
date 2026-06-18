@@ -137,6 +137,8 @@ const AnalyticsDisplayBlockItem = memo(
 
 interface Props {
   thread: ThreadItem;
+  /** Hide the page header when embedded in the ThreadDrawer. */
+  hideHeader?: boolean;
 }
 
 // ── Scroll-to-bottom behavior ─────────────────────────────────────────────────
@@ -338,7 +340,7 @@ const PastRunEntry = ({
 
 // ── Thread ────────────────────────────────────────────────────────────────────
 
-const AnalyticsThread = ({ thread }: Props) => {
+const AnalyticsThread = ({ thread, hideHeader }: Props) => {
   const { project, branchName } = useCurrentProjectBranch();
   const { isMobile } = useSidebar();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -696,7 +698,7 @@ const AnalyticsThread = ({ thread }: Props) => {
 
   return (
     <div className='flex h-full flex-col'>
-      <Header thread={thread} />
+      {!hideHeader && <Header thread={thread} />}
 
       <ResizablePanelGroup direction={isMobile ? "vertical" : "horizontal"} className='flex-1'>
         <ResizablePanel

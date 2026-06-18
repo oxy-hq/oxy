@@ -95,6 +95,8 @@ async fn ensure_local_org(conn: &sea_orm::DatabaseConnection) -> Result<(), OxyE
         id: ActiveValue::Set(LOCAL_ORG_ID),
         name: ActiveValue::Set("Local".to_string()),
         slug: ActiveValue::Set("local".to_string()),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     }

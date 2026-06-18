@@ -9,6 +9,16 @@ pub struct Model {
     pub name: String,
     #[sea_orm(unique)]
     pub slug: String,
+    /// Org-level uploaded logo bytes (white-labels the workspace HQ chrome:
+    /// rail tile + HQ heading). `None` falls back to the code-first `logo.*`
+    /// file at the workspace root, then to the name initial. `serde(skip)`
+    /// keeps the raw bytes out of every org JSON response — the logo is
+    /// served as an image by the dedicated `/{workspace_id}/logo` endpoint.
+    #[serde(skip)]
+    pub logo: Option<Vec<u8>>,
+    /// Content type of `logo` (e.g. `image/png`), set together with it.
+    #[serde(skip)]
+    pub logo_content_type: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

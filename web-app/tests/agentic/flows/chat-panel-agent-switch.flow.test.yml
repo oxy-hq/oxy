@@ -1,15 +1,18 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
-# Verify the agent-selector dropdown renders and reflects the selected
-# agent. This flow used to switch between two demo agents (a classic
-# `default` + the agentic `analytics`); #2346 removed the classic agent,
-# so the demo now ships a single agent — `analytics` (analytics.agentic.yml).
-# With one agent there is no "switch" to exercise, so this is now a selector
-# smoke check: open the dropdown, confirm the analytics agent is listed and
-# selectable, and the trigger reflects it. (If the demo regains a second
-# agent, restore the switch assertions from git history.)
+# Verify the apps-first Ask composer uses the default analytics agent with
+# NO manual agent picker. The agent-switch dropdown was removed in the
+# "streamline Ask Oxygen composer" change: ChatPanel is locked to ask-mode
+# and auto-selects the workspace default agent with the picker hidden
+# (AskPanel and AskForwardFallback both pass `hideAgentPicker`). So this flow
+# now guards that the picker stays gone, rather than exercising a switch.
+# (chat-ask covers that the auto-selected agent actually answers.)
+#
+# Home is the apps-first launcher; with zero published apps the ask-forward
+# fallback renders the same ChatPanel composer, so the submit button is
+# present while the agent selector is not.
 
-name: chat panel agent selector
+name: ask composer has no agent picker
 target: chat
 
 settings:
@@ -23,29 +26,12 @@ setup:
   - "goto:/"
 
 cases:
-  - name: agent selector lists and selects the analytics agent
+  - name: composer renders the default agent without a picker
     tags: [chat, regression]
     steps:
-      - wait_for: "selector:[data-testid=agent-selector-button]"
-
-      - act: |
-          browser_click [data-testid=agent-selector-button] to open the
-          agent dropdown.
-
-      # The dropdown renders one menuitem per available agent. The demo ships
-      # a single agent — `analytics`. Gate on that menuitem so a selector that
-      # fails to load its agents (the known "selector shows undefined/empty"
-      # race) fails here deterministically, instead of slipping past a judge
-      # the initial trigger label already satisfies.
-      - wait_for: "selector:role=menuitem[name='analytics'];timeout_ms=10000"
-
-      - act: |
-          browser_click `role=menuitem[name='analytics']` to select the
-          agent; the dropdown closes and the trigger button reflects
-          'analytics'.
-
+      # The composer is ready once its submit button renders.
+      - wait_for: "selector:[data-testid=chat-panel-submit-button]"
     expect:
-      - assert: "selector [data-testid=agent-selector-button] is visible"
-      - judge: |
-          The home/chat surface is shown, the agent selector button is
-          visible and reads 'analytics', and no error banner is present.
+      # The agent picker is intentionally hidden — the workspace default
+      # analytics agent is auto-selected, so no selector should be present.
+      - assert: "selector [data-testid=agent-selector-button] is not visible"

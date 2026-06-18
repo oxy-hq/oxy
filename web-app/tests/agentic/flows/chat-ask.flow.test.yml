@@ -5,6 +5,11 @@
 # pipeline) — and verify it returns a coherent, data-backed answer.
 # (The classic `default.agent.yml` was removed from the demo in #2346;
 # the agentic agent is now the only ask agent.)
+#
+# Home is the apps-first launcher: with zero published custom apps the
+# ask-forward fallback renders the same ChatPanel composer. Submitting
+# no longer navigates — the new thread opens and streams inside the
+# right-side drawer ([data-testid=thread-drawer]).
 
 name: chat ask returns an analytics answer
 target: chat
@@ -33,19 +38,21 @@ cases:
           no agent-picker step is needed:
           1. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
           2. browser_click [data-testid=chat-panel-submit-button].
-          End the turn once the URL changes to /threads/<id>.
+          End the turn once the thread drawer ([data-testid=thread-drawer])
+          opens on the right — the URL does not change.
         cache_scope: shared
       - wait_for: streaming_complete
     expect:
       # The agentic analytics agent renders its result as reasoning-trace
-      # steps + an interpreted answer, not a classic `execute_sql`
-      # agent-artifact — so assert on the answer via the judge rather than a
-      # classic artifact kind. (streaming_complete already gates run completion.)
+      # steps + an interpreted answer inside the thread drawer, not a
+      # classic `execute_sql` agent-artifact — so assert on the answer via
+      # the judge rather than a classic artifact kind. (streaming_complete
+      # already gates run completion.)
       - judge: |
-          The analytics agent answered the "total weekly sales by store"
-          question with a coherent, data-backed result — per-store sales
-          figures as a table, chart, or written summary. Fail if instead the
-          page shows an error banner, or the agentic run is suspended awaiting
-          input on a clarifying question (a prompt back to the user, not an
-          answer — the agentic pipeline can pause to clarify, which is not a
-          result).
+          The thread drawer on the right shows the analytics agent's answer
+          to the "total weekly sales by store" question — a coherent,
+          data-backed result with per-store sales figures as a table, chart,
+          or written summary. Fail if instead the drawer shows an error
+          banner, or the agentic run is suspended awaiting input on a
+          clarifying question (a prompt back to the user, not an answer —
+          the agentic pipeline can pause to clarify, which is not a result).

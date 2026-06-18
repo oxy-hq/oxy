@@ -55,6 +55,8 @@ async fn seed_org_user() -> (Uuid, Uuid) {
         id: ActiveValue::Set(org_id),
         name: ActiveValue::Set(format!("Resolution Org {}", org_id)),
         slug: ActiveValue::Set(format!("resolution-org-{}", org_id)),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::NotSet,
         updated_at: ActiveValue::NotSet,
     }

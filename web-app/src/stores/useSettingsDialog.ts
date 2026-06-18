@@ -13,7 +13,8 @@ export type SettingsSection =
   | "workspace.secrets"
   | "workspace.apps"
   | "workspace.activity_logs"
-  | "workspace.oxy_access";
+  | "workspace.oxy_access"
+  | "preferences.appearance";
 
 interface SettingsDialogState {
   isOpen: boolean;

@@ -142,6 +142,8 @@ async fn seed_site(db: &DatabaseConnection) -> (Uuid, Uuid) {
         id: ActiveValue::Set(org_id),
         name: ActiveValue::Set("smoke-org".into()),
         slug: ActiveValue::Set(format!("smoke-{}", org_id.simple())),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     }

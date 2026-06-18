@@ -25,16 +25,32 @@ import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
 import AgentsDropdown, { type Agent } from "./AgentsDropdown";
 import SelectItemWithDetail from "./SelectItemWithDetail";
+import ThinkingModeMenu from "./ThinkingModeMenu";
+import { resolveDefaultAgent, useAgentOptions } from "./useAgentOptions";
 import WorkflowsDropdown, { type WorkflowOption } from "./WorkflowsDropdown";
 
 const ChatPanel = ({
   initialMessage,
   initialAgentPath,
-  autoSubmit
+  autoSubmit,
+  onThreadCreated,
+  placeholderOverride,
+  lockMode,
+  hideAgentPicker
 }: {
   initialMessage?: string;
   initialAgentPath?: string;
   autoSubmit?: boolean;
+  /** When set, called with the new thread id instead of navigating to it. */
+  onThreadCreated?: (threadId: string) => void;
+  /** Overrides the mode-derived placeholder (e.g. a branded Ask prompt). */
+  placeholderOverride?: string;
+  /** Pins the composer to a single mode and hides the mode selector
+   *  (the Ask surfaces only ever ask). */
+  lockMode?: "ask";
+  /** Hides the agent picker and auto-selects the workspace default agent.
+   *  Extended Thinking stays available via the inline ThinkingModeMenu. */
+  hideAgentPicker?: boolean;
 }) => {
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
@@ -75,7 +91,16 @@ const ChatPanel = ({
         runWorkflow(data.id, data.source);
         break;
     }
-    navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREAD(data.id));
+    // Clear the composer once the thread exists. On the onThreadCreated
+    // path the panel stays mounted, so a lingering message could be
+    // re-submitted and create a duplicate thread.
+    setMessage("");
+    setMentions(new Map());
+    if (onThreadCreated) {
+      onThreadCreated(data.id);
+    } else {
+      navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREAD(data.id));
+    }
   });
 
   const autoSubmitDone = useRef(false);
@@ -100,8 +125,21 @@ const ChatPanel = ({
   const [mentionDismissed, setMentionDismissed] = useState(false);
   const textareaElRef = useRef<HTMLTextAreaElement | null>(null);
   const { formRef, onKeyDown: enterSubmitKeyDown } = useEnterSubmit();
-  const [mode, setMode] = useState<string>("ask");
+  const [mode, setMode] = useState<string>(lockMode ?? "ask");
   const [thinkingMode, setThinkingMode] = useState<ThinkingMode>("auto");
+
+  // When the agent picker is hidden, resolve and lock in the workspace
+  // default agent (the analytics .agentic.yml, else the first agent) so
+  // submit + auto-submit have an agent without any user choice.
+  const { agentOptions, isSuccess: agentsLoaded } = useAgentOptions();
+  useEffect(() => {
+    if (!hideAgentPicker || agent || !agentsLoaded) return;
+    const resolved = resolveDefaultAgent(agentOptions, initialAgentPath);
+    if (resolved) {
+      if (!resolved.isAnalytics) setThinkingMode("auto");
+      setAgent(resolved);
+    }
+  }, [hideAgentPicker, agent, agentsLoaded, agentOptions, initialAgentPath]);
 
   const isBuildMode = mode === "build" && isBuiltin;
 
@@ -281,6 +319,7 @@ const ChatPanel = ({
   };
 
   const placeholder = (() => {
+    if (placeholderOverride && mode === "ask") return placeholderOverride;
     switch (mode) {
       case "ask":
         return "Start your request, and let Oxygen handle everything.";
@@ -342,66 +381,77 @@ const ChatPanel = ({
       />
 
       <div className='flex flex-wrap items-center justify-between gap-2'>
-        <div className='flex items-center justify-center'>
-          <Select value={mode} onValueChange={setMode}>
-            <SelectTrigger size='sm'>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItemWithDetail
-                className='cursor-pointer'
-                value='ask'
-                detail={{
-                  title: "Ask",
-                  description:
-                    "Interact in natural language to get instant insights. No SQL or technical knowledge required."
-                }}
-              >
-                <MessageCircleQuestion className='size-4' />
-                Ask
-              </SelectItemWithDetail>
-              <SelectItemWithDetail
-                className='cursor-pointer'
-                value='build'
-                disabled={!isBuilderAvailable || isCheckingBuilder}
-                detail={{
-                  title: "Build",
-                  description:
-                    "Build data applications and dashboards by describing what you need in natural language."
-                }}
-              >
-                <Hammer className='size-4' />
-                Build
-              </SelectItemWithDetail>
-              <SelectItemWithDetail
-                className='cursor-pointer'
-                value='workflow'
-                detail={{
-                  title: "Procedure",
-                  description:
-                    "Automate multi-step workflows with intelligent agents that execute complex processes autonomously."
-                }}
-              >
-                <Play className='size-4' />
-                Procedure
-              </SelectItemWithDetail>
-            </SelectContent>
-          </Select>
-        </div>
+        {!lockMode && (
+          <div className='flex items-center justify-center'>
+            <Select value={mode} onValueChange={setMode}>
+              <SelectTrigger size='sm'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItemWithDetail
+                  className='cursor-pointer'
+                  value='ask'
+                  detail={{
+                    title: "Ask",
+                    description:
+                      "Interact in natural language to get instant insights. No SQL or technical knowledge required."
+                  }}
+                >
+                  <MessageCircleQuestion className='size-4' />
+                  Ask
+                </SelectItemWithDetail>
+                <SelectItemWithDetail
+                  className='cursor-pointer'
+                  value='build'
+                  disabled={!isBuilderAvailable || isCheckingBuilder}
+                  detail={{
+                    title: "Build",
+                    description:
+                      "Build data applications and dashboards by describing what you need in natural language."
+                  }}
+                >
+                  <Hammer className='size-4' />
+                  Build
+                </SelectItemWithDetail>
+                <SelectItemWithDetail
+                  className='cursor-pointer'
+                  value='workflow'
+                  detail={{
+                    title: "Procedure",
+                    description:
+                      "Automate multi-step workflows with intelligent agents that execute complex processes autonomously."
+                  }}
+                >
+                  <Play className='size-4' />
+                  Procedure
+                </SelectItemWithDetail>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className='flex flex-1 items-center justify-end gap-2'>
-          {mode === "ask" && (
-            <AgentsDropdown
-              onSelect={(a) => {
-                if (!a.isAnalytics) setThinkingMode("auto");
-                setAgent(a);
-              }}
-              agentSelected={agent}
-              preferAgentPath={initialAgentPath}
-              thinkingMode={thinkingMode}
-              onThinkingModeChange={setThinkingMode}
-              disabled={isPending}
-            />
-          )}
+          {mode === "ask" &&
+            (hideAgentPicker ? (
+              agent?.isAnalytics && (
+                <ThinkingModeMenu
+                  value={thinkingMode}
+                  onChange={setThinkingMode}
+                  disabled={isPending}
+                />
+              )
+            ) : (
+              <AgentsDropdown
+                onSelect={(a) => {
+                  if (!a.isAnalytics) setThinkingMode("auto");
+                  setAgent(a);
+                }}
+                agentSelected={agent}
+                preferAgentPath={initialAgentPath}
+                thinkingMode={thinkingMode}
+                onThinkingModeChange={setThinkingMode}
+                disabled={isPending}
+              />
+            ))}
           {mode === "workflow" && <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />}
           {isBuildMode && (
             <button

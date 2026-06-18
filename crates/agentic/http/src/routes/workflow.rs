@@ -57,6 +57,10 @@ pub struct WorkflowFile {
     /// URL-safe-base64 of `path`, for use in the `:path_b64` route param
     /// (a literal slash inside a path segment is otherwise ambiguous).
     pub path_b64: String,
+    /// Top-level `description` from the workflow YAML, when present.
+    /// Trimmed and truncated server-side; `None` for missing/empty
+    /// descriptions and for files that fail to read or parse.
+    pub description: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -364,22 +368,52 @@ pub async fn list_workflow_files(
         }
     };
     let workspace_root = workspace.workspace_path().to_path_buf();
-    let files: Vec<WorkflowFile> = paths
-        .into_iter()
-        .map(|abs| {
-            let rel = abs
-                .strip_prefix(&workspace_root)
-                .unwrap_or(&abs)
-                .to_string_lossy()
-                .to_string();
-            let path_b64 = URL_SAFE_NO_PAD.encode(rel.as_bytes());
-            WorkflowFile {
-                path: rel,
-                path_b64,
-            }
-        })
-        .collect();
+    let mut files: Vec<WorkflowFile> = Vec::with_capacity(paths.len());
+    for abs in paths {
+        let rel = abs
+            .strip_prefix(&workspace_root)
+            .unwrap_or(&abs)
+            .to_string_lossy()
+            .to_string();
+        let path_b64 = URL_SAFE_NO_PAD.encode(rel.as_bytes());
+        let description = read_workflow_description(&workspace, &rel).await;
+        files.push(WorkflowFile {
+            path: rel,
+            path_b64,
+            description,
+        });
+    }
     Json(files).into_response()
+}
+
+/// Best-effort description lookup for one listed file. Reads content
+/// through the same `resolve_workflow_yaml` path `get_workflow_file`
+/// uses, then parses the top-level `description`. Any read failure
+/// degrades to `None` — a malformed workflow must not break the listing.
+async fn read_workflow_description(
+    workspace: &Arc<dyn WorkflowWorkspaceContext>,
+    rel_path: &str,
+) -> Option<String> {
+    let content = workspace.resolve_workflow_yaml(rel_path).await.ok()?;
+    yaml_description(&content)
+}
+
+/// Hard cap on the listed description length; the UI clamps further.
+const MAX_DESCRIPTION_CHARS: usize = 200;
+
+/// Extract the top-level `description` field from workflow YAML.
+///
+/// Defensive by design: invalid YAML, a non-mapping root, a missing or
+/// non-string `description`, and a whitespace-only value all yield
+/// `None`. The value is trimmed and truncated to
+/// [`MAX_DESCRIPTION_CHARS`] (on a char boundary).
+fn yaml_description(content: &str) -> Option<String> {
+    let value = serde_yaml::from_str::<serde_yaml::Value>(content).ok()?;
+    let desc = value.get("description")?.as_str()?.trim();
+    if desc.is_empty() {
+        return None;
+    }
+    Some(desc.chars().take(MAX_DESCRIPTION_CHARS).collect())
 }
 
 // ── GET /agentic-workflows/files/:path_b64 ─────────────────────────────────────────
@@ -474,5 +508,44 @@ mod path_b64_tests {
         // Invalid base64 chars (space, `#`) must still error rather
         // than silently producing wrong bytes.
         assert!(decode_path_b64_tolerant("not base64 #").is_err());
+    }
+}
+
+#[cfg(test)]
+mod yaml_description_tests {
+    use super::{MAX_DESCRIPTION_CHARS, yaml_description};
+
+    #[test]
+    fn present_returns_trimmed() {
+        let yaml = "name: revenue\ndescription: '  Weekly revenue rollup  '\ntasks: []\n";
+        assert_eq!(
+            yaml_description(yaml).as_deref(),
+            Some("Weekly revenue rollup")
+        );
+    }
+
+    #[test]
+    fn absent_returns_none() {
+        assert_eq!(yaml_description("name: revenue\ntasks: []\n"), None);
+    }
+
+    #[test]
+    fn invalid_yaml_returns_none() {
+        // Unterminated flow sequence — parse error, not a panic.
+        assert_eq!(yaml_description("name: [unclosed"), None);
+        // Valid YAML but not a mapping at the root.
+        assert_eq!(yaml_description("- a\n- b\n"), None);
+        // Non-string description (e.g. accidental number).
+        assert_eq!(yaml_description("description: 42\n"), None);
+        // Whitespace-only description collapses to None after trim.
+        assert_eq!(yaml_description("description: '   '\n"), None);
+    }
+
+    #[test]
+    fn long_value_truncated() {
+        let long = "x".repeat(MAX_DESCRIPTION_CHARS + 300);
+        let yaml = format!("description: {long}\n");
+        let got = yaml_description(&yaml).expect("description should parse");
+        assert_eq!(got.chars().count(), MAX_DESCRIPTION_CHARS);
     }
 }

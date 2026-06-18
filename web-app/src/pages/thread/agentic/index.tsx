@@ -28,7 +28,7 @@ import AutomationDagPanel from "./AutomationDagPanel";
 import BlockMessage, { type AutomationGenerated } from "./BlockMessage";
 import Header from "./Header";
 
-const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
+const AgenticThread = ({ thread, hideHeader }: { thread: ThreadItem; hideHeader?: boolean }) => {
   const { project } = useCurrentProjectBranch();
 
   const { getTaskThread } = useTaskThreadStore();
@@ -121,7 +121,7 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
 
   return (
     <div className='flex h-full flex-col'>
-      <Header thread={thread} />
+      {!hideHeader && <Header thread={thread} />}
       <ResizablePanelGroup direction='horizontal' className='flex-1'>
         <ResizablePanel defaultSize={selectedBlock ? 60 : 100} minSize={30}>
           <div className='flex h-full w-full flex-1 flex-col py-4'>

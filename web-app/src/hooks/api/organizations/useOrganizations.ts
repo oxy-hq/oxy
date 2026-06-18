@@ -31,6 +31,29 @@ export const useUpdateOrg = () => {
   });
 };
 
+export const useUploadOrgLogo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orgId, file }: { orgId: string; file: File }) =>
+      OrganizationService.uploadLogo(orgId, file),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.org.item(variables.orgId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.org.list() });
+    }
+  });
+};
+
+export const useDeleteOrgLogo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orgId: string) => OrganizationService.deleteLogo(orgId),
+    onSuccess: (_data, orgId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.org.item(orgId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.org.list() });
+    }
+  });
+};
+
 export const useDeleteOrg = () => {
   const queryClient = useQueryClient();
   return useMutation({

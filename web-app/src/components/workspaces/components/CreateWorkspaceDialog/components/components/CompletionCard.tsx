@@ -202,12 +202,13 @@ function ExploreSection({
     <div className='flex flex-col gap-2'>
       <p className='text-muted-foreground text-xs uppercase tracking-wider'>Explore</p>
       <div className='grid grid-cols-1 gap-1'>
-        {apps.map((app) => {
+        {apps.map((app, index) => {
           const label = appDisplayLabel(app);
           return (
             <button
               key={app.path}
               type='button'
+              data-testid={`onboarding-explore-app-${index}`}
               onClick={() => {
                 const pathb64 = encodeBase64(app.path);
                 navigate(routes.APP(pathb64));

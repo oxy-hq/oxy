@@ -6,7 +6,7 @@
 
 use axum::Router;
 use axum::middleware;
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 
 use crate::api::billing;
 use crate::api::github::namespaces as github;
@@ -15,7 +15,7 @@ use crate::api::middlewares::{
     org_context, oxy_app_admin_guard, oxy_owner_guard, oxy_owner_or_app_admin_guard,
     subscription_guard,
 };
-use crate::api::{admin, onboarding, organizations, user, workspaces};
+use crate::api::{admin, onboarding, org_logo, organizations, user, workspaces};
 
 use super::AppState;
 
@@ -182,6 +182,10 @@ fn build_org_routes() -> Router<AppState> {
         .route("/", get(organizations::get_org))
         .route("/", patch(organizations::update_org))
         .route("/", delete(organizations::delete_org))
+        .route(
+            "/logo",
+            put(org_logo::upload_org_logo).delete(org_logo::delete_org_logo),
+        )
         .route("/members", get(organizations::list_members))
         .route(
             "/members/{user_id}",

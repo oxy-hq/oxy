@@ -91,6 +91,12 @@ export type WorkflowRunSnapshot = {
 export type WorkflowFile = {
   path: string;
   path_b64: string;
+  /**
+   * Top-level `description` from the workflow YAML, when present.
+   * Trimmed and truncated server-side (~200 chars); `null`/absent for
+   * files without one or that failed to read/parse.
+   */
+  description?: string | null;
 };
 
 export type WorkflowFileContent = {

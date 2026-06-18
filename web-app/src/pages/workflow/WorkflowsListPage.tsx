@@ -23,11 +23,11 @@ const WorkflowsListPage = () => {
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   return (
-    <div className='flex h-full w-full flex-col'>
+    <div className='flex h-full w-full flex-col' data-testid='automations-list-page'>
       <PageHeader className='items-center border-border border-b-1'>
         <div className='flex w-full items-center gap-2'>
           <WorkflowIcon className='size-4' />
-          <span className='font-medium text-sm'>Workflows</span>
+          <span className='font-medium text-sm'>Automations</span>
         </div>
       </PageHeader>
 

@@ -5,6 +5,7 @@ import Billing from "../sections/organization/Billing";
 import General from "../sections/organization/General";
 import Integration from "../sections/organization/Integration";
 import OrgMembers from "../sections/organization/Members";
+import Appearance from "../sections/preferences/Appearance";
 import ActivityLogs from "../sections/workspace/ActivityLogs";
 import Airhouse from "../sections/workspace/Airhouse";
 import ApiKeys from "../sections/workspace/ApiKeys";
@@ -62,6 +63,8 @@ export function ActiveSection({
       {workspace && activeSection === "workspace.apps" && (isLocalMode || isAdmin) && <Apps />}
       {workspace && activeSection === "workspace.oxy_access" && isAdmin && <OxyAccess />}
       {workspace && activeSection === "workspace.activity_logs" && <ActivityLogs />}
+
+      {activeSection === "preferences.appearance" && <Appearance />}
     </>
   );
 }

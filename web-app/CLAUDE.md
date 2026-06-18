@@ -52,7 +52,7 @@ src/
 ├── lib/             # Utilities (cn, schemas, etc.)
 ├── libs/            # Third-party integration helpers
 ├── pages/           # Route-level page components
-│   ├── home/        # Home / Chat page
+│   ├── launcher/    # Home launcher (apps-first anchor: app cards, modals, recents)
 │   ├── thread/      # Thread detail page
 │   ├── threads/     # Threads list
 │   ├── ide/         # Developer Portal (Monaco IDE + observability + settings)
@@ -237,7 +237,7 @@ If you only need the project (outside the IDE), use `useCurrentProject()` from `
 
 Cross-cutting UI flows are tested by `web-app/tests/agentic/`. Treat this as a regression-test surface for any change that touches:
 
-- Chat panel (`pages/home/**`, `components/Chat/**`) → `flows/chat-*.flow.test.yml`
+- Chat panel / launcher / Ask surfaces (`pages/launcher/**`, `components/Ask/**`, `components/Chat/**`) → `flows/chat-*.flow.test.yml`, `flows/launcher-*.flow.test.yml`
 - IDE (`pages/ide/**`) → `flows/ide-*.flow.test.yml`
 - Builder dialog (`components/BuilderDialog/**`) → `flows/builder-*.flow.test.yml`
 - Onboarding (`pages/onboarding/**`, `components/workspaces/**`) → `flows/onboarding-*.flow.test.yml`

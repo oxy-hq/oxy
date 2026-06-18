@@ -11,6 +11,11 @@
 # read-only-against-external-systems policy), the flow drives a small
 # chat-ask interaction first — same surface as `chat-ask` but the goal
 # here is just to put a row in the list, then navigate.
+#
+# Navigation note: shell v2 chrome is the left icon rail
+# ([data-testid=shell-rail]) — submitting opens the thread in the right
+# drawer, and /threads is reachable via [data-testid=rail-threads] or
+# direct navigation.
 
 name: threads list
 target: threads
@@ -20,9 +25,9 @@ settings:
   trace: on-failure
   cache_actions: true
   backend_mode: local
-  # 1 chat submit + waits + 1 navigate + 1 click + judge. Pad for the
-  # initial chat-ask iteration plus the agentic analytics run on a single
-  # question.
+  # 1 chat submit + waits + drawer close + 1 navigate + 1 click + judge.
+  # Pad for the initial chat-ask iteration plus the agentic analytics run
+  # on a single question.
   max_steps: 25
 
 setup:
@@ -42,14 +47,24 @@ cases:
           no agent-picker step is needed:
           1. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
           2. browser_click [data-testid=chat-panel-submit-button].
-          End the turn once the URL changes to /threads/<id>.
+          End the turn once the thread drawer ([data-testid=thread-drawer])
+          opens on the right — the URL does not change.
         cache_scope: shared
 
       - wait_for: streaming_complete
 
+      # The drawer is a modal sheet — close it before navigating so it
+      # doesn't block clicks on the threads list.
       - act: |
-          browser_click [data-testid=sidebar-threads-toggle]. URL
-          changes to /threads with a paginated thread list.
+          browser_press_key Escape to close the thread drawer
+          ([data-testid=thread-drawer] disappears).
+
+      - wait_for: "selector_hidden:[data-testid=thread-drawer]"
+
+      - act: |
+          browser_navigate to "/threads". The threads list page
+          ([data-testid=threads-list-page]) loads with a paginated
+          thread list; the icon rail stays on the left edge.
 
       - wait_for: "selector:[data-testid=thread-item]"
 

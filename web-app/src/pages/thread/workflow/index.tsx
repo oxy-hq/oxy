@@ -11,10 +11,12 @@ import ProcessingWarning from "../ProcessingWarning";
 
 const WorkflowThread = ({
   thread,
-  refetchThread
+  refetchThread,
+  hideHeader
 }: {
   thread: ThreadItem;
   refetchThread: () => void;
+  hideHeader?: boolean;
 }) => {
   const { workflowThread } = useWorkflowThreadStore();
 
@@ -46,19 +48,21 @@ const WorkflowThread = ({
 
   return (
     <div className='flex h-full flex-col'>
-      <PageHeader className='items-center border-border border-b-1'>
-        <div className='flex h-full flex-1 items-center justify-center p-2'>
-          <div className='flex items-center gap-1 text-muted-foreground'>
-            <Workflow className='h-4 min-h-4 w-4 min-w-4' />
-            <p className='break-all text-sm'>{sourcePath}</p>
-          </div>
-          <div className='flex h-full items-stretch px-4'>
-            <Separator orientation='vertical' />
-          </div>
+      {!hideHeader && (
+        <PageHeader className='items-center border-border border-b-1'>
+          <div className='flex h-full flex-1 items-center justify-center p-2'>
+            <div className='flex items-center gap-1 text-muted-foreground'>
+              <Workflow className='h-4 min-h-4 w-4 min-w-4' />
+              <p className='break-all text-sm'>{sourcePath}</p>
+            </div>
+            <div className='flex h-full items-stretch px-4'>
+              <Separator orientation='vertical' />
+            </div>
 
-          <p className='text-base-foreground text-sm'>{thread?.title}</p>
-        </div>
-      </PageHeader>
+            <p className='text-base-foreground text-sm'>{thread?.title}</p>
+          </div>
+        </PageHeader>
+      )}
 
       <div className='w-full flex-1'>
         <div className='px-4'>

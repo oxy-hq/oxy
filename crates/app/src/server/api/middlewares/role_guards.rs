@@ -230,6 +230,8 @@ mod tests {
                 id: org_id,
                 name: "test".into(),
                 slug: "test".into(),
+                logo: None,
+                logo_content_type: None,
                 created_at: now,
                 updated_at: now,
             },

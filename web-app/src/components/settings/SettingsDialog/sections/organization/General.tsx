@@ -12,6 +12,7 @@ import { clearLastOrgSlug } from "@/libs/utils/lastWorkspace";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { Organization } from "@/types/organization";
+import OrgLogoUpload from "./OrgLogoUpload";
 
 interface GeneralSectionProps {
   org: Organization;
@@ -77,6 +78,7 @@ export default function GeneralSection({ org, onClose }: GeneralSectionProps) {
     <div className='space-y-8'>
       <CanOrgAdmin>
         <div className='space-y-4'>
+          <OrgLogoUpload org={org} />
           <div className='space-y-2'>
             <Label htmlFor='org-name'>Organization name</Label>
             <Input id='org-name' value={name} onChange={(e) => setName(e.target.value)} />

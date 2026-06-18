@@ -179,6 +179,8 @@ async fn seed_workspace(db: &DatabaseConnection) -> Uuid {
         id: ActiveValue::Set(org_id),
         name: ActiveValue::Set("tierb-org".into()),
         slug: ActiveValue::Set(format!("tierb-{}", org_id.simple())),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     }

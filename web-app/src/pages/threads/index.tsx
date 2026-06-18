@@ -91,7 +91,7 @@ const Threads = () => {
   const shouldShowPagination = !isLoading && !isError && pagination;
 
   return (
-    <div className='flex h-full flex-col gap-4 pb-4'>
+    <div className='flex h-full flex-col gap-4 pb-4' data-testid='threads-list-page'>
       <Header
         onSelect={handleSelectMode}
         isSelectionMode={isSelectionMode}

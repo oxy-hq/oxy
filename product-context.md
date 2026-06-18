@@ -28,6 +28,7 @@ Three deployment modes — almost every bug report depends on which one:
 
 - **Procedure** = the thing formerly called **Workflow / Automation**. Canonical file is `.procedure.yml`, but `.workflow.yml` and `.automation.yml` still parse; the UI route is still `/workflows/:id` and the HTTP surface is still `/workflows`.
 - **Orchestrator Dashboard** replaced the old **Coordinator** surface.
+- **Oxygen Factory** = the Developer Portal / IDE, reached from the icon rail (renamed Studio → Oxygen Builder → Oxygen Core → **Oxygen Factory**). Same `/ide` surface, just the rail label.
 - **Agentic Agent** (`.agentic.yml`) = Oxy's multi-step FSM agent (two kinds: **analytics** and **app builder**), distinct from the single-shot sense of "agent."
 - **Builder Agent** = the file-editing copilot (chat **Build** mode) — distinct from the *app builder* agentic agent.
 - **Customer Apps Platform** (code-first React+Vite bundles, shipped with `oxy publish`) is **not** the same thing as YAML **Data Apps** (`.app.yml` dashboards).
@@ -47,7 +48,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 
 ## Surfaces (for "which component is this?" triage)
 
-- **Home** (`/`) — chat panel; submitting creates a **Thread**. Modes: Ask / Build / Workflow.
+- **Home / HQ launcher** (`/`, `/home`) — apps-first landing: org-branded **HQ** heading, a grid of **custom-app cards**, a status line, and a muted **Recent activity** list. A bottom-center **Ask pill** (⌘K) streams answers into a right-side **thread drawer** without navigating ("Full view" promotes to `/threads/:id`). Zero-app workspaces fall back to a greeting + chat composer. The only chrome is a 48px **icon rail** — **no left sidebar, no top bar**; interior pages are reached from the rail.
 - **Thread** (`/threads/:id`) — conversation; messages carry free-text plus structured artifacts (the `execute_sql` artifact shows the SQL the agent ran).
 - **Workflows** (`/workflows/:id`) — a Procedure as a node diagram (node border color = step status; emerald = success).
 - **Apps** (`/apps/:id`) — a Data App; auto-runs on load; Controls inject Jinja values and re-run dependent tasks; results cached by parameter hash (`?refresh` forces re-run).

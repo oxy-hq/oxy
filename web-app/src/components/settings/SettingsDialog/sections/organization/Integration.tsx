@@ -213,7 +213,7 @@ function SlackConnection({ org }: IntegrationSectionProps) {
 
   // Once the installation flips to connected, stop listening. The inline
   // "Connected" badge auto-flips here; the success toast is fired by the
-  // OAuth-tab landing (`AppSidebar/Footer.tsx`) after `?slack_installed=ok`,
+  // OAuth-tab landing (`WorkspaceLayout` in App.tsx) after `?slack_installed=ok`,
   // so re-firing it here would double-toast users who keep both tabs open.
   useEffect(() => {
     if (data?.connected && isInstalling) {

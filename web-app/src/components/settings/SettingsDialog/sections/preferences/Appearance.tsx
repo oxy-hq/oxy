@@ -1,0 +1,47 @@
+import { Monitor, Moon, Sun, SunMoon } from "lucide-react";
+import { cn } from "@/libs/shadcn/utils";
+import useTheme, { type ThemeMode } from "@/stores/useTheme";
+import SectionHeader from "../../components/SectionHeader";
+
+const MODES: { value: ThemeMode; label: string; hint: string; icon: typeof Sun }[] = [
+  { value: "light", label: "Light", hint: "Bright surfaces", icon: Sun },
+  { value: "dark", label: "Dark", hint: "Dimmed surfaces", icon: Moon },
+  { value: "system", label: "System", hint: "Follow your OS", icon: Monitor }
+];
+
+/** Per-browser presentation preferences. Theme lives here (not in the
+ *  shell rail) — it applies across every workspace on this device. */
+export default function Appearance() {
+  const mode = useTheme((s) => s.mode);
+  const setMode = useTheme((s) => s.setMode);
+
+  return (
+    <div className='flex flex-col gap-6'>
+      <SectionHeader
+        icon={SunMoon}
+        title='Appearance'
+        description='Theme applies to this browser, across every workspace.'
+      />
+      <div className='grid max-w-xl grid-cols-3 gap-3'>
+        {MODES.map(({ value, label, hint, icon: Icon }) => (
+          <button
+            key={value}
+            type='button'
+            onClick={() => setMode(value)}
+            data-active={mode === value}
+            data-testid={`appearance-mode-${value}`}
+            className={cn(
+              "flex flex-col items-center gap-2 rounded-lg border p-4 text-sm transition-colors",
+              "hover:border-primary/40 hover:bg-accent/50",
+              "data-[active=true]:border-primary data-[active=true]:bg-primary/5"
+            )}
+          >
+            <Icon className='h-5 w-5 text-muted-foreground' />
+            <span className='font-medium'>{label}</span>
+            <span className='text-muted-foreground text-xs'>{hint}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

@@ -45,6 +45,8 @@ async fn seed_org_with_admin() -> (Uuid, Uuid) {
         id: ActiveValue::Set(org_id),
         name: ActiveValue::Set(format!("OAuth State Test Org {}", org_id)),
         slug: ActiveValue::Set(format!("oauth-state-test-org-{}", org_id)),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::NotSet,
         updated_at: ActiveValue::NotSet,
     }

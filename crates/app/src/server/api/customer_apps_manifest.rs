@@ -4,8 +4,6 @@
 //! org, project). This module owns:
 //!
 //! - The Rust mirror of that schema (`OxyAppManifest`) — identity fields only.
-//! - A mtime-keyed in-process cache so repeated asset requests re-use the
-//!   last parsed manifest without re-reading disk.
 //! - `resolve_manifest` — the single entry point handlers call; it checks
 //!   the DB override first, then falls back to the bundle file.
 //! - `pick_channel_for`, `bundle_dir_for`, `sanitize_bundle_dir_for_display`
@@ -22,7 +20,19 @@ use super::customer_apps_sync::Channel;
 
 // ── Manifest schema ──────────────────────────────────────────────────────────
 
-/// Server-side mirror of the bundle's `oxy-app.json` — identity fields only.
+/// Optional Ask-binding declared by the app bundle: which agent the
+/// global Ask overlay should bind to on this app's surfaces, plus the
+/// suggested-question chips shown on the launcher card.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct OxyAppAskConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suggested_questions: Vec<String>,
+}
+
+/// Server-side mirror of the bundle's `oxy-app.json` — identity + launcher-card fields.
 ///
 /// The producer/writer struct soup that existed here was dead code: the
 /// executor that consumed it was deleted in commit 3b3dfea. The remaining
@@ -42,6 +52,25 @@ pub(super) struct OxyAppManifest {
     pub org_slug: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
+    /// One-line purpose shown on the launcher card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<OxyAppAskConfig>,
+    /// Card art for the launcher — a path RELATIVE to the bundle root
+    /// (e.g. "card.png"), served through the app's own public URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub art: Option<String>,
+    /// Shell-rail icon — a path RELATIVE to the bundle root (e.g.
+    /// "icon.svg"), served through the app's own public URL. Small square
+    /// mark; the rail falls back to a name-initial tile when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Status line shown on the launcher card (e.g.
+    /// "23 stores · sales +33.5% YoY · live"). A plain display string —
+    /// static for now; a live data binding can replace it later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 // ── Manifest error ───────────────────────────────────────────────────────────
@@ -92,7 +121,8 @@ fn parse_manifest_value(raw: serde_json::Value) -> Result<OxyAppManifest, Manife
 ///      (`app_builds.manifest_json`, written at publish from the bundle's
 ///      `oxy-app.json`). No build pointer → `NotFound`.
 ///   3. Local-folder apps: the `oxy-app.json` on disk (dev).
-/// Debug-endpoint only; the live serve path injects identity via
+/// Called by the customer-apps debug endpoint and the workspace custom-apps
+/// list (launcher card metadata); the live serve path injects identity via
 /// `window.__OXY_APP__` and serves the bundle's `oxy-app.json` directly.
 pub(super) async fn resolve_manifest(
     db: &DatabaseConnection,
@@ -164,4 +194,44 @@ pub(super) fn sanitize_bundle_dir_for_display(app: &apps::Model, dir: &StdPath) 
             .unwrap_or_else(|| "<unknown>".to_string());
     }
     dir.display().to_string()
+}
+
+#[cfg(test)]
+mod card_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn manifest_parses_description_and_ask_block() {
+        let json = serde_json::json!({
+            "schemaVersion": 2,
+            "slug": "site-scout",
+            "description": "Find your next location",
+            "art": "card.png",
+            "ask": {
+                "agent": "agents/restaurant_analyst.agentic.yml",
+                "suggestedQuestions": ["Why does Pleasanton rank #1?"]
+            }
+        });
+        let m: OxyAppManifest = serde_json::from_value(json).unwrap();
+        assert_eq!(m.description.as_deref(), Some("Find your next location"));
+        assert_eq!(m.art.as_deref(), Some("card.png"));
+        let ask = m.ask.expect("ask block");
+        assert_eq!(
+            ask.agent.as_deref(),
+            Some("agents/restaurant_analyst.agentic.yml")
+        );
+        assert_eq!(
+            ask.suggested_questions,
+            vec!["Why does Pleasanton rank #1?"]
+        );
+    }
+
+    #[test]
+    fn manifest_without_card_metadata_still_parses() {
+        let json = serde_json::json!({ "schemaVersion": 2, "slug": "bare" });
+        let m: OxyAppManifest = serde_json::from_value(json).unwrap();
+        assert!(m.description.is_none());
+        assert!(m.ask.is_none());
+        assert!(m.art.is_none());
+    }
 }

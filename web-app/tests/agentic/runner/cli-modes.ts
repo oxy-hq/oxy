@@ -176,7 +176,7 @@ function loadSurfaces(surfacesPath: string): SurfaceEntry[] {
   return [
     {
       surface: "chat-panel",
-      paths: ["src/pages/home/", "src/components/Chat/"],
+      paths: ["src/pages/launcher/", "src/components/Ask/", "src/components/Chat/"],
       flows: ["chat-ask"]
     },
     { surface: "ide", paths: ["src/pages/ide/"], flows: ["ide-save"] },

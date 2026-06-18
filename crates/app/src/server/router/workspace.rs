@@ -17,7 +17,8 @@ use crate::api::{
     execution_analytics, exported_chart, file, foot_traffic, integration, local_setup, message,
     metric_anomalies, metric_tree, metrics, modeling, onboarding, result_files, run, schedules,
     semantic, task, test_file, test_project_run, test_run, thread, traces, video,
-    workspace_custom_apps, workspace_members, workspace_oxy_access, workspaces, world_model,
+    workspace_custom_apps, workspace_logo, workspace_members, workspace_oxy_access, workspaces,
+    world_model,
 };
 
 use super::AppState;
@@ -80,6 +81,7 @@ pub(super) fn build_workspace_routes(
                 .delete(workspace_oxy_access::disable_oxy_access),
         )
         .route("/custom-apps", get(workspace_custom_apps::list_custom_apps))
+        .route("/logo", get(workspace_logo::get_workspace_logo))
         .nest("/apps", build_app_routes())
         .nest("/app-integrations", build_app_integration_routes())
         .nest("/tests", build_test_file_routes())

@@ -1,15 +1,11 @@
-import { AlertCircle, ArrowRight, Database, GitFork, X } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
-import ChatPanel from "@/components/Chat/ChatPanel";
-import PageHeader from "@/components/PageHeader";
-import { Spinner } from "@/components/ui/shadcn/spinner";
+import { Database, GitFork } from "lucide-react";
+import { useMemo } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useGithubSetup from "@/hooks/api/onboarding/useGithubSetup";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { cn } from "@/libs/shadcn/utils";
 import {
   hasPendingOnboardingForStorageKey,
   isOnboardingDismissedForStorageKey
@@ -19,80 +15,34 @@ import { getAgentNameFromPath } from "@/libs/utils/string";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useSettingsDialog from "@/stores/useSettingsDialog";
 
-const getGreeting = () => {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good Morning";
-  if (hour < 18) return "Good Afternoon";
-  return "Good Evening";
-};
-
-interface SetupGap {
+export interface SetupGap {
   icon: typeof Database;
   label: string;
   action: () => void;
   cta: string;
 }
 
-const ProjectSetupToast = ({ gaps }: { gaps: SetupGap[] }) => {
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed || gaps.length === 0) return null;
+export type WorkspaceReadiness =
+  | { status: "loading" }
+  | { status: "redirect-onboarding"; to: string }
+  | { status: "ready"; gaps: SetupGap[]; shouldDisableChat: boolean };
 
-  return (
-    <div className='fade-in slide-in-from-top-2 fixed top-4 right-4 z-50 w-96 animate-in duration-300'>
-      <div className='rounded-lg border border-amber-500/30 bg-background shadow-black/10 shadow-lg'>
-        <div className='flex items-center justify-between border-amber-500/20 border-b px-4 py-3'>
-          <div className='flex items-center gap-2 text-amber-600 dark:text-amber-400'>
-            <AlertCircle className='h-3.5 w-3.5 shrink-0' />
-            <span className='font-medium text-xs'>Project setup incomplete</span>
-          </div>
-          <button
-            type='button'
-            onClick={() => setDismissed(true)}
-            className='rounded p-0.5 text-muted-foreground/40 transition-colors hover:bg-muted hover:text-muted-foreground'
-            aria-label='Dismiss'
-          >
-            <X className='h-3.5 w-3.5' />
-          </button>
-        </div>
-        <div className='flex flex-col gap-1 p-2'>
-          {gaps.map((gap) => (
-            <div
-              key={gap.label}
-              className='flex items-center justify-between gap-3 rounded-md px-2 py-2'
-            >
-              <div className='flex min-w-0 items-center gap-2 text-muted-foreground text-xs'>
-                <gap.icon className='h-3 w-3 shrink-0' />
-                <span className='truncate'>{gap.label}</span>
-              </div>
-              <button
-                type='button'
-                onClick={gap.action}
-                className='flex shrink-0 items-center gap-1 whitespace-nowrap font-medium text-primary text-xs hover:underline'
-              >
-                {gap.cta}
-                <ArrowRight className='h-3 w-3' />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const Home = () => {
+/**
+ * The old chat-home's gating logic, extracted: workspace match, setup
+ * gaps (per-agent LLM key resolution, warehouse creds, no-db/no-agent),
+ * and the pending-wizard redirect. Behavior is copied verbatim from
+ * pages/home — see git history of pages/home/index.tsx for the original
+ * inline comments and rationale.
+ */
+export default function useWorkspaceReadiness(): WorkspaceReadiness {
   const { isLocalMode } = useAuth();
   const { project } = useCurrentProjectBranch();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
-  const location = useLocation();
   const navigate = useNavigate();
+  const location = useLocation();
   const openSettings = useSettingsDialog((s) => s.open);
   const { wsId: urlWsId } = useParams<{ wsId: string }>();
-  const locationState = location.state as {
-    prefillQuestion?: string;
-    agentPath?: string;
-    autoSubmit?: boolean;
-  } | null;
+  const locationState = location.state as { agentPath?: string } | null;
 
   // The Zustand store lags one render behind workspace switches; gate every
   // query so we don't decide a redirect using the previous workspace's data.
@@ -130,21 +80,11 @@ const Home = () => {
     )[0];
   }, [agents, locationState?.agentPath]);
 
-  const loadingFallback = (
-    <div className='flex h-full items-center justify-center'>
-      <Spinner className='size-6' />
-    </div>
-  );
-
-  if (!wsMatch) {
-    return loadingFallback;
+  if (!wsMatch || setupPending || agentsPending || databasesPending) {
+    return { status: "loading" };
   }
 
   const routes = ROUTES.ORG(orgSlug).WORKSPACE(project.id);
-
-  if (setupPending || agentsPending || databasesPending) {
-    return loadingFallback;
-  }
 
   // Fall through on API errors so a broken endpoint doesn't trap the user.
   const anyApiError = setupError || agentsError || databasesError;
@@ -197,8 +137,9 @@ const Home = () => {
   // wizard would just error too; or (b) the user explicitly deferred setup via
   // "Skip for now". In both cases the gaps still surface as rows below.
   if (!anyApiError && !onboardingDismissed && (hasPendingWizardState || hasMissingCredentials)) {
-    return <Navigate to={routes.ONBOARDING} replace />;
+    return { status: "redirect-onboarding", to: routes.ONBOARDING };
   }
+
   const isSetupComplete = hasDatabases && hasPublicAgents;
   // On API error we don't render any gap rows (we can't trust the data), so
   // the user would see a locked chat with no actionable steps. Let them try
@@ -227,39 +168,5 @@ const Home = () => {
     }
   }
 
-  const greeting = getGreeting();
-
-  return (
-    <div className='flex h-full flex-col'>
-      <PageHeader />
-      <ProjectSetupToast gaps={gaps} />
-      <div className='flex h-full flex-col items-center justify-center gap-6 px-4 sm:gap-10'>
-        <p className='text-balance text-center text-xl sm:text-3xl'>
-          {greeting}! How can I assist you?
-        </p>
-
-        <div className='flex w-full max-w-4xl flex-col items-center gap-3 pb-16 sm:pb-40'>
-          {shouldDisableChat && (
-            <p className='text-center text-muted-foreground/50 text-xs'>
-              Complete the setup steps above to start chatting.
-            </p>
-          )}
-          <div
-            className={cn(
-              "w-full",
-              shouldDisableChat && "pointer-events-none select-none opacity-40"
-            )}
-          >
-            <ChatPanel
-              initialMessage={locationState?.prefillQuestion}
-              initialAgentPath={locationState?.agentPath}
-              autoSubmit={locationState?.autoSubmit}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default Home;
+  return { status: "ready", gaps, shouldDisableChat };
+}

@@ -61,6 +61,8 @@ const ROUTES = {
           THREADS: `${wsBase}/threads`,
           THREAD: (threadId: string) => `${wsBase}/threads/${threadId}`,
 
+          WORKFLOWS: `${wsBase}/workflows`,
+
           WORKFLOW: (pathb64: string) => ({
             ROOT: `${wsBase}/workflows/${pathb64}`
           }),

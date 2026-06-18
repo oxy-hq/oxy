@@ -7,6 +7,9 @@ export interface Organization {
   slug: string;
   role: OrgRole;
   created_at?: string;
+  /** Bumped on any org update (incl. logo upload/remove); used to
+   *  cache-bust the workspace logo <img>. */
+  updated_at?: string;
   workspace_count?: number;
   member_count?: number;
 }

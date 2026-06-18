@@ -89,6 +89,13 @@ export interface CustomAppSummary {
   org_slug: string;
   url: string;
   published_at: string;
+  description?: string;
+  default_agent?: string;
+  suggested_questions?: string[];
+  art_url?: string;
+  icon_url?: string;
+  /** Launcher-card status line, e.g. "23 stores · sales +33.5% YoY · live". */
+  status?: string;
 }
 
 export interface Template {

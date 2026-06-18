@@ -36,11 +36,6 @@ export const CustomerAppsService = {
     return response.data;
   },
 
-  async listMine(): Promise<CustomerApp[]> {
-    const response = await apiClient.get("/apps/mine");
-    return response.data;
-  },
-
   /**
    * Every workspace that granted Oxy access, platform-wide, for the admin
    * org/project browser. App-admin gated (same surface as the registry).

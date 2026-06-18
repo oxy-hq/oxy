@@ -52,6 +52,9 @@ pub struct OrgResponse {
     pub slug: String,
     pub role: String,
     pub created_at: String,
+    /// Bumped on any org update (incl. logo upload/remove). The frontend
+    /// uses it to cache-bust the `/{workspace_id}/logo` <img>.
+    pub updated_at: String,
     /// Populated by list endpoints only. Single-org endpoints leave this None
     /// to avoid an extra query on the hot path.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,6 +143,7 @@ pub(crate) fn org_response(org: &organizations::Model, role: &OrgRole) -> OrgRes
         slug: org.slug.clone(),
         role: role.as_str().to_string(),
         created_at: org.created_at.to_rfc3339(),
+        updated_at: org.updated_at.to_rfc3339(),
         workspace_count: None,
         member_count: None,
     }
@@ -242,6 +246,8 @@ pub async fn create_org(
         id: ActiveValue::Set(org_id),
         name: ActiveValue::Set(req.name),
         slug: ActiveValue::Set(slug),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     };
@@ -342,6 +348,7 @@ pub async fn list_orgs(
                 slug: org.slug.clone(),
                 role: membership.role.as_str().to_string(),
                 created_at: org.created_at.to_rfc3339(),
+                updated_at: org.updated_at.to_rfc3339(),
                 workspace_count: Some(workspace_counts.get(&org.id).copied().unwrap_or(0)),
                 member_count: Some(member_counts.get(&org.id).copied().unwrap_or(0)),
             })

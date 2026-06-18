@@ -445,7 +445,6 @@ const adminBillingKeys = {
 
 const customerAppKeys = {
   all: () => ["customerApps", "all"] as const,
-  mine: () => ["customerApps", "mine"] as const,
   manage: () => ["customerApps", "manage"] as const,
   debug: (orgSlug: string, appSlug: string) => ["customerApps", "debug", orgSlug, appSlug] as const,
   listdir: (path: string, showHidden: boolean) =>

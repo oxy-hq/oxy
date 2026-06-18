@@ -39,6 +39,8 @@ fn org_response_serializes_correctly() {
         id: Uuid::new_v4(),
         name: "Test Org".to_string(),
         slug: "test-org".to_string(),
+        logo: None,
+        logo_content_type: None,
         created_at: now,
         updated_at: now,
     };
@@ -59,6 +61,8 @@ fn org_response_owner_role() {
         id: Uuid::new_v4(),
         name: "Org".to_string(),
         slug: "org".to_string(),
+        logo: None,
+        logo_content_type: None,
         created_at: now,
         updated_at: now,
     };
@@ -74,6 +78,8 @@ fn org_response_member_role() {
         id: Uuid::new_v4(),
         name: "Org".to_string(),
         slug: "org".to_string(),
+        logo: None,
+        logo_content_type: None,
         created_at: now,
         updated_at: now,
     };

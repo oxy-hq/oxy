@@ -8,13 +8,13 @@ import {
   RouterProvider,
   Routes,
   useNavigate,
-  useParams
+  useParams,
+  useSearchParams
 } from "react-router-dom";
-import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import AirwayPage from "@/pages/airway";
-import Home from "@/pages/home";
+import LauncherPage from "@/pages/launcher";
 import ThreadPage from "@/pages/thread";
 import Threads from "@/pages/threads";
 import WorkflowPage from "@/pages/workflow";
@@ -27,13 +27,14 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import ROUTES from "@/libs/utils/routes";
 import ContextGraphPage from "@/pages/context-graph";
 import { ErrorBoundary } from "@/sentry";
+import { ThreadDrawer } from "./components/Ask/ThreadDrawer";
 import { BuilderDialog } from "./components/BuilderDialog";
 import { FileQuickOpen } from "./components/FileQuickOpen";
 import OrgGuard from "./components/OrgGuard";
 import OwnerRedirect from "./components/OwnerRedirect";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { WorkspaceShell } from "./components/Shell/WorkspaceShell";
 import SettingsDialog from "./components/settings/SettingsDialog";
-import WorkspaceStatus from "./components/WorkspaceStatus";
 import AgenticSetupPage from "./components/workspaces/components/CreateWorkspaceDialog/components/AgenticSetup";
 import { LocalWorkspaceSetupDialog } from "./components/workspaces/components/LocalWorkspaceSetupDialog";
 import { ManageWorkspacesDialog } from "./components/workspaces/components/ManageWorkspacesDialog";
@@ -47,6 +48,7 @@ import CliAuth from "./pages/auth/CliAuth";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
+import DashboardsPage from "./pages/dashboards";
 import GitHubCallback from "./pages/github/callback";
 import InvitePage from "./pages/Invite";
 import LoginPage from "./pages/login";
@@ -55,10 +57,12 @@ import OnboardingPage from "./pages/onboarding";
 import OrgOnboardingPage from "./pages/onboarding/OrgOnboardingPage";
 import PostLoginDispatcher from "./pages/PostLoginDispatcher";
 import QuickBooksConnected from "./pages/quickbooks/QuickBooksConnected";
+import useAskPanel from "./stores/useAskPanel";
 import useBuilderDialog from "./stores/useBuilderDialog";
 import useCurrentOrg from "./stores/useCurrentOrg";
 import useCurrentWorkspace from "./stores/useCurrentWorkspace";
 import useFileQuickOpen from "./stores/useFileQuickOpen";
+import useSettingsDialog from "./stores/useSettingsDialog";
 import type { AuthConfigResponse } from "./types/auth";
 
 // Lazy-load the entire IDE subtree. The IDE pulls in Monaco, monaco-yaml,
@@ -133,10 +137,7 @@ const AdminWorkspaces = React.lazy(() => import("./pages/admin/AdminWorkspaces")
 const AdminWorkspaceDetail = React.lazy(
   () => import("./pages/admin/AdminWorkspaces/AdminWorkspaceDetail")
 );
-// /apps now lands on the customer-apps discovery page (the row a
-// member can navigate to see what's published for their workspace).
-// Individual data apps at /apps/:pathb64 are unaffected.
-const AppsPage = React.lazy(() => import("./pages/apps"));
+
 const CheckoutSuccessPage = React.lazy(() => import("./pages/billing/CheckoutSuccess"));
 const CheckoutCancelledPage = React.lazy(() => import("./pages/billing/CheckoutCancelled"));
 
@@ -145,15 +146,6 @@ const RouteFallback = () => (
     <Spinner className='size-6' />
   </div>
 );
-
-const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
-  return (
-    <main className='flex h-full w-full min-w-0 flex-1 flex-col bg-background'>
-      <WorkspaceStatus />
-      <div className='w-full min-w-0 flex-1 overflow-hidden'>{children}</div>
-    </main>
-  );
-};
 
 const WorkspaceLayout = React.memo(function WorkspaceLayout() {
   const { authConfig, isLocalMode } = useAuth();
@@ -176,6 +168,36 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
     useKey: true
   });
   useHotkeys("meta+p", () => setFileQuickOpenOpen(true), { preventDefault: true, useKey: true });
+  // react-hotkeys-hook's useKey matching misfired on bare "k" (closing the
+  // panel mid-typing); bind ⌘K/Ctrl+K manually with explicit modifier checks.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      if (useBuilderDialog.getState().isOpen || useFileQuickOpen.getState().isOpen) return;
+      useAskPanel.getState().toggle();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // After a successful Slack install, the backend redirects the browser to
+  // /<orgSlug>?slack_installed=ok. Detect the param, surface a toast, pop
+  // open the settings dialog on the Integration tab, and strip the param so
+  // a refresh doesn't re-fire the toast. (Lived in the cloud-only sidebar
+  // footer until the sidebar was removed; WorkspaceLayout matches its mount
+  // surface, and the local-mode guard matches its cloud-only scope.)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openSettingsDialog = useSettingsDialog((s) => s.open);
+  useEffect(() => {
+    if (isLocalMode) return;
+    if (searchParams.get("slack_installed") !== "ok") return;
+    toast.success("Slack connected");
+    openSettingsDialog("organization.integration");
+    const next = new URLSearchParams(searchParams);
+    next.delete("slack_installed");
+    setSearchParams(next, { replace: true });
+  }, [isLocalMode, searchParams, setSearchParams, openSettingsDialog]);
 
   React.useEffect(() => {
     if (!isPending && !isError && data) {
@@ -249,202 +271,119 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
       <FileQuickOpen />
       <SettingsDialog />
       <ManageWorkspacesDialog />
-      <AppSidebar />
+      <ThreadDrawer />
 
-      <Routes>
-        <Route
-          index
-          element={
-            <MainPageWrapper>
-              <Home />
-            </MainPageWrapper>
-          }
-        />
+      <WorkspaceShell>
+        <Routes>
+          <Route index element={<LauncherPage />} />
 
-        <Route
-          path='home'
-          element={
-            <MainPageWrapper>
-              <Home />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='threads'
-          element={
-            <MainPageWrapper>
-              <Threads />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='threads/:threadId'
-          element={
-            <MainPageWrapper>
-              <ThreadPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='workflows'
-          element={
-            <MainPageWrapper>
-              <WorkflowsListPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='workflows/:pathb64'
-          element={
-            <MainPageWrapper>
-              <WorkflowPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='pipelines/:pathb64'
-          element={
-            <MainPageWrapper>
-              <AirwayPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='pipelines/:pathb64/runs/:runId'
-          element={
-            <MainPageWrapper>
-              <AirwayPage />
-            </MainPageWrapper>
-          }
-        />
-        {/* NOTE: /apps now renders the customer-apps discovery page
-            (new-auth). Pre-existing bookmarks to bare /apps (Data App
-            list) land here instead. Individual Data Apps at
-            /apps/:pathb64 are unaffected. */}
-        <Route
-          path='apps'
-          element={
-            <MainPageWrapper>
-              <AppsPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='apps/:pathb64'
-          element={
-            <MainPageWrapper>
-              <AppPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='ide'
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <IdePage />
-            </Suspense>
-          }
-        >
-          {/* Files routes */}
-          <Route path='files' element={<FilesLayout />}>
-            <Route path=':pathb64' element={<EditorPage />} />
-            <Route
-              path='looker/:integrationName/:model/:exploreName'
-              element={<LookerExplorerPage />}
-            />
-          </Route>
+          <Route path='home' element={<LauncherPage />} />
+          <Route path='threads' element={<Threads />} />
+          <Route path='threads/:threadId' element={<ThreadPage />} />
+          <Route path='workflows' element={<WorkflowsListPage />} />
+          <Route path='workflows/:pathb64' element={<WorkflowPage />} />
+          <Route path='pipelines/:pathb64' element={<AirwayPage />} />
+          <Route path='pipelines/:pathb64/runs/:runId' element={<AirwayPage />} />
+          {/* NOTE: /apps now renders the Dashboards page (published .app.yml
+            Data Apps). Customer-apps discovery is handled by the launcher.
+            Individual Data Apps at /apps/:pathb64 are unaffected. */}
+          <Route path='apps' element={<DashboardsPage />} />
+          <Route path='apps/:pathb64' element={<AppPage />} />
+          <Route
+            path='ide'
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <IdePage />
+              </Suspense>
+            }
+          >
+            {/* Files routes */}
+            <Route path='files' element={<FilesLayout />}>
+              <Route path=':pathb64' element={<EditorPage />} />
+              <Route
+                path='looker/:integrationName/:model/:exploreName'
+                element={<LookerExplorerPage />}
+              />
+            </Route>
 
-          {/* Database routes */}
-          <Route path='database' element={<DatabaseLayout />}>
-            <Route index element={<QueryWorkspacePage />} />
-          </Route>
+            {/* Database routes */}
+            <Route path='database' element={<DatabaseLayout />}>
+              <Route index element={<QueryWorkspacePage />} />
+            </Route>
 
-          {/* Data Modeling routes */}
-          <Route path='modeling' element={<ModelingPage />} />
+            {/* Data Modeling routes */}
+            <Route path='modeling' element={<ModelingPage />} />
 
-          {/* Semantic layer — explorer + metric tree */}
-          <Route path='semantic' element={<SemanticLayerPage />} />
+            {/* Semantic layer — explorer + metric tree */}
+            <Route path='semantic' element={<SemanticLayerPage />} />
 
-          {/* Edge routes — fleet topology, list management, timeline
+            {/* Edge routes — fleet topology, list management, timeline
               playback (subsumes the old Compliance pages), audit log,
               and domain pack — all behind one IDE section so the
               operator stops hunting between Settings and the IDE. */}
-          <Route path='edge' element={<EdgeLayout />}>
-            <Route index element={<EdgeDashboardPage />} />
-            <Route path='playback' element={<EdgePlaybackPage />} />
-            <Route path='detections' element={<EdgeDetectionsPage />} />
-            <Route path='topology' element={<EdgeTopologyPage />} />
-            <Route path='devices' element={<EdgeDevicesPage />} />
-            <Route path='boxes/:boxId' element={<EdgeBoxDetailPage />} />
-            {/* Legacy /ide/edge/list redirected to the old FleetPage's
+            <Route path='edge' element={<EdgeLayout />}>
+              <Route index element={<EdgeDashboardPage />} />
+              <Route path='playback' element={<EdgePlaybackPage />} />
+              <Route path='detections' element={<EdgeDetectionsPage />} />
+              <Route path='topology' element={<EdgeTopologyPage />} />
+              <Route path='devices' element={<EdgeDevicesPage />} />
+              <Route path='boxes/:boxId' element={<EdgeBoxDetailPage />} />
+              {/* Legacy /ide/edge/list redirected to the old FleetPage's
                 list-toggle URL; FleetPage is gone now, so route to the
                 new Devices tab which is its functional successor. */}
-            <Route path='list' element={<Navigate to='../devices' replace />} />
-            <Route path='timeline' element={<Navigate to='../playback' replace />} />
-            <Route path='rollouts' element={<EdgeRolloutsPage />} />
-            <Route path='rollouts/:planId' element={<EdgeRolloutDetailPage />} />
-            <Route path='audit' element={<EdgeAuditPage />} />
-            <Route path='pack' element={<EdgePackPage />} />
-          </Route>
-          {/* Legacy /ide/compliance — kept as a back-compat redirect so
+              <Route path='list' element={<Navigate to='../devices' replace />} />
+              <Route path='timeline' element={<Navigate to='../playback' replace />} />
+              <Route path='rollouts' element={<EdgeRolloutsPage />} />
+              <Route path='rollouts/:planId' element={<EdgeRolloutDetailPage />} />
+              <Route path='audit' element={<EdgeAuditPage />} />
+              <Route path='pack' element={<EdgePackPage />} />
+            </Route>
+            {/* Legacy /ide/compliance — kept as a back-compat redirect so
               bookmarks and the old "View clip" links still land somewhere
               useful. Drops the cameraId/reportId segments since the
               timeline page resolves to the most recent event. */}
-          <Route path='compliance/*' element={<Navigate to='../edge/timeline' replace />} />
+            <Route path='compliance/*' element={<Navigate to='../edge/timeline' replace />} />
 
-          {/* Tests routes */}
-          <Route path='tests' element={<TestsLayout />}>
-            <Route index element={<TestsDashboardPage />} />
-            <Route path='runs' element={<TestsRunsPage />} />
-            <Route path=':pathb64' element={<TestFileDetailPage />} />
-          </Route>
-
-          {/* Coordinator routes */}
-          <Route path='coordinator' element={<CoordinatorLayout />}>
-            <Route path='overview' element={<OverviewPage />} />
-            <Route path='jobs' element={<JobsPage />} />
-            <Route path='jobs/:scheduleId' element={<JobDetailPage />} />
-            <Route path='runs' element={<RunsPage />} />
-            <Route path='runs/:runId' element={<RunDetailPage />} />
-            <Route path='recovery' element={<RecoveryPage />} />
-            <Route path='queue' element={<QueueHealthPage />} />
-            <Route index element={<Navigate to='overview' replace />} />
-          </Route>
-
-          {/* Observability routes (enterprise only) */}
-          {authConfig.enterprise && (
-            <Route path='observability' element={<ObservabilityLayout />}>
-              <Route path='traces' element={<TracesPage />} />
-              <Route path='traces/:traceId' element={<TraceDetailPage />} />
-              <Route path='clusters' element={<ClusterMapPage />} />
-              <Route path='metrics' element={<MetricsPage />} />
-              <Route path='metrics/:metricName' element={<MetricDetailPage />} />
-              <Route path='execution-analytics' element={<ExecutionAnalytics />} />
+            {/* Tests routes */}
+            <Route path='tests' element={<TestsLayout />}>
+              <Route index element={<TestsDashboardPage />} />
+              <Route path='runs' element={<TestsRunsPage />} />
+              <Route path=':pathb64' element={<TestFileDetailPage />} />
             </Route>
-          )}
 
-          {/* Default redirect to files */}
-          <Route index element={<Navigate to='files' replace />} />
-        </Route>
-        <Route
-          path='onboarding'
-          element={
-            <MainPageWrapper>
-              <AgenticSetupPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='context-graph'
-          element={
-            <MainPageWrapper>
-              <ContextGraphPage />
-            </MainPageWrapper>
-          }
-        />
+            {/* Coordinator routes */}
+            <Route path='coordinator' element={<CoordinatorLayout />}>
+              <Route path='overview' element={<OverviewPage />} />
+              <Route path='jobs' element={<JobsPage />} />
+              <Route path='jobs/:scheduleId' element={<JobDetailPage />} />
+              <Route path='runs' element={<RunsPage />} />
+              <Route path='runs/:runId' element={<RunDetailPage />} />
+              <Route path='recovery' element={<RecoveryPage />} />
+              <Route path='queue' element={<QueueHealthPage />} />
+              <Route index element={<Navigate to='overview' replace />} />
+            </Route>
 
-        <Route path='*' element={<Navigate to='.' />} />
-      </Routes>
+            {/* Observability routes (enterprise only) */}
+            {authConfig.enterprise && (
+              <Route path='observability' element={<ObservabilityLayout />}>
+                <Route path='traces' element={<TracesPage />} />
+                <Route path='traces/:traceId' element={<TraceDetailPage />} />
+                <Route path='clusters' element={<ClusterMapPage />} />
+                <Route path='metrics' element={<MetricsPage />} />
+                <Route path='metrics/:metricName' element={<MetricDetailPage />} />
+                <Route path='execution-analytics' element={<ExecutionAnalytics />} />
+              </Route>
+            )}
+
+            {/* Default redirect to files */}
+            <Route index element={<Navigate to='files' replace />} />
+          </Route>
+          <Route path='onboarding' element={<AgenticSetupPage />} />
+          <Route path='context-graph' element={<ContextGraphPage />} />
+
+          <Route path='*' element={<Navigate to='.' />} />
+        </Routes>
+      </WorkspaceShell>
     </HotkeysProvider>
   );
 });

@@ -10,11 +10,13 @@
 
 - surface: chat-panel
   paths:
-    - "src/pages/home/"
+    - "src/pages/launcher/"
     - "src/components/Chat/"
+    - "src/components/Ask/"
   flows:
     - chat-ask
     - chat-panel-agent-switch
+    - launcher-home
 
 - surface: ide
   paths:

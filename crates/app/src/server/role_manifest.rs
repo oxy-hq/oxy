@@ -956,6 +956,12 @@ mod tests {
         "/oxy-access",
         "/custom-apps",
         "/builder-availability",
+        // Workspace logo: the org-uploaded logo is served from Postgres (the
+        // org row) — fleet-safe. The code-first `logo.*` fallback reads the
+        // workspace FS, but that read is best-effort: on a replica without the
+        // files it 404s and the UI falls back to the name initial, so there is
+        // no broken-content failure mode that needs pinning to the IDE node.
+        "/logo",
         // run/thread/agent data planes (Postgres task router + persisted rows)
         "/threads",
         "/agents",

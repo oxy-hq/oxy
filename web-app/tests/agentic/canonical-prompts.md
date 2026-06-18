@@ -165,6 +165,13 @@ The demo project ships a single agent — `analytics` (analytics.agentic.yml),
 selected by default — since #2346 removed the classic `default` agent, so the
 prelude no longer opens the agent picker.
 
+Submitting does **not** navigate in the apps-first shell: the new thread
+opens and streams inside the right-side drawer
+(`[data-testid=thread-drawer]`) while the URL stays put. Flows that need
+the routed thread page afterwards click
+`[data-testid=thread-drawer-open-full]` or close the drawer (Escape) and
+`browser_navigate` directly.
+
 ```yaml
 - act: |
     Submit "What were the total weekly sales by store?" to the
@@ -173,7 +180,8 @@ prelude no longer opens the agent picker.
     no agent-picker step is needed:
     1. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
     2. browser_click [data-testid=chat-panel-submit-button].
-    End the turn once the URL changes to /threads/<id>.
+    End the turn once the thread drawer ([data-testid=thread-drawer])
+    opens on the right — the URL does not change.
   cache_scope: shared
 ```
 
@@ -185,25 +193,50 @@ byte-identical.
 
 ---
 
-## Sidebar navigation
+## Launcher navigation
 
-### Click an app sidebar link
+The left sidebar is gone — the home launcher is the navigation anchor.
+Interior pages carry a TopBar back button (`[data-testid=topbar-back-home]`).
+Utility tiles at the bottom of the launcher open list modals or navigate:
+
+| Affordance | Testid | Result |
+| --- | --- | --- |
+| Threads tile | `utility-tile-threads` | opens `[data-testid=threads-modal]` (rows navigate to `/threads/<id>`) |
+| Automations tile | `utility-tile-automations` | opens `[data-testid=automations-modal]` (rows navigate to `/workflows/<pathb64>`) |
+| Studio tile | `utility-tile-studio` | navigates to `/ide` |
+
+There is no launcher affordance to `.app.yml` Data Apps (the launcher grid
+shows published **custom** apps only); reach a Data App by direct
+`browser_navigate` to `/apps/<base64>` in local mode, or via the
+onboarding completion screen's `onboarding-explore-app-<index>` buttons
+in cloud mode (workspace-prefixed URLs embed a per-run UUID, so recorded
+absolute navigations would break warm replay).
+
+### Open the Threads modal from the launcher
 
 ```yaml
 - act: |
-    In the left sidebar, click [data-testid=sidebar-app-link-<app-name>]
-    where <app-name> matches the app's filename without `.app.yml`. The
-    URL changes to /apps/<base64>.
+    browser_click [data-testid=utility-tile-threads]. The Threads
+    list modal ([data-testid=threads-modal]) opens.
   cache_scope: shared
 ```
 
-### Click a thread sidebar link
+### Open the Automations modal from the launcher
 
 ```yaml
 - act: |
-    In the left sidebar's "Recent threads" section, click
-    [data-testid=sidebar-thread-link-<thread-id>]. The URL changes to
-    /threads/<thread-id>.
+    browser_click [data-testid=utility-tile-automations]. The
+    Automations list modal ([data-testid=automations-modal]) opens.
+  cache_scope: shared
+```
+
+### Promote the thread drawer to the routed thread page
+
+```yaml
+- act: |
+    browser_click [data-testid=thread-drawer-open-full]. The drawer
+    closes and the URL changes to /threads/<id> — the full thread
+    page with a TopBar back button.
   cache_scope: shared
 ```
 

@@ -23,8 +23,19 @@ const ThreadNotFound = () => (
   </div>
 );
 
-const Thread = ({ projectId }: { projectId?: string }) => {
-  const { threadId } = useParams();
+export const Thread = ({
+  projectId,
+  threadId: threadIdProp,
+  hideHeader
+}: {
+  projectId?: string;
+  threadId?: string;
+  /** Suppress the per-thread page header — used when the thread is embedded
+   *  in the ThreadDrawer, which supplies its own header. */
+  hideHeader?: boolean;
+}) => {
+  const { threadId: threadIdParam } = useParams();
+  const threadId = threadIdProp ?? threadIdParam;
   const {
     data: thread,
     isPending,
@@ -43,11 +54,13 @@ const Thread = ({ projectId }: { projectId?: string }) => {
   if (isSuccess && thread) {
     switch (thread.source_type) {
       case "workflow":
-        return <WorkflowThread thread={thread} refetchThread={() => refetch()} />;
+        return (
+          <WorkflowThread thread={thread} refetchThread={() => refetch()} hideHeader={hideHeader} />
+        );
       case "agentic":
-        return <AgenticThread key={thread.id} thread={thread} />;
+        return <AgenticThread key={thread.id} thread={thread} hideHeader={hideHeader} />;
       case "analytics":
-        return <AnalyticsThread key={thread.id} thread={thread} />;
+        return <AnalyticsThread key={thread.id} thread={thread} hideHeader={hideHeader} />;
       default:
         return <ThreadNotFound />;
     }
