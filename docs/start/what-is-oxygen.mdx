@@ -6,11 +6,13 @@ audience: end-user
 tier: standard
 ---
 
-**Oxygen OS** is the operating system for AI transformation, built on
-three components: Data Infrastructure, World Model, and Agentic
-Intelligence. Connect your warehouse, ask questions in plain English,
-and Oxygen's agents generate SQL, execute it, and stream back the
-answer — with charts, tables, and follow-up questions in the same thread.
+import Positioning from "/snippets/positioning.mdx";
+
+<Positioning />
+
+Connect your warehouse, ask questions in plain English, and Oxygen's agents
+generate SQL, execute it, and stream back the answer — with charts, tables,
+and follow-up questions in the same thread.
 
 Oxygen is delivered as a hosted product at
 [app.oxygen-hq.com](https://app.oxygen-hq.com). There is nothing to install.
@@ -33,8 +35,9 @@ Oxygen is delivered as a hosted product at
 
 {/* TODO: Single high-level diagram. */}
 
-Oxygen Cloud is a managed service. The API at `api.oxygen-hq.com` runs every
-agent, Procedure, and Data App for you, and the IDE at `app.oxygen-hq.com` is
-where your team builds and explores.
+Oxygen Cloud is a managed service hosted at `app.oxygen-hq.com`: the web app
+is where your team builds and explores, and the same platform runs every
+agent, Procedure, and Data App for you behind its REST API (served under
+`/api` on the same host).
 
 <Card title="Quickstart →" href="/guide/start/quickstart" />

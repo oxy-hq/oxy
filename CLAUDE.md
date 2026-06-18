@@ -259,6 +259,18 @@ The skill carries the five-step contract; the operator runbook is at
 
 - Save design documents and specs to `internal-docs/`, not `docs/superpowers/specs/`.
 
+## Docs & Brand Copy
+
+- When restructuring or migrating docs, **never regenerate
+  homepage/positioning/tagline copy from scratch** — port it verbatim from the
+  prior file, or stop and flag for marketing. Brand copy is not boilerplate.
+- The canonical positioning statement lives in `docs/snippets/positioning.mdx`
+  (imported by the Start landing pages); `README.md` mirrors it. Change it in
+  one place, with marketing sign-off — `.github/CODEOWNERS` gates these files.
+- Any docs PR that deletes a landing/homepage file or touches more than ~50
+  files must confirm **"positioning carried over verbatim"** (see the PR
+  checklist).
+
 ## Common Pitfalls
 
 - Do not use `--release` for local development or CI checks.

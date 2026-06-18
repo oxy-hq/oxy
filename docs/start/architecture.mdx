@@ -9,10 +9,13 @@ tier: standard
 Oxygen Cloud has three surfaces a user interacts with:
 
 - **`app.oxygen-hq.com`** — the IDE, chat panel, dashboards, and admin UI.
-- **`api.oxygen-hq.com`** — the REST API that powers automation and embedded
-  integrations.
-- **The MCP server** — exposes Oxygen as a tool surface for MCP clients
-  like Claude Desktop and Cursor. ([MCP →](/guide/build/embed-extend/mcp))
+- **The REST API** — served by the same host under `app.oxygen-hq.com/api`,
+  with a curated, API-key-only automation surface at `/external/api`. It
+  powers automation and embedded integrations.
+  ([REST API →](/guide/reference/rest-api))
+- **The MCP server** — exposes Oxygen as a tool surface for MCP clients like
+  Claude Desktop and Cursor, run from the `oxy mcp` CLI.
+  ([MCP →](/guide/build/embed-extend/mcp))
 
 {/* TODO: Annotated diagram. */}
 

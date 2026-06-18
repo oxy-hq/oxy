@@ -1,1 +1,9 @@
 .github/    luong@oxy.tech
+
+# Brand & positioning copy — require brand/marketing sign-off before merge.
+# (luong@oxy.tech is a placeholder owner; swap for a dedicated brand/marketing
+# team handle once one exists.)
+/README.md                       luong@oxy.tech
+/docs/start/index.mdx            luong@oxy.tech
+/docs/start/what-is-oxygen.mdx   luong@oxy.tech
+/docs/snippets/positioning.mdx   luong@oxy.tech

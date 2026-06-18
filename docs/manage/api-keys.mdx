@@ -39,11 +39,13 @@ For a complete reference of all available API endpoints, visit our **live Swagge
 
 ### Authentication Header
 
-Include your API key in the `X-API-Key` header with every request:
+Include your API key in the `X-API-Key` header with every request. The REST
+API is served by your Oxygen host under `/api`, and most resources are
+workspace-scoped (`/api/{workspace_id}/...`):
 
 ```bash
 curl -H "X-API-Key: oxy_your_api_key_here" \
-     https://api.oxy.com/your-endpoint
+     https://app.oxygen-hq.com/api/{workspace_id}/agents
 ```
 
 ## Examples
@@ -62,10 +64,12 @@ import os
 api_key = os.getenv('OXY_API_KEY')
 headers = {'X-API-Key': api_key}
 
-# List your workflows
-response = requests.get('https://api.oxy.com/workflows', headers=headers)
-workflows = response.json()
-print(f"Found {len(workflows)} workflows")
+# List the agents in a workspace
+response = requests.get(
+    'https://app.oxygen-hq.com/api/{workspace_id}/agents', headers=headers
+)
+agents = response.json()
+print(f"Found {len(agents)} agents")
 ```
 
 #### JavaScript (Node.js)
@@ -74,17 +78,17 @@ print(f"Found {len(workflows)} workflows")
 const axios = require("axios");
 
 const client = axios.create({
-  baseURL: "https://api.oxy.com",
+  baseURL: "https://app.oxygen-hq.com/api",
   headers: {
     "X-API-Key": process.env.OXY_API_KEY,
   },
 });
 
-// List your workflows
+// List the agents in a workspace
 client
-  .get("/workflows")
+  .get("/{workspace_id}/agents")
   .then((response) => {
-    console.log(`Found ${response.data.length} workflows`);
+    console.log(`Found ${response.data.length} agents`);
   })
   .catch((error) => {
     console.error("Error:", error.response.data);
@@ -94,14 +98,11 @@ client
 #### cURL
 
 ```bash
-# List your workflows
+# List the agents in a workspace
 curl -H "X-API-Key: $OXY_API_KEY" \
-     https://api.oxy.com/workflows
+     https://app.oxygen-hq.com/api/{workspace_id}/agents
 
-# Create a new workflow
-curl -X POST \
-  -H "X-API-Key: $OXY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My Workflow", "description": "A sample workflow"}' \
-  https://api.oxy.com/workflows
+# List threads in a workspace
+curl -H "X-API-Key: $OXY_API_KEY" \
+     https://app.oxygen-hq.com/api/{workspace_id}/threads
 ```

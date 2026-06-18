@@ -5,8 +5,11 @@ type: reference
 ---
 
 Every action you can take in the Oxygen UI is also exposed through the
-REST API at **`https://api.oxygen-hq.com`**. Use the API for CI gates,
-scheduled syncs, embedded integrations, or any other automation flow.
+REST API, served by your Oxygen host under **`/api`** (for example
+`https://app.oxygen-hq.com/api`). For automation — CI gates, scheduled
+syncs, embedded integrations — use the curated, API-key-only surface at
+**`/external/api/{workspace_id}`**. Interactive, always-current endpoint
+docs live at **`/apidoc`** (Swagger UI).
 
 <CardGroup cols={2}>
   <Card title="Auth & API tokens" href="/guide/reference/rest-api/auth" />

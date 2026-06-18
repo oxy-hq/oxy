@@ -18,3 +18,4 @@ Otherwise, please fill out the sections below. -->
 - [x] My changes generate no new warnings
 - [x] I have added tests that prove my fix is effective or that my feature works
 - [x] New and existing unit tests pass locally with my changes
+- [ ] **Positioning carried over verbatim** — required if this PR deletes a landing/homepage doc or touches more than ~50 files: homepage / positioning / tagline copy was ported verbatim from the prior file, not regenerated. (N/A otherwise.)
