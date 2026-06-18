@@ -228,12 +228,6 @@
             ]
           },
           {
-            "group": "Migrate to Oxygen",
-            "pages": [
-              "resources/migrations/index"
-            ]
-          },
-          {
             "group": "Recipes",
             "pages": [
               "resources/recipes/index"
