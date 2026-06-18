@@ -96,7 +96,7 @@ def get_writing_guide() -> str:
         return guide_path.read_text()
     # Embedded fallback for dry-run without a local oxygen-content checkout
     return """
-Write user-facing MDX changelogs for Oxy (AI-powered data analytics platform).
+Write user-facing MDX changelogs for Oxy (the operating system for AI transformation).
 
 Frontmatter fields: title, description, date, author ("Luong Vo (luong@oxygen-hq.com)"), slug, sidebarTitle.
 - title: 2-4 comma-separated main features, e.g. "Builder Agent, Workspace Management, and Thinking Budget"
@@ -179,7 +179,7 @@ def build_prompt(
     )
 
     if existing_content:
-        return f"""You are writing a user-facing changelog for Oxy (an AI-powered data analytics platform).
+        return f"""You are writing a user-facing changelog for Oxy (the operating system for AI transformation).
 
 Follow this writing guide exactly:
 <writing_guide>
@@ -215,7 +215,7 @@ Skip: internal refactors, CI/build/tooling changes, dependency bumps, test-only 
 
 Return ONLY the complete updated MDX — no explanation, no code fences."""
 
-    return f"""You are writing a user-facing changelog for Oxy (an AI-powered data analytics platform).
+    return f"""You are writing a user-facing changelog for Oxy (the operating system for AI transformation).
 
 Follow this writing guide exactly:
 <writing_guide>
@@ -272,7 +272,7 @@ def call_claude(
                     "type": "text",
                     "text": (
                         "You are a technical writer producing user-facing release changelogs for Oxy, "
-                        "an AI-powered data analytics platform. Write clearly for data analysts and "
+                        "the operating system for AI transformation. Write clearly for data analysts and "
                         "business users, not engineers. Output raw MDX only — no explanation, no markdown fences."
                     ),
                     "cache_control": {"type": "ephemeral"},

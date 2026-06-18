@@ -11,9 +11,9 @@ the relevant module, it does not belong here.
 
 ## Orientation
 
-Oxy (user-facing brand: **Oxygen**) is an AI data-analytics platform: connect a
-warehouse, ask questions in chat where agents generate and run SQL, and get
-streamed results. Teams also build **Procedures** (YAML automation), **Data
+Oxy (user-facing brand: **Oxygen**) is the operating system for AI
+transformation: connect a warehouse, ask questions in chat where agents
+generate and run SQL, and get streamed results. Teams also build **Procedures** (YAML automation), **Data
 Apps** (YAML dashboards), dbt-style transforms via **Airform**, and edit project
 files in the **Developer Portal IDE**.
 
