@@ -2,12 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.77] - 2026-06-18
+
+### 🚀 Features
+
+- Apps-first shell — HQ home, icon rail, global Ask drawer (#2497)
+
+### 💼 Other
+
+- *(deps)* Bump lewagon/wait-on-check-action from 1.7.0 to 1.8.0 (#2558)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 27 updates (#2559)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 9 updates (#2560)
+
+### 📚 Documentation
+
+- Remove SQLite to PostgreSQL migration guide (#2563)
+- Update Oxygen product description to OS positioning (#2565)
+- Finish OS positioning cleanup (changelog + agent context) (#2566)
+- Correct inaccurate API/CLI claims and add positioning guardrails (#2567)
+
 ## [0.5.76] - 2026-06-17
 
 ### 🐛 Bug Fixes
 
 - *(airway)* Align overpass test to airway's {bbox} placeholder (#2552)
 - Custom-app auth — clear cookie on logout + honor return_to after OAuth (#2555)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.76 (#2554)
 
 ## [0.5.75] - 2026-06-16
 
