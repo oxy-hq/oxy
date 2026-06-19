@@ -598,12 +598,16 @@ impl PipelineTaskExecutor {
         spec: &mut agentic_airway::AirwayPipelineSpec,
     ) -> Result<(), String> {
         for (field, var_key, var_name) in rest_api_secret_var_refs(&spec.source.config)? {
-            let secret = self.platform.resolve_secret(&var_name).await.ok_or_else(|| {
-                format!(
-                    "airway rest_api: secret `{var_name}` (referenced by `auth.{var_key}`) \
+            let secret = self
+                .platform
+                .resolve_secret(&var_name)
+                .await
+                .ok_or_else(|| {
+                    format!(
+                        "airway rest_api: secret `{var_name}` (referenced by `auth.{var_key}`) \
                      could not be resolved from the secret manager"
-                )
-            })?;
+                    )
+                })?;
             set_rest_api_auth_secret(&mut spec.source.config, field, var_key, &secret);
         }
         Ok(())
