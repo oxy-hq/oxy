@@ -1,74 +1,67 @@
 ---
 name: oxy-scaling-design
-description: Use when the user asks about Oxy's multi-instance scaling, worker fleet, workspace ownership leases, horizontal scaling design, or any topic from the scaling design doc. Triggers include "scale Oxy", "scale oxygen", "multi-instance", "worker fleet", "lease table", "horizontal scaling", "Phase 1/2/3/4/5/6/7 of scaling", "gix migration", "smart cloning", "durable execution", "shard workspaces", "Envoy ring hash", "internal jobs admin", "workspace ownership".
+description: Use when the user asks about Oxy's multi-instance scaling, the split fleet, worker fleet, horizontal scaling, high availability, or how the serve/ide/worker roles divide work. Triggers include "scale Oxy", "scale oxygen", "multi-instance", "split fleet", "worker fleet", "horizontal scaling", "high availability", "OXY_ROLE", "stateful vs HA", "compile boundary", "stateless serving", "durable execution", "shard workspaces", "ephemeral environments", "internal jobs admin".
 ---
 
 # Oxy multi-instance scaling — quick reference
 
-Full design at `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md`. Read that file first when grounding a decision.
+**The current architecture in one line:** Oxy runs as a **split fleet** keyed by `OXY_ROLE` — a single stateful `ide` (the Factory: working copy + `.git` + compile + new-run execution), a horizontally-scaled stateless `serve` fleet (reads Postgres + S3 only), and a `worker` queue drainer. This is a Postgres primary/read-replica shape: the `ide` is the primary, the serve fleet is the read replicas, and the **compile boundary** (compiled `*_definitions` rows + S3 blobs, keyed by `revision_id`) is the replicated read model.
 
-## Current phase status (2026-05-31)
+**Read these first when grounding a decision:**
+- `internal-docs/multi-instance-fleet.md` — how the fleet works today (roles, the stateful-vs-HA matrix, route classification, the `super_read_only` guard, graceful degradation, code map). **The primary reference.**
+- `internal-docs/2026-06-16-ephemeral-workspace-environments-design.md` — the forward implementation plan (the crate/binary split that makes "FS in a stateless service" a compile error).
+- `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md` — the original phase ledger + the rejected-alternatives list.
+- `internal-docs/compile-boundary.md` — operator runbook.
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Worker fleet separation (`oxy worker` standalone + `oxy serve --no-workers` + Internal Jobs admin UI) | ✅ DONE — PR #2409 |
-| 1.5 | Workspace ownership lease table | ⏳ Pending |
-| 1.75 | Move ad-hoc background work into TaskSpec (scope survey lists candidates) | ⏳ Pending |
-| 2 | Multi-instance HTTP with Envoy ring-hash routing + 307 fallback | ⏳ Pending (depends on 1.5) |
-| 3 | Smart cloning — `--filter=blob:none --depth N` + cone-mode sparse-checkout | ⏳ Pending (depends on 4) |
-| 4 | gix migration of `crates/git/` read paths | 🔄 In flight |
-| 5 | LRU clone cache + background mirror updater | ⏳ Pending (depends on 3) |
-| 6 | Durable execution — replay-deterministic agentic-runtime orchestrator | ⏳ Pending (independent) |
-| 7 | Generated artifacts → S3 (embeddings, parquet caches, build outputs) | ⏳ Pending (independent) |
+## What is built (the current reality)
+
+- **Split fleet via `OXY_ROLE`** (`ide | serve | worker | all`). One knob selects the topology; everything else derives from it. A `serve` replica derives in-process workers + the periodic global driver OFF; every other role ON. The legacy flags (`OXY_DISABLE_INPROCESS_WORKERS`, `OXY_INPROC_GLOBAL_WORKER`, `--no-workers`) survive only as two-directional overrides.
+- **Compile boundary (compile-complete stateless serving).** The `ide` compiles the working copy → Postgres `*_definitions` rows + S3 blobs per `revision_id` → promotes via `workspaces.current_revision_id`. The serve fleet reads the promoted revision and **never walks the workspace FS**. This is why the read path needs no working copy — and therefore no per-request clone.
+- **Self-routing.** `role_manifest::classify` is the single routing authority; a serve replica reverse-proxies `IdeOnly` requests to `OXY_IDE_UPSTREAM` (`ide_proxy`). Replaces the drift-prone external route table that caused three outages.
+- **Route classification + HA carve-out.** `IDE_ONLY_PATTERNS` (FS/exec/live-stream → ide) + `FLEET_OK_READ_PATTERNS` (Postgres/S3 reads buried under an IdeOnly wildcard stay HA) + drift tests + the `super_read_only` runtime guard. See the `oxy-route-classification` skill.
+- **Runtime-artifact S3 mirror** (`runtime_artifact.rs`) — charts/results/app-data mirror to the compile-boundary bucket so any replica serves them; ide-down charts degrade to the S3 mirror.
+- **Schedules/monitors fire without a leader.** The periodic global driver runs on every eligible node; `tick_schedules`/`tick_monitor_schedules` CAS-advance `next_run_at` so firing is exactly-once across replicas. (Leader election was tried and removed — the CAS already guarantees it, and running on all eligible nodes is better HA.)
+- **Backpressure** — admission control (global ceiling + per-tenant fairness, 503 + `Retry-After`), worker HPA on queue depth.
+- **Migrations** — a dedicated migrate Job owns the schema; `serve`/`compile`/`worker` honour `OXY_SKIP_MIGRATIONS`; a startup advisory lock serialises co-booting nodes.
+
+## What is pending
+
+- **Ephemeral-env crate/binary split** (the strongest enforcement): make the serve binary link no FS code so "FS in a stateless service" is a *compile error*, not a runtime miss. Reviewed, staged — see the ephemeral-env design. Keep env-count at **one** Factory until a measured production limit forces a small sharded pool.
+- **Durable execution** — replay-deterministic agentic-runtime orchestrator (independent).
+- **Generated artifacts → S3** — charts/results/app-data already mirror via `runtime_artifact`; embeddings + parquet caches still pending.
+- **gix migration** of `crates/git/` read paths — general git-read modernisation, in flight.
 
 ## Hard constraints (don't violate)
 
-1. **Code-first is sacred** — the filesystem IS the data model (like dbt). Agents/procedures/apps/semantic views live as YAML files in git. **Never introduce a parallel source of truth** (S3 snapshots, DB-backed file storage of definitions). Generated artifacts are different — those can go to S3.
-2. **Git is the source of truth** — GitHub origin in cloud mode, local-only repo in local mode. PRs, branches, commits stay first-class IDE actions.
-3. **Two distinct lease primitives** — task-claim (worker, exists in `agentic_task_queue`) and workspace-ownership (HTTP, Phase 1.5 will add). They are NOT the same lease. Workers do NOT consult the workspace-ownership lease.
-4. **HTTP is stateless beyond the lease** — anything else must move to Postgres, S3, or be reconstructable from origin.
-
-## Operational primitives (Phase 1 + in-flight)
-
-- **`oxy worker`** — standalone worker process. `OXY_DATABASE_URL`, `OXY_WORKER_MAX_INFLIGHT`, `--health-port`. Drain queue, no HTTP.
-- **`oxy serve --no-workers`** — HTTP-only frontend.
-- **Internal Jobs admin UI** — `/admin/internal-jobs`, gated by `OXY_OWNER`. Worker fleet health, queue stats, dead-letter management. Distinct from the customer-facing Coordinator/Orchestrator UI.
-- **`worker_id = <hostname>@<pid>`** — stable instance identity threaded through every span and structured log.
-
-## Architecture refinements that override the original sketch
-
-Read sections A–H of the design doc. The key surprises from Phase 1 implementation:
-
-- **A**: Workspace ownership lease (Phase 1.5) is HTTP-only. Workers use task-claim semantics, not the workspace lease.
-- **B**: Recovery loop is currently split (HTTP driver + worker reaper). Should unify into the worker fleet eventually; blocker is workspace enumeration from the worker process in cloud mode.
-- **C**: Backpressure is now explicit — queue-depth alerts, worker HPA on queue depth, HTTP-side admission control with 503 + `Retry-After`.
-- **D**: Customer vs system task distinction propagates — add `task_kind = "customer" | "system"` on task events, separate metrics/SLOs.
-- **E**: `worker_id` enables per-worker traces, capacity planning, version drift detection. Add `claimed_by` and `claimed_at` columns to `agentic_task_queue` to formalize.
-- **F**: Workers need their OWN per-worker clone cache (Phase 3 + Phase 4 are preconditions for fully separating worker fleet from HTTP fleet).
-- **G**: Phase ordering is parallel, not linear: {1.5} + {1.75} + {4→3→5} + {6} + {7} run independently post-Phase 1.
-- **H**: New features default to TaskSpec — see the `oxy-task-spec-default` skill.
+1. **Code-first is sacred** — the filesystem IS the data model (like dbt). Agents/procedures/apps/semantic views live as YAML in git. **Never introduce a parallel source of truth** (S3 snapshots, DB-backed file storage of definitions). Generated artifacts are different — those go to S3.
+2. **Git is the source of truth** — GitHub origin in cloud, local repo in local mode. PRs, branches, commits stay first-class ide actions. The Factory's local disk is a cache, re-cloned from origin on restart.
+3. **HTTP is stateless beyond the request** — anything a serve replica needs must be in Postgres, S3, or reconstructable from origin. Reads serve from any replica; only writes/execution touch the Factory.
+4. **One fencing primitive for the Factory:** the StatefulSet `replicas: 1` at-most-one guarantee. There is **no workspace-ownership lease** (it was built and reverted 2026-06-14 — at replicas=1 it guards a multi-producer race that can't occur) and **no leader election** (the `next_run_at` CAS gives exactly-once). The task-claim lease in `agentic_task_queue` is the worker's, and is unrelated.
 
 ## What was explicitly rejected (don't re-debate)
 
-- Sourcegraph gitserver — license flipped to proprietary; dead upstream.
+- **Smart cloning** for the serve/worker read path (partial/shallow/sparse clone + LRU clone cache + mirror updater). The compile boundary makes the read path need no working copy, so it needs no clone. A working copy lives only on the Factory, which already has its checkout. (A shelved implementation exists on `feat/smart-cloning` if cold-start cloning is ever needed for the *build* plane — not a scaling plan.)
+- Sourcegraph gitserver — license flipped proprietary; dead upstream.
 - Gitaly + Praefect — assumes GitLab Rails as auth source; nobody runs it standalone.
 - Mononoke (Meta) — GPL-2.0, no outside production deployments, exotic build.
 - libgit2 / git2-rs — superseded by gix; Cargo migrated off it.
-- Apalis / Hatchet / Temporal / River / pgmq — Oxy has its own orchestrator already; no parallel queue framework.
-- S3 snapshot as workspace truth — violates code-first; creates sync nightmare with git.
+- Apalis / Hatchet / Temporal / River / pgmq — Oxy has its own orchestrator; no parallel queue framework.
+- S3 snapshot as workspace truth — violates code-first; sync nightmare with git.
 - EFS/NFS shared filesystem — git over network FS is fragile.
 
 ## When this skill applies
 
-- User asks "how do we scale Oxy?" → point at this skill + the design doc.
-- User proposes a change that conflicts with the design → reference the relevant refinement (A–H).
-- User asks "why does X exist?" → trace to phase + design rationale.
-- User asks to add multi-instance support to some specific feature → check which phase it depends on.
+- "How do we scale Oxy?" / "is it HA?" → this skill + `multi-instance-fleet.md`.
+- A change that touches role split, the worker fleet, the compile boundary, or workspace ownership → ground it here, then read the relevant doc before implementing.
+- "Why does X exist / why not Y?" → trace to the constraints + rejected list above.
+- A route/handler change → defer to the `oxy-route-classification` skill (IdeOnly vs FleetOk vs the HA carve-out).
+- Long-running/background work → the `oxy-task-spec-default` skill (TaskSpec on the worker fleet, not `tokio::spawn` in a handler).
 
 ## Refs
 
-- Full design: `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md`
-- Worker fleet dev guide: `internal-docs/worker-fleet.md`
-- Scope survey: `internal-docs/2026-05-28-worker-fleet-scope-survey.md`
-- Internal Jobs admin design: `internal-docs/internal-jobs-admin-design.md`
+- Fleet guide (primary): `internal-docs/multi-instance-fleet.md`
+- Forward plan: `internal-docs/2026-06-16-ephemeral-workspace-environments-design.md`
+- Phase ledger + rejected alternatives: `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md`
+- Operator runbook: `internal-docs/compile-boundary.md`
+- Worker fleet dev guide: `internal-docs/worker-fleet.md`; scope survey: `internal-docs/2026-05-28-worker-fleet-scope-survey.md`
 - Backend architecture rules: `internal-docs/backend-architecture.md`

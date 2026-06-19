@@ -1,5 +1,6 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isIdeUnavailableError } from "@/libs/utils/ideHealth";
 import type {
   ChartConfig,
   HumanInputQuestion,
@@ -215,7 +216,16 @@ type AnalyticsRunState =
       durationMs: number;
       events: SseEvent[];
     }
-  | { tag: "failed"; runId: string; message: string; durationMs: number; events: SseEvent[] }
+  | {
+      tag: "failed";
+      runId: string;
+      message: string;
+      durationMs: number;
+      events: SseEvent[];
+      /** The run never started because the ide (developer env) was unreachable —
+       *  a transient restart, not a real run failure. Render a calm placeholder. */
+      ideUnavailable?: boolean;
+    }
   | { tag: "cancelled"; runId: string; events: SseEvent[] };
 
 // ── Mappers ───────────────────────────────────────────────────────────────────
@@ -483,7 +493,8 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
             runId: extractApiErrorRunId(err),
             message: extractApiErrorMessage(err, "Failed to start run"),
             durationMs: 0,
-            events: []
+            events: [],
+            ideUnavailable: isIdeUnavailableError(err)
           });
         })
         .finally(() => setIsStarting(false));

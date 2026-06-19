@@ -89,11 +89,11 @@ pub async fn run_compile(args: CompileArgs) -> Result<(), OxyError> {
         )));
     }
 
-    if !args.skip_migrations {
+    if args.skip_migrations || serve::skip_migrations_requested() {
+        tracing::info!("compile: skipping migrations (--skip-migrations or OXY_SKIP_MIGRATIONS)");
+    } else {
         tracing::info!("compile: running database migrations");
         serve::run_database_migrations(args.enterprise).await?;
-    } else {
-        tracing::info!("compile: --skip-migrations set");
     }
 
     let db = establish_connection()

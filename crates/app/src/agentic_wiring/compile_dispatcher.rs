@@ -46,9 +46,10 @@ impl CompileDispatcher for OxyCompileDispatcher {
         if !workspace_path.is_dir() {
             return Err(format!(
                 "compile: workspace {workspace_id} path {} does not exist on this worker — \
-                 per-worker clone-on-demand is Phase 3 work \
-                 (see internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md). \
-                 Until that lands, only workers that already hold a clone of the workspace can compile it.",
+                 compiles run only on a node that already holds the workspace working copy \
+                 (the IDE/build singleton with OXY_INPROC_GLOBAL_WORKER=1). Per-worker \
+                 clone-on-demand is NOT planned \
+                 (see internal-docs/multi-instance-fleet.md).",
                 workspace_path.display()
             ));
         }

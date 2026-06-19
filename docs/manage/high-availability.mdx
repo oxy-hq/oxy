@@ -1,0 +1,81 @@
+---
+title: High availability
+sidebarTitle: High availability
+description: What stays available during a restart or deploy, what briefly pauses, and why your data is never at risk.
+type: concept
+audience: admin
+tier: standard
+---
+
+Oxygen is built so the things you and your team do all day — asking questions, viewing answers, opening dashboards — keep working through deploys, maintenance, and the occasional node restart. A smaller set of developer actions are handled by a single dedicated environment and pause for a few seconds when it restarts, then resume on their own.
+
+This page explains exactly what falls into each bucket, what you'll see during a restart, and why your data is never at risk.
+
+## Always available
+
+These run on a redundant, horizontally-scaled fleet. There's no single point of failure, they scale with your traffic, and a node restarting or being replaced is invisible to you:
+
+- **Asking questions and viewing answers** — the chat experience and your results.
+- **Opening past conversations** — your full history, any time.
+- **Dashboards and Data Apps** — viewing them and their last computed data.
+- **Browsing** agents, procedures, apps, and the semantic layer.
+- **Running queries** against your connected warehouse.
+- **Charts you've already viewed**, query results, and saved files.
+- **Sign-in, settings, members, billing, and API keys.**
+
+<Check>
+If you're using Oxygen day-to-day to explore data, you are on the always-available path. A deploy or restart does not interrupt it.
+</Check>
+
+## Briefly pauses during a restart
+
+These are handled by the **developer environment** (Oxygen Factory) — a single dedicated instance that owns your project's working files and runs new computations:
+
+- **Editing project files** and **Git** actions (commit, branch, push, pull).
+- **Compiling and publishing** changes you've made.
+- **Running a _new_ analysis** or refreshing a Data App's data.
+- **Modeling** (Airform / dbt) actions.
+
+When the developer environment restarts — during a deploy or maintenance — these pause for a few seconds. The app shows a calm notice rather than an error:
+
+> **Oxygen Factory is temporarily unavailable.** File editing, Git, and live app runs are paused right now. Chat and your saved data keep working.
+
+The action resumes automatically once the environment is back; you can also retry. Nothing is lost.
+
+<Note>
+A new computation needs the developer environment because it runs against your project's live files. Everything that only **reads** already-saved data stays on the always-available fleet — which is why you can keep viewing conversations, dashboards, and results throughout.
+</Note>
+
+## Your data is never at risk
+
+The source of truth for your project is your **Git repository** plus Oxygen's managed **database and object storage** — all durable and backed up. The developer environment's local copy is only a fast-access cache: if it restarts, it rebuilds itself from Git. A restart can never lose committed work.
+
+## What you'll see during a deploy or restart
+
+| You're doing… | During a developer-environment restart |
+| --- | --- |
+| Chatting, viewing answers, opening past threads | Works normally |
+| Viewing dashboards and saved results | Works normally |
+| Running warehouse queries | Works normally |
+| Editing files / Git / publishing | Calm "temporarily unavailable" notice → resumes |
+| Running a new analysis or refreshing app data | "Restarting, will run once it's back" → resumes |
+
+Deploys are rolling: the serving fleet stays up the whole time, and the developer environment restarts briefly at the end.
+
+## Deploying Oxygen for high availability
+
+<Info>
+This section is for teams running **self-managed or Enterprise** Oxygen. On Oxygen Cloud, this is handled for you.
+</Info>
+
+Oxygen separates into independently-scaled roles so you can make the high-traffic path redundant:
+
+- **Serving fleet** — stateless replicas that handle all the always-available work above. Run **two or more** behind a load balancer and scale them with traffic; any replica can serve any request, so losing one is harmless.
+- **Developer environment** — a single instance that owns the working files and runs computations. It recovers by restarting and re-cloning from Git (its disk is a cache, not the source of truth). Keep its restarts short; the serving fleet keeps the product up while it does.
+- **Workers** — background processors (compiles, schedules, monitors) that scale independently of the serving fleet.
+
+This is the same split that lets cloud platforms keep a deployed app online while a build runs separately: the part everyone uses is replicated and elastic, and the single build/edit environment is isolated so its restarts don't take the product down.
+
+<Card title="Need help sizing or deploying for HA?" href="https://oxygen-hq.com/contact">
+Talk to us about a high-availability deployment for your team.
+</Card>

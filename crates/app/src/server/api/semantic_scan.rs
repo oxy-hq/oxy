@@ -21,8 +21,11 @@
 //! cache holding the parsed `SemanticLayer` directly, skipping the
 //! tempdir entirely.
 
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
 
+use lru::LruCache;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -101,6 +104,82 @@ pub async fn materialise_semantic_scan(
         _dir: dir,
         scan_path,
     }))
+}
+
+/// Which semantic entity a single-read resolves.
+#[derive(Clone, Copy)]
+pub enum SemanticEntity {
+    View,
+    Topic,
+}
+
+/// Materialise the promoted semantic scan and return it together with the
+/// on-disk path of ONE requested view/topic, so a Path-based parser (airlayer)
+/// can parse that file WITH full scan context for cross-entity reference
+/// resolution (a topic hydrates its referenced views from the same scan dir).
+///
+/// Returns `Ok(None)` when the workspace isn't promoted or the requested file
+/// isn't a compiled row — the caller then falls through to the FS, exactly like
+/// every other reader. The returned [`MaterialisedScan`] guard MUST be held
+/// until parsing finishes; its tempdir is deleted on drop.
+///
+/// TRACKING: this materialises the WHOLE promoted scan (S3 + disk writes) per
+/// call, uncached — a topic detail click pays for the full scan on every open.
+/// Acceptable while view/topic detail reads are low-frequency; if they grow,
+/// cache by `(workspace_id, revision_id)` the way [`materialise_agent_context`]
+/// already caches the agent context, instead of re-materialising per read.
+pub async fn materialise_semantic_entity(
+    workspace_id: Uuid,
+    entity: SemanticEntity,
+    file_path: &str,
+) -> Result<Option<(MaterialisedScan, PathBuf)>, std::io::Error> {
+    // Resolve the requested file to its compiled row first (cheap): we need its
+    // `name` for `derive_target_path`, and a miss lets us bail to FS before
+    // paying for a full-scan materialise.
+    let row = match entity {
+        SemanticEntity::View => {
+            compiled_reader::resolve_semantic_view(workspace_id, None, file_path).await
+        }
+        SemanticEntity::Topic => {
+            compiled_reader::resolve_semantic_topic(workspace_id, None, file_path).await
+        }
+    };
+    let row = match row {
+        Ok(Some(r)) => r,
+        Ok(None) => return Ok(None),
+        Err(e) => {
+            tracing::warn!(
+                workspace_id = %workspace_id,
+                error = ?e,
+                "semantic single-read: boundary lookup failed; falling through to FS"
+            );
+            return Ok(None);
+        }
+    };
+    let Some(scan) = materialise_semantic_scan(workspace_id).await? else {
+        return Ok(None);
+    };
+    let (subdir, suffix) = match entity {
+        SemanticEntity::View => ("views", "view.yml"),
+        SemanticEntity::Topic => ("topics", "topic.yml"),
+    };
+    // Same mapping `write_artifacts` used, so the file is exactly where the
+    // materialise put it.
+    let target = derive_target_path(
+        &scan.scan_path.join(subdir),
+        &row.file_path,
+        &row.name,
+        suffix,
+    );
+    if !target.exists() {
+        tracing::warn!(
+            workspace_id = %workspace_id,
+            file_path,
+            "semantic single-read: row resolved but materialised file missing; falling through to FS"
+        );
+        return Ok(None);
+    }
+    Ok(Some((scan, target)))
 }
 
 /// Write each artifact's `definition` JSONB to a YAML file under
@@ -202,12 +281,47 @@ fn derive_target_path(
     target_dir.join(trimmed)
 }
 
-/// Tempdir holding a workspace's compiled context entities, laid out at their
+/// A workspace's compiled context entities materialised at their
 /// workspace-relative paths so an analytics agent's `context:` globs resolve.
-/// Drop to clean up.
+/// The tempdir is `Arc`-held and cached per (workspace, revision): cloning a
+/// `MaterialisedContext` shares the same dir, which survives until both the
+/// cache entry and every in-flight clone have dropped (Arc refcount).
+#[derive(Clone)]
 pub struct MaterialisedContext {
-    _dir: TempDir,
+    _dir: Arc<TempDir>,
     pub root: PathBuf,
+}
+
+/// Max distinct `(workspace, revision)` contexts a process keeps materialised.
+/// Each entry pins a tempdir (the full semantic layer + procedures + verified
+/// SQL) on local disk for as long as it's cached, so an UNBOUNDED map would
+/// grow one tempdir per distinct workspace the process ever served — monotonic
+/// `/tmp` + inode pressure until restart. That bites hardest on a long-lived
+/// `oxy worker`, which drains a global, affinity-free queue across every tenant
+/// (a serve replica is ring-hash-sharded to a workspace subset). The LRU caps
+/// it: the least-recently-served workspace's tempdir drops (Arc refcount →
+/// `TempDir` cleanup) once evicted. 256 covers a large hot set while bounding
+/// worst-case resident disk to a few hundred small text trees.
+const CONTEXT_CACHE_CAP: usize = 256;
+
+/// Process-global, size-bounded LRU of materialised contexts, keyed by
+/// `(workspace_id, revision_id)`. Lets the per-request materialise — writing
+/// every view / topic / procedure / verified-SQL to a fresh `/tmp` dir — run
+/// ONCE per promoted revision instead of on every request. Revisions are
+/// immutable, so a hit is always current; a promote yields a new `revision_id`
+/// → miss → re-materialise (and the prior revision of that workspace is dropped
+/// eagerly on insert, so a busy workspace never pins two tempdirs).
+///
+/// `std::sync::Mutex` (not DashMap): `LruCache::get` mutates recency so it needs
+/// `&mut`, and the guard is only ever held for sync map ops — never across an
+/// `.await` — so it can't block the runtime.
+fn context_cache() -> &'static Mutex<LruCache<(Uuid, Uuid), MaterialisedContext>> {
+    static CACHE: OnceLock<Mutex<LruCache<(Uuid, Uuid), MaterialisedContext>>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        Mutex::new(LruCache::new(
+            NonZeroUsize::new(CONTEXT_CACHE_CAP).expect("CONTEXT_CACHE_CAP is non-zero"),
+        ))
+    })
 }
 
 /// Materialise the workspace's promoted-revision **context** entities into a
@@ -219,56 +333,142 @@ pub struct MaterialisedContext {
 /// globbing an absent filesystem and silently ending up with "no databases
 /// configured".
 ///
-/// Scope: semantic views + topics (the entities that carry the agent's database
-/// references). Procedures and verified `.sql` are a follow-up — `list_procedures`
-/// returns no body and verified queries have no compiled reader yet, so on the
-/// fleet they're simply absent from context (subruns degrade; the IDE, which
-/// reads the FS, is unaffected).
+/// Scope: semantic views + topics + procedures + verified `.sql` — the complete
+/// `context:` set an analytics run globs. The result is cached per
+/// (workspace, revision), so the materialise runs once per promoted revision.
 ///
 /// `Ok(None)` when the workspace isn't promoted or has no semantic rows — the
 /// caller then falls through to the FS workspace path.
 pub async fn materialise_agent_context(
     workspace_id: Uuid,
 ) -> Result<Option<MaterialisedContext>, std::io::Error> {
-    let views = match compiled_reader::list_semantic_views(workspace_id, None).await {
-        Ok(Some(rows)) => rows,
-        Ok(None) => return Ok(None),
-        Err(e) => {
-            tracing::warn!(workspace_id = %workspace_id, error = ?e,
-                "context materialise: views lookup failed; falling through to FS");
-            return Ok(None);
-        }
+    // Cache key: the revision actually being served (immutable). A hit returns
+    // the warm tempdir without re-reading the rows or re-writing the dir.
+    let Some(revision_id) = compiled_reader::resolve_request_revision(workspace_id, None).await
+    else {
+        return Ok(None); // not promoted / local mode → caller falls through to FS
     };
-    // Topics are optional — a workspace can ship views without topics.
-    let topics = match compiled_reader::list_semantic_topics(workspace_id, None).await {
-        Ok(Some(rows)) => rows,
-        Ok(None) => Vec::new(),
-        Err(e) => {
-            tracing::warn!(workspace_id = %workspace_id, error = ?e,
-                "context materialise: topics lookup failed; continuing with views only");
-            Vec::new()
-        }
-    };
-    if views.is_empty() && topics.is_empty() {
-        return Ok(None);
+    if let Some(hit) = context_cache()
+        .lock()
+        .ok()
+        .and_then(|mut c| c.get(&(workspace_id, revision_id)).cloned())
+    {
+        return Ok(Some(hit));
     }
 
-    let dir = TempDir::new()?;
+    // Read every context entity at the SAME revision the cache key uses. The key
+    // came from `resolve_request_revision` (which walks back to the last
+    // config-deserialisable revision when `current_revision_id` is broken), but
+    // the `list_*` readers resolve their own revision via `open_compiled_revision`
+    // — and OUTSIDE an HTTP request (a worker/TaskSpec run, with no ambient pin)
+    // that reads `current_revision_id` directly, with NO walk-back. Pinning the
+    // readers to `revision_id` here makes key and content the one resolved
+    // revision, so a config-broken current revision can't get cached under the
+    // last-known-good key. On the HTTP path the ambient pin already equals
+    // `revision_id`, so this is a harmless same-value re-scope.
+    let Some((views, topics, procedures, verified)) =
+        compiled_reader::with_pinned_revision(Some(revision_id), async {
+            let views = match compiled_reader::list_semantic_views(workspace_id, None).await {
+                Ok(Some(rows)) => rows,
+                Ok(None) => return None,
+                Err(e) => {
+                    tracing::warn!(workspace_id = %workspace_id, error = ?e,
+                        "context materialise: views lookup failed; falling through to FS");
+                    return None;
+                }
+            };
+            // Topics are optional — a workspace can ship views without topics.
+            let topics = match compiled_reader::list_semantic_topics(workspace_id, None).await {
+                Ok(Some(rows)) => rows,
+                Ok(None) => Vec::new(),
+                Err(e) => {
+                    tracing::warn!(workspace_id = %workspace_id, error = ?e,
+                        "context materialise: topics lookup failed; continuing with views only");
+                    Vec::new()
+                }
+            };
+            // Procedures + verified `.sql` complete the agent's `context:` set: the
+            // solver globs them from `base_dir`, and a matched verified query is read
+            // back by path at run time (`solver/specifying`). Without these in the
+            // tempdir the run still hits the real FS for them — the leak this closes.
+            // Both are additive (a miss yields an empty set), so they never gate the
+            // not-promoted fall-through, which stays keyed on the semantic-view lookup.
+            let procedures =
+                match compiled_reader::list_procedure_artifacts(workspace_id, None).await {
+                    Ok(Some(rows)) => rows,
+                    Ok(None) => Vec::new(),
+                    Err(e) => {
+                        tracing::warn!(workspace_id = %workspace_id, error = ?e,
+                            "context materialise: procedures lookup failed; continuing without them");
+                        Vec::new()
+                    }
+                };
+            let verified = match compiled_reader::list_verified_queries(workspace_id, None).await {
+                Ok(Some(rows)) => rows,
+                Ok(None) => Vec::new(),
+                Err(e) => {
+                    tracing::warn!(workspace_id = %workspace_id, error = ?e,
+                        "context materialise: verified-query lookup failed; continuing without them");
+                    Vec::new()
+                }
+            };
+            if views.is_empty()
+                && topics.is_empty()
+                && procedures.is_empty()
+                && verified.is_empty()
+            {
+                return None;
+            }
+            Some((views, topics, procedures, verified))
+        })
+        .await
+    else {
+        return Ok(None);
+    };
+
+    let dir = Arc::new(TempDir::new()?);
     let root = dir.path().to_path_buf();
     write_context_artifacts(&views, &root).await?;
     write_context_artifacts(&topics, &root).await?;
+    write_context_artifacts(&procedures, &root).await?;
+    write_verified_queries(&verified, &root).await?;
 
-    // info (not debug like the per-request boundary reads): this is a per-run
-    // operation on the stateless fleet and the single confirmation that the
-    // boundary context path — not an absent FS — served the run.
+    let ctx = MaterialisedContext {
+        _dir: dir,
+        root: root.clone(),
+    };
+    // Insert under the bounded LRU. First drop any PRIOR revision of this
+    // workspace so a promote frees the stale tempdir eagerly (Arc refcount →
+    // cleanup once in-flight clones release) instead of waiting for LRU
+    // eviction; then `put`, which itself evicts the least-recently-served
+    // workspace when the cache is at CONTEXT_CACHE_CAP. (Lock held for sync map
+    // ops only — never across an await.)
+    if let Ok(mut cache) = context_cache().lock() {
+        let stale: Vec<(Uuid, Uuid)> = cache
+            .iter()
+            .map(|(k, _)| *k)
+            .filter(|k| k.0 == workspace_id && k.1 != revision_id)
+            .collect();
+        for k in stale {
+            cache.pop(&k);
+        }
+        cache.put((workspace_id, revision_id), ctx.clone());
+    }
+
+    // info (not debug like the per-request boundary reads): the single
+    // confirmation that the boundary context path — not an absent FS — served
+    // this revision. Logged on the materialise (a miss), not on warm hits.
     tracing::info!(
         workspace_id = %workspace_id,
+        revision_id = %revision_id,
         views = views.len(),
         topics = topics.len(),
+        procedures = procedures.len(),
+        verified = verified.len(),
         root = %root.display(),
-        "context materialise: materialised agent context from compile boundary"
+        "context materialise: materialised + cached agent context from compile boundary"
     );
-    Ok(Some(MaterialisedContext { _dir: dir, root }))
+    Ok(Some(ctx))
 }
 
 /// Write each artifact's resolved body to `<root>/<file_path>`, recreating the
@@ -335,6 +535,40 @@ async fn write_context_artifacts(
         .await
 }
 
+/// Write each verified query's raw SQL to `<root>/<file_path>`. Unlike the YAML
+/// artifacts these carry no `definition` — the body IS the `.sql` text (with its
+/// `/* oxy: ... */` header) — so they bypass `resolve_body` and write verbatim.
+/// Same path-safety + dedup guard as `write_context_artifacts`.
+async fn write_verified_queries(
+    rows: &[compiled_reader::CompiledVerifiedQuery],
+    root: &std::path::Path,
+) -> Result<(), std::io::Error> {
+    let mut seen = std::collections::HashSet::new();
+    for row in rows {
+        let rel = std::path::Path::new(&row.file_path);
+        if rel.is_absolute()
+            || rel
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            tracing::warn!(file_path = %row.file_path,
+                "context materialise: skipping unsafe verified-query path");
+            continue;
+        }
+        let target = root.join(rel);
+        if !seen.insert(target.clone()) {
+            tracing::warn!(file_path = %row.file_path,
+                "context materialise: two verified queries materialise to the same path — dropping duplicate");
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(&target, &row.content).await?;
+    }
+    Ok(())
+}
+
 /// Tempdir + path to a materialised `.monitor.yml`. Drop the wrapper
 /// to clean up.
 pub struct MaterialisedMonitorConfig {
@@ -381,4 +615,56 @@ pub async fn materialise_monitor_config(
         _dir: dir,
         config_path,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::api::compiled_reader::CompiledVerifiedQuery;
+
+    fn vq(file_path: &str, content: &str) -> CompiledVerifiedQuery {
+        CompiledVerifiedQuery {
+            file_path: file_path.to_string(),
+            content_sha256: String::new(),
+            content: content.to_string(),
+        }
+    }
+
+    // The verified-query writer must reproduce the file at its workspace-relative
+    // path (so the agent's `context:` globs match) and must NEVER let a
+    // compiler-produced path escape the request tempdir.
+    #[tokio::test]
+    async fn write_verified_queries_writes_relative_and_blocks_escape() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        let rows = vec![
+            vq("example_sql/answer.sql", "SELECT 1 /* oxy: */"),
+            vq("../escape.sql", "evil"),
+            vq("/abs/escape.sql", "evil"),
+        ];
+
+        write_verified_queries(&rows, &root).await.unwrap();
+
+        // Safe path: written verbatim, nested parent created.
+        let body = tokio::fs::read_to_string(root.join("example_sql/answer.sql"))
+            .await
+            .unwrap();
+        assert_eq!(body, "SELECT 1 /* oxy: */");
+        // `..` traversal skipped — nothing lands beside the tempdir.
+        assert!(!root.parent().unwrap().join("escape.sql").exists());
+        // Absolute path skipped — not silently honoured.
+        assert!(!std::path::Path::new("/abs/escape.sql").exists());
+    }
+
+    // Two rows mapping to the same target dedupe (first wins) instead of racing
+    // or erroring — mirrors `write_context_artifacts`.
+    #[tokio::test]
+    async fn write_verified_queries_dedupes_same_path() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        let rows = vec![vq("q.sql", "first"), vq("q.sql", "second")];
+        write_verified_queries(&rows, &root).await.unwrap();
+        let body = tokio::fs::read_to_string(root.join("q.sql")).await.unwrap();
+        assert_eq!(body, "first");
+    }
 }

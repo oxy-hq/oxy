@@ -28,6 +28,7 @@ oxy-observability = { workspace = true, features = [
     "airhouse",
 ] }
 oxy-shared = { workspace = true }
+oxy-workspace-fs = { workspace = true }
 oxy-airform = { workspace = true }
 agentic-analytics = { workspace = true }
 agentic-builder = { workspace = true }

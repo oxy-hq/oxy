@@ -141,13 +141,25 @@ fn compile_row_from_model(
 // GET /admin/compiles/{revision_id}
 // ---------------------------------------------------------------------------
 
+/// One entity successfully written into a revision — the "which compiled" unit.
+#[derive(Serialize, Debug)]
+pub struct CompiledEntity {
+    /// agent | view | topic | app | procedure | verified_query | pipeline.
+    pub kind: String,
+    pub name: String,
+    pub file_path: String,
+}
+
 #[derive(Serialize, Debug)]
 pub struct CompileDetail {
     #[serde(flatten)]
     pub row: CompileRow,
-    /// Full `error_summary` JSONB from the revisions row. Null on
-    /// success.
+    /// Full `error_summary` JSONB from the revisions row. Null on success — the
+    /// "which did NOT compile" side: per-file `{path, kind, message}` failures.
     pub error_summary: Option<serde_json::Value>,
+    /// Every entity successfully compiled into this revision (flat, by kind) —
+    /// the "which DID compile" side, complementing `error_summary`.
+    pub compiled_entities: Vec<CompiledEntity>,
 }
 
 pub(super) async fn get_compile(
@@ -178,11 +190,58 @@ pub(super) async fn get_compile(
     }
 
     let error_summary = row.error_summary.clone();
+    let compiled_entities = collect_compiled_entities(&db, revision_id).await?;
     let cr = compile_row_from_model(row, &current_for);
     Ok(Json(CompileDetail {
         row: cr,
         error_summary,
+        compiled_entities,
     }))
+}
+
+/// List every entity successfully compiled into `revision_id`, across all the
+/// per-kind `*_definitions` tables — the "which compiled" side of the detail
+/// view (`revisions.error_summary` carries the "which didn't").
+async fn collect_compiled_entities(
+    db: &sea_orm::DatabaseConnection,
+    revision_id: Uuid,
+) -> Result<Vec<CompiledEntity>, Response> {
+    let mut out = Vec::new();
+    macro_rules! collect {
+        ($module:path, $kind:literal) => {{
+            use $module as m;
+            let rows = m::Entity::find()
+                .filter(m::Column::RevisionId.eq(revision_id))
+                .all(db)
+                .await
+                .map_err(db_err)?;
+            out.extend(rows.into_iter().map(|r| CompiledEntity {
+                kind: $kind.to_string(),
+                name: r.name,
+                file_path: r.file_path,
+            }));
+        }};
+    }
+    collect!(entity::agent_definitions, "agent");
+    collect!(entity::semantic_views, "view");
+    collect!(entity::semantic_topics, "topic");
+    collect!(entity::app_definitions, "app");
+    collect!(entity::procedure_definitions, "procedure");
+    collect!(entity::airway_pipelines, "pipeline");
+
+    // verified_queries has no `name` column — label it by file path.
+    let vqs = entity::verified_queries::Entity::find()
+        .filter(entity::verified_queries::Column::RevisionId.eq(revision_id))
+        .all(db)
+        .await
+        .map_err(db_err)?;
+    out.extend(vqs.into_iter().map(|r| CompiledEntity {
+        kind: "verified_query".to_string(),
+        name: r.file_path.clone(),
+        file_path: r.file_path,
+    }));
+
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------

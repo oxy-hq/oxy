@@ -50,6 +50,24 @@ export class AppService {
     return response.data;
   }
 
+  /** Last cached app data (no execution), served from the compile boundary +
+   *  S3 mirror so a stateless serve replica can show a dashboard's last data
+   *  when the ide is down. `null` when nothing is cached (the `404`). */
+  static async getAppDataCached(
+    projectId: string,
+    branchName: string,
+    appPath64: string
+  ): Promise<AppData | null> {
+    try {
+      const response = await apiClient.get(`/${projectId}/apps/${appPath64}/data-cached`, {
+        params: { branch: branchName }
+      });
+      return response.data;
+    } catch {
+      return null;
+    }
+  }
+
   static async runApp(
     projectId: string,
     branchName: string,

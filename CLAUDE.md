@@ -255,6 +255,32 @@ without a compile boundary path should be challenged through this skill.
 The skill carries the five-step contract; the operator runbook is at
 `internal-docs/compile-boundary.md`.
 
+### `oxy-route-classification` (`.claude/skills/oxy-route-classification/SKILL.md`)
+
+Every HTTP route that touches node-local disk (the workspace working copy,
+`.git`, or the local state dir) MUST be classified `IdeOnly` in
+`crates/app/src/server/role_manifest.rs`, or it defaults to `FleetOk` and
+404s/421s on a stateless serve replica with no working copy. This is how
+`GET /apps/source/<file>` shipped broken. The fully-FS builders (git / files /
+data-repo) are guarded automatically by the
+`fully_fs_builder_routes_classify_ide_only` test; MIXED builders
+(`build_app_routes`) need a per-route entry + test.
+
+**The HA other half:** a pure Postgres/S3 READ buried under a broad `IdeOnly`
+`{*rest}` wildcard (e.g. analytics/workflow/airway run-history reads under
+`/analytics/{*rest}`) must be carved back out to `FLEET_OK_READ_PATTERNS`, or
+*viewing* data (a past conversation) wrongly depends on the singleton Factory.
+**Full stateful-vs-HA functionality matrix + decision flow:**
+`internal-docs/multi-instance-fleet.md` — read it to know
+what requires the stateful instance and what is served HA.
+
+**Invoke when** adding/moving/renaming a route under
+`crates/app/src/server/router/`, or writing a handler that calls
+`workspace_path()` / `ConfigManager::resolve_*` / `resolve_state_dir()` / a
+`GitClient`. PRs that add an FS-reading route without an `IdeOnly` entry — or
+that pin a persisted-data read to the ide — should be challenged through this
+skill.
+
 ## Design Docs & Specs
 
 - Save design documents and specs to `internal-docs/`, not `docs/superpowers/specs/`.

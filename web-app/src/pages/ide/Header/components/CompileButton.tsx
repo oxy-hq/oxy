@@ -33,9 +33,12 @@ import type { CompileStatus, RevisionSummary } from "@/services/api/compile";
  * collapse into a single "Compile working tree" affordance with no
  * freshness concept.
  *
- * Hidden entirely when the active branch isn't the workspace's default —
- * compile ships only from the default branch, so the button would do nothing
- * useful on a draft branch (which reads from FS). See oxygen-internal#2528.
+ * Hidden entirely when:
+ *   - the deployment is single-instance / `all` (`status.boundary_active` is
+ *     false) — it serves from the working copy, so compile is a no-op there; or
+ *   - the active branch isn't the workspace's default — compile ships only from
+ *     the default branch, so the button would do nothing useful on a draft
+ *     branch (which reads from FS). See oxygen-internal#2528.
  */
 export function CompileButton() {
   const { project, branchName } = useCurrentProjectBranch();
@@ -43,6 +46,15 @@ export function CompileButton() {
 
   const { data: status, isLoading } = useCompileStatus(workspaceId, branchName);
   const enqueue = useEnqueueCompile(workspaceId, branchName);
+
+  // Single-instance / `all` deployments (e.g. `oxy start`, `oxy serve --local`)
+  // serve reads from the working copy directly, so a manual compile changes
+  // nothing they serve — a no-op. Hide the button entirely; it only earns its
+  // place on a multi-instance (split-fleet) deployment where compile promotes
+  // the revision the serve fleet reads. See internal-docs/multi-instance-fleet.md.
+  if (status && !status.boundary_active) {
+    return null;
+  }
 
   // Compile ships only from the default branch — on any other branch the button
   // can't do anything useful, so don't render it at all. (`can_compile` is false

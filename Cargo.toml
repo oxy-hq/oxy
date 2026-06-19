@@ -39,11 +39,13 @@ members = [
   "crates/airform",
   "crates/airhouse",
   "crates/platform",
+  "crates/workspace-fs",
   "web-app",
 ]
 
 exclude = [
   "docs",
+  "internal-docs",
   "tests",
   "scripts",
   "assets",
@@ -96,6 +98,7 @@ oxy-shared = { path = "crates/shared" }
 oxy-test-utils = { path = "crates/test-utils" }
 oxy-thread = { path = "crates/thread" }
 oxy-unifi = { path = "crates/integration/unifi" }
+oxy-workspace-fs = { path = "crates/workspace-fs" }
 
 # External dependencies
 async-openai = {version = "0.35.0"}

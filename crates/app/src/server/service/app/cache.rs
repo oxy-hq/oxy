@@ -5,16 +5,38 @@ use oxy::execute::types::{DataContainer, OutputContainer};
 use oxy_shared::errors::OxyError;
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
 use xxhash_rust::xxh3::xxh3_64;
 
 pub struct AppCache {
     config_manager: ConfigManager,
+    /// Owning workspace — scopes the S3 mirror key so a stateless serve replica
+    /// can read back a cache written by the ide.
+    workspace_id: Uuid,
 }
 
 impl AppCache {
-    pub fn new(config_manager: ConfigManager) -> Self {
-        Self { config_manager }
+    pub fn new(config_manager: ConfigManager, workspace_id: Uuid) -> Self {
+        Self {
+            config_manager,
+            workspace_id,
+        }
+    }
+
+    /// Best-effort mirror of a just-written data cache to S3 so another fleet
+    /// node (a stateless serve replica) can serve it when the ide is down.
+    /// No-op when no blob bucket is configured (dev / single node).
+    async fn mirror_cache(&self, data: &DataContainer, rel_path: &Path) {
+        let Ok(yaml) = serde_yaml::to_string(data) else {
+            return;
+        };
+        let key = crate::server::runtime_artifact::app_data_key(
+            self.workspace_id,
+            &rel_path.to_string_lossy(),
+        );
+        crate::server::runtime_artifact::mirror(&key, yaml.into_bytes(), "application/x-yaml")
+            .await;
     }
 
     pub async fn clean_up_data(&self, app_path: &PathBuf, tasks: &[Task]) -> AppResult<()> {
@@ -41,10 +63,17 @@ impl AppCache {
             })
             .ok()?;
 
-        let full_cache_path = state_dir.join(data_file_path);
+        let full_cache_path = state_dir.join(&data_file_path);
 
         if !full_cache_path.exists() {
-            return None;
+            // Cross-node read: a stateless serve replica didn't write this cache,
+            // so fall back to the S3 mirror (None when no bucket is configured).
+            let key = crate::server::runtime_artifact::app_data_key(
+                self.workspace_id,
+                &data_file_path.to_string_lossy(),
+            );
+            let bytes = crate::server::runtime_artifact::fetch(&key).await?;
+            return serde_yaml::from_slice(&bytes).ok();
         }
 
         self.load_from_file(&full_cache_path)
@@ -73,6 +102,7 @@ impl AppCache {
             self.ensure_directory(&parent.to_path_buf())?;
         }
         self.save_to_file(&data, &full_cache_path)?;
+        self.mirror_cache(&data, &data_file_path).await;
         Ok(data)
     }
 
@@ -110,6 +140,7 @@ impl AppCache {
         let full_cache_path = state_dir.join(&data_file_path);
 
         self.save_to_file(&data, &full_cache_path)?;
+        self.mirror_cache(&data, &data_file_path).await;
 
         Ok(data)
     }

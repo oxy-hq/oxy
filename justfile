@@ -258,23 +258,43 @@ airhouse-precompile:
       --workspace-id 70787bb2-e11b-5488-b2c3-02e60d5fc7d3 --enterprise --promote --skip-migrations
     echo "✓ demo workspace compiled + promoted. Next: just airhouse-fleet"
 
-# Build once, then run the split fleet (ide :3000 + serve :3002) backgrounded.
-# OXY_INPROC_GLOBAL_WORKER on the ide node drains the compile queue; the serve
-# node serves the latest compiled revision regardless of branch (no per-node
-# default-branch config needed). Ctrl-C stops both. Logs: tail -f /tmp/oxy-*.log.
+# Build once, then run the split fleet (ide :3000 + serve :3002). The ide starts
+# first and finishes migrating before serve starts (avoids a concurrent-migration
+# race). OXY_INPROC_GLOBAL_WORKER on the ide node drains the compile queue; the
+# serve node serves the latest compiled revision regardless of branch (no per-node
+# default-branch config needed). Both nodes' logs stream here, prefixed
+# [ide]/[serve] (also saved raw to /tmp/oxy-*.log). Ctrl-C stops both.
 airhouse-fleet:
     #!/usr/bin/env bash
     set -euo pipefail
     set -a; source .env.airhouse; set +a
     echo "→ build"; cargo build -p oxy-app
     bin=./target/debug/oxy
-    echo "→ ide :3000 + serve :3002"
-    OXY_ROLE=ide OXY_INPROC_GLOBAL_WORKER=1 "$bin" serve --enterprise >/tmp/oxy-ide.log 2>&1 &
+
+    # Each node streams to THIS terminal (prefixed [ide]/[serve]) AND to a raw
+    # /tmp log — so a startup crash (e.g. a failed migration) is visible here, not
+    # hidden in a file you have to tail. The ide starts FIRST and we block until
+    # it has migrated + bound :3000 before starting serve: launching both at once
+    # ran DB migrations concurrently, and the CREATE TYPE enum migrations collided
+    # (duplicate key on pg_type), crashing whichever node lost the race.
+    echo "→ ide :3000 (owns migrations)"
+    OXY_ROLE=ide OXY_INPROC_GLOBAL_WORKER=1 "$bin" serve --enterprise \
+        > >(tee /tmp/oxy-ide.log | awk '{ print "[ide]   " $0; fflush() }') 2>&1 &
     ide=$!
-    OXY_ROLE=serve OXY_IDE_UPSTREAM=http://localhost:3000 "$bin" serve --enterprise --no-workers --port 3002 --internal-port 0 >/tmp/oxy-serve.log 2>&1 &
+    trap 'echo; echo stopping; kill $ide ${serve:-} 2>/dev/null || true' INT TERM EXIT
+
+    echo "→ waiting for ide :3000 (migrations + bind)…"
+    until curl -sf -m2 http://localhost:3000/health >/dev/null 2>&1; do
+        kill -0 "$ide" 2>/dev/null || { echo "[fleet] ide exited during startup — see [ide] log above"; exit 1; }
+        sleep 1
+    done
+
+    echo "→ serve :3002 (migrations already applied by ide)"
+    OXY_ROLE=serve OXY_IDE_UPSTREAM=http://localhost:3000 "$bin" serve --enterprise --no-workers --port 3002 --internal-port 0 \
+        > >(tee /tmp/oxy-serve.log | awk '{ print "[serve] " $0; fflush() }') 2>&1 &
     serve=$!
-    trap 'echo; echo stopping; kill $ide $serve 2>/dev/null || true' INT TERM EXIT
-    echo "ide pid=$ide  serve pid=$serve  |  tail -f /tmp/oxy-ide.log /tmp/oxy-serve.log  |  just routing-check 3002"
+
+    echo "fleet up | logs streaming here (+ /tmp/oxy-{ide,serve}.log) | just routing-check 3002"
     wait
 
 # Tear it down (drops volumes; pass --keep-data to retain).

@@ -1,5 +1,6 @@
 //! HTTP server and API endpoints
 
+pub mod admission;
 pub mod api;
 pub mod builder_test_runner;
 pub mod compile_config_gate;
@@ -16,10 +17,12 @@ pub mod role_middleware;
 pub mod router;
 pub mod runtime_artifact;
 pub mod serve_mode;
+pub mod serve_safety;
 pub mod service;
 pub mod worker_health;
 pub mod worker_metrics;
 pub mod worker_runtime;
+pub mod workspace_fs;
 pub mod worktree_registry;
 
 pub use router::{AppState, WorkspaceExtractor, api_router, openapi_router};

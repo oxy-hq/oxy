@@ -307,14 +307,20 @@ export class AgenticWorkflowService {
   }
 
   static async listFiles(projectId: string): Promise<WorkflowFile[]> {
-    const { data } = await apiClient.get(`${AgenticWorkflowService.base(projectId)}/files`);
+    // The procedure LIST is served from the compile boundary at `/procedures`
+    // (FleetOk), so the customer-nav sidebar renders on a stateless serve
+    // replica with no working copy. The single-file fetch (`getFile`) stays on
+    // `/agentic-workflows/files/:path_b64` (IdeOnly) — it reads the working copy.
+    const { data } = await apiClient.get(`/${projectId}/procedures`);
     return data;
   }
 
   static async getFile(projectId: string, pathB64: string): Promise<WorkflowFileContent> {
-    const { data } = await apiClient.get(
-      `${AgenticWorkflowService.base(projectId)}/files/${pathB64}`
-    );
+    // Served from the compile boundary at `/procedures/{path_b64}` (FleetOk) so a
+    // procedure's diagram renders on a stateless serve replica; the legacy
+    // `/agentic-workflows/files/{path_b64}` route is IdeOnly (proxied → 502 when
+    // the ide is down).
+    const { data } = await apiClient.get(`/${projectId}/procedures/${pathB64}`);
     return data;
   }
 

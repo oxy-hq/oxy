@@ -49,6 +49,8 @@ pub mod modeling;
 pub mod onboarding;
 pub mod org_logo;
 pub mod organizations;
+pub mod pipeline;
+pub mod procedure;
 pub mod projects;
 pub mod result_files;
 pub mod run;

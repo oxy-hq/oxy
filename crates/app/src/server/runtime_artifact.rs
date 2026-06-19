@@ -36,6 +36,13 @@ pub fn chart_key(workspace_id: Uuid, file_name: &str) -> String {
     format!("runtime/charts/{workspace_id}/{file_name}")
 }
 
+/// S3 key for a Data App's cached data (the `DataContainer` YAML). `rel_path` is
+/// the cache's workspace-relative path (it already encodes the app + tasks
+/// hash), so two apps never collide.
+pub fn app_data_key(workspace_id: Uuid, rel_path: &str) -> String {
+    format!("runtime/app_data/{workspace_id}/{rel_path}")
+}
+
 /// Best-effort mirror of a just-written artifact to S3. No-op when no bucket
 /// is configured (dev / single-node). Never fails the caller — a mirror
 /// failure only costs the cross-node read fallback, which logs and 404s the
@@ -86,6 +93,10 @@ mod tests {
         assert_eq!(
             chart_key(ws, "sales-0-xyz.png"),
             "runtime/charts/00000000-0000-0000-0000-000000000000/sales-0-xyz.png"
+        );
+        assert_eq!(
+            app_data_key(ws, "data/sales/abc.sales.app.data.yml"),
+            "runtime/app_data/00000000-0000-0000-0000-000000000000/data/sales/abc.sales.app.data.yml"
         );
     }
 }

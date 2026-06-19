@@ -64,10 +64,11 @@ impl AppService {
         branch_hint: Option<String>,
     ) -> Self {
         let config_manager = workspace_manager.config_manager.clone();
+        let workspace_id = workspace_manager.workspace_id;
         Self {
             workspace_manager,
             project_ctx,
-            cache: AppCache::new(config_manager),
+            cache: AppCache::new(config_manager, workspace_id),
             branch_hint,
         }
     }

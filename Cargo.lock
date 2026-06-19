@@ -8673,6 +8673,7 @@ dependencies = [
  "oxy-shared",
  "oxy-test-utils",
  "oxy-thread",
+ "oxy-workspace-fs",
  "parking_lot 0.12.5",
  "parquet",
  "rand 0.10.1",
@@ -9121,6 +9122,14 @@ dependencies = [
 [[package]]
 name = "oxy-web"
 version = "0.5.77"
+
+[[package]]
+name = "oxy-workspace-fs"
+version = "0.5.75"
+dependencies = [
+ "async-trait",
+ "oxy-shared",
+]
 
 [[package]]
 name = "p256"

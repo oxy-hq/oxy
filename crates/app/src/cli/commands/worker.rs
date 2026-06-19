@@ -88,12 +88,12 @@ pub struct WorkerArgs {
 pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
     require_database_url()?;
 
-    if !args.skip_migrations {
+    if args.skip_migrations || serve::skip_migrations_requested() {
+        tracing::info!("worker: skipping migrations (--skip-migrations or OXY_SKIP_MIGRATIONS)");
+    } else {
         tracing::info!("worker: running database migrations");
         serve::run_database_migrations(args.enterprise).await?;
         tracing::info!("worker: migrations complete");
-    } else {
-        tracing::info!("worker: --skip-migrations set, leaving migrations to another process");
     }
 
     let max_inflight = read_max_inflight();

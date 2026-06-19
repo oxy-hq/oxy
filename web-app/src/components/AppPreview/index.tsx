@@ -10,9 +10,10 @@ import {
 } from "@/components/AppPreview/Displays/utils";
 import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import useAppData, { useAppDisplays } from "@/hooks/api/apps/useApp";
+import useAppData, { useAppDataCached, useAppDisplays } from "@/hooks/api/apps/useApp";
 import useRunAppMutation from "@/hooks/api/apps/useRunAppMutation";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { isIdeUnavailableError } from "@/libs/utils/ideHealth";
 import type { DataContainer, TableData } from "@/types/app";
 import AppDataState from "./AppDataState";
 
@@ -81,6 +82,10 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
 
   // Server-side data fetch — disabled for all-client apps.
   const appDataQueryResult = useAppData(appPath64, !allClientMode);
+  // When the live fetch 502s because the ide is down, fall back to the last
+  // cached data (compile boundary + S3 mirror) so the dashboard still renders.
+  const ideDown = appDataQueryResult.isError && isIdeUnavailableError(appDataQueryResult.error);
+  const cachedQuery = useAppDataCached(appPath64, ideDown);
 
   useEffect(() => {
     if (isError) toast.error("Error refreshing app. Check configuration and try again.");
@@ -213,14 +218,17 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
     }
   };
 
-  const displayData = paramData ?? appDataQueryResult.data?.data;
+  const displayData = paramData ?? appDataQueryResult.data?.data ?? cachedQuery.data?.data;
 
   // True on first load (including newly-created apps) before any data has
   // arrived and before any error surfaces. Prevents displays from briefly
   // rendering "No data found" against undefined data while the initial
   // server fetch or client-mode DuckDB tasks are still in flight.
   const isInitialLoading =
-    displayData === undefined && !appDataQueryResult.isError && !appDataQueryResult.data?.error;
+    (displayData === undefined && !appDataQueryResult.isError && !appDataQueryResult.data?.error) ||
+    // While falling back to cached data, hold the spinner so the displays don't
+    // flash "No data found" before the cache arrives.
+    (ideDown && cachedQuery.isFetching && displayData === undefined);
 
   return (
     <div className='relative h-full w-full overflow-hidden px-2' data-testid='app-preview'>
@@ -253,7 +261,11 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
           </div>
         )}
         <div className='mx-auto w-full max-w-200 p-2'>
-          <AppDataState appDataQueryResult={appDataQueryResult} />
+          <AppDataState
+            appDataQueryResult={appDataQueryResult}
+            cachedAvailable={!!cachedQuery.data?.data}
+            cachedPending={cachedQuery.isFetching}
+          />
           {isInitialLoading ? (
             <div
               className='flex min-h-100 flex-col items-center justify-center gap-3'

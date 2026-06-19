@@ -6,10 +6,11 @@ import { cn } from "@/libs/shadcn/utils";
 import { dismissIdeUnavailableBanner } from "@/libs/utils/ideHealth";
 
 /**
- * App-wide notice shown when the developer environment (file editing, Git, the
- * IDE) can't be reached. Deliberately non-blocking and calm: the data plane —
- * agents, apps, dashboards — keeps working, so this is a warning, not an error.
- * Mounted once in `OrgGuard`; driven by the Axios interceptor via `ideHealth`.
+ * App-wide notice shown when Oxygen Factory (the developer environment — file
+ * editing, Git, the IDE) can't be reached. Deliberately non-blocking and calm:
+ * the data plane — agents, apps, dashboards — keeps working, so this is a
+ * warning, not an error. Mounted once in `OrgGuard`; driven by the Axios
+ * interceptor via `ideHealth`.
  */
 export default function IdeUnavailableBanner() {
   const { unavailable, dismissed, lastPath, since } = useIdeHealth();
@@ -50,11 +51,11 @@ export default function IdeUnavailableBanner() {
 
         <div className='min-w-0 flex-1'>
           <p className='font-medium text-foreground text-sm'>
-            Developer tools are temporarily unavailable
+            Oxygen Factory is temporarily unavailable
           </p>
           <p className='mt-0.5 text-muted-foreground text-xs'>
-            File editing, Git, and the IDE can&rsquo;t load right now. The rest of your workspace is
-            working normally.
+            File editing, Git, and live app runs are paused right now. Chat and your saved data keep
+            working.
           </p>
 
           {lastPath && (

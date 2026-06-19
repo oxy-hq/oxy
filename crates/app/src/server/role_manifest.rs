@@ -14,9 +14,13 @@
 //!   (including the worker's `/healthz`).
 //! - [`RouteRole::WorkerOnly`] — reserved.
 //!
-//! The classification lives here as a single static table. Reviewers add new
-//! `IdeOnly` patterns when they add routes that touch FS — see
-//! `.claude/skills/oxy-compile-boundary/SKILL.md`.
+//! The classification lives here as a single static table. A route that touches
+//! the workspace FS / `.git` / local state dir MUST get an `IDE_ONLY_PATTERNS`
+//! entry below, or it 404s/421s on a serve replica — see
+//! `.claude/skills/oxy-route-classification/SKILL.md`. For the fully-FS builders
+//! (git / files / data-repo) the `fully_fs_builder_routes_classify_ide_only`
+//! test enforces this from the router source automatically; MIXED builders
+//! (e.g. `build_app_routes`) still need a per-route test + reviewer attention.
 //!
 //! Routes not in [`IDE_ONLY_PATTERNS`] are [`RouteRole::FleetOk`] by default.
 //! That's deliberate — the compile boundary already removed FS reads from the
@@ -34,6 +38,8 @@
 //! sidesteps the nesting issue entirely.
 
 use std::sync::OnceLock;
+
+use oxy_shared::errors::OxyError;
 
 /// Process-role for this server.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,6 +185,30 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
     ManifestEntry {
         method: "POST",
         path_pattern: "/api/{workspace_id}/apps/{pathb64}/result",
+        role: RouteRole::IdeOnly,
+    },
+    // App WRITE surface — these MUTATE the workspace working copy, so they must
+    // run on the ide singleton: a serve replica has no working copy, so the
+    // write is silently lost (never committed/promoted to git) or 500s.
+    //   • POST /apps/{pathb64}/publish    → publish_app  ┐ set_publish_state →
+    //   • POST /apps/{pathb64}/unpublish  → unpublish_app ┘ fs::write the .app.yml
+    //   • POST /apps/save-from-run/{run_id} → save_app_builder_run → fs::write
+    //     a generated app under `workspace_path()/generated`
+    // NOT runtime (DuckDB) routes — they're editing-bound, so they deliberately
+    // stay OUT of `is_workspace_runtime_route` (ide-down = workspace-editing).
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/apps/{pathb64}/publish",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/apps/{pathb64}/unpublish",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/apps/save-from-run/{run_id}",
         role: RouteRole::IdeOnly,
     },
     // ── Compile trigger reads the working copy on the singleton ─────────────
@@ -478,6 +508,38 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/exported-charts/{file_name}",
         role: RouteRole::IdeOnly,
     },
+    // ── Customer-Apps EXECUTION surface (public `/api/projects/*`) ───────────
+    // Bundle-SDK endpoints that build a WorkspaceManager from the working copy
+    // (`build_project_context` → `effective_workspace_path`) and RUN inline:
+    // query/semantic-query execute SQL over the local connector; agent asks +
+    // procedure runs discover the agent/procedure from disk (`list_workflows`
+    // + `fs::read_to_string`) and execute in-process. On a stateless serve
+    // replica with no working copy these 500 / NOT_FOUND, so pin them to the
+    // ide (the fleet self-proxies via OXY_IDE_UPSTREAM) — same posture as the
+    // workspace `/analytics` surface. The poll/cancel/stream siblings read run
+    // state from Postgres and stay FleetOk. These live in `router/public.rs`,
+    // OUTSIDE build_workspace_routes, so the workspace-mount drift test cannot
+    // see them — `customer_app_execution_routes_are_ide_only` pins them instead.
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/projects/{project_id}/query",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/projects/{project_id}/semantic-query",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/projects/{project_id}/agents/{agent_id}/asks",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/projects/{project_id}/procedures/{procedure_id}/runs",
+        role: RouteRole::IdeOnly,
+    },
 ];
 
 /// Set once at process startup. Subsequent calls to
@@ -517,9 +579,108 @@ pub fn current_process_role() -> Role {
     *PROCESS_ROLE.get().unwrap_or(&Role::All)
 }
 
+/// Whether this process owns a workspace filesystem — i.e. may write the working
+/// copy / `.git` / local state dir. True for every role EXCEPT the stateless
+/// `serve` replica, which owns no filesystem and serves reads from the compile
+/// boundary only.
+pub fn process_is_fs_writable() -> bool {
+    current_process_role() != Role::Serve
+}
+
+/// `super_read_only` guard for the workspace filesystem — the Postgres
+/// `default_transaction_read_only` / LiteFS-replica analog. Call it as the first
+/// line of any handler that MUTATES the working copy / `.git` / local state dir.
+///
+/// In correct operation it never fires: such routes are classified `IdeOnly`, so
+/// `role_middleware` already refused/proxied them and the handler never ran on a
+/// `serve` replica. The guard is **classification-independent** defense in depth:
+/// if a write route is ever MISclassified `FleetOk` and reaches a stateless
+/// replica (the gap the HTTP-edge drift tests can't fully close — see the #2543
+/// FS-buried-in-a-domain class), the write fails loudly HERE instead of silently
+/// losing data or mutating an ephemeral filesystem. The structural end-state
+/// (the serve binary links no FS code at all) makes this a compile error; until
+/// then this is the runtime safety net. See
+/// `internal-docs/multi-instance-fleet.md`.
+pub fn ensure_fs_writable(operation: &str) -> Result<(), OxyError> {
+    if process_is_fs_writable() {
+        return Ok(());
+    }
+    Err(OxyError::RuntimeError(format!(
+        "refused workspace filesystem write ({operation}) on a stateless serve \
+         replica — writes must run on the filesystem-owning environment (the ide). \
+         This indicates a route-classification bug: the route should be IdeOnly."
+    )))
+}
+
+/// Read-only endpoints that sit UNDER an otherwise-`IdeOnly` wildcard but are
+/// pure Postgres reads — so they are FleetOk and win over the wildcard. Checked
+/// before [`IDE_ONLY_PATTERNS`] in [`classify`].
+///
+/// The motivating case (HA): the agentic run/exec surface `/analytics/{*rest}`
+/// is `IdeOnly` because a LIVE run executes in-process on the ide and touches
+/// the FS. But VIEWING a past conversation only READS run history from Postgres
+/// (`list_runs_by_thread` / `get_run_by_thread` in `agentic-http`, `state.db`
+/// only — no workspace, no FS). Pinning those to the ide made loading a thread
+/// depend on the singleton — a thread is *data*, not a live run, so it must
+/// serve from any replica. These two reads are carved back out to FleetOk.
+///
+/// STRICT RULE: only add an entry here after verifying the handler touches NO
+/// workspace FS / `.git` / local state and NO in-process live stream — a pure
+/// Postgres (or S3) read. Anything that executes, edits, or streams a live run
+/// stays `IdeOnly`.
+const FLEET_OK_READ_PATTERNS: &[ManifestEntry] = &[
+    // Analytics conversation history — list_runs_by_thread / get_run_by_thread
+    // (agentic-http, `state.db` only).
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/analytics/threads/{thread_id}/runs",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/analytics/threads/{thread_id}/run",
+        role: RouteRole::FleetOk,
+    },
+    // Workflow run history — list_runs_for_workflow (GET /runs) /
+    // get_workflow_run (GET /runs/{id}) / latest_run_for_thread
+    // (GET /threads/{id}/run). All `state.db` snapshots; the live `/runs/{id}/
+    // events` SSE (one more segment) and POST create/cancel stay IdeOnly.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-workflows/runs",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-workflows/runs/{run_id}",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-workflows/threads/{thread_id}/run",
+        role: RouteRole::FleetOk,
+    },
+    // Airway pipeline run history — list_runs_for_pipeline (GET /runs, `state.db`).
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-airway/runs",
+        role: RouteRole::FleetOk,
+    },
+];
+
 /// Classify `(method, request_uri_path)`. Returns [`RouteRole::FleetOk`] when
 /// no entry matches.
 pub fn classify(method: &str, request_path: &str) -> RouteRole {
+    // FleetOk read carve-outs win over the broad IdeOnly wildcards (e.g. the
+    // analytics run-history reads under the otherwise-IdeOnly `/analytics`
+    // execution surface — so viewing a conversation never needs the ide).
+    for entry in FLEET_OK_READ_PATTERNS {
+        if (entry.method == "*" || entry.method == method)
+            && pattern_matches(entry.path_pattern, request_path)
+        {
+            return entry.role;
+        }
+    }
     for entry in IDE_ONLY_PATTERNS {
         if (entry.method == "*" || entry.method == method)
             && pattern_matches(entry.path_pattern, request_path)
@@ -545,7 +706,66 @@ pub fn classify(method: &str, request_path: &str) -> RouteRole {
 pub fn degrades_when_ide_unreachable(method: &str, request_path: &str) -> bool {
     method == "GET"
         && (pattern_matches("/api/{workspace_id}/details", request_path)
-            || pattern_matches("/api/{workspace_id}/status", request_path))
+            || pattern_matches("/api/{workspace_id}/status", request_path)
+            // The modeling LIST (dbt projects) is a read with a sensible empty
+            // degrade: a serve replica has no `modeling/` dir, so the local
+            // handler returns `[]` rather than 502 a homepage readiness check.
+            // The modeling SUB-routes (`/modeling/{*rest}`) stay non-degradable —
+            // they genuinely need the working copy.
+            || pattern_matches("/api/{workspace_id}/modeling", request_path)
+            // Legacy visualize-task chart files: the ide writes them to local
+            // disk AND mirrors each to S3 when it serves it (see `api/chart::
+            // get_chart`). With the ide down, the replica's local handler misses
+            // on disk and serves the S3 mirror — so a previously-viewed chart
+            // keeps loading instead of 502ing. A never-mirrored chart 404s, which
+            // the FE renders as the calm "chart unavailable" panel.
+            || pattern_matches("/api/{workspace_id}/charts/{file_path}", request_path))
+}
+
+/// `IdeOnly` routes whose ide-down failure is a WORKSPACE-RUNTIME outage — they
+/// need the ide's local DuckDB execution environment (the connector's
+/// `file_search_path` over working-copy data files), a generated run artifact
+/// (chart files on local disk), or a live in-process run stream. This is the
+/// subset still coupled to DuckDB / local execution, deliberately named so the
+/// fleet can isolate it.
+///
+/// It is distinct from the *editing* IdeOnly routes (file CRUD, git, compile,
+/// modeling) that need the git working copy for AUTHORING. The split lets a
+/// serve replica tell the two apart when the ide is unreachable and signal the
+/// FE precisely: a runtime outage pauses data / charts / runs while browsing the
+/// last compiled revision stays fully available; an authoring outage pauses
+/// editing. See `ide_proxy::forward_to_ide`.
+///
+/// Like [`degrades_when_ide_unreachable`], this is a hand-maintained subset of
+/// [`IDE_ONLY_PATTERNS`]: a new DuckDB-bound IdeOnly route must be added here
+/// too. The `runtime_routes_are_ide_only` test guards that every pattern here is
+/// genuinely IdeOnly (catching typos / stale paths), but cannot know that a
+/// future runtime route was forgotten — keep this list in sync by hand.
+pub fn is_workspace_runtime_route(request_path: &str) -> bool {
+    const RUNTIME_PATTERNS: &[&str] = &[
+        // Data-app EXECUTION — AppService::run() over the local DuckDB connector
+        // + file_search_path (auto-run on load, explicit run, cached result).
+        "/api/{workspace_id}/apps/{pathb64}",
+        "/api/{workspace_id}/apps/{pathb64}/run",
+        "/api/{workspace_id}/apps/{pathb64}/result",
+        // App DATA read — get_data() over the local state dir.
+        "/api/{workspace_id}/apps/file/{pathb64}",
+        // Agentic run/exec surface — subrun execute_sql runs in-process on the
+        // node driving the run, against the local DuckDB connector.
+        "/api/{workspace_id}/analytics/{*rest}",
+        "/api/{workspace_id}/agentic-workflows/{*rest}",
+        "/api/{workspace_id}/agentic-airway/{*rest}",
+        // Generated run artifacts — chart files on the executor's local disk.
+        "/api/{workspace_id}/charts/{file_path}",
+        "/api/{workspace_id}/exported-charts/{file_name}",
+        // Live in-process run streams — the producing run executes on the ide.
+        "/api/{workspace_id}/events",
+        "/api/{workspace_id}/events/{*rest}",
+        "/api/{workspace_id}/world-model/events",
+    ];
+    RUNTIME_PATTERNS
+        .iter()
+        .any(|p| pattern_matches(p, request_path))
 }
 
 pub fn dump_manifest() -> Vec<(&'static str, &'static str, &'static str)> {
@@ -690,6 +910,144 @@ mod tests {
         );
     }
 
+    /// The agentic run/exec + generated-chart surface must stay IdeOnly: a
+    /// subrun's `execute_sql` runs in-process against local DuckDB, and charts
+    /// are read off local disk. Flipping any of these to FleetOk would serve
+    /// them on a no-working-copy replica — and for `/analytics` specifically it
+    /// would bypass the runtime serve-safety gate (the conditional un-pin),
+    /// breaking every workspace with an FS-bound database. This test is the
+    /// regression guard for that whole surface.
+    #[test]
+    fn run_exec_and_chart_surface_stays_ide_only() {
+        let ws = "d9830be4-c6a4";
+        let cases: [(&str, String); 8] = [
+            ("POST", format!("/api/{ws}/analytics/runs")),
+            ("POST", format!("/api/{ws}/analytics/runs/abc/answer")),
+            ("POST", format!("/api/{ws}/agentic-workflows/run")),
+            ("POST", format!("/api/{ws}/agentic-airway/run")),
+            ("GET", format!("/api/{ws}/charts/chart-123.png")),
+            ("GET", format!("/api/{ws}/exported-charts/x.svg")),
+            ("GET", format!("/api/{ws}/apps/cGF0aA")), // data-app auto-run
+            ("POST", format!("/api/{ws}/apps/cGF0aA/run")), // data-app run
+        ];
+        for (method, path) in cases {
+            assert_eq!(
+                classify(method, &path),
+                RouteRole::IdeOnly,
+                "{method} {path} must stay IdeOnly"
+            );
+        }
+    }
+
+    /// Viewing a past conversation / run is a Postgres read and must NOT depend
+    /// on the ide singleton (HA). The run-history reads across all three agentic
+    /// surfaces are carved out to FleetOk even though they sit under the IdeOnly
+    /// `/analytics` `/agentic-workflows` `/agentic-airway` wildcards; the
+    /// EXECUTION + live-stream + file-read endpoints right next to them stay
+    /// IdeOnly.
+    #[test]
+    fn agentic_run_history_reads_are_fleet_ok() {
+        let ws = "d9830be4-c6a4";
+        // Pure Postgres reads → FleetOk (serve from any replica).
+        for path in [
+            format!("/api/{ws}/analytics/threads/t-1/runs"), // list_runs_by_thread
+            format!("/api/{ws}/analytics/threads/t-1/run"),  // get_run_by_thread
+            format!("/api/{ws}/agentic-workflows/runs"),     // list_runs_for_workflow
+            format!("/api/{ws}/agentic-workflows/runs/r-1"), // get_workflow_run
+            format!("/api/{ws}/agentic-workflows/threads/t-1/run"), // latest_run_for_thread
+            format!("/api/{ws}/agentic-airway/runs"),        // list_runs_for_pipeline
+        ] {
+            assert_eq!(
+                classify("GET", &path),
+                RouteRole::FleetOk,
+                "{path} is a Postgres run-history read — must serve from any replica"
+            );
+        }
+        // Execution / live-stream / FS-write endpoints under the same surfaces
+        // stay IdeOnly — the carve-out must not widen to them. Note the
+        // live-SSE `runs/{id}/events` has one MORE segment than the carved-out
+        // `runs/{id}`, so it is not shadowed.
+        for (method, path) in [
+            ("POST", format!("/api/{ws}/analytics/runs")), // start (executes)
+            ("GET", format!("/api/{ws}/analytics/runs/r-1/events")), // live SSE
+            ("POST", format!("/api/{ws}/analytics/runs/r-1/answer")), // resume
+            (
+                "POST",
+                format!("/api/{ws}/analytics/runs/r-1/revert-file-changes"),
+            ), // FS write
+            ("POST", format!("/api/{ws}/agentic-workflows/runs")), // start
+            (
+                "GET",
+                format!("/api/{ws}/agentic-workflows/runs/r-1/events"),
+            ), // live SSE
+            (
+                "POST",
+                format!("/api/{ws}/agentic-workflows/runs/r-1/cancel"),
+            ),
+            ("GET", format!("/api/{ws}/agentic-workflows/files")), // workspace FS read
+            ("POST", format!("/api/{ws}/agentic-airway/runs")),    // start
+            ("GET", format!("/api/{ws}/agentic-airway/runs/r-1/events")), // live SSE
+        ] {
+            assert_eq!(
+                classify(&method, &path),
+                RouteRole::IdeOnly,
+                "{method} {path} executes/streams/reads-FS — must stay IdeOnly"
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_routes_are_ide_only() {
+        // The DuckDB / local-execution subset isolated by
+        // `is_workspace_runtime_route`. Every one must (a) classify as runtime
+        // and (b) be genuinely IdeOnly — a runtime path that fell to FleetOk
+        // would never reach the proxy's unreachable arm, making the signal a lie.
+        let ws = "d9830be4-c6a4";
+        let runtime: [(&str, String); 9] = [
+            ("GET", format!("/api/{ws}/apps/cGF0aA")),
+            ("POST", format!("/api/{ws}/apps/cGF0aA/run")),
+            ("POST", format!("/api/{ws}/apps/cGF0aA/result")),
+            ("GET", format!("/api/{ws}/apps/file/cGF0aA")),
+            ("POST", format!("/api/{ws}/analytics/runs")),
+            ("POST", format!("/api/{ws}/agentic-airway/run")),
+            ("GET", format!("/api/{ws}/charts/chart-123.png")),
+            ("GET", format!("/api/{ws}/events")),
+            ("GET", format!("/api/{ws}/world-model/events")),
+        ];
+        for (method, path) in &runtime {
+            assert!(
+                is_workspace_runtime_route(path),
+                "{path} must be a workspace-runtime route"
+            );
+            assert_eq!(
+                classify(method, path),
+                RouteRole::IdeOnly,
+                "{method} {path} must stay IdeOnly"
+            );
+        }
+
+        // Editing-bound IdeOnly routes are NOT runtime — they need the git
+        // working copy, not the DuckDB env, so their ide-down message differs.
+        for path in [
+            format!("/api/{ws}/files/cGF0aA"),
+            format!("/api/{ws}/compile"),
+            format!("/api/{ws}/branches"),
+            format!("/api/{ws}/modeling"),
+            format!("/api/{ws}/details"),
+        ] {
+            assert!(
+                !is_workspace_runtime_route(&path),
+                "{path} is editing-bound, not runtime"
+            );
+        }
+
+        // FleetOk routes never reach the proxy, so they are not runtime either.
+        assert!(!is_workspace_runtime_route(&format!("/api/{ws}/threads")));
+        assert!(!is_workspace_runtime_route(&format!(
+            "/api/{ws}/apps/cGF0aA/displays"
+        )));
+    }
+
     #[test]
     fn unknown_routes_default_to_fleet_ok() {
         assert_eq!(
@@ -744,6 +1102,74 @@ mod tests {
         assert!(r.accepted_by(Role::All));
     }
 
+    // The next two tests set OXY_ROLE + init the process-role OnceLock; they
+    // rely on nextest's per-test process isolation (CLAUDE.md mandates nextest),
+    // the same pattern the role_middleware/types tests use.
+
+    #[test]
+    fn fs_write_guard_refuses_on_serve_role() {
+        // SAFETY: nextest isolates this test in its own single-threaded process.
+        unsafe { std::env::set_var("OXY_ROLE", "serve") };
+        init_process_role_from_env();
+        assert!(
+            !process_is_fs_writable(),
+            "serve replica owns no filesystem"
+        );
+        assert!(
+            ensure_fs_writable("test write").is_err(),
+            "serve replica must refuse a workspace FS write (super_read_only)"
+        );
+    }
+
+    #[test]
+    fn fs_write_guard_allows_fs_owning_roles() {
+        // SAFETY: nextest isolates this test in its own single-threaded process.
+        // `all` is the default; assert the guard is a no-op for an FS-owning role.
+        unsafe { std::env::set_var("OXY_ROLE", "ide") };
+        init_process_role_from_env();
+        assert!(process_is_fs_writable(), "ide owns the working copy");
+        assert!(
+            ensure_fs_writable("test write").is_ok(),
+            "an FS-owning role must permit workspace FS writes"
+        );
+    }
+
+    #[test]
+    fn ide_down_degradable_routes() {
+        let ws = "/api/d9830be4-c6a4";
+        // These IdeOnly reads serve a sensible degraded form on a serve replica
+        // when the ide is unreachable (rather than 502) — see role_middleware.
+        for path in [
+            format!("{ws}/details"),
+            format!("{ws}/status"),
+            format!("{ws}/modeling"),
+            // Charts degrade to the S3 mirror (get_chart mirrors on serve, reads
+            // S3 on a local miss) so a previously-viewed chart survives ide-down.
+            format!("{ws}/charts/sales-0-xyz.json"),
+        ] {
+            assert!(
+                degrades_when_ide_unreachable("GET", &path),
+                "{path} should degrade gracefully when the ide is unreachable"
+            );
+            // Still IdeOnly — degradation is the ide-DOWN path, not a reclassification.
+            assert_eq!(
+                classify("GET", &path),
+                RouteRole::IdeOnly,
+                "{path} stays IdeOnly"
+            );
+        }
+        // Modeling SUB-routes + file content genuinely need the working copy —
+        // they do NOT degrade (an honest 502 when the ide is down).
+        assert!(!degrades_when_ide_unreachable(
+            "GET",
+            &format!("{ws}/modeling/p/lineage")
+        ));
+        assert!(!degrades_when_ide_unreachable(
+            "GET",
+            &format!("{ws}/files/cGF0aA")
+        ));
+    }
+
     #[test]
     fn method_wildcard_matches_any_verb() {
         // `/branches` is a `method: "*"` IdeOnly entry — both verbs match.
@@ -791,6 +1217,229 @@ mod tests {
             classify("GET", &format!("{ws}/apps/b3h5bWFydA/displays")),
             RouteRole::FleetOk
         );
+        // get_app_data_cached serves a dashboard's last cached data (boundary
+        // def + disk/S3 cache, no execution) — the ide-down fallback. It MUST
+        // stay FleetOk, or a serve replica would proxy it to a dead ide and
+        // defeat the whole graceful-degradation feature.
+        assert_eq!(
+            classify("GET", &format!("{ws}/apps/b3h5bWFydA/data-cached")),
+            RouteRole::FleetOk
+        );
+        // App WRITE surface mutates the working copy → IdeOnly (proxied to the
+        // ide). FleetOk here would silently drop the publish toggle / generated
+        // app on a working-copy-less replica.
+        assert_eq!(
+            classify("POST", &format!("{ws}/apps/b3h5bWFydA/publish")),
+            RouteRole::IdeOnly
+        );
+        assert_eq!(
+            classify("POST", &format!("{ws}/apps/b3h5bWFydA/unpublish")),
+            RouteRole::IdeOnly
+        );
+        assert_eq!(
+            classify("POST", &format!("{ws}/apps/save-from-run/run-123")),
+            RouteRole::IdeOnly
+        );
+    }
+
+    /// Router-DERIVED drift guard — the automated router ⇄ manifest cross-check
+    /// the hand-maintained `manifest_covers_*` tests lack. Parses the route
+    /// paths straight out of `router/workspace.rs` for the builders that are
+    /// ENTIRELY filesystem/git (every route in them touches the working copy on
+    /// the singleton) and asserts each classifies IdeOnly. A new route added to
+    /// one of these builders is checked automatically — there is no separate
+    /// list to forget.
+    ///
+    /// This canNOT cover MIXED builders (only some routes touch disk), e.g.
+    /// `build_app_routes`'s `/source` + `/file` reads vs its fleet-served
+    /// `/run` / `/result`. Those need a per-route test + the
+    /// `oxy-route-classification` skill at authoring time — that gap is exactly
+    /// how `/apps/source` shipped FleetOk and 404'd on the serve fleet.
+    #[test]
+    fn fully_fs_builder_routes_classify_ide_only() {
+        let src = include_str!("router/workspace.rs");
+        // (builder fn, mount prefix beneath /api/{workspace_id})
+        let builders = [
+            ("build_git_routes", ""),
+            ("build_file_routes", "/files"),
+            ("build_data_repo_routes", "/repositories"),
+        ];
+        let ws = "/api/d9830be4-c6a4";
+        let mut checked = 0;
+        for (builder, prefix) in builders {
+            for route in route_paths_in_fn(src, builder) {
+                let tail = if route == "/" { "" } else { route.as_str() };
+                let concrete = concretize(&format!("{ws}{prefix}{tail}"));
+                assert!(
+                    ["GET", "POST", "PUT", "DELETE", "PATCH"]
+                        .iter()
+                        .any(|m| classify(m, &concrete) == RouteRole::IdeOnly),
+                    "{prefix}{route} (mounted by {builder}) classifies FleetOk — every \
+                     route in a fully-filesystem builder needs an IDE_ONLY_PATTERNS entry, \
+                     or a serve replica with no working copy 404s/500s it. Add it above.",
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked >= 25,
+            "parsed only {checked} routes from the FS builders — the source parser likely \
+             broke; fix the parser rather than weakening the guard",
+        );
+    }
+
+    /// Per-sub-route drift guard for the MIXED `build_app_routes()` builder —
+    /// the structural backstop the file previously lacked. `fully_fs_builder_*`
+    /// deliberately can't cover MIXED builders, and `every_workspace_mount_*`
+    /// only sees the `/apps` NEST (its one-segment probe matches the IdeOnly
+    /// `/apps/{pathb64}` pattern), so every app SUB-route was otherwise
+    /// classified by reviewer attention alone — exactly how publish/unpublish/
+    /// save-from-run wrote the working copy while classified FleetOk. This
+    /// parses `build_app_routes()` and asserts each sub-route is EITHER IdeOnly
+    /// OR on the explicit `APP_FLEET_OK` ack-list below, so a new app sub-route
+    /// fails CI unless someone classifies it on purpose.
+    #[test]
+    fn every_app_sub_route_is_classified() {
+        let src = include_str!("router/workspace.rs");
+        // App sub-routes intentionally FleetOk: served from the compile boundary
+        // / S3 / Postgres, never the working copy. REVIEW before adding one — if
+        // a handler reads OR writes the working copy / local state dir, it
+        // belongs in IDE_ONLY_PATTERNS, not here.
+        const APP_FLEET_OK: &[&str] = &[
+            "/",                              // list_apps (Postgres definitions)
+            "/{pathb64}/displays",            // get_displays (SQL templates, no run)
+            "/{pathb64}/data-cached",         // get_app_data_cached (boundary + S3)
+            "/{pathb64}/charts/{chart_path}", // get_chart_image (local + S3 fallback)
+        ];
+        let ws = "/api/d9830be4-c6a4";
+        let routes = route_paths_in_fn(src, "build_app_routes");
+        let mut checked = 0;
+        for route in &routes {
+            if APP_FLEET_OK.contains(&route.as_str()) {
+                continue; // intentional, reviewed FleetOk
+            }
+            let tail = if route == "/" { "" } else { route.as_str() };
+            let concrete = concretize(&format!("{ws}/apps{tail}"));
+            assert!(
+                ["GET", "POST", "PUT", "DELETE", "PATCH"]
+                    .iter()
+                    .any(|m| classify(m, &concrete) == RouteRole::IdeOnly),
+                "app sub-route {route:?} (under /apps) classifies FleetOk but is not in \
+                 APP_FLEET_OK — if it reads/writes the working copy it needs an \
+                 IDE_ONLY_PATTERNS entry; if it is genuinely stateless add it to \
+                 APP_FLEET_OK. (This is the publish/unpublish/save-from-run gap.)",
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 5,
+            "parsed only {checked} app sub-routes — the parser likely broke; fix it \
+             rather than weakening the guard",
+        );
+        // No stale acks: every APP_FLEET_OK entry must be a current sub-route.
+        let route_set: std::collections::HashSet<&str> =
+            routes.iter().map(|r| r.as_str()).collect();
+        for ack in APP_FLEET_OK {
+            assert!(
+                route_set.contains(ack),
+                "APP_FLEET_OK lists {ack:?} but build_app_routes has no such route — \
+                 remove the stale entry."
+            );
+        }
+    }
+
+    /// The Customer-Apps EXECUTION surface (public `/api/projects/*`) builds a
+    /// WorkspaceManager from the working copy and runs inline, so it must be
+    /// IdeOnly — a serve replica with no working copy 500s / NOT_FOUNDs it.
+    /// These routes live in `router/public.rs`, outside build_workspace_routes,
+    /// so the workspace-mount drift test cannot see them; this pins them by
+    /// hand (and pins the Postgres-backed poll/cancel/stream siblings FleetOk so
+    /// over-pinning them to the ide singleton would fail here too).
+    #[test]
+    fn customer_app_execution_routes_are_ide_only() {
+        let pid = "d9830be4-c6a4";
+        let ide_only = [
+            ("POST", format!("/api/projects/{pid}/query")),
+            ("POST", format!("/api/projects/{pid}/semantic-query")),
+            ("POST", format!("/api/projects/{pid}/agents/agent-1/asks")),
+            (
+                "POST",
+                format!("/api/projects/{pid}/procedures/proc-1/runs"),
+            ),
+        ];
+        for (method, path) in &ide_only {
+            assert_eq!(
+                classify(method, path),
+                RouteRole::IdeOnly,
+                "customer-app execution route {method} {path} must be IdeOnly \
+                 (runs inline from the working copy)"
+            );
+        }
+        // Postgres-backed run-state siblings are cross-process safe → FleetOk.
+        let fleet_ok = [
+            ("GET", format!("/api/projects/{pid}/procedures/runs/run-1")),
+            (
+                "POST",
+                format!("/api/projects/{pid}/procedures/runs/run-1/cancel"),
+            ),
+            (
+                "POST",
+                format!("/api/projects/{pid}/agents/asks/run-1/cancel"),
+            ),
+            (
+                "GET",
+                format!("/api/projects/{pid}/agents/runs/run-1/events"),
+            ),
+        ];
+        for (method, path) in &fleet_ok {
+            assert_eq!(
+                classify(method, path),
+                RouteRole::FleetOk,
+                "customer-app run-state route {method} {path} must stay FleetOk \
+                 (reads/writes Postgres run state, no working copy)"
+            );
+        }
+    }
+
+    /// Path string of every `.route("PATH", ...)` mounted directly in
+    /// `fn {fn_name}` of `src`. Deliberately simple text parsing (no syntax
+    /// crate): the FS builders are flat lists of `.route(...)` calls.
+    fn route_paths_in_fn(src: &str, fn_name: &str) -> Vec<String> {
+        let start = src
+            .find(&format!("fn {fn_name}"))
+            .unwrap_or_else(|| panic!("{fn_name} not found in workspace.rs"));
+        let rest = &src[start..];
+        // Body ends at the next top-level `fn ` (column 0).
+        let end = rest[1..].find("\nfn ").map(|i| i + 1).unwrap_or(rest.len());
+        rest[..end]
+            .split(".route(")
+            .skip(1)
+            .filter_map(|seg| {
+                let after_quote = seg.trim_start().strip_prefix('"')?;
+                let close = after_quote.find('"')?;
+                Some(after_quote[..close].to_string())
+            })
+            .collect()
+    }
+
+    /// Replace `{name}` / `{*name}` pattern segments with a literal so a route
+    /// pattern becomes a concrete request path `classify` can match.
+    fn concretize(pattern: &str) -> String {
+        let mut out = String::new();
+        let mut chars = pattern.chars();
+        while let Some(c) = chars.next() {
+            if c == '{' {
+                for d in chars.by_ref() {
+                    if d == '}' {
+                        break;
+                    }
+                }
+                out.push('x');
+            } else {
+                out.push(c);
+            }
+        }
+        out
     }
 
     /// Drift guard (hand-maintained — NOT router-introspecting). Every flat
@@ -982,6 +1631,13 @@ mod tests {
         "/integrations",
         "/secrets",
         "/apps",
+        // procedures + airway pipelines served from the compile boundary so the
+        // customer-nav sidebar + single-procedure view render on a serve replica
+        // (the IdeOnly `/agentic-workflows` + `/agentic-airway` live in a crate
+        // that can't reach `compiled_reader`).
+        "/procedures",
+        "/procedures/{path_b64}",
+        "/airway-pipelines",
         "/app-integrations",
         "/artifacts/{id}",
         // query + semantic layer (warehouse + compiled artifacts, stateless)

@@ -31,7 +31,10 @@ pub use state::{AgenticState, RunStatus};
 
 use sea_orm::DatabaseConnection;
 
-/// Run startup maintenance: mark any stale (running/suspended) runs as failed.
+/// Run startup maintenance: reconcile stale (running/suspended) runs left by a
+/// previous process. Runs that had made progress are marked **for resume** (the
+/// recovery loop re-drives them); only runs that can't be resumed (interrupted
+/// delegation, never-started placeholders) are failed.
 ///
 /// Call this once after migrations complete, before the HTTP server begins
 /// accepting requests.  Idempotent — safe to call every boot.
@@ -40,7 +43,12 @@ pub async fn cleanup_stale_runs(
 ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
     let count = db::cleanup_stale_runs(db).await?;
     if count > 0 {
-        tracing::warn!(count, "marked stale agentic runs as failed on startup");
+        // Not all "failed": runs with progress are set to `needs_resume` and
+        // re-driven by the recovery loop. This is reconciliation, not loss.
+        tracing::info!(
+            count,
+            "reconciled stale agentic runs on startup (those with progress resume; the rest fail)"
+        );
     }
     Ok(count)
 }

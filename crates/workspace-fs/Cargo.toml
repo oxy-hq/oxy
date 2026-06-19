@@ -1,0 +1,13 @@
+[package]
+name = "oxy-workspace-fs"
+version.workspace = true
+authors.workspace = true
+description = "The WorkspaceFs port — the boundary between the stateless serving plane and the filesystem-owning workspace environment."
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+oxy-shared = { workspace = true }

@@ -204,8 +204,8 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
     );
     println!(
         "{}",
-        "Enable OXY_INPROC_GLOBAL_WORKER on the worker/server for the periodic \
-         loop to drive it."
+        "The periodic global driver loop drives it — on by default for every \
+         role except `serve` (force with OXY_INPROC_GLOBAL_WORKER=1)."
             .text()
     );
     Ok(())

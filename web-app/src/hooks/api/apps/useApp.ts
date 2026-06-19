@@ -20,6 +20,19 @@ export default function useAppData(
   });
 }
 
+/** Fetch the LAST cached app data (no execution) — used as a fallback when the
+ *  live `useAppData` fetch fails because the ide is down. Enable it only then. */
+export function useAppDataCached(appPath64: string, enabled: boolean) {
+  const { project, branchName } = useCurrentProjectBranch();
+
+  return useQuery({
+    queryKey: queryKeys.app.getAppDataCached(project.id, branchName, appPath64),
+    queryFn: () => AppService.getAppDataCached(project.id, branchName, appPath64),
+    enabled,
+    refetchOnWindowFocus: false
+  });
+}
+
 export function useAppDisplays(
   filePath: string,
   enabled = true,

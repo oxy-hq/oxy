@@ -215,6 +215,39 @@ pub struct CompiledArtifact {
     pub compiled_sql_blob_key: Option<String>,
 }
 
+/// Verified-query (`.sql`) resolver result. Unlike the YAML entities a
+/// verified query has no parsed `definition` — its body IS the raw SQL
+/// text, carried verbatim alongside the content hash the compile worker
+/// recorded (`content_sha256`). The hash lets a caller verify integrity
+/// after a Postgres/S3 round-trip (the content-addressing invariant).
+#[derive(Debug, Clone)]
+pub struct CompiledVerifiedQuery {
+    pub file_path: String,
+    pub content_sha256: String,
+    pub content: String,
+}
+
+impl CompiledVerifiedQuery {
+    /// Re-hash the carried body and compare to the `content_sha256` the
+    /// compile worker recorded. A mismatch means the body was corrupted on
+    /// the Postgres/S3 round-trip — the content-addressing integrity check
+    /// from the compile-complete design (a verifier the loud serve-side
+    /// `WorkspaceFs` impl can use to refuse a corrupt artifact rather than
+    /// silently serve it). The hash format mirrors `oxy_compile`'s
+    /// `compile_verified_query`: lowercase-hex SHA-256 of the raw bytes.
+    pub fn integrity_ok(&self) -> bool {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(self.content.as_bytes());
+        let actual: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        actual == self.content_sha256
+    }
+}
+
 /// Return `Ok(Some(apps))` when the workspace has a promoted revision
 /// on its default branch; `Ok(None)` otherwise (caller falls through to FS).
 pub async fn list_apps(
@@ -509,6 +542,124 @@ pub async fn resolve_semantic_topic(
     }))
 }
 
+/// List every verified-query (`.sql`) row for the workspace's current
+/// revision. The compile worker already WRITES these (walker →
+/// `compile_verified_query` → writer into `verified_queries`), but until
+/// now nothing read them back — so a stateless `serve` replica running a
+/// verified query (`agentic/analytics/.../solver/specifying`) had to fall
+/// through to the workspace filesystem, which on a no-working-copy node is
+/// the `FileReadError` leak the compile boundary exists to close. The
+/// general agent-context materialiser consumes this list to write the
+/// `.sql` bodies into the request tempdir so the solver's read resolves
+/// without ever touching the real FS.
+pub async fn list_verified_queries(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+) -> Result<Option<Vec<CompiledVerifiedQuery>>, sea_orm::DbErr> {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+        return Ok(None);
+    };
+    let rows = entity::verified_queries::Entity::find()
+        .filter(entity::verified_queries::Column::RevisionId.eq(revision_id))
+        .all(&db)
+        .await?;
+    Ok(Some(
+        rows.into_iter()
+            .map(|m| CompiledVerifiedQuery {
+                file_path: m.file_path,
+                content_sha256: m.content_sha256,
+                content: m.content,
+            })
+            .collect(),
+    ))
+}
+
+/// Single verified-query resolver, keyed by `file_path`. Verified queries
+/// are referenced by their workspace-relative path (the agent `context:`
+/// glob discovers them on disk by path; on the boundary that same path is
+/// the row's PK alongside `revision_id`), so unlike the named entities we
+/// look up by `file_path` — mirroring `resolve_app`.
+///
+/// TRACKING (PR #2557): the §8 materialiser wires `list_verified_queries` into
+/// the agent context, so the analytics agent already resolves verified `.sql`
+/// from the boundary via the materialised tree. This single-row resolver is the
+/// reader for a future *direct* per-request lookup (e.g. a `GET
+/// /verified-queries/{path}` handler) and is intentionally caller-less until
+/// that surface lands; remove it if that surface is dropped.
+pub async fn resolve_verified_query(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+    file_path: &str,
+) -> Result<Option<CompiledVerifiedQuery>, sea_orm::DbErr> {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+        return Ok(None);
+    };
+    let row = entity::verified_queries::Entity::find_by_id((revision_id, file_path.to_string()))
+        .one(&db)
+        .await?;
+    Ok(row.map(|m| CompiledVerifiedQuery {
+        file_path: m.file_path,
+        content_sha256: m.content_sha256,
+        content: m.content,
+    }))
+}
+
+/// List every procedure (`.procedure.yml` / `.workflow.yml` / `.automation.yml`)
+/// row for the workspace's current revision, carrying the full `definition` so
+/// it can be materialised back to a YAML file — unlike `list_procedures`, which
+/// returns only listing metadata (no body). Feeds the agent-context materialiser
+/// so the analytics solver discovers and runs procedures FS-free on the serve
+/// fleet.
+pub async fn list_procedure_artifacts(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+) -> Result<Option<Vec<CompiledArtifact>>, sea_orm::DbErr> {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+        return Ok(None);
+    };
+    let rows = entity::procedure_definitions::Entity::find()
+        .filter(entity::procedure_definitions::Column::RevisionId.eq(revision_id))
+        .all(&db)
+        .await?;
+    Ok(Some(
+        rows.into_iter()
+            .map(|m| CompiledArtifact {
+                file_path: m.file_path,
+                name: m.name,
+                definition: m.definition,
+                compiled_sql_blob_key: None,
+            })
+            .collect(),
+    ))
+}
+
+/// List the workspace's compiled Airway pipelines (`airway_pipelines`) as
+/// path-addressed artifacts, mirroring [`list_procedure_artifacts`]. The
+/// `.airway.yml` body is already compiled (walker → `CompiledRow::Pipeline` →
+/// `airway_pipelines`); this is the missing reader.
+pub async fn list_pipeline_artifacts(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+) -> Result<Option<Vec<CompiledArtifact>>, sea_orm::DbErr> {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+        return Ok(None);
+    };
+    let rows = entity::airway_pipelines::Entity::find()
+        .filter(entity::airway_pipelines::Column::RevisionId.eq(revision_id))
+        .all(&db)
+        .await?;
+    Ok(Some(
+        rows.into_iter()
+            .map(|m| CompiledArtifact {
+                file_path: m.file_path,
+                name: m.name,
+                definition: m.definition,
+                compiled_sql_blob_key: None,
+            })
+            .collect(),
+    ))
+}
+
 /// Shared gate consulted at the top of every public reader. Returns
 /// `Some((db, revision_id))` when the request should be served from
 /// Postgres, `None` when the caller should fall through to FS.
@@ -658,5 +809,41 @@ mod tests {
         // We don't trim whitespace; a literal space is technically a legal
         // git branch name, so we treat it as a real branch hint.
         assert_eq!(normalize_branch_hint(Some(" ")), Some(" "));
+    }
+
+    #[test]
+    fn verified_query_integrity_detects_corruption() {
+        let content = "SELECT 1 /* oxy: verified */";
+        // Hash the body the same way `oxy_compile::compile_verified_query`
+        // does, so a faithful round-trip verifies.
+        let sha = {
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(content.as_bytes());
+            h.finalize()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+        let good = CompiledVerifiedQuery {
+            file_path: "example_sql/answer.sql".to_string(),
+            content_sha256: sha,
+            content: content.to_string(),
+        };
+        assert!(
+            good.integrity_ok(),
+            "a faithfully round-tripped body verifies"
+        );
+
+        // Same recorded hash, different bytes → corruption is caught. This
+        // case is non-circular: the hash is fixed, only `content` changes.
+        let corrupted = CompiledVerifiedQuery {
+            content: "SELECT 2 /* tampered */".to_string(),
+            ..good.clone()
+        };
+        assert!(
+            !corrupted.integrity_ok(),
+            "a body whose bytes no longer match the recorded hash is rejected"
+        );
     }
 }

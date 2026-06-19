@@ -1,5 +1,11 @@
 .github/    luong@oxy.tech
 
+# Split-fleet route classification. A new route that touches the workspace FS
+# must be classified IdeOnly in role_manifest.rs or it 404s/421s on the serve
+# fleet. See .claude/skills/oxy-route-classification/SKILL.md.
+crates/app/src/server/role_manifest.rs    luong@oxy.tech
+crates/app/src/server/router/             luong@oxy.tech
+
 # Brand & positioning copy — require brand/marketing sign-off before merge.
 # (luong@oxy.tech is a placeholder owner; swap for a dedicated brand/marketing
 # team handle once one exists.)

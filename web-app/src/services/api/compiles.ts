@@ -29,8 +29,17 @@ export interface CompileFailure {
   message: string;
 }
 
+/** One entity successfully compiled into a revision — the "which compiled" unit. */
+export interface CompiledEntity {
+  kind: string;
+  name: string;
+  file_path: string;
+}
+
 export interface CompileDetail extends CompileRow {
   error_summary: { failures?: CompileFailure[]; fatal?: string } | null;
+  /** Every entity successfully compiled into this revision ("which compiled"). */
+  compiled_entities: CompiledEntity[];
 }
 
 export interface ListCompilesResponse {

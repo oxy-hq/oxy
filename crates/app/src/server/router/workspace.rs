@@ -15,10 +15,10 @@ use agentic_http::{AgenticState, airway_router, router as agentic_router, workfl
 use crate::api::{
     agent, api_keys, app, apps, artifacts, chart, competitors, compile, data, data_repo, database,
     execution_analytics, exported_chart, file, foot_traffic, integration, local_setup, message,
-    metric_anomalies, metric_tree, metrics, modeling, onboarding, result_files, run, schedules,
-    semantic, task, test_file, test_project_run, test_run, thread, traces, video,
-    workspace_custom_apps, workspace_logo, workspace_members, workspace_oxy_access, workspaces,
-    world_model,
+    metric_anomalies, metric_tree, metrics, modeling, onboarding, pipeline, procedure,
+    result_files, run, schedules, semantic, task, test_file, test_project_run, test_run, thread,
+    traces, video, workspace_custom_apps, workspace_logo, workspace_members, workspace_oxy_access,
+    workspaces, world_model,
 };
 
 use super::AppState;
@@ -51,8 +51,19 @@ pub(super) fn build_workspace_routes(
             agentic_state.db.clone(),
         ))
         // Legacy `/workflows` and `/automations` routes have been retired.
-        // Workflow execution and listing now live under
-        // `/agentic-workflows`, mounted below.
+        // Workflow execution + the single-file fetch live under
+        // `/agentic-workflows` (IdeOnly), mounted below. The procedure LIST,
+        // however, is served HERE from the compile boundary (FleetOk) so the
+        // customer-nav sidebar renders on a stateless serve replica with no
+        // working copy — `/agentic-workflows` is IdeOnly and lives in a crate
+        // that can't reach `compiled_reader`.
+        .route("/procedures", get(procedure::list_procedures))
+        // Single-procedure YAML, also from the boundary, so clicking a procedure
+        // renders its diagram on a serve node when the ide is down.
+        .route("/procedures/{path_b64}", get(procedure::get_procedure))
+        // Same boundary-backed pattern for Airway pipelines (`/agentic-airway`
+        // is IdeOnly + in a crate that can't reach `compiled_reader`).
+        .route("/airway-pipelines", get(pipeline::list_pipelines))
         .nest("/threads", build_thread_routes())
         .nest("/agents", build_agent_routes())
         .nest("/api-keys", build_api_key_routes())
@@ -481,6 +492,18 @@ fn build_integration_routes() -> Router<AppState> {
         )
 }
 
+// MIXED role builder. IdeOnly (must reach the ide singleton): `/source` + `/file`
+// read the working copy / local state dir; `/{pathb64}` + `/run` + `/result`
+// EXECUTE the inline workflow over the local DuckDB connector; `/publish`,
+// `/unpublish`, `/save-from-run/{run_id}` WRITE the working copy. FleetOk
+// (compile boundary + S3 + Postgres): `/` (list), `/displays`, `/data-cached`,
+// `/charts/...`. Any FS-reading/-writing route added here MUST be classified by
+// hand in `server/role_manifest.rs` — the `fully_fs_builder_routes_classify_ide_only`
+// drift test only covers FULLY-fs builders, so it can't catch a miss here.
+// Skipping it is how `/apps/source` shipped FleetOk and 404'd on the serve fleet;
+// the `every_app_sub_route_is_classified` test now backstops THIS builder so a
+// new sub-route fails CI unless it is IdeOnly or explicitly acknowledged FleetOk.
+// See `.claude/skills/oxy-route-classification/SKILL.md`.
 fn build_app_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(app::list_apps))
@@ -488,6 +511,9 @@ fn build_app_routes() -> Router<AppState> {
         .route("/{pathb64}/run", post(app::run_app))
         .route("/{pathb64}/result", post(app::get_app_result))
         .route("/{pathb64}/displays", get(app::get_displays))
+        // Read-only cached data (boundary def + disk/S3 cache, no execution), so
+        // a serve replica shows a dashboard's last data when the ide is down.
+        .route("/{pathb64}/data-cached", get(app::get_app_data_cached))
         .route("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
         .route("/{pathb64}/publish", post(app::publish_app))
         .route("/{pathb64}/unpublish", post(app::unpublish_app))

@@ -3,7 +3,9 @@ import type { EChartsOption } from "echarts";
 import { ErrorBoundary } from "react-error-boundary";
 import { createCategoricalPalette } from "@/components/AppPreview/Displays/hooks/chartOptions";
 import { Echarts } from "@/components/Echarts";
+import IdeUnavailablePanel from "@/components/ui/IdeUnavailablePanel";
 import useChart from "@/hooks/api/useChart";
+import { isIdeUnavailableError } from "@/libs/utils/ideHealth";
 import useTheme from "@/stores/useTheme";
 import type { ChartConfig } from "@/types/chart";
 import ChartError from "./Error";
@@ -12,6 +14,7 @@ import ChartLoading from "./Loading";
 type ChartProps = {
   data: string | undefined;
   isPending: boolean;
+  isFetching: boolean;
   error: Error | null;
   refetch: () => void;
 };
@@ -22,13 +25,24 @@ type Props = {
 
 const Chart = (props: ChartProps) => {
   const { theme } = useTheme();
-  const { data, isPending, error, refetch } = props;
+  const { data, isPending, isFetching, error, refetch } = props;
 
   if (isPending) {
     return <ChartLoading />;
   }
 
   if (error) {
+    // A chart file lives on the ide's local disk; an ide restart is a transient
+    // pause, not a broken chart — degrade to the calm "resuming" placeholder.
+    if (isIdeUnavailableError(error)) {
+      return (
+        <IdeUnavailablePanel
+          description='This chart needs Oxygen Factory, which is restarting. It will resume shortly.'
+          onRetry={() => void refetch()}
+          retrying={isFetching}
+        />
+      );
+    }
     return (
       <ChartError
         title='Failed to load chart'
@@ -106,7 +120,7 @@ const ChartContainer = (props: Props) => {
     duration: 300
   });
   const encodedPath = encodeURIComponent(props.chart_src);
-  const { data, isPending, error, refetch } = useChart(encodedPath);
+  const { data, isPending, isFetching, error, refetch } = useChart(encodedPath);
 
   return (
     <div ref={parent as React.Ref<HTMLDivElement>}>
@@ -119,7 +133,13 @@ const ChartContainer = (props: Props) => {
           />
         }
       >
-        <Chart data={data} isPending={isPending} error={error} refetch={refetch} />
+        <Chart
+          data={data}
+          isPending={isPending}
+          isFetching={isFetching}
+          error={error}
+          refetch={refetch}
+        />
       </ErrorBoundary>
     </div>
   );

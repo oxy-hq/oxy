@@ -258,7 +258,9 @@ export class AirwayService {
   }
 
   static async listFiles(projectId: string): Promise<AirwayFile[]> {
-    const { data } = await apiClient.get(`${AirwayService.base(projectId)}/files`);
+    // Served from the compile boundary at `/airway-pipelines` (FleetOk) so the
+    // list renders on a stateless serve replica; `/agentic-airway` is IdeOnly.
+    const { data } = await apiClient.get(`/${projectId}/airway-pipelines`);
     return data;
   }
 

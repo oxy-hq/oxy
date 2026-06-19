@@ -1,4 +1,5 @@
 import { Loader2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/shadcn/badge";
@@ -9,6 +10,7 @@ import { usePromoteCompile } from "@/hooks/api/compiles";
 import type { CompileRow } from "@/services/api/compiles";
 
 import { formatMs, formatRelative } from "../utils";
+import { CompileDetailSheet } from "./CompileDetailSheet";
 import { CopyableId } from "./CopyableId";
 import { StatusBadge } from "./StatusBadge";
 
@@ -30,6 +32,7 @@ export const RevisionRow = ({
   nested?: boolean;
 }) => {
   const promote = usePromoteCompile();
+  const [detailOpen, setDetailOpen] = useState(false);
   const canPromote = row.status === "ready" && row.kind === "main" && !row.is_current_for_workspace;
 
   const onPromote = () => {
@@ -85,11 +88,23 @@ export const RevisionRow = ({
         </div>
       </TableCell>
       <TableCell className='tabular-nums'>
-        <span className='font-medium'>{row.file_count_compiled}</span>
-        <span className='text-muted-foreground'> / {row.file_count_seen}</span>
-        {row.file_count_failed > 0 ? (
-          <span className='ml-1 text-destructive'>({row.file_count_failed} failed)</span>
-        ) : null}
+        <button
+          type='button'
+          onClick={() => setDetailOpen(true)}
+          className='rounded text-left hover:underline'
+          title='View which entities compiled and which failed'
+        >
+          <span className='font-medium'>{row.file_count_compiled}</span>
+          <span className='text-muted-foreground'> / {row.file_count_seen}</span>
+          {row.file_count_failed > 0 ? (
+            <span className='ml-1 text-destructive'>({row.file_count_failed} failed)</span>
+          ) : null}
+        </button>
+        <CompileDetailSheet
+          revisionId={row.revision_id}
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+        />
       </TableCell>
       <TableCell className='tabular-nums'>
         {row.duration_ms !== null ? formatMs(row.duration_ms) : "—"}

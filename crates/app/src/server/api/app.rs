@@ -293,6 +293,13 @@ async fn set_publish_state(
     pathb64: &str,
     published: bool,
 ) -> Result<extract::Json<AppItem>, StatusCode> {
+    // super_read_only: a stateless serve replica must never write the working
+    // copy. This route is IdeOnly (proxied to the ide), so this only fires if
+    // that classification ever drifts — failing loud (421) beats silent loss.
+    if !crate::server::role_manifest::process_is_fs_writable() {
+        tracing::error!("refused app publish-state write on a stateless serve replica");
+        return Err(StatusCode::MISDIRECTED_REQUEST);
+    }
     let relative_path = decode_path(pathb64)?;
     let workspace_path = workspace_manager
         .config_manager
@@ -555,6 +562,33 @@ pub async fn get_app_data(
     };
 
     Ok(extract::Json(GetAppDataResponse { data, error: None }))
+}
+
+/// `GET /{ws}/apps/{pathb64}/data-cached` — FleetOk. Returns the LAST cached app
+/// data WITHOUT executing, so a stateless serve replica can show a dashboard's
+/// last-known data when the ide is down. `try_load_cached_data` reads the local
+/// cache, falling back to the S3 mirror (`runtime_artifact::app_data_key`), and
+/// `get_tasks` resolves the app definition from the compile boundary. `404` when
+/// nothing has been cached (the FE then keeps its "restarting" placeholder).
+pub async fn get_app_data_cached(
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
+    extract::Query(branch): extract::Query<BranchHintQuery>,
+) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
+    let path = decode_path(&pathb64)?;
+    let app_service = AppService::new_with_branch(workspace_manager, project_ctx, branch.branch);
+    let app_tasks = app_service.get_tasks(&path).await.map_err(|e| {
+        // A genuine boundary/DB fault reads to the FE as "no cache" (it keeps the
+        // placeholder either way), so log it here — otherwise a real failure on
+        // this path is invisible in logs/metrics, indistinguishable from a miss.
+        tracing::warn!(error = ?e, "get_app_data_cached: failed to resolve app tasks");
+        StatusCode::NOT_FOUND
+    })?;
+    match app_service.try_load_cached_data(&path, &app_tasks).await {
+        Some(data) => Ok(extract::Json(GetAppDataResponse { data, error: None })),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 pub async fn get_data(
@@ -1232,6 +1266,14 @@ pub async fn save_app_builder_run(
 ) -> Result<extract::Json<SaveAppBuilderRunResponse>, StatusCode> {
     use agentic_runtime::entity::run as agentic_run;
     use sea_orm::EntityTrait;
+
+    // super_read_only: a stateless serve replica must never write the working
+    // copy (this writes `generated/{run_id}.app.yml`). IdeOnly route; fires only
+    // on classification drift — 421 beats silently losing the generated app.
+    if !crate::server::role_manifest::process_is_fs_writable() {
+        tracing::error!("refused app builder-run save on a stateless serve replica");
+        return Err(StatusCode::MISDIRECTED_REQUEST);
+    }
 
     let db = oxy::database::client::establish_connection()
         .await

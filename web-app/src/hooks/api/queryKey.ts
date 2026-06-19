@@ -132,7 +132,9 @@ const appKeys = {
   getData: (projectId: string, branchName: string, appPath: string) =>
     [...appKeys.all, "getData", projectId, branchName, appPath] as const,
   getDisplays: (projectId: string, branchName: string, appPath: string) =>
-    [...appKeys.all, "getDisplays", projectId, branchName, appPath] as const
+    [...appKeys.all, "getDisplays", projectId, branchName, appPath] as const,
+  getAppDataCached: (projectId: string, branchName: string, appPath: string) =>
+    [...appKeys.all, "getAppDataCached", projectId, branchName, appPath] as const
 };
 
 const onboardingKeys = {

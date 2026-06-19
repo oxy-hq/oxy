@@ -538,13 +538,23 @@ impl WorkspaceContext for OxyProjectContext {
                     let root = materialised.root.clone();
                     return ContextRoot::materialised(root, Box::new(materialised));
                 }
-                // Not promoted / no semantic rows — fall through to the FS path.
-                Ok(None) => {}
+                // On a stateless node the FS fall-through below is doomed (no
+                // working copy), so make the miss LOUD and specific rather than
+                // letting it surface later as a confusing "no databases
+                // configured". Control flow is unchanged — we still fall
+                // through, which stays correct for Ide/All and any edge case.
+                Ok(None) => {
+                    tracing::error!(
+                        workspace_id = %workspace_id,
+                        role = ?current_process_role(),
+                        "context_root: no compiled agent context on a stateless node — workspace not promoted / not yet compiled; the run will have no usable context. Recompile the workspace."
+                    );
+                }
                 Err(e) => {
-                    tracing::warn!(
+                    tracing::error!(
                         workspace_id = %workspace_id,
                         error = ?e,
-                        "context_root: compile-boundary materialise failed; falling through to FS"
+                        "context_root: compile-boundary materialise failed on a stateless node; the run will fall through to an absent FS and fail"
                     );
                 }
             }

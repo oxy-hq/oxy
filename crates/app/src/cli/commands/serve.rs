@@ -94,8 +94,17 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         }
     }
 
-    println!("serve: running database migrations");
-    run_database_migrations(args.enterprise).await?;
+    // Skip when a dedicated migrator already ran the schema (the Helm
+    // pre-upgrade migrate Job, or the canonical StatefulSet migrator). The chart
+    // sets `OXY_SKIP_MIGRATIONS=1` on the stateless serve fleet; honouring it
+    // here avoids every serve pod re-running (and, pre-advisory-lock, racing)
+    // the full migrator on boot. Unset → migrate as before (single-node / dev).
+    if skip_migrations_requested() {
+        println!("serve: OXY_SKIP_MIGRATIONS set — skipping migrations (run by the migrate Job)");
+    } else {
+        println!("serve: running database migrations");
+        run_database_migrations(args.enterprise).await?;
+    }
     println!("serve: migrations done, initializing feature flags");
     init_feature_flags().await?;
     println!("serve: feature flags initialized, seeding app admins from env");
@@ -270,9 +279,13 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     })?;
 
     let disable_inprocess_workers = args.workers_disabled();
-    if disable_inprocess_workers {
-        tracing::info!("serve: in-process workers disabled (run a separate `oxy worker` fleet)");
-    }
+    tracing::info!(
+        role = crate::server::role_manifest::current_process_role().as_str(),
+        in_process_workers = !disable_inprocess_workers,
+        "serve: fleet config derived from OXY_ROLE (workers + global driver run \
+         in-process for every role except `serve`; override with --no-workers / \
+         OXY_DISABLE_INPROCESS_WORKERS / OXY_INPROC_GLOBAL_WORKER)"
+    );
 
     let app = create_web_application(
         mode,
@@ -322,33 +335,107 @@ async fn seed_app_admins_from_env() -> Result<(), OxyError> {
     Ok(())
 }
 
+/// A fixed, process-independent key for the Postgres session-level advisory lock
+/// that serialises startup migrations. Every oxy process uses this same key, so
+/// concurrent migrators (the split fleet starting the ide + serve nodes
+/// together, or `oxy start` bringing up serve + a worker) take turns instead of
+/// racing the non-idempotent `CREATE TYPE` enum DDL — which otherwise crashes one
+/// node with "duplicate key value violates unique constraint
+/// pg_type_typname_nsp_index". The value is arbitrary; it only has to be
+/// distinct from the OTHER advisory keys oxy uses in the SAME single-bigint
+/// space — Postgres does not separate the session (`pg_advisory_lock`) and
+/// transaction (`pg_try_advisory_xact_lock`) variants into different
+/// namespaces. The per-workspace lazy-compile lock in
+/// `server/api/middlewares/workspace_context.rs` is the only other user; it
+/// keys off `workspace_id & 0x7fff_ffff_ffff_ffff`, so a workspace UUID whose
+/// low 63 bits equal this key COULD collide (~1-in-2^63). The collision is
+/// benign: a lazy-compile that loses this lock during the brief boot-migration
+/// window just skips its non-blocking dedup and re-attempts on the next
+/// request — no lost work. Pick future advisory keys deliberately rather than
+/// assuming this space is otherwise empty.
+const MIGRATION_ADVISORY_LOCK_KEY: i64 = 0x0078_795F_6D69_6772; // "\0xy_migr"
+
+/// True when `OXY_SKIP_MIGRATIONS` is set. The long-lived pods — serve, compile,
+/// worker — consult this so a dedicated migrate Job / the canonical StatefulSet
+/// migrator owns the schema and the rest skip on boot (uniform intent across the
+/// fleet). `oxy migrate` itself NEVER consults this — it always runs the full
+/// migrator, since it IS the dedicated migrator.
+pub(crate) fn skip_migrations_requested() -> bool {
+    std::env::var("OXY_SKIP_MIGRATIONS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 pub(crate) async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
     println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
-    println!("migrations: database connection established, running SeaORM migrations");
 
+    // Serialise migrations across processes with a session-level advisory lock.
+    // Multiple oxy nodes booting together (the split fleet, or `oxy start`'s
+    // serve + worker) would otherwise run these migrators concurrently, and the
+    // `CREATE TYPE` enum migrations are NOT concurrency-safe → a duplicate-key
+    // crash on `pg_type`. Holding the lock makes the losers WAIT, then find every
+    // migration already applied (a no-op). The lock is held on one dedicated
+    // pooled connection (pool max is 80, so it never starves the migrators) and
+    // released even when a migrator fails, so a failure can't wedge other nodes
+    // behind a stuck lock. A process that dies mid-migration drops its
+    // connection, and Postgres releases the lock on disconnect too.
+    let mut lock_conn = db
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .map_err(|e| {
+            OxyError::RuntimeError(format!(
+                "migrations: failed to acquire lock connection: {e}"
+            ))
+        })?;
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(MIGRATION_ADVISORY_LOCK_KEY)
+        .execute(&mut *lock_conn)
+        .await
+        .map_err(|e| {
+            OxyError::RuntimeError(format!("migrations: failed to take advisory lock: {e}"))
+        })?;
+    println!("migrations: advisory lock held, running SeaORM migrations");
+
+    let result = run_all_migrators(&db).await;
+
+    if let Err(e) = sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(MIGRATION_ADVISORY_LOCK_KEY)
+        .execute(&mut *lock_conn)
+        .await
+    {
+        tracing::warn!("migrations: failed to release advisory lock (frees on disconnect): {e}");
+    }
+
+    result
+}
+
+/// Run every domain's migrator in dependency order. The caller holds the
+/// migration advisory lock — see [`run_database_migrations`].
+async fn run_all_migrators(db: &sea_orm::DatabaseConnection) -> Result<(), OxyError> {
     // Run SeaORM migrations for PostgreSQL
-    Migrator::up(&db, None)
+    Migrator::up(db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))?;
     println!("migrations: SeaORM migrations complete");
 
     // Run orchestrator runtime migrations (separate tracking table).
-    RuntimeMigrator::up(&db, None)
+    RuntimeMigrator::up(db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("runtime migrations failed: {}", e)))?;
     println!("migrations: runtime migrations complete");
 
     // Run analytics domain extension migrations (separate tracking table).
-    AnalyticsMigrator::up(&db, None)
+    AnalyticsMigrator::up(db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("analytics migrations failed: {}", e)))?;
     println!("migrations: analytics migrations complete");
 
     // Run workflow state migrations (separate tracking table).
-    WorkflowMigrator::up(&db, None)
+    WorkflowMigrator::up(db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("workflow migrations failed: {}", e)))?;
     println!("migrations: workflow migrations complete");
@@ -356,7 +443,7 @@ pub(crate) async fn run_database_migrations(_enterprise: bool) -> Result<(), Oxy
     // Run airway extension migrations (separate tracking table). Must
     // follow the runtime migrator — `airway_run_extensions.run_id` FKs
     // to `agentic_runs.id`.
-    AirwayMigrator::up(&db, None)
+    AirwayMigrator::up(db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("airway migrations failed: {}", e)))?;
     println!("migrations: airway migrations complete");
@@ -364,7 +451,7 @@ pub(crate) async fn run_database_migrations(_enterprise: bool) -> Result<(), Oxy
     // Run airhouse migrations (separate tracking table). The wrapper pre-stamps
     // `seaql_migrations_airhouse` from the central tracking table so existing
     // deployments don't re-run migrations whose tables already exist.
-    airhouse::migration::up(&db)
+    airhouse::migration::up(db)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("airhouse migrations failed: {}", e)))?;
     println!("migrations: airhouse migrations complete");
@@ -384,7 +471,7 @@ pub(crate) async fn run_database_migrations(_enterprise: bool) -> Result<(), Oxy
     // the lazy ensure on the ingest path
     // (`oxy_cameras::airhouse::connect_and_ensure`) as a final safety
     // net.
-    CamerasMigrator::up(&db, None)
+    CamerasMigrator::up(db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("cameras migrations failed: {}", e)))?;
     println!("migrations: cameras migrations complete");
@@ -546,6 +633,13 @@ async fn create_web_application(
         // unset. Stamps X-Oxy-Served-By on every response.
         .layer(axum::middleware::from_fn(
             crate::server::role_middleware::enforce_role,
+        ))
+        // Admission control sits OUTSIDE enforce_role (sheds before routing /
+        // proxy work) but INSIDE CORS (so the 503 still carries CORS headers).
+        // Above the in-flight ceiling it returns 503 + Retry-After so a spike
+        // backs off instead of cascading across the fleet; probes are exempt.
+        .layer(axum::middleware::from_fn(
+            crate::server::admission::admission_control,
         ))
         .layer(crate::server::router::build_cors_layer())
         .layer(create_trace_layer());

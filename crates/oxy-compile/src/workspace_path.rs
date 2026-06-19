@@ -3,9 +3,9 @@
 //! The cloud-mode worker fleet runs Compile tasks as `TaskScope::Global`,
 //! which means any worker can claim a task carrying any `workspace_id`
 //! — including workspaces whose source isn't cloned on this worker's
-//! local disk. Until per-worker clone-on-demand lands (Phase 3 of the
-//! 2026-05-31 scaling design), the worker can only compile a workspace
-//! whose path is already present.
+//! local disk. A worker can only compile a workspace whose working copy is
+//! already on its disk (compiles run on the node that holds the checkout —
+//! the IDE/build singleton); per-worker clone-on-demand is NOT planned.
 //!
 //! The fix for that limitation isn't here; the fix here is to make the
 //! limitation **visible**. We resolve from the DB's `workspaces.path`

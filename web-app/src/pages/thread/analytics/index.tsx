@@ -7,6 +7,7 @@ import ThinkingModeMenu from "@/components/Chat/ChatPanel/ThinkingModeMenu";
 import Markdown from "@/components/Markdown";
 import UserMessage from "@/components/Messages/UserMessage";
 import ErrorAlert from "@/components/ui/ErrorAlert";
+import IdeUnavailablePanel from "@/components/ui/IdeUnavailablePanel";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
@@ -779,25 +780,34 @@ const AnalyticsThread = ({ thread, hideHeader }: Props) => {
                       </div>
                     )}
 
-                    {state.tag === "failed" && (
-                      <ErrorAlert
-                        title='Run failed'
-                        actions={
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => {
-                              reset();
-                              handleStart(currentQuestion);
-                            }}
-                          >
-                            Retry
-                          </Button>
-                        }
-                      >
-                        <Markdown>{state.message}</Markdown>
-                      </ErrorAlert>
-                    )}
+                    {state.tag === "failed" &&
+                      (state.ideUnavailable ? (
+                        <IdeUnavailablePanel
+                          description='Your question needs Oxygen Factory, which is restarting. It will run once it is back.'
+                          onRetry={() => {
+                            reset();
+                            handleStart(currentQuestion);
+                          }}
+                        />
+                      ) : (
+                        <ErrorAlert
+                          title='Run failed'
+                          actions={
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => {
+                                reset();
+                                handleStart(currentQuestion);
+                              }}
+                            >
+                              Retry
+                            </Button>
+                          }
+                        >
+                          <Markdown>{state.message}</Markdown>
+                        </ErrorAlert>
+                      ))}
                     {state.tag === "cancelled" && (
                       <div className='rounded-lg border border-border bg-muted p-4 text-center'>
                         <p className='text-muted-foreground text-sm'>Operation cancelled</p>

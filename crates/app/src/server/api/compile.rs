@@ -59,6 +59,16 @@ pub struct CompileStatus {
     /// Workspace's default branch (`"main"` / `"master"` / custom).
     /// `None` matches `head_sha = None`.
     pub default_branch: Option<String>,
+    /// Whether this is a multi-instance (split-fleet) deployment where manual
+    /// compile is meaningful — i.e. compiling promotes the revision a separate
+    /// `serve` fleet reads. `false` on a single `all` instance, which serves
+    /// reads from the working copy directly, so a manual compile changes nothing
+    /// it serves. The IDE **hides** the Compile button when this is `false`.
+    ///
+    /// Derived from the role of the node answering this (FleetOk) request: in a
+    /// split fleet that's a `serve` replica (`!= all`); on a single instance
+    /// it's the `all` node itself.
+    pub boundary_active: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -304,6 +314,8 @@ pub async fn compile_status(
         can_compile,
         head_sha,
         default_branch,
+        boundary_active: crate::server::role_manifest::current_process_role()
+            != crate::server::role_manifest::Role::All,
     }))
 }
 

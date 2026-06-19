@@ -65,28 +65,40 @@ pub struct ServeArgs {
     /// task execution, recovery, and scheduler ticks; `oxy serve` only accepts
     /// HTTP requests and writes new tasks to the queue.
     ///
-    /// Also honored via the `OXY_DISABLE_INPROCESS_WORKERS` env var; the CLI
-    /// flag wins if both are set. Default OFF — existing single-process
-    /// deployments are unchanged.
+    /// Usually unnecessary: `OXY_ROLE=serve` already derives this. The flag (and
+    /// `OXY_DISABLE_INPROCESS_WORKERS`) remain explicit overrides; the CLI flag
+    /// wins over both.
     #[clap(long, default_value_t = false)]
     pub no_workers: bool,
 }
 
 impl ServeArgs {
-    /// True when in-process worker plumbing (startup recovery, periodic
-    /// global driver loop) should be skipped because a separate `oxy worker`
-    /// fleet handles execution.
+    /// True when in-process worker plumbing (startup recovery, periodic global
+    /// driver loop, task execution) should be skipped because a separate
+    /// `oxy worker` fleet handles it.
     ///
-    /// CLI flag (`--no-workers`) wins; falls back to the
-    /// `OXY_DISABLE_INPROCESS_WORKERS` env var (`1`/`true`/`yes`/`on`).
+    /// Resolution order: `--no-workers` flag → `OXY_DISABLE_INPROCESS_WORKERS`
+    /// env (honored in BOTH directions, so `=0` force-enables) → derived from
+    /// `OXY_ROLE`. A stateless `serve` replica derives OFF (offload to the
+    /// worker fleet); every other role (`all` / `ide` / `worker`) runs them
+    /// in-process. This is why a serve node no longer needs `--no-workers` set.
     pub fn workers_disabled(&self) -> bool {
+        // Explicit CLI flag always wins.
         if self.no_workers {
             return true;
         }
-        std::env::var("OXY_DISABLE_INPROCESS_WORKERS")
-            .ok()
-            .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
-            .unwrap_or(false)
+        // Explicit env override wins next, in BOTH directions, so
+        // `OXY_DISABLE_INPROCESS_WORKERS=0` can force workers ON for a role whose
+        // derived default is OFF.
+        if let Ok(v) = std::env::var("OXY_DISABLE_INPROCESS_WORKERS") {
+            return matches!(v.as_str(), "1" | "true" | "yes" | "on");
+        }
+        // Otherwise derive from the process role: only the stateless serve
+        // replica offloads everything to the worker fleet.
+        matches!(
+            crate::server::role_manifest::current_process_role(),
+            crate::server::role_manifest::Role::Serve
+        )
     }
 }
 
@@ -156,5 +168,58 @@ mod tests {
             Some(v) => unsafe { std::env::set_var("OXY_DISABLE_INPROCESS_WORKERS", v) },
             None => unsafe { std::env::remove_var("OXY_DISABLE_INPROCESS_WORKERS") },
         }
+    }
+
+    // The next three tests set OXY_ROLE + the override env and call
+    // init_process_role_from_env (a process-wide OnceLock). They rely on
+    // nextest running each test in its OWN process — the same isolation the
+    // role_middleware tests use — so the role set here never leaks. Under
+    // `cargo test` (shared process) they would race; CLAUDE.md mandates nextest.
+
+    #[test]
+    fn workers_disabled_derives_from_serve_role() {
+        // serve = stateless replica → offload all execution to the worker fleet.
+        // SAFETY: nextest isolates this test in its own single-threaded process.
+        unsafe {
+            std::env::remove_var("OXY_DISABLE_INPROCESS_WORKERS");
+            std::env::set_var("OXY_ROLE", "serve");
+        }
+        crate::server::role_manifest::init_process_role_from_env();
+        let args = ServeArgs::parse_from(["oxy"]);
+        assert!(
+            args.workers_disabled(),
+            "serve role with no override should derive workers-disabled"
+        );
+    }
+
+    #[test]
+    fn workers_enabled_derives_from_non_serve_role() {
+        // SAFETY: nextest isolates this test in its own single-threaded process.
+        unsafe {
+            std::env::remove_var("OXY_DISABLE_INPROCESS_WORKERS");
+            std::env::set_var("OXY_ROLE", "all");
+        }
+        crate::server::role_manifest::init_process_role_from_env();
+        let args = ServeArgs::parse_from(["oxy"]);
+        assert!(
+            !args.workers_disabled(),
+            "all role with no override should derive workers-enabled"
+        );
+    }
+
+    #[test]
+    fn env_override_forces_workers_on_for_serve_role() {
+        // serve would derive OFF, but an explicit `=0` forces workers ON.
+        // SAFETY: nextest isolates this test in its own single-threaded process.
+        unsafe {
+            std::env::set_var("OXY_ROLE", "serve");
+            std::env::set_var("OXY_DISABLE_INPROCESS_WORKERS", "0");
+        }
+        crate::server::role_manifest::init_process_role_from_env();
+        let args = ServeArgs::parse_from(["oxy"]);
+        assert!(
+            !args.workers_disabled(),
+            "explicit OXY_DISABLE_INPROCESS_WORKERS=0 must force workers ON even for serve"
+        );
     }
 }

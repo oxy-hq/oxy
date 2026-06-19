@@ -14,7 +14,7 @@
 //! an *unlisted* route to FleetOk, so a forgotten new IdeOnly classification
 //! would be served locally and fail rather than forward — see the
 //! forward-on-doubt + router-introspecting-drift-test fast-follows in
-//! `internal-docs/serve-self-routing.md`.)
+//! `internal-docs/multi-instance-fleet.md`.)
 //!
 //! ## Trust posture (vs the customer-apps proxy)
 //!
@@ -43,6 +43,15 @@ const HEADER_FORWARDED_BY: &str = "x-oxy-forwarded-by";
 /// Required-role hint mirrored from `role_middleware` so the FE can tell an
 /// "ide backend down" 502 apart from a generic gateway error.
 const HEADER_REQUIRED_ROLE: &str = "x-oxy-required-role";
+
+/// Which workspace capability is unavailable on an ide-down 502. Lets the FE
+/// scope the message — and ops alert per-class — instead of one opaque banner:
+///   - `workspace-runtime`: data, charts, and runs are paused (the DuckDB
+///     execution env lives on the ide), but browsing the last compiled revision
+///     still works. Mirrors `role_manifest::is_workspace_runtime_route`.
+///   - `workspace-editing`: file editing, git, and compile are paused (they need
+///     the git working copy).
+const HEADER_UNAVAILABLE: &str = "x-oxy-unavailable";
 
 /// The ide upstream base URL from `OXY_IDE_UPSTREAM`, e.g.
 /// `http://oxy-dev-oxy-app-ide:80`. `None` (unset/empty) → forwarding is off
@@ -191,15 +200,50 @@ pub async fn forward_to_ide_opt(upstream_base: &str, req: Request) -> Result<Res
 /// (read-only git state) call [`forward_to_ide_opt`] and serve a local fallback
 /// on `Err` instead.
 pub async fn forward_to_ide(upstream_base: &str, req: Request) -> Response {
+    // Classify BEFORE `req` is consumed by the proxy call, so the unreachable
+    // response can name which capability is down (runtime vs editing).
+    let class = unavailable_class(req.uri().path());
     match forward_to_ide_opt(upstream_base, req).await {
         Ok(resp) => resp,
-        Err(_unreachable) => {
-            let mut resp = (StatusCode::BAD_GATEWAY, "ide backend unreachable").into_response();
-            resp.headers_mut()
-                .insert(HEADER_REQUIRED_ROLE, HeaderValue::from_static("ide"));
-            resp
-        }
+        Err(_unreachable) => ide_unreachable_response(class),
     }
+}
+
+/// `workspace-runtime` for DuckDB / local-execution routes, else
+/// `workspace-editing`. See [`HEADER_UNAVAILABLE`].
+fn unavailable_class(path: &str) -> &'static str {
+    if crate::server::role_manifest::is_workspace_runtime_route(path) {
+        "workspace-runtime"
+    } else {
+        "workspace-editing"
+    }
+}
+
+/// The legible response for an unreachable ide on a non-degradable IdeOnly
+/// route. The ide is RESTARTING, not gone, so this is a retryable degradation,
+/// not a hard error:
+///   - `X-Oxy-Required-Role: ide` — the FE's existing ide-down banner trigger.
+///   - `X-Oxy-Unavailable: workspace-{runtime,editing}` — WHICH capability is
+///     down, so the FE scopes the message and ops alert per-class.
+///   - `Retry-After: 5` — pace client retries instead of hot-looping a
+///     recovering pod (reinforces the proxy's `connect_timeout` storm guard).
+/// Status stays `502` (not `503`) to preserve the FE detection contract
+/// (`status === 502 && x-oxy-required-role === 'ide'`).
+fn ide_unreachable_response(class: &'static str) -> Response {
+    let body = if class == "workspace-runtime" {
+        "ide backend unreachable: workspace runtime (data, charts, runs) temporarily unavailable"
+    } else {
+        "ide backend unreachable: workspace editing (files, git, compile) temporarily unavailable"
+    };
+    let mut resp = (StatusCode::BAD_GATEWAY, body).into_response();
+    let headers = resp.headers_mut();
+    headers.insert(HEADER_REQUIRED_ROLE, HeaderValue::from_static("ide"));
+    headers.insert(HEADER_UNAVAILABLE, HeaderValue::from_static(class));
+    headers.insert(
+        axum::http::header::RETRY_AFTER,
+        HeaderValue::from_static("5"),
+    );
+    resp
 }
 
 /// Copy request headers, dropping:
@@ -290,6 +334,45 @@ mod tests {
         assert!(out.get(header::HOST).is_none());
         assert!(out.get(header::CONTENT_LENGTH).is_none());
         assert!(out.get(HEADER_FORWARDED_BY).is_none());
+    }
+
+    #[test]
+    fn unavailable_class_splits_runtime_from_editing() {
+        let ws = "d9830be4-c6a4";
+        assert_eq!(
+            unavailable_class(&format!("/api/{ws}/analytics/runs")),
+            "workspace-runtime"
+        );
+        assert_eq!(
+            unavailable_class(&format!("/api/{ws}/charts/c.png")),
+            "workspace-runtime"
+        );
+        assert_eq!(
+            unavailable_class(&format!("/api/{ws}/files/cGF0aA")),
+            "workspace-editing"
+        );
+        assert_eq!(
+            unavailable_class(&format!("/api/{ws}/compile")),
+            "workspace-editing"
+        );
+    }
+
+    #[test]
+    fn ide_unreachable_response_is_retryable_and_classified() {
+        let resp = ide_unreachable_response("workspace-runtime");
+        assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+        let h = resp.headers();
+        // FE detection contract preserved.
+        assert_eq!(h.get(HEADER_REQUIRED_ROLE).unwrap(), "ide");
+        // Isolation signal + paced retry.
+        assert_eq!(h.get(HEADER_UNAVAILABLE).unwrap(), "workspace-runtime");
+        assert_eq!(h.get(header::RETRY_AFTER).unwrap(), "5");
+
+        let editing = ide_unreachable_response("workspace-editing");
+        assert_eq!(
+            editing.headers().get(HEADER_UNAVAILABLE).unwrap(),
+            "workspace-editing"
+        );
     }
 
     #[test]

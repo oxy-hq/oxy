@@ -31,6 +31,12 @@ export interface CompileStatus {
   /** Workspace's default branch (`main` / `master` / custom). Null
    * matches `head_sha = null`. */
   default_branch: string | null;
+  /** True only on a multi-instance (split-fleet) deployment where compiling
+   * promotes the revision a separate `serve` fleet reads. False on a single
+   * `all` instance (e.g. `oxy start` / `oxy serve --local`), which serves from
+   * the working copy directly — manual compile is a no-op there, so the IDE
+   * hides the Compile button. */
+  boundary_active: boolean;
 }
 
 export const CompileService = {

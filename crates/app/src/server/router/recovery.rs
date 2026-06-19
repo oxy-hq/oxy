@@ -50,26 +50,33 @@ pub(super) fn spawn_shutdown_hook(agentic_state: Arc<AgenticState>) {
     });
 }
 
-/// Env flag enabling the in-process global driver loop: after one-shot
-/// startup recovery, re-run recovery on an interval so scheduler-seeded
-/// (Phase 2) and crash-orphaned `scope_owned = false` runs are driven to
-/// completion without a per-request coordinator. Default OFF — when unset
-/// the loop never spawns and behavior is byte-identical to before.
+/// The in-process global driver loop: after one-shot startup recovery, re-run
+/// recovery on an interval so scheduler-seeded (Phase 2) and crash-orphaned
+/// `scope_owned = false` runs are driven to completion without a per-request
+/// coordinator. It also fires the periodic schedule + monitor-scan ticks
+/// (`tick_schedules` / `tick_monitor_schedules`).
 ///
-/// **NOTE:** The periodic monitor-scan tick (`tick_monitor_schedules`) is also
-/// gated behind this flag. When the flag is unset, no automatic anomaly scans
-/// fire; operators must trigger them manually via `POST .../scan` or the
-/// run-now button. Set `OXY_INPROC_GLOBAL_WORKER=1` to enable the full
-/// periodic loop including monitor scans.
+/// Enabled by ROLE, not a standalone flag: every role except the stateless
+/// `serve` replica runs it (`all` / `ide` / `worker`). `OXY_INPROC_GLOBAL_WORKER`
+/// remains an override in both directions (`=0` forces it off on a non-serve
+/// node). Firing is exactly-once across replicas via the scheduler `next_run_at`
+/// CAS, so several eligible nodes running it concurrently is safe — no leader
+/// election needed.
 pub(super) const INPROC_GLOBAL_WORKER_ENV: &str = "OXY_INPROC_GLOBAL_WORKER";
 const INPROC_GLOBAL_WORKER_INTERVAL_ENV: &str = "OXY_INPROC_GLOBAL_WORKER_INTERVAL_SECS";
 const DEFAULT_INPROC_GLOBAL_WORKER_INTERVAL_SECS: u64 = 30;
 
 fn inproc_global_worker_enabled() -> bool {
-    std::env::var(INPROC_GLOBAL_WORKER_ENV)
-        .ok()
-        .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false)
+    // Explicit env override wins, in both directions.
+    if let Ok(v) = std::env::var(INPROC_GLOBAL_WORKER_ENV) {
+        return matches!(v.as_str(), "1" | "true" | "yes" | "on");
+    }
+    // Otherwise derive from the process role: only the stateless serve replica
+    // skips the periodic driver (it offloads to the worker fleet).
+    !matches!(
+        crate::server::role_manifest::current_process_role(),
+        crate::server::role_manifest::Role::Serve
+    )
 }
 
 fn inproc_global_worker_interval() -> std::time::Duration {
@@ -129,19 +136,22 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
             ws_cache.clone(),
         );
     } else if matches!(mode, ServeMode::Cloud) {
-        // Loud operational signal: in cloud mode with the in-process global
-        // driver off AND no other node draining the queue, `TaskSpec::Compile`
-        // tasks (which the compile boundary depends on) never run, so
-        // workspaces stay uncompiled and unservable by the stateless fleet.
-        // Compile execution needs the workspace working copy on disk, so the
-        // node running the driver must have it (per-worker clone-on-demand is a
-        // later phase). Set OXY_INPROC_GLOBAL_WORKER=1 on such a node.
+        // Reached only when the global driver was explicitly disabled
+        // (`OXY_INPROC_GLOBAL_WORKER=0`) on a non-serve node — the derived
+        // default already turns it OFF for `serve` (which offloads to the worker
+        // fleet) and ON for every other role. Loud signal because in cloud mode
+        // with no node draining the queue, `TaskSpec::Compile` tasks (which the
+        // compile boundary depends on) never run, so workspaces stay uncompiled
+        // and unservable by the stateless fleet. Compile execution needs the
+        // workspace working copy on disk, so the node running the driver must
+        // have it. See internal-docs/compile-boundary.md.
         tracing::warn!(
             target: "recovery",
-            "OXY_INPROC_GLOBAL_WORKER is off on a cloud serve node — queued Global \
-             tasks (compiles in particular) will NOT be drained here. Ensure a node \
-             with the workspace working copy runs the global driver, or compiles \
-             never run. See internal-docs/compile-boundary.md."
+            "in-process global driver is explicitly OFF on a cloud node — queued \
+             Global tasks (compiles in particular) will NOT be drained here. Ensure \
+             a node with the workspace working copy runs the global driver (it is on \
+             by default for every role except serve), or compiles never run. See \
+             internal-docs/compile-boundary.md."
         );
     }
 
@@ -184,6 +194,16 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
                     break;
                 }
                 _ = tokio::time::sleep(interval) => {
+                    // Every eligible node drives this tick — no leader election
+                    // needed. The work it fans out is already exactly-once across
+                    // replicas: `tick_schedules` / `tick_monitor_schedules`
+                    // CAS-advance `next_run_at` (only the replica whose UPDATE
+                    // hits one row fires — see agentic-pipeline::scheduler), and
+                    // stranded-run recovery is driver-lease-gated (F1). So N
+                    // concurrent drivers self-dedupe, which is strictly better
+                    // HA than a single leader: instant failover, no lease, no
+                    // SPOF. The only cost is a little redundant polling, which is
+                    // a cheap indexed query.
                     let n = run_recovery(
                         &db,
                         runtime.clone(),

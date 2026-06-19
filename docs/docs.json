@@ -144,6 +144,7 @@
               "manage/api-keys",
               "manage/billing",
               "manage/usage-limits",
+              "manage/high-availability",
               "manage/support"
             ]
           },

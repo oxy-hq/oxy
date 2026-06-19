@@ -4,9 +4,11 @@ on:
   pull_request:
     paths-ignore:
       - "docs/**"
+      - "internal-docs/**"
   push:
     paths-ignore:
       - "docs/**"
+      - "internal-docs/**"
   schedule:
     - cron: "0 2 * * 1" # Weekly on Monday at 2am UTC
   workflow_dispatch:

@@ -98,6 +98,24 @@ pub async fn enforce_role(req: Request, next: Next) -> Response {
                 }
             }
         } else {
+            // Conditional /analytics un-pin (OXY_ANALYTICS_FLEET_UNPIN, default
+            // off): an analytics run whose workspace has only serve-safe
+            // databases (remote, or s3-mirrored / DuckLake DuckDB) can execute on
+            // the fleet — handle it locally instead of proxying. Conservative —
+            // any FS-bound DB (raw local DuckDB, local key file) or any boundary
+            // miss leaves `workspace_is_serve_safe` false, so it keeps proxying.
+            if crate::server::serve_safety::analytics_fleet_unpin_enabled()
+                && let Some(ws) = crate::server::serve_safety::analytics_workspace_id(&path)
+            {
+                if crate::server::serve_safety::workspace_is_serve_safe(ws).await {
+                    tracing::debug!(
+                        workspace_id = %ws,
+                        path = %path,
+                        "serve replica: serve-safe /analytics handled locally (fleet un-pin)"
+                    );
+                    return stamp(next.run(req).await, role);
+                }
+            }
             tracing::debug!(
                 method = %method,
                 path = %path,

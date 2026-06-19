@@ -27,6 +27,7 @@ use uuid::Uuid;
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
 use agentic_semantic::config::SemanticQueryConfig;
 use oxy::adapters::session_filters::SessionFilters;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::ConnectionOverrides;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
@@ -37,6 +38,7 @@ use crate::server::api::data::{
 use crate::server::api::middlewares::workspace_context::{
     EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerExtractor,
 };
+use crate::server::api::semantic_scan::{self, MaterialisedScan, SemanticEntity};
 
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
@@ -124,37 +126,22 @@ pub async fn get_view_details(
     }): Path<ViewPath>,
 ) -> Result<extract::Json<ViewResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let file_path_str = decode_b64_path(&file_path_b64)?;
+    // Boundary first (a stateless serve replica has no working copy), FS fallback
+    // in local / not-yet-promoted mode. `_guard` keeps the materialised tempdir
+    // alive until parsing finishes.
+    let (scan_path, view_file, _guard) = resolve_semantic_source(
+        &workspace_manager,
+        SemanticEntity::View,
+        &file_path_str,
+        "View",
+    )
+    .await?;
 
-    let full_path_str = workspace_manager
-        .config_manager
-        .resolve_file(&file_path_str)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                extract::Json(ErrorResponse {
-                    message: format!("Failed to resolve file path: {e}"),
-                }),
-            )
-        })?;
-    let full_path = std::path::PathBuf::from(full_path_str);
-    if !full_path.exists() {
-        return Err((
-            StatusCode::NOT_FOUND,
-            extract::Json(ErrorResponse {
-                message: format!("View file {file_path_str} not found"),
-            }),
-        ));
-    }
-
-    let parser_config = ParserConfig::new(workspace_manager.config_manager.semantics_scan_path());
-    let parser = SemanticLayerParser::new(parser_config);
-    let view = parser.parse_view_file(&full_path).map_err(|e| {
-        (
+    let parser = SemanticLayerParser::new(ParserConfig::new(&scan_path));
+    let view = parser.parse_view_file(&view_file).map_err(|e| {
+        semantic_err(
             StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: format!("Failed to parse view file: {e}"),
-            }),
+            format!("Failed to parse view file: {e}"),
         )
     })?;
 
@@ -177,38 +164,22 @@ pub async fn get_topic_details(
     }): Path<TopicPath>,
 ) -> Result<extract::Json<TopicDetailsResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let file_path_str = decode_b64_path(&file_path_b64)?;
-    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
+    // Boundary first, FS fallback. The WHOLE scan is materialised so the topic's
+    // referenced views hydrate from the same dir (`parse_semantic_layer_from_dir`
+    // below reads `semantics_path`). `_guard` holds the tempdir until then.
+    let (semantics_path, topic_file, _guard) = resolve_semantic_source(
+        &workspace_manager,
+        SemanticEntity::Topic,
+        &file_path_str,
+        "Topic",
+    )
+    .await?;
 
-    let full_path_str = workspace_manager
-        .config_manager
-        .resolve_file(&file_path_str)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                extract::Json(ErrorResponse {
-                    message: format!("Failed to resolve file path: {e}"),
-                }),
-            )
-        })?;
-    let full_path = std::path::PathBuf::from(full_path_str);
-    if !full_path.exists() {
-        return Err((
-            StatusCode::NOT_FOUND,
-            extract::Json(ErrorResponse {
-                message: format!("Topic file {file_path_str} not found"),
-            }),
-        ));
-    }
-
-    let parser_config = ParserConfig::new(&semantics_path);
-    let parser = SemanticLayerParser::new(parser_config);
-    let topic = parser.parse_topic_file(&full_path).map_err(|e| {
-        (
+    let parser = SemanticLayerParser::new(ParserConfig::new(&semantics_path));
+    let topic = parser.parse_topic_file(&topic_file).map_err(|e| {
+        semantic_err(
             StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: format!("Failed to parse topic file: {e}"),
-            }),
+            format!("Failed to parse topic file: {e}"),
         )
     })?;
 
@@ -260,6 +231,66 @@ pub async fn get_topic_details(
         },
         views: views_with_data,
     }))
+}
+
+/// Resolve where to read a single view/topic: the compile boundary (materialised
+/// into a tempdir) when the workspace is promoted, else the working-copy FS.
+/// Returns `(scan_root, file_path, guard)` — HOLD `guard` until parsing finishes
+/// (dropping it deletes the materialised tempdir).
+async fn resolve_semantic_source(
+    workspace_manager: &WorkspaceManager,
+    entity: SemanticEntity,
+    file_path_str: &str,
+    label: &str,
+) -> Result<
+    (
+        std::path::PathBuf,
+        std::path::PathBuf,
+        Option<MaterialisedScan>,
+    ),
+    (StatusCode, extract::Json<ErrorResponse>),
+> {
+    if let Some((scan, file)) = semantic_scan::materialise_semantic_entity(
+        workspace_manager.workspace_id,
+        entity,
+        file_path_str,
+    )
+    .await
+    .map_err(|e| {
+        semantic_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to materialise semantic scan: {e}"),
+        )
+    })? {
+        return Ok((scan.scan_path.clone(), file, Some(scan)));
+    }
+
+    let full_path_str = workspace_manager
+        .config_manager
+        .resolve_file(file_path_str)
+        .await
+        .map_err(|e| {
+            semantic_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to resolve file path: {e}"),
+            )
+        })?;
+    let full_path = std::path::PathBuf::from(full_path_str);
+    if !full_path.exists() {
+        return Err(semantic_err(
+            StatusCode::NOT_FOUND,
+            format!("{label} file {file_path_str} not found"),
+        ));
+    }
+    Ok((
+        workspace_manager.config_manager.semantics_scan_path(),
+        full_path,
+        None,
+    ))
+}
+
+fn semantic_err(status: StatusCode, message: String) -> (StatusCode, extract::Json<ErrorResponse>) {
+    (status, extract::Json(ErrorResponse { message }))
 }
 
 // ── Preagg status ─────────────────────────────────────────────────────────────
