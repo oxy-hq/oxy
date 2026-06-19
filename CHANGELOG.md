@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.78] - 2026-06-19
+
+### 🚀 Features
+
+- *(app)* Add world-model LLM proxy endpoint for the voice assistant (#2553)
+- *(serve)* Compile-complete stateless serving + ephemeral-env foundations (plan-2) (#2557)
+- Show Airhouse server version in settings (#2574)
+
+### 🐛 Bug Fixes
+
+- Unified secrets table (#2556)
+
+### 📚 Documentation
+
+- Fix broken internal links (404s) in /guide pages (#2568)
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove emojis from edge UI copy (#2561)
+
 ## [0.5.77] - 2026-06-18
 
 ### 🚀 Features
@@ -20,6 +40,10 @@ All notable changes to this project will be documented in this file.
 - Update Oxygen product description to OS positioning (#2565)
 - Finish OS positioning cleanup (changelog + agent context) (#2566)
 - Correct inaccurate API/CLI claims and add positioning guardrails (#2567)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.77 (#2562)
 
 ## [0.5.76] - 2026-06-17
 
