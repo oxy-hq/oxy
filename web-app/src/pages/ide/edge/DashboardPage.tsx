@@ -313,7 +313,7 @@ const DashboardPage: React.FC = () => {
 
         <Card title='Top violations' icon={ShieldAlert} href={`${detections}?severity=critical`}>
           {(rollup?.top_by_violations.length ?? 0) === 0 ? (
-            <EmptyHint>No violations in the selected range. 🎉</EmptyHint>
+            <EmptyHint>No violations in the selected range.</EmptyHint>
           ) : (
             <Table>
               <TableHeader>
@@ -353,7 +353,7 @@ const DashboardPage: React.FC = () => {
       <Card title='Recent alerts' icon={Bell}>
         {recentAlerts.length === 0 ? (
           <EmptyHint>
-            {alertsLoading ? "Loading…" : "No camera transitions in recent history. 🎉"}
+            {alertsLoading ? "Loading…" : "No camera transitions in recent history."}
           </EmptyHint>
         ) : (
           <Table>
@@ -424,7 +424,7 @@ const DashboardPage: React.FC = () => {
           <HealthChip label='unknown' count={healthBuckets.unknown} tone='muted' />
         </div>
         {attentionCameras.length === 0 ? (
-          <EmptyHint>Every camera is reporting clean. 🎉</EmptyHint>
+          <EmptyHint>Every camera is reporting clean.</EmptyHint>
         ) : (
           <Table>
             <TableHeader>
