@@ -43,6 +43,13 @@ struct CreateServiceAccountResponse {
     bearer: String,
 }
 
+/// Subset of the Airhouse public `/health` response. Only `version` is
+/// consumed here; the other fields (`status`, live counters) are ignored.
+#[derive(serde::Deserialize)]
+struct HealthResponse {
+    version: String,
+}
+
 pub struct AirhouseAdminClient {
     client: Client,
     base_url: String,
@@ -60,6 +67,23 @@ impl AirhouseAdminClient {
 
     fn url(&self, path: &str) -> String {
         format!("{}/admin/v1{}", self.base_url.trim_end_matches('/'), path)
+    }
+
+    /// Fetch the Airhouse server's software version from its public
+    /// `/health` endpoint. Unlike every other call here, `/health` lives at
+    /// the server root (*not* under `/admin/v1`) and is unauthenticated, so
+    /// this neither prefixes `/admin/v1` nor sends the bearer token. The
+    /// value is `CARGO_PKG_VERSION` baked into the Airhouse binary — surfaced
+    /// in the UI next to the connection panel, mirroring Oxy's VersionBadge.
+    pub async fn server_version(&self) -> Result<String, AirhouseError> {
+        let url = format!("{}/health", self.base_url.trim_end_matches('/'));
+        let resp = self.client.get(url).send().await?;
+        match resp.status() {
+            StatusCode::OK => Ok(resp.json::<HealthResponse>().await?.version),
+            s => Err(AirhouseError::Provisioning(format!(
+                "airhouse /health returned unexpected status {s}"
+            ))),
+        }
     }
 
     /// Create an Airhouse tenant. Storage is managed server-side from
@@ -429,6 +453,41 @@ mod tests {
         // Bucket + prefix come back from the server, not from the request body.
         assert_eq!(rec.bucket, "airhouse-data");
         assert!(!rec.pg_url().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_server_version_reads_health_root_unauthed() {
+        let server = MockServer::start().await;
+        // `/health` lives at the server root — NOT under `/admin/v1` — and is
+        // unauthenticated. Mounting on the bare path asserts we don't prefix
+        // `/admin/v1`; we only consume `version` and ignore the rest.
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "ok",
+                "version": "0.1.9",
+                "queries_active": 0,
+                "connections_active": 1
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AirhouseAdminClient::new(server.uri(), "tok");
+        assert_eq!(client.server_version().await.unwrap(), "0.1.9");
+    }
+
+    #[tokio::test]
+    async fn test_server_version_non_200_maps_to_provisioning() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("unavailable"))
+            .mount(&server)
+            .await;
+
+        let client = AirhouseAdminClient::new(server.uri(), "tok");
+        let err = client.server_version().await.unwrap_err();
+        assert!(matches!(err, AirhouseError::Provisioning(_)));
     }
 
     #[tokio::test]

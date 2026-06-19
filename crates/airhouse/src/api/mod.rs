@@ -1,6 +1,9 @@
 //! Axum HTTP routes for per-user Airhouse credential access.
 //!
 //! Routes (all under the host's auth middleware):
+//! - `GET    /airhouse/version`               — the running Airhouse
+//!   deployment's software version (global; no workspace). Read live from
+//!   the deployment's public `/health`. Safe; no side effects.
 //! - `GET    /airhouse/me/connection`         — wire endpoint + role,
 //!   `is_provisioned` flag. Safe; no side effects.
 //! - `POST   /airhouse/me/credentials`        — mint a fresh ephemeral
@@ -26,6 +29,7 @@ where
     S: Clone + Send + Sync + 'static,
 {
     Router::new()
+        .route("/airhouse/version", get(handlers::get_version))
         .route("/airhouse/me/connection", get(handlers::get_connection))
         .route("/airhouse/me/credentials", post(handlers::get_credentials))
         .route("/airhouse/me/provision", post(handlers::provision))

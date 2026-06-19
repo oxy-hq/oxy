@@ -30,7 +30,7 @@ use uuid::Uuid;
 
 use crate::airhouse_role_for;
 use crate::broker::DEFAULT_EXTERNAL_TTL;
-use crate::config::{provisioner_for, token_broker, wire_endpoint};
+use crate::config::{admin_client, provisioner_for, token_broker, wire_endpoint};
 use crate::entity::Tenants as AirhouseTenants;
 use crate::entity::tenants::{self as airhouse_tenants, TenantStatus};
 use crate::provisioner::ProvisionerError;
@@ -178,6 +178,34 @@ async fn lookup_provisioned_tenant(
         return Ok(None);
     }
     Ok(Some(row.airhouse_tenant_id))
+}
+
+#[derive(Serialize)]
+pub struct VersionResponse {
+    /// The Airhouse server's software version (its `CARGO_PKG_VERSION`),
+    /// read live from the deployment's public `/health` endpoint.
+    pub version: String,
+}
+
+/// `GET /airhouse/version` — the running Airhouse deployment's software
+/// version, surfaced next to the connection panel like Oxy's own
+/// VersionBadge. Global (one Airhouse per deployment), so unlike the
+/// `/me/*` routes it takes no `workspace_id` and resolves no role.
+///
+/// - 503 when Airhouse is disabled/misconfigured at the deployment level
+///   (no env vars) — same signal `get_connection` uses.
+/// - 502 when Airhouse's `/health` is unreachable or returns an unexpected
+///   shape. The UI treats either non-200 as "hide the badge".
+#[instrument(skip_all)]
+pub async fn get_version(
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+) -> Result<Json<VersionResponse>, StatusCode> {
+    let client = admin_client().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let version = client.server_version().await.map_err(|e| {
+        warn!("failed to fetch airhouse server version: {e}");
+        StatusCode::BAD_GATEWAY
+    })?;
+    Ok(Json(VersionResponse { version }))
 }
 
 /// `GET /airhouse/me/connection` — return wire endpoint, dbname, and the

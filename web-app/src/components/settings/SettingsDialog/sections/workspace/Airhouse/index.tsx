@@ -9,6 +9,7 @@ import useAuthConfig from "@/hooks/auth/useAuthConfig";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import SectionHeader from "../../../components/SectionHeader";
+import { AirhouseVersionBadge } from "./components/AirhouseVersionBadge";
 import { ConnectionDetails } from "./components/ConnectionDetails";
 import { ProvisionPrompt } from "./components/ProvisionPrompt";
 
@@ -114,6 +115,7 @@ const Airhouse: React.FC = () => {
           </span>
         }
         description='Connect any Postgres-compatible client to your Airhouse-managed database.'
+        actions={<AirhouseVersionBadge />}
       />
       <div className='space-y-6'>{renderContent()}</div>
     </div>

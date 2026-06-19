@@ -37,7 +37,28 @@ export type AirhouseEphemeralToken = {
   expires_at: string;
 };
 
+/**
+ * The running Airhouse deployment's software version. Global — there is one
+ * Airhouse per deployment — so this is not scoped to a workspace, mirroring
+ * how Oxy's own VersionBadge reports the running Oxy build.
+ */
+export type AirhouseVersionInfo = {
+  version: string;
+};
+
 export const AirhouseService = {
+  /**
+   * The running Airhouse deployment's software version. Backed by
+   * `GET /airhouse/version`, which Oxy reads live from the Airhouse server's
+   * public `/health`. Responds 503 when Airhouse isn't configured for the
+   * deployment and 502 when its `/health` is unreachable — callers hide the
+   * version badge on either, so it never shows a broken state.
+   */
+  async getVersion(): Promise<AirhouseVersionInfo> {
+    const response = await apiClient.get("/airhouse/version");
+    return response.data;
+  },
+
   async getConnection(workspaceId: string): Promise<AirhouseConnectionInfo> {
     const response = await apiClient.get("/airhouse/me/connection", {
       params: { workspace_id: workspaceId }

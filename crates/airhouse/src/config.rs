@@ -231,6 +231,19 @@ pub async fn autodetect_local_airhouse() -> bool {
 
 // ── Factory functions ─────────────────────────────────────────────────────────
 
+/// Build a bare [`AirhouseAdminClient`] when the integration is enabled.
+/// Unlike [`provisioner_for`] / [`token_broker`] it carries no extra state —
+/// it's for stateless one-shot reads (e.g. the server version from
+/// `/health`). Returns `None` when the integration is disabled or
+/// misconfigured; callers should surface that as 503 "not configured".
+pub fn admin_client() -> Option<AirhouseAdminClient> {
+    let cfg = AirhouseConfig::cached().as_runtime()?;
+    Some(AirhouseAdminClient::new(
+        cfg.base_url.clone(),
+        cfg.admin_token.clone(),
+    ))
+}
+
 /// Build a `TenantProvisioner` for the given DB connection if Airhouse is enabled.
 /// Returns `None` when the integration is disabled or misconfigured — call sites
 /// should treat that as "skip silently".
