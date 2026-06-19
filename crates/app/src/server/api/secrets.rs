@@ -542,10 +542,12 @@ pub struct EnvSecretInfo {
     pub source: SecretSource,
     /// Whether the environment variable is currently set (non-empty value)
     pub is_set: bool,
-    /// Masked value of the env var if set (e.g. "sk-a****bcde"), None if not set
+    /// Masked value of the env var if set (e.g. "sk-a****bcde"), None if not set.
+    ///
+    /// Only a masked value is ever exposed for env-sourced secrets — the raw
+    /// plaintext is never returned. Env vars are resolved by the server at
+    /// runtime; clients have no business seeing the raw value.
     pub masked_value: Option<String>,
-    /// Full plaintext value — present because this endpoint requires admin access.
-    pub full_value: Option<String>,
 }
 
 /// List all environment-variable-referenced secrets from config.yml.
@@ -592,10 +594,6 @@ pub async fn list_env_secrets(
             referenced_by,
             is_set: value.is_some(),
             masked_value: value.as_deref().map(mask_secret_value),
-            // Never return the plaintext value for env-sourced secrets.
-            // Env vars are resolved by the server at runtime; clients have no
-            // business seeing the raw value. Use the masked_value for display.
-            full_value: None,
             env_var,
         }
     };

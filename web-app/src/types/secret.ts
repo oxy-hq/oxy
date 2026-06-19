@@ -75,6 +75,4 @@ export interface EnvSecret {
   is_set: boolean;
   /** Masked value of the env var if set, e.g. "sk-a****bcde" */
   masked_value?: string;
-  /** Full plaintext value — only present for admin users */
-  full_value?: string;
 }
