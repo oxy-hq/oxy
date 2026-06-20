@@ -193,6 +193,8 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
         trigger: None,
         logical_date: None,
         retry_of: None,
+        backfill_from: None,
+        backfill_to: None,
     };
 
     // Single-process CLI: a co-located scoped coordinator drives this run.

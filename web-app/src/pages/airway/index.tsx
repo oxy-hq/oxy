@@ -18,6 +18,7 @@ import type React from "react";
 import { useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import BackfillAirwayModal from "@/components/airway/BackfillAirwayModal";
 import LineageGraph from "@/components/airway/LineageGraph";
 import PhaseBar from "@/components/airway/PhaseBar";
 import PipelineOverview from "@/components/airway/PipelineOverview";
@@ -125,6 +126,7 @@ export const AirwayPipelinePage: React.FC<{
   return (
     <div className='flex h-full flex-col'>
       <Chrome hideHeader={hideHeader} pipelineRef={pipelineRef}>
+        <BackfillAirwayModal pipelineRef={pipelineRef} onStarted={openRun} />
         <Button size='sm' onClick={run} disabled={ctrl.starting} aria-label='Run this pipeline'>
           {ctrl.starting ? (
             <Loader2 className='h-4 w-4 animate-spin' />

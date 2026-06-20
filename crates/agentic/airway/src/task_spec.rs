@@ -17,6 +17,10 @@ pub struct AirwayTaskSpec {
     /// Subset of resources to run (empty = whole spec). See
     /// [`TaskSpec::Airway::resources`].
     pub resources: Vec<String>,
+    /// Bounded-backfill window `[from, to)` as RFC3339 strings, applied to the
+    /// date-windowed sources (toast, quickbooks). `None` = normal run.
+    pub backfill_from: Option<String>,
+    pub backfill_to: Option<String>,
 }
 
 impl AirwayTaskSpec {
@@ -26,6 +30,8 @@ impl AirwayTaskSpec {
             pipeline_ref: pipeline_ref.into(),
             variables: None,
             resources: Vec::new(),
+            backfill_from: None,
+            backfill_to: None,
         }
     }
 
@@ -48,6 +54,8 @@ impl AirwayTaskSpec {
             pipeline_ref: self.pipeline_ref,
             variables: self.variables,
             resources: self.resources,
+            backfill_from: self.backfill_from,
+            backfill_to: self.backfill_to,
         }
     }
 
@@ -59,10 +67,14 @@ impl AirwayTaskSpec {
                 pipeline_ref,
                 variables,
                 resources,
+                backfill_from,
+                backfill_to,
             } => Some(Self {
                 pipeline_ref: pipeline_ref.clone(),
                 variables: variables.clone(),
                 resources: resources.clone(),
+                backfill_from: backfill_from.clone(),
+                backfill_to: backfill_to.clone(),
             }),
             _ => None,
         }

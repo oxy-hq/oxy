@@ -256,6 +256,14 @@ pub enum TaskSpec {
         /// rows without this key deserialize to empty (backward-compatible).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         resources: Vec<String>,
+        /// Bounded-backfill window `[from, to)` as RFC3339 strings, applied
+        /// to the date-windowed sources (toast, quickbooks). Set only by the
+        /// backfill path; absent for normal runs. Carried as strings so the
+        /// runtime queue stays chrono-free; the source factory parses them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        backfill_from: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        backfill_to: Option<String>,
     },
     /// Walk a workspace and write a compile-boundary revision (rows in
     /// `revisions` + per-entity tables; optionally promotes

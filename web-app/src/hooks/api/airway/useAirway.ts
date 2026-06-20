@@ -26,6 +26,7 @@ import {
   type AirwayEvent,
   type AirwayRunSummary,
   AirwayService,
+  type BackfillAirwayRequest,
   type DiscoveredTable,
   type DiscoverSourceRequest,
   type StartAirwayRequest
@@ -47,6 +48,23 @@ export const useStartAirwayRun = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: StartAirwayRequest) => AirwayService.startRun(project.id, request),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: keys.runsForPipeline(project.id, variables.pipeline_ref)
+      });
+    }
+  });
+};
+
+export const useBackfillAirway = (): UseMutationResult<
+  { run_id: string },
+  Error,
+  BackfillAirwayRequest
+> => {
+  const { project } = useCurrentProjectBranch();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: BackfillAirwayRequest) => AirwayService.backfillRun(project.id, request),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: keys.runsForPipeline(project.id, variables.pipeline_ref)

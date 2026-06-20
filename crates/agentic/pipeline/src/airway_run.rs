@@ -67,6 +67,14 @@ pub struct StartAirwayRequest {
     /// `agentic_runs.metadata.retry_of`.
     #[serde(skip_deserializing, default)]
     pub retry_of: Option<String>,
+    /// Bounded-backfill window `[from, to)` (RFC3339), set by the backfill
+    /// endpoint. Threaded onto the queue spec and applied to the
+    /// date-windowed sources (toast, quickbooks). Internal-only — the public
+    /// `/runs` body cannot set it (only `/backfill` does).
+    #[serde(skip_deserializing, default)]
+    pub backfill_from: Option<String>,
+    #[serde(skip_deserializing, default)]
+    pub backfill_to: Option<String>,
 }
 
 /// One row in the run-history list for a pipeline.
@@ -172,6 +180,10 @@ pub async fn start_airway_run(
         // silently widening a "retry failed tables" run back to the full
         // pipeline — see `retry_airway`.
         "resources": request.resources.clone(),
+        // Backfill window for observability in the run history (null for
+        // normal runs). The effective window still rides the queue spec below.
+        "backfill_from": request.backfill_from.clone(),
+        "backfill_to": request.backfill_to.clone(),
     });
     crate::scheduler::stamp_trigger_metadata(
         &mut metadata,
@@ -212,6 +224,8 @@ pub async fn start_airway_run(
         pipeline_ref: request.pipeline_ref,
         variables: request.variables,
         resources: request.resources,
+        backfill_from: request.backfill_from,
+        backfill_to: request.backfill_to,
     };
     crud::enqueue_task(db, &run_id, &run_id, None, &task_spec, None, scope).await?;
 

@@ -41,6 +41,7 @@ use airway::connector::sources::toast::ToastSource;
 use airway::connector::sources::weather::{WeatherConfig, weather_source};
 use airway::types::WriteDisposition;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -474,6 +475,13 @@ struct ToastParams {
     /// Sandbox / non-prod override. Defaults to airway's prod base URL.
     #[serde(default)]
     base_url: Option<String>,
+    /// Bounded-backfill window `[start, end)` (RFC3339), injected by the
+    /// executor for a backfill run. Both-or-neither; absent for normal
+    /// incremental runs. See [`parse_backfill_window`].
+    #[serde(default)]
+    backfill_start: Option<String>,
+    #[serde(default)]
+    backfill_end: Option<String>,
 }
 
 fn build_toast(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
@@ -492,7 +500,34 @@ fn build_toast(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
     if let Some(base) = params.base_url.as_deref() {
         source = source.with_base_url(base);
     }
+    if let Some((start, end)) = parse_backfill_window(&params.backfill_start, &params.backfill_end)?
+    {
+        source = source.with_backfill_window(start, end);
+    }
     Ok(Box::new(source))
+}
+
+/// Parse an optional RFC3339 `[start, end)` backfill window from source config.
+///
+/// Both-or-neither: `Ok(None)` when neither bound is set (normal run),
+/// `Ok(Some(..))` when both parse, and an error if only one is present or
+/// either fails to parse. Used by the date-windowed source builders.
+fn parse_backfill_window(
+    start: &Option<String>,
+    end: &Option<String>,
+) -> Result<Option<(DateTime<Utc>, DateTime<Utc>)>, AirwayError> {
+    let parse = |s: &str| {
+        DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| AirwayError::Other(format!("invalid backfill timestamp `{s}`: {e}")))
+    };
+    match (start.as_deref(), end.as_deref()) {
+        (None, None) => Ok(None),
+        (Some(s), Some(e)) => Ok(Some((parse(s)?, parse(e)?))),
+        _ => Err(AirwayError::Other(
+            "backfill window requires both `backfill_start` and `backfill_end`".into(),
+        )),
+    }
 }
 
 // ── quickbooks ─────────────────────────────────────────────────────────────────
@@ -522,6 +557,12 @@ struct QuickBooksParams {
     /// Optional API minor version (`?minorversion=`).
     #[serde(default, deserialize_with = "de_opt_string_or_number")]
     minor_version: Option<String>,
+    /// Bounded-backfill window `[start, end)` (RFC3339), injected by the
+    /// executor for a backfill run. Both-or-neither; absent for normal runs.
+    #[serde(default)]
+    backfill_start: Option<String>,
+    #[serde(default)]
+    backfill_end: Option<String>,
 }
 
 /// Deserialize a field that may appear as a YAML string or a bare number,
@@ -572,6 +613,10 @@ fn build_quickbooks(
     }
     if let Some(sink) = refresh_sink {
         source = source.with_refresh_token_sink(Arc::new(AirwayRefreshSink(sink)));
+    }
+    if let Some((start, end)) = parse_backfill_window(&params.backfill_start, &params.backfill_end)?
+    {
+        source = source.with_backfill_window(start, end);
     }
     Ok(Box::new(source))
 }
@@ -968,6 +1013,73 @@ mod tests {
         ))
         .expect("build");
         assert_eq!(source.name(), "quickbooks");
+    }
+
+    #[test]
+    fn toast_builds_with_backfill_window() {
+        let source = build(&cfg(
+            "toast",
+            json!({
+                "client_id": "abc",
+                "client_secret": "shh",
+                "restaurant_guids": ["g"],
+                "backfill_start": "2024-01-01T00:00:00Z",
+                "backfill_end": "2024-02-01T00:00:00Z",
+            }),
+        ))
+        .expect("build toast with backfill window");
+        assert_eq!(source.name(), "toast");
+    }
+
+    #[test]
+    fn quickbooks_builds_with_backfill_window() {
+        let source = build(&cfg(
+            "quickbooks",
+            json!({
+                "client_id": "c",
+                "client_secret": "s",
+                "refresh_token": "r",
+                "realm_id": "1234567890",
+                "backfill_start": "2024-01-01T00:00:00Z",
+                "backfill_end": "2024-02-01T00:00:00Z",
+            }),
+        ))
+        .expect("build quickbooks with backfill window");
+        assert_eq!(source.name(), "quickbooks");
+    }
+
+    #[test]
+    fn backfill_window_requires_both_bounds() {
+        let err = build(&cfg(
+            "toast",
+            json!({
+                "client_id": "abc",
+                "client_secret": "shh",
+                "restaurant_guids": ["g"],
+                "backfill_start": "2024-01-01T00:00:00Z",
+            }),
+        ))
+        .err()
+        .expect("expected error for one-sided backfill window");
+        assert!(err.to_string().contains("requires both"));
+    }
+
+    #[test]
+    fn backfill_window_rejects_malformed_timestamp() {
+        let err = build(&cfg(
+            "quickbooks",
+            json!({
+                "client_id": "c",
+                "client_secret": "s",
+                "refresh_token": "r",
+                "realm_id": "1",
+                "backfill_start": "not-a-date",
+                "backfill_end": "2024-02-01T00:00:00Z",
+            }),
+        ))
+        .err()
+        .expect("expected error for malformed backfill timestamp");
+        assert!(err.to_string().contains("invalid backfill timestamp"));
     }
 
     #[test]

@@ -185,6 +185,8 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
                 trigger: None,
                 logical_date: None,
                 retry_of: None,
+                backfill_from: None,
+                backfill_to: None,
             };
             start_airway_run(
                 &db,

@@ -128,9 +128,17 @@ impl TaskExecutor for PipelineTaskExecutor {
                 pipeline_ref,
                 variables,
                 resources,
+                backfill_from,
+                backfill_to,
             } => {
-                self.execute_airway(pipeline_ref, variables.as_ref(), resources)
-                    .await
+                self.execute_airway(
+                    pipeline_ref,
+                    variables.as_ref(),
+                    resources,
+                    backfill_from.as_deref(),
+                    backfill_to.as_deref(),
+                )
+                .await
             }
 
             TaskSpec::Compile {
@@ -415,6 +423,8 @@ impl PipelineTaskExecutor {
         pipeline_ref: &str,
         variables: Option<&serde_json::Value>,
         resources: &[String],
+        backfill_from: Option<&str>,
+        backfill_to: Option<&str>,
     ) -> Result<ExecutingTask, String> {
         // Defence-in-depth: `start_airway_run` already contained the
         // ref at submit time, but re-validate at queue-claim too (the
@@ -450,6 +460,40 @@ impl PipelineTaskExecutor {
         // `spec.resources`, so this re-runs only those streams.
         if !resources.is_empty() {
             spec.resources = resources.to_vec();
+        }
+
+        // `backfill_start`/`backfill_end` are injection-only — the executor is
+        // their sole writer. Strip any a user hand-wrote into the YAML source
+        // config first: otherwise a normal/scheduled run would silently replay
+        // that window forever (a backfill freezes the source cursor, so it
+        // never advances). Only after stripping do we inject the window — and
+        // only when *this* run is a backfill (set by the `/backfill` path).
+        if let Some(obj) = spec.source.config.as_object_mut() {
+            obj.remove("backfill_start");
+            obj.remove("backfill_end");
+        }
+        if let (Some(from), Some(to)) = (backfill_from, backfill_to) {
+            match spec.source.kind.as_str() {
+                // toast/quickbooks read `backfill_start`/`backfill_end`; any
+                // other kind can't honor a window, so fail loud rather than
+                // silently running a normal unbounded load.
+                "toast" | "quickbooks" => {
+                    let obj = spec.source.config.as_object_mut().ok_or_else(|| {
+                        format!("airway backfill: source config for `{pipeline_ref}` is not a map")
+                    })?;
+                    obj.insert(
+                        "backfill_start".into(),
+                        serde_json::Value::String(from.into()),
+                    );
+                    obj.insert("backfill_end".into(), serde_json::Value::String(to.into()));
+                }
+                other => {
+                    return Err(format!(
+                        "airway backfill: source kind `{other}` does not support a \
+                         date-window backfill (supported: toast, quickbooks)"
+                    ));
+                }
+            }
         }
 
         self.resolve_airway_source_secrets(&mut spec).await?;

@@ -639,6 +639,8 @@ async fn fire_schedule(
                 trigger: Some(trigger.to_string()),
                 logical_date: None,
                 retry_of: None,
+                backfill_from: None,
+                backfill_to: None,
             };
             start_airway_run(
                 db,
@@ -875,6 +877,10 @@ async fn seed_backfill_occurrence(
                 trigger: Some("backfill".to_string()),
                 logical_date: Some(occurrence),
                 retry_of: None,
+                // Schedule "backfill" is cron-replay, not a date-window
+                // backfill — it re-fires occurrences, it doesn't pin a window.
+                backfill_from: None,
+                backfill_to: None,
             };
             start_airway_run(
                 db,

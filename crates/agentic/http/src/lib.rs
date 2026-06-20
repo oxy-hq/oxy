@@ -149,6 +149,9 @@ where
             "/runs",
             post(routes::create_airway_run).get(routes::list_runs_for_pipeline),
         )
+        // Bounded date-window backfill (toast, quickbooks): seeds a run with
+        // the window pinned on the source.
+        .route("/backfill", post(routes::backfill_airway))
         // Reuse the domain-agnostic SSE handler.
         .route("/runs/{id}/events", get(routes::stream_events))
         .route("/runs/{id}/cancel", post(routes::cancel_airway_run))

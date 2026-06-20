@@ -101,19 +101,28 @@ pub async fn create_airway_run(
         }
     }
 
-    // `PlatformContext: WorkflowWorkspaceContext`, so this coercion is
-    // free — `start_airway_run` only needs the workspace surface.
-    let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
+    start_and_drive(state, platform, body).await
+}
 
-    // Interactive run: a co-located scoped coordinator is spawned right
-    // below via `spawn_airway_run_drive`, so it owns this run's tree.
-    // workspace_id from the platform context so out-of-process drivers
-    // can route this row back to its workspace.
+/// Shared tail for the airway start handlers: seed the run, map
+/// `start_airway_run` errors to status codes, then register cancel/answer
+/// channels and spawn the co-located coordinator that drives the queued
+/// `TaskSpec::Airway`. Both `create_airway_run` and `backfill_airway` build
+/// their `StartAirwayRequest` and delegate here.
+async fn start_and_drive(
+    state: Arc<AgenticState>,
+    platform: Arc<dyn PlatformContext>,
+    request: StartAirwayRequest,
+) -> Response {
+    // `PlatformContext: WorkflowWorkspaceContext`, so this coercion is free —
+    // `start_airway_run` only needs the workspace surface. `workspace_id`
+    // routes the row back to its workspace for out-of-process drivers.
+    let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
     let workspace_id = platform.workspace_id();
     let run_id = match start_airway_run(
         &state.db,
         workspace.as_ref(),
-        body,
+        request,
         agentic_pipeline::TaskScope::Scoped,
         workspace_id,
     )
@@ -128,20 +137,18 @@ pub async fn create_airway_run(
             return (StatusCode::BAD_REQUEST, format!("airway spec: {e}")).into_response();
         }
         Err(e) => {
-            tracing::error!(%e, "create_airway_run: start failed");
+            tracing::error!(%e, "airway run start failed");
             return (StatusCode::INTERNAL_SERVER_ERROR, format!("start: {e}")).into_response();
         }
     };
 
-    // Register cancel + answer channels so the Stop button works. Airway
-    // never consumes answers (no HITL), but `register` wants the pair;
-    // the answer_rx is simply dropped.
+    // Register cancel + answer channels so the Stop button works. Airway never
+    // consumes answers (no HITL), but `register` wants the pair; the
+    // answer_rx is simply dropped. Then drive the queued task — without this
+    // the `TaskSpec::Airway` row sits in `agentic_task_queue` forever.
     let (answer_tx, _answer_rx) = mpsc::channel::<String>(1);
     let (cancel_tx, cancel_rx) = watch::channel(false);
     state.register(&run_id, answer_tx, cancel_tx);
-
-    // Drive the queued task — without this the `TaskSpec::Airway` row
-    // sits in `agentic_task_queue` forever.
     spawn_airway_run_drive(
         state.db.clone(),
         state.runtime.clone(),
@@ -152,6 +159,56 @@ pub async fn create_airway_run(
     );
 
     Json(CreateAirwayRunResponse { run_id }).into_response()
+}
+
+// ── POST /agentic-airway/backfill ──────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BackfillAirwayRequest {
+    /// Path to a `.airway.yml`, relative to the workspace root.
+    pub pipeline_ref: String,
+    /// Inclusive lower bound (RFC3339). The window is half-open `[from, to)`.
+    pub from: chrono::DateTime<chrono::Utc>,
+    /// Exclusive upper bound (RFC3339).
+    pub to: chrono::DateTime<chrono::Utc>,
+    /// Optional subset of resources to backfill. Empty = whole spec; the
+    /// non-date-windowed resources just ignore the window.
+    #[serde(default)]
+    pub resources: Vec<String>,
+}
+
+/// Start a bounded date-window backfill. Pins `[from, to)` onto the
+/// date-windowed source (toast, quickbooks) and drives a normal run; the
+/// source freezes its incremental cursor so a live pipeline's state is
+/// unaffected. Other source kinds are rejected by the executor.
+pub async fn backfill_airway(
+    Extension(state): Extension<Arc<AgenticState>>,
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Json(body): Json<BackfillAirwayRequest>,
+) -> Response {
+    if body.from >= body.to {
+        return (
+            StatusCode::BAD_REQUEST,
+            "backfill `from` must be strictly before `to`",
+        )
+            .into_response();
+    }
+
+    let request = StartAirwayRequest {
+        pipeline_ref: body.pipeline_ref,
+        variables: None,
+        thread_id: None,
+        resources: body.resources,
+        schedule_id: None,
+        trigger: Some("backfill".to_string()),
+        logical_date: None,
+        retry_of: None,
+        backfill_from: Some(body.from.to_rfc3339()),
+        backfill_to: Some(body.to.to_rfc3339()),
+    };
+
+    start_and_drive(state, platform, request).await
 }
 
 // ── POST /agentic-airway/runs/:id/cancel ───────────────────────────────────

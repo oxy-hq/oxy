@@ -180,6 +180,8 @@ resources:
         trigger: None,
         logical_date: None,
         retry_of: None,
+        backfill_from: None,
+        backfill_to: None,
     };
 
     let run_id = start_airway_run(
@@ -274,6 +276,8 @@ async fn start_airway_run_rejects_missing_pipeline_file() {
         trigger: None,
         logical_date: None,
         retry_of: None,
+        backfill_from: None,
+        backfill_to: None,
     };
     let err = start_airway_run(
         &db,

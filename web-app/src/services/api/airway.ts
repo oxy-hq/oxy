@@ -27,6 +27,18 @@ export type StartAirwayRequest = {
   resources?: string[];
 };
 
+export type BackfillAirwayRequest = {
+  /** Path to a `.airway.yml`, relative to the workspace root. */
+  pipeline_ref: string;
+  /** Inclusive lower bound (ISO 8601 / RFC3339). Window is half-open `[from, to)`. */
+  from: string;
+  /** Exclusive upper bound (ISO 8601 / RFC3339). */
+  to: string;
+  /** Optional subset of resources to backfill. Omit = whole spec; the
+   *  non-date-windowed resources just ignore the window. */
+  resources?: string[];
+};
+
 export type AirwayRunSummary = {
   run_id: string;
   status: string;
@@ -239,6 +251,14 @@ export class AirwayService {
     request: StartAirwayRequest
   ): Promise<{ run_id: string }> {
     const { data } = await apiClient.post(`${AirwayService.base(projectId)}/runs`, request);
+    return data;
+  }
+
+  static async backfillRun(
+    projectId: string,
+    request: BackfillAirwayRequest
+  ): Promise<{ run_id: string }> {
+    const { data } = await apiClient.post(`${AirwayService.base(projectId)}/backfill`, request);
     return data;
   }
 

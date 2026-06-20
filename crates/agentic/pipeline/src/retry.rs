@@ -164,6 +164,12 @@ async fn retry_airway(
         trigger: Some("retry".to_string()),
         logical_date: None,
         retry_of: Some(original.id.clone()),
+        // A retry re-runs as a normal incremental; the original backfill
+        // window is not re-applied (the source's cursor was frozen during the
+        // backfill, so the live position is unchanged). Re-backfill explicitly
+        // via /backfill if a bounded replay is wanted again.
+        backfill_from: None,
+        backfill_to: None,
     };
     start_airway_run(db, workspace, req, TaskScope::Global, original.workspace_id)
         .await
