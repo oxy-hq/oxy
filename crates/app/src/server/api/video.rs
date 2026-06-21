@@ -290,10 +290,10 @@ pub fn spawn_camera_watcher(workspace_id: Uuid, api_key: String) {
                                     },
                                 );
                             }
-                            None => {
+                            None
                                 // First time we see this camera — only emit if offline,
                                 // so the panel doesn't fire ~120 "online" events on boot.
-                                if status == "offline" {
+                                if status == "offline" => {
                                     publish_camera_event(
                                         workspace_id,
                                         CameraStateEvent {
@@ -304,7 +304,6 @@ pub fn spawn_camera_watcher(workspace_id: Uuid, api_key: String) {
                                         },
                                     );
                                 }
-                            }
                             _ => {}
                         }
                     }
@@ -536,12 +535,12 @@ async fn fetch_one(
     let cache_key = format!("{workspace_id}:{:.2},{:.2}", req.lat, req.lon);
     {
         let cache = weather_cache().lock().await;
-        if let Some(cached) = cache.get(&cache_key) {
-            if cached.at.elapsed() < WEATHER_CACHE_TTL {
-                let mut v = cached.value.clone();
-                v.key = req.key;
-                return Ok(v);
-            }
+        if let Some(cached) = cache.get(&cache_key)
+            && cached.at.elapsed() < WEATHER_CACHE_TTL
+        {
+            let mut v = cached.value.clone();
+            v.key = req.key;
+            return Ok(v);
         }
     }
     let url = format!(

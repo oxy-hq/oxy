@@ -75,13 +75,13 @@ pub fn check_ppe_yolo(cfg: &PpeYoloConfig) -> Result<(), ServiceError> {
         )));
     }
 
-    if let Some(hash) = &cfg.model_sha256 {
-        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(bad(format!(
-                "model_sha256 must be 64 hex chars, got {} chars",
-                hash.len()
-            )));
-        }
+    if let Some(hash) = &cfg.model_sha256
+        && (hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Err(bad(format!(
+            "model_sha256 must be 64 hex chars, got {} chars",
+            hash.len()
+        )));
     }
 
     if !(cfg.confidence_threshold > 0.0 && cfg.confidence_threshold <= 1.0) {

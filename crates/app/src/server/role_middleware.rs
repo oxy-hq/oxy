@@ -106,15 +106,14 @@ pub async fn enforce_role(req: Request, next: Next) -> Response {
             // miss leaves `workspace_is_serve_safe` false, so it keeps proxying.
             if crate::server::serve_safety::analytics_fleet_unpin_enabled()
                 && let Some(ws) = crate::server::serve_safety::analytics_workspace_id(&path)
+                && crate::server::serve_safety::workspace_is_serve_safe(ws).await
             {
-                if crate::server::serve_safety::workspace_is_serve_safe(ws).await {
-                    tracing::debug!(
-                        workspace_id = %ws,
-                        path = %path,
-                        "serve replica: serve-safe /analytics handled locally (fleet un-pin)"
-                    );
-                    return stamp(next.run(req).await, role);
-                }
+                tracing::debug!(
+                    workspace_id = %ws,
+                    path = %path,
+                    "serve replica: serve-safe /analytics handled locally (fleet un-pin)"
+                );
+                return stamp(next.run(req).await, role);
             }
             tracing::debug!(
                 method = %method,

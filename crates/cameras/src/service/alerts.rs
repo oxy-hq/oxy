@@ -348,10 +348,10 @@ pub async fn alerter_tick(db: &DatabaseConnection, state: &mut AlertState) -> Se
             if in_grace {
                 continue;
             }
-            if let Some(last_at) = state.last_alert_at.get(&key) {
-                if now.duration_since(*last_at) < COOLDOWN {
-                    continue;
-                }
+            if let Some(last_at) = state.last_alert_at.get(&key)
+                && now.duration_since(*last_at) < COOLDOWN
+            {
+                continue;
             }
 
             let payload = build_transition_payload(&prev, &row);
@@ -528,10 +528,10 @@ pub async fn recent_alerts(
     for row in raw {
         let cam = row.target_id.and_then(|cid| cam_by_id.get(&cid).copied());
         let site = cam.and_then(|c| site_by_id.get(&c.site_id).copied());
-        if let Some(filter) = site_id {
-            if site.map(|s| s.id) != Some(filter) {
-                continue;
-            }
+        if let Some(filter) = site_id
+            && site.map(|s| s.id) != Some(filter)
+        {
+            continue;
         }
         let d = &row.details_json;
         out.push(RecentAlertRow {

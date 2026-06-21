@@ -400,10 +400,10 @@ pub async fn explain_anomaly(
         .ok_or(AnomalyError::NotFound)?;
 
     // Cheap path: hand back the cache.
-    if !q.refresh {
-        if let Some(cached) = &row.explain_cache {
-            return Ok(Json(cached.clone()));
-        }
+    if !q.refresh
+        && let Some(cached) = &row.explain_cache
+    {
+        return Ok(Json(cached.clone()));
     }
 
     // Build the explain request from the anomaly's fields. Periods mirror

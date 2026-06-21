@@ -26,7 +26,7 @@ use axum::Router;
 use axum::extract::Query;
 use axum::routing::get;
 use chrono::{DateTime, FixedOffset};
-use sea_orm::{DatabaseBackend, DbErr, FromQueryResult, Statement};
+use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

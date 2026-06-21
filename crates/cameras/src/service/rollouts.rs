@@ -36,11 +36,11 @@ use std::time::Duration;
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, Set, sea_query::Expr,
+    QueryOrder, Set,
 };
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::entities::{edge_boxes, rollout_plans, sites};

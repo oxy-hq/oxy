@@ -129,7 +129,7 @@ fn build_env_vars_for_yaml(
     // `track_nested = true` returns root variable names for nested accesses
     // (`{{ config.api.key }}` → returns `config`). For env vars that's
     // exactly what we want — process env is flat-keyed.
-    let mut env = minijinja::Environment::new();
+    let env = minijinja::Environment::new();
     let referenced: std::collections::HashSet<String> =
         match env.template_from_named_str("pipeline", &yaml) {
             Ok(tpl) => tpl.undeclared_variables(true).into_iter().collect(),

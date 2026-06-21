@@ -231,10 +231,10 @@ async fn fetch_one(
     ensure_caches_loaded().await;
     {
         let cache = live_cache().lock().await;
-        if let Some(cached) = cache.get(key) {
-            if elapsed_since(cached.at_unix) < CACHE_TTL {
-                return Ok(cached.value.clone());
-            }
+        if let Some(cached) = cache.get(key)
+            && elapsed_since(cached.at_unix) < CACHE_TTL
+        {
+            return Ok(cached.value.clone());
         }
     }
 
@@ -394,10 +394,10 @@ async fn fetch_radar(
     ensure_caches_loaded().await;
     {
         let cache = radar_cache().lock().await;
-        if let Some(cached) = cache.get(&cache_key) {
-            if elapsed_since(cached.at_unix) < CACHE_TTL {
-                return Ok(cached.venues.clone());
-            }
+        if let Some(cached) = cache.get(&cache_key)
+            && elapsed_since(cached.at_unix) < CACHE_TTL
+        {
+            return Ok(cached.venues.clone());
         }
     }
 

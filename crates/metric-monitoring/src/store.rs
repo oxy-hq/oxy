@@ -115,17 +115,17 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
         if let Some(g) = filter.granularity {
             q = q.filter(metric_anomalies::Column::Granularity.eq(g));
         }
-        if let Some(ps) = filter.period_start_gte {
-            if let Some(dt) = parse_utc(&ps) {
-                let fdt: DateTime<FixedOffset> = dt.into();
-                q = q.filter(metric_anomalies::Column::PeriodStart.gte(fdt));
-            }
+        if let Some(ps) = filter.period_start_gte
+            && let Some(dt) = parse_utc(&ps)
+        {
+            let fdt: DateTime<FixedOffset> = dt.into();
+            q = q.filter(metric_anomalies::Column::PeriodStart.gte(fdt));
         }
-        if let Some(pe) = filter.period_end_lte {
-            if let Some(dt) = parse_utc(&pe) {
-                let fdt: DateTime<FixedOffset> = dt.into();
-                q = q.filter(metric_anomalies::Column::PeriodEnd.lte(fdt));
-            }
+        if let Some(pe) = filter.period_end_lte
+            && let Some(dt) = parse_utc(&pe)
+        {
+            let fdt: DateTime<FixedOffset> = dt.into();
+            q = q.filter(metric_anomalies::Column::PeriodEnd.lte(fdt));
         }
 
         let rows = q
