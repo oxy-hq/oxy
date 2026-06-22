@@ -44,6 +44,9 @@ jobs:
     if: github.repository == 'oxy-hq/oxygen' && github.ref == 'refs/heads/main' &&
       needs.changesets.outputs.oxy == 'true'
     runs-on: "ubuntu-latest"
+    # Full workspace build under llvm-cov instrumentation + nextest is the
+    # heaviest job here; 60m bounds a cold instrumented build and a hung test.
+    timeout-minutes: 60
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}

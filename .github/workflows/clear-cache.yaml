@@ -16,6 +16,7 @@ jobs:
   clear-cache:
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       - name: Clear cache
         uses: actions/github-script@v9

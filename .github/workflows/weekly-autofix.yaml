@@ -15,6 +15,8 @@ jobs:
     if: ${{ github.repository == 'oxy-hq/oxygen' && github.event_name !=
       'workflow_run' }}
     runs-on: ubuntu-latest
+    # Agent-driven autofix; cap the LLM loop so a stuck turn can't run away.
+    timeout-minutes: 30
     steps:
       - uses: actions/create-github-app-token@v3
         name: Create GitHub App Token

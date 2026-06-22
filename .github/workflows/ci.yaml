@@ -75,6 +75,8 @@ jobs:
     runs-on:
       ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
+    # Typos checks the whole tree in ~20s; 10m is pure hang insurance.
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -91,6 +93,9 @@ jobs:
     runs-on:
       ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
+    # Install + lint-staged on the diff runs in ~2m warm; 15m covers a cold
+    # pnpm store with generous headroom.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -124,6 +129,9 @@ jobs:
       cancel-in-progress: true
     if: inputs.agentic_only != true && needs.changesets.outputs.web-app == 'true'
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
+    # `pnpm build` (turbo) runs in well under 10m; 25m absorbs a cold cache /
+    # full TS rebuild while still bounding a hung Vite/tsc process.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
         with:
@@ -200,6 +208,12 @@ jobs:
     if: inputs.agentic_only == true || needs.changesets.outputs.oxy == 'true'
     name: Format cargo, check & test (${{ matrix.task }})
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
+    # The 5h CI runaway that motivated these guardrails happened here: with no
+    # cap, a hung cargo/nextest process billed the runner until manually
+    # cancelled. Warm cache is ~3m (check) / ~14m (test); a cold full
+    # workspace compile + nextest tops out around ~40m, so 60m leaves headroom
+    # for a worst-case cold build while killing a true hang within the hour.
+    timeout-minutes: 60
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
@@ -480,6 +494,9 @@ jobs:
     # 💰 COST SAVING: Only run on approved PRs, pushes to oxy-hq/oxygen main, or manual trigger
     if: false # temporarily disabled
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
+    # Consistency tests + Playwright (the run step is itself capped at 20m).
+    # 45m bounds the whole job, including backend boot, if a step wedges.
+    timeout-minutes: 45
     concurrency:
       group: e2e-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true

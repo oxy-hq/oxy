@@ -51,6 +51,8 @@ jobs:
     name: Build, sign, push
     if: github.repository == 'oxy-hq/oxygen'
     runs-on: ubuntu-latest
+    # Multi-stage docker build, sign and push; bounded at 45m for a cold build.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -60,6 +60,7 @@ jobs:
         startsWith(github.event.head_commit.message, 'chore: release'))
     name: Determine Build Type
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       channel: ${{ steps.config.outputs.channel }}
       version: ${{ steps.config.outputs.version }}
@@ -165,6 +166,8 @@ jobs:
          needs.changesets.outputs.web-app == 'true' ||
          needs.changesets.outputs.docker == 'true')))
     runs-on: ubuntu-latest
+    # Production web-app build; 30m covers a cold turbo/Vite build.
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -256,6 +259,8 @@ jobs:
       needs.determine-build-type.result == 'success' &&
       needs.build-web-app.result == 'success'
     runs-on: ${{ matrix.job.os }}
+    # Release-mode cross-compile of the oxy CLI; 90m for a cold release build.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -300,6 +305,8 @@ jobs:
       needs.determine-build-type.result == 'success' &&
       needs.build-web-app.result == 'success'
     runs-on: macos-latest
+    # Release-mode build of the macOS CLI; 90m for a cold release build.
+    timeout-minutes: 90
     steps:
       # Checkout must run before the local composite action can be resolved.
       - name: Checkout repository
@@ -325,6 +332,7 @@ jobs:
   release-cli:
     name: Release ${{ needs.determine-build-type.outputs.channel }} CLI
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [determine-build-type, build-cli-linux, build-cli-macos]
     # Concurrency: Lock releases per channel and version/ref; queue (don't cancel)
     # so commits release in push order.
@@ -452,6 +460,8 @@ jobs:
         matrix.arch }}
       cancel-in-progress: false
     runs-on: ${{ matrix.runner }}
+    # Docker image build + push (binaries are prebuilt); 45m headroom.
+    timeout-minutes: 45
     strategy:
       fail-fast: true
       matrix:
@@ -536,6 +546,7 @@ jobs:
       always() &&
       needs.build-docker-images.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     continue-on-error: true
     steps:
       - name: Log in to GitHub Container Registry
@@ -600,6 +611,7 @@ jobs:
       always() &&
       needs.build-docker-images.result == 'success'
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
     steps:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -642,6 +654,7 @@ jobs:
       always() &&
       needs.create-manifests.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Create deployment summary
         run: |

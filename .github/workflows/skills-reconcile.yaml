@@ -62,6 +62,7 @@ jobs:
   check:
     if: github.event_name == 'pull_request' && github.repository == 'oxy-hq/oxygen-internal'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:

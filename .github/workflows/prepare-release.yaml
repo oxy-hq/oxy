@@ -16,6 +16,7 @@ jobs:
     if: "!startsWith(github.event.head_commit.message, 'chore: release')"
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
+    timeout-minutes: 20
     concurrency:
       group: release-pr-${{ github.ref }}
       cancel-in-progress: false
@@ -67,6 +68,7 @@ jobs:
     if: "startsWith(github.event.head_commit.message, 'chore: release')"
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
+    timeout-minutes: 20
     concurrency:
       group: release-${{ github.ref }}
       cancel-in-progress: false
@@ -121,6 +123,7 @@ jobs:
     if: needs.release.outputs.releases_created == 'true'
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
+    timeout-minutes: 20
     permissions:
       contents: read
       actions: read

@@ -14,6 +14,7 @@ jobs:
     name: Cleanup nightly releases and Docker tags older than 60 days
     if: github.repository == 'oxy-hq/oxygen'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Calculate cutoff date
         id: cutoff

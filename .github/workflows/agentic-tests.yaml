@@ -71,6 +71,8 @@ jobs:
   # job-level `if:` because the `matrix` context isn't available there.
   resolve-matrix:
     runs-on: ubuntu-latest
+    # Just emits the bucket matrix JSON; sub-second work.
+    timeout-minutes: 10
     outputs:
       flows: ${{ steps.resolve.outputs.flows }}
     steps:

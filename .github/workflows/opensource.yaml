@@ -16,6 +16,7 @@ permissions:
 jobs:
   move-code:
     runs-on: "ubuntu-latest"
+    timeout-minutes: 15
     if: ${{ ((github.event_name == 'push' && github.repository ==
       'oxy-hq/oxygen-internal') || (github.event_name == 'pull_request_target'
       && github.repository == 'oxy-hq/oxygen' && github.actor !=

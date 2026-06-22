@@ -12,6 +12,7 @@ jobs:
   cleanup-branches:
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v6

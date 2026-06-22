@@ -72,6 +72,8 @@ jobs:
   publish:
     name: Publish SDK packages
     runs-on: ubuntu-latest
+    # Build + npm/registry publish; a hung publish shouldn't bill past 20m.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6

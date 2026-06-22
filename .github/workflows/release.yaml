@@ -134,6 +134,8 @@ jobs:
 
   release:
     runs-on: warp-ubuntu-latest-arm64-2x
+    # Release build of the oxy binary; 60m bounds a cold full compile.
+    timeout-minutes: 60
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     # needs: [build-cli]
     steps:
