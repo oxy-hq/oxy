@@ -24,14 +24,14 @@ export function useCompileSemanticQuery() {
 }
 
 export function useTopicDetails(filePathB64: string | undefined) {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
 
   return useQuery({
-    queryKey: queryKeys.semantic.topicDetails(projectId, filePathB64),
+    queryKey: queryKeys.semantic.topicDetails(projectId, filePathB64, branchName),
     queryFn: () => {
       if (!filePathB64) throw new Error("Topic file path is required");
-      return SemanticService.getTopicDetails(projectId, filePathB64);
+      return SemanticService.getTopicDetails(projectId, filePathB64, branchName);
     },
     enabled: !!filePathB64,
     retry: false
@@ -39,14 +39,14 @@ export function useTopicDetails(filePathB64: string | undefined) {
 }
 
 export function useViewDetails(filePathB64: string | undefined) {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
 
   return useQuery({
-    queryKey: queryKeys.semantic.viewDetails(projectId, filePathB64),
+    queryKey: queryKeys.semantic.viewDetails(projectId, filePathB64, branchName),
     queryFn: () => {
       if (!filePathB64) throw new Error("View file path is required");
-      return SemanticService.getViewDetails(projectId, filePathB64);
+      return SemanticService.getViewDetails(projectId, filePathB64, branchName);
     },
     enabled: !!filePathB64,
     retry: false

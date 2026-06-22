@@ -147,10 +147,14 @@ export class SemanticService {
 
   static async getTopicDetails(
     projectId: string,
-    filePathB64: string
+    filePathB64: string,
+    branchName?: string
   ): Promise<TopicDetailsResponse> {
     try {
-      const response = await apiClient.get(`/${projectId}/semantic/topic/${filePathB64}`);
+      const params = branchName ? { branch: branchName } : {};
+      const response = await apiClient.get(`/${projectId}/semantic/topic/${filePathB64}`, {
+        params
+      });
       return response.data;
     } catch (error) {
       if (error instanceof AxiosError && error.response?.data?.message) {
@@ -160,9 +164,16 @@ export class SemanticService {
     }
   }
 
-  static async getViewDetails(projectId: string, filePathB64: string): Promise<ViewResponse> {
+  static async getViewDetails(
+    projectId: string,
+    filePathB64: string,
+    branchName?: string
+  ): Promise<ViewResponse> {
     try {
-      const response = await apiClient.get(`/${projectId}/semantic/view/${filePathB64}`);
+      const params = branchName ? { branch: branchName } : {};
+      const response = await apiClient.get(`/${projectId}/semantic/view/${filePathB64}`, {
+        params
+      });
       return response.data;
     } catch (error) {
       if (error instanceof AxiosError && error.response?.data?.message) {

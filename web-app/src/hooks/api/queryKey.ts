@@ -586,10 +586,10 @@ const appIntegrationKeys = {
 
 const semanticKeys = {
   all: ["semantic"] as const,
-  topicDetails: (projectId: string, filePathB64: string | undefined) =>
-    [...semanticKeys.all, "topicDetails", projectId, filePathB64] as const,
-  viewDetails: (projectId: string, filePathB64: string | undefined) =>
-    [...semanticKeys.all, "viewDetails", projectId, filePathB64] as const
+  topicDetails: (projectId: string, filePathB64: string | undefined, branchName?: string) =>
+    [...semanticKeys.all, "topicDetails", projectId, filePathB64, branchName] as const,
+  viewDetails: (projectId: string, filePathB64: string | undefined, branchName?: string) =>
+    [...semanticKeys.all, "viewDetails", projectId, filePathB64, branchName] as const
 };
 
 const metricTreeKeys = {
