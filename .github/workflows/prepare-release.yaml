@@ -31,7 +31,7 @@ jobs:
           client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
@@ -86,7 +86,7 @@ jobs:
           client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
@@ -151,7 +151,7 @@ jobs:
           repo-token: ${{ steps.app-token.outputs.token }}
           wait-interval: 20
       - name: Checkout oss repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           repository: oxy-hq/oxygen
