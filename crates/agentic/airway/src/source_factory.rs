@@ -230,6 +230,10 @@ enum WriteDispositionLabel {
     Append,
     Replace,
     Merge,
+    /// Append to a `<table>_raw` buffer; a scheduled airhouse vacuum
+    /// compaction rebuilds the public table latest-wins. Avoids the
+    /// O(target) `MERGE INTO` that OOMs the data plane on large tables.
+    Replacing,
 }
 
 impl From<WriteDispositionLabel> for WriteDisposition {
@@ -238,6 +242,7 @@ impl From<WriteDispositionLabel> for WriteDisposition {
             WriteDispositionLabel::Append => WriteDisposition::Append,
             WriteDispositionLabel::Replace => WriteDisposition::Replace,
             WriteDispositionLabel::Merge => WriteDisposition::Merge,
+            WriteDispositionLabel::Replacing => WriteDisposition::Replacing,
         }
     }
 }
