@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.79] - 2026-06-22
+
+### 🚀 Features
+
+- *(airway)* Manual date-window backfill endpoint (Toast/QuickBooks) + bump airway 0.1.10 (#2576)
+
+### 🐛 Bug Fixes
+
+- Web-app load semantic view/topic preview from active IDE branch (#2585)
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump airway to 0.1.12 (#2579)
+- Add timeout-minutes guardrails to all workflow jobs (#2586)
+- *(airway)* Toast orders → replacing + end-of-load compaction (#2584)
+
 ## [0.5.78] - 2026-06-19
 
 ### 🚀 Features
@@ -21,6 +37,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Remove emojis from edge UI copy (#2561)
+- Release 0.5.78 (#2571)
 
 ## [0.5.77] - 2026-06-18
 
