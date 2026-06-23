@@ -15,6 +15,10 @@ use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::Subs
 
 static LOG_GUARD: OnceCell<tracing_appender::non_blocking::WorkerGuard> = OnceCell::new();
 
+/// How many daily `oxy.log` files to keep on local installs before the oldest
+/// is pruned. Bounds the on-disk log footprint for a long-lived local session.
+const LOCAL_LOG_MAX_FILES: usize = 7;
+
 #[derive(Debug, Clone)]
 enum LogFormat {
     Local, // Human-readable format with colors for local development
@@ -69,14 +73,34 @@ fn init_tracing_logging(observability_enabled: bool) {
     });
     let make_filter = || EnvFilter::new(&filter_directives);
 
-    // Always write to oxy.log for legacy customers who rely on that file.
-    let log_file_path = std::path::Path::new(&get_state_dir()).join("oxy.log");
-    let file_appender = tracing_appender::rolling::never(
-        log_file_path.parent().unwrap(),
-        log_file_path.file_name().unwrap(),
-    );
-    let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
-    LOG_GUARD.set(guard).ok();
+    // oxy.log is a local-dev convenience — a developer running oxy on their
+    // laptop can tail it. In cloud (Kubernetes) every process already ships its
+    // logs to the cluster aggregator via stdout/stderr, so an extra on-disk file
+    // is pure waste: on the serve/worker fleet the state dir is an emptyDir, and
+    // an unrotated oxy.log grows until the kubelet evicts the pod under node
+    // DiskPressure. So write the file on Local only — and bound it even there
+    // with daily rotation so a long-lived session can't grow it without limit.
+    // Rotation dates the filename: `oxy.<YYYY-MM-DD>.log`.
+    let file_writer = match log_format {
+        LogFormat::Local => match tracing_appender::rolling::Builder::new()
+            .rotation(tracing_appender::rolling::Rotation::DAILY)
+            .filename_prefix("oxy")
+            .filename_suffix("log")
+            .max_log_files(LOCAL_LOG_MAX_FILES)
+            .build(get_state_dir())
+        {
+            Ok(appender) => {
+                let (writer, guard) = tracing_appender::non_blocking(appender);
+                LOG_GUARD.set(guard).ok();
+                Some(writer)
+            }
+            Err(e) => {
+                eprintln!("oxy: could not initialize oxy.log file appender: {e}");
+                None
+            }
+        },
+        LogFormat::Cloud => None,
+    };
 
     // Build the `SpanCollectorLayer` up front so it can be composed with the
     // same subscriber as Sentry + file appender + fmt. The store isn't ready
@@ -125,12 +149,14 @@ fn init_tracing_logging(observability_enabled: bool) {
                 .with_writer(std::io::stderr)
                 .with_ansi(std::io::stderr().is_terminal())
                 .with_filter(make_filter());
-            let file_layer = fmt::layer()
-                .with_target(true)
-                .with_level(true)
-                .with_writer(file_writer)
-                .with_ansi(false)
-                .with_filter(make_filter());
+            let file_layer = file_writer.map(|writer| {
+                fmt::layer()
+                    .with_target(true)
+                    .with_level(true)
+                    .with_writer(writer)
+                    .with_ansi(false)
+                    .with_filter(make_filter())
+            });
             let obs_layer =
                 obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter()));
             let sentry_layer = sentry::integrations::tracing::layer()
@@ -153,20 +179,15 @@ fn init_tracing_logging(observability_enabled: bool) {
                 .with_span_list(false)
                 .with_writer(std::io::stderr)
                 .with_filter(make_filter());
-            let file_layer = fmt::layer()
-                .with_target(true)
-                .with_level(true)
-                .with_writer(file_writer)
-                .with_ansi(false)
-                .compact()
-                .with_filter(make_filter());
+            // No file layer in cloud: logs already go to stdout/stderr → the
+            // cluster aggregator, and the state dir is an emptyDir we must not
+            // fill (see the `file_writer` comment above).
             let obs_layer =
                 obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter()));
             let sentry_layer = sentry::integrations::tracing::layer()
                 .with_filter(tracing_subscriber::filter::LevelFilter::WARN);
             tracing_subscriber::registry()
                 .with(sentry_layer)
-                .with(file_layer)
                 .with(console_layer)
                 .with(obs_layer)
                 .init();
