@@ -6,6 +6,12 @@
 //! [`crate::airhouse::connect_and_ensure`] — first call per process per
 //! workspace runs `CREATE TABLE IF NOT EXISTS` once, subsequent calls
 //! skip straight to the INSERT.
+//!
+//! The connection returned by [`crate::airhouse::connect_and_ensure`] is a
+//! **persistent, per-tenant** handle reused across every ingest call, so a
+//! fleet of edge boxes no longer churns one Airhouse DuckDB session per POST.
+//! Large batches are split into [`crate::airhouse::insert_chunk_rows`]-sized
+//! INSERTs to bound the SQL string and the server-side row group.
 
 use std::fmt::Write as _;
 
@@ -74,6 +80,18 @@ pub async fn write_events(
     }
     let client = crate::airhouse::connect_and_ensure(workspace_id).await?;
 
+    let mut accepted = 0;
+    for chunk in events.chunks(crate::airhouse::insert_chunk_rows()) {
+        let sql = build_events_insert(chunk);
+        client.simple_query(&sql).await.map_err(|e| {
+            ServiceError::Airhouse(crate::airhouse::AirhouseError::Insert(e.to_string()))
+        })?;
+        accepted += chunk.len();
+    }
+    Ok(IngestResult { accepted })
+}
+
+fn build_events_insert(events: &[EventPayload]) -> String {
     let mut sql = String::from(
         "INSERT INTO oxy_cam_events \
          (event_id, ts, camera_id, event_type, zone_id, line_id, track_id, \
@@ -98,12 +116,7 @@ pub async fn write_events(
             sql_opt_str(e.frame_uri.as_deref()),
         );
     }
-    client.simple_query(&sql).await.map_err(|e| {
-        ServiceError::Airhouse(crate::airhouse::AirhouseError::Insert(e.to_string()))
-    })?;
-    Ok(IngestResult {
-        accepted: events.len(),
-    })
+    sql
 }
 
 pub async fn write_camera_health(
@@ -115,6 +128,18 @@ pub async fn write_camera_health(
     }
     let client = crate::airhouse::connect_and_ensure(workspace_id).await?;
 
+    let mut accepted = 0;
+    for chunk in rows.chunks(crate::airhouse::insert_chunk_rows()) {
+        let sql = build_camera_health_insert(chunk);
+        client.simple_query(&sql).await.map_err(|e| {
+            ServiceError::Airhouse(crate::airhouse::AirhouseError::Insert(e.to_string()))
+        })?;
+        accepted += chunk.len();
+    }
+    Ok(IngestResult { accepted })
+}
+
+fn build_camera_health_insert(rows: &[CameraHealthPayload]) -> String {
     let mut sql = String::from(
         "INSERT INTO oxy_cam_camera_health \
          (camera_id, ts, fps, bitrate_kbps, last_frame_at, decoder_errors, \
@@ -136,12 +161,7 @@ pub async fn write_camera_health(
             sql_opt_i32(Some(r.reconnect_count)),
         );
     }
-    client.simple_query(&sql).await.map_err(|e| {
-        ServiceError::Airhouse(crate::airhouse::AirhouseError::Insert(e.to_string()))
-    })?;
-    Ok(IngestResult {
-        accepted: rows.len(),
-    })
+    sql
 }
 
 pub async fn write_box_health(
@@ -153,6 +173,18 @@ pub async fn write_box_health(
     }
     let client = crate::airhouse::connect_and_ensure(workspace_id).await?;
 
+    let mut accepted = 0;
+    for chunk in rows.chunks(crate::airhouse::insert_chunk_rows()) {
+        let sql = build_box_health_insert(chunk);
+        client.simple_query(&sql).await.map_err(|e| {
+            ServiceError::Airhouse(crate::airhouse::AirhouseError::Insert(e.to_string()))
+        })?;
+        accepted += chunk.len();
+    }
+    Ok(IngestResult { accepted })
+}
+
+fn build_box_health_insert(rows: &[BoxHealthPayload]) -> String {
     let mut sql = String::from(
         "INSERT INTO oxy_cam_box_health \
          (box_id, ts, cpu_pct, gpu_pct, mem_pct, temp_c, uptime_s, image_tag, \
@@ -176,10 +208,70 @@ pub async fn write_box_health(
             sql_opt_i32(r.containers_running),
         );
     }
-    client.simple_query(&sql).await.map_err(|e| {
-        ServiceError::Airhouse(crate::airhouse::AirhouseError::Insert(e.to_string()))
-    })?;
-    Ok(IngestResult {
-        accepted: rows.len(),
-    })
+    sql
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event(track: &str) -> EventPayload {
+        EventPayload {
+            event_id: Uuid::nil(),
+            ts: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+            camera_id: Uuid::nil(),
+            event_type: "person".into(),
+            zone_id: None,
+            line_id: None,
+            track_id: track.into(),
+            dwell_seconds: None,
+            confidence: None,
+            frame_uri: None,
+        }
+    }
+
+    #[test]
+    fn events_insert_is_single_multi_row_statement() {
+        let sql = build_events_insert(&[event("a"), event("b"), event("c")]);
+        assert!(sql.starts_with("INSERT INTO oxy_cam_events"));
+        // One INSERT, three value tuples → exactly two separators.
+        assert_eq!(sql.matches("), (").count(), 2);
+        assert_eq!(sql.matches("INSERT INTO").count(), 1);
+    }
+
+    #[test]
+    fn events_insert_escapes_single_quotes() {
+        // A track_id carrying a quote must not break out of the literal.
+        let sql = build_events_insert(&[event("a'b")]);
+        assert!(sql.contains("'a''b'"));
+    }
+
+    #[test]
+    fn camera_and_box_health_insert_target_right_tables() {
+        let cam = CameraHealthPayload {
+            camera_id: Uuid::nil(),
+            ts: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+            fps: Some(30.0),
+            bitrate_kbps: None,
+            last_frame_at: None,
+            decoder_errors: 0,
+            reconnect_count: 0,
+        };
+        assert!(
+            build_camera_health_insert(&[cam]).starts_with("INSERT INTO oxy_cam_camera_health")
+        );
+
+        let bx = BoxHealthPayload {
+            box_id: Uuid::nil(),
+            ts: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+            cpu_pct: Some(1.0),
+            gpu_pct: None,
+            mem_pct: None,
+            temp_c: None,
+            uptime_s: Some(10),
+            image_tag: None,
+            containers_running: Some(2),
+        };
+        assert!(build_box_health_insert(&[bx]).starts_with("INSERT INTO oxy_cam_box_health"));
+    }
 }

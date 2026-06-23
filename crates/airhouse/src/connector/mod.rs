@@ -230,27 +230,32 @@ impl DatabaseConnector for AirhouseConnector {
             StatementKind::Subquery => {}
         }
 
+        // Subquery DQL: introspect + count + sample + profile WITHOUT
+        // materialising the user's result into a `CREATE TEMP TABLE`.
+        //
+        // Airhouse backs every connection with a server-side DuckDB session,
+        // and `CREATE TEMP TABLE _agentic_tmp AS (...)` materialised the FULL
+        // result set into that session's memory for the duration of the call —
+        // a large result could spike (and, until the DROP, pin) the tenant's
+        // DuckDB session memory. Instead we wrap the query as a subquery
+        // `(sql) AS _q` (the same shape `execute_query_full` already uses) so
+        // nothing is held server-side between statements.
+        //
+        // Cost: the user query is planned once (DESCRIBE) and executed twice
+        // (count+stats in one pass, sample in another) instead of materialised
+        // once and re-scanned. For a non-deterministic query the sample may not
+        // perfectly match the stats — acceptable, and already the behaviour of
+        // the paged `execute_query_full` path.
         let client = self.client.lock().await;
-        let tmp = "_agentic_tmp";
 
-        // Drop any leftover temp table from a previous (failed) execution.
-        let _ = client
-            .simple_query(&format!("DROP TABLE IF EXISTS {tmp}"))
-            .await;
-
-        // 1. Materialise the user query into a temp table.
-        let create_sql = format!("CREATE TEMP TABLE {tmp} AS ({sql})");
-        client
-            .simple_query(&create_sql)
-            .await
-            .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)))?;
-
-        // 2. Column names + types via DuckDB's DESCRIBE.
-        let describe_sql = format!("DESCRIBE {tmp}");
+        // 1. Column names + types via DuckDB's DESCRIBE of the raw query.
+        //    A failed DESCRIBE here is the user's query failing — surface their
+        //    SQL (not the DESCRIBE wrapper) in the structured error.
+        let describe_sql = format!("DESCRIBE {sql}");
         let describe_messages = client
             .simple_query(&describe_sql)
             .await
-            .map_err(|e| ConnectorError::query_failed(describe_sql.clone(), e.to_string()))?;
+            .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)))?;
 
         let mut column_names: Vec<String> = Vec::new();
         let mut column_types: Vec<String> = Vec::new();
@@ -272,21 +277,82 @@ impl DatabaseConnector for AirhouseConnector {
         }
         let col_count = column_names.len();
 
-        // 3. Total row count.
-        let count_sql = format!("SELECT COUNT(*) AS n FROM {tmp}");
-        let count_messages = client
-            .simple_query(&count_sql)
+        // 2. Total row count + per-column stats in a SINGLE pass over the
+        //    subquery. Each column contributes 6 aliased expressions; TRY_CAST
+        //    to DOUBLE returns NULL for non-numeric columns so mean/std_dev come
+        //    back NULL naturally. The dedicated `_agentic_n` alias holds the row
+        //    count so it can't collide with a user column named `n`.
+        const COUNT_ALIAS: &str = "_agentic_n";
+        let stats_select = if col_count == 0 {
+            format!("SELECT COUNT(*) AS {COUNT_ALIAS}")
+        } else {
+            let exprs: String = column_names
+                .iter()
+                .enumerate()
+                .map(|(i, col)| {
+                    let q = quote_ident(col);
+                    format!(
+                        "(COUNT(*) - COUNT({q}))::VARCHAR AS c{i}_nc, \
+                         COUNT(DISTINCT {q})::VARCHAR AS c{i}_dc, \
+                         MIN({q})::VARCHAR AS c{i}_mn, \
+                         MAX({q})::VARCHAR AS c{i}_mx, \
+                         AVG(TRY_CAST({q} AS DOUBLE))::VARCHAR AS c{i}_avg, \
+                         STDDEV_POP(TRY_CAST({q} AS DOUBLE))::VARCHAR AS c{i}_sd"
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("SELECT COUNT(*) AS {COUNT_ALIAS}, {exprs}")
+        };
+        let stats_sql = format!("{stats_select} FROM ({sql}) AS _q");
+        let stats_messages = client
+            .simple_query(&stats_sql)
             .await
-            .map_err(|e| ConnectorError::query_failed(count_sql.clone(), e.to_string()))?;
-        let total_row_count = count_messages
-            .iter()
-            .find_map(|m| match m {
-                SimpleQueryMessage::Row(r) => r.get("n").and_then(|s| s.parse::<u64>().ok()),
-                _ => None,
-            })
+            .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)))?;
+        let stats_row = stats_messages.iter().find_map(|m| match m {
+            SimpleQueryMessage::Row(r) => Some(r),
+            _ => None,
+        });
+        let total_row_count = stats_row
+            .and_then(|r| r.get(COUNT_ALIAS).and_then(|s| s.parse::<u64>().ok()))
             .unwrap_or(0);
 
-        // 4. Sample rows — cast every column to VARCHAR for uniform decoding.
+        let col_stats: Vec<ColumnStats> = column_names
+            .iter()
+            .enumerate()
+            .map(|(i, col)| {
+                let r = stats_row.as_ref();
+                // SimpleQueryRow::get requires &str, not &String.
+                let k_nc = format!("c{i}_nc");
+                let k_dc = format!("c{i}_dc");
+                let k_mn = format!("c{i}_mn");
+                let k_mx = format!("c{i}_mx");
+                let k_avg = format!("c{i}_avg");
+                let k_sd = format!("c{i}_sd");
+                let null_count = r
+                    .and_then(|r| r.get(k_nc.as_str()).and_then(|s| s.parse().ok()))
+                    .unwrap_or(0u64);
+                let distinct_count = r
+                    .and_then(|r| r.get(k_dc.as_str()).and_then(|s| s.parse().ok()))
+                    .unwrap_or(0u64);
+                let min_v = text_to_cell(r.and_then(|r| r.get(k_mn.as_str())));
+                let max_v = text_to_cell(r.and_then(|r| r.get(k_mx.as_str())));
+                let mean = r.and_then(|r| r.get(k_avg.as_str()).and_then(|s| s.parse().ok()));
+                let std_dev = r.and_then(|r| r.get(k_sd.as_str()).and_then(|s| s.parse().ok()));
+                ColumnStats {
+                    name: col.clone(),
+                    data_type: column_types.get(i).cloned(),
+                    null_count,
+                    distinct_count: Some(distinct_count),
+                    min: Some(min_v),
+                    max: Some(max_v),
+                    mean,
+                    std_dev,
+                }
+            })
+            .collect();
+
+        // 3. Sample rows — cast every column to VARCHAR for uniform decoding.
         let sample_rows: Vec<QueryRow> = if col_count == 0 {
             Vec::new()
         } else {
@@ -298,7 +364,7 @@ impl DatabaseConnector for AirhouseConnector {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            let sample_sql = format!("SELECT {cast_cols} FROM {tmp} LIMIT {sample_limit}");
+            let sample_sql = format!("SELECT {cast_cols} FROM ({sql}) AS _q LIMIT {sample_limit}");
 
             let messages = client
                 .simple_query(&sample_sql)
@@ -317,81 +383,6 @@ impl DatabaseConnector for AirhouseConnector {
             }
             rows
         };
-
-        // 5. Per-column stats — single batched query instead of 2N round-trips.
-        //
-        // Each column contributes 6 aliased expressions.  TRY_CAST to DOUBLE
-        // returns NULL for non-numeric columns so mean/std_dev come back as
-        // NULL naturally; no per-column error handling needed.
-        let col_stats: Vec<ColumnStats> = if col_count == 0 {
-            Vec::new()
-        } else {
-            let exprs: String = column_names
-                .iter()
-                .enumerate()
-                .map(|(i, col)| {
-                    let q = quote_ident(col);
-                    format!(
-                        "(COUNT(*) - COUNT({q}))::VARCHAR AS c{i}_nc, \
-                         COUNT(DISTINCT {q})::VARCHAR AS c{i}_dc, \
-                         MIN({q})::VARCHAR AS c{i}_mn, \
-                         MAX({q})::VARCHAR AS c{i}_mx, \
-                         AVG(TRY_CAST({q} AS DOUBLE))::VARCHAR AS c{i}_avg, \
-                         STDDEV_POP(TRY_CAST({q} AS DOUBLE))::VARCHAR AS c{i}_sd"
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            let stats_sql = format!("SELECT {exprs} FROM {tmp}");
-            let stats_messages = client
-                .simple_query(&stats_sql)
-                .await
-                .map_err(|e| ConnectorError::query_failed(stats_sql.clone(), e.to_string()))?;
-            let stats_row = stats_messages.iter().find_map(|m| match m {
-                SimpleQueryMessage::Row(r) => Some(r),
-                _ => None,
-            });
-
-            column_names
-                .iter()
-                .enumerate()
-                .map(|(i, col)| {
-                    let r = stats_row.as_ref();
-                    // SimpleQueryRow::get requires &str, not &String.
-                    let k_nc = format!("c{i}_nc");
-                    let k_dc = format!("c{i}_dc");
-                    let k_mn = format!("c{i}_mn");
-                    let k_mx = format!("c{i}_mx");
-                    let k_avg = format!("c{i}_avg");
-                    let k_sd = format!("c{i}_sd");
-                    let null_count = r
-                        .and_then(|r| r.get(k_nc.as_str()).and_then(|s| s.parse().ok()))
-                        .unwrap_or(0u64);
-                    let distinct_count = r
-                        .and_then(|r| r.get(k_dc.as_str()).and_then(|s| s.parse().ok()))
-                        .unwrap_or(0u64);
-                    let min_v = text_to_cell(r.and_then(|r| r.get(k_mn.as_str())));
-                    let max_v = text_to_cell(r.and_then(|r| r.get(k_mx.as_str())));
-                    let mean = r.and_then(|r| r.get(k_avg.as_str()).and_then(|s| s.parse().ok()));
-                    let std_dev = r.and_then(|r| r.get(k_sd.as_str()).and_then(|s| s.parse().ok()));
-                    ColumnStats {
-                        name: col.clone(),
-                        data_type: column_types.get(i).cloned(),
-                        null_count,
-                        distinct_count: Some(distinct_count),
-                        min: Some(min_v),
-                        max: Some(max_v),
-                        mean,
-                        std_dev,
-                    }
-                })
-                .collect()
-        };
-
-        // 6. Cleanup.
-        let _ = client
-            .simple_query(&format!("DROP TABLE IF EXISTS {tmp}"))
-            .await;
 
         let truncated = (sample_rows.len() as u64) < total_row_count;
         Ok(ExecutionResult {

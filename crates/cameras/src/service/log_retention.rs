@@ -131,7 +131,9 @@ pub async fn sweep_workspace(workspace_id: Uuid, policy: Policy) -> ServiceResul
     let info_cutoff = now - ChronoDuration::days(policy.info_days);
     let warn_cutoff = now - ChronoDuration::days(policy.warn_days);
 
-    let client = match crate::airhouse::connect_and_ensure(workspace_id).await {
+    // Dedicated one-shot connection (not the persistent ingest one) so a large
+    // retention DELETE can't head-of-line-block live ingest for this tenant.
+    let client = match crate::airhouse::connect_for_retention(workspace_id).await {
         Ok(c) => c,
         Err(crate::airhouse::AirhouseError::Disabled) => {
             tracing::debug!(
