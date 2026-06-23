@@ -69,9 +69,10 @@ pub use broker::{
 
 #[cfg(feature = "admin")]
 pub use config::{
-    AIRHOUSE_ADMIN_TOKEN_VAR, AIRHOUSE_BASE_URL_VAR, AIRHOUSE_WIRE_HOST_VAR,
-    AIRHOUSE_WIRE_PORT_VAR, AirhouseConfig, AirhouseRuntimeConfig, LOCAL_ORG_ID, REQUIRED_VARS,
-    WireEndpoint, provisioner_for, token_broker, wire_endpoint,
+    AIRHOUSE_ADMIN_TOKEN_VAR, AIRHOUSE_ANALYTICS_WIRE_HOST_VAR, AIRHOUSE_ANALYTICS_WIRE_PORT_VAR,
+    AIRHOUSE_BASE_URL_VAR, AIRHOUSE_WIRE_HOST_VAR, AIRHOUSE_WIRE_PORT_VAR, AirhouseConfig,
+    AirhouseRuntimeConfig, LOCAL_ORG_ID, REQUIRED_VARS, WireEndpoint, analytics_wire_endpoint,
+    provisioner_for, token_broker, wire_endpoint,
 };
 
 #[cfg(feature = "admin")]

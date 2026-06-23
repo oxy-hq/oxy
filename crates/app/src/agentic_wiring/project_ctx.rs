@@ -851,7 +851,43 @@ fn validate_workflow_ref_syntax(workflow_ref: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_workflow_ref_syntax;
+    use super::{airhouse_pool_key, validate_workflow_ref_syntax};
+
+    #[test]
+    fn airhouse_pool_key_is_stable_per_identity() {
+        let ws = uuid::Uuid::nil();
+        let user = uuid::Uuid::from_u128(1);
+        let role = entity::workspace_members::WorkspaceRole::Admin;
+
+        // Managed: keyed by (workspace, subject, role) — NOT the minted user,
+        // so it survives credential rotation.
+        let k1 = airhouse_pool_key(true, ws, Some(user), Some(&role), "wh");
+        let k2 = airhouse_pool_key(true, ws, Some(user), Some(&role), "wh");
+        assert_eq!(k1, k2);
+        assert!(k1.starts_with("mgd:"));
+
+        // Different subject / role / no-subject → distinct keys (no cross-tenant
+        // or cross-role connection sharing).
+        let other_user =
+            airhouse_pool_key(true, ws, Some(uuid::Uuid::from_u128(2)), Some(&role), "wh");
+        let other_role = airhouse_pool_key(
+            true,
+            ws,
+            Some(user),
+            Some(&entity::workspace_members::WorkspaceRole::Member),
+            "wh",
+        );
+        let system = airhouse_pool_key(true, ws, None, None, "wh");
+        assert_ne!(k1, other_user);
+        assert_ne!(k1, other_role);
+        assert!(system.contains("system"));
+
+        // Static airhouse keys by (workspace, db) and ignores subject/role.
+        let s1 = airhouse_pool_key(false, ws, Some(user), Some(&role), "wh");
+        let s2 = airhouse_pool_key(false, ws, None, None, "wh");
+        assert_eq!(s1, s2);
+        assert_eq!(s1, format!("static:{ws}:wh"));
+    }
 
     #[test]
     fn rejects_empty_ref() {
@@ -1347,23 +1383,87 @@ async fn resolve_pre_built_airhouse(
 /// [`resolve_pre_built_airhouse`] (which discards the error) and
 /// [`OxyProjectContext::build_connector_for`] (which surfaces it). Keeps
 /// the per-`DatabaseType` arms in one place.
+///
+/// The actual `AirhouseConnector` is **reused across requests** via
+/// [`crate::agentic_wiring::airhouse_pool`] keyed by logical identity, so the
+/// per-request `OxyProjectContext` no longer opens a fresh pgwire connection
+/// (and a fresh server-side DuckLake session) per warehouse query. On a warm
+/// hit no credential is minted and no connection is opened; the closure below
+/// runs only on a miss or dead-connection rebuild.
 async fn build_airhouse_connector(
     db: &oxy::config::model::Database,
     workspace_manager: &WorkspaceManager,
     subject: Option<uuid::Uuid>,
     role: Option<WorkspaceRole>,
 ) -> Result<Arc<dyn DatabaseConnector>, OxyError> {
-    let (host, port, user, password, database) =
-        airhouse_wire_params(db, workspace_manager, subject, role).await?;
+    let is_managed = matches!(db.database_type, DatabaseType::AirhouseManaged(_));
+    let key = airhouse_pool_key(
+        is_managed,
+        workspace_manager.workspace_id,
+        subject,
+        role.as_ref(),
+        &db.name,
+    );
 
-    let conn = airhouse::AirhouseConnector::new(&host, port, &user, &password, &database)
-        .await
-        .map_err(|e| {
-            OxyError::DBError(format!(
-                "airhouse connector failed to connect to {host}:{port}/{database} as {user}: {e}"
-            ))
-        })?;
-    Ok(Arc::new(conn) as Arc<dyn DatabaseConnector>)
+    crate::agentic_wiring::airhouse_pool::get_or_build(key, || async {
+        let (mut host, mut port, user, password, database) =
+            airhouse_wire_params(db, workspace_manager, subject, role.clone()).await?;
+
+        // Route query workloads — analytics agent, Data-App, SQL-IDE: everything
+        // funneled through build_airhouse_connector — to the dedicated analytics
+        // DP pool when one is configured, isolating heavy OLAP from the
+        // latency-sensitive serving/ingest DP. airway ingest shares
+        // `airhouse_wire_params` directly (not this path) and cameras has its own
+        // client, so their writes stay on the main serving endpoint. Unset
+        // (AIRHOUSE_ANALYTICS_WIRE_HOST) → keep the serving endpoint (no change).
+        if let Some(ep) = airhouse::analytics_wire_endpoint() {
+            if (ep.host.as_str(), ep.port) != (host.as_str(), port) {
+                tracing::debug!(
+                    from = %format!("{host}:{port}"),
+                    to = %format!("{}:{}", ep.host, ep.port),
+                    "airhouse query connector routed to the analytics pool"
+                );
+                host = ep.host;
+                port = ep.port;
+            }
+        }
+
+        let conn = airhouse::AirhouseConnector::new(&host, port, &user, &password, &database)
+            .await
+            .map_err(|e| {
+                OxyError::DBError(format!(
+                    "airhouse connector failed to connect to {host}:{port}/{database} as {user}: {e}"
+                ))
+            })?;
+        Ok(Arc::new(conn))
+    })
+    .await
+}
+
+/// Logical pool identity for an airhouse connector. Deliberately keyed on the
+/// **requester**, not the minted username: the broker re-mints a fresh
+/// ephemeral username roughly every 15 min, but the live connection (and thus
+/// this key) must persist across that rotation. `airhouse_managed` is per
+/// `(workspace, subject|system, role)`; static airhouse shares fixed creds so
+/// it keys per `(workspace, db)`.
+fn airhouse_pool_key(
+    is_managed: bool,
+    workspace_id: uuid::Uuid,
+    subject: Option<uuid::Uuid>,
+    role: Option<&WorkspaceRole>,
+    db_name: &str,
+) -> String {
+    if is_managed {
+        let subj = subject
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "system".to_string());
+        let r = role
+            .map(|r| format!("{r:?}"))
+            .unwrap_or_else(|| "none".to_string());
+        format!("mgd:{workspace_id}:{subj}:{r}")
+    } else {
+        format!("static:{workspace_id}:{db_name}")
+    }
 }
 
 /// Build a `postgresql://` URL, percent-encoding the userinfo and path

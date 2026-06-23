@@ -19,6 +19,14 @@ pub const AIRHOUSE_ADMIN_TOKEN_VAR: &str = "AIRHOUSE_ADMIN_TOKEN";
 pub const AIRHOUSE_WIRE_HOST_VAR: &str = "AIRHOUSE_WIRE_HOST";
 pub const AIRHOUSE_WIRE_PORT_VAR: &str = "AIRHOUSE_WIRE_PORT";
 
+/// Optional dedicated analytics/read DP endpoint. When set, query workloads
+/// (analytics agent, Data-App, SQL-IDE — everything routed through
+/// `build_airhouse_connector`) connect here instead of the main serving
+/// endpoint, isolating heavy OLAP from the latency-sensitive serving/ingest DP.
+/// Ingest (airway) and cameras keep using the main wire endpoint.
+pub const AIRHOUSE_ANALYTICS_WIRE_HOST_VAR: &str = "AIRHOUSE_ANALYTICS_WIRE_HOST";
+pub const AIRHOUSE_ANALYTICS_WIRE_PORT_VAR: &str = "AIRHOUSE_ANALYTICS_WIRE_PORT";
+
 // ── Local-mode constants ──────────────────────────────────────────────────────
 
 /// Well-known nil-UUID organization id used in local mode. Mirrors the
@@ -167,6 +175,36 @@ pub fn wire_endpoint() -> Option<WireEndpoint> {
     })
 }
 
+/// Resolve the optional dedicated analytics DP endpoint.
+///
+/// Returns `Some` only when `AIRHOUSE_ANALYTICS_WIRE_HOST` is set to a non-empty
+/// value; the port falls back to `AIRHOUSE_ANALYTICS_WIRE_PORT`, then the main
+/// `wire_endpoint()` port, then the default. Returns `None` when unset, so
+/// callers transparently keep using the main `wire_endpoint()` (no behaviour
+/// change in deployments without a separate analytics pool). Read fresh from the
+/// environment (not cached) so it composes with the test-time env helpers.
+pub fn analytics_wire_endpoint() -> Option<WireEndpoint> {
+    let host = std::env::var(AIRHOUSE_ANALYTICS_WIRE_HOST_VAR)
+        .ok()
+        .filter(|s| !s.is_empty())?;
+    let port = std::env::var(AIRHOUSE_ANALYTICS_WIRE_PORT_VAR)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .and_then(|s| match s.parse::<u16>() {
+            Ok(p) => Some(p),
+            Err(_) => {
+                tracing::warn!(
+                    "{AIRHOUSE_ANALYTICS_WIRE_PORT_VAR} value {s:?} is not a valid port number; \
+                     falling back to the main wire port"
+                );
+                None
+            }
+        })
+        .or_else(|| wire_endpoint().map(|e| e.port))
+        .unwrap_or(DEFAULT_WIRE_PORT);
+    Some(WireEndpoint { host, port })
+}
+
 // ── Local-mode autodetect ─────────────────────────────────────────────────────
 
 /// In `--local` mode, wire Oxy to a running local Airhouse stack
@@ -283,6 +321,8 @@ mod tests {
             AIRHOUSE_ADMIN_TOKEN_VAR,
             AIRHOUSE_WIRE_HOST_VAR,
             AIRHOUSE_WIRE_PORT_VAR,
+            AIRHOUSE_ANALYTICS_WIRE_HOST_VAR,
+            AIRHOUSE_ANALYTICS_WIRE_PORT_VAR,
         ] {
             unsafe { std::env::remove_var(k) };
         }
@@ -339,6 +379,31 @@ mod tests {
         assert!(std::env::var(AIRHOUSE_ADMIN_TOKEN_VAR).is_err());
 
         unsafe { std::env::remove_var(AIRHOUSE_BASE_URL_VAR) };
+    }
+
+    #[test]
+    fn analytics_endpoint_opt_in() {
+        with_clean_env(|| {
+            // Unset → None: callers transparently keep using wire_endpoint(),
+            // so deployments without a separate analytics pool are unaffected.
+            assert!(analytics_wire_endpoint().is_none());
+
+            // Host (+ explicit port) set → query workloads route here.
+            unsafe {
+                std::env::set_var(
+                    AIRHOUSE_ANALYTICS_WIRE_HOST_VAR,
+                    "airhouse-analytics-haproxy",
+                );
+                std::env::set_var(AIRHOUSE_ANALYTICS_WIRE_PORT_VAR, "5445");
+            }
+            let ep = analytics_wire_endpoint().expect("set → Some");
+            assert_eq!(ep.host, "airhouse-analytics-haproxy");
+            assert_eq!(ep.port, 5445);
+
+            // Empty host is treated as unset.
+            unsafe { std::env::set_var(AIRHOUSE_ANALYTICS_WIRE_HOST_VAR, "") };
+            assert!(analytics_wire_endpoint().is_none());
+        });
     }
 
     #[test]

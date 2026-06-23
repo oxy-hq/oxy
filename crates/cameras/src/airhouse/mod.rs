@@ -77,13 +77,15 @@ const DEFAULT_READ_TTL_SECS: u64 = 5 * 60;
 /// row group — bounded. Override with `OXY_CAMERAS_AIRHOUSE_INSERT_CHUNK_ROWS`.
 const DEFAULT_INSERT_CHUNK_ROWS: usize = 500;
 
-/// Default consecutive reconnect failures (per disconnect episode) a persistent
-/// tenant connection tolerates before its background driver gives up, evicts
-/// the tenant from the registry, and exits — so a deprovisioned / long-dead
-/// tenant doesn't keep a reconnect task and a held server-side DuckDB session
-/// alive forever. The next request re-establishes lazily. At the 30s backoff
-/// cap, 20 attempts is ~10 minutes of continuous failure. Override with
-/// `OXY_CAMERAS_AIRHOUSE_MAX_RECONNECT_ATTEMPTS`; `0` means retry forever.
+/// Default consecutive unhealthy reconnect cycles a persistent tenant
+/// connection tolerates before its background driver gives up, evicts the
+/// tenant from the registry, and exits — so a deprovisioned / long-dead tenant
+/// doesn't keep a reconnect task and a held server-side DuckDB session alive
+/// forever. Counts both connect/auth failures (can't connect at all) and rapid
+/// flaps (connect succeeds but the session drops almost immediately); a
+/// connection that stays up resets the count. The next request re-establishes
+/// lazily. At the 30s backoff cap, 20 is ~10 minutes of continuous failure.
+/// Override with `OXY_CAMERAS_AIRHOUSE_MAX_RECONNECT_ATTEMPTS`; `0` = forever.
 const DEFAULT_MAX_RECONNECT_ATTEMPTS: u32 = 20;
 
 /// Credential lifetime for the ingest / DDL path. Plenty of headroom for an

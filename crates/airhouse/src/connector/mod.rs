@@ -26,6 +26,7 @@ mod typed;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
@@ -138,6 +139,11 @@ fn format_pg_error(e: &tokio_postgres::Error) -> String {
 pub struct AirhouseConnector {
     client: Arc<tokio::sync::Mutex<Client>>,
     cached_schema: SchemaInfo,
+    /// `false` once the pgwire connection driver task has ended (the
+    /// connection was closed or errored — e.g. the Airhouse DP restarted).
+    /// Lets a connector pool detect a dead connection on checkout without a
+    /// round-trip or contending on the query mutex.
+    alive: Arc<AtomicBool>,
 }
 
 impl AirhouseConnector {
@@ -161,10 +167,16 @@ impl AirhouseConnector {
             .await
             .map_err(|e| ConnectorError::ConnectionError(format_pg_error(&e)))?;
 
+        let alive = Arc::new(AtomicBool::new(true));
+        let alive_for_driver = Arc::clone(&alive);
         tokio::spawn(async move {
             if let Err(e) = connection.await {
                 tracing::error!("airhouse connection driver error: {e}");
             }
+            // The driver future resolves only when the connection is gone
+            // (clean close or error). Mark the connector dead so the pool
+            // rebuilds instead of handing out a defunct connection.
+            alive_for_driver.store(false, Ordering::Release);
         });
 
         let cached_schema = fetch_schema(&client).await?;
@@ -172,7 +184,14 @@ impl AirhouseConnector {
         Ok(Self {
             client: Arc::new(tokio::sync::Mutex::new(client)),
             cached_schema,
+            alive,
         })
+    }
+
+    /// True while the underlying pgwire connection is still open. Cheap,
+    /// non-blocking, no round-trip — safe to call on every pool checkout.
+    pub fn is_live(&self) -> bool {
+        self.alive.load(Ordering::Acquire)
     }
 }
 

@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::{Mutex, OnceCell, RwLock};
 use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
@@ -203,6 +203,14 @@ fn make_cred_fn(
 
 // ── Reconnect driver ────────────────────────────────────────────────────────
 
+/// A connection that stays up at least this long is considered healthy and
+/// resets the give-up counter. One that drops sooner counts as a "flap" — the
+/// connect succeeded but the server tore the session down almost immediately —
+/// which is bounded just like a connect failure. An ingest connection is reused
+/// and stays open for minutes/hours (idle TCP doesn't drop), so a sub-30s drop
+/// is abnormal.
+const MIN_STABLE_UPTIME: Duration = Duration::from_secs(30);
+
 /// Everything the background driver needs. Grouped into a struct so the spawn
 /// call stays under clippy's argument-count limit.
 struct DriverCtx {
@@ -213,19 +221,41 @@ struct DriverCtx {
     port: u16,
     insecure: bool,
     get_credentials: CredFn,
-    /// Consecutive reconnect attempts (per disconnect episode) before the
-    /// driver gives up and evicts the tenant; `0` means retry forever.
+    /// Consecutive unhealthy reconnect cycles (connect/auth failures **or**
+    /// rapid flaps) tolerated before the driver gives up and evicts the tenant;
+    /// `0` means retry forever. Reset whenever a connection stays up past
+    /// [`MIN_STABLE_UPTIME`].
     max_reconnect_attempts: u32,
 }
 
+/// Give up + evict if `failures` has reached the bound. Returns `true` when the
+/// caller should stop the driver. Shared by the flap path and the
+/// connect-failure path so the give-up policy lives in one place.
+async fn give_up_if_exhausted(max: u32, failures: u32, key: &Key, reason: &str) -> bool {
+    if max == 0 || failures < max {
+        return false;
+    }
+    tracing::warn!(
+        "cameras airhouse giving up after {failures} {reason}; \
+         evicting tenant connection (re-established on next use)"
+    );
+    // Best-effort: drop the registry entry so a later request builds a fresh
+    // connection instead of finding this dead one.
+    registry().lock().await.remove(key);
+    true
+}
+
 /// Drive the pgwire connection future and reconnect with exponential backoff
-/// when it ends. A single spawned task owns the whole lifecycle; the inner
-/// loop handles every reconnect attempt so no task is spawned per reconnect.
-/// Mirrors `observability::backends::airhouse::spawn_driver`, plus a give-up
-/// bound: a deprovisioned / long-dead tenant must not keep a reconnect task
-/// (and its log spam) alive forever, so after `max_reconnect_attempts`
-/// consecutive failures the driver evicts the registry entry and exits. The
-/// next request for that tenant re-establishes lazily.
+/// when it ends. A single spawned task owns the whole lifecycle; the inner loop
+/// handles every reconnect attempt so no task is spawned per reconnect. Mirrors
+/// `observability::backends::airhouse::spawn_driver`, plus a give-up bound so a
+/// deprovisioned / long-dead tenant doesn't keep a reconnect task (and its log
+/// spam) and a server-side DuckDB session alive forever. The bound trips on
+/// **both** repeated connect/auth failures (can't connect at all) **and**
+/// repeated flaps (connect succeeds but the session drops within
+/// [`MIN_STABLE_UPTIME`]); either way the registry entry is evicted and the
+/// next request re-establishes lazily. A connection that stays up resets the
+/// count.
 fn spawn_driver(ctx: DriverCtx) {
     let DriverCtx {
         key,
@@ -238,22 +268,43 @@ fn spawn_driver(ctx: DriverCtx) {
         max_reconnect_attempts,
     } = ctx;
     tokio::spawn(async move {
-        loop {
+        let mut connected_at = Instant::now();
+        let mut failures: u32 = 0;
+        'session: loop {
             match conn.await {
                 Err(e) => tracing::warn!("cameras airhouse connection dropped: {e}"),
                 Ok(()) => {
                     tracing::info!("cameras airhouse connection closed cleanly; reconnecting")
                 }
             }
+
+            // A connection that stayed up is healthy → reset. One that dropped
+            // almost immediately is flapping → count it toward the give-up bound
+            // (otherwise a server tearing sessions down on connect would churn
+            // forever, reintroducing the very session churn this module fixes).
+            if connected_at.elapsed() >= MIN_STABLE_UPTIME {
+                failures = 0;
+            } else {
+                failures += 1;
+                if give_up_if_exhausted(
+                    max_reconnect_attempts,
+                    failures,
+                    &key,
+                    "rapid reconnect flaps",
+                )
+                .await
+                {
+                    return;
+                }
+            }
+
             let mut delay = Duration::from_millis(200);
-            let mut attempts: u32 = 0;
             loop {
                 tokio::time::sleep(delay).await;
-                attempts += 1;
 
-                // On success, reassign `conn` and `break` adjacently so the
-                // borrow checker can prove `conn` is live at the outer loop's
-                // next `conn.await`.
+                // On success, reassign `conn` + `connected_at` and
+                // `continue 'session` adjacently so the borrow checker can prove
+                // `conn` is live at the outer loop's next `conn.await`.
                 match get_credentials().await {
                     Err(e) => {
                         tracing::warn!(
@@ -267,7 +318,8 @@ fn spawn_driver(ctx: DriverCtx) {
                                 *client_ref.write().await = Arc::new(new_client);
                                 tracing::info!("cameras airhouse reconnected");
                                 conn = new_conn;
-                                break; // drive the new connection in the outer loop
+                                connected_at = Instant::now();
+                                continue 'session; // drive the new connection
                             }
                             Err(e) => {
                                 tracing::warn!(
@@ -278,15 +330,16 @@ fn spawn_driver(ctx: DriverCtx) {
                     }
                 }
 
-                // Reached only on a failed attempt (success paths `break` above).
-                if max_reconnect_attempts > 0 && attempts >= max_reconnect_attempts {
-                    tracing::warn!(
-                        "cameras airhouse giving up after {attempts} reconnect attempts; \
-                         evicting tenant connection (re-established on next use)"
-                    );
-                    // Best-effort: drop the registry entry so a later request
-                    // builds a fresh connection instead of finding this dead one.
-                    registry().lock().await.remove(&key);
+                // Reached only on a failed attempt (success `continue`s above).
+                failures += 1;
+                if give_up_if_exhausted(
+                    max_reconnect_attempts,
+                    failures,
+                    &key,
+                    "reconnect failures",
+                )
+                .await
+                {
                     return;
                 }
                 delay = (delay * 2).min(Duration::from_secs(30));

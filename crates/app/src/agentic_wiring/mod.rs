@@ -14,6 +14,7 @@
 //! - [`thread_owner`] — platform threads-table adapter for
 //!   [`agentic_pipeline::platform::ThreadOwnerLookup`].
 
+pub mod airhouse_pool;
 pub mod builder_bridges;
 pub mod compile_dispatcher;
 pub mod metric_sink;
