@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.80] - 2026-06-23
+
+### 🐛 Bug Fixes
+
+- Don't write oxy.log in cloud; bound it on local (#2591)
+- Reuse persistent per-tenant Airhouse connection for camera ingest (#2592)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2588)
+
 ## [0.5.79] - 2026-06-22
 
 ### 🚀 Features
@@ -17,6 +28,7 @@ All notable changes to this project will be documented in this file.
 - Bump airway to 0.1.12 (#2579)
 - Add timeout-minutes guardrails to all workflow jobs (#2586)
 - *(airway)* Toast orders → replacing + end-of-load compaction (#2584)
+- Release 0.5.79 (#2577)
 
 ## [0.5.78] - 2026-06-19
 
