@@ -88,6 +88,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Test these combinations after pipeline/LLM changes** — agentic analytics under `oxy serve --local` (history of server-side errors) and **Azure OpenAI** (routes through the OSS path; history of agentic incompatibilities).
 - **`oxy run` works with no database** (run history/checkpoints fall back to no-op storage) — code that assumes a real storage backend must check runtime mode.
 - **Input that must be sanitized/allowlisted** — DuckDB config SQL (S3 secrets, schema names, paths) escaped against single-quote injection; the Slack re-post handler allowlists block kinds (`section` / `context` / `divider` / `header` / `image`) and drops interactive types.
+- **Custom-app subdomains rely on a server-side session cookie, separate from main-site client login state** — logout must clear that cookie server-side (not just client-side), and every OAuth provider (not just magic-link) must preserve the return-to-app destination, or the subdomain and main site disagree on whether you're signed in.
 
 ---
 
