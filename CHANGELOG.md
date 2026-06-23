@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.81] - 2026-06-23
+
+### 🐛 Bug Fixes
+
+- Airhouse connection management — analytics connector pool + cameras reconnect flap-bound (#2596)
+
 ## [0.5.80] - 2026-06-23
 
 ### 🐛 Bug Fixes
@@ -12,6 +18,10 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Update product-context.md from recent changelogs (#2588)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.80 (#2595)
 
 ## [0.5.79] - 2026-06-22
 
