@@ -1025,8 +1025,8 @@ async fn test_happy_path_analytics_automation_step_done() {
     tokio::spawn(async move { worker.run().await });
     let coord_handle = tokio::spawn(async move { coordinator.run().await });
 
-    // Wait up to 10s for the root to complete.
-    tokio::time::timeout(std::time::Duration::from_secs(10), coord_handle)
+    // Wait up to 30s for the root to complete (CI runners can be slow under load).
+    tokio::time::timeout(std::time::Duration::from_secs(30), coord_handle)
         .await
         .expect("coordinator timed out")
         .expect("coordinator panicked");

@@ -344,40 +344,40 @@ mod tests {
         );
     }
 
-    /// Verifies the race described in the `get_or_init` doc-comment: two
-    /// threads both miss the cache and run `init` concurrently for the same
-    /// `PoolTarget`. The second writer wins the slot, but the first caller's
-    /// `Arc<PoolEntry>` remains valid — its primary `Mutex` is intact and
-    /// `checkout()` must still succeed on the evicted entry.
+    /// Verifies the per-target init lock: two threads that both miss the cache
+    /// for the same `PoolTarget` are serialised — only ONE of them runs `init`;
+    /// the second waits and then returns the entry the first inserted (the
+    /// double-check in `get_or_init` hits the warm cache).  Both callers must
+    /// end up with `Arc::ptr_eq` entries and the pool must hold exactly one slot.
     #[test]
     fn concurrent_init_for_same_target_leaves_one_slot() {
-        use std::sync::Barrier;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::thread;
 
         let pool = Arc::new(DuckDBPool::default());
         let dir = PathBuf::from("/tmp/duckdb-pool-concurrent-test");
-        let barrier = Arc::new(Barrier::new(2));
+        // Count how many times `init` actually executes — with the per-target
+        // lock it must be exactly 1 even when two threads race.
+        let init_count = Arc::new(AtomicUsize::new(0));
 
         let pool1 = pool.clone();
-        let barrier1 = barrier.clone();
         let dir1 = dir.clone();
+        let count1 = init_count.clone();
         let t1 = thread::spawn(move || {
             let key = fake_local_key(&dir1);
             pool1.get_or_init(key, move || {
-                // Wait until both threads are inside init before either
-                // proceeds to insert — this manufactures the race.
-                barrier1.wait();
+                count1.fetch_add(1, Ordering::SeqCst);
                 dummy_entry()
             })
         });
 
         let pool2 = pool.clone();
-        let barrier2 = barrier.clone();
         let dir2 = dir.clone();
+        let count2 = init_count.clone();
         let t2 = thread::spawn(move || {
             let key = fake_local_key(&dir2);
             pool2.get_or_init(key, move || {
-                barrier2.wait();
+                count2.fetch_add(1, Ordering::SeqCst);
                 dummy_entry()
             })
         });
@@ -385,22 +385,26 @@ mod tests {
         let entry1 = t1.join().expect("thread 1 panicked").unwrap();
         let entry2 = t2.join().expect("thread 2 panicked").unwrap();
 
-        // Exactly one slot must survive — the second writer's entry replaced
-        // the first, but the map must not hold duplicates.
+        // Per-target init lock: exactly one init ran.
+        assert_eq!(
+            init_count.load(Ordering::SeqCst),
+            1,
+            "only one init must run when two threads race for the same target"
+        );
+
+        // Exactly one slot in the map.
         assert_eq!(
             pool.slots.lock().unwrap().len(),
             1,
             "pool must hold exactly one slot after a concurrent-init race"
         );
 
-        // Both Arc<PoolEntry> values must still be usable. The evicted entry
-        // was removed from the map but its Arc refcount kept it alive. Its
-        // primary Mutex is untouched, so checkout() must not panic or error.
-        entry1
-            .checkout()
-            .expect("entry1 (possibly evicted) checkout failed after concurrent race");
-        entry2
-            .checkout()
-            .expect("entry2 (possibly evicted) checkout failed after concurrent race");
+        // Both callers got the same entry (second caller hit the double-check).
+        assert!(
+            Arc::ptr_eq(&entry1, &entry2),
+            "both callers must receive the same Arc<PoolEntry>"
+        );
+
+        entry1.checkout().expect("checkout failed");
     }
 }
