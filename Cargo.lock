@@ -712,8 +712,8 @@ dependencies = [
 
 [[package]]
 name = "airway"
-version = "0.1.14"
-source = "git+https://github.com/oxy-hq/airway-internal.git?tag=0.1.14#93420552b296dfa0567ff9139342def99b528dbf"
+version = "0.1.15"
+source = "git+https://github.com/oxy-hq/airway-internal.git?tag=0.1.15#85cda8d39b5a150e18a116ade8e17c6e56e59884"
 dependencies = [
  "anyhow",
  "arrow 58.3.0",
@@ -6363,7 +6363,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -9883,7 +9883,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.10.5",
  "log",
  "multimap",
@@ -10066,7 +10066,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.40",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -10104,7 +10104,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -11949,7 +11949,7 @@ version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
