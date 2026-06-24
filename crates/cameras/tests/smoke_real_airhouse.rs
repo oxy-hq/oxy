@@ -403,6 +403,12 @@ async fn list_camera_tables(workspace_id: Uuid) -> std::collections::HashSet<Str
 async fn ingest_one_event_through_real_airhouse() {
     assert_env_set();
     set_test_encryption_key();
+    // This Tier-B test verifies a row actually lands in real Airhouse, so it
+    // needs the SYNCHRONOUS write path — the default write-coalescing buffer
+    // would 202-ACK and flush asynchronously, racing `verify_event_landed`.
+    // SAFETY: set before any Tokio work; #[ignore] Tier-B tests run individually
+    // (nextest process-per-test), so there is no concurrent env reader.
+    unsafe { std::env::set_var("OXY_CAMERAS_INGEST_BUFFER_DISABLED", "1") };
 
     let db = test_db().await;
     let workspace_id = seed_workspace(&db).await;
@@ -490,7 +496,9 @@ async fn ingest_one_event_through_real_airhouse() {
             )
             .await
             .unwrap();
-        if resp.status() != StatusCode::OK {
+        // 202 Accepted: the ingest handler ACKs before the (here synchronous, via
+        // OXY_CAMERAS_INGEST_BUFFER_DISABLED above) airhouse write completes.
+        if resp.status() != StatusCode::ACCEPTED {
             let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
                 .await
                 .unwrap();
@@ -546,6 +554,12 @@ async fn ingest_one_event_through_real_airhouse() {
 async fn ddl_gated_on_camera_intent() {
     assert_env_set();
     set_test_encryption_key();
+    // This Tier-B test verifies a row actually lands in real Airhouse, so it
+    // needs the SYNCHRONOUS write path — the default write-coalescing buffer
+    // would 202-ACK and flush asynchronously, racing `verify_event_landed`.
+    // SAFETY: set before any Tokio work; #[ignore] Tier-B tests run individually
+    // (nextest process-per-test), so there is no concurrent env reader.
+    unsafe { std::env::set_var("OXY_CAMERAS_INGEST_BUFFER_DISABLED", "1") };
 
     let db = test_db().await;
     let workspace_id = seed_workspace(&db).await;

@@ -21,7 +21,7 @@ use crate::routes::dto::{
     TargetView as TargetViewDto,
 };
 use crate::routes::errors::map as map_err;
-use crate::service::{clips, compliance, config, ingest, logs, packs, updates};
+use crate::service::{clips, compliance, config, ingest, ingest_buffer, logs, packs, updates};
 use sea_orm::{EntityTrait, Set};
 
 pub fn routes<S>() -> Router<S>
@@ -144,11 +144,10 @@ async fn post_box_health(
         image_tag: body.image_tag,
         containers_running: body.containers_running,
     };
-    match ingest::write_box_health(ctx.workspace_id, vec![payload]).await {
-        Ok(r) => Json(AcceptedResponse {
-            accepted: r.accepted,
-        })
-        .into_response(),
+    match ingest_buffer::push_box_health(ctx.workspace_id, vec![payload]).await {
+        // 202 Accepted: rows are buffered, not yet durable in airhouse (the
+        // flusher writes them on its next window) — honest ACK-before-durable.
+        Ok(accepted) => (StatusCode::ACCEPTED, Json(AcceptedResponse { accepted })).into_response(),
         Err(e) => map_err(e),
     }
 }
@@ -235,11 +234,10 @@ async fn post_camera_health(
         reconnect_count: body.reconnect_count,
     };
     let workspace_id = _ctx.workspace_id;
-    match ingest::write_camera_health(workspace_id, vec![payload]).await {
-        Ok(r) => Json(AcceptedResponse {
-            accepted: r.accepted,
-        })
-        .into_response(),
+    match ingest_buffer::push_camera_health(workspace_id, vec![payload]).await {
+        // 202 Accepted: rows are buffered, not yet durable in airhouse (the
+        // flusher writes them on its next window) — honest ACK-before-durable.
+        Ok(accepted) => (StatusCode::ACCEPTED, Json(AcceptedResponse { accepted })).into_response(),
         Err(e) => map_err(e),
     }
 }
@@ -250,11 +248,10 @@ async fn post_events(
     EdgeContextExtractor(ctx): EdgeContextExtractor,
     Json(batch): Json<EventBatch>,
 ) -> Response {
-    match ingest::write_events(ctx.workspace_id, batch.events).await {
-        Ok(r) => Json(AcceptedResponse {
-            accepted: r.accepted,
-        })
-        .into_response(),
+    match ingest_buffer::push_events(ctx.workspace_id, batch.events).await {
+        // 202 Accepted: rows are buffered, not yet durable in airhouse (the
+        // flusher writes them on its next window) — honest ACK-before-durable.
+        Ok(accepted) => (StatusCode::ACCEPTED, Json(AcceptedResponse { accepted })).into_response(),
         Err(e) => map_err(e),
     }
 }

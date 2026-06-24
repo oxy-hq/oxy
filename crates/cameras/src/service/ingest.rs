@@ -73,7 +73,7 @@ pub struct IngestResult {
 
 pub async fn write_events(
     workspace_id: Uuid,
-    events: Vec<EventPayload>,
+    events: &[EventPayload],
 ) -> ServiceResult<IngestResult> {
     if events.is_empty() {
         return Ok(IngestResult { accepted: 0 });
@@ -121,7 +121,7 @@ fn build_events_insert(events: &[EventPayload]) -> String {
 
 pub async fn write_camera_health(
     workspace_id: Uuid,
-    rows: Vec<CameraHealthPayload>,
+    rows: &[CameraHealthPayload],
 ) -> ServiceResult<IngestResult> {
     if rows.is_empty() {
         return Ok(IngestResult { accepted: 0 });
@@ -166,7 +166,7 @@ fn build_camera_health_insert(rows: &[CameraHealthPayload]) -> String {
 
 pub async fn write_box_health(
     workspace_id: Uuid,
-    rows: Vec<BoxHealthPayload>,
+    rows: &[BoxHealthPayload],
 ) -> ServiceResult<IngestResult> {
     if rows.is_empty() {
         return Ok(IngestResult { accepted: 0 });

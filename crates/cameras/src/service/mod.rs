@@ -35,6 +35,7 @@ pub mod dashboard;
 pub mod events;
 pub mod fleet;
 pub mod ingest;
+pub mod ingest_buffer;
 pub mod listing;
 pub mod log_retention;
 pub mod logs;

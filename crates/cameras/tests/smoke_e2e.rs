@@ -321,9 +321,28 @@ fn assert_airhouse_disabled_in_env() {
 /// The 503 is the success signal: we exercised auth, middleware,
 /// routing, DTO deserialization, and `service::ingest::write_events`
 /// dispatch — everything except the pgwire write itself.
+///
+/// Note: the in-memory write-coalescing buffer is disabled for this test
+/// (`OXY_CAMERAS_INGEST_BUFFER_DISABLED=1`) so the events POST takes the
+/// synchronous Airhouse path and reaches the expected 503 boundary.
 #[tokio::test]
 async fn happy_path_register_then_ingest_reaches_airhouse_boundary() {
     assert_airhouse_disabled_in_env();
+    // Disable the write-coalescing buffer so the events POST takes the
+    // synchronous Airhouse path and returns the expected 503 immediately.
+    //
+    // SAFETY: `std::env::set_var` is unsafe in Rust 2024 because concurrent
+    // env reads in the same process can race. We guard against that here with
+    // a process-wide OnceLock — the closure is guaranteed to execute exactly
+    // once, so there is exactly one writer. No other test in this binary reads
+    // OXY_CAMERAS_INGEST_BUFFER_DISABLED via `buffering_disabled()`: every
+    // other /control/events caller in this file either carries an empty batch
+    // (rejected before the service layer) or an invalid bearer (401 before any
+    // env read), so there is no concurrent reader racing against this write.
+    static BUFFER_DISABLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    BUFFER_DISABLED.get_or_init(|| unsafe {
+        std::env::set_var("OXY_CAMERAS_INGEST_BUFFER_DISABLED", "1");
+    });
     let db = test_db().await;
     let (workspace_id, site_id) = seed_site(&db).await;
     let app = router(db.clone());
@@ -3154,11 +3173,12 @@ async fn update_channel_set_target_then_device_reads_then_reports_back() {
         )
         .await
         .unwrap();
-    // 503 here is acceptable — the Airhouse ingest path can be
-    // unconfigured in the test env, but the edge_boxes row still
-    // gets stamped (we run record_health_update first).
+    // With write-coalescing on (the default), the health POST buffers the row
+    // and returns 202 Accepted. 503 stays acceptable for the synchronous path
+    // (Airhouse ingest can be unconfigured in the test env); either way the
+    // edge_boxes row is still stamped (we run record_health_update first).
     assert!(
-        resp.status() == StatusCode::OK || resp.status() == StatusCode::SERVICE_UNAVAILABLE,
+        resp.status() == StatusCode::ACCEPTED || resp.status() == StatusCode::SERVICE_UNAVAILABLE,
         "got {}",
         resp.status()
     );

@@ -221,6 +221,14 @@ pub async fn api_router(
         );
     }
 
+    // Camera ingest write-coalescing flusher: buffers high-frequency
+    // events/health and flushes one batched INSERT per (tenant, stream) per
+    // window, so airhouse sees ~one DuckLake commit/window instead of one per
+    // edge POST. No-op (synchronous writes) under
+    // OXY_CAMERAS_INGEST_BUFFER_DISABLED. Same shutdown token as the other
+    // camera loops (final-drains on SIGTERM).
+    oxy_cameras::service::ingest_buffer::spawn(agentic_state.shutdown_token.clone());
+
     // Bridge camera domain events (compliance ingest, health transitions)
     // onto the world-model SSE bus.
     oxy_cameras::service::events::set_sink(Box::new(
