@@ -2,11 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.82] - 2026-06-24
+
+### 🐛 Bug Fixes
+
+- Ignore .worktrees/ locally so worktree creation never dirties main (#2598)
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump airway to 0.1.14 (#2603)
+
 ## [0.5.81] - 2026-06-23
 
 ### 🐛 Bug Fixes
 
 - Airhouse connection management — analytics connector pool + cameras reconnect flap-bound (#2596)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.81 (#2599)
 
 ## [0.5.80] - 2026-06-23
 
