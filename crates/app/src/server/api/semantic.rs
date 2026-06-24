@@ -12,6 +12,7 @@
 //! `semantic_query` step uses, so IDE results stay in lockstep with
 //! runtime results without re-introducing `oxy-workflow`.
 
+use airlayer::engine::promotions::Promotions;
 use axum::{
     extract::{self, Path},
     http::StatusCode,
@@ -36,7 +37,7 @@ use crate::server::api::data::{
     agentic_error_response, run_via_agentic_connector,
 };
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, PreaggCacheCtx, SemanticLayerCacheCtx, WorkspaceManagerExtractor,
 };
 use crate::server::api::semantic_scan::{self, MaterialisedScan, SemanticEntity};
 
@@ -120,6 +121,7 @@ fn decode_b64_path(
 
 pub async fn get_view_details(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    layer_cache: SemanticLayerCacheCtx,
     Path(ViewPath {
         workspace_id: _,
         file_path_b64,
@@ -145,6 +147,39 @@ pub async fn get_view_details(
         )
     })?;
 
+    // Load the full airlayer semantic layer to compute the promotion closure.
+    // Induced measures are defined on fine-grain views but become queryable at
+    // every coarser-grain ancestor — they don't exist in the single-file YAML.
+    // `scan_path` is the whole promoted scan (boundary tempdir or FS fallback),
+    // so loading it gives the cross-view graph the promotion closure needs.
+    let airlayer_layer = layer_cache
+        .get_or_load(scan_path.clone())
+        .await
+        .map_err(|e| {
+            semantic_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load semantic layer: {e}"),
+            )
+        })?;
+    let promotions = Promotions::build(&airlayer_layer.views).map_err(|e| {
+        semantic_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to build promotion closure: {e}"),
+        )
+    })?;
+
+    let mut measures = view
+        .measures
+        .map(|ms| {
+            json_array(
+                &ms.into_iter()
+                    .filter(|m| !m.name.starts_with('_'))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .unwrap_or_default();
+    append_induced_measures(&mut measures, &view.name, &promotions, &airlayer_layer);
+
     Ok(extract::Json(ViewResponse {
         view_name: view.name.clone(),
         name: view.name,
@@ -152,12 +187,13 @@ pub async fn get_view_details(
         datasource: view.datasource,
         table: view.table,
         dimensions: json_array(&view.dimensions),
-        measures: view.measures.map(|m| json_array(&m)).unwrap_or_default(),
+        measures,
     }))
 }
 
 pub async fn get_topic_details(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    layer_cache: SemanticLayerCacheCtx,
     Path(TopicPath {
         workspace_id: _,
         file_path_b64,
@@ -196,6 +232,26 @@ pub async fn get_topic_details(
         )
     })?;
 
+    let airlayer_layer = layer_cache
+        .get_or_load(semantics_path.clone())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                extract::Json(ErrorResponse {
+                    message: format!("Failed to load semantic layer: {e}"),
+                }),
+            )
+        })?;
+    let promotions = Promotions::build(&airlayer_layer.views).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            extract::Json(ErrorResponse {
+                message: format!("Failed to build promotion closure: {e}"),
+            }),
+        )
+    })?;
+
     let mut views_with_data = Vec::with_capacity(topic.views.len());
     for view_name in &topic.views {
         let Some(view) = parse_result
@@ -211,6 +267,13 @@ pub async fn get_topic_details(
                 }),
             ));
         };
+        let visible_measures: Vec<_> = view
+            .measures
+            .as_ref()
+            .map(|ms| ms.iter().filter(|m| !m.name.starts_with('_')).collect())
+            .unwrap_or_default();
+        let mut measures = json_array(&visible_measures);
+        append_induced_measures(&mut measures, view_name, &promotions, &airlayer_layer);
         views_with_data.push(ViewResponse {
             view_name: view_name.clone(),
             name: view.name.clone(),
@@ -218,7 +281,7 @@ pub async fn get_topic_details(
             datasource: view.datasource.clone(),
             table: view.table.clone(),
             dimensions: json_array(&view.dimensions),
-            measures: view.measures.as_ref().map(json_array).unwrap_or_default(),
+            measures,
         });
     }
 
@@ -460,6 +523,41 @@ mod preagg_tests {
     }
 }
 
+/// Append induced (promoted) measures for `view_name` to `measures`.
+///
+/// Each entry mirrors the source measure's JSON shape with two extra fields:
+/// `induced: true` and `promoted_from: "<source_view>"`. The frontend renders
+/// them alongside explicit measures; callers can filter on `induced` for badges.
+fn append_induced_measures(
+    measures: &mut Vec<serde_json::Value>,
+    view_name: &str,
+    promotions: &Promotions,
+    layer: &airlayer::SemanticLayer,
+) {
+    for im in promotions.induced_for_view(view_name) {
+        let mut json = layer
+            .views
+            .iter()
+            .find(|v| v.name == im.source_view)
+            .and_then(|v| v.measures.as_ref())
+            .and_then(|ms| ms.iter().find(|m| m.name == im.source_measure))
+            .and_then(|m| serde_json::to_value(m).ok())
+            .unwrap_or_else(|| serde_json::json!({ "name": im.source_measure }));
+
+        if let serde_json::Value::Object(ref mut map) = json {
+            map.insert("induced".to_string(), serde_json::Value::Bool(true));
+            map.insert(
+                "promoted_from".to_string(),
+                serde_json::Value::String(im.source_view.clone()),
+            );
+        }
+
+        measures.push(json);
+    }
+}
+
+// ── World Model — filter/instance types ──────────────────────────────────────
+
 /// Serialize anything to a `Vec<serde_json::Value>`, treating a
 /// non-array serialization as empty. Lets the response shape stay
 /// `Vec<Object>` regardless of whether the semantic model exposes the
@@ -471,7 +569,7 @@ fn json_array<T: Serialize>(value: &T) -> Vec<serde_json::Value> {
     }
 }
 
-// ── POST /semantic/compile ─────────────────────────────────────────────────
+// ── World Model — instance / filter endpoints ────────────────────────────────
 
 #[derive(Serialize, ToSchema)]
 pub struct SemanticQueryCompileResponse {
@@ -514,7 +612,7 @@ pub async fn compile_semantic_query(
         // Compile to warehouse SQL only (no preagg cache) — IDE preview
         // should always show the human-readable warehouse SQL, not the
         // local-Parquet rewrite.
-        resolve_and_compile(&scan_path, &databases, &query, None, 0)
+        resolve_and_compile(&scan_path, &databases, &query, None, 0, None)
     })
     .await
     .map_err(|e| {
@@ -617,6 +715,7 @@ pub async fn execute_semantic_query(
             &query,
             cache_for_compile,
             threshold,
+            None,
         )
     })
     .await
@@ -778,3 +877,4 @@ fn sql_error_500(message: String) -> (StatusCode, extract::Json<SqlErrorResponse
         }),
     )
 }
+

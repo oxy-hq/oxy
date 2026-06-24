@@ -7,6 +7,8 @@ entities:
   type: primary
   description: Primary shipping address entity
   key: shipping_address_id
+  label: city
+  parent: customer
 - name: customer
   type: foreign
   description: Customer who owns this address
@@ -59,4 +61,4 @@ measures:
 - name: default_addresses_count
   type: sum
   description: Count of default addresses
-  expr: "CASE WHEN is_default THEN 1 ELSE 0 END"
+  expr: "CASE WHEN {{shipping_addresses.is_default}} THEN 1 ELSE 0 END"

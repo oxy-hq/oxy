@@ -16,7 +16,9 @@
 //! handler that calls `OrgMembershipExtractor` must not be mounted on the
 //! local router.
 
-use crate::server::api::middlewares::workspace_context::{EffectiveWorkspaceRole, PreaggCacheCtx};
+use crate::server::api::middlewares::workspace_context::{
+    EffectiveWorkspaceRole, PreaggCacheCtx, SemanticEngineCacheCtx, SemanticLayerCacheCtx,
+};
 use crate::server::router::AppState;
 use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
 use crate::server::service::retrieval::EnumIndexManager;
@@ -100,6 +102,7 @@ pub async fn local_context_middleware(
             app_state.preagg_cache.clone(),
             app_state.preagg_renewal_threshold_secs,
             agentic_db,
+            app_state.semantic_layer_cache.clone(),
         )
         .await?;
     }
@@ -109,6 +112,14 @@ pub async fn local_context_middleware(
     request.extensions_mut().insert(PreaggCacheCtx {
         cache: app_state.preagg_cache,
         renewal_threshold_secs: app_state.preagg_renewal_threshold_secs,
+    });
+    request.extensions_mut().insert(SemanticLayerCacheCtx {
+        cache: app_state.semantic_layer_cache,
+        workspace_id: LOCAL_WORKSPACE_ID,
+    });
+    request.extensions_mut().insert(SemanticEngineCacheCtx {
+        cache: app_state.semantic_engine_cache,
+        workspace_id: LOCAL_WORKSPACE_ID,
     });
     Ok(next.run(request).await)
 }
@@ -134,6 +145,9 @@ async fn attach_workspace_manager(
     preagg_cache: Option<std::sync::Arc<std::sync::RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: Option<u64>,
     agentic_db: Option<std::sync::Arc<sea_orm::DatabaseConnection>>,
+    _semantic_layer_cache: std::sync::Arc<
+        crate::server::router::workspace_cache::SemanticLayerCache,
+    >,
 ) -> Result<(), StatusCode> {
     let effective_path = effective_workspace_path(workspace_row, None)
         .await
@@ -255,6 +269,11 @@ mod tests {
             preagg_cache: None,
             preagg_renewal_threshold_secs: None,
             agentic_state: None,
+            semantic_layer_cache: crate::server::router::workspace_cache::new_semantic_layer_cache(
+            ),
+            semantic_engine_cache:
+                crate::server::router::workspace_cache::new_semantic_engine_cache(),
+            query_result_cache: crate::server::router::workspace_cache::new_query_result_cache(),
         };
 
         let app = Router::new()

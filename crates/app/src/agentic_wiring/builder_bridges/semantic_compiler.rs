@@ -42,9 +42,15 @@ impl BuilderSemanticCompiler for OxyBuilderSemanticCompiler {
         let cache = self.project_ctx.refresh_key_cache();
         let renewal_threshold_secs = self.project_ctx.preagg_renewal_threshold_secs();
 
-        let compiled =
-            resolve_and_compile(scan_path, &databases, &task, cache, renewal_threshold_secs)
-                .map_err(|e| ToolError::Execution(e.to_string()))?;
+        let compiled = resolve_and_compile(
+            scan_path,
+            &databases,
+            &task,
+            cache,
+            renewal_threshold_secs,
+            None,
+        )
+        .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         match compiled {
             CompiledQuery::Warehouse { sql, database_name } => {

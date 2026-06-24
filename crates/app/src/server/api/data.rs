@@ -28,7 +28,7 @@ pub enum SemanticQueryResponse {
     },
 }
 use crate::server::service::retrieval::{ReindexInput, reindex};
-use agentic_connector::{ConnectorError, QueryFailedDetails};
+use agentic_connector::{ConnectorError, DatabaseConnector, QueryFailedDetails};
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -38,6 +38,7 @@ use oxy::config::model::ConnectionOverrides;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -243,6 +244,46 @@ pub(crate) async fn run_via_agentic_connector(
             Ok(SemanticQueryResponse::Json(data))
         }
     }
+}
+
+/// Execute SQL against an already-built connector, returning JSON rows.
+/// Use this when running multiple queries against the same database in one
+/// handler — build the connector once with `OxyProjectContext::build_connector_for`
+/// and pass it here to avoid paying the initialization cost per query.
+/// Execute SQL against an already-built connector, returning data rows (header
+/// row 0 stripped). The header is consistent with what `run_via_agentic_connector`
+/// returns — callers that previously did `.skip(1)` after `run_via_agentic_connector`
+/// can use this directly with `.first()` / `.next()`.
+pub(crate) async fn run_with_connector(
+    connector: &Arc<dyn DatabaseConnector>,
+    sql: &str,
+    _workspace_manager: &WorkspaceManager,
+) -> Vec<Vec<String>> {
+    match connector.execute_query_full(sql).await {
+        Ok(stream) => typed_stream_to_json_array(stream)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .skip(1)
+            .collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, sql, "run_with_connector: query failed, returning empty result");
+            vec![]
+        }
+    }
+}
+
+/// Build a connector for the given database name, scoped to `user_id`/`role`.
+pub(crate) async fn build_connector(
+    workspace_manager: &WorkspaceManager,
+    user_id: Uuid,
+    role: WorkspaceRole,
+    database: &str,
+) -> Result<Arc<dyn DatabaseConnector>, OxyError> {
+    let ctx = OxyProjectContext::new(workspace_manager.clone())
+        .with_subject(user_id)
+        .with_role(role);
+    ctx.build_connector_for(database).await
 }
 
 /// Cap SQL length in structured log fields so one bad query doesn't flood the

@@ -1,0 +1,249 @@
+entities:
+  - id: fruit_category
+    label: Fruit Category
+    description: Top-level product taxonomy grouping fruits into families (tropical, asian, berry, citrus, etc.)
+    display_field: category_name
+    dimensions:
+      - name: category_id
+        label: Category ID
+      - name: category_name
+        label: Name
+      - name: category_description
+        label: Description
+    measures:
+      # Induced up from fruit (and transitively from order line items) — these
+      # aggregate over the category's fiber, so they vary per category instance.
+      - name: total_fruits
+        label: Fruits in Category
+      - name: avg_fruit_price
+        label: Avg Fruit Price
+      - name: total_revenue
+        label: Category Revenue
+      - name: total_items
+        label: Units Sold
+
+  - id: fruit
+    label: Fruit
+    description: Individual fruit catalog entries with pricing information
+    display_field: fruit_name
+    dimensions:
+      - name: fruit_id
+        label: Fruit ID
+      - name: fruit_name
+        label: Name
+      - name: fruit_price
+        label: Unit Price
+    measures:
+      # avg_fruit_price over a single fruit = its own price.
+      - name: avg_fruit_price
+        label: Unit Price
+      # Induced from order line items and supplier relationships.
+      - name: total_revenue
+        label: Revenue
+      - name: total_items
+        label: Units Sold
+      - name: total_relationships
+        label: Suppliers
+      - name: avg_wholesale_price
+        label: Avg Wholesale Price
+
+  - id: supplier
+    label: Supplier
+    description: Suppliers who provide fruits to the business
+    display_field: supplier_name
+    dimensions:
+      - name: supplier_id
+        label: Supplier ID
+      - name: supplier_name
+        label: Name
+      - name: country
+        label: Country
+      - name: rating
+        label: Rating
+      - name: contact_email
+        label: Email
+      - name: contact_phone
+        label: Phone
+    measures:
+      # avg_supplier_rating over a single supplier = its own rating.
+      - name: avg_supplier_rating
+        label: Rating
+      # Induced from this supplier's fruit relationships.
+      - name: total_relationships
+        label: Fruits Supplied
+      - name: avg_wholesale_price
+        label: Avg Wholesale Price
+      - name: avg_lead_time
+        label: Avg Lead Time
+      - name: primary_supplier_relationships
+        label: Primary Relationships
+
+  - id: fruit_supplier_relationship
+    label: Supplier Relationship
+    description: Pricing and logistics terms between a fruit and a supplier
+    dimensions:
+      - name: relationship_id
+        label: Relationship ID
+      - name: wholesale_price
+        label: Wholesale Price
+      - name: minimum_order_quantity
+        label: Min Order Qty
+      - name: lead_time_days
+        label: Lead Time (days)
+      - name: is_primary_supplier
+        label: Primary Supplier
+    measures:
+      # A relationship is a leaf row; these averages over one row = the row's values.
+      - name: avg_wholesale_price
+        label: Wholesale Price
+      - name: avg_lead_time
+        label: Lead Time
+
+  - id: customer
+    label: Customer
+    description: Customers who place orders
+    display_field: customer_name
+    dimensions:
+      - name: customer_id
+        label: Customer ID
+      - name: customer_name
+        label: Name
+      - name: gender
+        label: Gender
+    measures:
+      # Own count measures (total_customers / distinct_customers) are always 1 for a
+      # single customer instance, so they are intentionally NOT exposed here. Instead we
+      # surface the measures induced up from this customer's orders and line items —
+      # these aggregate over the customer's fiber and are what's interesting per instance.
+      - name: total_orders
+        label: Total Orders
+      - name: total_order_value
+        label: Total Revenue
+      - name: net_revenue
+        label: Net Revenue
+      - name: total_shipping_costs
+        label: Total Shipping
+      - name: total_items
+        label: Items Ordered
+      - name: total_revenue
+        label: Line-Item Revenue
+      - name: average_quantity
+        label: Avg Items per Line
+      # Induced from shipments / returns (shipment & return parent to order_item).
+      - name: total_shipments
+        label: Shipments
+      - name: total_returns
+        label: Returns
+      - name: total_refund_amount
+        label: Refunded
+
+  - id: order
+    label: Order
+    description: Customer orders with shipping and payment details
+    dimensions:
+      - name: order_id
+        label: Order ID
+      - name: order_date
+        label: Order Date
+      - name: order_status
+        label: Status
+      - name: total_amount
+        label: Total Amount
+      - name: shipping_cost
+        label: Shipping Cost
+      - name: tax_amount
+        label: Tax Amount
+    measures:
+      # Own sums over a single order = that order's own values (total_orders would be 1,
+      # so it is omitted). total_items / total_revenue are induced from this order's lines.
+      - name: total_order_value
+        label: Order Value
+      - name: net_revenue
+        label: Net Revenue
+      - name: total_shipping_costs
+        label: Shipping Cost
+      - name: total_items
+        label: Line Items
+      - name: total_revenue
+        label: Line-Item Revenue
+      - name: average_quantity
+        label: Avg Quantity
+      # Induced from shipments / returns on this order's line items.
+      - name: total_shipments
+        label: Shipments
+      - name: delivered_shipments
+        label: Delivered
+      - name: total_returns
+        label: Returns
+      - name: total_refund_amount
+        label: Refunded
+
+  - id: order_item
+    label: Order Item
+    description: Individual line items within an order
+    dimensions:
+      - name: order_id
+        label: Order ID
+      - name: line_item_id
+        label: Line Item ID
+      - name: quantity
+        label: Quantity
+      - name: unit_price
+        label: Unit Price
+      - name: discount_percent
+        label: Discount %
+    measures:
+      # A line item is a leaf row; total_items would be 1, so only the per-row values show.
+      - name: total_revenue
+        label: Revenue
+      - name: average_quantity
+        label: Quantity
+      # Induced from this line's shipments / returns.
+      - name: total_shipments
+        label: Shipments
+      - name: total_returns
+        label: Returns
+      - name: total_refund_amount
+        label: Refunded
+
+  - id: shipment
+    label: Shipment
+    description: Shipment tracking for an order line item
+    display_field: tracking_number
+    dimensions:
+      - name: tracking_number
+        label: Tracking #
+      - name: carrier
+        label: Carrier
+      - name: shipment_status
+        label: Status
+      - name: shipped_date
+        label: Shipped
+      - name: estimated_delivery
+        label: Est. Delivery
+      - name: actual_delivery
+        label: Delivered
+    # A shipment is a leaf row — its dimensions (status, dates, carrier) carry the
+    # detail, and own count measures would all be 1, so no measures are surfaced.
+    measures: []
+
+  - id: return
+    label: Return
+    description: Product return for an order line item
+    dimensions:
+      - name: return_id
+        label: Return ID
+      - name: return_reason
+        label: Reason
+      - name: return_status
+        label: Status
+      - name: return_quantity
+        label: Quantity
+      - name: refund_amount
+        label: Refund Amount
+      - name: return_date
+        label: Return Date
+    measures:
+      # total_refund_amount over a single return = its own refund.
+      - name: total_refund_amount
+        label: Refund

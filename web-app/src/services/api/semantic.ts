@@ -78,6 +78,8 @@ interface Measure {
   type: string;
   description?: string;
   expr?: string;
+  induced?: boolean;
+  promoted_from?: string;
 }
 
 export interface ViewResponse {

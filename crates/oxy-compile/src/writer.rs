@@ -438,6 +438,7 @@ async fn write_compiled_rows(
     let mut pipelines = Vec::new();
     let mut references = Vec::new();
     let mut monitor_cfgs = Vec::new();
+    let mut world_model_cfgs = Vec::new();
 
     for row in rows {
         match row {
@@ -534,6 +535,12 @@ async fn write_compiled_rows(
                     definition: Set(m.definition.clone()),
                 })
             }
+            CompiledRow::WorldModelConfig(w) => {
+                world_model_cfgs.push(entity::world_model_configs::ActiveModel {
+                    revision_id: Set(revision_id),
+                    definition: Set(w.definition.clone()),
+                })
+            }
         }
     }
 
@@ -584,6 +591,11 @@ async fn write_compiled_rows(
     }
     if !monitor_cfgs.is_empty() {
         entity::monitor_configs::Entity::insert_many(monitor_cfgs)
+            .exec(txn)
+            .await?;
+    }
+    if !world_model_cfgs.is_empty() {
+        entity::world_model_configs::Entity::insert_many(world_model_cfgs)
             .exec(txn)
             .await?;
     }

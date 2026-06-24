@@ -133,6 +133,7 @@ const ROUTES = {
           },
 
           CONTEXT_GRAPH: `${wsBase}/context-graph`,
+          WORLD_MODEL: `${wsBase}/world-model`,
           CUSTOMER_APPS: `${wsBase}/apps`,
           ONBOARDING: `${wsBase}/onboarding`
         };

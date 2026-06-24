@@ -686,8 +686,8 @@ dependencies = [
 
 [[package]]
 name = "airlayer"
-version = "0.2.1"
-source = "git+https://github.com/oxy-hq/airlayer?rev=95b036950f2aa3ea408bd6946ecca18306c384e3#95b036950f2aa3ea408bd6946ecca18306c384e3"
+version = "0.3.2"
+source = "git+https://github.com/oxy-hq/airlayer?rev=246d2407563e61b73329410fc55f38ffea2cfaf4#246d2407563e61b73329410fc55f38ffea2cfaf4"
 dependencies = [
  "anyhow",
  "chrono",

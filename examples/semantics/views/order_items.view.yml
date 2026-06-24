@@ -23,6 +23,7 @@ entities:
     keys:
       - order_id
       - line_item_id
+    parent: order
   - name: order
     type: foreign
     description: "Order containing this line item"

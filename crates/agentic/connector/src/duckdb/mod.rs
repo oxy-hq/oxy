@@ -523,51 +523,60 @@ impl DatabaseConnector for DuckDbConnector {
 
     async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
         let sql = normalize_sql(sql);
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| ConnectorError::ConnectionError(format!("mutex poisoned: {e}")))?;
+        let conn = self.conn.clone();
+        let sql_owned = sql.to_string();
+        // Move all blocking DuckDB work off the Tokio worker thread so concurrent
+        // callers (e.g. join_all of 29 filter-count queries) can run in parallel
+        // rather than serialising on the limited worker-thread pool.  Pattern is
+        // identical to `execute_statement` above.
+        tokio::task::spawn_blocking(move || {
+            let conn = conn
+                .lock()
+                .map_err(|e| ConnectorError::ConnectionError(format!("mutex poisoned: {e}")))?;
 
-        // DESCRIBE resolves column names + types at the logical plan level —
-        // no rows are fetched, no temp table needed.
-        let described = describe_query(&conn, sql).map_err(|e| {
-            ConnectorError::query_failed(format!("DESCRIBE ({sql})"), e.to_string())
-        })?;
-        let columns: Vec<ColumnSpec> = described
-            .iter()
-            .map(|(name, ty)| ColumnSpec {
-                name: name.clone(),
-                data_type: describe_type_to_typed(ty),
-            })
-            .collect();
-        let col_count = columns.len();
-        let column_types: Vec<_> = columns.iter().map(|c| c.data_type.clone()).collect();
+            // DESCRIBE resolves column names + types at the logical plan level —
+            // no rows are fetched, no temp table needed.
+            let described = describe_query(&conn, &sql_owned).map_err(|e| {
+                ConnectorError::query_failed(format!("DESCRIBE ({sql_owned})"), e.to_string())
+            })?;
+            let columns: Vec<ColumnSpec> = described
+                .iter()
+                .map(|(name, ty)| ColumnSpec {
+                    name: name.clone(),
+                    data_type: describe_type_to_typed(ty),
+                })
+                .collect();
+            let col_count = columns.len();
+            let column_types: Vec<_> = columns.iter().map(|c| c.data_type.clone()).collect();
 
-        let mut stmt = conn
-            .prepare(sql)
-            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
+            let mut stmt = conn
+                .prepare(&sql_owned)
+                .map_err(|e| ConnectorError::query_failed(sql_owned.clone(), e.to_string()))?;
 
-        let rows_iter = stmt
-            .query_map([], |row| {
-                let mut cells = Vec::with_capacity(col_count);
-                for i in 0..col_count {
-                    let v: Value = row.get(i)?;
-                    cells.push(duckdb_value_to_typed(v, &column_types[i]));
+            let rows_iter = stmt
+                .query_map([], |row| {
+                    let mut cells = Vec::with_capacity(col_count);
+                    for i in 0..col_count {
+                        let v: Value = row.get(i)?;
+                        cells.push(duckdb_value_to_typed(v, &column_types[i]));
+                    }
+                    Ok(cells)
+                })
+                .map_err(|e| ConnectorError::query_failed(sql_owned.clone(), e.to_string()))?;
+
+            // Collect eagerly so we can release the Mutex and return a `'static` stream.
+            let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+            for row in rows_iter {
+                match row {
+                    Ok(cells) => rows.push(Ok(cells)),
+                    Err(e) => rows.push(Err(TypedRowError::DriverError(e.to_string()))),
                 }
-                Ok(cells)
-            })
-            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
-
-        // Collect eagerly so we can release the Mutex and return a `'static` stream.
-        let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
-        for row in rows_iter {
-            match row {
-                Ok(cells) => rows.push(Ok(cells)),
-                Err(e) => rows.push(Err(TypedRowError::DriverError(e.to_string()))),
             }
-        }
 
-        Ok(TypedRowStream::from_rows(columns, rows))
+            Ok(TypedRowStream::from_rows(columns, rows))
+        })
+        .await
+        .map_err(|e| ConnectorError::ConnectionError(format!("blocking task panicked: {e}")))?
     }
 
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {

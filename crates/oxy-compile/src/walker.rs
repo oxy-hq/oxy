@@ -43,6 +43,9 @@ pub enum FileKind {
     /// `.monitor.yml` at the workspace root — the anomaly-monitor
     /// configuration. Singleton per workspace.
     MonitorConfig,
+    /// `.world-model.yml` at the workspace root — the world-model entity
+    /// labels / display fields / allowlist. Singleton per workspace.
+    WorldModelConfig,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -98,6 +101,16 @@ pub fn discover(workspace_root: &Path) -> Result<Vec<DiscoveredFile>, CompileErr
             rel_path: ".monitor.yml".to_string(),
             abs_path: monitor_path,
             kind: FileKind::MonitorConfig,
+        });
+    }
+
+    // .world-model.yml — root-only, world-model entity config. Optional.
+    let world_model_path = workspace_root.join(".world-model.yml");
+    if world_model_path.is_file() {
+        out.push(DiscoveredFile {
+            rel_path: ".world-model.yml".to_string(),
+            abs_path: world_model_path,
+            kind: FileKind::WorldModelConfig,
         });
     }
 

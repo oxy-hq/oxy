@@ -644,6 +644,19 @@ const metricTreeKeys = {
     ] as const
 };
 
+const worldModelKeys = {
+  all: ["world-model"] as const,
+  graph: (projectId: string) => [...worldModelKeys.all, "graph", projectId] as const,
+  instances: (projectId: string, entityId: string, search: string) =>
+    [...worldModelKeys.all, "instances", projectId, entityId, search] as const,
+  filterCounts: (projectId: string, entityId: string, keyValue: string) =>
+    [...worldModelKeys.all, "filter-counts", projectId, entityId, keyValue] as const,
+  instanceDetail: (projectId: string, entityId: string, keyValue: string) =>
+    [...worldModelKeys.all, "instance-detail", projectId, entityId, keyValue] as const,
+  measureBreakdown: (projectId: string, entityId: string, keyValue: string, measure: string) =>
+    [...worldModelKeys.all, "measure-breakdown", projectId, entityId, keyValue, measure] as const
+};
+
 const metricAnomaliesKeys = {
   all: ["metric-anomalies"] as const,
   list: (projectId: string, status: string | undefined) =>
@@ -677,6 +690,7 @@ const queryKeys = {
   authConfig: authConfigKeys,
   semantic: semanticKeys,
   metricTree: metricTreeKeys,
+  worldModel: worldModelKeys,
   metricAnomalies: metricAnomaliesKeys,
   org: orgKeys,
   agent: agentKeys,

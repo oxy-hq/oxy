@@ -189,6 +189,133 @@ where
     }
 }
 
+/// Per-workspace airlayer SemanticLayer cache. Attached by workspace_middleware
+/// so handlers avoid re-parsing all `.view.yml`/`.topic.yml` files on every
+/// request. Call `get_or_load` for a cached layer, `invalidate` after writes.
+#[derive(Clone)]
+pub struct SemanticLayerCacheCtx {
+    pub cache: std::sync::Arc<crate::server::router::workspace_cache::SemanticLayerCache>,
+    pub workspace_id: Uuid,
+}
+
+impl SemanticLayerCacheCtx {
+    /// Returns a cached `Arc<airlayer::SemanticLayer>`, loading from disk on the
+    /// first call per workspace (or after `invalidate`). The load is offloaded to
+    /// a blocking thread so it does not stall the Tokio worker pool.
+    pub async fn get_or_load(
+        &self,
+        scan_path: std::path::PathBuf,
+    ) -> Result<std::sync::Arc<airlayer::SemanticLayer>, oxy_airlayer_compat::SemanticError> {
+        if let Some(layer) = self.cache.lookup(self.workspace_id) {
+            tracing::debug!(workspace_id = %self.workspace_id, "semantic layer cache hit");
+            return Ok(layer);
+        }
+        tracing::info!(workspace_id = %self.workspace_id, path = ?scan_path, "semantic layer cache miss — loading from disk");
+        let t0 = std::time::Instant::now();
+        let layer = tokio::task::spawn_blocking(move || {
+            oxy_airlayer_compat::load_layer_from_dir(&scan_path)
+        })
+        .await
+        .map_err(|e| {
+            oxy_airlayer_compat::SemanticError::Engine(format!("blocking task failed: {e}"))
+        })??;
+        tracing::info!(workspace_id = %self.workspace_id, elapsed_ms = t0.elapsed().as_millis(), "semantic layer loaded");
+        let arc_layer = std::sync::Arc::new(layer);
+        self.cache.insert(self.workspace_id, arc_layer.clone());
+        Ok(arc_layer)
+    }
+
+    /// Evicts the cached layer so the next `get_or_load` reloads from disk.
+    pub fn invalidate(&self) {
+        self.cache.remove(self.workspace_id);
+    }
+}
+
+impl<S> FromRequestParts<S> for SemanticLayerCacheCtx
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = parts
+            .extensions
+            .get::<SemanticLayerCacheCtx>()
+            .cloned()
+            .ok_or(StatusCode::INTERNAL_SERVER_ERROR);
+        async move { result }
+    }
+}
+
+/// Cached compiled `SemanticEngine` for a workspace, injected by workspace middleware.
+#[derive(Clone)]
+pub struct SemanticEngineCacheCtx {
+    pub cache: std::sync::Arc<crate::server::router::workspace_cache::SemanticEngineCache>,
+    pub workspace_id: Uuid,
+}
+
+impl SemanticEngineCacheCtx {
+    /// Returns a cached engine, building it from `layer` + `databases` on the first call.
+    /// The engine is `Send` but not `Sync`; it lives behind a `Mutex` so callers must
+    /// compile inside a `spawn_blocking` that locks, compiles, and immediately drops the guard.
+    pub async fn get_or_build(
+        &self,
+        layer: std::sync::Arc<airlayer::SemanticLayer>,
+        databases: Vec<airlayer::DatabaseConfig>,
+    ) -> Option<std::sync::Arc<std::sync::Mutex<airlayer::SemanticEngine>>> {
+        let workspace_id = self.workspace_id;
+        self.cache
+            .get_or_build(workspace_id, || async move {
+                tracing::info!(%workspace_id, "semantic engine cache miss — building engine");
+                let t0 = std::time::Instant::now();
+                let result = tokio::task::spawn_blocking(move || {
+                    let dialects =
+                        airlayer::DatasourceDialectMap::from_config_databases(&databases);
+                    airlayer::SemanticEngine::from_semantic_layer((*layer).clone(), dialects)
+                        .ok()
+                        .map(|engine| std::sync::Arc::new(std::sync::Mutex::new(engine)))
+                })
+                .await
+                .ok()
+                .flatten();
+                if result.is_some() {
+                    tracing::info!(%workspace_id, elapsed_ms = t0.elapsed().as_millis(), "semantic engine built and cached");
+                } else {
+                    tracing::warn!(%workspace_id, elapsed_ms = t0.elapsed().as_millis(), "semantic engine build failed");
+                }
+                result
+            })
+            .await
+    }
+
+    /// Evicts the cached engine (call alongside `SemanticLayerCacheCtx::invalidate`).
+    pub fn invalidate(&self) {
+        self.cache.remove(self.workspace_id);
+    }
+}
+
+impl<S> FromRequestParts<S> for SemanticEngineCacheCtx
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = parts
+            .extensions
+            .get::<SemanticEngineCacheCtx>()
+            .cloned()
+            .ok_or(StatusCode::INTERNAL_SERVER_ERROR);
+        async move { result }
+    }
+}
+
 /// The caller's org membership, inserted by workspace_middleware when the workspace belongs to an org.
 #[derive(Clone)]
 pub struct OrgMembershipExtractor(pub entity::org_members::Model);
@@ -266,6 +393,8 @@ pub async fn workspace_middleware(
                     app_state.preagg_cache,
                     app_state.preagg_renewal_threshold_secs,
                     agentic_db,
+                    app_state.semantic_layer_cache,
+                    app_state.semantic_engine_cache,
                     &mut request,
                 )
                 .await?;
@@ -644,6 +773,12 @@ async fn try_attach_workspace_manager(
     preagg_cache: Option<std::sync::Arc<std::sync::RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: Option<u64>,
     db: Option<std::sync::Arc<sea_orm::DatabaseConnection>>,
+    semantic_layer_cache: std::sync::Arc<
+        crate::server::router::workspace_cache::SemanticLayerCache,
+    >,
+    semantic_engine_cache: std::sync::Arc<
+        crate::server::router::workspace_cache::SemanticEngineCache,
+    >,
     request: &mut Request<axum::body::Body>,
 ) -> Result<(), StatusCode> {
     // Branch name is validated inside `effective_workspace_path`. The helper
@@ -876,6 +1011,14 @@ async fn try_attach_workspace_manager(
     request.extensions_mut().insert(PreaggCacheCtx {
         cache: preagg_cache,
         renewal_threshold_secs: preagg_renewal_threshold_secs,
+    });
+    request.extensions_mut().insert(SemanticLayerCacheCtx {
+        cache: semantic_layer_cache,
+        workspace_id,
+    });
+    request.extensions_mut().insert(SemanticEngineCacheCtx {
+        cache: semantic_engine_cache,
+        workspace_id,
     });
     let project_ctx = std::sync::Arc::new(ctx);
     let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =

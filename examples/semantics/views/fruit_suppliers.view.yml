@@ -34,6 +34,7 @@ entities:
   type: primary
   description: Primary supplier entity
   key: supplier_id
+  label: supplier_name
 dimensions:
 - name: supplier_id
   type: number

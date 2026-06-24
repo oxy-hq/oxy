@@ -135,7 +135,7 @@ tracing = {version = "0.1.44"}
 uuid = { version = "1.23", features = ["serde", "v4"] }
 aes-gcm = "0.10.3"
 aho-corasick = "1.1"
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "95b036950f2aa3ea408bd6946ecca18306c384e3" }
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "246d2407563e61b73329410fc55f38ffea2cfaf4" }
 # Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
 # Holt-Winters family (with auto model selection); augurs-mstl handles
 # multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.

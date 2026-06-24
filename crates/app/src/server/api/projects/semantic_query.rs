@@ -213,7 +213,7 @@ pub async fn run_semantic_query(
 
     let req_clone = req;
     let compiled = match tokio::task::spawn_blocking(move || {
-        resolve_and_compile(&scan_path, &databases, &req_clone, None, 0)
+        resolve_and_compile(&scan_path, &databases, &req_clone, None, 0, None)
     })
     .await
     {

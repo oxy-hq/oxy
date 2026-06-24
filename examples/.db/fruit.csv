@@ -1,21 +1,21 @@
-id,name,price
-1,banana,33.77
-2,apple,6.13
-3,orange,17.38
-4,mango,15.04
-5,pineapple,38.14
-6,grape,35.45
-7,strawberry,45.15
-8,blueberry,8.91
-9,watermelon,23.99
-10,kiwi,6.34
-11,papaya,14.84
-12,lychee,27.74
-13,guava,6.19
-14,passion fruit,13.95
-15,dragon fruit,34.24
-16,durian,29.52
-17,jackfruit,14.92
-18,rambutan,31.52
-19,longan,41.42
-20,starfruit,5.29
+id,name,price,category_id
+1,banana,33.77,1
+2,apple,6.13,4
+3,orange,17.38,4
+4,mango,15.04,1
+5,pineapple,38.14,1
+6,grape,35.45,3
+7,strawberry,45.15,3
+8,blueberry,8.91,3
+9,watermelon,23.99,4
+10,kiwi,6.34,5
+11,papaya,14.84,1
+12,lychee,27.74,2
+13,guava,6.19,1
+14,passion fruit,13.95,1
+15,dragon fruit,34.24,5
+16,durian,29.52,2
+17,jackfruit,14.92,1
+18,rambutan,31.52,2
+19,longan,41.42,2
+20,starfruit,5.29,2

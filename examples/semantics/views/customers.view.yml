@@ -22,6 +22,7 @@ entities:
   type: primary
   description: Primary customer entity
   key: customer_id
+  label: customer_name
 dimensions:
 - name: customer_id
   type: number
@@ -48,4 +49,4 @@ measures:
   description: Count
   expr: id
   filters:
-    - expr: "{{gender}} = 'M'"
+    - expr: "gender = 'M'"

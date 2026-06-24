@@ -1,5 +1,7 @@
 use crate::server::api::middlewares::role_guards::WorkspaceEditor;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::{
+    SemanticEngineCacheCtx, SemanticLayerCacheCtx, WorkspaceManagerExtractor,
+};
 use crate::server::router::AppState;
 use axum::Json;
 use axum::extract::{self, Path, State};
@@ -188,6 +190,9 @@ pub async fn rename_folder(
 pub async fn save_file(
     _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    layer_cache: SemanticLayerCacheCtx,
+    engine_cache: SemanticEngineCacheCtx,
+    axum::extract::State(app_state): axum::extract::State<crate::server::router::AppState>,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<SaveFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -238,7 +243,24 @@ pub async fn save_file(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Semantic file: invalidate cached layer, compiled engine, and query results.
+    if is_semantic_file(&file_path) {
+        layer_cache.invalidate();
+        engine_cache.invalidate();
+        app_state
+            .query_result_cache
+            .remove_prefix(&format!("{}:", layer_cache.workspace_id));
+    }
+
     Ok(extract::Json("success".to_string()))
+}
+
+fn is_semantic_file(path: &std::path::Path) -> bool {
+    let s = path.to_string_lossy();
+    // `.world-model.yml` feeds the world-model handlers: its `display_field` is
+    // baked into cached instance results, and its label/allowlist into the
+    // cached layer view. Editing it must bust the same caches as a view/topic.
+    s.ends_with(".view.yml") || s.ends_with(".topic.yml") || s.ends_with(".world-model.yml")
 }
 
 pub async fn get_diff_summary(

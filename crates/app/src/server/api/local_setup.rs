@@ -157,6 +157,11 @@ mod tests {
             preagg_renewal_threshold_secs: None,
             startup_cwd,
             agentic_state: None,
+            semantic_layer_cache: crate::server::router::workspace_cache::new_semantic_layer_cache(
+            ),
+            semantic_engine_cache:
+                crate::server::router::workspace_cache::new_semantic_engine_cache(),
+            query_result_cache: crate::server::router::workspace_cache::new_query_result_cache(),
         }
     }
 

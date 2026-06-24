@@ -294,6 +294,15 @@ pub fn checkout_file_connection(path: &str) -> Result<Connection, OxyError> {
     checkout_file_blocking(path)
 }
 
+/// Check out a pooled connection for a local directory database (CSV/Parquet
+/// files). On the first call for `file_search_path` the files are loaded into
+/// an in-memory DuckDB; subsequent calls return a cheap `try_clone()` of the
+/// same primary connection. Mtime-based eviction ensures stale data is never
+/// served after a file change.
+pub fn checkout_local_connection(file_search_path: &str) -> Result<Connection, OxyError> {
+    checkout_local_blocking(file_search_path)
+}
+
 /// Synchronous body of [`DuckDB::init_connection`] for `File` mode.
 fn checkout_file_blocking(path: &str) -> Result<Connection, OxyError> {
     // `Connection::open` on a missing path silently CREATES an empty database,
@@ -361,6 +370,22 @@ fn init_local_db(
         );
         conn.execute(&create_stmt, [])
             .map_err(|err| connector_internal_error(CREATE_TEMP_TABLE, &err))?;
+
+        // Also expose the table under the full filename (e.g. "climbing.csv")
+        // so semantic-layer views that declare `table: "climbing.csv"` resolve
+        // against the in-memory table instead of triggering a per-query file
+        // scan — which reads the CSV from disk every time.
+        if let Some(full_name) = path.file_name().and_then(|n| n.to_str()) {
+            let full_escaped = full_name.replace('"', "\"\"");
+            if full_escaped != table_name {
+                let alias_sql = format!(
+                    "CREATE OR REPLACE VIEW {full_quoted} AS SELECT * FROM {table_quoted}",
+                    full_quoted = quote_sql_identifier(full_name),
+                    table_quoted = quote_sql_identifier(&table_name),
+                );
+                let _ = conn.execute(&alias_sql, []);
+            }
+        }
     }
 
     install_icu(&conn)?;

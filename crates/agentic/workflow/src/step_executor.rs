@@ -160,6 +160,7 @@ async fn execute_semantic_query(
         &query_config,
         cache,
         renewal_threshold_secs,
+        None,
     )
     .map_err(|e| format!("semantic compilation failed: {e}"))?;
 

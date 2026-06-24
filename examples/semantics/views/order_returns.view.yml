@@ -24,6 +24,7 @@ entities:
     type: primary
     description: "Individual return record"
     key: return_id
+    parent: order_item
   - name: order_item
     type: foreign
     description: "Order line item being returned (composite foreign key)"
@@ -84,4 +85,4 @@ measures:
   - name: approved_returns
     type: count
     description: "Number of approved returns"
-    expr: "CASE WHEN status = 'approved' THEN 1 END"
+    expr: "CASE WHEN \"order_returns\".status = 'approved' THEN 1 END"

@@ -23,6 +23,8 @@ entities:
     type: primary
     description: "Individual shipment record"
     key: shipment_id
+    label: tracking_number
+    parent: order_item
   - name: order_item
     type: foreign
     description: "Order line item being shipped (composite foreign key)"
@@ -78,7 +80,7 @@ measures:
   - name: delivered_shipments
     type: count
     description: "Number of delivered shipments"
-    expr: "CASE WHEN status = 'delivered' THEN 1 END"
+    expr: "CASE WHEN {{order_shipments.shipment_status}} = 'delivered' THEN 1 END"
   - name: on_time_shipments
     type: count
     description: "Shipments delivered on or before estimated date"

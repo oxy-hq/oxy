@@ -55,10 +55,16 @@ pub enum CompiledRow {
     Pipeline(CompiledPipeline),
     Reference(CompiledReference),
     MonitorConfig(CompiledMonitorConfig),
+    WorldModelConfig(CompiledWorldModelConfig),
 }
 
 #[derive(Debug, Clone)]
 pub struct CompiledMonitorConfig {
+    pub definition: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompiledWorldModelConfig {
     pub definition: Value,
 }
 
@@ -554,6 +560,7 @@ async fn compile_one(file: &DiscoveredFile) -> Result<Vec<CompiledRow>, FileFail
         }),
         FileKind::VerifiedQuery => compile_verified_query(file, &content),
         FileKind::MonitorConfig => compile_monitor_config(file, &content),
+        FileKind::WorldModelConfig => compile_world_model_config(file, &content),
     }
 }
 
@@ -565,6 +572,16 @@ fn compile_monitor_config(
     Ok(vec![CompiledRow::MonitorConfig(CompiledMonitorConfig {
         definition: value,
     })])
+}
+
+fn compile_world_model_config(
+    file: &DiscoveredFile,
+    content: &str,
+) -> Result<Vec<CompiledRow>, FileFailure> {
+    let value = parse_yaml(file, content)?;
+    Ok(vec![CompiledRow::WorldModelConfig(
+        CompiledWorldModelConfig { definition: value },
+    )])
 }
 
 fn compile_config(file: &DiscoveredFile, content: &str) -> Result<Vec<CompiledRow>, FileFailure> {
@@ -1218,6 +1235,7 @@ fn row_dedupe_key(row: &CompiledRow, _kind: &FileKind) -> Option<String> {
         CompiledRow::Pipeline(p) => Some(format!("pipe:{}", p.name)),
         CompiledRow::Reference(_) => None,
         CompiledRow::MonitorConfig(_) => None,
+        CompiledRow::WorldModelConfig(_) => None,
     }
 }
 

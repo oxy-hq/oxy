@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import ROUTES from "@/libs/utils/routes";
 import ContextGraphPage from "@/pages/context-graph";
+import WorldModelView from "@/pages/ide/WorldModel";
 import { ErrorBoundary } from "@/sentry";
 import { ThreadDrawer } from "./components/Ask/ThreadDrawer";
 import { BuilderDialog } from "./components/BuilderDialog";
@@ -380,6 +381,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           </Route>
           <Route path='onboarding' element={<AgenticSetupPage />} />
           <Route path='context-graph' element={<ContextGraphPage />} />
+          <Route path='world-model' element={<WorldModelView />} />
 
           <Route path='*' element={<Navigate to='.' />} />
         </Routes>

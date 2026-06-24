@@ -18,7 +18,7 @@ use crate::api::{
     metric_anomalies, metric_tree, metrics, modeling, onboarding, pipeline, procedure,
     result_files, run, schedules, semantic, task, test_file, test_project_run, test_run, thread,
     traces, video, workspace_custom_apps, workspace_logo, workspace_members, workspace_oxy_access,
-    workspaces, world_model,
+    workspaces, world_model, world_model_graph,
 };
 
 use super::AppState;
@@ -172,6 +172,26 @@ pub(super) fn build_workspace_routes(
         .route(
             "/semantic/metric-tree/distribution",
             post(metric_tree::post_distribution),
+        )
+        .route(
+            "/semantic/world-model",
+            get(world_model_graph::get_world_model),
+        )
+        .route(
+            "/semantic/world-model/instances",
+            get(world_model_graph::get_world_model_instances),
+        )
+        .route(
+            "/semantic/world-model/filter-counts",
+            post(world_model_graph::post_world_model_filter_counts),
+        )
+        .route(
+            "/semantic/world-model/instance-detail",
+            get(world_model_graph::get_world_model_instance_detail),
+        )
+        .route(
+            "/semantic/world-model/measure-breakdown",
+            get(world_model_graph::get_world_model_measure_breakdown),
         )
         // Anomaly inbox — backed by oxy-metric-monitoring. Nested so the
         // `Extension<Arc<AgenticState>>` layer scopes only to these routes
@@ -588,6 +608,11 @@ mod tests {
             preagg_cache: None,
             preagg_renewal_threshold_secs: None,
             agentic_state: None,
+            semantic_layer_cache: crate::server::router::workspace_cache::new_semantic_layer_cache(
+            ),
+            semantic_engine_cache:
+                crate::server::router::workspace_cache::new_semantic_engine_cache(),
+            query_result_cache: crate::server::router::workspace_cache::new_query_result_cache(),
         }
     }
 

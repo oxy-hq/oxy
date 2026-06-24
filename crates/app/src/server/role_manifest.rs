@@ -1657,6 +1657,15 @@ mod tests {
         "/semantic/metric-tree/opportunity",
         "/semantic/metric-tree/time-dimensions",
         "/semantic/metric-tree/distribution",
+        // world-model entity graph + instance drill-down. Reads the semantic
+        // layer (same scan mechanism as `/semantic`) plus `.world-model.yml`,
+        // which is served from the compile boundary (`world_model_configs`), so
+        // these are fleet-safe — no working-copy dependency a replica lacks.
+        "/semantic/world-model",
+        "/semantic/world-model/instances",
+        "/semantic/world-model/filter-counts",
+        "/semantic/world-model/instance-detail",
+        "/semantic/world-model/measure-breakdown",
         // world-model (Postgres + S3, read-through cached)
         "/world-model/cameras",
         "/world-model/weather/{layer}/{z}/{x}/{y}",

@@ -451,6 +451,23 @@ pub async fn resolve_monitor_config(
     Ok(row.map(|m| m.definition))
 }
 
+/// Resolve the workspace's compiled `.world-model.yml`. Singleton per
+/// revision, so the row's `definition` JSONB is the full
+/// `WorldModelConfig` (top-level `entities`) ready to round-trip back
+/// into the strict-typed struct.
+pub async fn resolve_world_model_config(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+) -> Result<Option<Value>, sea_orm::DbErr> {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+        return Ok(None);
+    };
+    let row = entity::world_model_configs::Entity::find_by_id(revision_id)
+        .one(&db)
+        .await?;
+    Ok(row.map(|m| m.definition))
+}
+
 /// List every `.view.yml` row for the workspace's current revision.
 /// Used by callers that want to enumerate semantic views without
 /// touching FS — typically to populate Postgres-only "scan" paths

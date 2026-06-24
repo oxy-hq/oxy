@@ -112,6 +112,7 @@ mod m20260602_000001_create_quickbooks_oauth_states;
 mod m20260606_000001_create_custom_app_tracking;
 mod m20260606_000002_create_compile_boundary;
 mod m20260612_000001_add_logo_to_organizations;
+mod m20260624_000001_create_world_model_configs;
 
 pub struct Migrator;
 
@@ -225,6 +226,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260606_000001_create_custom_app_tracking::Migration),
             Box::new(m20260606_000002_create_compile_boundary::Migration),
             Box::new(m20260612_000001_add_logo_to_organizations::Migration),
+            Box::new(m20260624_000001_create_world_model_configs::Migration),
         ]
     }
 }

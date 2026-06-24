@@ -69,6 +69,7 @@ entities:
   type: primary
   description: Primary order entity
   key: order_id
+  parent: customer
 - name: customer
   type: foreign
   description: Customer who placed the order

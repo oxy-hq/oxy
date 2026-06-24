@@ -165,12 +165,38 @@ pub fn build_layer<P: AsRef<Path>>(paths: &[P]) -> Result<airlayer::SemanticLaye
         }
     }
 
+    inject_row_count_measures(&mut views);
+
     let topic_opt = if topics.is_empty() {
         None
     } else {
         Some(topics)
     };
     Ok(airlayer::SemanticLayer::new(views, topic_opt))
+}
+
+/// Inject a `_row_count: count` measure into every view so fiber-count queries
+/// always have a `SELECT COUNT(*)` handle via the semantic layer.
+fn inject_row_count_measures(views: &mut Vec<airlayer::View>) {
+    for view in views.iter_mut() {
+        view.measures
+            .get_or_insert_with(Vec::new)
+            .push(airlayer::schema::models::Measure {
+                name: "__oxy_row_count".to_string(),
+                measure_type: airlayer::schema::models::MeasureType::Count,
+                description: None,
+                expr: None,
+                original_expr: None,
+                filters: None,
+                samples: None,
+                synonyms: None,
+                rolling_window: None,
+                inherits_from: None,
+                drivers: None,
+                shift: None,
+                meta: None,
+            });
+    }
 }
 
 /// Directory names that are never descended into when discovering semantic
@@ -298,6 +324,8 @@ fn build_layer_with_override(
             topics.push(parse_topic_yaml(proposed)?);
         }
     }
+
+    inject_row_count_measures(&mut views);
 
     let topic_opt = if topics.is_empty() {
         None

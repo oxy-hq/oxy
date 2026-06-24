@@ -1211,6 +1211,7 @@ pub async fn delete_branch(
 
 pub async fn switch_workspace_branch(
     _: WorkspaceEditor,
+    State(app_state): State<AppState>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
     Json(request): Json<SwitchBranchRequest>,
@@ -1224,13 +1225,25 @@ pub async fn switch_workspace_branch(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    git_switch_branch(&root, &request.branch, Some(&ws), ws.id)
+    let branch = git_switch_branch(&root, &request.branch, Some(&ws), ws.id)
         .await
-        .map(ResponseJson)
         .map_err(|e| {
             error!("{}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        })
+        })?;
+
+    // A branch switch changes the working copy in place, but both semantic
+    // caches key solely on `workspace_id` (TTL 60s layer / 600s engine) and the
+    // query-result cache bakes in branch-specific display config. Without this
+    // the world-model + semantic detail panels serve the previous branch's
+    // layer until the TTL lapses. Same invalidation `save_file` does.
+    app_state.semantic_layer_cache.remove(ws.id);
+    app_state.semantic_engine_cache.remove(ws.id);
+    app_state
+        .query_result_cache
+        .remove_prefix(&format!("{}:", ws.id));
+
+    Ok(ResponseJson(branch))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

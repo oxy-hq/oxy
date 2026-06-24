@@ -167,9 +167,26 @@ struct Slot {
 /// logical database) so an mtime change replaces the slot rather than
 /// accumulating beside it. The replaced slot's `Arc<PoolEntry>` drops once
 /// the last in-flight checkout returns, releasing the in-memory database.
-#[derive(Default)]
+///
+/// `init_locks` is a per-target mutex that serialises concurrent initialisations
+/// for the *same* target. Without it, N callers that all miss the cache
+/// simultaneously each run `init` (loading every CSV/Parquet file into a
+/// separate in-memory database), paying the full initialisation cost N times
+/// before one slot wins and N-1 are thrown away. With the per-target lock, only
+/// the first caller runs `init`; the rest wait and then hit the warm cache.
+/// Callers for *different* targets are unaffected — they hold different locks.
 pub(super) struct DuckDBPool {
     slots: Mutex<HashMap<PoolTarget, Slot>>,
+    init_locks: Mutex<HashMap<PoolTarget, Arc<Mutex<()>>>>,
+}
+
+impl Default for DuckDBPool {
+    fn default() -> Self {
+        Self {
+            slots: Mutex::new(HashMap::new()),
+            init_locks: Mutex::new(HashMap::new()),
+        }
+    }
 }
 
 pub(super) fn pool() -> &'static DuckDBPool {
@@ -182,18 +199,42 @@ impl DuckDBPool {
     /// `PoolKey` matches `key`, return its entry. If it differs (mtime
     /// changed) or no slot exists, build via `init` and replace.
     ///
-    /// The `init` closure runs **outside** the slots-map lock so concurrent
-    /// callers for different targets don't serialise on initialisation. On
-    /// a race where two callers init for the same target, the second
-    /// caller's slot wins and the first's `PoolEntry` drops. This is
-    /// slightly wasteful but correct.
+    /// Concurrent callers for the **same** target serialise on a per-target
+    /// init lock: only the first caller runs `init`; the rest wait and then
+    /// return the entry the first caller inserted (double-checked locking).
+    /// Concurrent callers for **different** targets are never blocked by each
+    /// other — they acquire different per-target locks.
     pub(super) fn get_or_init<F>(&self, key: PoolKey, init: F) -> Result<Arc<PoolEntry>, OxyError>
     where
         F: FnOnce() -> Result<(Connection, Vec<String>), OxyError>,
     {
+        // Fast path: warm cache hit — no locking beyond the slots map read.
         if let Some(entry) = self.lookup_fresh(&key) {
             return Ok(entry);
         }
+
+        // Acquire (or create) the per-target init lock before running `init`.
+        // This mutex is held for the duration of `init` so that a second caller
+        // for the same target waits here rather than starting its own `init`.
+        let init_lock = {
+            let mut locks = self
+                .init_locks
+                .lock()
+                .expect("DuckDB pool init_locks mutex poisoned");
+            locks
+                .entry(key.target.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _init_guard = init_lock
+            .lock()
+            .expect("DuckDB pool per-target init mutex poisoned");
+
+        // Double-check: a concurrent caller may have initialised while we waited.
+        if let Some(entry) = self.lookup_fresh(&key) {
+            return Ok(entry);
+        }
+
         let (conn, session_setup) = init()?;
         let new_entry = Arc::new(PoolEntry {
             primary: Mutex::new(conn),

@@ -142,6 +142,8 @@ const FieldsSelectionPanel = () => {
                                 name={measure.name}
                                 isSelected={selectedMeasures.includes(fullName)}
                                 onToggle={() => toggleMeasure(fullName)}
+                                induced={measure.induced}
+                                promotedFrom={measure.promoted_from}
                               />
                             );
                           })}

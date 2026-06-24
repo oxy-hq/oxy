@@ -27,7 +27,7 @@ mod connectorx;
 mod constants;
 mod domo;
 mod duckdb;
-pub use duckdb::{build_s3_mirror_sql, checkout_file_connection};
+pub use duckdb::{build_s3_mirror_sql, checkout_file_connection, checkout_local_connection};
 mod duckdb_pool;
 mod engine;
 mod motherduck;

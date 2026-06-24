@@ -67,6 +67,8 @@ pub enum SemanticFilterType {
     InDateRange(DateRangeFilter),
     #[serde(rename = "not_in_date_range")]
     NotInDateRange(DateRangeFilter),
+    #[serde(rename = "contains")]
+    Contains(ScalarFilter),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

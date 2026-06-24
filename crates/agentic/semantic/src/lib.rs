@@ -10,5 +10,7 @@ pub mod error;
 pub mod preagg;
 pub mod refresh_key_cache;
 
-pub use compile::{CompiledQuery, get_database_from_views, resolve_and_compile};
+pub use compile::{
+    CompiledQuery, compile_with_engine, get_database_from_views, resolve_and_compile,
+};
 pub use error::SemanticError;

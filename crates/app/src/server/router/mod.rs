@@ -16,7 +16,7 @@ mod public;
 mod recovery;
 mod secrets;
 mod workspace;
-mod workspace_cache;
+pub(crate) mod workspace_cache;
 
 use crate::server::serve_mode::ServeMode;
 use axum::extract::FromRequestParts;
@@ -58,6 +58,17 @@ pub struct AppState {
     /// surface needed there). Handlers should 503 when this is
     /// `None` rather than panic.
     pub agentic_state: Option<std::sync::Arc<agentic_http::AgenticState>>,
+    /// Shared per-workspace semantic layer cache. Avoids re-reading and
+    /// re-parsing all `.view.yml`/`.topic.yml` files on every request.
+    /// Keyed by workspace UUID; TTL of 60 s with explicit invalidation on
+    /// semantic file writes.
+    pub semantic_layer_cache: std::sync::Arc<workspace_cache::SemanticLayerCache>,
+    /// Compiled SemanticEngine cache (join graph + evaluator).
+    /// Avoids rebuilding the engine on every compilation request.
+    pub semantic_engine_cache: std::sync::Arc<workspace_cache::SemanticEngineCache>,
+    /// Cache for expensive warehouse query results (entity instance pickers).
+    /// Keyed by "{workspace_id}:{entity}:{search}:{limit}"; 5-minute TTL.
+    pub query_result_cache: std::sync::Arc<workspace_cache::QueryResultCache>,
 }
 
 #[derive(Clone)]
@@ -249,6 +260,9 @@ mod app_state_tests {
             preagg_cache: None,
             preagg_renewal_threshold_secs: None,
             agentic_state: None,
+            semantic_layer_cache: super::workspace_cache::new_semantic_layer_cache(),
+            semantic_engine_cache: super::workspace_cache::new_semantic_engine_cache(),
+            query_result_cache: super::workspace_cache::new_query_result_cache(),
         };
         let cloud = AppState {
             enterprise: false,
@@ -259,6 +273,9 @@ mod app_state_tests {
             preagg_cache: None,
             preagg_renewal_threshold_secs: None,
             agentic_state: None,
+            semantic_layer_cache: super::workspace_cache::new_semantic_layer_cache(),
+            semantic_engine_cache: super::workspace_cache::new_semantic_engine_cache(),
+            query_result_cache: super::workspace_cache::new_query_result_cache(),
         };
         assert!(local.mode.is_local());
         assert!(!cloud.mode.is_local());

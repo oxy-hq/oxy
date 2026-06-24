@@ -68,14 +68,18 @@ pub fn resolve_and_compile(
     task: &SemanticQueryConfig,
     cache: Option<Arc<RwLock<RefreshKeyCache>>>,
     renewal_threshold_secs: u64,
+    pre_loaded_layer: Option<airlayer::SemanticLayer>,
 ) -> Result<CompiledQuery, SemanticError> {
     let dialects = airlayer::DatasourceDialectMap::from_config_databases(databases);
 
-    // Canonical shim-based discovery + parse (honors the `data_source`
-    // alias), then build the dialect-aware engine — identical to how
-    // analytics constructs its engine.
-    let layer = oxy_airlayer_compat::load_layer_from_dir(scan_path)
-        .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?;
+    // Use the caller-supplied layer when available (avoids re-reading the
+    // workspace from disk on hot paths). Fall back to the canonical
+    // shim-based discovery + parse when not provided.
+    let layer = match pre_loaded_layer {
+        Some(l) => l,
+        None => oxy_airlayer_compat::load_layer_from_dir(scan_path)
+            .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?,
+    };
     let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects)
         .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?;
 
@@ -135,6 +139,37 @@ pub fn resolve_and_compile(
     }
 
     Ok(CompiledQuery::Warehouse { sql, database_name })
+}
+
+/// Compile a semantic query using a pre-built `SemanticEngine`.
+///
+/// Use this when compiling multiple queries against the same schema — build
+/// the engine once with [`airlayer::SemanticEngine::from_semantic_layer`] and
+/// call this for each query so the expensive engine-build cost is paid once.
+/// Returns only the SQL string; no preagg check is performed.
+pub fn compile_with_engine(
+    engine: &airlayer::SemanticEngine,
+    task: &SemanticQueryConfig,
+) -> Result<String, SemanticError> {
+    let semantic_layer = engine.semantic_layer();
+    let topic = resolve_topic(semantic_layer, task)?;
+    let views: Vec<&airlayer::View> = semantic_layer
+        .views
+        .iter()
+        .filter(|v| topic.views.contains(&v.name))
+        .collect();
+    let date_fields = collect_date_fields(&views);
+    let request = build_query_request(
+        task,
+        &topic.name,
+        topic.base_view.as_ref(),
+        topic.default_filters.as_ref(),
+        &date_fields,
+    )?;
+    let result = engine
+        .compile_query(&request)
+        .map_err(|e| SemanticError::Runtime(format!("query compilation error: {e}")))?;
+    Ok(substitute_params(&result.sql, &result.params))
 }
 
 /// Look up the local-Parquet manifest, check coverage + freshness, and
@@ -529,6 +564,10 @@ fn convert_semantic_filter_type(
                 jv2s(&f.from, field, date_fields)?,
                 jv2s(&f.to, field, date_fields)?,
             ],
+        )),
+        SemanticFilterType::Contains(f) => Ok((
+            FilterOperator::Contains,
+            vec![jv2s(&f.value, field, date_fields)?],
         )),
     }
 }

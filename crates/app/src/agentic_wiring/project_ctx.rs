@@ -191,6 +191,33 @@ impl OxyProjectContext {
                 )
                 .await
             }
+            // DuckDB Local: use the process-wide pool so CSV/Parquet files are
+            // loaded only once and subsequent calls get a cheap try_clone().
+            // This is the same pool that oxy-core's DuckDB connector uses,
+            // avoiding the fresh-connection-per-request cost.
+            DatabaseType::DuckDB(duck) if matches!(&duck.options, DuckDBOptions::Local { .. }) => {
+                let DuckDBOptions::Local { file_search_path } = &duck.options else {
+                    unreachable!()
+                };
+                let resolved = self
+                    .workspace_manager
+                    .config_manager
+                    .resolve_file(file_search_path)
+                    .await
+                    .map_err(|e| {
+                        OxyError::ConfigurationError(format!(
+                            "DuckDB '{db_name}': cannot resolve path '{file_search_path}': {e}"
+                        ))
+                    })?;
+                let conn = tokio::task::spawn_blocking(move || {
+                    oxy::connector::checkout_local_connection(&resolved)
+                })
+                .await
+                .map_err(|e| OxyError::DBError(format!("DuckDB pool join error: {e}")))?
+                .map_err(|e| OxyError::DBError(format!("DuckDB pool checkout failed: {e}")))?;
+                Ok(Arc::new(agentic_connector::DuckDbConnector::new(conn))
+                    as Arc<dyn DatabaseConnector>)
+            }
             _ => {
                 let cfg = database_to_connector_config(&db, &self.workspace_manager)
                     .await

@@ -129,7 +129,9 @@ const FieldsSelectionPanel = () => {
 
   const measures = viewData.measures.map((measure) => ({
     name: measure.name,
-    fullName: `${viewData.name}.${measure.name}`
+    fullName: `${viewData.name}.${measure.name}`,
+    induced: measure.induced,
+    promotedFrom: measure.promoted_from
   }));
 
   return (
@@ -190,6 +192,8 @@ const FieldsSelectionPanel = () => {
                   name={measure.name}
                   isSelected={selectedMeasures.includes(measure.fullName)}
                   onToggle={() => toggleMeasure(measure.fullName)}
+                  induced={measure.induced}
+                  promotedFrom={measure.promotedFrom}
                 />
               ))}
             </CollapsibleFieldSection>

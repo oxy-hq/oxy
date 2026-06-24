@@ -23,6 +23,7 @@ entities:
   type: primary
   description: Primary fruit-supplier relationship entity
   key: relationship_id
+  parent: supplier
 - name: fruit
   type: foreign
   description: Fruit in this relationship

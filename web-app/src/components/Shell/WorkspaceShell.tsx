@@ -1,4 +1,4 @@
-import { House, MessagesSquare, Workflow } from "lucide-react";
+import { Globe, House, MessagesSquare, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AskPanel } from "@/components/Ask/AskPanel";
@@ -69,6 +69,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       icon: <Workflow className='h-4 w-4' />,
       active: path.startsWith(ws.WORKFLOWS),
       onSelect: () => navigate(ws.WORKFLOWS)
+    },
+    {
+      key: "world-model",
+      label: "World Model",
+      testId: "rail-world-model",
+      icon: <Globe className='h-4 w-4' />,
+      active: path.startsWith(ws.WORLD_MODEL),
+      onSelect: () => navigate(ws.WORLD_MODEL)
     }
   ];
   // System: the intelligence substrate powering the HQ. Pinned at the
