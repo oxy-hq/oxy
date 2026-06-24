@@ -109,7 +109,7 @@ pub async fn get_workspace_logo(
     }
     // 2. Fall back to the code-first file at the workspace root.
     let root = workspace_manager.config_manager.workspace_path();
-    let Some((path, mime)) = find_logo(&root) else {
+    let Some((path, mime)) = find_logo(root) else {
         return Err(StatusCode::NOT_FOUND);
     };
     let bytes = tokio::fs::read(&path).await.map_err(|e| {

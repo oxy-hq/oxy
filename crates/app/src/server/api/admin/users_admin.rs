@@ -564,7 +564,7 @@ fn would_strand_owner(
     target_user_id: Uuid,
     new_role: Option<&OrgRole>,
 ) -> bool {
-    let target_is_owner = current_owners.iter().any(|u| *u == target_user_id);
+    let target_is_owner = current_owners.contains(&target_user_id);
     if !target_is_owner {
         return false;
     }

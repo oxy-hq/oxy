@@ -1019,10 +1019,10 @@ fn pin_org_subdomain_to_app_host(base: String) -> String {
     let Some(host) = url.host_str() else {
         return base;
     };
-    if super::org_host_dispatch::parse_org_subdomain(host).is_some() {
-        if let Some(app_host) = super::customer_apps_host_dispatch::admin_base_url() {
-            return app_host;
-        }
+    if super::org_host_dispatch::parse_org_subdomain(host).is_some()
+        && let Some(app_host) = super::customer_apps_host_dispatch::admin_base_url()
+    {
+        return app_host;
     }
     base
 }

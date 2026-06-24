@@ -333,11 +333,9 @@ fn build_summary(
         // stopped.
         None => false,
     };
-    if frame_stale {
-        if let Some(lf) = row.last_frame_at {
-            let age = (now - lf).num_seconds();
-            reasons.push(format!("last frame {age}s ago"));
-        }
+    if frame_stale && let Some(lf) = row.last_frame_at {
+        let age = (now - lf).num_seconds();
+        reasons.push(format!("last frame {age}s ago"));
     }
 
     let fps_low = row.fps.map(|f| f < thresholds.fps_target).unwrap_or(false);

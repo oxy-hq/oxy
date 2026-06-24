@@ -251,10 +251,10 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                     v.as_str()
                         .map(String::from)
                         .or_else(|| Some(v.to_string().trim_matches('"').to_string()))
-                }) {
-                    if !v.is_empty() && v != "null" {
-                        out.push(v);
-                    }
+                }) && !v.is_empty()
+                    && v != "null"
+                {
+                    out.push(v);
                 }
             }
             out.sort();
@@ -452,7 +452,7 @@ impl OxyMetricTreeRunner {
 /// Extracted here so both `OxyMetricTreeRunner` and the HTTP `/explain` and
 /// `/opportunity` handlers go through the exact same code path.
 pub fn build_query_executor(
-    target_measure: &str,
+    _target_measure: &str,
     engine: airlayer::SemanticEngine,
     databases: Vec<DatabaseConfig>,
     workspace_manager: WorkspaceManager,
@@ -507,8 +507,8 @@ pub fn build_query_executor(
         // Preagg path: if a covering rollup exists in the local Parquet manifest,
         // serve from DuckDB instead of the warehouse. Any failure falls through
         // silently to the warehouse path below.
-        if let Some(ref preagg) = preagg_cache {
-            if let Some(agentic_semantic::compile::CompiledQuery::Preaggregation {
+        if let Some(ref preagg) = preagg_cache
+            && let Some(agentic_semantic::compile::CompiledQuery::Preaggregation {
                 preagg_sql,
                 parquet_path,
                 ..
@@ -519,32 +519,32 @@ pub fn build_query_executor(
                 preagg_renewal_threshold_secs,
                 &sql,
                 &database,
-            ) {
-                match execute_preagg_and_convert(&preagg_sql, &parquet_path) {
-                    Ok(rows) => {
-                        tracing::info!(
-                            target: "metric_tree.explain",
-                            seq,
-                            database = %database,
-                            preagg = true,
-                            row_count = rows.len(),
-                            total_ms = total_start.elapsed().as_millis() as u64,
-                            "query (preagg)"
-                        );
-                        result_cache
-                            .lock()
-                            .unwrap()
-                            .insert(result_key, rows.clone());
-                        return Ok(rows);
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            target: "metric_tree.explain",
-                            seq,
-                            %e,
-                            "preagg execute failed, falling back to warehouse"
-                        );
-                    }
+            )
+        {
+            match execute_preagg_and_convert(&preagg_sql, &parquet_path) {
+                Ok(rows) => {
+                    tracing::info!(
+                        target: "metric_tree.explain",
+                        seq,
+                        database = %database,
+                        preagg = true,
+                        row_count = rows.len(),
+                        total_ms = total_start.elapsed().as_millis() as u64,
+                        "query (preagg)"
+                    );
+                    result_cache
+                        .lock()
+                        .unwrap()
+                        .insert(result_key, rows.clone());
+                    return Ok(rows);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "metric_tree.explain",
+                        seq,
+                        %e,
+                        "preagg execute failed, falling back to warehouse"
+                    );
                 }
             }
         }

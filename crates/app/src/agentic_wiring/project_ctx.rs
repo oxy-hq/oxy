@@ -1443,8 +1443,8 @@ async fn build_airhouse_connector(
         // `airhouse_wire_params` directly (not this path) and cameras has its own
         // client, so their writes stay on the main serving endpoint. Unset
         // (AIRHOUSE_ANALYTICS_WIRE_HOST) → keep the serving endpoint (no change).
-        if let Some(ep) = airhouse::analytics_wire_endpoint() {
-            if (ep.host.as_str(), ep.port) != (host.as_str(), port) {
+        if let Some(ep) = airhouse::analytics_wire_endpoint()
+            && (ep.host.as_str(), ep.port) != (host.as_str(), port) {
                 tracing::debug!(
                     from = %format!("{host}:{port}"),
                     to = %format!("{}:{}", ep.host, ep.port),
@@ -1453,7 +1453,6 @@ async fn build_airhouse_connector(
                 host = ep.host;
                 port = ep.port;
             }
-        }
 
         let conn = airhouse::AirhouseConnector::new(&host, port, &user, &password, &database)
             .await

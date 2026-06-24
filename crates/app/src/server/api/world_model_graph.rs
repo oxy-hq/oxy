@@ -401,12 +401,11 @@ impl EntityDisplaySpec {
 
     /// Build a display string from attribute name→value pairs (e.g. the attrs query).
     fn display_from_attrs(&self, attrs: &[(String, String)]) -> String {
-        if let Some(ref lbl) = self.label_name {
-            if let Some((_, v)) = attrs.iter().find(|(n, _)| n == lbl) {
-                if !v.is_empty() {
-                    return v.clone();
-                }
-            }
+        if let Some(ref lbl) = self.label_name
+            && let Some((_, v)) = attrs.iter().find(|(n, _)| n == lbl)
+            && !v.is_empty()
+        {
+            return v.clone();
         }
         let parts: Vec<&str> = self
             .pk_names
@@ -970,12 +969,11 @@ pub async fn get_world_model_instances(
     } else {
         Some(format!("{}:{}:{}", workspace_id, q.entity, q.limit))
     };
-    if let Some(ref key) = cache_key {
-        if let Some(bytes) = app_state.query_result_cache.get(key) {
-            if let Ok(cached) = serde_json::from_slice::<WmInstancesResponse>(&bytes) {
-                return Ok(extract::Json(cached));
-            }
-        }
+    if let Some(ref key) = cache_key
+        && let Some(bytes) = app_state.query_result_cache.get(key)
+        && let Ok(cached) = serde_json::from_slice::<WmInstancesResponse>(&bytes)
+    {
+        return Ok(extract::Json(cached));
     }
 
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
@@ -996,7 +994,7 @@ pub async fn get_world_model_instances(
             }),
         )
     })?;
-    let table = view
+    let _table = view
         .table
         .as_deref()
         .or(view.sql.as_deref())
@@ -1118,9 +1116,9 @@ pub async fn get_world_model_instances(
             }),
         )
     })
-    .and_then(|compiled| match compiled {
-        CompiledQuery::Warehouse { sql, database_name } => Ok((sql, database_name)),
-        CompiledQuery::Preaggregation { preagg_sql, .. } => Ok((preagg_sql, String::new())),
+    .map(|compiled| match compiled {
+        CompiledQuery::Warehouse { sql, database_name } => (sql, database_name),
+        CompiledQuery::Preaggregation { preagg_sql, .. } => (preagg_sql, String::new()),
     })?;
 
     let payload = SQLParams {
@@ -1164,10 +1162,10 @@ pub async fn get_world_model_instances(
         has_more,
         items,
     };
-    if let Some(key) = cache_key {
-        if let Ok(bytes) = serde_json::to_vec(&response) {
-            app_state.query_result_cache.insert(key, bytes);
-        }
+    if let Some(key) = cache_key
+        && let Ok(bytes) = serde_json::to_vec(&response)
+    {
+        app_state.query_result_cache.insert(key, bytes);
     }
     Ok(extract::Json(response))
 }
@@ -1179,8 +1177,8 @@ pub async fn post_world_model_filter_counts(
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
     engine_cache: SemanticEngineCacheCtx,
-    axum::extract::State(app_state): axum::extract::State<crate::server::router::AppState>,
-    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
+    axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
+    Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     extract::Json(req): extract::Json<WmFilterCountsRequest>,
 ) -> Result<
     Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>,
@@ -1291,7 +1289,7 @@ pub async fn post_world_model_filter_counts(
                             .and_then(|e| agentic_semantic::compile_with_engine(&e, cfg).ok())
                     }
                 };
-                let sqls: Vec<Option<String>> = cfgs.iter().map(|cfg| compile_one(cfg)).collect();
+                let sqls: Vec<Option<String>> = cfgs.iter().map(compile_one).collect();
                 Ok::<_, agentic_semantic::SemanticError>(sqls)
             })
         };
@@ -1457,8 +1455,7 @@ pub async fn post_world_model_filter_counts(
                                 .and_then(|e| agentic_semantic::compile_with_engine(&e, cfg).ok())
                             }
                         };
-                        let sqls: Vec<Option<String>> =
-                            cfgs.iter().map(|cfg| compile_one(cfg)).collect();
+                        let sqls: Vec<Option<String>> = cfgs.iter().map(compile_one).collect();
                         Ok::<_, agentic_semantic::SemanticError>(sqls)
                     })
                 };
@@ -1506,8 +1503,7 @@ pub async fn post_world_model_filter_counts(
                     .iter()
                     .enumerate()
                     .filter(|(_, m)| {
-                        m.entity_name != req.entity_id
-                            && seed_ancestors.iter().any(|a| *a == m.entity_name)
+                        m.entity_name != req.entity_id && seed_ancestors.contains(&m.entity_name)
                     })
                     .map(|(i, _)| i)
                     .collect();
@@ -2349,24 +2345,23 @@ pub async fn get_world_model_instance_detail(
                 .is_none_or(|a| a.contains_key(im.source_measure.as_str()))
         })
     {
-        if let Some(source_view) = layer.views.iter().find(|v| v.name == im.source_view) {
-            if let Some(sm) = source_view
+        if let Some(source_view) = layer.views.iter().find(|v| v.name == im.source_view)
+            && let Some(sm) = source_view
                 .measures
                 .as_ref()
                 .and_then(|ms| ms.iter().find(|m| m.name == im.source_measure))
-            {
-                let label = meas_allow
-                    .as_ref()
-                    .and_then(|a| a.get(im.source_measure.as_str()).cloned().flatten());
-                induced_by_source
-                    .entry(im.source_view.clone())
-                    .or_default()
-                    .push((
-                        im.source_measure.clone(),
-                        format!("{:?}", sm.measure_type).to_lowercase(),
-                        label,
-                    ));
-            }
+        {
+            let label = meas_allow
+                .as_ref()
+                .and_then(|a| a.get(im.source_measure.as_str()).cloned().flatten());
+            induced_by_source
+                .entry(im.source_view.clone())
+                .or_default()
+                .push((
+                    im.source_measure.clone(),
+                    format!("{:?}", sm.measure_type).to_lowercase(),
+                    label,
+                ));
         }
     }
     let induced_groups: Vec<InducedGroup> = induced_by_source
@@ -2420,10 +2415,10 @@ pub async fn get_world_model_instance_detail(
             };
             Ok::<_, agentic_semantic::SemanticError>((
                 c(&attrs_cfg),
-                child_sample_cfgs.iter().map(|cc| c(cc)).collect(),
-                child_count_cfgs.iter().map(|cc| c(cc)).collect(),
+                child_sample_cfgs.iter().map(&c).collect(),
+                child_count_cfgs.iter().map(&c).collect(),
                 c(&own_batch_cfg),
-                induced_cfgs.iter().map(|ic| c(ic)).collect(),
+                induced_cfgs.iter().map(c).collect(),
             ))
         })
         .await
@@ -2636,10 +2631,9 @@ pub async fn get_world_model_instance_detail(
                                     let nav_key = if cc.pk_count <= 1 {
                                         r.first().cloned().unwrap_or_default()
                                     } else {
-                                        serde_json::to_string(
-                                            &pk_vals.iter().cloned().collect::<Vec<_>>(),
+                                        serde_json::to_string(&pk_vals.to_vec()).unwrap_or_else(
+                                            |_| r.first().cloned().unwrap_or_default(),
                                         )
-                                        .unwrap_or_else(|_| r.first().cloned().unwrap_or_default())
                                     };
                                     let display = if cc.has_label_dim {
                                         r.get(cc.pk_count).cloned().unwrap_or_else(|| {

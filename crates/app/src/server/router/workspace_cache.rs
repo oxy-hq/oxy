@@ -145,14 +145,13 @@ impl QueryResultCache {
         // Evict expired entries first; if still at cap, remove the oldest.
         if guard.len() >= self.max_entries {
             guard.retain(|_, v| v.0.elapsed() < self.ttl);
-            if guard.len() >= self.max_entries {
-                if let Some(oldest_key) = guard
+            if guard.len() >= self.max_entries
+                && let Some(oldest_key) = guard
                     .iter()
                     .min_by_key(|(_, v)| v.0)
                     .map(|(k, _)| k.clone())
-                {
-                    guard.remove(&oldest_key);
-                }
+            {
+                guard.remove(&oldest_key);
             }
         }
         guard.insert(key, (Instant::now(), value));

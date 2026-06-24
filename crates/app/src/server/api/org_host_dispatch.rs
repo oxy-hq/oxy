@@ -81,14 +81,13 @@ pub fn is_reserved_label(label: &str) -> bool {
     if l.starts_with("app-") || l == "customer-apps" || l.starts_with("customer-apps-") {
         return true;
     }
-    if let Ok(extra) = std::env::var("OXY_RESERVED_SUBDOMAINS") {
-        if extra
+    if let Ok(extra) = std::env::var("OXY_RESERVED_SUBDOMAINS")
+        && extra
             .split(',')
             .map(|s| s.trim().to_ascii_lowercase())
             .any(|s| !s.is_empty() && s == l)
-        {
-            return true;
-        }
+    {
+        return true;
     }
     false
 }
