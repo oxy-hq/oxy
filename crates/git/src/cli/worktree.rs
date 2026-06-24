@@ -25,6 +25,71 @@ pub fn get_worktree_path(workspace_root: &Path, branch: &str) -> Option<PathBuf>
     if path.exists() { Some(path) } else { None }
 }
 
+/// Ensures the repo ignores its own `.worktrees/` directory via the **local**
+/// exclude file, so the worktrees Oxy creates inside the main working copy never
+/// surface as untracked changes on the main branch.
+///
+/// The entry is written to `<git-common-dir>/info/exclude` — a per-clone,
+/// never-committed ignore file shared across all of a repo's worktrees — rather
+/// than the tracked `.gitignore`, so the customer's repository history is left
+/// untouched (nothing to commit, nothing to push). The pattern is unanchored so
+/// it also covers subdirectory workspaces, where `.worktrees/` sits below the
+/// repo root. Idempotent, and best-effort: a failure here only leaves status
+/// noisy, so it warns rather than aborting worktree creation.
+async fn ensure_worktrees_ignored(workspace_root: &Path) {
+    let common_dir = match run::run(workspace_root, &["rev-parse", "--git-common-dir"]).await {
+        Ok(out) if !out.trim().is_empty() => out.trim().to_string(),
+        Ok(_) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, "could not resolve git-common-dir; skipping .worktrees exclude");
+            return;
+        }
+    };
+    // `--git-common-dir` is relative to `workspace_root` for a normal checkout
+    // and absolute for a linked worktree; `join` does the right thing for both.
+    let exclude_path = workspace_root
+        .join(&common_dir)
+        .join("info")
+        .join("exclude");
+
+    // Recognise every spelling git accepts for this ignore so we never
+    // double-write: unanchored with/without the trailing slash, and the
+    // repo-root-anchored forms a user might have hand-written.
+    let entry = format!("{WORKTREES_DIR}/");
+    let anchored = format!("/{entry}");
+    let anchored_bare = format!("/{WORKTREES_DIR}");
+    let existing = tokio::fs::read_to_string(&exclude_path)
+        .await
+        .unwrap_or_default();
+    if existing.lines().any(|l| {
+        let t = l.trim();
+        t == entry || t == WORKTREES_DIR || t == anchored || t == anchored_bare
+    }) {
+        return;
+    }
+
+    if let Some(parent) = exclude_path.parent()
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        tracing::warn!(error = %e, "could not create git info dir; skipping .worktrees exclude");
+        return;
+    }
+
+    // This read-modify-write is not atomic: two concurrent first-time calls for
+    // the same repo (worktree creation can race — see the exists() recovery
+    // below) could both append. Harmless — a duplicate exclude line is a no-op,
+    // and the dedup check above makes it self-limiting to at most one extra line.
+    let mut content = existing;
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(&entry);
+    content.push('\n');
+    if let Err(e) = tokio::fs::write(&exclude_path, content).await {
+        tracing::warn!(error = %e, "could not write .worktrees exclude entry");
+    }
+}
+
 /// Returns the worktree path for `branch`, creating the worktree (and the
 /// branch, if it does not already exist) when necessary.
 ///
@@ -40,6 +105,15 @@ pub async fn get_or_create_worktree(
     }
 
     branch::validate_branch_name(branch_name)?;
+
+    // The worktree lives at `<workspace_root>/.worktrees/<branch>`, i.e. nested
+    // inside the main working copy. Git reports that nested directory as an
+    // untracked entry (`?? .worktrees/`) in the main branch's status, which
+    // dirties main, blocks clean pulls, and tempts a spurious commit. Ignore it
+    // locally before it is ever created. Runs before the `exists()` early-return
+    // below so workspaces whose `.worktrees/` predates this fix self-heal on the
+    // next access.
+    ensure_worktrees_ignored(workspace_root).await;
 
     let dir_name = branch_to_dir_name(branch_name);
     let worktree_path = workspace_root.join(WORKTREES_DIR).join(&dir_name);
@@ -250,5 +324,67 @@ detached
     #[test]
     fn empty_output_yields_no_entries() {
         assert!(parse_worktree_list("").is_empty());
+    }
+
+    async fn git(cwd: &Path, args: &[&str]) -> String {
+        let out = tokio::process::Command::new("git")
+            .current_dir(cwd)
+            .args(args)
+            .output()
+            .await
+            .expect("git runs");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    /// Regression: creating a worktree under `<root>/.worktrees/` must NOT leave
+    /// the main working copy dirty. Before the fix, `git status` reported
+    /// `?? .worktrees/`, which forced a spurious commit before main could pull.
+    #[tokio::test]
+    async fn worktree_creation_keeps_main_clean_via_local_exclude() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path();
+        git(repo, &["init", "-q", "-b", "main"]).await;
+        git(repo, &["config", "user.email", "t@example.com"]).await;
+        git(repo, &["config", "user.name", "Test"]).await;
+        std::fs::write(repo.join("f.txt"), "hi").expect("seed file");
+        git(repo, &["add", "."]).await;
+        git(repo, &["commit", "-qm", "init"]).await;
+
+        assert!(
+            git(repo, &["status", "--porcelain"])
+                .await
+                .trim()
+                .is_empty(),
+            "precondition: repo is clean before any worktree"
+        );
+
+        let wt = get_or_create_worktree(repo, "feature")
+            .await
+            .expect("worktree created");
+        assert!(wt.exists(), "worktree directory materialised");
+        assert!(wt.starts_with(repo.join(WORKTREES_DIR)));
+
+        let status = git(repo, &["status", "--porcelain"]).await;
+        assert!(
+            status.trim().is_empty(),
+            "main must stay clean after worktree creation, got: {status:?}"
+        );
+
+        // Idempotent: a second call must not duplicate the exclude entry.
+        get_or_create_worktree(repo, "feature")
+            .await
+            .expect("idempotent re-access");
+        let exclude = std::fs::read_to_string(repo.join(".git").join("info").join("exclude"))
+            .unwrap_or_default();
+        let count = exclude
+            .lines()
+            .filter(|l| l.trim() == ".worktrees/")
+            .count();
+        assert_eq!(count, 1, "exclude entry written exactly once:\n{exclude}");
     }
 }
