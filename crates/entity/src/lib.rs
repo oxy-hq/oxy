@@ -26,6 +26,7 @@ pub mod org_billing;
 pub mod org_invitations;
 pub mod org_members;
 pub mod org_secrets;
+pub mod org_subdomains;
 pub mod organizations;
 pub mod quickbooks_oauth_states;
 pub mod run_sequences;

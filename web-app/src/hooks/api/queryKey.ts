@@ -472,6 +472,11 @@ const appAdminKeys = {
   list: () => [...appAdminKeys.all, "list"] as const
 };
 
+const orgSubdomainKeys = {
+  all: ["orgSubdomain"] as const,
+  status: (workspaceId: string) => [...orgSubdomainKeys.all, "status", workspaceId] as const
+};
+
 const oxyAccessKeys = {
   all: ["oxyAccess"] as const,
   status: (workspaceId: string) => [...oxyAccessKeys.all, "status", workspaceId] as const,
@@ -537,7 +542,8 @@ const compileKeys = {
 const adminOrgsKeys = {
   all: ["admin", "orgs"] as const,
   list: (search?: string) => [...adminOrgsKeys.all, "list", search ?? ""] as const,
-  detail: (orgId: string) => [...adminOrgsKeys.all, "detail", orgId] as const
+  detail: (orgId: string) => [...adminOrgsKeys.all, "detail", orgId] as const,
+  subdomain: (orgId: string) => [...adminOrgsKeys.all, "subdomain", orgId] as const
 };
 
 const adminMetricsKeys = {
@@ -678,6 +684,7 @@ const queryKeys = {
   customerApps: customerAppKeys,
   appAdmins: appAdminKeys,
   oxyAccess: oxyAccessKeys,
+  orgSubdomain: orgSubdomainKeys,
   customApps: customAppKeys,
   featureFlags: featureFlagKeys,
   internalJobs: internalJobsKeys,

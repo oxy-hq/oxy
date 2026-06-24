@@ -53,6 +53,31 @@ export interface RenameOrgBody {
   slug?: string;
 }
 
+// Org bare subdomain (`<org-slug>.<zone>`) — Oxy-staff control.
+export interface AdminOrgSubdomainWorkspace {
+  id: string;
+  name: string;
+  status: WorkspaceStatusId;
+}
+
+export interface AdminOrgSubdomainResponse {
+  enabled: boolean;
+  /** The org slug — this is the subdomain label (not editable). */
+  subdomain: string;
+  /** `https://<slug>.<zone>/`; null when the zone isn't derivable. */
+  url: string | null;
+  default_workspace_id: string | null;
+  /** The org's workspaces, for the default-project dropdown. */
+  workspaces: AdminOrgSubdomainWorkspace[];
+  /** True when the slug collides with a reserved infra label (can't enable). */
+  reserved: boolean;
+}
+
+export interface SetAdminOrgSubdomainBody {
+  enabled: boolean;
+  default_workspace_id?: string | null;
+}
+
 export const AdminOrgsService = {
   async list(query: ListOrgsMetaQuery = {}): Promise<AdminOrgMeta[]> {
     const res = await apiClient.get<AdminOrgMeta[]>("/admin/orgs-meta", { params: query });
@@ -66,6 +91,22 @@ export const AdminOrgsService = {
 
   async rename(orgId: string, body: RenameOrgBody): Promise<AdminOrgMeta> {
     const res = await apiClient.patch<AdminOrgMeta>(`/admin/orgs/${orgId}`, body);
+    return res.data;
+  },
+
+  async getSubdomain(orgId: string): Promise<AdminOrgSubdomainResponse> {
+    const res = await apiClient.get<AdminOrgSubdomainResponse>(`/admin/orgs/${orgId}/subdomain`);
+    return res.data;
+  },
+
+  async setSubdomain(
+    orgId: string,
+    body: SetAdminOrgSubdomainBody
+  ): Promise<AdminOrgSubdomainResponse> {
+    const res = await apiClient.put<AdminOrgSubdomainResponse>(
+      `/admin/orgs/${orgId}/subdomain`,
+      body
+    );
     return res.data;
   },
 

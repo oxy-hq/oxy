@@ -28,6 +28,7 @@ import { AdminEmptyState } from "../../components/AdminEmptyState";
 import { AdminLinkedList, AdminLinkedRow } from "../../components/AdminLinkedRow";
 import { AdminSectionLabel } from "../../components/AdminSectionLabel";
 import { AdminStatusPill } from "../../components/AdminStatusPill";
+import { OrgSubdomainSettings } from "./OrgSubdomainSettings";
 
 type TabId = "overview" | "members" | "workspaces" | "settings";
 
@@ -382,6 +383,8 @@ export default function AdminOrgDetail() {
               </Button>
             </div>
           </section>
+
+          <OrgSubdomainSettings orgId={detail.id} />
 
           <section className='space-y-4 rounded-lg border border-destructive/40 bg-destructive/5 p-6'>
             <div className='space-y-1'>

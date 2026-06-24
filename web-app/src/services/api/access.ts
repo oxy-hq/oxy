@@ -1,4 +1,4 @@
-import type { AppAdmin, OxyAccessStatus } from "@/types/access";
+import type { AppAdmin, OrgSubdomainStatus, OxyAccessStatus } from "@/types/access";
 import { apiClient } from "./axios";
 
 /**
@@ -40,5 +40,18 @@ export const OxyAccessService = {
 
   async disable(workspaceId: string): Promise<void> {
     await apiClient.delete(`/${workspaceId}/oxy-access`);
+  }
+};
+
+/**
+ * Per-org bare subdomain (`<org-slug>.<zone>`) — READ-ONLY status for the
+ * customer's settings. Owner-readable; mounted at
+ * `/api/{workspaceId}/org-subdomain`. Enable/disable is an Oxy-staff action
+ * in the admin panel (see `AdminOrgsService.setSubdomain`).
+ */
+export const OrgSubdomainService = {
+  async get(workspaceId: string): Promise<OrgSubdomainStatus> {
+    const response = await apiClient.get(`/${workspaceId}/org-subdomain`);
+    return response.data;
   }
 };

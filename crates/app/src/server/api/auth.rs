@@ -976,6 +976,10 @@ async fn finalize_login(
 }
 
 pub(super) fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
+    pin_org_subdomain_to_app_host(extract_base_url_raw(headers))
+}
+
+fn extract_base_url_raw(headers: &HeaderMap) -> String {
     if let Some(origin) = headers.get("origin").and_then(|h| h.to_str().ok()) {
         let origin = origin.trim_end_matches('/');
         if origin.starts_with("http://") || origin.starts_with("https://") {
@@ -999,6 +1003,28 @@ pub(super) fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
         return format!("{}://{}{}", url.scheme(), host, port);
     }
     "http://localhost:3000".to_string()
+}
+
+/// Centralized auth: OAuth callbacks and magic-link emails must resolve to a
+/// single host (the app host) so providers need exactly one registered
+/// callback. With the centralized-auth bounce in place, an auth request
+/// already arrives on the app host — but if one ever lands on a bare org
+/// subdomain (`pokehouse.oxygen-hq.com`), pin the base URL back to the app
+/// host rather than echoing the subdomain. Non-subdomain hosts (app host,
+/// custom-branded, localhost) pass through unchanged.
+fn pin_org_subdomain_to_app_host(base: String) -> String {
+    let Ok(url) = Url::parse(&base) else {
+        return base;
+    };
+    let Some(host) = url.host_str() else {
+        return base;
+    };
+    if super::org_host_dispatch::parse_org_subdomain(host).is_some() {
+        if let Some(app_host) = super::customer_apps_host_dispatch::admin_base_url() {
+            return app_host;
+        }
+    }
+    base
 }
 
 #[derive(Deserialize)]

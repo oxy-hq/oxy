@@ -16,6 +16,7 @@ pub use super::messages::Entity as Messages;
 pub use super::org_invitations::Entity as OrgInvitations;
 pub use super::org_members::Entity as OrgMembers;
 pub use super::org_secrets::Entity as OrgSecrets;
+pub use super::org_subdomains::Entity as OrgSubdomains;
 pub use super::organizations::Entity as Organizations;
 pub use super::run_sequences::Entity as RunSequences;
 pub use super::runs::Entity as Runs;

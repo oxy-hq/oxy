@@ -15,10 +15,10 @@ use agentic_http::{AgenticState, airway_router, automation_router, router as age
 use crate::api::{
     agent, api_keys, app, apps, artifacts, automation, chart, competitors, compile, data,
     data_repo, database, execution_analytics, exported_chart, file, foot_traffic, integration,
-    local_setup, message, metric_anomalies, metric_tree, metrics, modeling, onboarding, pipeline,
-    result_files, run, schedules, semantic, task, test_file, test_project_run, test_run, thread,
-    traces, video, workspace_custom_apps, workspace_logo, workspace_members, workspace_oxy_access,
-    workspaces, world_model, world_model_graph,
+    local_setup, message, metric_anomalies, metric_tree, metrics, modeling, onboarding,
+    org_subdomain, pipeline, result_files, run, schedules, semantic, task, test_file,
+    test_project_run, test_run, thread, traces, video, workspace_custom_apps, workspace_logo,
+    workspace_members, workspace_oxy_access, workspaces, world_model, world_model_graph,
 };
 
 use super::AppState;
@@ -97,6 +97,7 @@ pub(super) fn build_workspace_routes(
                 .post(workspace_oxy_access::enable_oxy_access)
                 .delete(workspace_oxy_access::disable_oxy_access),
         )
+        .route("/org-subdomain", get(org_subdomain::get_org_subdomain))
         .route("/custom-apps", get(workspace_custom_apps::list_custom_apps))
         .route("/logo", get(workspace_logo::get_workspace_logo))
         .nest("/apps", build_app_routes())

@@ -23,3 +23,14 @@ export interface OxyAccessStatus {
   granted_by: string | null;
   granted_at: string | null;
 }
+
+/** Read-only org-subdomain status shown in customer settings. */
+export interface OrgSubdomainStatus {
+  enabled: boolean;
+  /** The org slug — this is the subdomain label. */
+  subdomain: string;
+  /** Full URL `https://<slug>.<zone>/`, or null (disabled / zone not derivable). */
+  url: string | null;
+  /** True when the current workspace is the subdomain's default project. */
+  is_default_workspace: boolean;
+}

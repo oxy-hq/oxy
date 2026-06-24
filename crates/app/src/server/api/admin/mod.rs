@@ -14,6 +14,7 @@ pub mod compiles;
 pub mod explorer;
 pub mod internal_jobs;
 pub mod metrics;
+pub mod org_subdomains;
 pub mod orgs_admin;
 pub mod oxy_access;
 pub mod routing;
@@ -92,6 +93,7 @@ pub(crate) fn router() -> Router<AppState> {
         .merge(explorer::router())
         .merge(metrics::router())
         .merge(orgs_admin::router())
+        .merge(org_subdomains::router())
         .merge(users_admin::router())
         .merge(workspaces_admin::router())
         .merge(routing::router())

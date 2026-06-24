@@ -1,6 +1,6 @@
 import axios from "axios";
 import { toast } from "sonner";
-
+import { getInjectedOrg } from "@/libs/orgSubdomain";
 import { clearAuthScopedStorage } from "@/libs/utils/authStorage";
 import { reportIdeReachable, reportIdeUnavailable } from "@/libs/utils/ideHealth";
 import { usePaywallStore } from "@/stores/usePaywallStore";
@@ -68,7 +68,18 @@ const makeResponseErrorHandler = () => {
       // Sweep persisted per-user state alongside the token; a hard navigate
       // to /login lets Zustand rehydrate the next user from a clean slate.
       clearAuthScopedStorage();
-      window.location.href = "/login";
+      // On a bare org subdomain auth is centralized on the app host, so
+      // re-auth must go there (one OAuth callback for the whole fleet), then
+      // `return_to` bounces back. A local `/login` would be re-bounced by the
+      // backend anyway, but going direct avoids a stale-cookie redirect loop.
+      const org = getInjectedOrg();
+      if (org?.appBaseUrl) {
+        window.location.href = `${org.appBaseUrl}/login?return_to=${encodeURIComponent(
+          window.location.href
+        )}`;
+      } else {
+        window.location.href = "/login";
+      }
     }
 
     if (status === 403 && !publicAPIPaths.includes(url)) {

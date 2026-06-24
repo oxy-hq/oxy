@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useOrgs } from "@/hooks/api/organizations";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
+import { getInjectedOrg } from "@/libs/orgSubdomain";
 import {
   clearLastWorkspaceId,
   getLastOrgSlug,
@@ -41,6 +42,23 @@ export default function PostLoginDispatcher() {
     isPending: wsPending,
     isError: wsError
   } = useAllWorkspaces(chosenOrg?.id);
+
+  // On a bare org subdomain (`pokehouse.oxygen-hq.com`) the backend injects
+  // the org identity, so we skip the org/workspace picker entirely and go
+  // straight to the admin-chosen default project (or the org root, which
+  // lets OrgDispatcher pick when no default is set). This branch is below the
+  // hook calls so the Rules of Hooks hold.
+  const injectedOrg = getInjectedOrg();
+  if (injectedOrg) {
+    return injectedOrg.defaultProjectId ? (
+      <Navigate
+        to={ROUTES.ORG(injectedOrg.orgSlug).WORKSPACE(injectedOrg.defaultProjectId).ROOT}
+        replace
+      />
+    ) : (
+      <Navigate to={ROUTES.ORG(injectedOrg.orgSlug).ROOT} replace />
+    );
+  }
 
   if (orgsPending) return <FullPageSpinner />;
 

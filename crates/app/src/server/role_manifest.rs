@@ -1109,6 +1109,28 @@ mod tests {
     }
 
     #[test]
+    fn org_subdomain_routes_are_fleet_ok() {
+        // Both org-subdomain surfaces are Postgres-only (read workspace→org,
+        // upsert the `org_subdomains` row) — no workspace FS — so they serve
+        // from any replica, like `oxy-access`. See
+        // `internal-docs/2026-06-22-org-subdomain-routing-design.md`.
+        let id = "d9830be4-c6a4";
+        // Customer read-only status (workspace-scoped).
+        assert_eq!(
+            classify("GET", &format!("/api/{id}/org-subdomain")),
+            RouteRole::FleetOk,
+        );
+        // Oxy-staff control (admin surface).
+        for method in ["GET", "PUT"] {
+            assert_eq!(
+                classify(method, &format!("/api/admin/orgs/{id}/subdomain")),
+                RouteRole::FleetOk,
+                "{method} admin org-subdomain must be FleetOk (Postgres-only)"
+            );
+        }
+    }
+
+    #[test]
     fn ide_only_accepted_by_ide_and_all_only() {
         let r = RouteRole::IdeOnly;
         assert!(r.accepted_by(Role::Ide));

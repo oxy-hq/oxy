@@ -1,6 +1,7 @@
-import { Loader2, Sparkles } from "lucide-react";
+import { Globe, Loader2, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { Switch } from "@/components/ui/shadcn/switch";
+import { useOrgSubdomain } from "@/hooks/api/access/useOrgSubdomain";
 import { useOxyAccess, useSetOxyAccess } from "@/hooks/api/access/useOxyAccess";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
@@ -26,6 +27,8 @@ export default function OxyAccess() {
 
   const { data: status, isPending } = useOxyAccess(workspaceId);
   const set = useSetOxyAccess(workspaceId);
+
+  const { data: subdomain } = useOrgSubdomain(workspaceId);
 
   if (!workspace) return null;
 
@@ -70,6 +73,24 @@ export default function OxyAccess() {
           />
         </div>
       </div>
+
+      {/* Org subdomain — read-only. It's an Oxy-managed capability (enabled by
+          Oxy staff for select orgs), so the customer sees status only, no
+          toggle. Shown only when live. */}
+      {subdomain?.enabled && subdomain.url && (
+        <div className='flex items-start gap-4 rounded-lg border bg-card p-5'>
+          <div className='flex size-10 shrink-0 items-center justify-center rounded-md border bg-primary/10 text-primary'>
+            <Globe className='size-5' />
+          </div>
+          <div className='flex flex-1 flex-col gap-1'>
+            <p className='font-medium text-sm leading-tight'>Served on its own subdomain</p>
+            <p className='text-muted-foreground text-xs'>
+              Live at <span className='font-mono'>{subdomain.url}</span>
+              {subdomain.is_default_workspace ? " — this workspace is the default project" : ""}
+            </p>
+          </div>
+        </div>
+      )}
 
       {!canManage && (
         <p className='text-muted-foreground text-xs'>

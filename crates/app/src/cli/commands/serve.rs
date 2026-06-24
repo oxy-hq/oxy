@@ -660,9 +660,17 @@ async fn create_web_application(
     // straight to the static file server and the customer app never loads
     // (the staging/prod "blank page" bug). Regression test:
     // `customer_apps_host_dispatch::subdomain_rewrite_must_run_before_routing`.
+    // Two host-dispatch layers run before routing. The customer-apps rewrite
+    // is first (it owns the structural `<org>--<slug>.customer-apps…` hosts);
+    // the org-subdomain dispatch is second (bare `<org>.<zone>` hosts → org
+    // scoping, `/a/<slug>/` app rewrite, centralized-auth bounce). On any host
+    // neither matches, both fall through untouched.
     let main = ServiceBuilder::new()
         .layer(axum::middleware::from_fn(
             crate::server::api::customer_apps_host_dispatch::subdomain_rewrite_middleware,
+        ))
+        .layer(axum::middleware::from_fn(
+            crate::server::api::org_host_dispatch::org_host_dispatch_middleware,
         ))
         .service(main);
 
@@ -714,6 +722,14 @@ fn create_trace_layer()
 async fn handle_static_files(
     req: Request<Body>,
 ) -> Result<axum::response::Response, std::convert::Infallible> {
+    // The org-subdomain dispatch middleware attaches this for product routes
+    // on a bare org host; when present we splice `window.__OXY_ORG__` into the
+    // served index.html so the SPA boots pre-scoped to the org + default
+    // project (and skips the org/workspace picker).
+    let org_ctx = req
+        .extensions()
+        .get::<crate::server::api::org_host_dispatch::OrgSubdomainCtx>()
+        .cloned();
     let uri = req.uri().clone();
     let mut response = get_service(ServeDir::new(&DIST))
         .call(req, None::<()>)
@@ -731,11 +747,20 @@ async fn handle_static_files(
             .uri("/index.html")
             .body(Body::empty())
             .unwrap();
-        let response = get_service(ServeDir::new(&DIST))
+        let mut response = get_service(ServeDir::new(&DIST))
             .call(index_request, None::<()>)
             .await;
-
+        if let Some(ctx) = &org_ctx {
+            response =
+                crate::server::api::org_host_dispatch::inject_org_into_response(response, ctx)
+                    .await;
+        }
         return Ok(response);
+    }
+
+    if let Some(ctx) = &org_ctx {
+        response =
+            crate::server::api::org_host_dispatch::inject_org_into_response(response, ctx).await;
     }
 
     Ok(response)
