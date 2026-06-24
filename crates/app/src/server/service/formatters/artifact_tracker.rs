@@ -79,7 +79,7 @@ impl ArtifactTracker {
                 })?;
 
             let content = match artifact {
-                ArtifactKind::Workflow { .. } => Self::create_workflow_artifact(children)?,
+                ArtifactKind::Workflow { .. } => Self::create_automation_artifact(children)?,
                 ArtifactKind::Agent { .. } => Self::create_agent_artifact(children)?,
                 ArtifactKind::ExecuteSQL { .. } => Self::create_sql_artifact(children)?,
                 ArtifactKind::SemanticQuery { .. } => {
@@ -117,7 +117,7 @@ impl ArtifactTracker {
         Ok(())
     }
 
-    fn create_workflow_artifact(children: &[Block]) -> Result<Option<ArtifactContent>, OxyError> {
+    fn create_automation_artifact(children: &[Block]) -> Result<Option<ArtifactContent>, OxyError> {
         if let Some(Block { id: _, value }) = children.first()
             && let BlockValue::Children { kind, children } = &**value
             && let ContainerKind::Workflow { r#ref } = kind

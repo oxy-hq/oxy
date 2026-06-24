@@ -29,7 +29,9 @@ pub fn analytics_step_summary(state: &str) -> Option<String> {
 pub fn analytics_tool_summary(tool: &str, _input: &serde_json::Value) -> Option<String> {
     let s = match tool {
         "search_catalog" => "Searching catalog",
-        "search_procedures" => "Searching procedures",
+        // Match both the canonical tool name and the legacy name so old
+        // persisted runs still render a label.
+        "search_automations" | "search_procedures" => "Searching automations",
         "get_join_path" => "Resolving join path",
         "sample_columns" => "Sampling column values",
         "execute_preview" => "Previewing query",

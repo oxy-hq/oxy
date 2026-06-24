@@ -58,7 +58,7 @@ export function aggregateByTime(traces: Trace[]): TimeBucket[] {
     if (!buckets.has(bucketKey)) {
       buckets.set(bucketKey, {
         time: formatFn(new Date(bucketKey)),
-        workflowCount: 0,
+        automationCount: 0,
         analyticsCount: 0,
         tokens: 0
       });
@@ -66,7 +66,7 @@ export function aggregateByTime(traces: Trace[]): TimeBucket[] {
 
     const bucket = buckets.get(bucketKey)!;
     if (trace.spanName === "workflow.run_workflow") {
-      bucket.workflowCount++;
+      bucket.automationCount++;
     } else if (trace.spanName === "analytics.run") {
       bucket.analyticsCount++;
     }
@@ -137,21 +137,21 @@ export function aggregateByDuration(traces: Trace[]): DurationBucket[] {
 export function calculateStats(traces: Trace[] | undefined): TraceStats {
   if (!traces || traces.length === 0) {
     return {
-      workflowRuns: 0,
+      automationRuns: 0,
       analyticsRuns: 0,
       avgDuration: "0ms",
       totalTokens: 0
     };
   }
 
-  const workflowRuns = traces.filter((t) => t.spanName === "workflow.run_workflow").length;
+  const automationRuns = traces.filter((t) => t.spanName === "workflow.run_workflow").length;
   const analyticsRuns = traces.filter((t) => t.spanName === "analytics.run").length;
   const durations = traces.map((t) => getDurationMs(t));
   const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
   const totalTokens = traces.reduce((sum, t) => sum + (getTokensTotal(t) ?? 0), 0);
 
   return {
-    workflowRuns,
+    automationRuns,
     analyticsRuns,
     avgDuration: formatDuration(avgDuration),
     totalTokens

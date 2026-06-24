@@ -3,9 +3,9 @@
  * result inline in chat, with a click-to-expand dialog for the full SQL
  * + result table.
  *
- * The "Save to Workflow" path that this component used to expose was
- * dropped along with the legacy `/workflows/from-query` endpoint. Use
- * the workflow editor in the IDE to author new workflows.
+ * The "Save to Automation" path that this component used to expose was
+ * dropped along with the legacy `/automations/from-query` endpoint. Use
+ * the automation editor in the IDE to author new automations.
  */
 
 import { Code, Download, X } from "lucide-react";

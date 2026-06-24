@@ -1,5 +1,6 @@
 import {
   AppWindow,
+  Workflow as Automation,
   BookOpen,
   Bot,
   Braces,
@@ -7,8 +8,7 @@ import {
   Eye,
   FileCode,
   ShieldCheck,
-  Table,
-  Workflow
+  Table
 } from "lucide-react";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType, FileType } from "@/utils/fileTypes";
@@ -35,9 +35,8 @@ export const getObjectName = (file: FileTreeModel): string => {
 export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
   switch (fileType) {
     case FileType.PROCEDURE:
-    case FileType.WORKFLOW:
     case FileType.AUTOMATION:
-      return Workflow;
+      return Automation;
     case FileType.ANALYTICS_AGENT:
       return Bot;
     case FileType.PIPELINE:
@@ -64,7 +63,7 @@ export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
 };
 
 interface GroupedObjects {
-  procedures: FileTreeModel[];
+  automations: FileTreeModel[];
   pipelines: FileTreeModel[];
   agents: FileTreeModel[];
   apps: FileTreeModel[];
@@ -75,7 +74,7 @@ interface GroupedObjects {
 // Group objects by type
 export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
   const groups: GroupedObjects = {
-    procedures: [],
+    automations: [],
     pipelines: [],
     agents: [],
     apps: [],
@@ -89,9 +88,8 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
 
     switch (fileType) {
       case FileType.PROCEDURE:
-      case FileType.WORKFLOW:
       case FileType.AUTOMATION:
-        groups.procedures.push(file);
+        groups.automations.push(file);
         break;
       case FileType.PIPELINE:
         groups.pipelines.push(file);
@@ -113,7 +111,7 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
   });
 
   // Sort each group alphabetically by name
-  groups.procedures.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
+  groups.automations.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.agents.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.apps.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.tests.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));

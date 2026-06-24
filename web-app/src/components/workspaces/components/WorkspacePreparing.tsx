@@ -332,7 +332,7 @@ function viewConfig(type: WorkspaceCreationType): {
     case "demo":
       return {
         title: "Preparing your demo workspace",
-        subtitle: "Copying sample agents, procedures, and example queries.",
+        subtitle: "Copying sample agents, automations, and example queries.",
         Icon: Sparkles,
         stages: [
           { label: "Copying sample files", doneAt: 2 },

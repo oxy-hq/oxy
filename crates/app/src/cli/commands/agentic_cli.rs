@@ -18,7 +18,7 @@ use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use agentic_pipeline::PipelineBuilder;
-use agentic_pipeline::{AnalyticsMigrator, WorkflowMigrator};
+use agentic_pipeline::{AnalyticsMigrator, AutomationMigrator};
 use agentic_runtime::crud;
 use agentic_runtime::crud::user_facing_status;
 use agentic_runtime::event_registry::EventRegistry;
@@ -155,7 +155,7 @@ async fn connect_db() -> Result<DatabaseConnection, OxyError> {
     AnalyticsMigrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("analytics migrations: {e}")))?;
-    WorkflowMigrator::up(&db, None)
+    AutomationMigrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("workflow migrations: {e}")))?;
     Ok(db)
@@ -241,7 +241,7 @@ async fn cmd_run(args: RunArgs) -> Result<(), OxyError> {
             // CLI is one-shot: no long-lived listener to maintain, so
             // the no-op router is correct. Worker falls back to the 10s
             // backstop poll, which matches the CLI's typical runtime
-            // (single workflow, no cross-process coordination).
+            // (single automation, no cross-process coordination).
             Arc::new(agentic_runtime::router::NoopTaskRouter),
         )
         .await;
@@ -314,7 +314,7 @@ async fn cmd_list(args: ListArgs) -> Result<(), OxyError> {
 
     // List recent runs (all runs, not just by thread). CLI is local-mode
     // only, so the workspace id is fixed to `LOCAL_WORKSPACE_ID` —
-    // matches what `start_workflow_run` / `start_airway_run` seed with
+    // matches what `start_automation_run` / `start_airway_run` seed with
     // from the CLI entry points.
     let runs = crud::list_recent_runs(
         &db,

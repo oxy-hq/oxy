@@ -44,7 +44,7 @@ export default function InsightsCard({
             <p className='text-muted-foreground'>
               {agentPercentage > 50
                 ? "Agent is the primary access method, suggesting strong adoption of conversational analytics."
-                : "Workflows and tasks are frequently used to access metrics programmatically."}
+                : "Automations and tasks are frequently used to access metrics programmatically."}
             </p>
           </>
         )}

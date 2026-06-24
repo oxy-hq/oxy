@@ -17,8 +17,16 @@ describe("detectFileType", () => {
   });
 
   describe("no regression on existing types", () => {
-    it("still detects .workflow.yml as WORKFLOW", () => {
-      expect(detectFileType("etl.workflow.yml")).toBe(FileType.WORKFLOW);
+    it("detects .automation.yml as AUTOMATION", () => {
+      expect(detectFileType("etl.automation.yml")).toBe(FileType.AUTOMATION);
+    });
+
+    it("detects .procedure.yml as PROCEDURE (back-compat)", () => {
+      expect(detectFileType("etl.procedure.yml")).toBe(FileType.PROCEDURE);
+    });
+
+    it("returns DEFAULT for retired .workflow.yml extension", () => {
+      expect(detectFileType("etl.workflow.yml")).toBe(FileType.DEFAULT);
     });
 
     it("still detects .app.yml as APP", () => {
@@ -26,7 +34,7 @@ describe("detectFileType", () => {
     });
 
     it("returns DEFAULT for unknown extension", () => {
-      expect(detectFileType("README.md")).toBe(FileType.DEFAULT);
+      expect(detectFileType("notes.txt")).toBe(FileType.DEFAULT);
     });
 
     it("returns DEFAULT for retired .agent.yml extension", () => {

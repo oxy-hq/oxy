@@ -23,7 +23,7 @@ import {
  *
  * Single landing surface for Global Owners and Global Admins doing tenant
  * triage. Replaces the implicit "I have to click into each list to know
- * if anything's wrong" workflow with an at-a-glance summary:
+ * if anything's wrong" automation with an at-a-glance summary:
  *
  *   - Headline counts for orgs / users / workspaces, with a 7-day delta
  *     so growth is visible even before the operator opens a chart.

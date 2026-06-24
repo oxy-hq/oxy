@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::types::{ChartConfig, QuestionType};
 
-use super::{SAMPLE_COLUMNS_DESC, SEARCH_CATALOG_DESC, SEARCH_PROCEDURES_DESC};
+use super::{SAMPLE_COLUMNS_DESC, SEARCH_AUTOMATIONS_DESC, SEARCH_CATALOG_DESC};
 
 // ── Tool definitions per state ────────────────────────────────────────────────
 
@@ -26,14 +26,14 @@ use super::{SAMPLE_COLUMNS_DESC, SEARCH_CATALOG_DESC, SEARCH_PROCEDURES_DESC};
 pub fn triage_tools(_has_metric_tree: bool) -> Vec<ToolDef> {
     let tools = vec![
         ToolDef {
-            name: "search_procedures",
-            description: SEARCH_PROCEDURES_DESC,
+            name: "search_automations",
+            description: SEARCH_AUTOMATIONS_DESC,
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search term matched against procedure names and descriptions"
+                        "description": "Search term matched against automation names and descriptions"
                     }
                 },
                 "required": ["query"],
@@ -172,14 +172,14 @@ pub fn clarifying_tools(has_semantic: bool, has_metric_tree: bool) -> Vec<ToolDe
             ..Default::default()
         },
         ToolDef {
-            name: "search_procedures",
-            description: SEARCH_PROCEDURES_DESC,
+            name: "search_automations",
+            description: SEARCH_AUTOMATIONS_DESC,
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search term matched against procedure names and descriptions"
+                        "description": "Search term matched against automation names and descriptions"
                     }
                 },
                 "required": ["query"],

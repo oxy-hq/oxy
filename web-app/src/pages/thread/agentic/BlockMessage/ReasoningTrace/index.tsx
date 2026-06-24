@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
-import useSaveAutomationMutation from "@/hooks/api/workflows/useSaveAutomationMutation";
-import useWorkflows from "@/hooks/api/workflows/useWorkflows";
+import useAutomations from "@/hooks/api/automations/useAutomations";
+import useSaveAutomationMutation from "@/hooks/api/automations/useSaveAutomationMutation";
 import { cn } from "@/libs/shadcn/utils";
 import type { Step } from "@/pages/thread/agentic/ArtifactSidebar/ArtifactBlockRenderer/SubGroupReasoningPanel/Reasoning";
 import type { RunInfo } from "@/services/types";
@@ -11,8 +11,8 @@ import {
   useMessageStreaming,
   useSelectedMessageReasoning
 } from "@/stores/agentic";
+import type { TaskConfig } from "@/stores/useAutomation";
 import useTaskThreadStore from "@/stores/useTaskThread";
-import type { TaskConfig } from "@/stores/useWorkflow";
 import {
   buildStepDagMapping,
   convertReasoningToTasks,
@@ -62,17 +62,17 @@ const ReasoningTrace = ({
 
   const stepDagMap = useMemo(() => buildStepDagMapping(steps), [steps]);
 
-  const { data: existingWorkflows } = useWorkflows();
+  const { data: existingAutomations } = useAutomations();
   const firstHumanContent = useMemo(() => {
     const threadMessages = getTaskThread(threadId).messages;
     return threadMessages.find((m) => m.is_human)?.content;
   }, [getTaskThread, threadId]);
 
   const existingAutomationName = useMemo(() => {
-    if (!existingWorkflows || !firstHumanContent) return undefined;
+    if (!existingAutomations || !firstHumanContent) return undefined;
     const proposedName = generateAutomationName([], firstHumanContent).toLowerCase();
-    return existingWorkflows.find((w) => w.name.toLowerCase() === proposedName)?.name;
-  }, [existingWorkflows, firstHumanContent]);
+    return existingAutomations.find((w) => w.name.toLowerCase() === proposedName)?.name;
+  }, [existingAutomations, firstHumanContent]);
 
   const handleAutomateClick = useCallback(() => {
     const reasoningSteps = getMessageReasoningSteps(runInfo);

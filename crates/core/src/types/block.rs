@@ -7,7 +7,7 @@ use utoipa::{
 };
 
 use crate::{
-    config::model::Workflow,
+    config::model::Automation,
     execute::types::{
         VizParams,
         event::{ArtifactKind, DataApp, SandboxAppKind, Step},
@@ -146,7 +146,7 @@ pub enum GroupKind {
         workflow_id: String,
         run_id: String,
         #[schema(schema_with = any_schema)]
-        workflow_config: Workflow,
+        workflow_config: Automation,
     },
     Artifact {
         artifact_id: String,

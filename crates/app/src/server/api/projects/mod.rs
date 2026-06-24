@@ -11,6 +11,6 @@
 
 pub mod agent_ask;
 pub mod agent_run_stream;
-pub mod procedure_run;
+pub mod automation_run;
 pub mod query;
 pub mod semantic_query;

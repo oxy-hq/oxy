@@ -37,7 +37,7 @@ export const RunHeader: React.FC<{
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   // Cross-link to the IDE file editor for runs whose source is a
-  // YAML file (airway / workflow). Hidden when the run has no
+  // YAML file (airway / automation). Hidden when the run has no
   // backing file — analytics agents by `agent_id`, builder runs,
   // preagg daemons.
   const editHref = root.source_ref

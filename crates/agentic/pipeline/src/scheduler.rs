@@ -32,8 +32,8 @@ use uuid::Uuid;
 
 use crate::agent_run::{StartAgentRequest, start_agent_run};
 use crate::airway_run::{StartAirwayRequest, start_airway_run};
+use crate::automation_run::{StartAutomationRequest, start_automation_run};
 use crate::platform::PlatformContext;
-use crate::workflow_run::{StartWorkflowRequest, start_workflow_run};
 
 /// Create/update payload. Deserialized straight from the HTTP body.
 #[derive(Debug, Clone, Deserialize)]
@@ -160,7 +160,7 @@ pub async fn create_schedule(
     let next = next_occurrence_after(&input.cron_expr, &input.timezone, chrono::Utc::now())
         .map_err(ScheduleError::Invalid)?
         .fixed_offset();
-    // Only persist a question for agent schedules; workflow / airway
+    // Only persist a question for agent schedules; automation / airway
     // rows ignore it. Trim before storing so accidental whitespace
     // doesn't slip through.
     let question = if input.target_kind == "agent" {
@@ -607,7 +607,7 @@ async fn fire_schedule(
 ) -> Result<String, String> {
     match s.target_kind.as_str() {
         "workflow" => {
-            let req = StartWorkflowRequest {
+            let req = StartAutomationRequest {
                 workflow_ref: s.target_ref.clone(),
                 variables: s.variables.clone(),
                 retry_from_run_id: None,
@@ -620,7 +620,7 @@ async fn fire_schedule(
                 logical_date: None,
                 retry_of: None,
             };
-            start_workflow_run(
+            start_automation_run(
                 db,
                 req,
                 agentic_runtime::crud::TaskScope::Global,
@@ -845,7 +845,7 @@ async fn seed_backfill_occurrence(
 ) -> Result<String, String> {
     match s.target_kind.as_str() {
         "workflow" => {
-            let req = StartWorkflowRequest {
+            let req = StartAutomationRequest {
                 workflow_ref: s.target_ref.clone(),
                 variables: s.variables.clone(),
                 retry_from_run_id: None,
@@ -858,7 +858,7 @@ async fn seed_backfill_occurrence(
                 logical_date: Some(occurrence),
                 retry_of: None,
             };
-            start_workflow_run(
+            start_automation_run(
                 db,
                 req,
                 agentic_runtime::crud::TaskScope::Global,

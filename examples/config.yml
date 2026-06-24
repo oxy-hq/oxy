@@ -163,7 +163,7 @@ mcp:
     - semantics/topics/fruit_business.topic.yml
     - data/*.sql
     - agents/*.agent.yml
-    - procedures/*.procedure.yml
+    - procedures/*.automation.yml
 
 
 # ── Git branch workflow ────────────────────────────────────────────────────

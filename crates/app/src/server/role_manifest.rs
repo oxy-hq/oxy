@@ -162,7 +162,7 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/apps/file/{pathb64}",
         role: RouteRole::IdeOnly,
     },
-    // Data-app EXECUTION runs the app's inline workflow, whose `execute_sql`
+    // Data-app EXECUTION runs the app's inline automation, whose `execute_sql`
     // tasks emit authored file-path SQL (`FROM 'oxymart.csv'`). That needs the
     // working copy + the local DuckDB connector's file_search_path, so every
     // handler that calls `AppService::run()` is pinned to the ide:
@@ -457,12 +457,12 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         role: RouteRole::IdeOnly,
     },
     // ── Agentic run/exec surface → ide singleton (ephemeral-env tier 1) ──────
-    // An analytics run delegates to procedure subruns enqueued `TaskScope::
+    // An analytics run delegates to automation subruns enqueued `TaskScope::
     // Scoped`, so a subrun's `execute_sql` runs IN-PROCESS on whichever node
     // drives the analytics run (co-located coordinator; see
     // `agentic-pipeline::workflow_run`). A stateless serve replica has no working
     // copy, so authored file-path SQL (`FROM 'oxymart.csv'`, resolved via DuckDB
-    // `file_search_path`) and any FS-touching procedure / airway step fail there.
+    // `file_search_path`) and any FS-touching automation / airway step fail there.
     // Per the ephemeral-env tier-1 posture (one ide owns the FS; the fleet serves
     // reads), pin the whole run/exec surface to the ide — the serve fleet
     // self-proxies via `OXY_IDE_UPSTREAM`. This DELIBERATELY reverts the earlier
@@ -479,6 +479,13 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
     ManifestEntry {
         method: "*",
         path_pattern: "/api/{workspace_id}/agentic-workflows/{*rest}",
+        role: RouteRole::IdeOnly,
+    },
+    // Canonical alias (Procedures/Workflows -> Automations); same posture as
+    // `/agentic-workflows`.
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/agentic-automations/{*rest}",
         role: RouteRole::IdeOnly,
     },
     ManifestEntry {
@@ -512,7 +519,7 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
     // Bundle-SDK endpoints that build a WorkspaceManager from the working copy
     // (`build_project_context` → `effective_workspace_path`) and RUN inline:
     // query/semantic-query execute SQL over the local connector; agent asks +
-    // procedure runs discover the agent/procedure from disk (`list_workflows`
+    // automation runs discover the agent/automation from disk (`list_workflows`
     // + `fs::read_to_string`) and execute in-process. On a stateless serve
     // replica with no working copy these 500 / NOT_FOUND, so pin them to the
     // ide (the fleet self-proxies via OXY_IDE_UPSTREAM) — same posture as the
@@ -660,6 +667,22 @@ const FLEET_OK_READ_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/agentic-workflows/threads/{thread_id}/run",
         role: RouteRole::FleetOk,
     },
+    // Automation run-history aliases (mirror the agentic-workflows carve-outs).
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-automations/runs",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-automations/runs/{run_id}",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-automations/threads/{thread_id}/run",
+        role: RouteRole::FleetOk,
+    },
     // Airway pipeline run history — list_runs_for_pipeline (GET /runs, `state.db`).
     ManifestEntry {
         method: "GET",
@@ -754,6 +777,7 @@ pub fn is_workspace_runtime_route(request_path: &str) -> bool {
         // node driving the run, against the local DuckDB connector.
         "/api/{workspace_id}/analytics/{*rest}",
         "/api/{workspace_id}/agentic-workflows/{*rest}",
+        "/api/{workspace_id}/agentic-automations/{*rest}",
         "/api/{workspace_id}/agentic-airway/{*rest}",
         // Generated run artifacts — chart files on the executor's local disk.
         "/api/{workspace_id}/charts/{file_path}",
@@ -1183,7 +1207,7 @@ mod tests {
     #[test]
     fn app_data_and_source_file_reads_are_ide_only() {
         // Every handler that calls `AppService::run()` (executes the inline
-        // workflow's file-path SQL) is ide-pinned: get_app_data (GET
+        // automation's file-path SQL) is ide-pinned: get_app_data (GET
         // /apps/{pathb64}, the auto-run on load), run_app (POST .../run) and
         // get_app_result (POST .../result). The file/source reads
         // (get_source_file → workspace_path; get_data → local state dir) are
@@ -1198,7 +1222,7 @@ mod tests {
             classify("GET", &format!("{ws}/apps/file/b3h5bWFydA")),
             RouteRole::IdeOnly
         );
-        // get_app_data runs the inline workflow on a cold cache → ide.
+        // get_app_data runs the inline automation on a cold cache → ide.
         assert_eq!(
             classify("GET", &format!("{ws}/apps/b3h5bWFydA")),
             RouteRole::IdeOnly
@@ -1631,12 +1655,14 @@ mod tests {
         "/integrations",
         "/secrets",
         "/apps",
-        // procedures + airway pipelines served from the compile boundary so the
-        // customer-nav sidebar + single-procedure view render on a serve replica
+        // automations + airway pipelines served from the compile boundary so the
+        // customer-nav sidebar + single-automation view render on a serve replica
         // (the IdeOnly `/agentic-workflows` + `/agentic-airway` live in a crate
         // that can't reach `compiled_reader`).
         "/procedures",
         "/procedures/{path_b64}",
+        "/automations",
+        "/automations/{path_b64}",
         "/airway-pipelines",
         "/app-integrations",
         "/artifacts/{id}",

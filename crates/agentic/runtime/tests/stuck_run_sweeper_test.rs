@@ -1,15 +1,15 @@
 //! Tests for the stuck-run sweeper.
 //!
 //! The sweeper is defense-in-depth: even after `commit_decision` made the
-//! decision boundary atomic, a workflow run can still be stranded if the
+//! decision boundary atomic, an automation run can still be stranded if the
 //! coordinator crashes between receiving a `Suspended` outcome and calling
 //! `insert_child_run` + `transport.assign`. In that window the parent's
 //! queue row has already been released as `completed`, so the reaper cannot
 //! rescue it — its grace is keyed on `queue_status='claimed'`.
 //!
-//! The sweeper finds any workflow run that is still in a non-terminal
+//! The sweeper finds any automation run that is still in a non-terminal
 //! `task_status` but has no queue entry in `queued`/`claimed` (for itself or
-//! any descendant task_id), and re-enqueues a fresh `WorkflowDecision`. The
+//! any descendant task_id), and re-enqueues a fresh `AutomationDecision`. The
 //! decider is idempotent under the `decision_version` CAS, so a spurious
 //! re-enqueue is safe.
 //!
@@ -91,7 +91,7 @@ async fn age_run(db: &DatabaseConnection, run_id: &str, secs: i64) {
     .unwrap();
 }
 
-async fn seed_workflow_run(db: &DatabaseConnection) -> String {
+async fn seed_automation_run(db: &DatabaseConnection) -> String {
     let run_id = format!("wf-stuck-{}", uuid::Uuid::new_v4());
     crud::insert_run(db, &run_id, "Q", None, "workflow", None, uuid::Uuid::nil())
         .await
@@ -99,7 +99,7 @@ async fn seed_workflow_run(db: &DatabaseConnection) -> String {
     run_id
 }
 
-/// A workflow run in `running` state with no queue row (or any descendant
+/// An automation run in `running` state with no queue row (or any descendant
 /// queue row) is stranded; the sweeper should surface it.
 #[tokio::test(flavor = "multi_thread")]
 async fn find_stuck_runs_detects_run_with_no_queue_entry() {
@@ -108,17 +108,17 @@ async fn find_stuck_runs_detects_run_with_no_queue_entry() {
         return;
     };
 
-    let run_id = seed_workflow_run(&db).await;
+    let run_id = seed_automation_run(&db).await;
     age_run(&db, &run_id, 60).await;
 
-    let stuck = crud::find_stuck_workflow_runs(&db, 30).await.unwrap();
+    let stuck = crud::find_stuck_automation_runs(&db, 30).await.unwrap();
     assert!(
         stuck.iter().any(|r| r.run_id == run_id),
         "expected {run_id} in stuck runs, got: {stuck:?}"
     );
 }
 
-/// A workflow run whose child task is still `claimed` is NOT stuck — the
+/// An automation run whose child task is still `claimed` is NOT stuck — the
 /// child will drive the parent forward when it finishes. The sweeper must
 /// not false-positive here or it would spawn duplicate decisions.
 #[tokio::test(flavor = "multi_thread")]
@@ -128,7 +128,7 @@ async fn find_stuck_runs_ignores_run_with_in_flight_child() {
         return;
     };
 
-    let run_id = seed_workflow_run(&db).await;
+    let run_id = seed_automation_run(&db).await;
     age_run(&db, &run_id, 60).await;
 
     // Child task claimed and heart-beating: parent is healthy, not stuck.
@@ -150,14 +150,14 @@ async fn find_stuck_runs_ignores_run_with_in_flight_child() {
     .unwrap();
     crud::claim_task(&db, "worker-x").await.unwrap();
 
-    let stuck = crud::find_stuck_workflow_runs(&db, 30).await.unwrap();
+    let stuck = crud::find_stuck_automation_runs(&db, 30).await.unwrap();
     assert!(
         !stuck.iter().any(|r| r.run_id == run_id),
         "run with in-flight child must not be reported stuck"
     );
 }
 
-/// Recently-updated workflows (inside the grace window) are skipped — they
+/// Recently-updated automations (inside the grace window) are skipped — they
 /// may be mid-commit from another worker. Acting on them would race.
 #[tokio::test(flavor = "multi_thread")]
 async fn find_stuck_runs_respects_grace_window() {
@@ -166,10 +166,10 @@ async fn find_stuck_runs_respects_grace_window() {
         return;
     };
 
-    let run_id = seed_workflow_run(&db).await;
+    let run_id = seed_automation_run(&db).await;
     // No age_run — run was just created; updated_at is near now().
 
-    let stuck = crud::find_stuck_workflow_runs(&db, 30).await.unwrap();
+    let stuck = crud::find_stuck_automation_runs(&db, 30).await.unwrap();
     assert!(
         !stuck.iter().any(|r| r.run_id == run_id),
         "recently-updated run must be excluded by grace window"
@@ -184,31 +184,31 @@ async fn find_stuck_runs_ignores_terminal_runs() {
         return;
     };
 
-    let run_id = seed_workflow_run(&db).await;
+    let run_id = seed_automation_run(&db).await;
     age_run(&db, &run_id, 60).await;
     crud::update_run_done(&db, &run_id, "done", None)
         .await
         .unwrap();
     age_run(&db, &run_id, 60).await; // ensure still outside grace after update
 
-    let stuck = crud::find_stuck_workflow_runs(&db, 30).await.unwrap();
+    let stuck = crud::find_stuck_automation_runs(&db, 30).await.unwrap();
     assert!(!stuck.iter().any(|r| r.run_id == run_id));
 }
 
 /// End-to-end: `run_stuck_run_sweeper` on a `DurableTransport` re-enqueues a
-/// `WorkflowDecision` for each stuck run. The queue row is upsert-safe, so a
+/// `AutomationDecision` for each stuck run. The queue row is upsert-safe, so a
 /// second sweep must not re-rescue the same run.
 ///
 /// The test DB is shared across tests via a reused testcontainer, so the
 /// sweep may also rescue runs seeded by other tests. The assertion is
 /// scoped to this test's own run to stay isolated.
 #[tokio::test(flavor = "multi_thread")]
-async fn sweeper_re_enqueues_workflow_decision_idempotently() {
+async fn sweeper_re_enqueues_automation_decision_idempotently() {
     let Some(db) = test_db().await else {
         eprintln!("skipping: no DB available");
         return;
     };
-    let run_id = seed_workflow_run(&db).await;
+    let run_id = seed_automation_run(&db).await;
     age_run(&db, &run_id, 60).await;
 
     let transport = DurableTransport::with_config(db.clone(), Duration::from_millis(100));
@@ -219,13 +219,13 @@ async fn sweeper_re_enqueues_workflow_decision_idempotently() {
     let rescued = transport.run_stuck_run_sweeper(30).await;
     assert!(rescued >= 1, "expected to rescue at least this run");
 
-    // Queue row now present with a WorkflowDecision spec for this run.
+    // Queue row now present with an AutomationDecision spec for this run.
     let entry = crud::get_queue_entry(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "queued");
     let spec: TaskSpec = serde_json::from_value(entry.spec).unwrap();
     assert!(
-        matches!(spec, TaskSpec::WorkflowDecision { .. }),
-        "expected WorkflowDecision spec"
+        matches!(spec, TaskSpec::AutomationDecision { .. }),
+        "expected AutomationDecision spec"
     );
 
     // Idempotent for OUR run: a second sweep may rescue other tests' stuck
@@ -240,7 +240,7 @@ async fn sweeper_re_enqueues_workflow_decision_idempotently() {
     );
     // Spec is unchanged.
     let spec_after: TaskSpec = serde_json::from_value(entry_after.spec).unwrap();
-    assert!(matches!(spec_after, TaskSpec::WorkflowDecision { .. }));
+    assert!(matches!(spec_after, TaskSpec::AutomationDecision { .. }));
 }
 
 // ── find_stuck_runs (periodic global-driver selection, Task 6 correction) ────
@@ -275,7 +275,7 @@ async fn find_stuck_runs_excludes_run_with_live_queue_entry() {
         &run_id,
         &run_id,
         None,
-        &TaskSpec::WorkflowDecision {
+        &TaskSpec::AutomationDecision {
             run_id: run_id.clone(),
             pending_child_answer: None,
         },
@@ -303,7 +303,7 @@ async fn find_stuck_runs_excludes_run_with_live_queue_entry() {
     assert!(stuck.iter().any(|r| r.run_id == other));
 }
 
-/// Generalized beyond workflow: airway runs are also schedulable (Phase 2)
+/// Generalized beyond automation: airway runs are also schedulable (Phase 2)
 /// and must be picked up by the periodic loop when stranded.
 #[tokio::test(flavor = "multi_thread")]
 async fn find_stuck_runs_includes_airway() {
@@ -442,8 +442,8 @@ async fn cleanup_stale_runs_preserves_pending_global_seed() {
         &run_id,
         &run_id,
         None,
-        &TaskSpec::Workflow {
-            workflow_ref: "dummy.workflow.yml".into(),
+        &TaskSpec::Automation {
+            workflow_ref: "dummy.automation.yml".into(),
             variables: None,
             retry_from_run_id: None,
             cache_enabled: false,
@@ -519,8 +519,8 @@ async fn seed_pending_global(db: &DatabaseConnection, source_type: &str) -> Stri
     // `queue_status` + `scope_owned` + `source_type` from the run row);
     // we only need *some* queued+!scope_owned row at task_id=run_id.
     let spec = match source_type {
-        "workflow" => TaskSpec::Workflow {
-            workflow_ref: "dummy.workflow.yml".into(),
+        "workflow" => TaskSpec::Automation {
+            workflow_ref: "dummy.automation.yml".into(),
             variables: None,
             retry_from_run_id: None,
             cache_enabled: false,
@@ -556,7 +556,7 @@ async fn seed_pending_global(db: &DatabaseConnection, source_type: &str) -> Stri
 }
 
 /// The contract: the latency-worker selection must be type-agnostic.
-/// Workflow, airway, AND analytics (agent) freshly-seeded Global runs
+/// Automation, airway, AND analytics (agent) freshly-seeded Global runs
 /// must all be picked up. Failing this test means one source type sits
 /// `queued` forever and the dashboard shows it stuck.
 #[tokio::test(flavor = "multi_thread")]
@@ -565,7 +565,7 @@ async fn find_pending_global_runs_picks_up_all_source_types() {
         return;
     };
 
-    let workflow = seed_pending_global(&db, "workflow").await;
+    let automation = seed_pending_global(&db, "workflow").await;
     let airway = seed_pending_global(&db, "airway").await;
     let analytics = seed_pending_global(&db, "analytics").await;
 
@@ -576,7 +576,7 @@ async fn find_pending_global_runs_picks_up_all_source_types() {
     // Assert each individually so a failure tells you *which* source type
     // regressed rather than a vague "missing some rows".
     for (label, run_id) in [
-        ("workflow", &workflow),
+        ("workflow", &automation),
         ("airway", &airway),
         ("analytics", &analytics),
     ] {
@@ -614,8 +614,8 @@ async fn find_pending_global_runs_excludes_scope_owned_for_all_source_types() {
         .await
         .unwrap();
         let spec = match source_type {
-            "workflow" => TaskSpec::Workflow {
-                workflow_ref: "dummy.workflow.yml".into(),
+            "workflow" => TaskSpec::Automation {
+                workflow_ref: "dummy.automation.yml".into(),
                 variables: None,
                 retry_from_run_id: None,
                 cache_enabled: false,

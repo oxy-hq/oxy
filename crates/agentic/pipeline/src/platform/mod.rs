@@ -9,7 +9,7 @@
 //! - [`ProjectContext`] — connector, model, secret resolution.
 //! - [`ThreadOwnerLookup`] — thread ownership query (used by HTTP for auth).
 //! - [`PlatformContext`] — supertrait combining [`ProjectContext`] and
-//!   [`agentic_workflow::WorkspaceContext`]. The full platform handle.
+//!   [`agentic_automation::WorkspaceContext`]. The full platform handle.
 //!
 //! # Bundles
 //!
@@ -21,13 +21,13 @@ use std::sync::Arc;
 
 use agentic_analytics::config::{LlmVendor, ResolvedModelInfo};
 use agentic_analytics::{MetricTreeRunner, SharedMetricSink};
+use agentic_automation::WorkspaceContext;
 use agentic_builder::{
     BuilderDatabaseProvider, BuilderProjectValidator, BuilderSchemaProvider,
     BuilderSecretsProvider, BuilderSemanticCompiler,
 };
 use agentic_connector::{ConnectorConfig, DatabaseConnector};
 use agentic_llm::{LlmClient, OpenAiCompatProvider, OpenAiProvider};
-use agentic_workflow::WorkspaceContext;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
@@ -255,7 +255,7 @@ pub trait ThreadOwnerLookup: Send + Sync {
 
 /// Combined platform handle.
 ///
-/// Pipeline uses this anywhere it needs both project config *and* workflow
+/// Pipeline uses this anywhere it needs both project config *and* automation
 /// workspace operations from the same object. The host provides a single
 /// concrete type (e.g. `app::agentic_wiring::OxyProjectContext`) that
 /// implements both of the component traits; the blanket impl below lifts

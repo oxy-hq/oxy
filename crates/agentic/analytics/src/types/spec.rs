@@ -147,12 +147,13 @@ pub enum SolutionSource {
     /// The spec was produced by an LLM call (fallback / complex-query path).
     #[default]
     LlmWithSemanticContext,
-    /// The LLM generated a multi-step `procedure.yml` during Specifying.
+    /// The LLM generated a multi-step automation file during Specifying.
     ///
     /// `file_path` points to the generated file on disk.  The Solving stage
     /// is skipped entirely; the Executing stage delegates to the external
     /// [`SubrunRunner`](agentic_core::subrun::SubrunRunner).
-    Procedure { file_path: PathBuf },
+    #[serde(alias = "Procedure")]
+    Automation { file_path: PathBuf },
     /// A `.sql` file from the agent context was matched by the user's question.
     ///
     /// `file_path` points to the `.sql` file on disk.  The SQL is read at

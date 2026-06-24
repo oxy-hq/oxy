@@ -198,7 +198,7 @@ impl DatabaseConnector for PostgresConnector {
     ) -> Result<ExecutionResult, ConnectorError> {
         // The temp-table wrap below (`CREATE TEMP TABLE _t AS (sql)`) is
         // only valid for one SELECT-family statement. A multi-statement
-        // DDL/DML script (workflow `execute_sql` setup files, Airhouse
+        // DDL/DML script (automation `execute_sql` setup files, Airhouse
         // bootstrap, etc.) substituted into the parens would fail with
         // `syntax error at or near "CREATE"`. Run leading statements for
         // their side effects, then sample only the final statement.

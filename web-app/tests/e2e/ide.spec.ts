@@ -53,10 +53,10 @@ test.describe("IDE Functionality", () => {
   });
 
   test("should expand and collapse folders", async ({ page }) => {
-    // Use workflows folder which exists in the test environment
+    // Use automations folder which exists in the test environment
     const folder = page.getByRole("button", { name: "workflows", exact: true });
     const fileInFolder = page.getByRole("link", {
-      name: "fruit_sales_analyst.workflow.yml"
+      name: "fruit_sales_analyst.automation.yml"
     });
 
     // Ensure folder starts in a known state (collapsed)
@@ -118,7 +118,7 @@ test.describe("IDE Functionality", () => {
 
     // Check for at least one object group (the specific groups depend on what files exist)
     const agentsGroup = page.locator("text=Agents");
-    const automationsGroup = page.locator("text=Procedures");
+    const automationsGroup = page.locator("text=Automations");
     const semanticGroup = page.locator("text=Semantic Layer");
     const appsGroup = page.locator("text=Apps");
 

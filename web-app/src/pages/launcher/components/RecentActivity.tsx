@@ -1,4 +1,4 @@
-import { MessagesSquare, Workflow } from "lucide-react";
+import { Workflow as Automation, MessagesSquare } from "lucide-react";
 import { Link } from "react-router-dom";
 import useRunHistory from "@/hooks/api/coordinator/useRunHistory";
 import useThreads from "@/hooks/api/threads/useThreads";
@@ -20,7 +20,7 @@ interface RecentItem {
 
 /**
  * A compact "Recent" footnote on the launcher: merges the latest threads and
- * workflow/procedure (automation) runs into a single newest-first list capped
+ * automation/automation (automation) runs into a single newest-first list capped
  * at 5 rows. Pipeline (airway), agent, and system runs are excluded.
  */
 export function RecentActivity() {
@@ -29,7 +29,7 @@ export function RecentActivity() {
   const ws = ROUTES.ORG(orgSlug).WORKSPACE(project.id);
 
   const threadsQuery = useThreads(1, RECENT_LIMIT);
-  // source_type="workflow" narrows server-side to DAG/procedure runs only,
+  // source_type="automation" narrows server-side to DAG/automation runs only,
   // excluding airway (elt), agent, preagg_cycle, and other system runs.
   const runsQuery = useRunHistory({ limit: RECENT_LIMIT, offset: 0, source_type: "workflow" });
 
@@ -74,7 +74,7 @@ export function RecentActivity() {
             {item.kind === "thread" ? (
               <MessagesSquare className='size-3.5 shrink-0' />
             ) : (
-              <Workflow className='size-3.5 shrink-0' />
+              <Automation className='size-3.5 shrink-0' />
             )}
             <span className='min-w-0 flex-1 truncate'>{item.title}</span>
             <div className='flex shrink-0 items-center gap-2'>

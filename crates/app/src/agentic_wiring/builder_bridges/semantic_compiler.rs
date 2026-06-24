@@ -3,11 +3,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use agentic_automation::WorkspaceContext;
 use agentic_builder::semantic::{BuilderSemanticCompiler, SemanticCompilationResult};
 use agentic_core::result::QueryResult;
 use agentic_core::tools::ToolError;
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
-use agentic_workflow::WorkspaceContext;
 use async_trait::async_trait;
 
 use crate::agentic_wiring::OxyProjectContext;

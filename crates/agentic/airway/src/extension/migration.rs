@@ -1,7 +1,7 @@
 //! Airway extension migrations.
 //!
 //! Uses a separate tracking table (`seaql_migrations_airway`) so this
-//! migrator evolves independently of the runtime, workflow, and
+//! migrator evolves independently of the runtime, automation, and
 //! analytics migrators. Run in the standard startup order after the
 //! runtime migrator (which owns `agentic_runs`, the target of
 //! `airway_run_extensions.run_id`'s FK).

@@ -2,7 +2,7 @@
  * Decode the serialized `TaskSpec` JSON (internally tagged: `{ "type": … }`)
  * into a short list of human-readable `label → value` lines for the debug
  * panel. The point is to answer "what was this job actually doing?" without
- * making the operator read raw JSON — agent id, the question, which workflow
+ * making the operator read raw JSON — agent id, the question, which automation
  * or pipeline, etc.
  *
  * Unknown shapes fall back to the top-level scalar fields so a new TaskSpec
@@ -35,7 +35,7 @@ export function summarizeSpec(spec: unknown): { type: string | null; fields: Spe
       push("Extra", obj.extra);
       break;
     case "workflow":
-      push("Workflow", obj.workflow_ref);
+      push("Automation", obj.workflow_ref);
       push("Variables", obj.variables);
       push("Retry from run", obj.retry_from_run_id);
       if (obj.cache_enabled) push("Cache", "enabled");

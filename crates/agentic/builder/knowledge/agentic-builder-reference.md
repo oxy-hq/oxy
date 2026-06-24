@@ -19,11 +19,11 @@ when you want a chat-style agent backed by the semantic layer.
 
 ## When to use which agent file
 
-| Need                                    | File             |
-| --------------------------------------- | ---------------- |
-| Chat over the semantic layer            | `.agentic.yml`   |
-| One-shot tool-using agent (no FSM)      | `.agent.yml`     |
-| Deterministic multi-step pipeline       | `.workflow.yml`  |
+| Need                                    | File               |
+| --------------------------------------- | ------------------ |
+| Chat over the semantic layer            | `.agentic.yml`     |
+| One-shot tool-using agent (no FSM)      | `.agent.yml`       |
+| Deterministic multi-step pipeline       | `.automation.yml`  |
 
 The filename stem becomes the agent_id (`analytics.agentic.yml` →
 `analytics`). Place the file at the project root or under any subdirectory.

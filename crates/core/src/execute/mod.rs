@@ -1,9 +1,9 @@
+mod automation_templates;
 pub mod builders;
 mod context;
 pub mod formatters;
 pub mod renderer;
 pub mod types;
-mod workflow_templates;
 pub mod writer;
 
 pub use context::{Executable, ExecutionContext, ExecutionContextBuilder};

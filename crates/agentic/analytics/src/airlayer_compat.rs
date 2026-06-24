@@ -15,7 +15,7 @@ use airlayer::DatasourceDialectMap;
 // ── YAML parsing ─────────────────────────────────────────────────────────────
 //
 // The oxy → airlayer YAML shim is the canonical one in `oxy-airlayer-compat`
-// (infrastructure) so analytics, the builder validator, the workflow bridge
+// (infrastructure) so analytics, the builder validator, the automation bridge
 // and `oxy validate` cannot disagree. Re-exported here so existing
 // `crate::airlayer_compat::parse_*_yaml` call sites are unchanged.
 // See internal-docs/semantic-validation-standardization.md.

@@ -111,7 +111,7 @@ const JobsPage: React.FC = () => {
                           : "No jobs scheduled yet"}
                       </p>
                       <p className='text-xs'>
-                        Schedule a DAG workflow or ELT pipeline to run on a recurring cron.
+                        Schedule a DAG automation or ELT pipeline to run on a recurring cron.
                       </p>
                     </div>
                   </TableCell>

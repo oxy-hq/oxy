@@ -4,7 +4,7 @@ use crate::{
         Executable, ExecutionContext,
         types::{Chunk, EventKind, Output, Table, TableReference},
     },
-    observability::events::workflow as workflow_events,
+    observability::events::automation as automation_events,
     tools::looker::types::LookerQueryInput,
     types::LookerQuery,
 };
@@ -12,7 +12,7 @@ use oxy_looker::{InlineQueryRequest, LookerApiClient, LookerAuthConfig, Metadata
 use oxy_shared::errors::OxyError;
 use std::collections::HashMap;
 
-/// Shared executor for Looker queries that can be used by both tools and workflow tasks
+/// Shared executor for Looker queries that can be used by both tools and automation tasks
 #[derive(Debug, Clone)]
 pub struct LookerQueryExecutable {}
 
@@ -52,7 +52,7 @@ impl Executable<LookerQueryInput> for LookerQueryExecutable {
 
         if let Ok(ref output) = result {
             tracing::info!("Looker query executed successfully");
-            workflow_events::task::looker_query::execute_output(output);
+            automation_events::task::looker_query::execute_output(output);
         }
 
         result

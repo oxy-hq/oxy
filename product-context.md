@@ -26,7 +26,7 @@ Three deployment modes — almost every bug report depends on which one:
 
 ## Terminology & renames (easy to get wrong)
 
-- **Procedure** = the thing formerly called **Workflow / Automation**. Canonical file is `.procedure.yml`, but `.workflow.yml` and `.automation.yml` still parse; the UI route is still `/workflows/:id` and the HTTP surface is still `/workflows`.
+- **Automation** = the thing formerly called **Procedure / Workflow**. Canonical file is now `.automation.yml`; `.procedure.yml` is kept for back-compat. The `.workflow.yml` file extension is **no longer supported** (the runtime no longer recognizes it as a file kind — only `oxy migrate-automations` still reads legacy `.workflow.yml` files to rename them). Canonical UI route is `/automations/:id` (legacy `/workflows/:id` still renders); canonical HTTP surface is `/automations` + `/agentic-automations` (legacy `/procedures` + `/agentic-workflows` kept as aliases). Internally the Rust types are still named `Workflow*`/`Procedure*` (the `type: workflow` YAML task discriminator and the `agentic_workflow_state` table are wire/storage contracts) with canonical `Automation*` aliases. The DB table is `automation_definitions` (a `procedure_definitions` view remains for back-compat).
 - **Orchestrator Dashboard** replaced the old **Coordinator** surface.
 - **Oxygen Factory** = the Developer Portal / IDE, reached from the icon rail (renamed Studio → Oxygen Builder → Oxygen Core → **Oxygen Factory**). Same `/ide` surface, just the rail label.
 - **Agentic Agent** (`.agentic.yml`) = Oxy's multi-step FSM agent (two kinds: **analytics** and **app builder**), distinct from the single-shot sense of "agent."
@@ -97,7 +97,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 | Extension | Type | Notes |
 | --- | --- | --- |
 | `.agentic.yml` | Agentic Agent | Multi-step FSM (analytics or app builder) |
-| `.procedure.yml` | Procedure | Also accepts `.workflow.yml`, `.automation.yml` |
+| `.automation.yml` | Automation | Canonical; `.procedure.yml` also accepted (back-compat). `.workflow.yml` no longer supported |
 | `.app.yml` | Data App | `tasks` + `display`; `published: bool` controls sidebar visibility |
 | `.view.yml` / `.topic.yml` | Semantic View / Topic | Compiled by airlayer |
 | `.sql` | Verified Query | Auto-discovered, run as-is when matched; shows a Verified badge |

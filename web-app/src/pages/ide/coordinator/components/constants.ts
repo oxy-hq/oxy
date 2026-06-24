@@ -1,5 +1,6 @@
 import {
   Activity,
+  Workflow as Automation,
   Ban,
   Bot,
   CalendarClock,
@@ -12,7 +13,6 @@ import {
   PauseCircle,
   Play,
   RotateCcw,
-  Workflow,
   XCircle
 } from "lucide-react";
 import type React from "react";
@@ -127,12 +127,12 @@ export const JOB_TYPE: Record<JobType, JobTypeMeta> = {
     unit: "trace"
   },
   dag: {
-    label: "DAG Workflow",
+    label: "DAG Automation",
     short: "DAG",
     fg: "text-vis-purple",
     bg: "bg-vis-purple",
     tint: "bg-vis-purple/10 text-vis-purple",
-    icon: Workflow,
+    icon: Automation,
     unit: "task graph"
   },
   elt: {

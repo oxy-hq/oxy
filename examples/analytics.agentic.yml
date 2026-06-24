@@ -11,7 +11,7 @@ context:
   - ./sales_semantics/**/*
   - ./airhouse_semantics/**/*
   - ./enrichment_semantics/**/*
-  - ./workflows/**/*.procedure.yml
+  - ./workflows/**/*.automation.yml
   - ./example_sql/*.sql
 states:
   specifying:

@@ -1,4 +1,10 @@
-import { Database, Layers, LucideBot, LucideWorkflow, Plug } from "lucide-react";
+import {
+  Database,
+  Layers,
+  LucideWorkflow as LucideAutomation,
+  LucideBot,
+  Plug
+} from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
 import { EXECUTION_TYPES, type ExecutionDetail } from "../../types";
 
@@ -6,7 +12,7 @@ const TYPE_ICONS: Record<ExecutionDetail["executionType"], typeof Database> = {
   semantic_query: Layers,
   omni_query: Plug,
   sql_generated: Database,
-  workflow: LucideWorkflow,
+  workflow: LucideAutomation,
   agent_tool: LucideBot
 };
 

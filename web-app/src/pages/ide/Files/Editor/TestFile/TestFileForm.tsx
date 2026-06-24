@@ -147,7 +147,7 @@ const TestFileForm: React.FC<TestFileFormProps> = ({ data, onChange }) => {
     name: "cases"
   });
 
-  // Use subscribe with isDirty (same pattern as WorkflowForm) to avoid
+  // Use subscribe with isDirty (same pattern as AutomationForm) to avoid
   // triggering onChange on initial load / resets
   React.useEffect(() => {
     const callback = subscribe({

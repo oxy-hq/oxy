@@ -34,6 +34,6 @@ pub trait BuilderProjectValidator: Send + Sync {
     /// Returns `Ok(())` on success, `Err(message)` on validation failure.
     async fn validate_file(&self, abs_path: &Path) -> Result<(), String>;
 
-    /// Validate all project files (agents, workflows, apps, semantic).
+    /// Validate all project files (agents, automations, apps, semantic).
     async fn validate_all(&self) -> Result<ValidationReport, ToolError>;
 }

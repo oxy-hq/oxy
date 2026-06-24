@@ -37,7 +37,7 @@ const emptySummary: ExecutionSummary = {
   semanticQueryCount: 0,
   omniQueryCount: 0,
   sqlGeneratedCount: 0,
-  workflowCount: 0,
+  automationCount: 0,
   agentToolCount: 0
 };
 

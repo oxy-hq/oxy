@@ -224,23 +224,23 @@ impl AppService {
         // Data Apps run a free-form `Vec<oxy::Task>` (from `.app.yml`)
         // synchronously and need the final results back to render charts /
         // tables on the same request. We feed the tasks through
-        // `agentic_pipeline::workflow_run::run_inline_workflow`, which drives
-        // the workflow decider in-process without the coordinator queue —
+        // `agentic_pipeline::automation_run::run_inline_automation`, which drives
+        // the automation decider in-process without the coordinator queue —
         // round-trip the tasks through JSON to land on
-        // `agentic_workflow::WorkflowConfig`. Both `Task` types use
+        // `agentic_automation::AutomationConfig`. Both `Task` types use
         // `#[serde(tag = "type")]` so the shapes line up.
-        let workflow_value = serde_json::json!({
+        let automation_value = serde_json::json!({
             "name": "app-tasks-inline",
             "tasks": serde_json::to_value(&tasks).map_err(|e| {
                 OxyError::RuntimeError(format!("serialize app tasks: {e}"))
             })?,
         });
-        let workflow_config: agentic_workflow::WorkflowConfig =
-            serde_json::from_value(workflow_value).map_err(|e| {
-                OxyError::RuntimeError(format!("convert app tasks → WorkflowConfig: {e}"))
+        let automation_config: agentic_automation::AutomationConfig =
+            serde_json::from_value(automation_value).map_err(|e| {
+                OxyError::RuntimeError(format!("convert app tasks → AutomationConfig: {e}"))
             })?;
 
-        // Seed the workflow runner's render context with `controls.*` so
+        // Seed the automation runner's render context with `controls.*` so
         // task SQL templates like `{{ controls.store }}` resolve. The
         // `variables` parameter lands in `state.variables` only — NOT
         // in `state.render_context`, which is what `merge_sql_variables`
@@ -258,22 +258,22 @@ impl AppService {
         };
 
         // `OxyInlineAgentRunner` was removed on main; agent fan-out
-        // tasks inside a Data App workflow now surface a clear error
-        // from the workflow runner instead of executing inline. The
+        // tasks inside a Data App automation now surface a clear error
+        // from the automation runner instead of executing inline. The
         // common case (`execute_sql` tasks driven by Data App
         // controls) doesn't depend on inline-agent execution, so
         // `None` here is correct for current customer-apps usage.
         let project_ctx = Arc::new(OxyProjectContext::new(self.workspace_manager.clone()));
-        let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
-        let results = agentic_pipeline::workflow_run::run_inline_workflow_with_render_context(
+        let workspace: Arc<dyn agentic_automation::WorkspaceContext> = project_ctx;
+        let results = agentic_pipeline::automation_run::run_inline_automation_with_render_context(
             workspace.as_ref(),
-            workflow_config,
+            automation_config,
             None,
             render_context,
             None,
         )
         .await
-        .map_err(|e| OxyError::RuntimeError(format!("app inline workflow: {e}")))?;
+        .map_err(|e| OxyError::RuntimeError(format!("app inline automation: {e}")))?;
 
         // Build the cache-layer `DataContainer` directly. The frontend
         // (`AppPreview` / `registerFromTableData` in
@@ -282,9 +282,9 @@ impl AppService {
         // as an array-of-objects string — that's what
         // `Data::Table(TableData { ... })` serialises to.
         //
-        // The agentic-workflow runner produces tabular results as
+        // The agentic-automation runner produces tabular results as
         // `{columns, rows}` (the standard step-executor output);
-        // `workflow_task_to_data` converts that to array-of-objects
+        // `automation_task_to_data` converts that to array-of-objects
         // and wraps in `TableData`. Non-tabular results fall through
         // as `Data::Text(stringified)`.
         //
@@ -294,11 +294,11 @@ impl AppService {
         let mut map: HashMap<String, DataContainer> = HashMap::with_capacity(results.len());
         for task in &tasks {
             if let Some(value) = results.get(&task.name) {
-                let data = workflow_task_to_data(&task.name, value);
+                let data = automation_task_to_data(&task.name, value);
                 map.insert(task.name.clone(), DataContainer::Single(data));
             } else {
-                // Workflow runner dropped this task — typically means it
-                // errored mid-run (an inline-workflow step exception clears
+                // Automation runner dropped this task — typically means it
+                // errored mid-run (an inline-automation step exception clears
                 // the slot before `results` is assembled) or the task name
                 // doesn't match the runner's result key. Log so an operator
                 // can correlate with the bundle-side "task missing from app
@@ -306,7 +306,7 @@ impl AppService {
                 tracing::warn!(
                     app_path = ?app_path,
                     task = %task.name,
-                    "task produced no result during inline workflow run; \
+                    "task produced no result during inline automation run; \
                      omitting from data map"
                 );
             }
@@ -369,10 +369,10 @@ pub async fn read_app_yaml_file(
     })
 }
 
-/// Convert an inline-workflow task result into a [`Data`] suitable for
+/// Convert an inline-automation task result into a [`Data`] suitable for
 /// the frontend's `AppPreview` consumer.
 ///
-/// Two shapes coming out of the agentic-workflow runner:
+/// Two shapes coming out of the agentic-automation runner:
 /// - **Tabular** — `{columns: [...], rows: [[...]]}` from `execute_sql`,
 ///   `semantic_query`, `omni_query`. Reshape to array-of-objects JSON
 ///   and wrap in [`Data::Table`] with a synthetic `file_path`. The
@@ -380,7 +380,7 @@ pub async fn read_app_yaml_file(
 ///   path is only used as a stable view name.
 /// - **Anything else** — stringify and wrap in [`Data::Text`]. Covers
 ///   formatter / agent outputs.
-fn workflow_task_to_data(task_name: &str, value: &JsonValue) -> Data {
+fn automation_task_to_data(task_name: &str, value: &JsonValue) -> Data {
     if let Some(records) = tabular_to_records(value) {
         let json = serde_json::to_string(&records).ok();
         let file_path = PathBuf::from(format!("app_inline/{task_name}.parquet"));
@@ -478,7 +478,7 @@ mod tests {
             "columns": ["a"],
             "rows": [[1], [2]],
         });
-        let data = workflow_task_to_data("query", &v);
+        let data = automation_task_to_data("query", &v);
         let Data::Table(td) = data else {
             panic!("expected Data::Table");
         };
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn non_tabular_task_produces_data_text() {
         let v = json!({"text": "hello"});
-        let data = workflow_task_to_data("greet", &v);
+        let data = automation_task_to_data("greet", &v);
         match data {
             Data::Text(s) => assert!(s.contains("hello")),
             other => panic!("expected Data::Text, got {other:?}"),

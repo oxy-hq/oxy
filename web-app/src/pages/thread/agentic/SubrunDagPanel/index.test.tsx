@@ -14,10 +14,10 @@ const sseEv = <T extends SseEvent["type"]>(
   data: Extract<SseEvent, { type: T }>["data"]
 ): SseEvent => ({ id: String(counter++), type, data }) as SseEvent;
 
-const procedureStarted = (name: string, steps: Array<{ name: string; task_type: string }>) =>
+const automationStarted = (name: string, steps: Array<{ name: string; task_type: string }>) =>
   sseEv("subrun_started", { subrun_name: name, steps });
 
-const procedureCompleted = (name: string, success: boolean, error?: string) =>
+const automationCompleted = (name: string, success: boolean, error?: string) =>
   sseEv("subrun_completed", {
     subrun_name: name,
     success,
@@ -55,7 +55,7 @@ describe("SubrunDagPanel — rendering", () => {
   it("renders all step names", () => {
     render(
       <SubrunDagPanel
-        procedureName='my_procedure'
+        automationName='my_automation'
         steps={STEPS}
         events={[]}
         isRunning={false}
@@ -67,29 +67,35 @@ describe("SubrunDagPanel — rendering", () => {
     }
   });
 
-  it("renders procedure name in the header", () => {
+  it("renders automation name in the header", () => {
     render(
       <SubrunDagPanel
-        procedureName='my_procedure'
+        automationName='my_automation'
         steps={STEPS}
         events={[]}
         isRunning={false}
         onClose={noop}
       />
     );
-    expect(screen.getByText("my_procedure")).toBeInTheDocument();
+    expect(screen.getByText("my_automation")).toBeInTheDocument();
   });
 
-  it("falls back to 'Procedure Run' when procedure name is empty", () => {
+  it("falls back to 'Automation Run' when automation name is empty", () => {
     render(
-      <SubrunDagPanel procedureName='' steps={STEPS} events={[]} isRunning={false} onClose={noop} />
+      <SubrunDagPanel
+        automationName=''
+        steps={STEPS}
+        events={[]}
+        isRunning={false}
+        onClose={noop}
+      />
     );
-    expect(screen.getByText("Procedure Run")).toBeInTheDocument();
+    expect(screen.getByText("Automation Run")).toBeInTheDocument();
   });
 
   it("renders nothing beyond the header when steps is empty", () => {
     const { container } = render(
-      <SubrunDagPanel procedureName='p' steps={[]} events={[]} isRunning={false} onClose={noop} />
+      <SubrunDagPanel automationName='p' steps={[]} events={[]} isRunning={false} onClose={noop} />
     );
     // No step node divs — only the panel shell remains
     const content = container.querySelector("[data-slot='panel-content']");
@@ -99,7 +105,7 @@ describe("SubrunDagPanel — rendering", () => {
   it("renders one node per step", () => {
     render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[
           { name: "a", task_type: "execute_sql" },
           { name: "b", task_type: "execute_sql" },
@@ -121,7 +127,13 @@ describe("SubrunDagPanel — rendering", () => {
 describe("SubrunDagPanel — header subtitle", () => {
   it("shows 'Running…' subtitle when isRunning is true and no events", () => {
     render(
-      <SubrunDagPanel procedureName='p' steps={STEPS} events={[]} isRunning={true} onClose={noop} />
+      <SubrunDagPanel
+        automationName='p'
+        steps={STEPS}
+        events={[]}
+        isRunning={true}
+        onClose={noop}
+      />
     );
     const header = screen.getByRole("heading", { name: "p" }).closest("[data-slot='panel-header']");
     expect(within(header as HTMLElement).getByText("Running…")).toBeInTheDocument();
@@ -130,9 +142,9 @@ describe("SubrunDagPanel — header subtitle", () => {
   it("shows 'Completed' subtitle when subrun_completed success=true", () => {
     render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={STEPS}
-        events={[procedureStarted("p", STEPS), procedureCompleted("p", true)]}
+        events={[automationStarted("p", STEPS), automationCompleted("p", true)]}
         isRunning={false}
         onClose={noop}
       />
@@ -144,9 +156,9 @@ describe("SubrunDagPanel — header subtitle", () => {
   it("shows 'Failed' subtitle when subrun_completed success=false", () => {
     render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={STEPS}
-        events={[procedureStarted("p", STEPS), procedureCompleted("p", false, "timeout")]}
+        events={[automationStarted("p", STEPS), automationCompleted("p", false, "timeout")]}
         isRunning={false}
         onClose={noop}
       />
@@ -158,7 +170,7 @@ describe("SubrunDagPanel — header subtitle", () => {
   it("renders no subtitle when not running and no subrun_completed event", () => {
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={STEPS}
         events={[]}
         isRunning={false}
@@ -173,9 +185,9 @@ describe("SubrunDagPanel — header subtitle", () => {
     // Edge case: both isRunning=true and subrun_completed in events
     render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={STEPS}
-        events={[procedureCompleted("p", true)]}
+        events={[automationCompleted("p", true)]}
         isRunning={true}
         onClose={noop}
       />
@@ -192,7 +204,7 @@ describe("SubrunDagPanel — step statuses", () => {
   it("all steps are idle (no status label) when no step events", () => {
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[
           { name: "step_a", task_type: "execute_sql" },
           { name: "step_b", task_type: "execute_sql" }
@@ -211,7 +223,7 @@ describe("SubrunDagPanel — step statuses", () => {
   it("subrun_step_started marks the target step as running", () => {
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[
           { name: "step_a", task_type: "execute_sql" },
           { name: "step_b", task_type: "execute_sql" }
@@ -230,7 +242,7 @@ describe("SubrunDagPanel — step statuses", () => {
   it("subrun_step_completed success=true marks step as done", () => {
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[stepStarted("step_a"), stepCompleted("step_a", true)]}
         isRunning={false}
@@ -245,7 +257,7 @@ describe("SubrunDagPanel — step statuses", () => {
   it("subrun_step_completed success=false marks step as failed", () => {
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[stepStarted("step_a"), stepCompleted("step_a", false, "connection refused")]}
         isRunning={false}
@@ -261,7 +273,7 @@ describe("SubrunDagPanel — step statuses", () => {
   it("tracks multiple steps independently", () => {
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[
           { name: "step_a", task_type: "execute_sql" },
           { name: "step_b", task_type: "execute_sql" },
@@ -283,7 +295,7 @@ describe("SubrunDagPanel — step statuses", () => {
     // An unknown step name in events should not crash or affect the known steps.
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[stepStarted("unknown_step")]}
         isRunning={false}
@@ -300,7 +312,7 @@ describe("SubrunDagPanel — step statuses", () => {
     // subrun_step_started fired twice for the same step, then completed
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[
           stepStarted("step_a"),
@@ -323,10 +335,10 @@ describe("SubrunDagPanel — incremental rerender", () => {
     const allEvents = [
       stepStarted("step_a"),
       stepCompleted("step_a", true),
-      procedureCompleted("p", true)
+      automationCompleted("p", true)
     ];
     const props = (n: number, running = true) => ({
-      procedureName: "p",
+      automationName: "p",
       steps: [{ name: "step_a", task_type: "execute_sql" }],
       events: allEvents.slice(0, n),
       isRunning: running,
@@ -354,12 +366,12 @@ describe("SubrunDagPanel — incremental rerender", () => {
     const allEvents = [
       stepStarted("step_a"),
       stepCompleted("step_a", true),
-      procedureCompleted("p", true)
+      automationCompleted("p", true)
     ];
 
     const { rerender } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={allEvents.slice(0, 1)}
         isRunning={true}
@@ -372,10 +384,10 @@ describe("SubrunDagPanel — incremental rerender", () => {
 
     expect(within(header).getByText("Running…")).toBeInTheDocument();
 
-    // Procedure completed
+    // Automation completed
     rerender(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={allEvents}
         isRunning={false}
@@ -390,12 +402,12 @@ describe("SubrunDagPanel — incremental rerender", () => {
     const allEvents = [
       stepStarted("step_a"),
       stepCompleted("step_a", false, "query error"),
-      procedureCompleted("p", false, "query error")
+      automationCompleted("p", false, "query error")
     ];
 
     const { rerender } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={allEvents.slice(0, 1)}
         isRunning={true}
@@ -408,7 +420,7 @@ describe("SubrunDagPanel — incremental rerender", () => {
 
     rerender(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={allEvents}
         isRunning={false}
@@ -422,11 +434,11 @@ describe("SubrunDagPanel — incremental rerender", () => {
     // If subrun_completed fires more than once, the last one wins
     const { container } = render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[
-          procedureCompleted("p", false, "first failure"),
-          procedureCompleted("p", true) // second, successful retry
+          automationCompleted("p", false, "first failure"),
+          automationCompleted("p", true) // second, successful retry
         ]}
         isRunning={false}
         onClose={noop}
@@ -445,7 +457,7 @@ describe("SubrunDagPanel — close button", () => {
     const onClose = vi.fn();
     render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={STEPS}
         events={[]}
         isRunning={false}
@@ -460,7 +472,7 @@ describe("SubrunDagPanel — close button", () => {
     const onClose = vi.fn();
     render(
       <SubrunDagPanel
-        procedureName='p'
+        automationName='p'
         steps={STEPS}
         events={[]}
         isRunning={false}

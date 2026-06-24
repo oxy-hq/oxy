@@ -18,8 +18,8 @@ import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import type {
   ArtifactItem,
+  AutomationItem,
   BuilderDelegationItem,
-  ProcedureItem,
   SelectableItem,
   SqlItem
 } from "@/hooks/analyticsSteps";
@@ -348,7 +348,7 @@ const AnalyticsThread = ({ thread, hideHeader }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
   const [selectedArtifact, setSelectedArtifact] = useState<
-    ArtifactItem | SqlItem | ProcedureItem | null
+    ArtifactItem | SqlItem | AutomationItem | null
   >(null);
   const [selectedRunEvents, setSelectedRunEvents] = useState<SseEvent[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
@@ -448,8 +448,8 @@ const AnalyticsThread = ({ thread, hideHeader }: Props) => {
     // based on which file types were actually modified.
     if (liveAcceptedChangesRef.current.length > 0) {
       const paths = liveAcceptedChangesRef.current.map((c) => c.filePath);
-      const hasWorkflow = paths.some(
-        (p) => p.endsWith(".workflow.yml") || p.endsWith(".procedure.yml")
+      const hasAutomation = paths.some(
+        (p) => p.endsWith(".automation.yml") || p.endsWith(".procedure.yml")
       );
       const hasApp = paths.some((p) => p.endsWith(".app.yml"));
 
@@ -460,9 +460,9 @@ const AnalyticsThread = ({ thread, hideHeader }: Props) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.revisionInfo(project.id, branchName)
       });
-      if (hasWorkflow) {
+      if (hasAutomation) {
         queryClient.invalidateQueries({
-          queryKey: queryKeys.workflow.list(project.id, branchName)
+          queryKey: queryKeys.automation.list(project.id, branchName)
         });
       }
       if (hasApp) {

@@ -17,15 +17,18 @@ export type AnalyticsDisplayBlock = {
 };
 
 /**
- * Detect whether an `awaiting_input` event represents a procedure delegation
+ * Detect whether an `awaiting_input` event represents a automation delegation
  * (not a human input question). Delegation prompts start with "Executing step:"
- * which the workflow orchestrator uses for step delegation.
+ * which the automation orchestrator uses for step delegation.
  */
 function isDelegationSuspension(questions: HumanInputQuestion[]): boolean {
   if (questions.length === 0) return false;
   const prompt = questions[0].prompt;
   return (
     prompt.startsWith("Executing step:") ||
+    // Match the legacy prefix too so runs persisted before the rename still
+    // register as delegation suspensions.
+    prompt.startsWith("Execute automation") ||
     prompt.startsWith("Execute procedure") ||
     prompt.startsWith("Delegating to builder") ||
     prompt.startsWith("The analytics pipeline could not")
@@ -348,10 +351,10 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
           }
           if (ev.event === "awaiting_input") {
             const questions = (parsed.questions as HumanInputQuestion[]) ?? [];
-            // Don't show suspension popup for procedure delegations —
-            // the procedure progress renders inline via ProcedureChild/ProcedureDelegationCard.
+            // Don't show suspension popup for automation delegations —
+            // the automation progress renders inline via AutomationChild/AutomationDelegationCard.
             if (isDelegationSuspension(questions)) {
-              // Stay in "running" state — procedure events will render inline.
+              // Stay in "running" state — automation events will render inline.
               return;
             }
             setState((prev) => {

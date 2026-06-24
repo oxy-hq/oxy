@@ -14,11 +14,11 @@ import {
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import AirwayPage from "@/pages/airway";
+import AutomationPage from "@/pages/automation";
+import AutomationsListPage from "@/pages/automation/AutomationsListPage";
 import LauncherPage from "@/pages/launcher";
 import ThreadPage from "@/pages/thread";
 import Threads from "@/pages/threads";
-import WorkflowPage from "@/pages/workflow";
-import WorkflowsListPage from "@/pages/workflow/WorkflowsListPage";
 import "@xyflow/react/dist/style.css";
 import React, { Suspense, useEffect, useRef } from "react";
 import { HotkeysProvider, useHotkeys } from "react-hotkeys-hook";
@@ -281,8 +281,13 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           <Route path='home' element={<LauncherPage />} />
           <Route path='threads' element={<Threads />} />
           <Route path='threads/:threadId' element={<ThreadPage />} />
-          <Route path='workflows' element={<WorkflowsListPage />} />
-          <Route path='workflows/:pathb64' element={<WorkflowPage />} />
+          {/* Canonical "Automations" routes (formerly Automations / Automations). */}
+          <Route path='automations' element={<AutomationsListPage />} />
+          <Route path='automations/:pathb64' element={<AutomationPage />} />
+          {/* Back-compat: legacy /automations URLs keep rendering for old
+              bookmarks and deep links. */}
+          <Route path='workflows' element={<AutomationsListPage />} />
+          <Route path='workflows/:pathb64' element={<AutomationPage />} />
           <Route path='pipelines/:pathb64' element={<AirwayPage />} />
           <Route path='pipelines/:pathb64/runs/:runId' element={<AirwayPage />} />
           {/* NOTE: /apps now renders the Dashboards page (published .app.yml

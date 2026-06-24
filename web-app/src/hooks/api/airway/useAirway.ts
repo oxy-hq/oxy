@@ -6,7 +6,7 @@
  * shared SSE endpoint and folds the event buffer through
  * `reduceAirwayEvents` into the phase-bar + resource-grid view model.
  *
- * Mirrors `useAgenticWorkflows.ts`. Simpler: no snapshot endpoint, no
+ * Mirrors `useAgenticAutomations.ts`. Simpler: no snapshot endpoint, no
  * step DAG — the view is a pure function of the accumulated events,
  * and `reduceAirwayEvents` is idempotent over a prefix so we just
  * re-reduce the whole buffer on every tick.

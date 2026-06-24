@@ -52,7 +52,7 @@ impl RuntimeVariableResolver {
 
     /// Create a resolver from multiple variable sources with priority order
     pub fn from_sources(
-        workflow_vars: Option<HashMap<String, JsonValue>>,
+        automation_vars: Option<HashMap<String, JsonValue>>,
         agent_vars: Option<HashMap<String, JsonValue>>,
         globals: Option<HashMap<String, JsonValue>>,
         env_vars: Option<HashMap<String, JsonValue>>,
@@ -84,10 +84,10 @@ impl RuntimeVariableResolver {
             }
         }
 
-        if let Some(workflow) = workflow_vars
+        if let Some(automation) = automation_vars
             && let JsonValue::Object(ref mut ctx) = context
         {
-            for (key, value) in workflow {
+            for (key, value) in automation {
                 ctx.insert(key, value);
             }
         }
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_from_sources_priority() {
-        let workflow_vars = HashMap::from([
+        let automation_vars = HashMap::from([
             ("table".to_string(), json!("workflow_table")),
             ("schema".to_string(), json!("workflow_schema")),
         ]);
@@ -313,18 +313,18 @@ mod tests {
         let agent_vars = HashMap::from([("table".to_string(), json!("agent_table"))]);
 
         let resolver = RuntimeVariableResolver::from_sources(
-            Some(workflow_vars),
+            Some(automation_vars),
             Some(agent_vars),
             None,
             None,
         )
         .unwrap();
 
-        // Workflow variables should override agent variables
+        // Automation variables should override agent variables
         let table = resolver.resolve_variable("table").unwrap();
         assert_eq!(table, JsonValue::String("workflow_table".to_string()));
 
-        // Agent variables should be used when workflow doesn't override
+        // Agent variables should be used when the automation doesn't override
         let schema = resolver.resolve_variable("schema").unwrap();
         assert_eq!(schema, JsonValue::String("workflow_schema".to_string()));
     }

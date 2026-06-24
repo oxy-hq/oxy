@@ -63,7 +63,7 @@ fn run_sql_file_with_variables_ok() {
 }
 
 #[test]
-fn run_example_workflow_ok() {
+fn run_example_automation_ok() {
     let mut cmd = setup_command();
     let result = cmd
         .arg("procedures/table_values.automation.yml")
@@ -76,12 +76,12 @@ fn run_example_workflow_ok() {
     assert!(output.contains("weekly"));
 }
 
-// Tests that exercised inline `type: agent` steps inside procedures
+// Tests that exercised inline `type: agent` steps inside automations
 // (`run_workflow_with_anonymization_ok`, `run_workflow_with_loop_ok`) were
 // retired alongside the `.agent.yml` fixtures and the classic
 // `InlineAgentRunner`. The fixtures that drove them
 // (`anonymize.procedure.yml`, `survey_responses.procedure.yml`, etc.)
 // were removed in the same cleanup. `loop_sequential` coverage now
-// lives in `run_example_workflow_ok` via `table_values.automation.yml`.
+// lives in `run_example_automation_ok` via `table_values.automation.yml`.
 // CLI agent-execution coverage lives under `crates/agentic/pipeline/tests/`;
 // `tests/fixtures/oxy_example/` carries no `.agentic.yml` fixture today.

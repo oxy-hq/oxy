@@ -190,7 +190,7 @@ pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> gard
             &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
             "LookerQuery",
         ),
-        TaskType::Workflow(_)
+        TaskType::SubAutomation(_)
         | TaskType::LoopSequential(_)
         | TaskType::Visualize(_)
         | TaskType::Unknown => Ok(()),
@@ -223,8 +223,8 @@ pub fn validate_task_data_reference(data_ref: &String, ctx: &ValidationContext) 
             .map(|t| t.name.clone())
             .collect();
 
-        // For dot notation references like "workflow.task", validate the first part (workflow name)
-        // The nested task part can't be validated statically since it requires loading sub-workflows
+        // For dot notation references like "workflow.task", validate the first part (automation name)
+        // The nested task part can't be validated statically since it requires loading sub-automations
         let task_to_check = if let Some(dot_pos) = data_ref.find('.') {
             &data_ref[..dot_pos]
         } else {

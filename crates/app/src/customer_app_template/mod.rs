@@ -189,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn render_template_files_filters_example_workflows() {
+    fn render_template_files_filters_example_automations() {
         let sub = Substitutions {
             app_slug: "x",
             app_display_name: "X",

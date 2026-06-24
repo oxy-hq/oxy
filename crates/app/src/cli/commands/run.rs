@@ -30,7 +30,7 @@ fn parse_variable(env: &str) -> Result<Variable, OxyError> {
 
 #[derive(Parser, Debug)]
 pub struct RunArgs {
-    /// Path to the file to execute (.sql, .procedure.yml, .workflow.yml, or .automation.yml)
+    /// Path to the file to execute (.sql, .automation.yml, or .procedure.yml)
     pub(super) file: String,
 
     /// Database connection to use for SQL execution
@@ -53,11 +53,11 @@ pub struct RunArgs {
     /// Retry failed operations automatically
     ///
     /// Enable automatic retry logic for transient failures
-    /// during workflow or query execution.
+    /// during automation or query execution.
     #[clap(long, default_value_t = false, group = "named")]
     pub(super) retry: bool,
 
-    /// Retry from a specific step in the workflow
+    /// Retry from a specific step in the automation
     #[clap(long, group = "unnamed", conflicts_with = "named")]
     pub(super) retry_from: Option<String>,
 
@@ -104,7 +104,7 @@ impl RunArgs {
 }
 
 pub enum RunResult {
-    Workflow,
+    Automation,
     Sql(String),
 }
 
@@ -124,19 +124,19 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
     let extension = file_path.extension().and_then(std::ffi::OsStr::to_str);
 
     // Extract the compound extension (the part before the final `.yml`/`.yaml`/`.sql`).
-    // For example, `my.workflow.yml` → outer_ext = "yml", stem_ext = "workflow".
+    // For example, `my.automation.yml` → outer_ext = "yml", stem_ext = "automation".
     let stem_ext = file_path
         .file_stem()
         .and_then(|stem| std::path::Path::new(stem).extension())
         .and_then(std::ffi::OsStr::to_str);
 
     match (extension, stem_ext) {
-        (Some("yml") | Some("yaml"), Some("procedure" | "workflow" | "automation")) => {
-            handle_workflow_file(&file_path, run_args.retry, run_args.retry_from).await?;
-            Ok(RunResult::Workflow)
+        (Some("yml") | Some("yaml"), Some("procedure" | "automation")) => {
+            handle_automation_file(&file_path, run_args.retry, run_args.retry_from).await?;
+            Ok(RunResult::Automation)
         }
         (Some("yml") | Some("yaml"), _) => Err(OxyError::ArgumentError(
-            "Invalid YAML file. Must be either *.procedure.yml, *.workflow.yml, or *.automation.yml".into(),
+            "Invalid YAML file. Must be either *.automation.yml or *.procedure.yml".into(),
         )),
         (Some("sql"), _) => {
             let config = ConfigBuilder::new()
@@ -163,14 +163,13 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
             Ok(RunResult::Sql(sql_result))
         }
         _ => Err(OxyError::ArgumentError(
-            "Invalid file extension. Must be .procedure.yml, .workflow.yml, .automation.yml, or .sql"
-                .into(),
+            "Invalid file extension. Must be .automation.yml, .procedure.yml, or .sql".into(),
         )),
     }
 }
 
-async fn handle_workflow_file(
-    workflow_path: &PathBuf,
+async fn handle_automation_file(
+    automation_path: &PathBuf,
     _retry: bool,
     _retry_from: Option<String>,
 ) -> Result<(), OxyError> {
@@ -180,14 +179,14 @@ async fn handle_workflow_file(
     use ::oxy::theme::StyledText;
 
     let workspace_path = resolve_local_workspace_path()?;
-    let workflow_name_str = workflow_path
+    let automation_name_str = automation_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown");
-    sentry_config::add_workflow_context(workflow_name_str, None);
+    sentry_config::add_automation_context(automation_name_str, None);
 
     // CLI runs are stateless: nil ids and a noop runs manager so the user
-    // doesn't need OXY_DATABASE_URL set just to execute a procedure.
+    // doesn't need OXY_DATABASE_URL set just to execute an automation.
     let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
         .with_workspace_path(&workspace_path)
         .await?
@@ -196,33 +195,33 @@ async fn handle_workflow_file(
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
 
-    // Read + parse the workflow YAML directly from disk. We bypass
-    // `WorkspaceContext::resolve_workflow_yaml` (which expects relative
+    // Read + parse the automation YAML directly from disk. We bypass
+    // `WorkspaceContext::resolve_automation_yaml` (which expects relative
     // paths) because the user gave us an absolute filesystem path.
-    let yaml = tokio::fs::read_to_string(workflow_path)
+    let yaml = tokio::fs::read_to_string(automation_path)
         .await
-        .map_err(|e| OxyError::RuntimeError(format!("read {}: {e}", workflow_path.display())))?;
-    let workflow: agentic_workflow::WorkflowConfig = serde_yaml::from_str(&yaml)
-        .map_err(|e| OxyError::RuntimeError(format!("parse workflow YAML: {e}")))?;
+        .map_err(|e| OxyError::RuntimeError(format!("read {}: {e}", automation_path.display())))?;
+    let automation: agentic_automation::AutomationConfig = serde_yaml::from_str(&yaml)
+        .map_err(|e| OxyError::RuntimeError(format!("parse automation YAML: {e}")))?;
 
     let project_ctx = Arc::new(OxyProjectContext::new(workspace_manager));
-    let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
+    let workspace: Arc<dyn agentic_automation::WorkspaceContext> = project_ctx;
 
-    let results = agentic_pipeline::workflow_run::run_inline_workflow_with(
+    let results = agentic_pipeline::automation_run::run_inline_automation_with(
         workspace.as_ref(),
-        workflow,
+        automation,
         None,
         None,
     )
     .await
-    .map_err(|e| OxyError::RuntimeError(format!("inline workflow: {e}")))?;
+    .map_err(|e| OxyError::RuntimeError(format!("inline automation: {e}")))?;
 
-    // Render results in workflow-task order — the HashMap key set is
+    // Render results in automation-task order — the HashMap key set is
     // the same, but the iteration order isn't deterministic.
-    let workflow_again: agentic_workflow::WorkflowConfig =
-        serde_yaml::from_str(&yaml).expect("re-parse workflow YAML (already validated above)");
-    println!("{}", format!("✓ {}", workflow_name_str).success());
-    for task in &workflow_again.tasks {
+    let automation_again: agentic_automation::AutomationConfig =
+        serde_yaml::from_str(&yaml).expect("re-parse automation YAML (already validated above)");
+    println!("{}", format!("✓ {}", automation_name_str).success());
+    for task in &automation_again.tasks {
         if let Some(value) = results.get(&task.name) {
             println!("{}", format!("  {}", task.name).primary());
             let pretty = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());

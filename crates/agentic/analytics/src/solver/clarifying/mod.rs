@@ -75,7 +75,7 @@ impl AnalyticsSolver {
         let system_prompt = self.build_system_prompt("clarifying", TRIAGE_SYSTEM_PROMPT, None);
         let thinking = self.thinking_for_state("clarifying", ThinkingConfig::Disabled);
 
-        // Triage tools: catalog/procedure search only. RCA questions get
+        // Triage tools: catalog/automation search only. RCA questions get
         // routed via QuestionType::RootCause to a dedicated handler that
         // owns the metric-tree tools and their answer path. Keeping
         // triage lean (a) keeps the compiled grammar small enough for
@@ -140,7 +140,7 @@ impl AnalyticsSolver {
                         if name == "ask_user" {
                             handle_ask_user(&params, human_input.as_ref())
                                 .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
-                        } else if name == "search_procedures" {
+                        } else if name == "search_automations" {
                             let query = params["query"].as_str().unwrap_or("").to_string();
                             let refs = match subrun_runner.as_ref() {
                                 Some(runner) => runner.search(&query).await,
@@ -156,7 +156,7 @@ impl AnalyticsSolver {
                                     })
                                 })
                                 .collect();
-                            Ok(Box::new(serde_json::json!({ "procedures": items }))
+                            Ok(Box::new(serde_json::json!({ "automations": items }))
                                 as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "search_catalog" {
                             execute_clarifying_tool(&name, params, &*catalog)
@@ -249,7 +249,7 @@ impl AnalyticsSolver {
                 ambiguity_questions: vec![],
                 semantic_query: None,
                 semantic_confidence: 0.0,
-                selected_procedure_path: None,
+                selected_automation_path: None,
                 missing_members: vec![],
             }
         };
@@ -289,7 +289,7 @@ impl AnalyticsSolver {
                 filters: vec![],
                 history: intent.history,
                 spec_hint: None,
-                selected_procedure: None,
+                selected_automation: None,
                 semantic_query: semantic_query.clone(),
                 semantic_confidence,
             }));
@@ -305,7 +305,7 @@ impl AnalyticsSolver {
                 filters: vec![],
                 history: intent.history,
                 spec_hint: None,
-                selected_procedure: None,
+                selected_automation: None,
                 semantic_query: semantic_query.clone(),
                 semantic_confidence,
             }));
@@ -324,7 +324,7 @@ impl AnalyticsSolver {
                 filters: vec![],
                 history: intent.history,
                 spec_hint: None,
-                selected_procedure: None,
+                selected_automation: None,
                 semantic_query: semantic_query.clone(),
                 semantic_confidence,
             }));
@@ -442,7 +442,7 @@ impl AnalyticsSolver {
 
         // Ground is dropped: pass the raw question and triage-derived question_type
         // directly to Specifying, which now owns catalog discovery + resolution in one loop.
-        // Propagate any procedure selected during triage.
+        // Propagate any automation selected during triage.
         //
         // When the user answered a clarifying question, the hypothesis summary
         // captures the disambiguated intent (e.g. "running performance" instead
@@ -465,8 +465,8 @@ impl AnalyticsSolver {
             filters: vec![],
             history: intent.history,
             spec_hint: None,
-            selected_procedure: hypothesis
-                .selected_procedure_path
+            selected_automation: hypothesis
+                .selected_automation_path
                 .map(std::path::PathBuf::from),
             semantic_query,
             semantic_confidence,

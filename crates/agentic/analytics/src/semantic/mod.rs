@@ -274,7 +274,7 @@ impl SemanticCatalog {
             filters: vec![],
             history: vec![],
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         };

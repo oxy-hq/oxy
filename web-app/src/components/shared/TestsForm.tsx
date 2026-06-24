@@ -114,11 +114,11 @@ export function TestsForm<T extends FieldValues>({ index, onRemove }: TestsFormP
             </div>
             <div className='space-y-2'>
               <Label htmlFor={`tests.${index}.workflow_variable_name`}>
-                Workflow Variable Name
+                Automation Variable Name
               </Label>
               <Input
                 id={`tests.${index}.workflow_variable_name`}
-                placeholder='Optional variable name to use in workflow'
+                placeholder='Optional variable name to use in automation'
                 {...register(`tests.${index}.workflow_variable_name` as Path<T>)}
               />
             </div>

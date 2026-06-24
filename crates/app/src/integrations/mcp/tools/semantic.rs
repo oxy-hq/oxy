@@ -76,8 +76,8 @@ pub async fn resolve_semantic_tool(
 
 /// Runs a semantic topic tool with the given arguments.
 ///
-/// Builds an in-memory single-step `WorkflowConfig` whose only task is a
-/// `semantic_query`, then drives it through the inline workflow runner.
+/// Builds an in-memory single-step `AutomationConfig` whose only task is a
+/// `semantic_query`, then drives it through the inline automation runner.
 /// This re-uses the same compilation + execution pipeline that the new
 /// `/agentic-workflows` HTTP surface uses, instead of duplicating the
 /// semantic plumbing into the MCP layer.
@@ -103,7 +103,7 @@ pub async fn run_semantic_topic_tool(
         };
 
     // Project the SemanticTopicToolInput onto the on-the-wire shape that
-    // `agentic_workflow::SemanticQueryConfig` expects via JSON parsing.
+    // `agentic_automation::SemanticQueryConfig` expects via JSON parsing.
     // Fields default-empty so omitting them in the MCP call works.
     let mut step_config = serde_json::Map::new();
     step_config.insert("topic".to_string(), Value::String(topic_name));
@@ -131,21 +131,21 @@ pub async fn run_semantic_topic_tool(
 
     // Build the task body imperatively — `serde_json::json!` doesn't support
     // splatting an existing map, but the `semantic_query` variant is opaque
-    // on the workflow side so all the SemanticQueryConfig fields live at
+    // on the automation side so all the SemanticQueryConfig fields live at
     // this object's root alongside `name` and `type`.
     let mut task_body = step_config;
     task_body.insert("name".into(), Value::String("semantic".into()));
     task_body.insert("type".into(), Value::String("semantic_query".into()));
-    let workflow_value = serde_json::json!({
+    let automation_value = serde_json::json!({
         "name": "mcp-semantic-topic",
         "tasks": [Value::Object(task_body)],
     });
-    let workflow_config: agentic_workflow::WorkflowConfig =
-        match serde_json::from_value(workflow_value) {
+    let automation_config: agentic_automation::AutomationConfig =
+        match serde_json::from_value(automation_value) {
             Ok(c) => c,
             Err(e) => {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "Failed to build inline workflow for semantic topic: {e}"
+                    "Failed to build inline automation for semantic topic: {e}"
                 ))]));
             }
         };
@@ -153,10 +153,10 @@ pub async fn run_semantic_topic_tool(
     let project_ctx = std::sync::Arc::new(crate::agentic_wiring::OxyProjectContext::new(
         workspace_manager.clone(),
     ));
-    let workspace: std::sync::Arc<dyn agentic_workflow::WorkspaceContext> = project_ctx;
-    let results = match agentic_pipeline::workflow_run::run_inline_workflow_with(
+    let workspace: std::sync::Arc<dyn agentic_automation::WorkspaceContext> = project_ctx;
+    let results = match agentic_pipeline::automation_run::run_inline_automation_with(
         workspace.as_ref(),
-        workflow_config,
+        automation_config,
         None,
         None,
     )

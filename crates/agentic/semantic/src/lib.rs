@@ -1,7 +1,7 @@
 //! Shared semantic-query compile + preagg execution helpers.
 //!
-//! Extracted out of `agentic-workflow` so both the analytics domain and
-//! the workflow domain can call the same preagg-aware compile path
+//! Extracted out of `agentic-automation` so both the analytics domain and
+//! the automation domain can call the same preagg-aware compile path
 //! without violating the domain-to-domain dependency ban.
 
 pub mod compile;

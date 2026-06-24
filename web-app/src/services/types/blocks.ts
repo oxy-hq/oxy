@@ -1,6 +1,6 @@
-import type { WorkflowConfig } from "@/stores/useWorkflow";
+import type { AutomationConfig } from "@/stores/useAutomation";
 
-type TaskSubWorkflowMetadata = {
+type TaskSubAutomationMetadata = {
   type: "sub_workflow";
   workflow_id: string;
   run_id: number;
@@ -16,7 +16,7 @@ type TaskLoopItemMetadata = {
   index: number;
 };
 
-type TaskMetadata = TaskSubWorkflowMetadata | TaskLoopMetadata | TaskLoopItemMetadata;
+type TaskMetadata = TaskSubAutomationMetadata | TaskLoopMetadata | TaskLoopItemMetadata;
 
 export type TaskContent = {
   type: "task";
@@ -84,7 +84,7 @@ type DataAppContent = {
   file_path: string;
 };
 
-type ArtifactWorkflowMetadata = {
+type ArtifactAutomationMetadata = {
   type: "workflow";
   workflow_id: string;
 };
@@ -99,7 +99,7 @@ type ArtifactSqlMetadata = {
   database: string;
 };
 
-type ArtifactMetadata = ArtifactAgentMetadata | ArtifactWorkflowMetadata | ArtifactSqlMetadata;
+type ArtifactMetadata = ArtifactAgentMetadata | ArtifactAutomationMetadata | ArtifactSqlMetadata;
 
 export type BlockContent =
   | TaskContent
@@ -121,11 +121,11 @@ export type BlockBase = {
 
 export type Block = BlockBase & BlockContent;
 
-export type GroupWorkflowType = {
+export type GroupAutomationType = {
   type: "workflow";
   workflow_id: string;
   run_id: string;
-  workflow_config?: WorkflowConfig;
+  workflow_config?: AutomationConfig;
 };
 
 export type GroupArtifactType = {
@@ -146,24 +146,24 @@ export type Group = {
   id: string;
   error?: string;
   is_streaming?: boolean;
-} & (GroupWorkflowType | GroupArtifactType | GroupAgenticType);
+} & (GroupAutomationType | GroupArtifactType | GroupAgenticType);
 
-type WorkflowStartedEvent = {
+type AutomationStartedEvent = {
   type: "workflow_started";
   workflow_id: string;
   run_id: string;
-  workflow_config: WorkflowConfig;
+  workflow_config: AutomationConfig;
   variables?: Record<string, unknown>;
 };
 
-type WorkflowFinishedEvent = {
+type AutomationFinishedEvent = {
   type: "workflow_finished";
   workflow_id: string;
   run_id: string;
   error?: string;
 };
 
-type WorkflowEvent = WorkflowStartedEvent | WorkflowFinishedEvent;
+type AutomationEvent = AutomationStartedEvent | AutomationFinishedEvent;
 
 type TaskStartedEvent = {
   type: "task_started";
@@ -239,7 +239,7 @@ type ArtifactStartedEvent = {
   artifact_id: string;
   artifact_name: string;
   is_verified: boolean;
-  artifact_metadata: ArtifactMetadata; // e.g., "execute_sql", "agent", "workflow"
+  artifact_metadata: ArtifactMetadata; // e.g., "execute_sql", "agent", "automation"
 };
 
 type ArtifactFinishedEvent = {
@@ -251,7 +251,7 @@ type ArtifactFinishedEvent = {
 type ArtifactEvent = ArtifactStartedEvent | ArtifactFinishedEvent;
 
 export type BlockEvent =
-  | WorkflowEvent
+  | AutomationEvent
   | TaskEvent
   | AgenticEvent
   | StepEvent

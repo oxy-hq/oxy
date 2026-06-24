@@ -10,12 +10,12 @@ import type { Artifact } from "@/types/artifact";
 import { Panel } from "../ui/panel";
 import { Button } from "../ui/shadcn/button";
 import AgentArtifactPanel from "./ArtifactsContent/agent";
+import AutomationArtifactPanel from "./ArtifactsContent/automation";
 import LookerQueryArtifactPanel from "./ArtifactsContent/looker-query";
 import OmniQueryArtifactPanel from "./ArtifactsContent/omni-query";
 import SandboxArtifactPanel from "./ArtifactsContent/sandbox-app";
 import SemanticQueryArtifactPanel from "./ArtifactsContent/semantic-query";
 import SqlArtifactPanel from "./ArtifactsContent/sql";
-import WorkflowArtifactPanel from "./ArtifactsContent/workflow";
 import Header from "./Header";
 
 type Props = {
@@ -140,7 +140,9 @@ const ArtifactPanel = ({
     }
 
     if (currentArtifact.kind === "workflow") {
-      return <WorkflowArtifactPanel onArtifactClick={onArtifactClick} artifact={currentArtifact} />;
+      return (
+        <AutomationArtifactPanel onArtifactClick={onArtifactClick} artifact={currentArtifact} />
+      );
     }
 
     if (currentArtifact.kind === "sandbox_app") {

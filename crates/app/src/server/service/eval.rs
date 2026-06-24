@@ -27,7 +27,7 @@ pub struct TokenStats {
 pub type SharedTokenStats = Arc<Mutex<TokenStats>>;
 
 /// General-purpose progress bar handler using indicatif.
-/// Used by agent, workflow, and eval event handlers.
+/// Used by agent, automation, and eval event handlers.
 pub struct PBarsHandler {
     bars: HashMap<String, ProgressBar>,
 }

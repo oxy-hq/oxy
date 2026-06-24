@@ -8,10 +8,10 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
+import useRunAutomationThread from "@/hooks/automation/useRunAutomationThread";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { useMentionHighlight } from "@/hooks/useMentionHighlight";
-import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 import { cn } from "@/libs/shadcn/utils";
 import { flattenFiles, getActiveMention, getCleanObjectName } from "@/libs/utils/mention";
 import ROUTES from "@/libs/utils/routes";
@@ -24,10 +24,10 @@ import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
 import AgentsDropdown, { type Agent } from "./AgentsDropdown";
+import AutomationsDropdown, { type AutomationOption } from "./AutomationsDropdown";
 import SelectItemWithDetail from "./SelectItemWithDetail";
 import ThinkingModeMenu from "./ThinkingModeMenu";
 import { resolveDefaultAgent, useAgentOptions } from "./useAgentOptions";
-import WorkflowsDropdown, { type WorkflowOption } from "./WorkflowsDropdown";
 
 const ChatPanel = ({
   initialMessage,
@@ -57,10 +57,10 @@ const ChatPanel = ({
   const projectId = project.id;
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
-  const { run: runWorkflow } = useRunWorkflowThread();
+  const { run: runAutomation } = useRunAutomationThread();
 
   const [agent, setAgent] = useState<Agent | null>(null);
-  const [workflow, setWorkflow] = useState<WorkflowOption | null>(null);
+  const [automation, setAutomation] = useState<AutomationOption | null>(null);
   const { mutateAsync: sendAgenticMessage } = useAskAgentic();
 
   const {
@@ -85,10 +85,10 @@ const ChatPanel = ({
         setPendingThinkingMode(data.id, thinkingMode);
         break;
       case "workflow":
-        // `data.source` carries the workflow's path-base64 (set when the
-        // thread was created above). The new agentic-workflows runner
+        // `data.source` carries the automation's path-base64 (set when the
+        // thread was created above). The new agentic-automations runner
         // decodes it back into a workflow_ref.
-        runWorkflow(data.id, data.source);
+        runAutomation(data.id, data.source);
         break;
     }
     // Clear the composer once the thread exists. On the onThreadCreated
@@ -294,10 +294,10 @@ const ChatPanel = ({
         }
         break;
       case "workflow":
-        if (!workflow) return;
+        if (!automation) return;
         createThread({
-          title: title ? title : workflow.name,
-          source: workflow.id,
+          title: title ? title : automation.name,
+          source: automation.id,
           source_type: "workflow",
           input: message
         });
@@ -314,7 +314,7 @@ const ChatPanel = ({
       case "build":
         return !message || !isBuilderAvailable || isCheckingBuilder;
       case "workflow":
-        return !workflow;
+        return !automation;
     }
   };
 
@@ -326,7 +326,7 @@ const ChatPanel = ({
       case "build":
         return "Enter anything you want to build, and Oxygen will figure out the rest.";
       case "workflow":
-        return "Enter a title for this procedure run.";
+        return "Enter a title for this automation run.";
     }
   })();
 
@@ -417,13 +417,13 @@ const ChatPanel = ({
                   className='cursor-pointer'
                   value='workflow'
                   detail={{
-                    title: "Procedure",
+                    title: "Automation",
                     description:
-                      "Automate multi-step workflows with intelligent agents that execute complex processes autonomously."
+                      "Automate multi-step processes with intelligent agents that execute complex automations autonomously."
                   }}
                 >
                   <Play className='size-4' />
-                  Procedure
+                  Automation
                 </SelectItemWithDetail>
               </SelectContent>
             </Select>
@@ -452,7 +452,9 @@ const ChatPanel = ({
                 disabled={isPending}
               />
             ))}
-          {mode === "workflow" && <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />}
+          {mode === "workflow" && (
+            <AutomationsDropdown onSelect={setAutomation} automation={automation} />
+          )}
           {isBuildMode && (
             <button
               type='button'

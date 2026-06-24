@@ -33,15 +33,15 @@ const traceKeys = {
   item: (projectId: string, traceId: string) => [...traceKeys.all, projectId, { traceId }] as const
 };
 
-const agenticWorkflowKeys = {
-  all: ["agentic-workflows"] as const,
-  files: (projectId: string) => [...agenticWorkflowKeys.all, "files", projectId] as const,
+const agenticAutomationKeys = {
+  all: ["agentic-automations"] as const,
+  files: (projectId: string) => [...agenticAutomationKeys.all, "files", projectId] as const,
   file: (projectId: string, pathB64: string) =>
-    [...agenticWorkflowKeys.all, "file", projectId, pathB64] as const,
+    [...agenticAutomationKeys.all, "file", projectId, pathB64] as const,
   run: (projectId: string, runId: string) =>
-    [...agenticWorkflowKeys.all, "run", projectId, runId] as const,
-  runsForWorkflow: (projectId: string, workflowRef: string) =>
-    [...agenticWorkflowKeys.all, "runs-for-workflow", projectId, workflowRef] as const
+    [...agenticAutomationKeys.all, "run", projectId, runId] as const,
+  runsForAutomation: (projectId: string, automationRef: string) =>
+    [...agenticAutomationKeys.all, "runs-for-automation", projectId, automationRef] as const
 };
 
 const airwayKeys = {
@@ -58,24 +58,25 @@ const scheduleKeys = {
   item: (projectId: string, id: string) => [...scheduleKeys.all, projectId, { id }] as const
 };
 
-const workflowKeys = {
-  all: ["workflow"] as const,
+const automationKeys = {
+  all: ["automation"] as const,
   run: (projectId: string, branchName: string) =>
-    [...workflowKeys.all, "run", projectId, branchName] as const,
+    [...automationKeys.all, "run", projectId, branchName] as const,
   list: (projectId: string, branchName: string) =>
-    [...workflowKeys.all, "list", projectId, branchName] as const,
+    [...automationKeys.all, "list", projectId, branchName] as const,
   get: (projectId: string, branchName: string, relative_path: string) =>
-    [...workflowKeys.all, "get", projectId, branchName, relative_path] as const,
+    [...automationKeys.all, "get", projectId, branchName, relative_path] as const,
   getLogs: (projectId: string, branchName: string, relative_path: string) =>
-    [...workflowKeys.all, "getLogs", projectId, branchName, relative_path] as const,
+    [...automationKeys.all, "getLogs", projectId, branchName, relative_path] as const,
   getRuns: (
     projectId: string,
     branchName: string,
     relative_path: string,
     pagination: PaginationState
-  ) => [...workflowKeys.all, "getRuns", projectId, branchName, relative_path, pagination] as const,
+  ) =>
+    [...automationKeys.all, "getRuns", projectId, branchName, relative_path, pagination] as const,
   getBlocks: (projectId: string, branchName: string, sourceId: string, runIndex?: number) =>
-    [...workflowKeys.all, "getBlocks", projectId, branchName, sourceId, runIndex] as const
+    [...automationKeys.all, "getBlocks", projectId, branchName, sourceId, runIndex] as const
 };
 
 const chartKeys = {
@@ -703,8 +704,8 @@ const queryKeys = {
   logs: logsKeys,
   user: userKeys,
   workspaces: workspaceKeys,
-  workflow: workflowKeys,
-  agenticWorkflow: agenticWorkflowKeys,
+  automation: automationKeys,
+  agenticAutomation: agenticAutomationKeys,
   airway: airwayKeys,
   schedule: scheduleKeys,
   chart: chartKeys,

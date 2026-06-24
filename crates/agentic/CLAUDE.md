@@ -19,11 +19,11 @@ Three-layer design — each layer has strict dependency rules:
 | **Core** | `agentic-core` | External only (serde, tokio) | Any `agentic-*` crate |
 | **Runtime** | `agentic-runtime` | `core` | analytics, builder, workflow, connector, llm, pipeline, http |
 | **Infrastructure** | `agentic-connector`, `agentic-llm` | `core` | analytics, builder, workflow, runtime, pipeline, http |
-| **Domains** | `agentic-analytics`, `agentic-builder`, `agentic-workflow` | `core`, `runtime`, `connector`, `llm` | Each other, pipeline, http |
+| **Domains** | `agentic-analytics`, `agentic-builder`, `agentic-automation` | `core`, `runtime`, `connector`, `llm` | Each other, pipeline, http |
 | **Pipeline** | `agentic-pipeline` | All agentic crates, `oxy` | `http` |
 | **HTTP** | `agentic-http` | `pipeline`, `runtime`, `oxy`, `oxy-auth` | analytics, builder, workflow, connector, llm, core, entity |
 
-`agentic-workflow` is a sibling domain alongside analytics/builder — no
+`agentic-automation` is a sibling domain alongside analytics/builder — no
 domain imports another. The cross-domain "subrun" contract
 (`SubrunRunner`, `SubrunStep`, `OxyCommentBlock`,
 `parse_oxy_comment_block`) lives in `agentic-core::subrun` so any
@@ -54,7 +54,7 @@ Four independent SeaORM migrators with separate tracking tables:
 | ---------- | --------------- | ---------- | ------ |
 | Central | `seaql_migrations` | `crates/migration/` | Platform + conversation tables |
 | Runtime | `seaql_migrations_orchestrator` | `agentic-runtime` | `agentic_runs`, `agentic_run_events`, `agentic_run_suspensions` |
-| Workflow | `seaql_migrations_workflow` | `agentic-workflow` | `agentic_workflow_state` (incl. prior-cache snapshot columns) |
+| Workflow | `seaql_migrations_workflow` | `agentic-automation` | `agentic_workflow_state` (incl. prior-cache snapshot columns) |
 | Analytics | `seaql_migrations_analytics` | `agentic-analytics` | `analytics_run_extensions` |
 
 Startup order: Central -> Runtime -> Workflow -> Analytics.
@@ -87,7 +87,7 @@ For a quick FSM-style domain that fits the analytics/builder shape:
 5. Wire into `agentic-pipeline`: add to `PipelineBuilder` + `ErasedHandle` + `build_event_registry()`
 6. **No changes needed** to `runtime`, `core`, or `http`
 
-For a heavier integration (queue-driven, multi-step, like `agentic-workflow` —
+For a heavier integration (queue-driven, multi-step, like `agentic-automation` —
 the pattern airway/airform will follow), see the full integration reference
 in [`internal-docs/agentic-runtime-integration.md`](../../internal-docs/agentic-runtime-integration.md).
 That doc covers both patterns (pipeline-style vs queue-driven), the

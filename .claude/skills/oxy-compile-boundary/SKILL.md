@@ -31,7 +31,7 @@ You owe **all five of these** before the feature ships. Skipping any one of them
 
 Large semantic view / topic bodies move to S3 when `OXY_COMPILE_BLOB_S3_BUCKET` is set. The compile worker uploads each body to `s3://<bucket>/workspaces/<workspace_id>/{semantic_views,semantic_topics}/<name>-<sha[..32]>.yml` and stores the key in `semantic_views.compiled_sql_blob_key` / `semantic_topics.compiled_sql_blob_key`. The materialiser (`crates/app/src/server/api/semantic_scan.rs`) prefers the S3 blob over the in-row JSONB. When the env var is unset, blob_key is NULL and the in-row `definition` is the canonical body — Postgres-only deployments work unchanged.
 
-If you add a new entity type whose definition routinely tops tens of KB (the way semantic views do), follow the same shape: add a nullable `compiled_sql_blob_key` column, wire the upload in `oxy-compile`'s writer, and extend `oxy_compile::blob_store::BlobKind`. Small definitions (apps, agents, procedures) stay JSONB-only — the S3 round-trip costs more than the row bloat at typical sizes.
+If you add a new entity type whose definition routinely tops tens of KB (the way semantic views do), follow the same shape: add a nullable `compiled_sql_blob_key` column, wire the upload in `oxy-compile`'s writer, and extend `oxy_compile::blob_store::BlobKind`. Small definitions (apps, agents, automations) stay JSONB-only — the S3 round-trip costs more than the row bloat at typical sizes.
 
 ## Why this matters
 

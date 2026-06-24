@@ -64,13 +64,13 @@ test.describe("Home Page Chat Box Test", () => {
   test("should be able to run a workflow from chat box", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
-    // Run workflow
+    // Run automation
     await chatPage.askQuestion("run this workflow", "duckdb", {
       mode: "Workflow",
-      workflowName: "fruit_sales_report"
+      automationName: "fruit_sales_report"
     });
 
-    // Wait for workflow completion
+    // Wait for automation completion
     await page.waitForResponse(
       (response) => {
         const url = response.url();
@@ -190,14 +190,14 @@ test.describe("Home Page Chat Box Test", () => {
       "Enter anything you want to build"
     );
 
-    // Switch to Workflow mode
+    // Switch to Automation mode
     await chatPage.switchMode("Workflow");
-    await expect(chatPage.workflowModeButton).toBeChecked();
+    await expect(chatPage.automationModeButton).toBeChecked();
     await expect(chatPage.questionInput).toHaveAttribute(
       "placeholder",
       "Enter a title for this workflow run"
     );
-    await expect(chatPage.workflowSelectorButton).toBeVisible();
+    await expect(chatPage.automationSelectorButton).toBeVisible();
 
     // Switch back to Ask
     await chatPage.switchMode("Ask");

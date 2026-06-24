@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
 /**
- * Advanced Workflow Editor Tests
+ * Advanced Automation Editor Tests
  *
  * This file contains advanced test scenarios including:
  * - Stress tests with extreme inputs
@@ -12,8 +12,8 @@ import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-
  * - Browser compatibility edge cases
  */
 
-// Helper to open workflow
-async function openWorkflow(page: Page): Promise<boolean> {
+// Helper to open automation
+async function openAutomation(page: Page): Promise<boolean> {
   await page.getByRole("tab", { name: "Files" }).click();
   await page.waitForTimeout(500);
 
@@ -25,13 +25,13 @@ async function openWorkflow(page: Page): Promise<boolean> {
     await workflowsFolder.click();
     await page.waitForTimeout(500);
 
-    const workflowFile = page
+    const automationFile = page
       .locator('a[href*="/ide/"]:visible')
-      .filter({ hasText: ".workflow.yml" })
+      .filter({ hasText: ".automation.yml" })
       .first();
 
-    if (await workflowFile.isVisible()) {
-      await workflowFile.click();
+    if (await automationFile.isVisible()) {
+      await automationFile.click();
       await page.waitForURL(/\/ide\/.+/);
       await page.waitForTimeout(1000);
       return true;
@@ -76,7 +76,7 @@ test.describe("Workflow Editor - Stress Tests", () => {
   });
 
   test("should handle extremely large YAML file", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -103,7 +103,7 @@ test.describe("Workflow Editor - Stress Tests", () => {
   });
 
   test("should handle rapid mode switching under load", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -123,7 +123,7 @@ test.describe("Workflow Editor - Stress Tests", () => {
   });
 
   test("should handle continuous typing for 5 seconds", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -145,7 +145,7 @@ test.describe("Workflow Editor - Stress Tests", () => {
   });
 
   test("should handle rapid save attempts", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -170,7 +170,7 @@ test.describe("Workflow Editor - Stress Tests", () => {
 
   test("should handle many open/close cycles", async ({ page }) => {
     for (let i = 0; i < 5; i++) {
-      const opened = await openWorkflow(page);
+      const opened = await openAutomation(page);
       if (!opened) break;
 
       // Navigate away
@@ -188,7 +188,7 @@ test.describe("Workflow Editor - Stress Tests", () => {
     }
 
     // Should still work
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     expect(opened).toBeTruthy();
   });
 });
@@ -211,7 +211,7 @@ test.describe("Workflow Editor - Race Conditions", () => {
   });
 
   test("should handle save during mode switch", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -235,7 +235,7 @@ test.describe("Workflow Editor - Race Conditions", () => {
   });
 
   test("should handle navigation during save", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -258,7 +258,7 @@ test.describe("Workflow Editor - Race Conditions", () => {
   });
 
   test("should handle concurrent form changes", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -287,7 +287,7 @@ test.describe("Workflow Editor - Race Conditions", () => {
   });
 
   test("should handle edit during auto-save", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -329,7 +329,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 
   test("should handle Ctrl+Home/End navigation", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -349,7 +349,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 
   test("should handle PageUp/PageDown", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -368,7 +368,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 
   test("should handle Ctrl+D (duplicate line)", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -387,7 +387,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 
   test("should handle Alt+Arrow (move line)", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -406,7 +406,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 
   test("should handle Ctrl+/ (comment toggle)", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -423,7 +423,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 
   test("should handle Ctrl+Shift+K (delete line)", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -441,7 +441,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 
   test("should handle Ctrl+[ and Ctrl+] (indent/outdent)", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -461,7 +461,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 
   test("should handle F1 (command palette)", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -500,7 +500,7 @@ test.describe("Workflow Editor - Form Stress Tests", () => {
   });
 
   test("should handle adding 100 tasks", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -525,7 +525,7 @@ test.describe("Workflow Editor - Form Stress Tests", () => {
   });
 
   test("should handle rapid form field changes", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -549,7 +549,7 @@ test.describe("Workflow Editor - Form Stress Tests", () => {
   });
 
   test("should handle form validation errors", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -574,7 +574,7 @@ test.describe("Workflow Editor - Form Stress Tests", () => {
   });
 
   test("should handle scrolling in long form", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -628,7 +628,7 @@ test.describe("Workflow Editor - Clipboard Operations", () => {
   });
 
   test("should handle Ctrl+C and Ctrl+V in editor", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -653,7 +653,7 @@ test.describe("Workflow Editor - Clipboard Operations", () => {
   });
 
   test("should handle Ctrl+X (cut) in editor", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -673,7 +673,7 @@ test.describe("Workflow Editor - Clipboard Operations", () => {
   });
 
   test("should handle paste with special formatting", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -719,7 +719,7 @@ test.describe("Workflow Editor - Resource Management", () => {
 
   test("should not leak memory on repeated open/close", async ({ page }) => {
     for (let i = 0; i < 10; i++) {
-      const opened = await openWorkflow(page);
+      const opened = await openAutomation(page);
       if (!opened) break;
 
       await switchMode(page, "editor");
@@ -739,7 +739,7 @@ test.describe("Workflow Editor - Resource Management", () => {
   });
 
   test("should clean up on navigation", async ({ page }) => {
-    const opened = await openWorkflow(page);
+    const opened = await openAutomation(page);
     if (!opened) {
       test.skip();
       return;
@@ -762,7 +762,7 @@ test.describe("Workflow Editor - Resource Management", () => {
     }
 
     // Navigate back
-    const opened2 = await openWorkflow(page);
+    const opened2 = await openAutomation(page);
     expect(opened2).toBeTruthy();
   });
 });

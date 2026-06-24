@@ -1,7 +1,7 @@
 import { Check, ChevronDown, CircleX, Copy } from "lucide-react";
+import { useCopyTimeout } from "@/components/automation/output/useCopyTimeout";
 import { Button } from "@/components/ui/shadcn/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
-import { useCopyTimeout } from "@/components/workflow/output/useCopyTimeout";
 import { useWorkspaceStatus } from "@/hooks/api/workspaces/useWorkspaceStatus";
 
 /**

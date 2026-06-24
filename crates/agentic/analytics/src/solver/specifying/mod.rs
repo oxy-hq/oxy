@@ -89,11 +89,11 @@ impl AnalyticsSolver {
         intent: AnalyticsIntent,
         retry_ctx: Option<&RetryContext>,
     ) -> Result<Vec<QuerySpec>, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        // Short-circuit: the LLM already selected a procedure/workflow.
+        // Short-circuit: the LLM already selected an automation.
         // Skip LLM resolution and hand the path straight to Executing.
         // (SQL files are intercepted earlier in `build_specifying_handler`'s
         // step-0 short-circuit and never reach this method.)
-        if let Some(ref file_path) = intent.selected_procedure.clone() {
+        if let Some(ref file_path) = intent.selected_automation.clone() {
             return Ok(vec![QuerySpec {
                 intent,
                 resolved_metrics: vec![],
@@ -102,7 +102,7 @@ impl AnalyticsSolver {
                 join_path: vec![],
                 expected_result_shape: ResultShape::Table { columns: vec![] },
                 assumptions: vec![],
-                solution_source: SolutionSource::Procedure {
+                solution_source: SolutionSource::Automation {
                     file_path: file_path.clone(),
                 },
                 precomputed: None,
@@ -298,11 +298,11 @@ impl AnalyticsSolver {
         intent: AnalyticsIntent,
         retry_ctx: Option<&RetryContext>,
     ) -> Result<QueryRequestEnvelope, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        // Short-circuit: procedure already selected.
+        // Short-circuit: automation already selected.
         //
         // In the live pipeline, `build_specifying_handler`'s step-0 short-
         // circuit returns before this method is called when
-        // `selected_procedure` is set, so this arm is reachable only via
+        // `selected_automation` is set, so this arm is reachable only via
         // direct unit-test calls. SQL files never reach here — they are
         // always handled by step-0 in the handler.
         //
@@ -311,7 +311,7 @@ impl AnalyticsSolver {
         // back into the LLM-driven path; producing a single empty item
         // keeps the contract of "non-empty specs" intact for callers that
         // bypass the handler.
-        if intent.selected_procedure.is_some() {
+        if intent.selected_automation.is_some() {
             return Ok(QueryRequestEnvelope {
                 specs: vec![crate::types::QueryRequestItem {
                     measures: vec![],
@@ -945,7 +945,7 @@ impl AnalyticsSolver {
             .map(|mut spec| {
                 if !matches!(
                     spec.solution_source,
-                    SolutionSource::Procedure { .. } | SolutionSource::SqlFile { .. }
+                    SolutionSource::Automation { .. } | SolutionSource::SqlFile { .. }
                 ) {
                     spec.solution_source = SolutionSource::LlmWithSemanticContext;
                 }
@@ -1005,9 +1005,9 @@ impl AnalyticsSolver {
             }));
         }
 
-        // Procedure/workflow path: delegate to Executing (coordinator handles it).
+        // Automation path: delegate to Executing (coordinator handles it).
         // SqlFile has precomputed SQL and is handled by the fast path above.
-        if matches!(spec.solution_source, SolutionSource::Procedure { .. }) {
+        if matches!(spec.solution_source, SolutionSource::Automation { .. }) {
             return TransitionResult::ok(ProblemState::Executing(crate::AnalyticsSolution {
                 payload: SolutionPayload::Sql(String::new()),
                 solution_source: spec.solution_source.clone(),
@@ -1132,7 +1132,7 @@ fn build_translation_context(
 
 fn spec_source_label(source: &SolutionSource) -> String {
     match source {
-        SolutionSource::Procedure { .. } => "Procedure".to_string(),
+        SolutionSource::Automation { .. } => "Automation".to_string(),
         SolutionSource::SqlFile { .. } => "SqlFile".to_string(),
         _ => "Llm".to_string(),
     }
@@ -1315,7 +1315,7 @@ fn parse_query_request_response(
 /// Build the `StateHandler` for the **specifying** state.
 ///
 /// Tries paths in order:
-/// 1. Procedure short-circuit
+/// 1. Automation short-circuit
 /// 2. VendorEngine (first-pass only)
 /// 3. Primary path (LLM → QueryRequest → airlayer compile) when semantic layer exists
 /// 4. Legacy path (LLM → SQL fragments) when no semantic layer
@@ -1336,12 +1336,12 @@ pub(super) fn build_specifying_handler()
                     };
                     let retry_ctx = run_ctx.retry_ctx.clone();
 
-                    // ── 0. Procedure/workflow/SQL file short-circuit ─────────────
-                    if let Some(ref file_path) = intent.selected_procedure.clone() {
+                    // ── 0. Automation/SQL file short-circuit ─────────────
+                    if let Some(ref file_path) = intent.selected_automation.clone() {
                         let default_conn = solver.default_connector.clone();
 
-                        // Guard against path traversal for ALL procedure types
-                        // (SQL, workflow, procedure yml, etc.) — not just .sql.
+                        // Guard against path traversal for ALL automation types
+                        // (SQL, automation, .procedure.yml, etc.) — not just .sql.
                         // A relative path containing `..` that escapes the workspace
                         // root is rejected here before any read or execution.
                         if let Some(ref ws) = solver.workspace_path {
@@ -1377,7 +1377,7 @@ pub(super) fn build_specifying_handler()
                         // SQL files are executed directly as verified queries.
                         if file_path.extension().is_some_and(|e| e == "sql") {
                             // Resolve workspace-relative paths (as returned by
-                            // `search_procedures`) against the workspace root.
+                            // `search_automations`) against the workspace root.
                             let abs_path = if file_path.is_absolute() {
                                 file_path.clone()
                             } else if let Some(ref ws) = solver.workspace_path {
@@ -1389,7 +1389,7 @@ pub(super) fn build_specifying_handler()
                             // Guard against path traversal: reject any resolved
                             // path that escapes the workspace root (e.g. a path
                             // containing `..` that the LLM produced). This
-                            // mirrors the analogous check in the workflow domain
+                            // mirrors the analogous check in the automation domain
                             // (`pipeline_ref::resolve_pipeline_ref`).
                             //
                             // The syntactic `..`-component check MUST come first
@@ -1487,11 +1487,11 @@ pub(super) fn build_specifying_handler()
                                 },
                             ));
                         }
-                        // Procedure/workflow: delegate to coordinator.
+                        // Automation: delegate to coordinator.
                         return TransitionResult::ok(ProblemState::Executing(
                             crate::AnalyticsSolution {
                                 payload: SolutionPayload::Sql(String::new()),
-                                solution_source: crate::SolutionSource::Procedure {
+                                solution_source: crate::SolutionSource::Automation {
                                     file_path: file_path.clone(),
                                 },
                                 connector_name: default_conn,

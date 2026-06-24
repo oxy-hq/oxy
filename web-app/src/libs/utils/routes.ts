@@ -61,10 +61,19 @@ const ROUTES = {
           THREADS: `${wsBase}/threads`,
           THREAD: (threadId: string) => `${wsBase}/threads/${threadId}`,
 
-          WORKFLOWS: `${wsBase}/workflows`,
+          // Canonical "Automations" routes (formerly Automations / Automations).
+          AUTOMATIONS: `${wsBase}/automations`,
+          AUTOMATION: (pathb64: string) => ({
+            ROOT: `${wsBase}/automations/${pathb64}`
+          }),
 
+          // Back-compat aliases — same key names kept so existing call sites
+          // compile unchanged, but they now resolve to the canonical
+          // `/automations` paths. The legacy `/automations` URL still renders
+          // (see App.tsx) for old bookmarks/deep links.
+          WORKFLOWS: `${wsBase}/automations`,
           WORKFLOW: (pathb64: string) => ({
-            ROOT: `${wsBase}/workflows/${pathb64}`
+            ROOT: `${wsBase}/automations/${pathb64}`
           }),
 
           PIPELINE: (pathb64: string) => ({

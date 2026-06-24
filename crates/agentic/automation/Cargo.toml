@@ -1,0 +1,45 @@
+[package]
+name = "agentic-automation"
+description = "Automation runner backed by oxy-workflow for the agentic framework"
+version.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+agentic-core = { workspace = true }
+agentic-runtime = { workspace = true }
+agentic-semantic = { workspace = true }
+agentic-connector = { workspace = true, features = [
+    "duckdb",
+    "postgres",
+    "clickhouse",
+    "snowflake",
+    "bigquery",
+] }
+airlayer = { workspace = true }
+omni = { workspace = true }
+oxy-looker = { workspace = true }
+oxy-shared = { workspace = true }
+chrono = { workspace = true }
+
+async-trait = { workspace = true }
+minijinja = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_jcs = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sha2 = { workspace = true }
+strsim = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }

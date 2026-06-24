@@ -24,7 +24,7 @@ your search_catalog queries — search for terms related to the matching topic's
     };
     format!(
         "{session_section}{history_section}Question: {raw_question}{topics_hint}\n\n\
-Call search_procedures first. If no procedure matches, call search_catalog to discover \
+Call search_automations first. If no automation matches, call search_catalog to discover \
 available measures and dimensions. If search_catalog confirms that ALL needed members \
 exist, call propose_semantic_query with the exact view.member paths and a confidence \
 score (>= 0.85 for full coverage, lower for partial).\n\n\

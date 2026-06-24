@@ -2,7 +2,7 @@
 //!
 //! The builder solver invokes semantic compilation through this trait so
 //! the pipeline layer can supply the concrete implementation (typically
-//! `agentic_workflow::semantic_bridge`).
+//! `agentic_automation::semantic_bridge`).
 
 use std::path::PathBuf;
 

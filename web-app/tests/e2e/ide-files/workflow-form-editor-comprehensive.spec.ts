@@ -5,23 +5,26 @@ import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-
 // HELPER FUNCTIONS
 // ============================================================================
 
-async function openWorkflowFile(page: Page, mode: "files" | "objects" = "files"): Promise<boolean> {
+async function openAutomationFile(
+  page: Page,
+  mode: "files" | "objects" = "files"
+): Promise<boolean> {
   if (mode === "objects") {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const automationsSection = page.getByText("Procedures").first();
+    const automationsSection = page.getByText("Automations").first();
     if (await automationsSection.isVisible()) {
       await automationsSection.click();
       await page.waitForTimeout(300);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
         .filter({ hasText: "workflow" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
         return true;
@@ -41,13 +44,13 @@ async function openWorkflowFile(page: Page, mode: "files" | "objects" = "files")
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
         return true;
@@ -113,7 +116,7 @@ test.describe("Workflow Editor - Form & Editor Sync", () => {
   });
 
   test("should sync changes from form to editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -142,7 +145,7 @@ test.describe("Workflow Editor - Form & Editor Sync", () => {
   });
 
   test("should sync changes from editor to form", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -173,7 +176,7 @@ tasks:
   });
 
   test("should maintain sync during rapid mode switching", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -191,7 +194,7 @@ tasks:
   });
 
   test("should handle save then mode switch", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -221,7 +224,7 @@ tasks:
   test("should persist saved changes after navigating to another file and back", async ({
     page
   }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -255,9 +258,9 @@ tasks:
       await configFile.click();
       await page.waitForTimeout(1000);
 
-      // Navigate back to workflow file
-      const workflowFileAgain = await openWorkflowFile(page);
-      if (workflowFileAgain) {
+      // Navigate back to automation file
+      const automationFileAgain = await openAutomationFile(page);
+      if (automationFileAgain) {
         await page.waitForTimeout(1000);
 
         // Verify saved changes persisted
@@ -269,7 +272,7 @@ tasks:
   });
 
   test("should handle reload after edit without save", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -310,7 +313,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
   });
 
   test("should warn when navigating away with unsaved changes in form", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -342,7 +345,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
   });
 
   test("should warn when reloading page with unsaved changes", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -362,7 +365,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
   });
 
   test("should navigate to another file after saving changes", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -395,7 +398,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
   });
 
   test("should handle switching files during edit", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -411,7 +414,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(300);
 
-    // Look for another workflow file
+    // Look for another automation file
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
       exact: true
@@ -420,13 +423,13 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(300);
 
-      const anotherWorkflow = page
+      const anotherAutomation = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .nth(1);
 
-      if (await anotherWorkflow.isVisible()) {
-        await anotherWorkflow.click();
+      if (await anotherAutomation.isVisible()) {
+        await anotherAutomation.click();
         await page.waitForTimeout(500);
       }
     }
@@ -451,7 +454,7 @@ test.describe("Workflow Editor - Character Input Validation", () => {
   });
 
   test("should handle special characters in workflow name", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -478,7 +481,7 @@ test.describe("Workflow Editor - Character Input Validation", () => {
   });
 
   test("should handle Unicode characters in description", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -499,7 +502,7 @@ test.describe("Workflow Editor - Character Input Validation", () => {
   });
 
   test("should handle very long text input", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -520,7 +523,7 @@ test.describe("Workflow Editor - Character Input Validation", () => {
   });
 
   test("should handle paste operations in editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -546,7 +549,7 @@ tasks:
   });
 
   test("should handle multiline YAML in editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -594,7 +597,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should save with Ctrl+S in editor mode", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -614,7 +617,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should handle Ctrl+Z (undo) in editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -638,7 +641,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should handle Ctrl+Shift+Z (redo) in editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -663,7 +666,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should handle Ctrl+F (find) in editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -683,7 +686,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should handle Tab key in form inputs", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -709,7 +712,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should handle Enter key in form inputs", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -729,7 +732,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should handle Escape key", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -745,7 +748,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should handle rapid keyboard input", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -765,7 +768,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 
   test("should handle Ctrl+A (select all) in editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -802,7 +805,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
   });
 
   test("should handle empty workflow file", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -825,7 +828,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
   });
 
   test("should handle invalid YAML in editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -855,7 +858,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
   });
 
   test("should handle switching modes while typing", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -879,7 +882,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
   });
 
   test("should handle window resize during edit", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -902,7 +905,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
   });
 
   test("should handle multiple rapid saves", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -927,7 +930,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
   });
 
   test("should handle browser back button during edit", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -947,7 +950,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
   });
 
   test("should handle concurrent edits in form and editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -996,7 +999,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
   });
 
   test("should validate task name format", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1028,7 +1031,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
   });
 
   test("should add and remove tasks", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1057,7 +1060,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
   });
 
   test("should handle adding many tasks", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1082,7 +1085,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
   });
 
   test("should handle task type changes", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1114,7 +1117,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
   });
 
   test("should sync variables between form and editor", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1163,7 +1166,7 @@ test.describe("Workflow Editor - Output Mode", () => {
   });
 
   test("should switch to output mode and show runs", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1185,7 +1188,7 @@ test.describe("Workflow Editor - Output Mode", () => {
   });
 
   test("should handle URL with run parameter", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1202,7 +1205,7 @@ test.describe("Workflow Editor - Output Mode", () => {
   });
 
   test("should paginate through run history", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1227,7 +1230,7 @@ test.describe("Workflow Editor - Output Mode", () => {
   });
 
   test("should switch from output to editor without losing content", async ({ page }) => {
-    const opened = await openWorkflowFile(page);
+    const opened = await openAutomationFile(page);
     if (!opened) {
       test.skip();
       return;
@@ -1241,7 +1244,7 @@ test.describe("Workflow Editor - Output Mode", () => {
     await switchToMode(page, "editor");
     await page.waitForTimeout(500);
 
-    // Editor should show workflow content
+    // Editor should show automation content
     const editor = page.locator(".monaco-editor");
     await expect(editor).toBeVisible();
 

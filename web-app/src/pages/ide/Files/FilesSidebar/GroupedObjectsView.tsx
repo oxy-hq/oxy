@@ -1,4 +1,10 @@
-import { AppWindow, ChevronDown, ChevronRight, Database, Workflow } from "lucide-react";
+import {
+  AppWindow,
+  Workflow as Automation,
+  ChevronDown,
+  ChevronRight,
+  Database
+} from "lucide-react";
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/shadcn/badge";
@@ -103,7 +109,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
   const navigate = useNavigate();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const [openGroups, setOpenGroups] = React.useState({
-    procedures: true,
+    automations: true,
     pipelines: true,
     agents: true,
     apps: true,
@@ -143,13 +149,13 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
   return (
     <SidebarMenu className='pb-20'>
       <CollapsibleGroup
-        label='Procedures'
-        files={grouped.procedures}
-        isOpen={openGroups.procedures}
+        label='Automations'
+        files={grouped.automations}
+        isOpen={openGroups.automations}
         activePath={activePath}
-        onToggle={() => toggleGroup("procedures")}
+        onToggle={() => toggleGroup("automations")}
         onFileClick={handleFileClick}
-        icon={Workflow}
+        icon={Automation}
       />
 
       <CollapsibleGroup

@@ -45,10 +45,10 @@ pub struct ExecutionContext {
     pub workspace: WorkspaceManager,
     pub checkpoint: Option<CheckpointContext>,
     /// Filters to apply to all SQL queries in this execution context
-    /// Set by API request, transparent to workflows/agents
+    /// Set by API request, transparent to automations/agents
     pub filters: Option<SessionFilters>,
     /// Connection overrides to apply to database connections in this execution context
-    /// Set by API request, transparent to workflows/agents
+    /// Set by API request, transparent to automations/agents
     pub connections: Option<ConnectionOverrides>,
     /// Sandbox information from thread (e.g., v0 chat_id and preview_url)
     /// Passed from thread to tools for continuity
@@ -62,7 +62,7 @@ pub struct ExecutionContext {
     /// background runs and CLI/system paths that have no per-user identity.
     pub effective_role: Option<entity::workspace_members::WorkspaceRole>,
     /// Metric collection context for tracking usage data
-    /// Flows through nested agent/workflow executions via tokio::spawn
+    /// Flows through nested agent/automation executions via tokio::spawn
     pub metric_context: Option<SharedMetricCtx>,
     /// Data app file path (for tools that need to read/write data apps) - set by tools/create_data_app and tools/edit_data_app
     pub data_app_file_path: Option<String>,
@@ -298,7 +298,7 @@ impl ExecutionContext {
     /// Create a child metric context for nested execution
     ///
     /// This creates a new MetricContext linked to the parent's trace_id.
-    /// Use this when spawning nested agents/workflows.
+    /// Use this when spawning nested agents/automations.
     pub fn with_child_metric_context(&self, source_type: SourceType, source_ref: &str) -> Self {
         let child_ctx = if let Some(parent_ctx) = &self.metric_context {
             if let Ok(guard) = parent_ctx.read() {

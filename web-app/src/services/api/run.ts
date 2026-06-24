@@ -1,15 +1,11 @@
-import type { PaginationState } from "@tanstack/react-table";
 import { encodeBase64 } from "@/libs/encoding";
 import { apiBaseURL } from "../env";
 import type {
   BlockEvent,
   CreateAgenticRunPayload,
   CreateAgenticRunResponse,
-  CreateRunPayload,
-  CreateRunResponse,
   GetBlocksRequest,
   GetBlocksResponse,
-  ListRunsResponse,
   StreamEventsPayload
 } from "../types";
 import { apiClient } from "./axios";
@@ -38,24 +34,6 @@ export class RunService {
       onClose,
       onError
     });
-  }
-
-  static async listRuns(
-    projectId: string,
-    branchName: string,
-    workflowId: string,
-    pagination: PaginationState
-  ): Promise<ListRunsResponse> {
-    const searchParams = new URLSearchParams();
-    searchParams.append("branch", branchName);
-    if (pagination) {
-      searchParams.append("page", `${pagination.pageIndex + 1}`);
-      searchParams.append("size", `${pagination.pageSize}`);
-    }
-    const response = await apiClient.get(
-      `/${projectId}/workflows/${encodeBase64(workflowId)}/runs?${searchParams.toString()}`
-    );
-    return response.data;
   }
 
   static async getBlocks(
@@ -94,20 +72,6 @@ export class RunService {
     return [data, ...flatten];
   }
 
-  static async createRun(
-    projectId: string,
-    branchName: string,
-    payload: CreateRunPayload
-  ): Promise<CreateRunResponse> {
-    const workflowId = encodeBase64(payload.workflowId);
-    const response = await apiClient.post(
-      `/${projectId}/workflows/${workflowId}/runs`,
-      payload.retryType,
-      { params: { branch: branchName } }
-    );
-    return response.data;
-  }
-
   static async cancelRun(
     projectId: string,
     branchName: string,
@@ -121,17 +85,6 @@ export class RunService {
       }
     );
     return response.data;
-  }
-
-  static async deleteRun(
-    projectId: string,
-    branchName: string,
-    workflowId: string,
-    runIndex: number
-  ): Promise<void> {
-    await apiClient.delete(`/${projectId}/workflows/${encodeBase64(workflowId)}/runs/${runIndex}`, {
-      params: { branch: branchName }
-    });
   }
 
   static async createAgenticRun(

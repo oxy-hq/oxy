@@ -33,7 +33,7 @@ impl std::error::Error for EvalError {}
 ///
 /// Implementations may use LLM pairwise comparison, embedding similarity,
 /// or any other strategy. The trait is intentionally minimal so it can be
-/// used in workflow orchestrators, eval harnesses, and agent tests alike.
+/// used in automation orchestrators, eval harnesses, and agent tests alike.
 #[async_trait]
 pub trait ConsistencyEvaluator: Send + Sync {
     /// Evaluate `answers` against `question` and return the winner.

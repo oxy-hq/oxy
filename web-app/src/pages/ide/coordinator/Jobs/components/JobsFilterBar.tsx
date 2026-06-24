@@ -63,7 +63,7 @@ export const JobsFilterBar: React.FC<{
         width='w-32'
         options={[
           { value: "all", label: "All types" },
-          { value: "dag", label: "DAG workflow" },
+          { value: "dag", label: "DAG automation" },
           { value: "elt", label: "ELT pipeline" }
         ]}
       />

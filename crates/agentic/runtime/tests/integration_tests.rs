@@ -94,6 +94,11 @@ async fn test_db() -> Option<DatabaseConnection> {
         .await
         .expect("analytics migrations failed");
 
+    // Every test shares this one Postgres and the task queue / outcomes are
+    // claimed globally, so clear them up front — each test then starts from an
+    // empty queue regardless of what a prior (serial-db) test left behind.
+    cleanup_queued_entries(&db).await;
+
     Some(db)
 }
 
@@ -631,7 +636,7 @@ mod coordinator_tests {
         }
     }
 
-    /// Executor that suspends on Agent, completes on Resume, runs workflows.
+    /// Executor that suspends on Agent, completes on Resume, runs automations.
     struct SuspendThenResumeExecutor;
 
     #[async_trait]
@@ -663,16 +668,16 @@ mod coordinator_tests {
                         answer: "resumed answer".into(),
                         metadata: None,
                     },
-                    TaskSpec::Workflow { .. } => TaskOutcome::Done {
+                    TaskSpec::Automation { .. } => TaskOutcome::Done {
                         answer: "workflow done".into(),
                         metadata: None,
                     },
-                    TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                    TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                         answer: "step done".into(),
                         metadata: None,
                     },
                     _ => {
-                        unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                        unreachable!("AutomationDecision/Custom not used in runtime tests")
                     }
                     TaskSpec::Airway { .. } => {
                         unreachable!("Airway not used in runtime tests")
@@ -1044,7 +1049,7 @@ mod coordinator_tests {
                                 .send((
                                     "awaiting_input".into(),
                                     json!({
-                                        "questions": [{"prompt": "Execute procedure: test.workflow.yml", "suggestions": []}],
+                                        "questions": [{"prompt": "Execute procedure: test.automation.yml", "suggestions": []}],
                                         "from_state": "executing",
                                         "trace_id": "t1",
                                     }),
@@ -1055,8 +1060,8 @@ mod coordinator_tests {
                                 .send(TaskOutcome::Suspended {
                                     reason: SuspendReason::Delegation {
                                         target:
-                                            agentic_core::delegation::DelegationTarget::Workflow {
-                                                workflow_ref: "test.workflow.yml".into(),
+                                            agentic_core::delegation::DelegationTarget::Automation {
+                                                workflow_ref: "test.automation.yml".into(),
                                             },
                                         request: "run workflow".into(),
                                         context: json!({}),
@@ -1079,7 +1084,7 @@ mod coordinator_tests {
                                 })
                                 .await;
                         }
-                        TaskSpec::Workflow { .. } => {
+                        TaskSpec::Automation { .. } => {
                             drop(event_tx);
                             let _ = outcome_tx
                                 .send(TaskOutcome::Done {
@@ -1088,7 +1093,7 @@ mod coordinator_tests {
                                 })
                                 .await;
                         }
-                        TaskSpec::WorkflowStep { .. } => {
+                        TaskSpec::AutomationStep { .. } => {
                             drop(event_tx);
                             let _ = outcome_tx
                                 .send(TaskOutcome::Done {
@@ -1099,7 +1104,7 @@ mod coordinator_tests {
                         }
                         _ => {
                             drop(event_tx);
-                            unreachable!("WorkflowDecision/Custom not used in runtime tests");
+                            unreachable!("AutomationDecision/Custom not used in runtime tests");
                         }
                         TaskSpec::Airway { .. } => {
                             drop(event_tx);
@@ -1144,7 +1149,7 @@ mod coordinator_tests {
         let coord_handle = tokio::spawn(async move { coordinator.run().await });
 
         // Coordinator runs delegation: Agent suspends (with awaiting_input)
-        // → child Workflow spawned → child completes → parent resumed
+        // → child Automation spawned → child completes → parent resumed
         // (with input_resolved) via TaskSpec::Resume → Done.
         tokio::time::timeout(Duration::from_secs(10), coord_handle)
             .await
@@ -2052,8 +2057,8 @@ mod task_tree_tests {
                     let outcome = match spec {
                         TaskSpec::Agent { .. } => TaskOutcome::Suspended {
                             reason: SuspendReason::Delegation {
-                                target: agentic_core::delegation::DelegationTarget::Workflow {
-                                    workflow_ref: "test.workflow.yml".into(),
+                                target: agentic_core::delegation::DelegationTarget::Automation {
+                                    workflow_ref: "test.automation.yml".into(),
                                 },
                                 request: "run workflow".into(),
                                 context: json!({}),
@@ -2066,16 +2071,16 @@ mod task_tree_tests {
                             answer: "resumed after delegation".into(),
                             metadata: None,
                         },
-                        TaskSpec::Workflow { .. } => TaskOutcome::Done {
+                        TaskSpec::Automation { .. } => TaskOutcome::Done {
                             answer: "workflow done".into(),
                             metadata: None,
                         },
-                        TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                        TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                             answer: "step done".into(),
                             metadata: None,
                         },
                         _ => {
-                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                            unreachable!("AutomationDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -2177,7 +2182,7 @@ mod fanout_tests {
     }
 
     /// Executor that suspends with ParallelDelegation on Agent spec,
-    /// completes immediately on Workflow and Resume specs.
+    /// completes immediately on Automation and Resume specs.
     struct ParallelDelegationExecutor {
         child_count: usize,
     }
@@ -2197,7 +2202,7 @@ mod fanout_tests {
                     TaskSpec::Agent { .. } => {
                         let targets: Vec<DelegationItem> = (0..child_count)
                             .map(|i| DelegationItem {
-                                target: DelegationTarget::Workflow {
+                                target: DelegationTarget::Automation {
                                     workflow_ref: format!("workflow_{i}.yml"),
                                 },
                                 request: format!("run workflow {i}"),
@@ -2217,16 +2222,16 @@ mod fanout_tests {
                         answer: "resumed after parallel delegation".into(),
                         metadata: None,
                     },
-                    TaskSpec::Workflow { workflow_ref, .. } => TaskOutcome::Done {
+                    TaskSpec::Automation { workflow_ref, .. } => TaskOutcome::Done {
                         answer: format!("result from {workflow_ref}"),
                         metadata: None,
                     },
-                    TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                    TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                         answer: "step done".into(),
                         metadata: None,
                     },
                     _ => {
-                        unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                        unreachable!("AutomationDecision/Custom not used in runtime tests")
                     }
                     TaskSpec::Airway { .. } => {
                         unreachable!("Airway not used in runtime tests")
@@ -2244,7 +2249,7 @@ mod fanout_tests {
         }
     }
 
-    /// Executor that fails on certain workflow refs (for fail-fast testing).
+    /// Executor that fails on certain automation refs (for fail-fast testing).
     struct FailFastDelegationExecutor;
 
     #[async_trait]
@@ -2262,14 +2267,14 @@ mod fanout_tests {
                     TaskSpec::Agent { .. } => {
                         let targets = vec![
                             DelegationItem {
-                                target: DelegationTarget::Workflow {
+                                target: DelegationTarget::Automation {
                                     workflow_ref: "good.yml".into(),
                                 },
                                 request: "good".into(),
                                 context: json!({}),
                             },
                             DelegationItem {
-                                target: DelegationTarget::Workflow {
+                                target: DelegationTarget::Automation {
                                     workflow_ref: "bad.yml".into(),
                                 },
                                 request: "bad".into(),
@@ -2289,9 +2294,9 @@ mod fanout_tests {
                         answer: "resumed after fail-fast".into(),
                         metadata: None,
                     },
-                    TaskSpec::Workflow { workflow_ref, .. } => {
+                    TaskSpec::Automation { workflow_ref, .. } => {
                         if workflow_ref.contains("bad") {
-                            // Small delay so the good workflow might complete first.
+                            // Small delay so the good automation might complete first.
                             tokio::time::sleep(Duration::from_millis(50)).await;
                             TaskOutcome::Failed("workflow failed".into())
                         } else {
@@ -2307,12 +2312,12 @@ mod fanout_tests {
                             }
                         }
                     }
-                    TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                    TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                         answer: "step done".into(),
                         metadata: None,
                     },
                     _ => {
-                        unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                        unreachable!("AutomationDecision/Custom not used in runtime tests")
                     }
                     TaskSpec::Airway { .. } => {
                         unreachable!("Airway not used in runtime tests")
@@ -2487,7 +2492,7 @@ mod fanout_tests {
         let tree = crud::load_task_tree(&db, &run_id).await.unwrap();
         assert!(tree.len() >= 3, "should have root + 2 children");
 
-        // The bad workflow child should be failed.
+        // The bad automation child should be failed.
         let children: Vec<_> = tree.iter().filter(|r| r.id != run_id).collect();
         let failed_children: Vec<_> = children
             .iter()
@@ -2595,7 +2600,7 @@ mod retry_tests {
         }
     }
 
-    /// Executor that delegates with a retry policy. The workflow fails
+    /// Executor that delegates with a retry policy. The automation fails
     /// `fail_count` times then succeeds.
     struct RetryExecutor {
         fail_count: u32,
@@ -2617,7 +2622,7 @@ mod retry_tests {
                 let outcome = match spec {
                     TaskSpec::Agent { .. } => TaskOutcome::Suspended {
                         reason: SuspendReason::Delegation {
-                            target: DelegationTarget::Workflow {
+                            target: DelegationTarget::Automation {
                                 workflow_ref: "flaky.yml".into(),
                             },
                             request: "run flaky workflow".into(),
@@ -2638,7 +2643,7 @@ mod retry_tests {
                         answer: "resumed after retry".into(),
                         metadata: None,
                     },
-                    TaskSpec::Workflow { .. } => {
+                    TaskSpec::Automation { .. } => {
                         let attempt = counter.fetch_add(1, Ordering::SeqCst);
                         if attempt < fail_count {
                             TaskOutcome::Failed(format!("attempt {attempt} failed"))
@@ -2649,12 +2654,12 @@ mod retry_tests {
                             }
                         }
                     }
-                    TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                    TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                         answer: "step done".into(),
                         metadata: None,
                     },
                     _ => {
-                        unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                        unreachable!("AutomationDecision/Custom not used in runtime tests")
                     }
                     TaskSpec::Airway { .. } => {
                         unreachable!("Airway not used in runtime tests")
@@ -2736,7 +2741,7 @@ mod retry_tests {
             "root should complete after retry"
         );
 
-        // The workflow was called twice (1 fail + 1 success).
+        // The automation was called twice (1 fail + 1 success).
         assert_eq!(counter.load(Ordering::SeqCst), 2);
 
         // Verify delegation_retry event was emitted.
@@ -2770,7 +2775,7 @@ mod retry_tests {
         .await
         .unwrap();
 
-        /// Executor that always fails on the primary workflow but succeeds on fallback.
+        /// Executor that always fails on the primary automation but succeeds on fallback.
         struct FallbackExecutor;
 
         #[async_trait]
@@ -2786,7 +2791,7 @@ mod retry_tests {
                     let outcome = match spec {
                         TaskSpec::Agent { .. } => TaskOutcome::Suspended {
                             reason: SuspendReason::Delegation {
-                                target: DelegationTarget::Workflow {
+                                target: DelegationTarget::Automation {
                                     workflow_ref: "primary.yml".into(),
                                 },
                                 request: "run primary".into(),
@@ -2797,7 +2802,7 @@ mod retry_tests {
                                         backoff: BackoffStrategy::Fixed { delay_ms: 10 },
                                         retry_on: vec![],
                                     }),
-                                    fallback_targets: vec![DelegationTarget::Workflow {
+                                    fallback_targets: vec![DelegationTarget::Automation {
                                         workflow_ref: "fallback.yml".into(),
                                     }],
                                 }),
@@ -2809,7 +2814,7 @@ mod retry_tests {
                             answer: "resumed after fallback".into(),
                             metadata: None,
                         },
-                        TaskSpec::Workflow { workflow_ref, .. } => {
+                        TaskSpec::Automation { workflow_ref, .. } => {
                             if workflow_ref.contains("primary") {
                                 TaskOutcome::Failed("primary always fails".into())
                             } else {
@@ -2819,12 +2824,12 @@ mod retry_tests {
                                 }
                             }
                         }
-                        TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                        TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                             answer: "step done".into(),
                             metadata: None,
                         },
                         _ => {
-                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                            unreachable!("AutomationDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -2936,7 +2941,7 @@ mod retry_tests {
                     let outcome = match spec {
                         TaskSpec::Agent { .. } => TaskOutcome::Suspended {
                             reason: SuspendReason::Delegation {
-                                target: DelegationTarget::Workflow {
+                                target: DelegationTarget::Automation {
                                     workflow_ref: "pattern_test.yml".into(),
                                 },
                                 request: "test".into(),
@@ -2964,7 +2969,7 @@ mod retry_tests {
                             answer: "done".into(),
                             metadata: None,
                         },
-                        TaskSpec::Workflow { .. } => {
+                        TaskSpec::Automation { .. } => {
                             let attempt = counter.fetch_add(1, Ordering::SeqCst);
                             if attempt == 0 {
                                 // First failure: "transient" — should retry.
@@ -2974,12 +2979,12 @@ mod retry_tests {
                                 TaskOutcome::Failed("permanent error".into())
                             }
                         }
-                        TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                        TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                             answer: "step done".into(),
                             metadata: None,
                         },
                         _ => {
-                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                            unreachable!("AutomationDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -3665,8 +3670,8 @@ mod crash_recovery_tests {
                     let outcome = match spec {
                         TaskSpec::Agent { .. } => TaskOutcome::Suspended {
                             reason: SuspendReason::Delegation {
-                                target: agentic_core::delegation::DelegationTarget::Workflow {
-                                    workflow_ref: "test.workflow.yml".into(),
+                                target: agentic_core::delegation::DelegationTarget::Automation {
+                                    workflow_ref: "test.automation.yml".into(),
                                 },
                                 request: "run workflow".into(),
                                 context: json!({}),
@@ -3679,16 +3684,16 @@ mod crash_recovery_tests {
                             answer: "resumed".into(),
                             metadata: None,
                         },
-                        TaskSpec::Workflow { .. } => TaskOutcome::Done {
+                        TaskSpec::Automation { .. } => TaskOutcome::Done {
                             answer: "workflow done".into(),
                             metadata: None,
                         },
-                        TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                        TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                             answer: "step done".into(),
                             metadata: None,
                         },
                         _ => {
-                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                            unreachable!("AutomationDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -3805,8 +3810,8 @@ mod crash_recovery_tests {
                     let outcome = match spec {
                         TaskSpec::Agent { .. } => TaskOutcome::Suspended {
                             reason: SuspendReason::Delegation {
-                                target: agentic_core::delegation::DelegationTarget::Workflow {
-                                    workflow_ref: "test.workflow.yml".into(),
+                                target: agentic_core::delegation::DelegationTarget::Automation {
+                                    workflow_ref: "test.automation.yml".into(),
                                 },
                                 request: "run workflow".into(),
                                 context: json!({}),
@@ -3819,16 +3824,16 @@ mod crash_recovery_tests {
                             answer: "resumed".into(),
                             metadata: None,
                         },
-                        TaskSpec::Workflow { .. } => TaskOutcome::Done {
+                        TaskSpec::Automation { .. } => TaskOutcome::Done {
                             answer: "workflow done".into(),
                             metadata: None,
                         },
-                        TaskSpec::WorkflowStep { .. } => TaskOutcome::Done {
+                        TaskSpec::AutomationStep { .. } => TaskOutcome::Done {
                             answer: "step done".into(),
                             metadata: None,
                         },
                         _ => {
-                            unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                            unreachable!("AutomationDecision/Custom not used in runtime tests")
                         }
                         TaskSpec::Airway { .. } => {
                             unreachable!("Airway not used in runtime tests")
@@ -3938,11 +3943,11 @@ mod answer_channel_tests {
         }
     }
 
-    /// A long-lived executor that simulates a workflow orchestrator:
+    /// A long-lived executor that simulates an automation orchestrator:
     /// - On Agent spec: suspends for Delegation, then waits for answer via channel
-    /// - On Workflow spec: completes immediately (child task)
+    /// - On Automation spec: completes immediately (child task)
     /// - On Resume: should NOT be called for this test
-    /// - On WorkflowStep: completes immediately
+    /// - On AutomationStep: completes immediately
     struct LongLivedOrchestrator;
 
     #[async_trait]
@@ -3968,8 +3973,8 @@ mod answer_channel_tests {
                         let _ = outcome_tx
                             .send(TaskOutcome::Suspended {
                                 reason: SuspendReason::Delegation {
-                                    target: DelegationTarget::Workflow {
-                                        workflow_ref: "test.workflow.yml".into(),
+                                    target: DelegationTarget::Automation {
+                                        workflow_ref: "test.automation.yml".into(),
                                     },
                                     request: "run workflow".into(),
                                     context: json!({}),
@@ -4012,7 +4017,7 @@ mod answer_channel_tests {
                         answers: Some(answer_tx),
                     })
                 }
-                TaskSpec::Workflow { .. } => {
+                TaskSpec::Automation { .. } => {
                     // Child task: complete immediately.
                     tokio::spawn(async move {
                         drop(event_tx);
@@ -4057,7 +4062,7 @@ mod answer_channel_tests {
                         answers: None,
                     })
                 }
-                TaskSpec::WorkflowStep { .. } => {
+                TaskSpec::AutomationStep { .. } => {
                     tokio::spawn(async move {
                         drop(event_tx);
                         let _ = outcome_tx
@@ -4076,7 +4081,7 @@ mod answer_channel_tests {
                     })
                 }
                 _ => {
-                    unreachable!("WorkflowDecision/Custom not used in runtime tests")
+                    unreachable!("AutomationDecision/Custom not used in runtime tests")
                 }
                 TaskSpec::Airway { .. } => {
                     unreachable!("Airway not used in runtime tests")
@@ -4089,8 +4094,8 @@ mod answer_channel_tests {
     /// `TaskSpec::Resume` (the non-workflow_decision path).
     ///
     /// The old answer-channel mechanism (`orchestrator_txs`) has been removed.
-    /// Temporal-style workflow tasks use `from_state = "workflow_decision"` and
-    /// get resumed via `TaskSpec::WorkflowDecision`. Everything else uses
+    /// Temporal-style automation tasks use `from_state = "workflow_decision"` and
+    /// get resumed via `TaskSpec::AutomationDecision`. Everything else uses
     /// `TaskSpec::Resume`.
     #[tokio::test]
     async fn test_resume_via_task_spec_resume() {
@@ -4140,8 +4145,8 @@ mod answer_channel_tests {
         let coord_handle = tokio::spawn(async move { coordinator.run().await });
 
         // Coordinator should:
-        // 1. Root task (Agent) suspends for Delegation(Workflow) with from_state="workflow"
-        // 2. Coordinator spawns child Workflow task
+        // 1. Root task (Agent) suspends for Delegation(Automation) with from_state="workflow"
+        // 2. Coordinator spawns child Automation task
         // 3. Child completes with "workflow child done"
         // 4. resume_parent sees from_state="workflow" → assigns TaskSpec::Resume
         // 5. LongLivedOrchestrator::execute(Resume) completes with "orchestrator got: ..."
@@ -4299,7 +4304,7 @@ mod recovery_attempt_tests {
     use agentic_runtime::transport::LocalTransport;
     use std::sync::Arc;
 
-    /// Simulates a workflow run that crashes mid-execution, recovers, then
+    /// Simulates an automation run that crashes mid-execution, recovers, then
     /// verifies that the coordinator's child_counter is high enough to avoid
     /// PK collisions with children created in the previous attempt.
     #[tokio::test]
@@ -4525,9 +4530,9 @@ mod recovery_attempt_tests {
         };
 
         let root_id = test_run_id();
-        let workflow_child = format!("{root_id}.1");
+        let automation_child = format!("{root_id}.1");
 
-        // 1. Set up: root → workflow child, root waiting on children.
+        // 1. Set up: root → automation child, root waiting on children.
         crud::insert_run(
             &db,
             &root_id,
@@ -4541,7 +4546,7 @@ mod recovery_attempt_tests {
         .unwrap();
         crud::insert_run_with_parent(
             &db,
-            &workflow_child,
+            &automation_child,
             &root_id,
             "workflow Q",
             "workflow",
@@ -4556,7 +4561,7 @@ mod recovery_attempt_tests {
             &root_id,
             "delegating",
             Some(json!({
-                "child_task_ids": [&workflow_child],
+                "child_task_ids": [&automation_child],
                 "completed": {},
                 "failure_policy": "fail_fast",
             })),
@@ -4564,13 +4569,13 @@ mod recovery_attempt_tests {
         .await
         .unwrap();
 
-        // Workflow child delegates step tasks (children of the child).
-        let step_1 = format!("{workflow_child}.2");
-        let step_2 = format!("{workflow_child}.3");
+        // Automation child delegates step tasks (children of the child).
+        let step_1 = format!("{automation_child}.2");
+        let step_2 = format!("{automation_child}.3");
         crud::insert_run_with_parent(
             &db,
             &step_1,
-            &workflow_child,
+            &automation_child,
             "step 1",
             "workflow_step",
             None,
@@ -4582,7 +4587,7 @@ mod recovery_attempt_tests {
         crud::insert_run_with_parent(
             &db,
             &step_2,
-            &workflow_child,
+            &automation_child,
             "step 2",
             "workflow_step",
             None,
@@ -4608,12 +4613,12 @@ mod recovery_attempt_tests {
 
         // 2. Recovery attempt 1: creates new step children.
         crud::increment_attempt(&db, &root_id).await.unwrap();
-        let step_1_retry = format!("{workflow_child}.a1_4");
-        let step_2_retry = format!("{workflow_child}.a1_5");
+        let step_1_retry = format!("{automation_child}.a1_4");
+        let step_2_retry = format!("{automation_child}.a1_5");
         crud::insert_run_with_parent(
             &db,
             &step_1_retry,
-            &workflow_child,
+            &automation_child,
             "step 1 retry",
             "workflow_step",
             None,
@@ -4625,7 +4630,7 @@ mod recovery_attempt_tests {
         crud::insert_run_with_parent(
             &db,
             &step_2_retry,
-            &workflow_child,
+            &automation_child,
             "step 2 retry",
             "workflow_step",
             None,
@@ -4669,11 +4674,11 @@ mod recovery_attempt_tests {
         );
 
         // Creating a new child at counter max+1 should succeed.
-        let new_child = format!("{workflow_child}.a2_{}", max_counter + 1);
+        let new_child = format!("{automation_child}.a2_{}", max_counter + 1);
         crud::insert_run_with_parent(
             &db,
             &new_child,
-            &workflow_child,
+            &automation_child,
             "step 1 re-retry",
             "workflow_step",
             None,
@@ -4761,23 +4766,36 @@ mod recovery_attempt_tests {
 
 // ── Task Queue CRUD tests ──────────────────────────────────────────────────
 
-/// Helper: clean up stale queue entries from prior test runs (older than 30s)
-/// to avoid cross-test interference without deleting entries from active tests.
+/// Reset the global task-queue tables so each queue test starts from a clean
+/// slate. The whole `agentic-runtime` integration binary shares ONE Postgres
+/// (a reused testcontainer locally / a single CI service) and both `claim_task`
+/// and outcome `recv` are GLOBAL — so any row a prior test left behind (e.g. a
+/// requeued/reaped task left `queued`) would be poached by the next test's
+/// "claim my task" / "queue is empty" assertions. Called from `test_db()` so
+/// every test gets the clean slate. The `serial-db` nextest group runs these DB
+/// tests one at a time, so this unconditional delete can't race a concurrent
+/// test. (The previous `created_at < now() - 30s` guard was insufficient:
+/// serial tests run far less than 30s apart, so recent rows survived and
+/// polluted the next test.)
 async fn cleanup_queued_entries(db: &DatabaseConnection) {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
-    db.execute(Statement::from_string(
-        DatabaseBackend::Postgres,
-        "DELETE FROM agentic_task_queue WHERE created_at < now() - interval '30 seconds'"
-            .to_string(),
-    ))
-    .await
-    .ok();
+    for sql in [
+        "DELETE FROM agentic_task_queue",
+        "DELETE FROM agentic_task_outcomes",
+    ] {
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            sql.to_string(),
+        ))
+        .await
+        .expect("cleanup_queued_entries failed");
+    }
 }
 
-/// Helper: create a parent run and enqueue a task for it.
-/// Cleans up stale queued entries first to avoid cross-test interference.
+/// Helper: create a parent run and enqueue a task for it. The clean slate is
+/// established once per test in `test_db()`, so this just enqueues — letting a
+/// single test enqueue multiple coexisting tasks without wiping the earlier ones.
 async fn enqueue_test_task(db: &DatabaseConnection) -> (String, String) {
-    cleanup_queued_entries(db).await;
     let run_id = test_run_id();
     let task_id = run_id.clone(); // root tasks share run_id as task_id
 
@@ -5442,7 +5460,7 @@ async fn test_rung2_global_never_poaches_scoped() {
     .await
     .expect("insert run_global");
 
-    let spec = |rid: &str| TaskSpec::WorkflowDecision {
+    let spec = |rid: &str| TaskSpec::AutomationDecision {
         run_id: rid.to_string(),
         pending_child_answer: None,
     };
@@ -5553,7 +5571,7 @@ async fn test_rung4_kill_and_recover() {
         &run_id,
         &run_id,
         None,
-        &TaskSpec::WorkflowDecision {
+        &TaskSpec::AutomationDecision {
             run_id: run_id.clone(),
             pending_child_answer: None,
         },
@@ -5646,7 +5664,7 @@ async fn test_rung4_kill_and_recover() {
         .expect("scoped reconstruction reclaims the requeued task");
     assert_eq!(reclaimed.task_id, run_id);
     let spec: TaskSpec = serde_json::from_value(reclaimed.spec).unwrap();
-    assert!(matches!(spec, TaskSpec::WorkflowDecision { .. }));
+    assert!(matches!(spec, TaskSpec::AutomationDecision { .. }));
 }
 
 /// §12 FU4a: the durable cross-process cancel flag — `request_cancel` is

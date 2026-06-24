@@ -1,7 +1,7 @@
 /**
  * IDE editor for `.airway.yml` pipeline files.
  *
- * Mirrors `WorkflowEditor`'s split layout but minimal: a `.airway.yml`
+ * Mirrors `AutomationEditor`'s split layout but minimal: a `.airway.yml`
  * is plain YAML (no visual form / diagram), so the left pane is the
  * default Monaco editor and the right pane embeds the pipeline / run
  * pair as master-detail. Clicking Run opens the run inline rather

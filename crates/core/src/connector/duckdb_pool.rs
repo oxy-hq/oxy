@@ -7,8 +7,8 @@
 //!      temporary table.
 //!
 //! For a 50 MB CSV that's ~9 seconds per query — multiplied by every
-//! `execute_sql` task in a workflow run, including dozens of tasks that exist
-//! only inside nested subworkflows. Workflows that should run in seconds were
+//! `execute_sql` task in an automation run, including dozens of tasks that exist
+//! only inside nested sub-automations. Automations that should run in seconds were
 //! taking tens of minutes.
 //!
 //! The pool keeps **one** primary connection per [`PoolTarget`] (i.e. one per

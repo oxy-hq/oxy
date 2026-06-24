@@ -1,4 +1,4 @@
-import { Check, Workflow, Zap } from "lucide-react";
+import { Workflow as Automation, Check, Zap } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
@@ -36,7 +36,7 @@ const AutomationIndicator = ({
         <Check className='h-3.5 w-3.5 shrink-0 text-primary' />
         <div className='min-w-0 flex-1'>
           <div className='font-medium text-foreground text-sm leading-tight'>
-            Similar procedure exists
+            Similar automation exists
           </div>
           <div className='mt-0.5 text-muted-foreground text-xs'>{existingAutomationName}</div>
         </div>
@@ -59,7 +59,7 @@ const AutomationIndicator = ({
       />
       <div className='min-w-0 flex-1'>
         <div className='font-medium text-foreground text-sm leading-tight'>
-          {isGoodCandidate ? "Good candidate for procedure" : "Low procedure potential"}
+          {isGoodCandidate ? "Good candidate for automation" : "Low automation potential"}
         </div>
         <div className='mt-0.5 font-mono text-muted-foreground text-xs'>
           {querySteps.length} {querySteps.length === 1 ? "query" : "queries"} &middot;{" "}
@@ -67,8 +67,8 @@ const AutomationIndicator = ({
         </div>
       </div>
       <Button size='sm' onClick={onGenerate} disabled={isLoading}>
-        {isLoading ? <Spinner className='size-3' /> : <Workflow className='h-3 w-3' />}
-        <span>{isLoading ? "Saving…" : "Save as procedure"}</span>
+        {isLoading ? <Spinner className='size-3' /> : <Automation className='h-3 w-3' />}
+        <span>{isLoading ? "Saving…" : "Save as automation"}</span>
       </Button>
     </div>
   );

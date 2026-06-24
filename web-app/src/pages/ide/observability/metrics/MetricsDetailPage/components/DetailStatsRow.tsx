@@ -1,7 +1,7 @@
 import {
   BarChart3,
+  LucideWorkflow as LucideAutomation,
   LucideBot,
-  LucideWorkflow,
   Minus,
   TrendingDown,
   TrendingUp
@@ -40,7 +40,7 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
   const totalQueries = detailData.total_queries;
   const trendVsLastPeriod = detailData.trend_vs_last_period;
   const viaAgent = detailData.via_agent;
-  const viaWorkflow = detailData.via_workflow;
+  const viaAutomation = detailData.via_workflow;
 
   const trend = trendVsLastPeriod;
   const isPositive = trend?.startsWith("+");
@@ -100,11 +100,11 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
         <CardContent className='p-4'>
           <div className='flex items-center gap-3'>
             <div className='rounded-lg bg-vis-purple/10 p-2'>
-              <LucideWorkflow className='h-5 w-5 text-vis-purple' />
+              <LucideAutomation className='h-5 w-5 text-vis-purple' />
             </div>
             <div>
-              <p className='font-bold text-2xl'>{viaWorkflow}</p>
-              <p className='text-muted-foreground text-xs'>Via Workflow</p>
+              <p className='font-bold text-2xl'>{viaAutomation}</p>
+              <p className='text-muted-foreground text-xs'>Via Automation</p>
             </div>
           </div>
         </CardContent>

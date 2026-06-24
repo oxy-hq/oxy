@@ -60,9 +60,9 @@ pub fn triage_response_schema() -> ResponseSchema {
                         "required": ["prompt", "suggestions"]
                     }
                 },
-                "selected_procedure_path": {
+                "selected_automation_path": {
                     "type": ["string", "null"],
-                    "description": "If an available procedure/workflow/SQL file directly answers the question, set this to its exact path string (e.g. 'workflows/sales/report.procedure.yml' or 'example_sql/monthly_revenue.sql'). SQL files (.sql) are executed directly as verified queries and preferred over SQL generation. Set null when no match was found."
+                    "description": "If an available automation/SQL file directly answers the question, set this to its exact path string (e.g. 'workflows/sales/report.procedure.yml' or 'example_sql/monthly_revenue.sql'). SQL files (.sql) are executed directly as verified queries and preferred over SQL generation. Set null when no match was found."
                 },
                 "missing_members": {
                     "type": "array",
@@ -97,7 +97,7 @@ pub fn triage_response_schema() -> ResponseSchema {
                 "confidence",
                 "ambiguities",
                 "ambiguity_questions",
-                "selected_procedure_path",
+                "selected_automation_path",
                 "missing_members"
             ]
         }),
@@ -136,9 +136,9 @@ pub fn clarify_response_schema() -> ResponseSchema {
                     "description": "Filter expressions using column names from the schema, e.g. \"date >= '2024-01-01'\", \"status = 'active'\". Extract explicit or implied constraints.",
                     "items": { "type": "string" }
                 },
-                "selected_procedure_path": {
+                "selected_automation_path": {
                     "type": ["string", "null"],
-                    "description": "MUST be set when search_procedures returned any matching procedure, workflow, or SQL file. Copy the exact 'path' string from the tool result (e.g. 'workflows/sales/report.procedure.yml' or 'example_sql/monthly_revenue.sql'). SQL files are executed directly as verified queries. Set null ONLY when search_procedures returned an empty list or was not called."
+                    "description": "MUST be set when search_automations returned any matching automation or SQL file. Copy the exact 'path' string from the tool result (e.g. 'workflows/sales/report.procedure.yml' or 'example_sql/monthly_revenue.sql'). SQL files are executed directly as verified queries. Set null ONLY when search_automations returned an empty list or was not called."
                 }
             },
             "additionalProperties": false,
@@ -147,7 +147,7 @@ pub fn clarify_response_schema() -> ResponseSchema {
                 "metrics",
                 "dimensions",
                 "filters",
-                "selected_procedure_path"
+                "selected_automation_path"
             ]
         }),
     }

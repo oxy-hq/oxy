@@ -4,7 +4,7 @@ export class ChatPage {
   readonly page: Page;
   readonly questionInput: Locator;
   readonly agentSelectorButton: Locator;
-  readonly workflowSelectorButton: Locator;
+  readonly automationSelectorButton: Locator;
   readonly submitButton: Locator;
   readonly loadingState: Locator;
   readonly stopButton: Locator;
@@ -16,14 +16,14 @@ export class ChatPage {
   readonly followUpInput: Locator;
   readonly askModeButton: Locator;
   readonly buildModeButton: Locator;
-  readonly workflowModeButton: Locator;
+  readonly automationModeButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
     // The textarea's aria-label changes based on mode, so we use a flexible matcher
     this.questionInput = page.locator("textarea[name='question']");
     this.agentSelectorButton = page.getByTestId("agent-selector-button");
-    this.workflowSelectorButton = page.getByTestId("workflow-selector-button");
+    this.automationSelectorButton = page.getByTestId("automation-selector-button");
     this.submitButton = page.getByTestId("chat-panel-submit-button");
     this.loadingState = page.getByTestId("agent-loading-state");
     this.stopButton = page.getByTestId("message-input-stop-button");
@@ -38,27 +38,27 @@ export class ChatPage {
     // ToggleGroup with type="single" renders as radio buttons
     this.askModeButton = page.getByRole("radio", { name: "Ask" });
     this.buildModeButton = page.getByRole("radio", { name: "Build" });
-    this.workflowModeButton = page.getByRole("radio", { name: "Workflow" });
+    this.automationModeButton = page.getByRole("radio", { name: "Workflow" });
   }
 
   async askQuestion(
     question: string,
     agentName: string = "duckdb",
-    options?: { mode?: "Ask" | "Build" | "Workflow"; workflowName?: string }
+    options?: { mode?: "Ask" | "Build" | "Workflow"; automationName?: string }
   ) {
     // Switch mode if specified
     if (options?.mode === "Build") {
       await this.buildModeButton.click();
     } else if (options?.mode === "Workflow") {
-      await this.workflowModeButton.click();
+      await this.automationModeButton.click();
 
-      // Fill workflow title
+      // Fill automation title
       await this.questionInput.fill(question);
 
-      // Select workflow
-      if (options.workflowName) {
-        await this.workflowSelectorButton.click();
-        await this.page.getByRole("menuitemcheckbox", { name: options.workflowName }).click();
+      // Select automation
+      if (options.automationName) {
+        await this.automationSelectorButton.click();
+        await this.page.getByRole("menuitemcheckbox", { name: options.automationName }).click();
       }
 
       await this.submitButton.click();
@@ -149,7 +149,7 @@ export class ChatPage {
     } else if (mode === "Build") {
       await this.buildModeButton.click();
     } else if (mode === "Workflow") {
-      await this.workflowModeButton.click();
+      await this.automationModeButton.click();
     }
   }
 

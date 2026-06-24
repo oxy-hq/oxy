@@ -42,7 +42,7 @@ impl EvalMapper {
         let task_ref = self.last_task_ref_internal(tasks);
         if task_ref.is_empty() {
             return Err(OxyError::ConfigurationError(
-                "No tasks found in the workflow".to_string(),
+                "No tasks found in the automation".to_string(),
             ));
         }
         Ok(task_ref.join("."))
@@ -79,7 +79,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, AgenticInput)>> for EvalMapp
 
                 // Only `.agentic.yml` agents are runnable as eval targets. The
                 // classic `.agent.yml` runtime was retired with the oxy-agent
-                // crate; workflows/automations/procedures don't accept prompts
+                // crate; automations don't accept prompts
                 // via the test framework.
                 let eval_target = if resolved_target.ends_with("agentic.yml")
                     || resolved_target.ends_with("agentic.yaml")

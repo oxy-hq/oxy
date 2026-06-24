@@ -40,7 +40,7 @@ pub mod orchestrator;
 //
 // These flatten the new two-layer structure back into the pre-Stage-1
 // surface so the ~180 external `agentic_runtime::<flat>::…` imports
-// across analytics/builder/workflow/pipeline/http keep compiling.
+// across analytics/builder/automation/pipeline/http keep compiling.
 // New code should prefer the explicit `lifecycle::…` / `orchestrator::…`
 // paths so the layering shows up in `use` statements.
 
@@ -61,9 +61,9 @@ pub mod entity {
 /// `agentic_runtime::crud::events::insert_event`.
 pub mod crud {
     pub use crate::lifecycle::crud::{
-        AirwayTableSummary, EventRow, LlmTokenSummary, LlmTokenSummaryByRun,
-        ScheduleDurationBaseline, ThreadHistoryTurn, ToolExchangeRow, WorkflowStepSummary,
-        airway_table_summary_for_run, batch_insert_events, delete_events_from_seq,
+        AirwayTableSummary, AutomationStepSummary, EventRow, LlmTokenSummary, LlmTokenSummaryByRun,
+        ScheduleDurationBaseline, ThreadHistoryTurn, ToolExchangeRow, airway_table_summary_for_run,
+        automation_step_summary_for_run, batch_insert_events, delete_events_from_seq,
         fetch_duration_baselines, get_all_events, get_all_events_for_runs, get_effective_run_state,
         get_events_after, get_max_seq, get_run, get_run_by_thread, get_runs_by_thread,
         get_suspension, get_thread_history, get_thread_history_with_events, heartbeat_driver,
@@ -73,7 +73,6 @@ pub mod crud {
         release_driver, request_cancel, runs_in_workspace, try_acquire_driver, update_run_done,
         update_run_failed, update_run_running, update_run_suspended,
         update_run_terminal_from_events, update_task_status, upsert_suspension,
-        workflow_step_summary_for_run,
     };
     pub use crate::lifecycle::crud::{
         DRIVER_LEASE_TTL_SECS, now, transition_run, user_facing_status,
@@ -83,11 +82,11 @@ pub mod crud {
         QueueStats, QueueTaskRow, StuckRun, TaskScope, cancel_queued_task, claim_task,
         claim_task_under_root, cleanup_stale_runs, complete_child_done_txn,
         complete_child_failed_txn, complete_queue_task, enqueue_task, fail_queue_task,
-        find_pending_global_runs, find_stuck_runs, find_stuck_workflow_runs, get_active_root_runs,
-        get_max_child_counter, get_outcomes_for_parent, get_queue_entry, get_queue_stats,
-        get_resumable_root_runs, get_run_answer, increment_attempt, insert_child_run,
-        insert_task_outcome, mark_recovery_failed, purge_old_terminal_tasks, reap_stale_tasks,
-        requeue_task, suspend_with_data_txn, update_queue_heartbeat,
+        find_pending_global_runs, find_stuck_automation_runs, find_stuck_runs,
+        get_active_root_runs, get_max_child_counter, get_outcomes_for_parent, get_queue_entry,
+        get_queue_stats, get_resumable_root_runs, get_run_answer, increment_attempt,
+        insert_child_run, insert_task_outcome, mark_recovery_failed, purge_old_terminal_tasks,
+        reap_stale_tasks, requeue_task, suspend_with_data_txn, update_queue_heartbeat,
     };
     pub use crate::orchestrator::crud::{outcomes, queue, recovery};
 }

@@ -1,5 +1,6 @@
 import {
   AppWindow,
+  Workflow as Automation,
   BookOpen,
   Bot,
   Braces,
@@ -8,8 +9,7 @@ import {
   FileCode,
   Pencil,
   Table,
-  Trash2,
-  Workflow
+  Trash2
 } from "lucide-react";
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -36,9 +36,8 @@ const getFileIcon = (path: string) => {
   const fileType = detectFileType(path);
   switch (fileType) {
     case FileType.PROCEDURE:
-    case FileType.WORKFLOW:
     case FileType.AUTOMATION:
-      return Workflow;
+      return Automation;
     case FileType.ANALYTICS_AGENT:
       return Bot;
     case FileType.APP:

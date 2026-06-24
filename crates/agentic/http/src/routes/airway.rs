@@ -1,6 +1,6 @@
 //! Airway run lifecycle handlers.
 //!
-//! Airway is queue-driven like workflow: `POST /runs` seeds an
+//! Airway is queue-driven like automation: `POST /runs` seeds an
 //! `agentic_runs` row + `airway_run_extensions` row and enqueues a
 //! `TaskSpec::Airway`; the per-request coordinator + worker claim it
 //! and drive it to completion. SSE just streams whatever lands in
@@ -221,12 +221,12 @@ pub async fn cancel_airway_run(
     if let Err(resp) = ensure_run_access(&state, &user.id, &run_id).await {
         return resp;
     }
-    // Durable cross-process cancel signal (see cancel_workflow_run).
+    // Durable cross-process cancel signal (see cancel_automation_run).
     agentic_runtime::crud::request_cancel(&state.db, &run_id)
         .await
         .ok();
     if !state.cancel(&run_id) {
-        // No live cancel channel. Same race as the workflow cancel
+        // No live cancel channel. Same race as the automation cancel
         // handler: distinguish "stuck queue row" (defensive fail) from
         // "just finished cleanly" (must not rewrite a `done` run to
         // `failed`). Gate the defensive write on non-terminal status.
@@ -256,7 +256,7 @@ pub async fn cancel_airway_run(
 
 /// Verify `user_id` may operate on `run_id`. Runs not linked to a
 /// thread (the common case for airway — pipelines are usually not
-/// chat-scoped) are allowed through, matching the workflow handler's
+/// chat-scoped) are allowed through, matching the automation handler's
 /// policy. Single chokepoint if that policy changes.
 async fn ensure_run_access(
     state: &AgenticState,
@@ -297,7 +297,7 @@ async fn ensure_run_access(
 pub struct AirwayFile {
     /// Workspace-relative path, usable as a schedule `target_ref`.
     pub path: String,
-    /// URL-safe base64 of `path` (parity with the workflow files shape).
+    /// URL-safe base64 of `path` (parity with the automation files shape).
     pub path_b64: String,
 }
 

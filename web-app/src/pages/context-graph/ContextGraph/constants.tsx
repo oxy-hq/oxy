@@ -1,12 +1,12 @@
 import {
   AppWindow,
+  Workflow as AutomationIcon,
   BookOpen,
   Bot,
   Box,
   Eye,
   FileCode,
-  Table,
-  Workflow as WorkflowIcon
+  Table
 } from "lucide-react";
 
 export const NODE_TYPE_CLASSES: Record<string, string> = {
@@ -43,10 +43,10 @@ export const HANDLE_STYLE_VISIBLE = {
 
 export const ICONS: Record<string, React.ReactNode> = {
   agent: <Bot className='h-3.5 w-3.5' />,
-  procedure: <WorkflowIcon className='h-3.5 w-3.5' />,
-  workflow: <WorkflowIcon className='h-3.5 w-3.5' />,
+  procedure: <AutomationIcon className='h-3.5 w-3.5' />,
+  workflow: <AutomationIcon className='h-3.5 w-3.5' />,
   app: <AppWindow className='h-3.5 w-3.5' />,
-  automation: <WorkflowIcon className='h-3.5 w-3.5' />,
+  automation: <AutomationIcon className='h-3.5 w-3.5' />,
   topic: <BookOpen className='h-3.5 w-3.5' />,
   view: <Eye className='h-3.5 w-3.5' />,
   sql_query: <FileCode className='h-3.5 w-3.5' />,
@@ -69,8 +69,8 @@ export const TYPE_ORDER = [
 
 export const TYPE_LABEL_SINGULAR: Record<string, string> = {
   agent: "Agent",
-  workflow: "Workflow",
-  procedure: "Procedure",
+  workflow: "Automation",
+  procedure: "Automation",
   topic: "Topic",
   view: "View",
   sql_query: "SQL Query",
@@ -82,9 +82,9 @@ export const TYPE_LABEL_SINGULAR: Record<string, string> = {
 
 export const TYPE_LABELS: Record<string, string> = {
   agent: "Agents",
-  procedure: "Procedures",
-  workflow: "Workflows (legacy)",
-  automation: "Automations (legacy)",
+  procedure: "Automations (.procedure.yml)",
+  workflow: "Automations (.automation.yml)",
+  automation: "Automations",
   topic: "Topics",
   view: "Views",
   sql_query: "SQL Queries",
@@ -109,14 +109,22 @@ export type FocusType =
 export const FOCUS_OPTIONS: Array<{ value: FocusType; label: string; icon?: React.ReactNode }> = [
   { value: "auto", label: "All Types" },
   { value: "agent", label: "Agents", icon: <Bot className='h-4 w-4' /> },
-  { value: "procedure", label: "Procedures", icon: <WorkflowIcon className='h-4 w-4' /> },
-  { value: "workflow", label: "Workflows (legacy)", icon: <WorkflowIcon className='h-4 w-4' /> },
-  { value: "app", label: "Apps", icon: <AppWindow className='h-4 w-4' /> },
   {
     value: "automation",
-    label: "Automations (legacy)",
-    icon: <WorkflowIcon className='h-4 w-4' />
+    label: "Automations",
+    icon: <AutomationIcon className='h-4 w-4' />
   },
+  {
+    value: "procedure",
+    label: "Automations (.procedure.yml)",
+    icon: <AutomationIcon className='h-4 w-4' />
+  },
+  {
+    value: "workflow",
+    label: "Automations (.automation.yml)",
+    icon: <AutomationIcon className='h-4 w-4' />
+  },
+  { value: "app", label: "Apps", icon: <AppWindow className='h-4 w-4' /> },
   { value: "topic", label: "Topics", icon: <BookOpen className='h-4 w-4' /> },
   { value: "view", label: "Views", icon: <Eye className='h-4 w-4' /> },
   { value: "sql_query", label: "SQL Queries", icon: <FileCode className='h-4 w-4' /> },

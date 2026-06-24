@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use agentic_analytics::config::{LlmVendor, ResolvedModelInfo};
+use agentic_automation::workspace::IntegrationConfig;
+use agentic_automation::{ContextRoot, WorkspaceContext};
 use agentic_connector::{
     BigQueryConfig, ClickHouseConfig, ConnectorConfig, DatabaseConnector, DomoConfig, DuckDbConfig,
     DuckDbLoadStrategy, DuckDbRawConfig, DuckDbUrlConfig, MysqlConfig, PostgresConfig,
@@ -15,8 +17,6 @@ use agentic_connector::{
 };
 use agentic_pipeline::SharedMetricSink;
 use agentic_pipeline::platform::{MonitorScanPort, ProjectContext, ResolvedPipelineDestination};
-use agentic_workflow::workspace::IntegrationConfig;
-use agentic_workflow::{ContextRoot, WorkspaceContext};
 use async_trait::async_trait;
 use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::workspace::manager::WorkspaceManager;
@@ -24,9 +24,9 @@ use oxy::config::model::{DatabaseType, DuckDBOptions, IntegrationType, Model, Sn
 use oxy_shared::errors::OxyError;
 
 /// Adapter that exposes a [`WorkspaceManager`] as a [`ProjectContext`] and
-/// (for the workflow runner) an [`agentic_workflow::WorkspaceContext`].
+/// (for the automation runner) an [`agentic_automation::WorkspaceContext`].
 ///
-/// Built connectors are cached via a [`tokio::sync::OnceCell`] so the workflow
+/// Built connectors are cached via a [`tokio::sync::OnceCell`] so the automation
 /// runner's `get_connector` calls don't re-resolve/re-build per step. The
 /// cache is per-instance; callers that want to share it should wrap in `Arc`
 /// before handing the context around.
@@ -555,7 +555,7 @@ impl WorkspaceContext for OxyProjectContext {
     /// otherwise context resolution finds nothing and the run fails "no
     /// databases configured". `Ide` / `All` keep the FS path (they hold the
     /// working copy), so context the boundary doesn't serve yet (verified
-    /// `.sql`, `.md`, procedures) isn't lost there.
+    /// `.sql`, `.md`, automations) isn't lost there.
     async fn context_root(&self) -> ContextRoot {
         use crate::server::role_manifest::{Role, current_process_role};
         if matches!(current_process_role(), Role::Serve | Role::Worker) {
@@ -683,16 +683,16 @@ impl WorkspaceContext for OxyProjectContext {
         }
     }
 
-    async fn list_workflow_files(&self) -> Result<Vec<PathBuf>, String> {
-        // Boundary-first (mirrors `resolve_workflow_yaml` just below): a stateless
-        // fleet replica has no working copy, so list runnable procedures from
+    async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
+        // Boundary-first (mirrors `resolve_automation_yaml` just below): a stateless
+        // fleet replica has no working copy, so list runnable automations from
         // `procedure_definitions` instead of globbing an absent filesystem —
-        // otherwise `/agentic-workflows/files` returns `[]` and the procedures
+        // otherwise `/agentic-workflows/files` returns `[]` and the automations
         // sidebar is empty. Fall through to the FS walk on a miss (workspace not
         // promoted / non-default branch). Paths are returned workspace-absolute to
         // preserve the FS walk's contract — the HTTP handler and the subrun runner
         // relativise against `workspace_path()` themselves.
-        match crate::server::api::compiled_reader::list_procedures(
+        match crate::server::api::compiled_reader::list_automations(
             self.workspace_manager.workspace_id,
             None,
         )
@@ -703,7 +703,7 @@ impl WorkspaceContext for OxyProjectContext {
                 tracing::debug!(
                     workspace_id = %self.workspace_manager.workspace_id,
                     count = rows.len(),
-                    "list_workflow_files served from compile boundary"
+                    "list_automation_files served from compile boundary"
                 );
                 return Ok(rows.into_iter().map(|r| root.join(r.file_path)).collect());
             }
@@ -712,7 +712,7 @@ impl WorkspaceContext for OxyProjectContext {
             Err(e) => tracing::warn!(
                 workspace_id = %self.workspace_manager.workspace_id,
                 error = ?e,
-                "compile boundary procedure list error; falling through to FS"
+                "compile boundary automation list error; falling through to FS"
             ),
         }
         self.workspace_manager
@@ -730,12 +730,12 @@ impl WorkspaceContext for OxyProjectContext {
             .map_err(|e| format!("{e}"))
     }
 
-    async fn resolve_workflow_yaml(&self, workflow_ref: &str) -> Result<String, String> {
-        // Serve the procedure YAML from `procedure_definitions`; falls through
+    async fn resolve_automation_yaml(&self, workflow_ref: &str) -> Result<String, String> {
+        // Serve the automation YAML from `procedure_definitions`; falls through
         // to the filesystem read below on any miss. Round-trips JSONB →
         // strict-typed Workflow → YAML so the downstream parser (which expects
         // YAML) is unchanged.
-        match crate::server::api::compiled_reader::resolve_procedure(
+        match crate::server::api::compiled_reader::resolve_automation(
             self.workspace_manager.workspace_id,
             None,
             workflow_ref,
@@ -747,7 +747,7 @@ impl WorkspaceContext for OxyProjectContext {
                     tracing::debug!(
                         workspace_id = %self.workspace_manager.workspace_id,
                         workflow_ref,
-                        "resolve_workflow_yaml served from compile boundary"
+                        "resolve_automation_yaml served from compile boundary"
                     );
                     return Ok(yaml);
                 }
@@ -755,7 +755,7 @@ impl WorkspaceContext for OxyProjectContext {
                     workspace_id = %self.workspace_manager.workspace_id,
                     workflow_ref,
                     error = ?e,
-                    "compile boundary procedure YAML re-serialise failed; falling through to FS"
+                    "compile boundary automation YAML re-serialise failed; falling through to FS"
                 ),
             },
             Ok(None) => {
@@ -766,7 +766,7 @@ impl WorkspaceContext for OxyProjectContext {
                 workspace_id = %self.workspace_manager.workspace_id,
                 workflow_ref,
                 error = ?e,
-                "compile boundary procedure lookup error; falling through to FS"
+                "compile boundary automation lookup error; falling through to FS"
             ),
         }
 
@@ -840,7 +840,7 @@ async fn resolve_workspace_relative(
     workspace_manager: &WorkspaceManager,
     workflow_ref: &str,
 ) -> Result<PathBuf, String> {
-    validate_workflow_ref_syntax(workflow_ref)?;
+    validate_automation_ref_syntax(workflow_ref)?;
     let resolved = workspace_manager
         .config_manager
         .resolve_file(workflow_ref)
@@ -855,7 +855,7 @@ async fn resolve_workspace_relative(
 /// vary by OS and by whether the path happens to exist; failing here
 /// keeps the diagnostics stable and avoids touching the filesystem at all
 /// for the easy cases.
-fn validate_workflow_ref_syntax(workflow_ref: &str) -> Result<(), String> {
+fn validate_automation_ref_syntax(workflow_ref: &str) -> Result<(), String> {
     if workflow_ref.is_empty() {
         return Err("workflow_ref is empty".to_string());
     }
@@ -878,7 +878,7 @@ fn validate_workflow_ref_syntax(workflow_ref: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{airhouse_pool_key, validate_workflow_ref_syntax};
+    use super::{airhouse_pool_key, validate_automation_ref_syntax};
 
     #[test]
     fn airhouse_pool_key_is_stable_per_identity() {
@@ -918,7 +918,7 @@ mod tests {
 
     #[test]
     fn rejects_empty_ref() {
-        assert!(validate_workflow_ref_syntax("").is_err());
+        assert!(validate_automation_ref_syntax("").is_err());
     }
 
     #[test]
@@ -930,7 +930,7 @@ mod tests {
             "a/../b",
         ] {
             assert!(
-                validate_workflow_ref_syntax(ref_str).is_err(),
+                validate_automation_ref_syntax(ref_str).is_err(),
                 "should reject {ref_str:?}"
             );
         }
@@ -938,18 +938,18 @@ mod tests {
 
     #[test]
     fn rejects_absolute_paths() {
-        assert!(validate_workflow_ref_syntax("/etc/passwd").is_err());
+        assert!(validate_automation_ref_syntax("/etc/passwd").is_err());
     }
 
     #[test]
     fn accepts_relative_ref() {
         for ref_str in [
-            "foo.workflow.yml",
-            "workflows/foo.workflow.yml",
-            "./foo.workflow.yml",
+            "foo.automation.yml",
+            "workflows/foo.automation.yml",
+            "./foo.automation.yml",
         ] {
             assert!(
-                validate_workflow_ref_syntax(ref_str).is_ok(),
+                validate_automation_ref_syntax(ref_str).is_ok(),
                 "should accept {ref_str:?}"
             );
         }
@@ -1054,7 +1054,7 @@ pub async fn database_to_connector_config(
         // but DOES have the files, so it must fall through to the `Local` arm
         // below. The S3-mirror connector exposes data as views only and has no
         // `file_search_path`, so it can't resolve authored file-path SQL
-        // (`FROM 'oxymart.csv'`) — which workflow/procedure steps emit and which
+        // (`FROM 'oxymart.csv'`) — which workflow/automation steps emit and which
         // is exactly what runs on the ide once /agentic-workflows is ide-pinned.
         DatabaseType::DuckDB(duck)
             if duck.s3_mirror.is_some()

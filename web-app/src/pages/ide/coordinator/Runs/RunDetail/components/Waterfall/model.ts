@@ -98,7 +98,7 @@ export interface ChildSpan {
     /** First few result rows (capped server-side). */
     rowsPreview: unknown[][];
   };
-  /** For procedure-step spans inside a delegated procedure run. */
+  /** For automation-step spans inside a delegated automation run. */
   step?: {
     name: string;
     success: boolean;
@@ -170,9 +170,9 @@ export const buildWaterfall = (events: RunEventEntry[]): WaterfallModel => {
   const openLlms: OpenLlm[] = [];
   const openThinking: OpenThinking[] = [];
   const openTools: OpenTool[] = [];
-  // Open procedure steps, keyed by step name. Subrun_step_* events pair
+  // Open automation steps, keyed by step name. Subrun_step_* events pair
   // by name (no trace id), so concurrent steps with duplicate names
-  // would collide — fine in practice; v1 procedures are linear.
+  // would collide — fine in practice; v1 automations are linear.
   const openSteps = new Map<string, OpenStep>();
   let openPhase: OpenPhase | null = null;
   let phaseChildren: ChildSpan[] = [];
@@ -487,7 +487,7 @@ export const buildWaterfall = (events: RunEventEntry[]): WaterfallModel => {
         });
         break;
       }
-      // Procedure-step lifecycle inside a delegated subrun. Step
+      // Automation-step lifecycle inside a delegated subrun. Step
       // events don't carry a duration; we measure wall-clock between
       // start/end on the monotonic cursor instead.
       case "subrun_step_started": {

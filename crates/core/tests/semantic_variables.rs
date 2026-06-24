@@ -10,14 +10,14 @@ pub mod semantic_variables {
     }
 
     #[test]
-    fn run_workflow_with_semantic_variables_validates() {
-        // This test verifies the workflow with variables parses correctly
+    fn run_automation_with_semantic_variables_validates() {
+        // This test verifies the automation with variables parses correctly
         let mut cmd = setup_command();
         let result = cmd
-            .arg("procedures/semantic_variables.procedure.yml")
+            .arg("procedures/semantic_variables.automation.yml")
             .assert();
 
-        // The workflow may fail to execute without infrastructure, but should not fail on parsing
+        // The automation may fail to execute without infrastructure, but should not fail on parsing
         let output = String::from_utf8(result.get_output().stderr.clone()).unwrap();
         // Should not have parsing errors
         assert!(!output.contains("Failed to deserialize"));
@@ -25,10 +25,10 @@ pub mod semantic_variables {
     }
 
     #[test]
-    fn run_workflow_with_semantic_variables_override_validates() {
+    fn run_automation_with_semantic_variables_override_validates() {
         let mut cmd = setup_command();
         let result = cmd
-            .arg("procedures/semantic_variables.procedure.yml")
+            .arg("procedures/semantic_variables.automation.yml")
             .arg("-v")
             .arg("orders_table=custom_orders")
             .assert();
@@ -40,11 +40,11 @@ pub mod semantic_variables {
     }
 
     #[test]
-    fn run_semantic_variables_example_workflow_validates() {
-        // Test the example workflow from semantic-with-variables directory
+    fn run_semantic_variables_example_automation_validates() {
+        // Test the example automation from semantic-with-variables directory
         let mut cmd = setup_command();
         let result = cmd
-            .arg("semantic-with-variables/workflow-example.workflow.yml")
+            .arg("semantic-with-variables/workflow-example.automation.yml")
             .assert();
 
         let stderr = String::from_utf8(result.get_output().stderr.clone()).unwrap();
@@ -59,17 +59,17 @@ pub mod semantic_variables {
         // Allow execution failures, but not parsing failures
         assert!(
             !stderr.contains("missing field `topic`") && !stderr.contains("invalid type"),
-            "Workflow should parse correctly even if execution fails. Stderr: {}",
+            "Automation should parse correctly even if execution fails. Stderr: {}",
             stderr
         );
     }
 
     #[test]
     fn run_semantic_query_with_nested_variables_validates() {
-        // Test using the workflow-example which has nested variable paths
+        // Test using the automation-example which has nested variable paths
         let mut cmd = setup_command();
         let result = cmd
-            .arg("semantic-with-variables/workflow-example.workflow.yml")
+            .arg("semantic-with-variables/workflow-example.automation.yml")
             .assert();
 
         let output = String::from_utf8(result.get_output().stderr.clone()).unwrap();
@@ -80,10 +80,10 @@ pub mod semantic_variables {
 
     #[test]
     fn run_semantic_query_with_variable_precedence_validates() {
-        // Test that workflow variables can override defaults
+        // Test that automation variables can override defaults
         let mut cmd = setup_command();
         let result = cmd
-            .arg("procedures/semantic_variables.procedure.yml")
+            .arg("procedures/semantic_variables.automation.yml")
             .arg("-v")
             .arg("orders_table=priority_orders")
             .assert();

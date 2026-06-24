@@ -14,14 +14,14 @@ fn make_step(name: &str, cols: Vec<&str>, rows: Vec<Vec<serde_json::Value>>) -> 
 
 #[test]
 fn empty_steps_returns_placeholder() {
-    let result = procedure_output_to_result(SubrunOutput { steps: vec![] });
+    let result = automation_output_to_result(SubrunOutput { steps: vec![] });
     assert_eq!(result.results.len(), 1);
     assert_eq!(result.results[0].data.columns, vec!["result"]);
 }
 
 #[test]
 fn single_step_produces_single_result_set() {
-    let result = procedure_output_to_result(SubrunOutput {
+    let result = automation_output_to_result(SubrunOutput {
         steps: vec![make_step(
             "q1",
             vec!["a", "b"],
@@ -36,7 +36,7 @@ fn single_step_produces_single_result_set() {
 
 #[test]
 fn multiple_steps_produce_multi_result() {
-    let result = procedure_output_to_result(SubrunOutput {
+    let result = automation_output_to_result(SubrunOutput {
         steps: vec![
             make_step("q1", vec!["x"], vec![vec![serde_json::json!(1)]]),
             make_step("q2", vec!["y"], vec![vec![serde_json::json!(2)]]),
@@ -53,7 +53,7 @@ fn multiple_steps_produce_multi_result() {
 fn numeric_json_cells_become_number_cell_values() {
     use agentic_core::result::CellValue;
 
-    let result = procedure_output_to_result(SubrunOutput {
+    let result = automation_output_to_result(SubrunOutput {
         steps: vec![make_step(
             "revenue_by_region",
             vec!["region", "total_revenue"],

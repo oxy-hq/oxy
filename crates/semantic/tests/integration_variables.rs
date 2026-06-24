@@ -45,21 +45,21 @@ fn test_multiple_variable_sources_with_precedence() {
         ("column".to_string(), json!("agent_column")),
     ]);
 
-    let workflow_vars = HashMap::from([
+    let automation_vars = HashMap::from([
         ("table".to_string(), json!("workflow_table")),
         ("limit".to_string(), json!(100)),
     ]);
 
     // Create resolver with all sources
     let resolver = RuntimeVariableResolver::from_sources(
-        Some(workflow_vars),
+        Some(automation_vars),
         Some(agent_vars),
         Some(globals),
         Some(env_vars),
     )
     .unwrap();
 
-    // Verify precedence: workflow > agent > global > env
+    // Verify precedence: automation > agent > global > env
     assert_eq!(
         resolver.resolve_variable("table").unwrap(),
         json!("workflow_table")

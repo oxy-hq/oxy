@@ -256,9 +256,9 @@ describe("buildAnalyticsSteps — fan-out (streaming / flush)", () => {
   });
 });
 
-// ── procedure steps ───────────────────────────────────────────────────────────
+// ── automation steps ───────────────────────────────────────────────────────────
 
-describe("buildAnalyticsSteps — procedure steps", () => {
+describe("buildAnalyticsSteps — automation steps", () => {
   it("subrun_step_started creates a streaming artifact with toolInput 'Running…'", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
@@ -354,11 +354,11 @@ describe("buildAnalyticsSteps — procedure steps", () => {
   });
 });
 
-// ── procedure item stepsDone tracking ─────────────────────────────────────────
+// ── automation item stepsDone tracking ─────────────────────────────────────────
 
-type ProcedureItemShape = {
-  kind: "procedure";
-  procedureName: string;
+type AutomationItemShape = {
+  kind: "automation";
+  automationName: string;
   steps: { name: string; task_type: string }[];
   stepsDone: number;
   isStreaming: boolean;
@@ -370,7 +370,7 @@ const MAIN_STEPS = [
   { name: "generate_report", task_type: "formatter" }
 ];
 
-const procedureStarted = (name = "my_proc", steps = MAIN_STEPS) =>
+const automationStarted = (name = "my_proc", steps = MAIN_STEPS) =>
   ev("subrun_started", { subrun_name: name, steps });
 
 const procStepStarted = (step: string) => ev("subrun_step_started", { step });
@@ -381,27 +381,27 @@ const procStepCompleted = (step: string, success = true, error?: string) =>
 const procCompleted = (name = "my_proc", success = true) =>
   ev("subrun_completed", { subrun_name: name, success });
 
-const getProcItem = (items: ReturnType<typeof buildAnalyticsSteps>): ProcedureItemShape => {
+const getProcItem = (items: ReturnType<typeof buildAnalyticsSteps>): AutomationItemShape => {
   for (const node of items) {
     if (node.kind !== "step") continue;
     const found = (node as { items: unknown[] }).items.find(
-      (i) => (i as { kind: string }).kind === "procedure"
+      (i) => (i as { kind: string }).kind === "automation"
     );
-    if (found) return found as ProcedureItemShape;
+    if (found) return found as AutomationItemShape;
   }
-  throw new Error("no procedure item found");
+  throw new Error("no automation item found");
 };
 
-describe("buildAnalyticsSteps — procedure item stepsDone", () => {
+describe("buildAnalyticsSteps — automation item stepsDone", () => {
   it("starts at 0 with no step events", () => {
-    const items = buildAnalyticsSteps([stepStart("Running"), procedureStarted()]);
+    const items = buildAnalyticsSteps([stepStart("Running"), automationStarted()]);
     expect(getProcItem(items).stepsDone).toBe(0);
   });
 
   it("increments for each successful main-step completion", () => {
     const items = buildAnalyticsSteps([
       stepStart("Running"),
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"),
       procStepStarted("process_data"),
@@ -413,7 +413,7 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
   it("does NOT increment for a failed main step", () => {
     const items = buildAnalyticsSteps([
       stepStart("Running"),
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data", false, "timeout")
     ]);
@@ -424,7 +424,7 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
     const steps = [{ name: "loop_step", task_type: "loop_sequential" }];
     const items = buildAnalyticsSteps([
       stepStart("Running"),
-      procedureStarted("p", steps),
+      automationStarted("p", steps),
       procStepStarted("loop_step"),
       // sub-steps have names not in the top-level list
       procStepStarted("sub_1"),
@@ -443,7 +443,7 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
     ];
     const items = buildAnalyticsSteps([
       stepStart("Running"),
-      procedureStarted("p", steps),
+      automationStarted("p", steps),
       procStepStarted("prepare"),
       procStepCompleted("prepare"), // +1
       procStepStarted("loop_step"),
@@ -461,7 +461,7 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
   it("reaches total steps when all main steps complete", () => {
     const items = buildAnalyticsSteps([
       stepStart("Running"),
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"),
       procStepStarted("process_data"),
@@ -479,14 +479,14 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
   it("stepsDone is stable after subrun_completed (no further increments)", () => {
     const items = buildAnalyticsSteps([
       stepStart("Running"),
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"),
       procCompleted(),
-      // ghost completion after procedure is done — should not increment
+      // ghost completion after automation is done — should not increment
       procStepCompleted("fetch_data")
     ]);
-    // procedure is now not streaming, but stepsDone should still be 1
+    // automation is now not streaming, but stepsDone should still be 1
     expect(getProcItem(items).stepsDone).toBe(1);
   });
 });
@@ -684,7 +684,7 @@ describe("buildAnalyticsSteps — concurrent fan-out", () => {
   });
 });
 
-// ── delegation suspension — procedure events attach to the open step ─────────
+// ── delegation suspension — automation events attach to the open step ─────────
 
 const awaitingDelegation = (prompt = "Executing step: run_proc") =>
   ev("awaiting_input", { questions: [{ prompt, suggestions: [] }] });
@@ -695,12 +695,12 @@ const awaitingHuman = (prompt = "What database?") =>
 const inputResolved = (answer = "done") => ev("input_resolved", { answer });
 
 describe("buildAnalyticsSteps — delegation suspension", () => {
-  it("procedure events attach to step kept open during delegation", () => {
+  it("automation events attach to step kept open during delegation", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
       awaitingDelegation(),
       stepEnd("suspended"),
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"),
       procStepStarted("process_data"),
@@ -714,26 +714,26 @@ describe("buildAnalyticsSteps — delegation suspension", () => {
     expect(items).toHaveLength(1);
     const step = items[0] as { kind: string; items: { kind: string }[] };
     expect(step.kind).toBe("step");
-    // procedure item + 3 procedure step artifacts
-    const procItems = step.items.filter((i) => i.kind === "procedure");
+    // automation item + 3 automation step artifacts
+    const procItems = step.items.filter((i) => i.kind === "automation");
     expect(procItems).toHaveLength(1);
     expect(getProcItem(items).stepsDone).toBe(3);
   });
 
-  it("procedure pill appears in collapsed step row", () => {
+  it("automation pill appears in collapsed step row", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
       awaitingDelegation(),
       stepEnd("suspended"),
-      procedureStarted("my_proc"),
+      automationStarted("my_proc"),
       procCompleted("my_proc"),
       inputResolved()
     ]);
 
-    const step = items[0] as { items: { kind: string; procedureName?: string }[] };
-    const proc = step.items.find((i) => i.kind === "procedure");
+    const step = items[0] as { items: { kind: string; automationName?: string }[] };
+    const proc = step.items.find((i) => i.kind === "automation");
     expect(proc).toBeDefined();
-    expect(proc?.procedureName).toBe("my_proc");
+    expect(proc?.automationName).toBe("my_proc");
   });
 
   it("human input suspension still closes the step normally", () => {
@@ -758,7 +758,7 @@ describe("buildAnalyticsSteps — delegation suspension", () => {
       stepStart("Executing"),
       awaitingDelegation(),
       stepEnd("suspended"),
-      procedureStarted(),
+      automationStarted(),
       procCompleted(),
       inputResolved()
     ]);
@@ -767,12 +767,12 @@ describe("buildAnalyticsSteps — delegation suspension", () => {
     expect(items[0]).toMatchObject({ kind: "step", isStreaming: false });
   });
 
-  it("delegation step stays open (streaming) while procedure is running", () => {
+  it("delegation step stays open (streaming) while automation is running", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
       awaitingDelegation(),
       stepEnd("suspended"),
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data")
       // no input_resolved yet — still running
     ]);
@@ -781,7 +781,7 @@ describe("buildAnalyticsSteps — delegation suspension", () => {
     // Step is still streaming (kept open)
     const step = items[0] as { kind: string; isStreaming: boolean; items: { kind: string }[] };
     expect(step.isStreaming).toBe(true);
-    expect(step.items.some((i) => i.kind === "procedure")).toBe(true);
+    expect(step.items.some((i) => i.kind === "automation")).toBe(true);
   });
 });
 
@@ -790,7 +790,7 @@ describe("buildAnalyticsSteps — delegation suspension", () => {
 const recoveryResumed = (attempt: number) => ev("recovery_resumed", { attempt });
 
 describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
-  it("open non-procedure step is marked interrupted on recovery_resumed", () => {
+  it("open non-automation step is marked interrupted on recovery_resumed", () => {
     const items = buildAnalyticsSteps([
       stepStart("Solving"),
       ev("text_delta", { token: "partial" }),
@@ -813,19 +813,19 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
     });
   });
 
-  it("procedure step is NOT marked interrupted — kept for aggregation", () => {
+  it("automation step is NOT marked interrupted — kept for aggregation", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
       awaitingDelegation(),
       stepEnd("suspended"),
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"),
       procStepStarted("process_data"),
       // crash mid-step
       recoveryResumed(1),
       // new attempt re-emits subrun_started + continues
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("process_data"),
       procStepCompleted("process_data"),
       procStepStarted("generate_report"),
@@ -834,27 +834,27 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
       inputResolved()
     ]);
 
-    // The step containing the procedure should NOT have an error
+    // The step containing the automation should NOT have an error
     const step = items[0] as { kind: string; error?: string; items: { kind: string }[] };
     expect(step.error).toBeUndefined();
-    // The procedure item should aggregate steps from both attempts
+    // The automation item should aggregate steps from both attempts
     const proc = getProcItem(items);
     expect(proc.stepsDone).toBe(3); // fetch_data + process_data + generate_report
     expect(proc.isStreaming).toBe(false);
   });
 
-  it("procedure stepsDone does not double-count steps completed before and after recovery", () => {
+  it("automation stepsDone does not double-count steps completed before and after recovery", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
       awaitingDelegation(),
       stepEnd("suspended"),
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"), // +1
       // crash
       recoveryResumed(1),
       // recovery re-emits subrun_started, resumes from fetch_data
-      procedureStarted(),
+      automationStarted(),
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"), // already counted — but stepsDone increments again
       procStepStarted("process_data"),
@@ -865,11 +865,11 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
 
     const proc = getProcItem(items);
     // fetch_data counted twice (once per attempt) + process_data = 3
-    // This is acceptable: the procedure item shows progress, not unique completions
+    // This is acceptable: the automation item shows progress, not unique completions
     expect(proc.stepsDone).toBe(3);
   });
 
-  it("procedure steps after recovery (no new subrun_started) still update progress", () => {
+  it("automation steps after recovery (no new subrun_started) still update progress", () => {
     // Real payload: subrun_started at attempt 0, some steps complete,
     // then recovery_resumed(1), recovery_resumed(2), then more subrun_step_*
     // events WITHOUT a new subrun_started event.
@@ -886,7 +886,7 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
       stepStart("Executing"),
       awaitingDelegation(),
       stepEnd("suspended"),
-      procedureStarted("external_factors_correlation", steps),
+      automationStarted("external_factors_correlation", steps),
       procStepStarted("temperature_correlation"),
       procStepCompleted("temperature_correlation"),
       procStepStarted("fuel_price_impact"),
@@ -915,12 +915,12 @@ describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
     expect(proc.stepsDone).toBe(7);
     expect(proc.isStreaming).toBe(false);
 
-    // Verify artifacts exist for procedure steps — the step containing
-    // the procedure should have artifact items for each proc step.
+    // Verify artifacts exist for automation steps — the step containing
+    // the automation should have artifact items for each proc step.
     const procStep = items.find(
       (i) =>
         i.kind === "step" &&
-        (i as { items: { kind: string }[] }).items.some((it) => it.kind === "procedure")
+        (i as { items: { kind: string }[] }).items.some((it) => it.kind === "automation")
     ) as { items: { kind: string; toolName?: string; isStreaming: boolean }[] };
     const artifacts = procStep.items.filter((i) => i.kind === "artifact");
     // Should have artifacts for: temperature_correlation(attempt 0),
@@ -1085,7 +1085,7 @@ describe("builder delegation", () => {
     });
   });
 
-  it("workflow delegation_started does not create BuilderDelegationItem", () => {
+  it("automation delegation_started does not create BuilderDelegationItem", () => {
     seq = 0;
     const items = buildAnalyticsSteps([
       stepStart("Running"),

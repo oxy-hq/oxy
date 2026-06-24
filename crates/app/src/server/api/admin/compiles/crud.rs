@@ -144,7 +144,7 @@ fn compile_row_from_model(
 /// One entity successfully written into a revision — the "which compiled" unit.
 #[derive(Serialize, Debug)]
 pub struct CompiledEntity {
-    /// agent | view | topic | app | procedure | verified_query | pipeline.
+    /// agent | view | topic | app | automation | verified_query | pipeline.
     pub kind: String,
     pub name: String,
     pub file_path: String,
@@ -226,7 +226,7 @@ async fn collect_compiled_entities(
     collect!(entity::semantic_views, "view");
     collect!(entity::semantic_topics, "topic");
     collect!(entity::app_definitions, "app");
-    collect!(entity::procedure_definitions, "procedure");
+    collect!(entity::automation_definitions, "automation");
     collect!(entity::airway_pipelines, "pipeline");
 
     // verified_queries has no `name` column — label it by file path.

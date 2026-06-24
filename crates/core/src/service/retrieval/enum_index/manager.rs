@@ -219,7 +219,7 @@ impl EnumIndexManager {
         }
     }
 
-    /// Build and persist the enum index from workflow configurations
+    /// Build and persist the enum index from automation configurations
     async fn build_and_persist(
         &self,
         retrieval_objects: &[RetrievalObject],

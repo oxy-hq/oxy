@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
+use agentic_automation::WorkspaceContext;
 use agentic_builder::BuilderDatabaseProvider;
 use agentic_connector::DatabaseConnector;
 use agentic_core::tools::ToolError;
-use agentic_workflow::WorkspaceContext;
 use async_trait::async_trait;
 
 use crate::agentic_wiring::OxyProjectContext;

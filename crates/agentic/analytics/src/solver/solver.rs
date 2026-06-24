@@ -70,9 +70,9 @@ pub struct AnalyticsSolver {
     pub(crate) suspension_data: Option<SuspendedRunData>,
     /// Resume input injected before re-entering the pipeline.
     pub(crate) resume_data: Option<ResumeInput>,
-    /// Optional external procedure runner.
+    /// Optional external automation runner.
     ///
-    /// When set, the executing stage delegates `SolutionSource::Procedure`
+    /// When set, the executing stage delegates `SolutionSource::Automation`
     /// solutions to this runner instead of the SQL connector.
     pub(crate) subrun_runner: Option<Arc<dyn SubrunRunner>>,
     /// Optional metric-tree runner for `explain` / `opportunity` /
@@ -117,12 +117,12 @@ pub struct AnalyticsSolver {
     /// instead of materialising rows or running interpreting.
     /// Pre-validated solution paths (semantic-layer, verified `.sql`,
     /// vendor engine) skip execution entirely; LLM-generated SQL
-    /// runs a `LIMIT 0` smoke check first. Procedure delegation is
+    /// runs a `LIMIT 0` smoke check first. Automation delegation is
     /// rejected with an explicit error in this mode.
     pub(crate) sql_generation_mode: bool,
     /// Root directory of the workspace / project.
     ///
-    /// Used to resolve workspace-relative paths returned by `search_procedures`
+    /// Used to resolve workspace-relative paths returned by `search_automations`
     /// (e.g. `example_sql/total_number_of_store.sql`) before reading the file.
     pub(crate) workspace_path: Option<std::path::PathBuf>,
     /// Layer-1 preagg refresh-key cache, shared with the background worker.
@@ -336,8 +336,8 @@ impl AnalyticsSolver {
         self
     }
 
-    /// Attach an external procedure runner for `SolutionSource::Procedure` solutions.
-    /// Attach an external subrun runner for `SolutionSource::Procedure` solutions.
+    /// Attach an external automation runner for `SolutionSource::Automation` solutions.
+    /// Attach an external subrun runner for `SolutionSource::Automation` solutions.
     pub fn with_subrun_runner(mut self, runner: Arc<dyn SubrunRunner>) -> Self {
         self.subrun_runner = Some(runner);
         self

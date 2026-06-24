@@ -1,4 +1,4 @@
-import type { Block, GroupAgenticType, GroupArtifactType, GroupWorkflowType } from "./blocks";
+import type { Block, GroupAgenticType, GroupArtifactType, GroupAutomationType } from "./blocks";
 
 interface Retry {
   type: "retry";
@@ -24,7 +24,7 @@ type RetryType = Retry | RetryWithVariables | NoRetry;
 
 export type CreateRunPayload = {
   type: "workflow";
-  workflowId: string;
+  automationId: string;
   retryType: RetryType;
 };
 
@@ -77,7 +77,7 @@ export type GetBlocksRequest = {
   run_index?: number;
 };
 
-export type GroupKind = GroupArtifactType | GroupWorkflowType | GroupAgenticType;
+export type GroupKind = GroupArtifactType | GroupAutomationType | GroupAgenticType;
 
 export type GetBlocksResponse = RunInfo & {
   blocks?: Record<string, Block>;

@@ -942,7 +942,7 @@ impl TestRunsManager {
 
     /// Atomically increment and return the next run index for the given source.
     /// Uses INSERT ... ON CONFLICT DO UPDATE ... RETURNING for atomicity without
-    /// advisory locks, matching the pattern used by workflow runs.
+    /// advisory locks, matching the pattern used by automation runs.
     async fn next_run_index(&self, source_id: &str) -> Result<i32, OxyError> {
         let row =
             entity::test_run_sequences::Entity::insert(entity::test_run_sequences::ActiveModel {

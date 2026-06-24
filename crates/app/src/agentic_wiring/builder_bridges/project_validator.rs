@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 
 /// Bridges builder project validation to oxy's config validation (for agents,
-/// workflows, apps) and airlayer parsing (for semantic views/topics).
+/// automations, apps) and airlayer parsing (for semantic views/topics).
 pub struct OxyBuilderProjectValidator {
     workspace_manager: WorkspaceManager,
 }
@@ -117,10 +117,7 @@ fn validate_single_file(
     file_name: &str,
     cfg: &oxy::config::model::Config,
 ) -> Result<(), String> {
-    if file_name.ends_with(".procedure.yml")
-        || file_name.ends_with(".workflow.yml")
-        || file_name.ends_with(".automation.yml")
-    {
+    if file_name.ends_with(".procedure.yml") || file_name.ends_with(".automation.yml") {
         let w = cfg
             .load_workflow(&abs.to_path_buf())
             .map_err(|e| e.to_string())?;
@@ -134,7 +131,7 @@ fn validate_single_file(
         validate_semantic_file(abs)
     } else {
         Err(format!(
-            "unsupported file type: {file_name}. Expected .workflow.yml, .procedure.yml, \
+            "unsupported file type: {file_name}. Expected .procedure.yml, \
              .automation.yml, .app.yml, .view.yml, or .topic.yml"
         ))
     }
@@ -143,7 +140,7 @@ fn validate_single_file(
 // ── Semantic file validation ────────────────────────────────────────────────
 
 /// Validate a semantic file by parsing it through the canonical
-/// `oxy-airlayer-compat` shim — the same parser analytics, the workflow
+/// `oxy-airlayer-compat` shim — the same parser analytics, the automation
 /// bridge, and `oxy validate` use, so the builder validator cannot accept a
 /// file analytics would reject. See
 /// `internal-docs/semantic-validation-standardization.md`.

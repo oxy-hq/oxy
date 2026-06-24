@@ -57,7 +57,7 @@ pub const SOURCE_TYPE: &str = "airway";
 ///
 /// Airway events are emitted as `(event_type, payload)` JSON pairs by
 /// the worker; the processor is a passthrough that preserves both
-/// fields verbatim. Same shape as `agentic-workflow`'s event handler.
+/// fields verbatim. Same shape as `agentic-automation`'s event handler.
 ///
 /// [`DomainHandler`]: agentic_runtime::event_registry::DomainHandler
 /// [`EventRegistry`]: agentic_runtime::event_registry::EventRegistry

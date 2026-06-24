@@ -190,11 +190,11 @@ pub struct CompiledAgent {
     pub model_ref: Option<String>,
 }
 
-/// Row shape for the procedure listing. The legacy extensions
-/// (`.procedure.yml`, `.workflow.yml`, `.automation.yml`) are
+/// Row shape for the automation listing. The legacy extensions
+/// (`.procedure.yml`, `.automation.yml`) are
 /// preserved on the row so the file-tree grouping can show them.
 #[derive(Debug, Clone)]
-pub struct CompiledProcedure {
+pub struct CompiledAutomation {
     pub file_path: String,
     pub name: String,
     pub extension: String,
@@ -302,21 +302,21 @@ pub async fn list_analytics_agents(
     ))
 }
 
-/// Listing equivalent for the workflow / procedure file enumeration.
-pub async fn list_procedures(
+/// Listing equivalent for the automation file enumeration.
+pub async fn list_automations(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
-) -> Result<Option<Vec<CompiledProcedure>>, sea_orm::DbErr> {
+) -> Result<Option<Vec<CompiledAutomation>>, sea_orm::DbErr> {
     let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
         return Ok(None);
     };
-    let rows = entity::procedure_definitions::Entity::find()
-        .filter(entity::procedure_definitions::Column::RevisionId.eq(revision_id))
+    let rows = entity::automation_definitions::Entity::find()
+        .filter(entity::automation_definitions::Column::RevisionId.eq(revision_id))
         .all(&db)
         .await?;
     Ok(Some(
         rows.into_iter()
-            .map(|m| CompiledProcedure {
+            .map(|m| CompiledAutomation {
                 file_path: m.file_path,
                 name: m.name,
                 extension: m.extension,
@@ -369,8 +369,8 @@ pub async fn resolve_analytics_agent(
     }))
 }
 
-/// Single-procedure resolver, keyed by `file_path` (the PK column).
-pub async fn resolve_procedure(
+/// Single-automation resolver, keyed by `file_path` (the PK column).
+pub async fn resolve_automation(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
     file_path: &str,
@@ -379,7 +379,7 @@ pub async fn resolve_procedure(
         return Ok(None);
     };
     let row =
-        entity::procedure_definitions::Entity::find_by_id((revision_id, file_path.to_string()))
+        entity::automation_definitions::Entity::find_by_id((revision_id, file_path.to_string()))
             .one(&db)
             .await?;
     Ok(row.map(|m| CompiledArtifact {
@@ -621,21 +621,21 @@ pub async fn resolve_verified_query(
     }))
 }
 
-/// List every procedure (`.procedure.yml` / `.workflow.yml` / `.automation.yml`)
+/// List every automation (`.procedure.yml` / `.automation.yml`)
 /// row for the workspace's current revision, carrying the full `definition` so
-/// it can be materialised back to a YAML file — unlike `list_procedures`, which
+/// it can be materialised back to a YAML file — unlike `list_automations`, which
 /// returns only listing metadata (no body). Feeds the agent-context materialiser
-/// so the analytics solver discovers and runs procedures FS-free on the serve
+/// so the analytics solver discovers and runs automations FS-free on the serve
 /// fleet.
-pub async fn list_procedure_artifacts(
+pub async fn list_automation_artifacts(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
 ) -> Result<Option<Vec<CompiledArtifact>>, sea_orm::DbErr> {
     let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
         return Ok(None);
     };
-    let rows = entity::procedure_definitions::Entity::find()
-        .filter(entity::procedure_definitions::Column::RevisionId.eq(revision_id))
+    let rows = entity::automation_definitions::Entity::find()
+        .filter(entity::automation_definitions::Column::RevisionId.eq(revision_id))
         .all(&db)
         .await?;
     Ok(Some(
@@ -651,7 +651,7 @@ pub async fn list_procedure_artifacts(
 }
 
 /// List the workspace's compiled Airway pipelines (`airway_pipelines`) as
-/// path-addressed artifacts, mirroring [`list_procedure_artifacts`]. The
+/// path-addressed artifacts, mirroring [`list_automation_artifacts`]. The
 /// `.airway.yml` body is already compiled (walker → `CompiledRow::Pipeline` →
 /// `airway_pipelines`); this is the missing reader.
 pub async fn list_pipeline_artifacts(

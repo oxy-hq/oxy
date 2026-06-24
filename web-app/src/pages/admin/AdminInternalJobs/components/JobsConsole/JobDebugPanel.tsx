@@ -11,7 +11,7 @@ import { summarizeSpec } from "./specSummary";
  *   1. Error — the run's `error_message`, full width, monospace.
  *   2. Context — tenant (workspace / org / user) + run identity, with
  *      copyable ids.
- *   3. Spec — the decoded TaskSpec (agent / question / workflow / …).
+ *   3. Spec — the decoded TaskSpec (agent / question / automation / …).
  *
  * Every value is selectable; ids carry a one-click copy affordance because
  * the first thing an operator does is paste a run_id into a log query.

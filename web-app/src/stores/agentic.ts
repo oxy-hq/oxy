@@ -224,7 +224,7 @@ export const useGroupReasoningSteps = (groupId: string | null) => {
     (block) => block.type === "step" || block.type === "task"
   );
 
-  // If no step/task blocks, follow nested group chain (e.g., artifact wrapping workflow)
+  // If no step/task blocks, follow nested group chain (e.g., artifact wrapping automation)
   if (stepOrTaskBlocks.length === 0) {
     const nestedGroupBlock = rootBlocks.find((block) => block.type === "group");
     if (nestedGroupBlock?.type === "group") {

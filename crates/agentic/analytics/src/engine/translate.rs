@@ -294,7 +294,7 @@ mod tests {
             filters: filters.iter().map(|s| s.to_string()).collect(),
             history: vec![],
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         }

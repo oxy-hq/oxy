@@ -6,7 +6,7 @@ llm:
     thinking: adaptive
 context:
   - ./sales_semantics/**/*
-  - ./workflows/**/*.procedure.yml
+  - ./workflows/**/*.automation.yml
   - ./example_sql/*.sql
 states:
   specifying:

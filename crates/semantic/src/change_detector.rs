@@ -239,7 +239,7 @@ impl ChangeDetector {
         Ok(file_hashes)
     }
 
-    /// Scan embedding source files (agents, workflows, SQL) and compute their hashes
+    /// Scan embedding source files (agents, automations, SQL) and compute their hashes
     pub fn scan_embedding_files(&self) -> Result<BTreeMap<String, String>, SemanticLayerError> {
         let mut file_hashes = BTreeMap::new();
 
@@ -257,11 +257,11 @@ impl ChangeDetector {
             &mut file_hashes,
         )?;
 
-        // Scan for workflow files (*.workflow.yml)
+        // Scan for automation files (*.automation.yml canonical, *.procedure.yml back-compat)
         Self::scan_directory_all_extensions(
             workspace_root,
             workspace_root,
-            &[".workflow.yml"],
+            &[".automation.yml", ".procedure.yml"],
             &mut file_hashes,
         )?;
 

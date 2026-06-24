@@ -19,7 +19,7 @@
 
 use crate::errors::CompileError;
 use crate::outcome::{CompileOutcome, FailureKind, FileFailure, RevisionStatus};
-use crate::walker::{DiscoveredFile, FileKind, ProcedureKind, discover};
+use crate::walker::{AutomationKind, DiscoveredFile, FileKind, discover};
 use crate::writer::{
     FinaliseInput, FinaliseOutcome, RevisionContext, finalise_revision, insert_compiling_revision,
     mark_failed,
@@ -50,7 +50,7 @@ pub enum CompiledRow {
     View(CompiledView),
     Topic(CompiledTopic),
     App(CompiledApp),
-    Procedure(CompiledProcedure),
+    Automation(CompiledAutomation),
     VerifiedQuery(CompiledVerifiedQuery),
     Pipeline(CompiledPipeline),
     Reference(CompiledReference),
@@ -109,7 +109,7 @@ pub struct CompiledApp {
 }
 
 #[derive(Debug, Clone)]
-pub struct CompiledProcedure {
+pub struct CompiledAutomation {
     pub file_path: String,
     pub name: String,
     pub extension: String,
@@ -550,7 +550,7 @@ async fn compile_one(file: &DiscoveredFile) -> Result<Vec<CompiledRow>, FileFail
             })
         }),
         FileKind::App => compile_app(file, &content),
-        FileKind::Procedure(p) => compile_procedure(file, &content, p),
+        FileKind::Automation(p) => compile_automation(file, &content, p),
         FileKind::AirwayPipeline => compile_named_yaml(file, &content, |name, file_path, def| {
             CompiledRow::Pipeline(CompiledPipeline {
                 name,
@@ -1119,10 +1119,10 @@ fn compile_app(file: &DiscoveredFile, content: &str) -> Result<Vec<CompiledRow>,
     })])
 }
 
-fn compile_procedure(
+fn compile_automation(
     file: &DiscoveredFile,
     content: &str,
-    proc_kind: ProcedureKind,
+    automation_kind: AutomationKind,
 ) -> Result<Vec<CompiledRow>, FileFailure> {
     let value = parse_yaml(file, content)?;
     let name = value
@@ -1131,10 +1131,10 @@ fn compile_procedure(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .unwrap_or_else(|| derive_name_from_path(&file.rel_path));
-    Ok(vec![CompiledRow::Procedure(CompiledProcedure {
+    Ok(vec![CompiledRow::Automation(CompiledAutomation {
         file_path: file.rel_path.clone(),
         name,
-        extension: proc_kind.extension().to_string(),
+        extension: automation_kind.extension().to_string(),
         definition: value,
     })])
 }
@@ -1207,7 +1207,6 @@ fn derive_name_from_path(rel_path: &str) -> String {
         ".topic.yml",
         ".app.yml",
         ".procedure.yml",
-        ".workflow.yml",
         ".automation.yml",
         ".airway.yml",
         ".yml",
@@ -1230,7 +1229,7 @@ fn row_dedupe_key(row: &CompiledRow, _kind: &FileKind) -> Option<String> {
         CompiledRow::View(v) => Some(format!("view:{}", v.name)),
         CompiledRow::Topic(t) => Some(format!("topic:{}", t.name)),
         CompiledRow::App(a) => Some(format!("app:{}", a.file_path)),
-        CompiledRow::Procedure(p) => Some(format!("proc:{}", p.file_path)),
+        CompiledRow::Automation(p) => Some(format!("proc:{}", p.file_path)),
         CompiledRow::VerifiedQuery(q) => Some(format!("sql:{}", q.file_path)),
         CompiledRow::Pipeline(p) => Some(format!("pipe:{}", p.name)),
         CompiledRow::Reference(_) => None,
@@ -1464,7 +1463,6 @@ mod tests {
         assert_eq!(derive_name_from_path("topics/t.topic.yml"), "topics/t");
         assert_eq!(derive_name_from_path("apps/a.app.yml"), "apps/a");
         assert_eq!(derive_name_from_path("p/x.procedure.yml"), "p/x");
-        assert_eq!(derive_name_from_path("p/y.workflow.yml"), "p/y");
         assert_eq!(derive_name_from_path("p/z.automation.yml"), "p/z");
         assert_eq!(derive_name_from_path("pipe/a.airway.yml"), "pipe/a");
         assert_eq!(derive_name_from_path("noext"), "noext");

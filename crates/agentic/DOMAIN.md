@@ -274,7 +274,7 @@ Five-stage pipeline: Clarifying → Specifying → Solving → Executing → Int
 
 | Stage | Tools | Emits |
 |-------|-------|-------|
-| Clarifying | `search_catalog`, `search_procedures`, `ask_user` | `SchemaResolved`, `TriageCompleted`, `IntentClarified` |
+| Clarifying | `search_catalog`, `search_automations`, `ask_user` | `SchemaResolved`, `TriageCompleted`, `IntentClarified` |
 | Specifying | `get_valid_dimensions`, `get_column_range` | `SpecResolved`, `SemanticShortcutAttempted`/`Resolved` |
 | Solving | `explain_plan`, `dry_run` | `QueryGenerated` |
 | Executing | (connector I/O) | `QueryExecuted` |
@@ -360,7 +360,7 @@ User: "Total revenue by region?"
     ▼
 Clarifying(intent { question, history })
     │ solver.clarify() — triage tool loop
-    │ tools: search_catalog, search_procedures
+    │ tools: search_catalog, search_automations
     │ emit IntentClarified { question_type: Breakdown, metrics, dimensions }
     ▼
 Specifying(clarified_intent)

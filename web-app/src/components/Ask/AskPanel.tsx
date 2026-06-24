@@ -23,7 +23,7 @@ const ASK_SUGGESTIONS = [
 /**
  * Bottom-anchored composer the AskPill expands into. Wraps the existing
  * ChatPanel engine — same thread creation, agent selector, and
- * Ask/Build/Procedure modes. Submitting creates the thread and opens it
+ * Ask/Build/Automation modes. Submitting creates the thread and opens it
  * in the right-side ThreadDrawer — the user never leaves the current
  * page. The close-on-route-change effect remains as a safety net for
  * navigations triggered elsewhere.

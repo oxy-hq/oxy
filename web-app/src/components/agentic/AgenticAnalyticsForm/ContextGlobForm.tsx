@@ -22,8 +22,8 @@ export const ContextGlobForm: React.FC = () => {
       </div>
 
       <p className='text-muted-foreground text-sm'>
-        Glob patterns pointing to semantic layer files, procedures, and SQL examples injected as LLM
-        context.
+        Glob patterns pointing to semantic layer files, automations, and SQL examples injected as
+        LLM context.
       </p>
 
       {fields.length === 0 && (

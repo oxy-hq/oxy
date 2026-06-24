@@ -1,9 +1,9 @@
-//! Atomicity tests for [`agentic_workflow::extension::commit_decision`].
+//! Atomicity tests for [`agentic_automation::extension::commit_decision`].
 //!
-//! `commit_decision` is the single atomic write-point for a workflow decision
-//! boundary. It replaces the ad-hoc sequence `update_workflow_state` → emit
+//! `commit_decision` is the single atomic write-point for an automation decision
+//! boundary. It replaces the ad-hoc sequence `update_automation_state` → emit
 //! events → mark queue completed, which was observably non-atomic: a silent
-//! failure anywhere in that sequence stranded a workflow in a half-committed
+//! failure anywhere in that sequence stranded an automation in a half-committed
 //! state (state advanced, events/queue never written).
 //!
 //! Run:
@@ -11,12 +11,12 @@
 
 use std::collections::HashMap;
 
+use agentic_automation::extension::{
+    AutomationRunState, CommitOutcome, DecisionCommit, DecisionTerminal, commit_decision,
+    insert_automation_state, load_automation_state,
+};
 use agentic_runtime::crud;
 use agentic_runtime::migration::RuntimeMigrator;
-use agentic_workflow::extension::{
-    CommitOutcome, DecisionCommit, DecisionTerminal, WorkflowRunState, commit_decision,
-    insert_workflow_state, load_workflow_state,
-};
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use serde_json::{Value, json};
@@ -76,30 +76,30 @@ async fn test_db() -> Option<DatabaseConnection> {
     agentic_analytics::extension::AnalyticsMigrator::up(&db, None)
         .await
         .expect("analytics migrations failed");
-    agentic_workflow::WorkflowMigrator::up(&db, None)
+    agentic_automation::AutomationMigrator::up(&db, None)
         .await
-        .expect("workflow migrations failed");
+        .expect("automation migrations failed");
     Some(db)
 }
 
 // ── Fixture helpers ──────────────────────────────────────────────────────────
 
-/// Build a two-step workflow with a delegated SQL step followed by an inline
+/// Build a two-step automation with a delegated SQL step followed by an inline
 /// formatter. Mirrors the real-world shape where a non-atomic commit stranded
-/// the workflow between the two steps.
-fn two_step_workflow() -> agentic_workflow::WorkflowConfig {
-    agentic_workflow::WorkflowConfig {
+/// the automation between the two steps.
+fn two_step_automation() -> agentic_automation::AutomationConfig {
+    agentic_automation::AutomationConfig {
         name: "atomic_test".to_string(),
         tasks: vec![
-            agentic_workflow::config::TaskConfig {
+            agentic_automation::config::TaskConfig {
                 name: "step_sql".to_string(),
-                task_type: agentic_workflow::config::TaskType::Unknown,
+                task_type: agentic_automation::config::TaskType::Unknown,
                 export: None,
                 cache: None,
             },
-            agentic_workflow::config::TaskConfig {
+            agentic_automation::config::TaskConfig {
                 name: "step_fmt".to_string(),
-                task_type: agentic_workflow::config::TaskType::Unknown,
+                task_type: agentic_automation::config::TaskType::Unknown,
                 export: None,
                 cache: None,
             },
@@ -111,7 +111,7 @@ fn two_step_workflow() -> agentic_workflow::WorkflowConfig {
     }
 }
 
-async fn seed_run(db: &DatabaseConnection) -> (String, WorkflowRunState) {
+async fn seed_run(db: &DatabaseConnection) -> (String, AutomationRunState) {
     let run_id = format!("wf-commit-{}", Uuid::new_v4());
     crud::insert_run(
         db,
@@ -125,9 +125,9 @@ async fn seed_run(db: &DatabaseConnection) -> (String, WorkflowRunState) {
     .await
     .expect("insert run");
 
-    let state = WorkflowRunState {
+    let state = AutomationRunState {
         run_id: run_id.clone(),
-        workflow: two_step_workflow(),
+        workflow: two_step_automation(),
         workflow_yaml_hash: "hash".to_string(),
         workflow_context: json!({"workspace_path": "/tmp"}),
         variables: None,
@@ -145,9 +145,9 @@ async fn seed_run(db: &DatabaseConnection) -> (String, WorkflowRunState) {
         initial_render_context: json!({}),
         invalidate_iterations: HashMap::new(),
     };
-    insert_workflow_state(db, &state)
+    insert_automation_state(db, &state)
         .await
-        .expect("insert workflow state");
+        .expect("insert automation state");
     (run_id, state)
 }
 
@@ -159,7 +159,7 @@ async fn seed_queue_row(db: &DatabaseConnection, task_id: &str, run_id: &str) {
         task_id,
         run_id,
         None,
-        &TaskSpec::WorkflowDecision {
+        &TaskSpec::AutomationDecision {
             run_id: run_id.to_string(),
             pending_child_answer: None,
         },
@@ -198,7 +198,7 @@ async fn queue_status(db: &DatabaseConnection, task_id: &str) -> Option<String> 
 
 /// Continuing terminal: state CAS'd, events persisted with monotonic seq, run
 /// + queue rows untouched. This models the common case of "decider advanced
-/// the workflow to the next suspended step".
+/// the automation to the next suspended step".
 #[tokio::test(flavor = "multi_thread")]
 async fn continuing_commits_state_and_events_atomically() {
     let Some(db) = test_db().await else {
@@ -241,7 +241,7 @@ async fn continuing_commits_state_and_events_atomically() {
     assert!(matches!(outcome, CommitOutcome::Committed));
 
     // State CAS'd: version advanced to 1, current_step == 1.
-    let loaded = load_workflow_state(&db, &run_id).await.unwrap().unwrap();
+    let loaded = load_automation_state(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(loaded.decision_version, 1);
     assert_eq!(loaded.current_step, 1);
     assert!(loaded.results.contains_key("step_sql"));
@@ -265,10 +265,10 @@ async fn continuing_commits_state_and_events_atomically() {
     );
 }
 
-/// CompleteWorkflow terminal: run row flipped to `done` and decision queue
+/// CompleteAutomation terminal: run row flipped to `done` and decision queue
 /// row flipped to `completed` inside the same transaction.
 #[tokio::test(flavor = "multi_thread")]
-async fn complete_workflow_terminal_atomically_finalizes_run_and_queue() {
+async fn complete_automation_terminal_atomically_finalizes_run_and_queue() {
     let Some(db) = test_db().await else {
         eprintln!("skipping: no DB available");
         return;
@@ -300,7 +300,7 @@ async fn complete_workflow_terminal_atomically_finalizes_run_and_queue() {
             step_hash_delta: json!({}),
             events,
             attempt: 0,
-            terminal: DecisionTerminal::CompleteWorkflow {
+            terminal: DecisionTerminal::CompleteAutomation {
                 final_answer: "[\"done\"]".into(),
             },
         },
@@ -319,10 +319,10 @@ async fn complete_workflow_terminal_atomically_finalizes_run_and_queue() {
     assert_eq!(event_types(&db, &run_id).await, vec!["subrun_completed"]);
 }
 
-/// FailWorkflow terminal: run row flipped to `failed` and decision queue
+/// FailAutomation terminal: run row flipped to `failed` and decision queue
 /// row flipped to `failed` atomically, with the error surfaced on both.
 #[tokio::test(flavor = "multi_thread")]
-async fn fail_workflow_terminal_atomically_marks_run_and_queue_failed() {
+async fn fail_automation_terminal_atomically_marks_run_and_queue_failed() {
     let Some(db) = test_db().await else {
         eprintln!("skipping: no DB available");
         return;
@@ -345,7 +345,7 @@ async fn fail_workflow_terminal_atomically_marks_run_and_queue_failed() {
                 json!({"success": false, "error": "boom"}),
             )],
             attempt: 0,
-            terminal: DecisionTerminal::FailWorkflow {
+            terminal: DecisionTerminal::FailAutomation {
                 error: "boom".into(),
             },
         },
@@ -384,11 +384,11 @@ async fn version_conflict_rolls_back_all_writes() {
     state.current_step = 1;
     state.results.insert("step_sql".into(), json!({"rows": 1}));
     assert!(
-        agentic_workflow::extension::update_workflow_state(&db, &state)
+        agentic_automation::extension::update_automation_state(&db, &state)
             .await
             .unwrap()
     );
-    let after_race = load_workflow_state(&db, &run_id).await.unwrap().unwrap();
+    let after_race = load_automation_state(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(after_race.decision_version, 1);
 
     // Our worker still holds expected_version = 0. Commit should rollback.
@@ -407,7 +407,7 @@ async fn version_conflict_rolls_back_all_writes() {
             step_hash_delta: json!({}),
             events: vec![("subrun_completed".into(), json!({"success": true}))],
             attempt: 0,
-            terminal: DecisionTerminal::CompleteWorkflow {
+            terminal: DecisionTerminal::CompleteAutomation {
                 final_answer: "stale".into(),
             },
         },
@@ -418,7 +418,7 @@ async fn version_conflict_rolls_back_all_writes() {
     assert!(matches!(outcome, CommitOutcome::VersionConflict));
 
     // DB reflects the racing worker's state, NOT our conflicting commit.
-    let final_state = load_workflow_state(&db, &run_id).await.unwrap().unwrap();
+    let final_state = load_automation_state(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(final_state.decision_version, 1);
     assert_eq!(final_state.current_step, 1);
     assert!(!final_state.results.contains_key("step_fmt"));
@@ -534,7 +534,7 @@ async fn sequential_deltas_accumulate_in_results_column() {
     assert!(matches!(outcome, CommitOutcome::Committed));
 
     // Reload and verify only step_sql is present.
-    let loaded = load_workflow_state(&db, &run_id).await.unwrap().unwrap();
+    let loaded = load_automation_state(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(loaded.decision_version, 1);
     assert!(loaded.results.contains_key("step_sql"));
     assert!(!loaded.results.contains_key("step_fmt"));
@@ -565,7 +565,7 @@ async fn sequential_deltas_accumulate_in_results_column() {
     assert!(matches!(outcome, CommitOutcome::Committed));
 
     // Both keys must be present and untouched.
-    let final_state = load_workflow_state(&db, &run_id).await.unwrap().unwrap();
+    let final_state = load_automation_state(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(final_state.decision_version, 2);
     assert_eq!(final_state.current_step, 2);
     assert_eq!(final_state.results.len(), 2);
@@ -579,11 +579,11 @@ async fn sequential_deltas_accumulate_in_results_column() {
     );
 }
 
-/// Completion invariant: CompleteWorkflow with `current_step < tasks.len()`
+/// Completion invariant: CompleteAutomation with `current_step < tasks.len()`
 /// is rejected as a bug and rolls back. Without this, a decider with an
-/// off-by-one would strand the workflow with pending steps never running.
+/// off-by-one would strand the automation with pending steps never running.
 #[tokio::test(flavor = "multi_thread")]
-async fn complete_workflow_with_pending_steps_is_rejected() {
+async fn complete_automation_with_pending_steps_is_rejected() {
     let Some(db) = test_db().await else {
         eprintln!("skipping: no DB available");
         return;
@@ -607,7 +607,7 @@ async fn complete_workflow_with_pending_steps_is_rejected() {
             step_hash_delta: json!({}),
             events: vec![],
             attempt: 0,
-            terminal: DecisionTerminal::CompleteWorkflow {
+            terminal: DecisionTerminal::CompleteAutomation {
                 final_answer: "premature".into(),
             },
         },
@@ -621,7 +621,7 @@ async fn complete_workflow_with_pending_steps_is_rejected() {
     );
 
     // Nothing committed.
-    let loaded = load_workflow_state(&db, &run_id).await.unwrap().unwrap();
+    let loaded = load_automation_state(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(loaded.decision_version, 0);
     assert_eq!(
         run_task_status(&db, &run_id).await.as_deref(),

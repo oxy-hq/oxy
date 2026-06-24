@@ -51,10 +51,10 @@ export type TextItem = {
   isStreaming: boolean;
 };
 
-export type ProcedureItem = {
-  kind: "procedure";
+export type AutomationItem = {
+  kind: "automation";
   id: string;
-  procedureName: string;
+  automationName: string;
   steps: Array<{ name: string; task_type: string }>;
   stepsDone: number;
   isStreaming: boolean;
@@ -76,10 +76,10 @@ export type TraceItem =
   | ArtifactItem
   | SqlItem
   | TextItem
-  | ProcedureItem
+  | AutomationItem
   | BuilderDelegationItem;
 
-export type SelectableItem = ArtifactItem | SqlItem | ProcedureItem | BuilderDelegationItem;
+export type SelectableItem = ArtifactItem | SqlItem | AutomationItem | BuilderDelegationItem;
 
 // ── Step / fan-out types ──────────────────────────────────────────────────────
 
@@ -175,10 +175,10 @@ function createScope() {
       return;
     }
     // Fallback: if no current step (e.g. after recovery flush), find the
-    // last flushed step that contains a procedure item and push there.
+    // last flushed step that contains an automation item and push there.
     for (let i = result.length - 1; i >= 0; i--) {
       const r = result[i];
-      if (r.kind === "step" && r.items.some((it) => it.kind === "procedure")) {
+      if (r.kind === "step" && r.items.some((it) => it.kind === "automation")) {
         r.items.push(item);
         return;
       }
@@ -213,7 +213,7 @@ function createScope() {
       }
     }
     // Fallback: search flushed results (recovery case — step was closed
-    // but procedure step artifacts were pushed into it afterwards).
+    // but automation step artifacts were pushed into it afterwards).
     for (let i = result.length - 1; i >= 0; i--) {
       const r = result[i];
       if (r.kind !== "step") continue;
@@ -415,16 +415,16 @@ function createScope() {
       currentFanOut = null;
     },
 
-    // ── Procedure lookup across flushed results ────────────────────────────────
-    // Search flushed results for a procedure item with a matching name.
-    // Used on recovery to reuse an existing procedure instead of creating a
+    // ── Automation lookup across flushed results ────────────────────────────────
+    // Search flushed results for an automation item with a matching name.
+    // Used on recovery to reuse an existing automation instead of creating a
     // duplicate.
-    findExistingProcedure(name?: string): ProcedureItem | undefined {
+    findExistingAutomation(name?: string): AutomationItem | undefined {
       for (let i = result.length - 1; i >= 0; i--) {
         const item = result[i];
         if (item.kind !== "step") continue;
         for (const child of item.items) {
-          if (child.kind === "procedure" && (!name || child.procedureName === name)) return child;
+          if (child.kind === "automation" && (!name || child.automationName === name)) return child;
         }
       }
       return undefined;
@@ -433,17 +433,17 @@ function createScope() {
     // ── Attempt boundary ──────────────────────────────────────────────────────
     // Close any open (streaming) steps when a new recovery attempt begins.
     // Steps are flushed to result so subsequent events from the new attempt
-    // appear after them. Procedure items are NOT marked as failed — they
+    // appear after them. Automation items are NOT marked as failed — they
     // will be updated by events from the new attempt to show aggregate
     // progress across all attempts.
     closeInterruptedSteps() {
       for (const step of stepStack.splice(0)) {
         step.isStreaming = false;
-        // Only mark non-procedure steps as interrupted. Procedure steps
+        // Only mark non-automation steps as interrupted. Automation steps
         // keep their current state so the new attempt's events can
         // continue updating them (e.g., more subrun_step_completed).
-        const hasProcedure = step.items.some((it) => it.kind === "procedure");
-        if (!hasProcedure) {
+        const hasAutomation = step.items.some((it) => it.kind === "automation");
+        if (!hasAutomation) {
           step.error = "Interrupted by server restart";
         }
         result.push(step);
@@ -634,9 +634,9 @@ function buildDomainItem(ev: UiBlock, nextId: (prefix: string) => string): Trace
 export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
   const scope = createScope();
 
-  // Track whether the most recent awaiting_input was a procedure delegation
+  // Track whether the most recent awaiting_input was an automation delegation
   // (not human input).  When true, the subsequent step_end "suspended" should
-  // NOT close the step — procedure events need an open step to attach to.
+  // NOT close the step — automation events need an open step to attach to.
   let lastAwaitingIsDelegation = false;
   let delegationStepOpen = false;
 
@@ -730,11 +730,14 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
       // ── Human-in-the-loop ──────────────────────────────────────────────────
       case "awaiting_input": {
         // Detect delegation suspensions: prompts starting with "Executing step:"
-        // or "Execute procedure" indicate procedure delegation, not human input.
+        // or "Execute automation" indicate automation delegation, not human input.
         const questions: Array<{ prompt: string }> = ev.payload.questions ?? [];
         const prompt = questions[0]?.prompt ?? "";
         lastAwaitingIsDelegation =
           prompt.startsWith("Executing step:") ||
+          // Match the legacy prefix too so runs persisted before the rename
+          // still register as automation delegation.
+          prompt.startsWith("Execute automation") ||
           prompt.startsWith("Execute procedure") ||
           prompt.startsWith("Delegating to builder") ||
           prompt.startsWith("The analytics pipeline could not");
@@ -813,19 +816,19 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         scope.closeFanOut();
         break;
 
-      // ── Procedure lifecycle ────────────────────────────────────────────────
+      // ── Automation lifecycle ────────────────────────────────────────────────
       case "subrun_started": {
         // On recovery, a subrun_started event fires again for the same
-        // procedure. Find the existing item in flushed results and re-open
+        // automation. Find the existing item in flushed results and re-open
         // it instead of creating a duplicate.
-        const existingProc = scope.findExistingProcedure(ev.payload.subrun_name);
+        const existingProc = scope.findExistingAutomation(ev.payload.subrun_name);
         if (existingProc) {
           existingProc.isStreaming = true;
         } else {
           scope.pushItem({
-            kind: "procedure",
+            kind: "automation",
             id: scope.nextId("proc-run"),
-            procedureName: ev.payload.subrun_name,
+            automationName: ev.payload.subrun_name,
             steps: ev.payload.steps,
             stepsDone: 0,
             isStreaming: true
@@ -836,18 +839,18 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
 
       case "subrun_completed": {
         // Check current steps first, then flushed results (recovery case).
-        const p = scope.findLastStreaming<ProcedureItem>("procedure");
+        const p = scope.findLastStreaming<AutomationItem>("automation");
         if (p) {
           p.isStreaming = false;
         } else {
-          // On recovery the procedure item lives in flushed results.
-          const existing = scope.findExistingProcedure(ev.payload.subrun_name ?? "");
+          // On recovery the automation item lives in flushed results.
+          const existing = scope.findExistingAutomation(ev.payload.subrun_name ?? "");
           if (existing) existing.isStreaming = false;
         }
         break;
       }
 
-      // ── Procedure execution progress ───────────────────────────────────────
+      // ── Automation execution progress ───────────────────────────────────────
       case "subrun_step_started":
         scope.pushItem({
           kind: "artifact",
@@ -865,13 +868,13 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
           artifact.isStreaming = false;
           artifact.toolOutput = ev.payload.success ? "Completed" : (ev.payload.error ?? "Failed");
         }
-        // Also update stepsDone on the procedure item.
+        // Also update stepsDone on the automation item.
         // Check current steps first, then flushed results (recovery case).
         if (ev.payload.success) {
-          let p = scope.findLastStreaming<ProcedureItem>("procedure");
+          let p = scope.findLastStreaming<AutomationItem>("automation");
           if (!p) {
-            // On recovery the procedure was flushed — find the most recent one.
-            p = scope.findExistingProcedure("") ?? undefined;
+            // On recovery the automation was flushed — find the most recent one.
+            p = scope.findExistingAutomation("") ?? undefined;
           }
           if (p?.steps.some((s) => s.name === ev.payload.step)) p.stepsDone += 1;
         }

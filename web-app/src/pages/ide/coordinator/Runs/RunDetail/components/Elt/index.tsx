@@ -15,7 +15,7 @@ import { EltTableRow } from "./TableRow";
 /**
  * ELT (airway) run detail body — replaces the flat `EltTablesCard` +
  * generic TaskTree fallback for `source_type = "airway"` runs. Two
- * tabs (Graph default / Events) matching the workflow run shape.
+ * tabs (Graph default / Events) matching the automation run shape.
  *
  * The Graph tab is the hero: pipeline lineage header at top, per-table
  * cards stacked vertically with tri-banded extract/normalize/load
@@ -129,7 +129,7 @@ export const EltBody: React.FC<{
           <div className='flex flex-col gap-4 p-3 lg:flex-row'>
             <div className='flex min-w-0 flex-1 flex-col gap-2'>
               {/* Shared time axis above the bars — same widget the
-                  workflow Graph view uses, just with column-width slots
+                  automation Graph view uses, just with column-width slots
                   tuned to the ELT card layout (no fixed left/right
                   gutters here, so a tiny left pad matches the bar's
                   `ml-5` and the right slot is zero). */}

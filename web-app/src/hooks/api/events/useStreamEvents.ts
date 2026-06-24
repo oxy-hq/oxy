@@ -7,13 +7,13 @@
  * `useBlockStore.handleEvent` folds each frame into the per-group
  * block tree.
  *
- * Why it lives outside the workflow tree now: the workflow run page
- * uses the new `/agentic-workflows/runs/:id/events` SSE (typed
- * `WorkflowEvent`s, handled by `useWorkflowRunStream`). The legacy
+ * Why it lives outside the automation tree now: the automation run page
+ * uses the new `/agentic-automations/runs/:id/events` SSE (typed
+ * `AutomationEvent`s, handled by `useAutomationRunStream`). The legacy
  * `/events` SSE this hook subscribes to is still load-bearing for
  * analytics chat blocks — keeping it here makes the dependency
  * direction honest (analytics chat depends on a generic event stream
- * hook, not on a workflow component).
+ * hook, not on a automation component).
  */
 
 import { useMutation } from "@tanstack/react-query";

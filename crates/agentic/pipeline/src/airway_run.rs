@@ -1,6 +1,6 @@
 //! Shared start helper for airway runs.
 //!
-//! Mirrors [`crate::workflow_run::start_workflow_run`]: seeds a fresh
+//! Mirrors [`crate::automation_run::start_automation_run`]: seeds a fresh
 //! `agentic_runs` row, populates the airway-specific extension row,
 //! and enqueues a [`TaskSpec::Airway`] for the coordinator to claim.
 //! HTTP, CLI, MCP, and eval all converge on this primitive.
@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use agentic_airway::AirwayPipelineSpec;
 use agentic_airway::extension::run_extension;
+use agentic_automation::WorkspaceContext;
 use agentic_core::delegation::TaskSpec;
 use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
 use agentic_runtime::coordinator::Coordinator;
@@ -20,7 +21,6 @@ use agentic_runtime::crud;
 use agentic_runtime::state::RuntimeState;
 use agentic_runtime::transport::DurableTransport;
 use agentic_runtime::worker::Worker;
-use agentic_workflow::WorkspaceContext;
 use sea_orm::{DatabaseConnection, DbErr};
 use serde::Deserialize;
 use serde_json::Value;
@@ -237,12 +237,12 @@ pub async fn start_airway_run(
 ///
 /// Pairs with [`start_airway_run`]. Airway is a single atomic task —
 /// no child delegation, no decision chain — so unlike
-/// `spawn_workflow_run_drive` this attaches no completion policy or
+/// `spawn_automation_run_drive` this attaches no completion policy or
 /// delegation resolver: the default coordinator terminates the run
 /// when the root `TaskSpec::Airway` returns `Done` / `Failed`.
 ///
 /// The transport is scoped to this run's id so the worker can't poach
-/// a sibling run's queued root task (same race the workflow drive
+/// a sibling run's queued root task (same race the automation drive
 /// guards against).
 pub fn spawn_airway_run_drive(
     db: DatabaseConnection,
@@ -299,7 +299,7 @@ pub fn spawn_airway_run_drive(
         let mut coord = coordinator;
         coord.run().await;
         // Close the SSE stream cleanly once the run terminates —
-        // mirrors the workflow drive's shutdown sequence.
+        // mirrors the automation drive's shutdown sequence.
         cleanup_state.notify(&cleanup_run_id);
         cancel_forwarder.abort();
         worker_task.abort();

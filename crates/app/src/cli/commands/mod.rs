@@ -15,6 +15,7 @@ mod looker;
 mod make;
 mod mcp;
 mod migrate;
+mod migrate_automations;
 mod publish;
 pub mod run;
 mod seed;
@@ -25,6 +26,7 @@ mod worker;
 
 use crate::cli::commands::mcp::{start_mcp_sse_server, start_mcp_stdio};
 use crate::cli::commands::migrate::migrate;
+use crate::cli::commands::migrate_automations::{MigrateAutomationsArgs, migrate_automations};
 use crate::cli::commands::run::{RunArgs, handle_run_command};
 use crate::server::service::retrieval::{ReindexInput, reindex};
 use crate::server::service::sync::{SyncFilter, sync_databases};
@@ -39,7 +41,7 @@ use ::oxy::theme::get_current_theme_mode;
 use clap::CommandFactory;
 use clap::Parser;
 use make::handle_make_command;
-use model::{Config, Workflow};
+use model::{Automation, Config};
 use oxy_shared::errors::OxyError;
 use serve::start_server_and_web_app;
 use std::backtrace;
@@ -159,9 +161,9 @@ enum McpTransport {
 enum SubCommand {
     /// Initialize a repository as an oxy project. Also creates a ~/.config/oxy/config.yaml file if it doesn't exist
     Init,
-    /// Execute procedure (.procedure.yml), workflow (.workflow.yml or .automation.yml), or SQL (.sql) files
+    /// Execute automation (.automation.yml or .procedure.yml) or SQL (.sql) files
     ///
-    /// Run SQL queries against databases or execute workflows for data processing.
+    /// Run SQL queries against databases or execute automations for data processing.
     Run(RunArgs),
     /// Build vector embeddings and sync integrations
     ///
@@ -185,7 +187,7 @@ enum SubCommand {
     Sync(SyncArgs),
     /// Validate configuration files for syntax and structure
     ///
-    /// Check your config.yml, workflow files, and agent configurations
+    /// Check your config.yml, automation files, and agent configurations
     /// for errors and compliance with the expected schema.
     Validate(ValidateArgs),
     /// Start MCP (Model Context Protocol) server
@@ -195,6 +197,13 @@ enum SubCommand {
     Mcp(McpArgs),
     /// Migrate the database schema to the latest version
     Migrate,
+    /// Migrate a customer project to the Automations naming
+    ///
+    /// Renames legacy `.procedure.yml` / `.workflow.yml` files to the canonical
+    /// `.automation.yml` extension and rewrites references to them
+    /// (`src:`, `workflow_ref:`, glob includes) across the project's
+    /// `.yml` / `.yaml` / `.sql` files. Use `--dry-run` to preview.
+    MigrateAutomations(MigrateAutomationsArgs),
     /// Start with Docker PostgreSQL (recommended)
     ///
     /// Launch PostgreSQL in Docker and start the Oxy web server.
@@ -227,9 +236,9 @@ enum SubCommand {
     /// Download and install the newest release of Oxy,
     /// ensuring you have access to the latest features and fixes.
     SelfUpdate,
-    /// Execute and manage workflow files with advanced options
+    /// Execute and manage automation files with advanced options
     ///
-    /// Run workflow files with additional control over execution,
+    /// Run automation files with additional control over execution,
     /// error handling, and output formatting.
     Make(MakeArgs),
 
@@ -317,7 +326,7 @@ enum SubCommand {
 
 #[derive(Parser, Debug)]
 pub struct MakeArgs {
-    /// Path to the workflow file to execute
+    /// Path to the automation file to execute
     file: String,
 }
 
@@ -387,7 +396,7 @@ struct GenConfigSchemaArgs {
 struct ValidateArgs {
     /// Validate a specific file instead of all configuration files
     ///
-    /// Provide a path to a workflow (.workflow.yml), agentic agent
+    /// Provide a path to an automation (.automation.yml), agentic agent
     /// (.agentic.yml), or app (.app.yml) file to validate just that file.
     ///
     /// Note: .agentic.yml validation is structural only — the file is parsed
@@ -447,13 +456,10 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
     let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     match () {
-        _ if file_name.ends_with(".procedure.yml")
-            || file_name.ends_with(".workflow.yml")
-            || file_name.ends_with(".automation.yml") =>
-        {
-            let workflow = config.load_workflow(file_path).map_err(|e| e.to_string())?;
+        _ if file_name.ends_with(".procedure.yml") || file_name.ends_with(".automation.yml") => {
+            let automation = config.load_workflow(file_path).map_err(|e| e.to_string())?;
             config
-                .validate_workflow(&workflow)
+                .validate_workflow(&automation)
                 .map_err(|e| e.to_string())
         }
         _ if file_name.ends_with(".agentic.yml") => {
@@ -486,7 +492,7 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
             }
         }
         _ => Err(format!(
-            "Unknown file type: {}. Expected .workflow.yml, .automation.yml, .agentic.yml, .app.yml, .view.yml, or .topic.yml",
+            "Unknown file type: {}. Expected .automation.yml, .procedure.yml, .agentic.yml, .app.yml, .view.yml, or .topic.yml",
             file_path.display()
         )),
     }
@@ -540,6 +546,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Sync(_) => "sync",
             SubCommand::Validate(_) => "validate",
             SubCommand::Migrate => "migrate",
+            SubCommand::MigrateAutomations(_) => "migrate-automations",
             SubCommand::Start(_) => "start",
             SubCommand::Serve(_) => "serve",
             SubCommand::Status => "status",
@@ -587,7 +594,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 ),
                 (
                     "workflow.json",
-                    serde_json::to_string_pretty(&schemars::schema_for!(Workflow))?,
+                    serde_json::to_string_pretty(&schemars::schema_for!(Automation))?,
                 ),
                 (
                     "agentic.json",
@@ -744,11 +751,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 let mut errors: Vec<String> = Vec::new();
                 let mut valid_count = 0;
 
-                // Validate workflows
-                for workflow_file in cfg.list_workflows(&cfg.workspace_path) {
-                    match validate_single_file(&workflow_file, cfg) {
+                // Validate automations
+                for automation_file in cfg.list_workflows(&cfg.workspace_path) {
+                    match validate_single_file(&automation_file, cfg) {
                         Ok(_) => valid_count += 1,
-                        Err(e) => errors.push(format!("{}: {}", workflow_file.display(), e)),
+                        Err(e) => errors.push(format!("{}: {}", automation_file.display(), e)),
                     }
                 }
 
@@ -804,6 +811,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 exit(1);
             } else {
                 println!("{}", "Migration completed successfully".success());
+            }
+        }
+        Some(SubCommand::MigrateAutomations(args)) => {
+            if let Err(e) = migrate_automations(args) {
+                eprintln!("{}", format!("Automation migration failed: {e}").error());
+                exit(1);
             }
         }
         Some(SubCommand::Start(start_args)) => {

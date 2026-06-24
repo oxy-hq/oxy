@@ -1,5 +1,6 @@
 import {
   Activity,
+  Workflow as Automation,
   BarChart3,
   Bot,
   CheckCircle,
@@ -15,7 +16,6 @@ import {
   RotateCw,
   Search,
   Target,
-  Workflow,
   Wrench,
   Zap
 } from "lucide-react";
@@ -43,7 +43,7 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
     return <CheckCircle className={className} />;
   }
   if (spanName === "workflow.execute") {
-    return <Workflow className={className} />;
+    return <Automation className={className} />;
   }
   if (spanName === "retrieval.execute") {
     return <Search className={className} />;
@@ -70,7 +70,7 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
     return <Wrench className={className} />;
   }
 
-  // Workflow launcher operations
+  // Automation launcher operations
   if (spanName === "workflow.launcher.with_project") {
     return <Folder className={className} />;
   }
@@ -84,12 +84,12 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
     return <ClipboardList className={className} />;
   }
 
-  // Workflow run
+  // Automation run
   if (spanName === "workflow.run_workflow") {
-    return <Workflow className={className} />;
+    return <Automation className={className} />;
   }
 
-  // Workflow task types
+  // Automation task types
   if (spanName === "workflow.task.execute") {
     return <CheckCircle className={className} />;
   }
@@ -118,9 +118,9 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
     return <ClipboardList className={className} />;
   }
 
-  // General workflow operations
+  // General automation operations
   if (spanName.startsWith("workflow.")) {
-    return <Workflow className={className} />;
+    return <Automation className={className} />;
   }
 
   // Agent operations

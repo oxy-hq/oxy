@@ -32,7 +32,7 @@ crates/
     db/                     # (agentic-db) Shared SeaORM entities and migrations for agentic pipeline
     http/                   # (agentic-http) Axum HTTP routes for the agentic analytics pipeline
     llm/                    # (agentic-llm) Shared LLM provider abstraction for agentic domains
-    workflow/               # (agentic-workflow) Procedure runner backed by oxy-workflow
+    automation/             # (agentic-automation) Automation runner backed by oxy-workflow
   infrastructure/llm/
     anthropic/              # (oxy-anthropic) Anthropic LLM provider
     gemini/                 # (oxy-gemini) Google Gemini provider

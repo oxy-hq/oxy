@@ -131,7 +131,7 @@ impl Connector {
     /// (`INSERT` / `UPDATE` / `CREATE` / `DROP`) issued through this
     /// connector will fail with a permission-denied at the database, even
     /// for an Owner. Threading the real role from `ExecutionContext` is
-    /// the supported way to grant write access to Procedure / Workflow /
+    /// the supported way to grant write access to Automation /
     /// agent SQL steps; the IDE Database panel does this automatically
     /// via `OxyProjectContext::build_connector_for`.
     pub async fn from_db(
@@ -236,10 +236,10 @@ impl Connector {
                 // falling back to a less-privileged path.
                 //
                 // Role: pick the airhouse role from `effective_role` when
-                // the caller threaded one through (agent / workflow runs
+                // the caller threaded one through (agent / automation runs
                 // entered via authenticated handlers do this), else fall
                 // back to least-privilege Reader. Reader denies DDL/DML at
-                // the database, so write-capable Procedure / Workflow
+                // the database, so write-capable Automation
                 // steps require the caller to populate `effective_role`
                 // — see the doc on `from_db` for how.
                 let airhouse_role = effective_role
@@ -257,7 +257,7 @@ impl Connector {
                     OxyError::ConfigurationError(
                         "airhouse_managed requires a user identity; no subject (oxy user id) \
                          was threaded into Connector::from_db. This typically means the caller \
-                         needs to pass `execution_context.user_id` — agent / workflow runs are \
+                         needs to pass `execution_context.user_id` — agent / automation runs are \
                          expected to populate it."
                             .into(),
                     )

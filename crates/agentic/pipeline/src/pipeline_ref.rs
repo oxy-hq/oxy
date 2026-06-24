@@ -2,7 +2,7 @@
 //!
 //! `pipeline_ref` arrives from untrusted HTTP input. Naively doing
 //! `workspace_root.join(pipeline_ref)` lets `../../etc/passwd` escape
-//! the workspace. This mirrors the workflow guard
+//! the workspace. This mirrors the automation guard
 //! (`agentic_wiring::project_ctx::resolve_workspace_relative`):
 //! syntactic reject of empty/absolute/`..` refs, then a
 //! canonical-containment check so symlink escapes are caught too.

@@ -15,14 +15,14 @@ interface TraceCardProps {
   onClick: () => void;
 }
 
-// Helper to get workflow reference from trace attributes
-function getWorkflowRef(trace: Trace): string | undefined {
+// Helper to get automation reference from trace attributes
+function getAutomationRef(trace: Trace): string | undefined {
   const attrs = getSpanAttributesAsRecord(trace);
   return attrs["oxy.workflow.ref"];
 }
 
-// Helper to determine if trace is a workflow
-function isWorkflowTrace(trace: Trace): boolean {
+// Helper to determine if trace is a automation
+function isAutomationTrace(trace: Trace): boolean {
   return trace.spanName.startsWith("workflow.");
 }
 
@@ -39,17 +39,17 @@ function getAnalyticsQuestion(trace: Trace): string | undefined {
 
 export function TraceCard({ trace, onClick }: TraceCardProps) {
   const isError = trace.statusCode === "Error";
-  const isWorkflow = isWorkflowTrace(trace);
+  const isAutomation = isAutomationTrace(trace);
   const isAnalytics = isAnalyticsTrace(trace);
   const agentRef = getAgentRef(trace);
-  const workflowRef = getWorkflowRef(trace);
+  const automationRef = getAutomationRef(trace);
   const prompt = isAnalytics ? getAnalyticsQuestion(trace) : getPrompt(trace);
   const durationMs = getDurationMs(trace);
   const tokensTotal = getTokensTotal(trace);
 
-  // For workflow traces, use workflow_ref; for agent/analytics traces, use prompt
-  const displayTitle = isWorkflow
-    ? workflowRef || formatSpanLabel(trace.spanName)
+  // For automation traces, use workflow_ref; for agent/analytics traces, use prompt
+  const displayTitle = isAutomation
+    ? automationRef || formatSpanLabel(trace.spanName)
     : prompt || formatSpanLabel(trace.spanName);
 
   return (
@@ -81,13 +81,13 @@ export function TraceCard({ trace, onClick }: TraceCardProps) {
           </Badge>
 
           {/* Show agent ref for agent traces */}
-          {!isWorkflow && agentRef && (
+          {!isAutomation && agentRef && (
             <span className='text-muted-foreground text-xs'>{agentRef}</span>
           )}
 
-          {/* Show workflow ref for workflow traces */}
-          {isWorkflow && workflowRef && (
-            <span className='text-muted-foreground text-xs'>{workflowRef}</span>
+          {/* Show automation ref for automation traces */}
+          {isAutomation && automationRef && (
+            <span className='text-muted-foreground text-xs'>{automationRef}</span>
           )}
 
           <Badge variant='secondary' className='gap-1 text-xs'>

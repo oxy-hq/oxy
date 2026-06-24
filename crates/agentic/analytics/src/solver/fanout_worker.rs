@@ -203,7 +203,7 @@ impl<Ev: DomainEvents> FanoutWorker<AnalyticsDomain, Ev> for AnalyticsFanoutWork
         // than the generic `_events` parameter.
         let tx = &self.event_tx;
 
-        // ── Check for pre-computed skip (SemanticLayer / SqlFile / Procedure / VendorEngine) ──
+        // ── Check for pre-computed skip (SemanticLayer / SqlFile / Automation / VendorEngine) ──
         let solution = match &spec.solution_source {
             SolutionSource::SemanticLayer => {
                 if let Some(payload) = spec.precomputed.clone() {
@@ -226,9 +226,9 @@ impl<Ev: DomainEvents> FanoutWorker<AnalyticsDomain, Ev> for AnalyticsFanoutWork
                     semantic_query: None,
                 })
             }
-            SolutionSource::Procedure { file_path } => Some(AnalyticsSolution {
+            SolutionSource::Automation { file_path } => Some(AnalyticsSolution {
                 payload: SolutionPayload::Sql(String::new()),
-                solution_source: SolutionSource::Procedure {
+                solution_source: SolutionSource::Automation {
                     file_path: file_path.clone(),
                 },
                 connector_name: spec.connector_name.clone(),
@@ -435,13 +435,13 @@ impl AnalyticsFanoutWorker {
             SolutionSource::SemanticLayer => QuerySource::Semantic,
             SolutionSource::SqlFile { .. } => QuerySource::VerifiedSql,
             SolutionSource::VendorEngine(_) => QuerySource::Vendor,
-            // NOTE: `Procedure` solutions *can* reach this fan-out worker (unlike the
+            // NOTE: `Automation` solutions *can* reach this fan-out worker (unlike the
             // serial `execute_solution` in executing.rs, which intercepts them first).
-            // Badging them as `Llm` is imprecise — user-authored YAML procedures are
+            // Badging them as `Llm` is imprecise — user-authored YAML automations are
             // not LLM-generated SQL. Revisit by introducing a dedicated
-            // `QuerySource::UserDefined` variant if/when procedure provenance needs to
+            // `QuerySource::UserDefined` variant if/when automation provenance needs to
             // surface distinctly in the UI.
-            SolutionSource::LlmWithSemanticContext | SolutionSource::Procedure { .. } => {
+            SolutionSource::LlmWithSemanticContext | SolutionSource::Automation { .. } => {
                 QuerySource::Llm
             }
         };

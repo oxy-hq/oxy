@@ -99,7 +99,7 @@ pub enum BackTarget<D: Domain> {
     Interpret(D::Result, RetryContext),
 
     /// The pipeline must suspend — either to ask the user a question or to
-    /// delegate work to another agent/workflow.
+    /// delegate work to another agent/automation.
     ///
     /// The [`SuspendReason`] tells the coordinator how to fulfil the
     /// suspension.  The solver stores the full [`SuspendedRunData`]

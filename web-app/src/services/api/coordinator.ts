@@ -136,7 +136,7 @@ export interface TaskTreeNode {
   /** Populated by the backend on the root node only — agent runs' total
    *  token / cost summary. */
   llm_usage?: LlmUsage | null;
-  /** Populated on workflow (DAG) runs' root only — per-step timings. */
+  /** Populated on automation (DAG) runs' root only — per-step timings. */
   dag_steps?: DagStepSummary[] | null;
   /** Populated on airway (ELT) runs' root only — per-table row counts. */
   elt_tables?: EltTableSummary[] | null;
@@ -147,7 +147,7 @@ export interface TaskTreeNode {
   destination_label?: string | null;
   pipeline_name?: string | null;
   /** File path that authored this run — `metadata.pipeline_ref` for
-   *  airway, `metadata.workflow_ref` for workflow. Drives the
+   *  airway, `metadata.workflow_ref` for automation. Drives the
    *  "Edit YAML" link from a run detail back to the IDE file editor.
    *  `null` for runs that don't have a YAML source. */
   source_ref?: string | null;

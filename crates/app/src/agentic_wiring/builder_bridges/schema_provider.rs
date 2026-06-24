@@ -38,7 +38,7 @@ const SUPPORTED_TYPES: &[&str] = &[
     "LoopSequentialTask",
     "ConditionalTask",
     // `TaskCache` (legacy name for the new `CacheConfig`) gates the
-    // file-presence cache. See `agentic_workflow::config::CacheConfig`
+    // file-presence cache. See `agentic_automation::config::CacheConfig`
     // for the new runner; the schema name stays "TaskCache" so
     // existing YAML / IDE suggestions match.
     "TaskCache",

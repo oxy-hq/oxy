@@ -433,7 +433,7 @@ async fn write_compiled_rows(
     let mut views = Vec::new();
     let mut topics = Vec::new();
     let mut apps = Vec::new();
-    let mut procedures = Vec::new();
+    let mut automations = Vec::new();
     let mut verified = Vec::new();
     let mut pipelines = Vec::new();
     let mut references = Vec::new();
@@ -499,8 +499,8 @@ async fn write_compiled_rows(
                 definition: Set(a.definition.clone()),
                 published: Set(a.published),
             }),
-            CompiledRow::Procedure(p) => {
-                procedures.push(entity::procedure_definitions::ActiveModel {
+            CompiledRow::Automation(p) => {
+                automations.push(entity::automation_definitions::ActiveModel {
                     revision_id: Set(revision_id),
                     file_path: Set(p.file_path.clone()),
                     name: Set(p.name.clone()),
@@ -569,8 +569,8 @@ async fn write_compiled_rows(
             .exec(txn)
             .await?;
     }
-    if !procedures.is_empty() {
-        entity::procedure_definitions::Entity::insert_many(procedures)
+    if !automations.is_empty() {
+        entity::automation_definitions::Entity::insert_many(automations)
             .exec(txn)
             .await?;
     }

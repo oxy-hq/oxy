@@ -1310,7 +1310,7 @@ pub struct WorkspaceSummary {
     pub created_by_name: Option<String>,
     /// Number of `.agent.yml` files found (recursive).
     pub agent_count: usize,
-    /// Number of `.workflow.yml` files found (recursive).
+    /// Number of `.automation.yml` files found (recursive).
     pub workflow_count: usize,
     /// Number of `.app.yml` files found (recursive).
     pub app_count: usize,

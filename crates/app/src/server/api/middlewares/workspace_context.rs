@@ -810,7 +810,7 @@ async fn try_attach_workspace_manager(
     // hydrate the workspace `Config` from `workspace_compiled_configs` instead
     // of re-parsing `config.yml` from disk on every request. This is the
     // largest single FS hit on the customer hot path — every chat / thread /
-    // data app / workflow request reads config.yml today.
+    // data app / automation request reads config.yml today.
     //
     // Thread the active branch through so the IDE on a feature branch sees its
     // working-copy `config.yml` edits via FS, matching the branch-aware

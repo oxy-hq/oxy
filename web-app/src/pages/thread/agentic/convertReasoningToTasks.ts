@@ -1,6 +1,6 @@
 import type { Step } from "@/pages/thread/agentic/ArtifactSidebar/ArtifactBlockRenderer/SubGroupReasoningPanel/Reasoning";
 import type { Block } from "@/services/types";
-import { type TaskConfig, TaskType } from "@/stores/useWorkflow";
+import { type TaskConfig, TaskType } from "@/stores/useAutomation";
 
 function slugify(text: string): string {
   return text
@@ -186,7 +186,7 @@ function convertStep(step: Step, index: number): TaskConfig | null {
       return null;
     }
     case "visualize": {
-      // Visualize task type is not yet supported in backend workflow execution.
+      // Visualize task type is not yet supported in backend automation execution.
       return null;
     }
     case "insight": {
@@ -206,7 +206,7 @@ function convertStep(step: Step, index: number): TaskConfig | null {
       return null;
     }
     case "subflow":
-      // Subflow steps cannot be replayed as workflow tasks without knowing the src path.
+      // Subflow steps cannot be replayed as automation tasks without knowing the src path.
       return null;
     default:
       return null;
@@ -279,5 +279,5 @@ export function generateAutomationDescription(steps: Step[]): string {
   if (objectives.length > 0) {
     return objectives.join("; ");
   }
-  return "Auto-generated procedure from reasoning steps";
+  return "Auto-generated automation from reasoning steps";
 }

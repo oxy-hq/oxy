@@ -66,7 +66,7 @@ function DistributionChartInner({ summary, isLoading }: DistributionChartProps) 
           itemStyle: { color: resolveColor(EXECUTION_TYPES.sql_generated.chartColor) }
         },
         {
-          value: summary.workflowCount,
+          value: summary.automationCount,
           name: EXECUTION_TYPES.workflow.label,
           itemStyle: { color: resolveColor(EXECUTION_TYPES.workflow.chartColor) }
         },

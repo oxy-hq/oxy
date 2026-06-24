@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_files_omits_shared_repo_workflow_examples() {
+    fn scaffold_files_omits_shared_repo_automation_examples() {
         // The customer-apps repo has a shared root workflow; per-app
         // workflow files would conflict. The shared template renderer
         // filters `.example` workflows out — re-asserted here so a

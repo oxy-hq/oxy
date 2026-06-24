@@ -106,7 +106,7 @@ pub struct RunHistoryEntry {
     /// Estimated — derived from token counts × per-million rates rather
     /// than persisted at write time, so pricing changes after the fact
     /// shift historical numbers slightly. `None` for non-LLM runs
-    /// (workflow / airway) and for runs whose every model is missing
+    /// (automation / airway) and for runs whose every model is missing
     /// from the pricing table.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
@@ -157,7 +157,7 @@ fn extract_agent_id(metadata: &Option<serde_json::Value>) -> String {
 /// (`llm_token`/`thinking_token`) and noisy validators are dropped so
 /// the response stays bounded on long runs — the waterfall reconstructs
 /// phase boundaries, LLM rounds, tool calls, SQL executions, and
-/// procedure steps from these alone.
+/// automation steps from these alone.
 fn is_waterfall_event(event_type: &str) -> bool {
     matches!(
         event_type,
@@ -185,7 +185,7 @@ fn is_waterfall_event(event_type: &str) -> bool {
             | "error"
             // Analytics domain events that carry the *what* of the Executing
             // phase: the SQL that ran, its row count, and per-step
-            // progress for delegated procedure runs.
+            // progress for delegated automation runs.
             | "query_generated"
             | "query_executed"
             | "execution_failed"
@@ -438,7 +438,7 @@ pub async fn list_runs(
 
     // LLM cost enrichment — one batched query covers every run on the
     // page. The query's HAVING clause drops runs without llm events, so
-    // workflow / airway runs are silently absent from the map.
+    // automation / airway runs are silently absent from the map.
     let run_ids: Vec<String> = runs.iter().map(|r| r.id.clone()).collect();
     let usage_reports = match usage_reports_for_runs(&db, &run_ids).await {
         Ok(m) => m,
@@ -545,11 +545,11 @@ pub struct TaskTreeNode {
     /// root by `get_run_tree`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_usage: Option<LlmUsageReport>,
-    /// Per-step timing + status breakdown (workflow / DAG runs only).
+    /// Per-step timing + status breakdown (automation / DAG runs only).
     /// Populated on the root node only — one row per
     /// `subrun_step_started` event, joined to its completion.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dag_steps: Option<Vec<db::WorkflowStepSummary>>,
+    pub dag_steps: Option<Vec<db::AutomationStepSummary>>,
     /// Per-table row-count summary (airway / ELT runs only). Aggregated
     /// from the `extract_*` / `table_loaded` events the airway worker
     /// forwards.
@@ -566,7 +566,7 @@ pub struct TaskTreeNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pipeline_name: Option<String>,
     /// File path that authored this run — `metadata.pipeline_ref` for
-    /// airway, `metadata.workflow_ref` for workflow. Lets the UI link
+    /// airway, `metadata.workflow_ref` for automation. Lets the UI link
     /// from a run detail back to the YAML in the IDE file editor.
     /// `None` for runs that don't have a YAML source (analytics agents
     /// addressed by id, builder runs, preagg daemons).
@@ -629,7 +629,7 @@ pub async fn get_run_tree(
             let source_kind = extract_metadata_string(&r.metadata, "source_kind");
             let destination_label = extract_metadata_string(&r.metadata, "destination_label");
             let pipeline_name = extract_metadata_string(&r.metadata, "pipeline_name");
-            // `pipeline_ref` (airway) or `workflow_ref` (workflow) — whichever
+            // `pipeline_ref` (airway) or `workflow_ref` (automation) — whichever
             // the seeder stamped. Used by the run detail UI to link
             // back to the source YAML in the IDE editor.
             let source_ref = extract_metadata_string(&r.metadata, "pipeline_ref")
@@ -668,7 +668,7 @@ pub async fn get_run_tree(
     // payload size stays bounded on long runs.
     //
     // Fetch all events in one batched query instead of one per node to
-    // avoid N sequential round-trips for large workflow trees.
+    // avoid N sequential round-trips for large automation trees.
     let enriched_run_ids: Vec<String> = nodes
         .iter()
         .filter(|n| {
@@ -724,7 +724,7 @@ pub async fn get_run_tree(
             Err(e) => tracing::warn!(%run_id, error = %e, "usage_report_for_run failed"),
         }
         if root.source_type == "workflow"
-            && let Ok(steps) = db::workflow_step_summary_for_run(&db, &run_id).await
+            && let Ok(steps) = db::automation_step_summary_for_run(&db, &run_id).await
             && !steps.is_empty()
         {
             root.dag_steps = Some(steps);

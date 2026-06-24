@@ -22,7 +22,7 @@ pub struct LookerArgs {
 pub enum LookerCommand {
     /// Synchronize Looker explore metadata from the API
     ///
-    /// Fetch metadata from Looker and store it locally for use by agents and workflows.
+    /// Fetch metadata from Looker and store it locally for use by agents and automations.
     /// Without arguments, syncs all configured integrations and explores.
     Sync(LookerSyncArgs),
     /// List synchronized Looker explores

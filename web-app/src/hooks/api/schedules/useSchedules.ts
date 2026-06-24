@@ -1,7 +1,7 @@
 /**
  * Hooks for the `/agentic-schedules` HTTP surface + the airway file
- * list used by the schedule target picker (workflow files reuse
- * `useAgenticWorkflowFiles`; agent picker uses `useScheduleAgents`).
+ * list used by the schedule target picker (automation files reuse
+ * `useAgenticAutomationFiles`; agent picker uses `useScheduleAgents`).
  */
 
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

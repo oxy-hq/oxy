@@ -175,7 +175,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
     }
   });
 
-  // 3.7 Rename .workflow.yml to .agent.yml
+  // 3.7 Rename .automation.yml to .agent.yml
   test("3.7 - should change file type when renaming extension", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();

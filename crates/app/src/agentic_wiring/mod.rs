@@ -8,7 +8,7 @@
 //!
 //! - [`project_ctx`] — [`OxyProjectContext`] implements
 //!   [`agentic_pipeline::platform::ProjectContext`] +
-//!   [`agentic_workflow::WorkspaceContext`].
+//!   [`agentic_automation::WorkspaceContext`].
 //! - [`builder_bridges`] — Oxy impls of the four `agentic-builder` port
 //!   traits (database, schema, semantic, validator).
 //! - [`thread_owner`] — platform threads-table adapter for

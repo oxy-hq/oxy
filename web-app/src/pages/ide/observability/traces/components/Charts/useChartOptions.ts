@@ -16,12 +16,12 @@ function createTooltipFormatter(
   };
 }
 
-export function useWorkflowRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOption {
+export function useAutomationRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOption {
   return useMemo(
     () => ({
       tooltip: {
         trigger: "axis",
-        formatter: createTooltipFormatter("Workflow Runs")
+        formatter: createTooltipFormatter("Automation Runs")
       },
       grid: CHART_GRID,
       xAxis: {
@@ -37,7 +37,7 @@ export function useWorkflowRunsChartOptions(timeBuckets: TimeBucket[]): EChartsO
       series: [
         {
           type: "bar",
-          data: timeBuckets.map((b) => b.workflowCount),
+          data: timeBuckets.map((b) => b.automationCount),
           itemStyle: { color: getChartColors().info },
           barMaxWidth: 20
         }

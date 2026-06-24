@@ -44,7 +44,7 @@ export function WorkspaceTooltipContent({ workspace }: { workspace: WorkspaceSum
       {showCounts && (
         <p className='text-muted-foreground text-xs'>
           {pluralize(workspace.agent_count, "agent", "agents")} ·{" "}
-          {pluralize(workspace.workflow_count, "procedure", "procedures")} ·{" "}
+          {pluralize(workspace.workflow_count, "automation", "automations")} ·{" "}
           {pluralize(workspace.app_count, "app", "apps")}
         </p>
       )}

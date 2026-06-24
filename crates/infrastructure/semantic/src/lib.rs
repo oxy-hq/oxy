@@ -5,7 +5,7 @@
 //! from airlayer's strict schema (optional `description`, the `data_source`
 //! alias for `datasource`, defaulted collections). Before this crate the
 //! same shim was duplicated across `agentic-analytics`, the host builder
-//! validator, and partially diverged in the workflow semantic bridge — a
+//! validator, and partially diverged in the automation semantic bridge — a
 //! file accepted by one path could be rejected by another. See
 //! `internal-docs/semantic-validation-standardization.md`.
 //!
@@ -142,7 +142,7 @@ fn is_topic_file(name: &str) -> bool {
 /// [`airlayer::SemanticLayer`]. Files with other suffixes are ignored.
 ///
 /// This is the one place that does the oxy-flavored parse loop; every
-/// caller (analytics catalog load, builder validation, workflow bridge,
+/// caller (analytics catalog load, builder validation, automation bridge,
 /// `oxy validate`) should funnel through here so they cannot disagree.
 pub fn build_layer<P: AsRef<Path>>(paths: &[P]) -> Result<airlayer::SemanticLayer, SemanticError> {
     let mut views = Vec::new();
@@ -246,7 +246,7 @@ fn collect_semantic_paths(root: &Path, out: &mut Vec<PathBuf>) {
 /// The canonical replacement for `airlayer::SemanticEngine::load(dir, …)`:
 /// using airlayer's native directory loader bypasses the oxy shim (it
 /// rejects the `data_source` alias and lacks the defaulted-collection
-/// leniency), which is exactly how the workflow path used to disagree with
+/// leniency), which is exactly how the automation path used to disagree with
 /// analytics. Funnel directory loads through here instead.
 pub fn load_layer_from_dir(root: &Path) -> Result<airlayer::SemanticLayer, SemanticError> {
     let mut paths = Vec::new();
@@ -521,7 +521,7 @@ mod tests {
         let views = dir.join("semantics/views");
         std::fs::create_dir_all(&views).unwrap();
         // `data_source` alias — airlayer's native loader would reject this;
-        // the shared loader (used by analytics, workflow, builder) must not.
+        // the shared loader (used by analytics, automation, builder) must not.
         std::fs::write(
             views.join("orders.view.yml"),
             "name: orders\ndata_source: warehouse\ntable: orders\n",

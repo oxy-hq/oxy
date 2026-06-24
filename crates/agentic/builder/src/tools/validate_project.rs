@@ -9,13 +9,13 @@ use crate::validator::BuilderProjectValidator;
 pub fn validate_project_def() -> ToolDef {
     ToolDef {
         name: "validate_project",
-        description: "Validate project configuration files (agents, workflows, apps, semantic views, topics) against the Oxygen schema. Optionally validate a single file by providing its path. Returns a list of validation errors or confirms all files are valid.",
+        description: "Validate project configuration files (agents, automations, apps, semantic views, topics) against the Oxygen schema. Optionally validate a single file by providing its path. Returns a list of validation errors or confirms all files are valid.",
         parameters: json!({
             "type": "object",
             "properties": {
                 "file_path": {
                     "type": ["string", "null"],
-                    "description": "Path to a specific file to validate, relative to the project root. Null to validate all agents, workflows, apps, and semantic layer files."
+                    "description": "Path to a specific file to validate, relative to the project root. Null to validate all agents, automations, apps, and semantic layer files."
                 }
             },
             "required": ["file_path"],

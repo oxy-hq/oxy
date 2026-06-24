@@ -1,24 +1,24 @@
 import { expect, type Page, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 
-// Helper function to open a workflow file
-async function openWorkflowFile(page: Page, mode: "files" | "objects" = "files") {
+// Helper function to open a automation file
+async function openAutomationFile(page: Page, mode: "files" | "objects" = "files") {
   if (mode === "objects") {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const automationsSection = page.getByText("Procedures").first();
+    const automationsSection = page.getByText("Automations").first();
     if (await automationsSection.isVisible()) {
       await automationsSection.click();
       await page.waitForTimeout(300);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
         .filter({ hasText: "workflow" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
         return true;
@@ -38,13 +38,13 @@ async function openWorkflowFile(page: Page, mode: "files" | "objects" = "files")
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
         return true;
@@ -65,7 +65,7 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
 
   // 7.1 Open in Objects mode → Form default
   test("7.1 - should default to Form in Objects mode", async ({ page }) => {
-    const opened = await openWorkflowFile(page, "objects");
+    const opened = await openAutomationFile(page, "objects");
     if (!opened) {
       test.skip();
       return;
@@ -85,7 +85,7 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
 
   // 7.2 Open in Files mode → Output default
   test("7.2 - should default to Output view in Files mode", async ({ page }) => {
-    const opened = await openWorkflowFile(page, "files");
+    const opened = await openAutomationFile(page, "files");
     if (!opened) {
       test.skip();
       return;
@@ -117,13 +117,13 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const outputTab = page.getByRole("tab", { name: /output/i });
@@ -149,13 +149,13 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         // Navigate with run parameter
@@ -185,13 +185,13 @@ test.describe("IDE Files - Workflow Form Editor - Basic Fields", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const formTab = page.getByRole("tab", { name: /form/i });
@@ -228,13 +228,13 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const formTab = page.getByRole("tab", { name: /form/i });
@@ -264,13 +264,13 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const formTab = page.getByRole("tab", { name: /form/i });
@@ -301,13 +301,13 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const formTab = page.getByRole("tab", { name: /form/i });
@@ -352,13 +352,13 @@ test.describe("IDE Files - Workflow Form Editor - Task Name Validation", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const formTab = page.getByRole("tab", { name: /form/i });
@@ -388,13 +388,13 @@ test.describe("IDE Files - Workflow Form Editor - Task Name Validation", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const formTab = page.getByRole("tab", { name: /form/i });
@@ -435,13 +435,13 @@ test.describe("IDE Files - Workflow Form Editor - Variables", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const formTab = page.getByRole("tab", { name: /form/i });
@@ -479,13 +479,13 @@ test.describe("IDE Files - Workflow Form Editor - Run History", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const outputTab = page.getByRole("tab", { name: /output/i });
@@ -513,13 +513,13 @@ test.describe("IDE Files - Workflow Form Editor - Run History", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const outputTab = page.getByRole("tab", { name: /output/i });

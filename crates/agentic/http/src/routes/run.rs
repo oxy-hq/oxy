@@ -812,7 +812,7 @@ pub async fn cancel_run(
         return Json(serde_json::json!({ "ok": true })).into_response();
     }
     // Defensive path — see the equivalent comment in
-    // `routes/workflow.rs::cancel_workflow_run`. The narrow race we
+    // `routes/automation.rs::cancel_automation_run`. The narrow race we
     // guard against: a `done` run whose coordinator just finished
     // and `deregister`'d its cancel channel must NOT be rewritten
     // to `failed("cancelled by user")` here, or a successful run

@@ -2,7 +2,7 @@
 //! cloud and local modes (local always uses the nil UUID).
 //!
 //! This module owns the tree shape plus all per-resource sub-builders
-//! (workflows, threads, agents, files, etc.). Secrets live in their own
+//! (automations, threads, agents, files, etc.). Secrets live in their own
 //! module because they ship with an admin-gated middleware.
 
 use std::sync::Arc;
@@ -10,12 +10,12 @@ use std::sync::Arc;
 use axum::Router;
 use axum::routing::{delete, get, post, put};
 
-use agentic_http::{AgenticState, airway_router, router as agentic_router, workflow_router};
+use agentic_http::{AgenticState, airway_router, automation_router, router as agentic_router};
 
 use crate::api::{
-    agent, api_keys, app, apps, artifacts, chart, competitors, compile, data, data_repo, database,
-    execution_analytics, exported_chart, file, foot_traffic, integration, local_setup, message,
-    metric_anomalies, metric_tree, metrics, modeling, onboarding, pipeline, procedure,
+    agent, api_keys, app, apps, artifacts, automation, chart, competitors, compile, data,
+    data_repo, database, execution_analytics, exported_chart, file, foot_traffic, integration,
+    local_setup, message, metric_anomalies, metric_tree, metrics, modeling, onboarding, pipeline,
     result_files, run, schedules, semantic, task, test_file, test_project_run, test_run, thread,
     traces, video, workspace_custom_apps, workspace_logo, workspace_members, workspace_oxy_access,
     workspaces, world_model, world_model_graph,
@@ -52,15 +52,21 @@ pub(super) fn build_workspace_routes(
         ))
         // Legacy `/workflows` and `/automations` routes have been retired.
         // Workflow execution + the single-file fetch live under
-        // `/agentic-workflows` (IdeOnly), mounted below. The procedure LIST,
+        // `/agentic-workflows` (IdeOnly), mounted below. The automation LIST,
         // however, is served HERE from the compile boundary (FleetOk) so the
         // customer-nav sidebar renders on a stateless serve replica with no
         // working copy — `/agentic-workflows` is IdeOnly and lives in a crate
         // that can't reach `compiled_reader`.
-        .route("/procedures", get(procedure::list_procedures))
-        // Single-procedure YAML, also from the boundary, so clicking a procedure
+        .route("/procedures", get(automation::list_automations))
+        // Single-automation YAML, also from the boundary, so clicking an automation
         // renders its diagram on a serve node when the ide is down.
-        .route("/procedures/{path_b64}", get(procedure::get_procedure))
+        .route("/procedures/{path_b64}", get(automation::get_automation))
+        // Canonical "automations" aliases for the procedure list/get (the term
+        // Procedure/Workflow was renamed to Automation). Same FleetOk handlers,
+        // classified identically in `role_manifest.rs`. `/procedures` is kept
+        // for backward compatibility.
+        .route("/automations", get(automation::list_automations))
+        .route("/automations/{path_b64}", get(automation::get_automation))
         // Same boundary-backed pattern for Airway pipelines (`/agentic-airway`
         // is IdeOnly + in a crate that can't reach `compiled_reader`).
         .route("/airway-pipelines", get(pipeline::list_pipelines))
@@ -109,13 +115,13 @@ pub(super) fn build_workspace_routes(
             get(exported_chart::get_exported_chart),
         )
         .route("/logs", get(thread::get_logs))
-        .route("/events", get(run::workflow_events))
+        .route("/events", get(run::automation_events))
         .route("/events/lookup", get(task::agentic_events))
-        .route("/events/sync", get(run::workflow_events_sync))
+        .route("/events/sync", get(run::automation_events_sync))
         .route("/blocks", get(run::get_blocks))
         .route(
             "/runs/{source_id}/{run_index}",
-            delete(run::cancel_workflow_run),
+            delete(run::cancel_automation_run),
         )
         .route(
             "/builder-availability",
@@ -135,7 +141,7 @@ pub(super) fn build_workspace_routes(
         // read-only file handlers stay here so the IDE's topic / view
         // explorer + SQL preview panel keep working without re-introducing
         // a workflow dependency on the request path. Compile reaches
-        // into airlayer via `agentic_workflow::semantic_bridge`.
+        // into airlayer via `agentic_automation::semantic_bridge`.
         .route(
             "/semantic/topic/{file_path_b64}",
             get(semantic::get_topic_details),
@@ -237,7 +243,16 @@ pub(super) fn build_workspace_routes(
         .nest("/analytics", agentic_router(agentic_state.clone()))
         // New agentic-workflow surface — coexists with the legacy `/workflows`
         // routes during migration. Will subsume them in the cleanup task.
-        .nest("/agentic-workflows", workflow_router(agentic_state.clone()))
+        .nest(
+            "/agentic-workflows",
+            automation_router(agentic_state.clone()),
+        )
+        // Canonical execution surface alias (Procedures/Workflows -> Automations).
+        // Same handlers as `/agentic-workflows`, mirrored in `role_manifest.rs`.
+        .nest(
+            "/agentic-automations",
+            automation_router(agentic_state.clone()),
+        )
         .nest("/agentic-airway", airway_router(agentic_state.clone()))
         // Relocated from agentic-http (§12 FU4b): the schedule handlers
         // need WorkspaceAdmin from app/role_guards which agentic-http

@@ -1,10 +1,10 @@
 /**
  * Client for the `/agentic-airway` HTTP surface (mounted per workspace).
  *
- * Airway is queue-driven like workflow: `startRun` seeds the run and
+ * Airway is queue-driven like automation: `startRun` seeds the run and
  * the runtime coordinator drives it; events stream over the shared
  * domain-agnostic SSE endpoint, routed by `source_type = "airway"`.
- * Mirrors `agenticWorkflows.ts` — same SSE shape (`event:` field for
+ * Mirrors `automations.ts` — same SSE shape (`event:` field for
  * the type, `data:` for the payload).
  */
 
@@ -47,7 +47,7 @@ export type AirwayRunSummary = {
   updated_at: string;
 };
 
-/** `.airway.yml` file ref (parity with `WorkflowFile`). */
+/** `.airway.yml` file ref (parity with `AutomationFile`). */
 export type AirwayFile = {
   path: string;
   path_b64: string;

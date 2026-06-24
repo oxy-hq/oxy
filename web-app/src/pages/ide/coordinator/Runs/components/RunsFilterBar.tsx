@@ -158,7 +158,7 @@ export const RunsFilterBar: React.FC<{
           { value: "all", label: "All sources" },
           { value: "analytics", label: "Analytics" },
           { value: "builder", label: "Builder" },
-          { value: "workflow", label: "Workflow" },
+          { value: "workflow", label: "Automation" },
           { value: "airway", label: "Airway" },
           { value: "coordinator", label: "Coordinator" },
           { value: "monitor_scan", label: "Monitor" }

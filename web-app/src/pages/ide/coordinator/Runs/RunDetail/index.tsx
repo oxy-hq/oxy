@@ -8,26 +8,26 @@ import { JOB_TYPE, sourceTypeToJobType } from "../../components/constants";
 import { EmptyState, ErrorState, LoadingState } from "../../components/PageState";
 import { useCoordinatorRoutes } from "../../components/useCoordinatorRoutes";
 import { AgentEventLog } from "./components/AgentEventLog";
+import { AutomationBody } from "./components/Automation";
 import { Conversation } from "./components/Conversation";
 import { EltBody } from "./components/Elt";
 import { LlmUsageCard } from "./components/LlmUsageCard";
 import { RunHeader } from "./components/RunHeader";
 import { TaskTree } from "./components/TaskTree";
 import { Waterfall } from "./components/Waterfall";
-import { WorkflowBody } from "./components/Workflow";
 
 /** What each job type still needs from the coordinator metrics backend. */
 const TYPE_FOLLOWUP: Record<string, string> = {
   agent:
     "Waterfall + conversation views are wired; sub-agent fan-out and inline thinking previews land next.",
-  dag: "Graph + step inspector are live; sub-procedure steps embed their nested trace. Real `depends_on` edges (vs. execution-order chain) land when the YAML graph is parsed server-side.",
+  dag: "Graph + step inspector are live; sub-automation steps embed their nested trace. Real `depends_on` edges (vs. execution-order chain) land when the YAML graph is parsed server-side.",
   elt: "Lineage header, tri-phase (extract/normalize/load) bars per table, and schema-evolution banner are live. Throughput (rows/sec, bytes) lands when the airway events carry byte counts."
 };
 
 /**
  * Run detail — one execution. The header is identical for every job type;
  * the body is polymorphic. Agent runs get the waterfall/conversation tabs;
- * workflow and airway runs keep the task-tree view that matches their
+ * automation and airway runs keep the task-tree view that matches their
  * own DAG-shaped execution model.
  */
 const RunDetailPage: React.FC = () => {
@@ -55,7 +55,7 @@ const RunDetailPage: React.FC = () => {
 
   const jobType = sourceTypeToJobType(root.source_type);
   const isAgent = jobType === "agent";
-  const isWorkflow = root.source_type === "workflow";
+  const isAutomation = root.source_type === "workflow";
   const isAirway = root.source_type === "airway";
 
   return (
@@ -79,8 +79,8 @@ const RunDetailPage: React.FC = () => {
             answer={root.answer}
             errorMessage={root.error_message}
           />
-        ) : isWorkflow ? (
-          <WorkflowBody steps={root.dag_steps ?? []} events={root.event_log ?? []} />
+        ) : isAutomation ? (
+          <AutomationBody steps={root.dag_steps ?? []} events={root.event_log ?? []} />
         ) : isAirway ? (
           <EltBody
             tables={root.elt_tables ?? []}

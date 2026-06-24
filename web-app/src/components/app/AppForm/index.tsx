@@ -2,9 +2,9 @@ import { Plus } from "lucide-react";
 import type React from "react";
 import { useEffect } from "react";
 import { FormProvider, useFieldArray, useForm } from "react-hook-form";
+import { NestedTasksForm } from "@/components/automation/AutomationForm/TasksForm/NestedTasksForm";
 import { Button } from "@/components/ui/shadcn/button";
 import { CardTitle } from "@/components/ui/shadcn/card";
-import { NestedTasksForm } from "@/components/workflow/WorkflowForm/TasksForm/NestedTasksForm";
 import { cleanObject } from "@/utils/formDataCleaner";
 import { DisplayForm } from "./DisplayForm";
 

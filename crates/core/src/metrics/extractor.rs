@@ -57,7 +57,7 @@ impl ExtractorConfig {
 pub struct ExtractionContext {
     /// User's question/prompt
     pub question: Option<String>,
-    /// Agent/workflow response
+    /// Agent/automation response
     pub response: Option<String>,
     /// Executed SQL queries
     pub sql_queries: Vec<String>,

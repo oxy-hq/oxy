@@ -40,11 +40,11 @@ pub trait ToolExecutor: Send + Sync {
     ) -> Result<CallToolResult, rmcp::ErrorData>;
 }
 
-/// Workflow tool executor
-pub struct WorkflowExecutor;
+/// Automation tool executor
+pub struct AutomationExecutor;
 
 #[async_trait]
-impl ToolExecutor for WorkflowExecutor {
+impl ToolExecutor for AutomationExecutor {
     async fn execute(
         &self,
         workspace_manager: &WorkspaceManager,
@@ -52,7 +52,7 @@ impl ToolExecutor for WorkflowExecutor {
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        super::tools::run_workflow_tool(
+        super::tools::run_automation_tool(
             workspace_manager,
             tool_name,
             arguments,

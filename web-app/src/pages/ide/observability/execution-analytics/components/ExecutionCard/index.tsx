@@ -102,13 +102,13 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
               <span className='font-medium text-foreground'>{execution.database}</span>
             </span>
           )}
-          {execution.workflowRef && (
+          {execution.automationRef && (
             <span>
-              <span className='text-muted-foreground'>Workflow ref:</span>{" "}
+              <span className='text-muted-foreground'>Automation ref:</span>{" "}
               <span className='font-medium text-foreground'>
                 <button
                   onClick={() => {
-                    const pathb64 = encodeBase64(execution.workflowRef || "");
+                    const pathb64 = encodeBase64(execution.automationRef || "");
                     navigate(
                       ROUTES.ORG(orgSlug)
                         .WORKSPACE(project?.id || "")
@@ -117,7 +117,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
                   }}
                   className='text-left font-mono text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'
                 >
-                  {execution.workflowRef}
+                  {execution.automationRef}
                 </button>
               </span>
             </span>

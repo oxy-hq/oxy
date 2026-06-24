@@ -5,11 +5,10 @@ use crate::constants::UNPUBLISH_APP_DIR;
 use crate::state_dir::resolve_state_dir_with_fallback;
 use oxy_shared::errors::OxyError;
 
-use super::model::{AppConfig, Config, Workflow, WorkflowWithRawVariables};
+use super::model::{AppConfig, Automation, AutomationWithRawVariables, Config};
 use super::test_config::TestFileConfig;
 
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
-const WORKFLOW_EXTENSION: &str = ".workflow";
 const AUTOMATION_EXTENSION: &str = ".automation";
 const PROCEDURE_EXTENSION: &str = ".procedure";
 #[allow(dead_code)]
@@ -20,14 +19,14 @@ pub(super) trait ConfigStorage {
     async fn load_config(&self) -> Result<Config, OxyError>;
     async fn load_config_with_fallback(&self) -> Config;
     async fn write_config(&self, config: &Config) -> Result<(), OxyError>;
-    async fn load_workflow_config<P: AsRef<Path>>(
+    async fn load_automation_config<P: AsRef<Path>>(
         &self,
-        workflow_ref: P,
-    ) -> Result<Workflow, OxyError>;
-    async fn load_workflow_config_with_raw_variables<P: AsRef<Path>>(
+        automation_ref: P,
+    ) -> Result<Automation, OxyError>;
+    async fn load_automation_config_with_raw_variables<P: AsRef<Path>>(
         &self,
-        workflow_ref: P,
-    ) -> Result<WorkflowWithRawVariables, OxyError>;
+        automation_ref: P,
+    ) -> Result<AutomationWithRawVariables, OxyError>;
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError>;
     async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError>;
     async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError>;
@@ -259,43 +258,19 @@ impl ConfigStorage for LocalSource {
         Ok(())
     }
 
-    async fn load_workflow_config<P: AsRef<Path>>(
+    async fn load_automation_config<P: AsRef<Path>>(
         &self,
-        workflow_ref: P,
-    ) -> Result<Workflow, OxyError> {
-        let resolved_path = self.validate_path_within_project(workflow_ref)?;
-        let workflow_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to read workflow config from file: {e}"))
+        automation_ref: P,
+    ) -> Result<Automation, OxyError> {
+        let resolved_path = self.validate_path_within_project(automation_ref)?;
+        let automation_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to read automation config from file: {e}"))
         })?;
-        let mut workflow_config: Workflow = serde_yaml::from_str(&workflow_yml).map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
-        })?;
-        let file_name = resolved_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        let extension = if file_name.contains(AUTOMATION_EXTENSION) {
-            AUTOMATION_EXTENSION
-        } else if file_name.contains(PROCEDURE_EXTENSION) {
-            PROCEDURE_EXTENSION
-        } else {
-            WORKFLOW_EXTENSION
-        };
-        workflow_config.name = self.get_stem_by_extension(&resolved_path, extension)?;
-        Ok(workflow_config)
-    }
-
-    async fn load_workflow_config_with_raw_variables<P: AsRef<Path>>(
-        &self,
-        workflow_ref: P,
-    ) -> Result<WorkflowWithRawVariables, OxyError> {
-        let resolved_path = self.validate_path_within_project(workflow_ref)?;
-        let workflow_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
-            OxyError::ConfigurationError(format!("Failed to read workflow config from file: {e}"))
-        })?;
-        let mut temp_workflow: WorkflowWithRawVariables = serde_yaml::from_str(&workflow_yml)
-            .map_err(|e| {
-                OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
+        let mut automation_config: Automation =
+            serde_yaml::from_str(&automation_yml).map_err(|e| {
+                OxyError::ConfigurationError(format!(
+                    "Failed to deserialize automation config: {e}"
+                ))
             })?;
         let file_name = resolved_path
             .file_name()
@@ -306,10 +281,39 @@ impl ConfigStorage for LocalSource {
         } else if file_name.contains(PROCEDURE_EXTENSION) {
             PROCEDURE_EXTENSION
         } else {
-            WORKFLOW_EXTENSION
+            AUTOMATION_EXTENSION
         };
-        temp_workflow.name = self.get_stem_by_extension(&resolved_path, extension)?;
-        Ok(temp_workflow)
+        automation_config.name = self.get_stem_by_extension(&resolved_path, extension)?;
+        Ok(automation_config)
+    }
+
+    async fn load_automation_config_with_raw_variables<P: AsRef<Path>>(
+        &self,
+        automation_ref: P,
+    ) -> Result<AutomationWithRawVariables, OxyError> {
+        let resolved_path = self.validate_path_within_project(automation_ref)?;
+        let automation_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to read automation config from file: {e}"))
+        })?;
+        let mut temp_automation: AutomationWithRawVariables = serde_yaml::from_str(&automation_yml)
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!(
+                    "Failed to deserialize automation config: {e}"
+                ))
+            })?;
+        let file_name = resolved_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let extension = if file_name.contains(AUTOMATION_EXTENSION) {
+            AUTOMATION_EXTENSION
+        } else if file_name.contains(PROCEDURE_EXTENSION) {
+            PROCEDURE_EXTENSION
+        } else {
+            AUTOMATION_EXTENSION
+        };
+        temp_automation.name = self.get_stem_by_extension(&resolved_path, extension)?;
+        Ok(temp_automation)
     }
 
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError> {
@@ -341,10 +345,10 @@ impl ConfigStorage for LocalSource {
     }
 
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
-        let mut workflows = self.list_by_sub_extension(None, "procedure");
-        workflows.extend(self.list_by_sub_extension(None, "workflow"));
-        workflows.extend(self.list_by_sub_extension(None, "automation"));
-        Ok(workflows)
+        let mut automations = self.list_by_sub_extension(None, "procedure");
+        automations.extend(self.list_by_sub_extension(None, "workflow"));
+        automations.extend(self.list_by_sub_extension(None, "automation"));
+        Ok(automations)
     }
 
     async fn list_pipelines(&self) -> Result<Vec<PathBuf>, OxyError> {

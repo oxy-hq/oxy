@@ -154,7 +154,7 @@ pub async fn api_router(
     // sweep + cross-instance cancel reconciliation + stuck-row
     // recovery. Cheap (delete-many + two update-many every 10 min)
     // and keeps the table bounded under load.
-    crate::server::api::projects::procedure_run::spawn_periodic_sweep(
+    crate::server::api::projects::automation_run::spawn_periodic_sweep(
         agentic_state.db.clone(),
         agentic_state.shutdown_token.clone(),
     );

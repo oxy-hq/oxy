@@ -7,8 +7,8 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import { TaskType } from "@/stores/useAutomation";
 import useCurrentOrg from "@/stores/useCurrentOrg";
-import { TaskType } from "@/stores/useWorkflow";
 import type { AutomationGenerated } from "../BlockMessage";
 
 const NODE_ICONS: Record<string, ElementType> = {
@@ -24,7 +24,7 @@ const NODE_LABELS: Record<string, string> = {
   [TaskType.EXECUTE_SQL]: "Execute SQL",
   [TaskType.FORMATTER]: "Formatter",
   [TaskType.VISUALIZE]: "Visualize",
-  [TaskType.WORKFLOW]: "Sub-procedure"
+  [TaskType.WORKFLOW]: "Sub-automation"
 };
 
 interface AutomationDagPanelProps {
@@ -47,7 +47,7 @@ const AutomationDagPanel = ({
   return (
     <Panel>
       <PanelHeader
-        title='Generated Procedure'
+        title='Generated Automation'
         onClose={onClose}
         actions={
           <Button

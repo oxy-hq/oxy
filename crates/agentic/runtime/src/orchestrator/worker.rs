@@ -1,6 +1,6 @@
 //! Worker: pulls task assignments from the transport and executes them.
 //!
-//! The worker is domain-agnostic — it delegates actual pipeline/workflow
+//! The worker is domain-agnostic — it delegates actual pipeline/automation
 //! execution to a [`TaskExecutor`] injected by the pipeline layer.
 
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 ///
 /// "Per-worker" deliberately, not per-run: a single worker process holds
 /// at most this many tasks executing concurrently. With multiple worker
-/// processes (today: one per HTTP workflow run; future: a remote worker
+/// processes (today: one per HTTP automation run; future: a remote worker
 /// pool), the global ceiling scales as `n_workers * MAX_INFLIGHT` — same
 /// semantic Sidekiq / Celery use. A future per-run or per-tenant cap
 /// would layer on top via DB-side claim predicates, not by reinterpreting
@@ -61,13 +61,13 @@ pub struct ExecutingTask {
     /// Send an answer to resume a suspended task.
     ///
     /// For pipelines, this feeds the orchestrator's internal suspend/resume
-    /// loop.  For workflows and other tasks that don't suspend, this is `None`.
+    /// loop.  For automations and other tasks that don't suspend, this is `None`.
     pub answers: Option<mpsc::Sender<String>>,
 }
 
 // ── TaskExecutor ─────────────────────────────────────────────────────────────
 
-/// Knows how to start pipelines and workflows.
+/// Knows how to start pipelines and automations.
 ///
 /// Implemented by the pipeline layer (`agentic-pipeline`), which has access to
 /// all domain crates. The runtime only sees this trait.

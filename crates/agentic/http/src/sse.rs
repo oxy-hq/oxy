@@ -51,20 +51,20 @@ pub fn squash_deltas(events: Vec<UiEvent>) -> Vec<UiEvent> {
 /// Returns true for event types that signal the run has terminated.
 ///
 /// `done`/`error`/`cancelled` are the analytics/builder terminal events.
-/// `subrun_completed` is the workflow domain's terminal event — without
-/// it here, workflow SSE streams never close server-side: the loop keeps
+/// `subrun_completed` is the automation domain's terminal event — without
+/// it here, automation SSE streams never close server-side: the loop keeps
 /// waiting on the run's notifier even after the run row flips to `done`/
 /// `failed`, the client's `fetchEventSource` promise never resolves, and
 /// any `finally`-block cleanup (e.g. `setIsLoading(false)` in the chat
 /// thread runner) never fires. The result is a spinner that hangs forever
-/// after the workflow actually finished.
+/// after the automation actually finished.
 ///
 /// `source_type` is required because `subrun_completed` is the
-/// *workflow run's own* terminal event for source_type="workflow", but
+/// *automation run's own* terminal event for source_type="workflow", but
 /// it's just an intermediate event for analytics/builder runs that
-/// delegated to a procedure — the analytics pipeline still has more
-/// events to emit once the child workflow returns. Without this gate,
-/// the SSE loop would exit on the child procedure's `subrun_completed`
+/// delegated to an automation — the analytics pipeline still has more
+/// events to emit once the child automation returns. Without this gate,
+/// the SSE loop would exit on the child automation's `subrun_completed`
 /// and the user would see the run frozen mid-stream until they
 /// navigated away and back (which re-opens the SSE and replays the
 /// post-resume events from the DB).
@@ -80,7 +80,7 @@ pub fn squash_deltas(events: Vec<UiEvent>) -> Vec<UiEvent> {
 /// `streaming` stays true, and the run page spins forever even though
 /// the data already finished loading. They're scoped to airway because
 /// other domains have no such event types (no cross-domain risk), same
-/// pattern as the workflow gate above.
+/// pattern as the automation gate above.
 ///
 /// `task_failed` is the coordinator's failure event when
 /// `execute_airway` errors *before* the engine starts (secrets /
@@ -109,14 +109,14 @@ mod tests {
         assert!(is_terminal("done", "builder"));
     }
 
-    /// Regression: a workflow delegated to from analytics emits
+    /// Regression: an automation delegated to from analytics emits
     /// `subrun_completed` mid-run. The analytics SSE used to exit
     /// there, freezing the UI until the user navigated away and back
     /// (which re-opens the stream and replays from the DB). Gate the
     /// terminal classification on `source_type == "workflow"` so only
-    /// the procedure's own run treats it as terminal.
+    /// the automation's own run treats it as terminal.
     #[test]
-    fn subrun_completed_terminates_workflow_only() {
+    fn subrun_completed_terminates_automation_only() {
         assert!(is_terminal("subrun_completed", "workflow"));
         assert!(!is_terminal("subrun_completed", "analytics"));
         assert!(!is_terminal("subrun_completed", "builder"));

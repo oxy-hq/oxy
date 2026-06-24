@@ -67,7 +67,7 @@ impl Coordinator {
             ResumeImmediate {
                 answer: String,
                 /// `"done"` for `ChildResult::Done`, `"failed"` for
-                /// `ChildResult::Failed`. Plumbed through to the workflow
+                /// `ChildResult::Failed`. Plumbed through to the automation
                 /// decider so its fold path can take its `Fail` branch.
                 child_status: &'static str,
             },
@@ -292,7 +292,7 @@ impl Coordinator {
     /// True iff the parent's `WaitingOnChildren` has at least one failed entry.
     /// Used by `BestEffort` fan-outs to flip the aggregated step status to
     /// `"failed"` when any iteration broke — without this, a partial-success
-    /// loop would silently pass and the workflow would continue.
+    /// loop would silently pass and the automation would continue.
     fn parent_has_any_failure(&self, parent_id: &str) -> bool {
         let Some(parent_node) = self.tasks.get(parent_id) else {
             return false;
@@ -463,7 +463,7 @@ impl Coordinator {
                 return;
             };
 
-            // For workflow decision chaining, grab the child task ID before
+            // For automation decision chaining, grab the child task ID before
             // transitioning to Running (it lives in WaitingOnChildren).
             let child_task_id_hint = match &parent_node.status {
                 TaskStatus::WaitingOnChildren { child_task_ids, .. } => {
@@ -508,7 +508,7 @@ impl Coordinator {
             .statuses
             .insert(run_id.clone(), RunStatus::Running);
 
-        // ── Temporal-style workflow decision task: enqueue WorkflowDecision ─
+        // ── Temporal-style automation decision task: enqueue AutomationDecision ─
         if resume_data.from_state == "workflow_decision" {
             let step_name = resume_data
                 .stage_data
@@ -534,20 +534,20 @@ impl Coordinator {
                 task_id: parent_id.to_string(),
                 parent_task_id: None,
                 run_id: run_id.clone(),
-                spec: TaskSpec::WorkflowDecision {
+                spec: TaskSpec::AutomationDecision {
                     run_id: run_id.clone(),
                     pending_child_answer,
                 },
                 policy: None,
             };
             if let Err(e) = self.transport.assign(assignment).await {
-                self.fail_parent_on_assign_error(parent_id, &run_id, "WorkflowDecision", e)
+                self.fail_parent_on_assign_error(parent_id, &run_id, "AutomationDecision", e)
                     .await;
             }
             return;
         }
 
-        // ── Non-workflow: assign TaskSpec::Resume ───────────────────────────
+        // ── Non-automation: assign TaskSpec::Resume ─────────────────────────
         //
         // For analytics/builder pipelines that have a SuspendedRunData checkpoint,
         // assign a TaskSpec::Resume so a fresh pipeline is built from that data.

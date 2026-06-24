@@ -1,12 +1,12 @@
 //! Metric collection context for accumulating usage data during execution
 //!
 //! This module provides a context accumulator that collects metric usage data
-//! as it flows through the execution pipeline (agent, workflow, task).
+//! as it flows through the execution pipeline (agent, automation, task).
 //!
 //! ## Usage Pattern
 //!
 //! The `MetricContext` is passed through `ExecutionContext` and works correctly
-//! with nested agent/workflow executions and `tokio::spawn`:
+//! with nested agent/automation executions and `tokio::spawn`:
 //!
 //! ```rust,ignore
 //! // Context is created in launcher and attached to ExecutionContext
@@ -36,7 +36,7 @@ pub type SharedMetricCtx = Arc<RwLock<MetricContext>>;
 ///
 /// Unlike the thread-local approach, this works correctly with:
 /// - `tokio::spawn` (context is cloned/moved into spawned task)
-/// - Nested agent/workflow executions (child contexts link to parent)
+/// - Nested agent/automation executions (child contexts link to parent)
 /// - Cross-thread execution
 ///
 /// ## Example
@@ -69,7 +69,7 @@ pub struct MetricContext {
 
     /// User's question/prompt (set at input)
     question: Option<String>,
-    /// Agent/workflow response (set at output)
+    /// Agent/automation response (set at output)
     response: Option<String>,
     /// Accumulated SQL queries executed during this trace
     executed_sqls: Vec<String>,
@@ -104,7 +104,7 @@ impl MetricContext {
 
     /// Create a child context linked to this parent
     ///
-    /// Used when a nested agent/workflow is called.
+    /// Used when a nested agent/automation is called.
     pub fn child(&self, source_type: SourceType, source_ref: impl Into<String>) -> Self {
         Self {
             trace_id: self.trace_id.clone(),

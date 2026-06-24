@@ -10,8 +10,8 @@ const STEP_MAP: Record<string, string> = {
   visualize: "Generating visualization",
   retrieve: "Retrieving data",
   agent: "Generating answer",
-  workflow: "Running procedure",
-  save_automation: "Saving procedure"
+  workflow: "Running automation",
+  save_automation: "Saving automation"
 };
 
 import type {

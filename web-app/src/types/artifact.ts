@@ -123,7 +123,7 @@ export type AgentArtifact = {
   };
 };
 
-export type WorkflowArtifact = {
+export type AutomationArtifact = {
   id: string;
   name: string;
   kind: "workflow";
@@ -160,5 +160,5 @@ export type Artifact =
   | OmniQueryArtifact
   | LookerQueryArtifact
   | AgentArtifact
-  | WorkflowArtifact
+  | AutomationArtifact
   | SandboxAppArtifact;

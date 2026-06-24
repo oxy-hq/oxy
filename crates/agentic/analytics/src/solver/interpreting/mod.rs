@@ -141,7 +141,7 @@ impl AnalyticsSolver {
                 }
                 _ => {
                     // For delegation resumes (from_state == "executing"),
-                    // the answer contains the workflow output as JSON.
+                    // the answer contains the automation output as JSON.
                     // Parse it into result_sets and build a custom prompt
                     // so the LLM sees real data instead of the placeholder.
                     if resume.data.from_state == "executing" {
@@ -154,7 +154,7 @@ impl AnalyticsSolver {
                             let data_section = format_delegation_data(&result_sets);
                             let user_prompt = format!(
                                 "## User question\n{raw_question}\n\n\
-                                 ## Procedure output\n{data_section}\n\n\
+                                 ## Automation output\n{data_section}\n\n\
                                  Analyze these results and provide a clear, \
                                  data-driven answer to the user's question."
                             );
@@ -163,7 +163,7 @@ impl AnalyticsSolver {
                             // Fallback if answer isn't valid JSON — use raw text.
                             let user_prompt = format!(
                                 "## User question\n{raw_question}\n\n\
-                                 ## Procedure output\n{}\n\n\
+                                 ## Automation output\n{}\n\n\
                                  Analyze these results and provide a clear, \
                                  data-driven answer.",
                                 resume.answer

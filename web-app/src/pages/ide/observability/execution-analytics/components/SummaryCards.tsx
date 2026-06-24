@@ -54,7 +54,7 @@ export default function SummaryCards({ summary, isLoading }: SummaryCardsProps) 
       <StatsCard
         title='Total Executions'
         value={formatNumber(summary.totalExecutions)}
-        subtitle='queries & workflows'
+        subtitle='queries & automations'
         icon={<Activity className='h-5 w-5' />}
         isLoading={isLoading}
       />

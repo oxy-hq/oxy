@@ -52,7 +52,7 @@ export type DataApp = {
   display?: AppDisplayItem[];
 };
 
-type WorkflowTask = {
+type AutomationTask = {
   name: string;
   type: string;
   database?: string;
@@ -61,10 +61,10 @@ type WorkflowTask = {
   template?: string;
 };
 
-export type WorkflowConfig = {
+export type AutomationConfig = {
   name?: string;
   description?: string;
-  tasks?: WorkflowTask[];
+  tasks?: AutomationTask[];
 };
 
 export type TopicConfig = {
@@ -160,11 +160,11 @@ export function tryParseApp(content: string): DataApp | null {
   return null;
 }
 
-export function tryParseWorkflow(content: string): WorkflowConfig | null {
+export function tryParseAutomation(content: string): AutomationConfig | null {
   try {
     const parsed = parseYaml(content);
     if (parsed && typeof parsed === "object" && Array.isArray(parsed.tasks)) {
-      return parsed as WorkflowConfig;
+      return parsed as AutomationConfig;
     }
   } catch {
     // not valid YAML
@@ -405,17 +405,17 @@ export function diffAppDisplays(oldApp: DataApp | null, newApp: DataApp): AppIte
   return diffAppItems(oldApp, newApp).filter((d) => d.kind === "display");
 }
 
-export function workflowKind(filePath: string): string {
+export function automationKind(filePath: string): string {
   if (filePath.endsWith(".procedure.yml") || filePath.endsWith(".procedure.yaml"))
-    return "Procedure";
+    return "Automation";
   if (filePath.endsWith(".automation.yml") || filePath.endsWith(".automation.yaml"))
     return "Automation";
-  return "Workflow";
+  return "Automation";
 }
 
-export function diffWorkflowTasks(
-  oldWf: WorkflowConfig | null,
-  newWf: WorkflowConfig
+export function diffAutomationTasks(
+  oldWf: AutomationConfig | null,
+  newWf: AutomationConfig
 ): AppItemDiff[] {
   const result: AppItemDiff[] = [];
   const oldTasks = oldWf?.tasks ?? [];

@@ -2,7 +2,7 @@ import type React from "react";
 import { formatDurationMs } from "../../../components/utils";
 
 /**
- * Shared time-axis strip used above proportional-bar layouts (workflow
+ * Shared time-axis strip used above proportional-bar layouts (automation
  * Graph, ELT tables). 5 evenly-spaced tick labels in elapsed-time
  * format so the reader can map any bar's position to an absolute
  * duration.
@@ -10,7 +10,7 @@ import { formatDurationMs } from "../../../components/utils";
  * `leftSlot` / `rightSlot` widths reserve space matching the columns
  * that sit on either side of the bar track below the axis — passing
  * `w-44` here aligns the first tick with the start of the bar track
- * exactly. Defaults match the workflow-graph card layout.
+ * exactly. Defaults match the automation-graph card layout.
  */
 export const TimeAxis: React.FC<{
   spanMs: number;

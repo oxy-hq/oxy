@@ -2,7 +2,6 @@ import { decodeBase64 } from "@/libs/encoding";
 
 export enum FileType {
   PROCEDURE = "procedure",
-  WORKFLOW = "workflow",
   AUTOMATION = "automation",
   ANALYTICS_AGENT = "analytics_agent",
   PIPELINE = "pipeline",
@@ -27,20 +26,18 @@ export const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
     extensions: [".test.yml", ".test.yaml"],
     editorComponent: "TestEditor"
   },
-  [FileType.PROCEDURE]: {
-    type: FileType.PROCEDURE,
-    extensions: [".procedure.yml", ".procedure.yaml"],
-    editorComponent: "WorkflowEditor"
-  },
-  [FileType.WORKFLOW]: {
-    type: FileType.WORKFLOW,
-    extensions: [".workflow.yml", ".workflow.yaml", ".automation.yml", ".automation.yaml"],
-    editorComponent: "WorkflowEditor"
-  },
+  // Automation is the canonical type (formerly Procedure / Workflow). It is
+  // listed first so `.automation.yml` resolves to AUTOMATION; the legacy
+  // PROCEDURE type is kept so existing files keep opening.
   [FileType.AUTOMATION]: {
     type: FileType.AUTOMATION,
     extensions: [".automation.yml", ".automation.yaml"],
-    editorComponent: "WorkflowEditor"
+    editorComponent: "AutomationEditor"
+  },
+  [FileType.PROCEDURE]: {
+    type: FileType.PROCEDURE,
+    extensions: [".procedure.yml", ".procedure.yaml"],
+    editorComponent: "AutomationEditor"
   },
   [FileType.ANALYTICS_AGENT]: {
     type: FileType.ANALYTICS_AGENT,

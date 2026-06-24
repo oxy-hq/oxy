@@ -110,7 +110,7 @@ impl RunsStorage for RunsNoopStorage {
         _run_index: i32,
         variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError> {
-        // Return a stub RunInfo. This path is hit when a workflow with sub-workflow
+        // Return a stub RunInfo. This path is hit when an automation with sub-automation
         // steps runs without a database (normal `oxy run` without --retry flags).
         // Explicit retry operations always use RunsManager::default() with a real DB.
         let now = chrono::Utc::now();

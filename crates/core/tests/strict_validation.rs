@@ -181,15 +181,15 @@ databases: []
 }
 
 // =============================================================================
-// Workflow Tests
+// Automation Tests
 // =============================================================================
 
-mod workflow_tests {
+mod automation_tests {
     use super::*;
-    use oxy::config::model::Workflow;
+    use oxy::config::model::Automation;
 
     #[test]
-    fn test_valid_workflow() {
+    fn test_valid_automation() {
         let yaml = r#"
 tasks:
   - name: test_task
@@ -197,16 +197,16 @@ tasks:
     agent_ref: test.agent.yml
     prompt: "test prompt"
 "#;
-        let result: Result<Workflow, _> = parse_yaml(yaml);
+        let result: Result<Automation, _> = parse_yaml(yaml);
         assert!(
             result.is_ok(),
-            "Valid workflow should parse: {:?}",
+            "Valid automation should parse: {:?}",
             result.err()
         );
     }
 
     #[test]
-    fn test_workflow_with_variables() {
+    fn test_automation_with_variables() {
         // Test that flatten for variables still works with deny_unknown_fields
         let yaml = r#"
 tasks:
@@ -219,19 +219,19 @@ variables:
     type: string
     default: "hello"
 "#;
-        let result: Result<Workflow, _> = parse_yaml(yaml);
+        let result: Result<Automation, _> = parse_yaml(yaml);
         assert!(
             result.is_ok(),
-            "Workflow with variables should parse: {:?}",
+            "Automation with variables should parse: {:?}",
             result.err()
         );
 
-        let workflow = result.unwrap();
-        assert!(workflow.variables.is_some(), "Variables should be parsed");
+        let automation = result.unwrap();
+        assert!(automation.variables.is_some(), "Variables should be parsed");
     }
 
     #[test]
-    fn test_workflow_rejects_steps_typo() {
+    fn test_automation_rejects_steps_typo() {
         // This is the main use case - catching the common "steps" vs "tasks" typo
         let yaml = r#"
 steps:
@@ -240,12 +240,12 @@ steps:
     agent_ref: test.agent.yml
     prompt: "test prompt"
 "#;
-        let result: Result<Workflow, _> = parse_yaml(yaml);
+        let result: Result<Automation, _> = parse_yaml(yaml);
         assert_unknown_field_error_with_result(result, "steps");
     }
 
     #[test]
-    fn test_workflow_rejects_unknown_fields() {
+    fn test_automation_rejects_unknown_fields() {
         let yaml = r#"
 tasks:
   - name: test_task
@@ -254,13 +254,13 @@ tasks:
     prompt: "test prompt"
 unknown_field: "should fail"
 "#;
-        let result: Result<Workflow, _> = parse_yaml(yaml);
+        let result: Result<Automation, _> = parse_yaml(yaml);
         assert_unknown_field_error_with_result(result, "unknown_field");
     }
 
     #[test]
-    fn test_workflow_with_all_valid_fields() {
-        // Test all valid Workflow fields to ensure they still work
+    fn test_automation_with_all_valid_fields() {
+        // Test all valid Automation fields to ensure they still work
         let yaml = r#"
 tasks:
   - name: test_task
@@ -270,16 +270,16 @@ tasks:
 description: "A test workflow"
 consistency_prompt: "Check consistency"
 "#;
-        let result: Result<Workflow, _> = parse_yaml(yaml);
+        let result: Result<Automation, _> = parse_yaml(yaml);
         assert!(
             result.is_ok(),
-            "Workflow with all valid fields should parse: {:?}",
+            "Automation with all valid fields should parse: {:?}",
             result.err()
         );
     }
 
     #[test]
-    fn test_workflow_with_name_field() {
+    fn test_automation_with_name_field() {
         // Test that the `name` field is accepted in YAML (for backwards compatibility).
         // The name is ignored during parsing and always derived from the filename at runtime.
         let yaml = r#"
@@ -290,16 +290,16 @@ tasks:
     agent_ref: test.agent.yml
     prompt: "test prompt"
 "#;
-        let result: Result<Workflow, _> = parse_yaml(yaml);
+        let result: Result<Automation, _> = parse_yaml(yaml);
         assert!(
             result.is_ok(),
-            "Workflow with name field should parse: {:?}",
+            "Automation with name field should parse: {:?}",
             result.err()
         );
 
         // The name field should be parsed (defaults to empty if not set, but here it's set)
-        let workflow = result.unwrap();
-        assert_eq!(workflow.name, "my_workflow_name");
+        let automation = result.unwrap();
+        assert_eq!(automation.name, "my_workflow_name");
     }
 
     #[test]
@@ -308,7 +308,7 @@ tasks:
         let yaml = r#"
 tasks: []
 "#;
-        let result: Result<Workflow, _> = parse_yaml(yaml);
+        let result: Result<Automation, _> = parse_yaml(yaml);
         // Serde parsing should succeed
         assert!(result.is_ok(), "Empty tasks should parse at serde level");
 
@@ -345,13 +345,13 @@ databases:
 
     // Verifies that empty tasks fail garde validation
     #[test]
-    fn test_workflow_empty_tasks_fails_garde_validation() {
-        use oxy::config::model::Workflow;
+    fn test_automation_empty_tasks_fails_garde_validation() {
+        use oxy::config::model::Automation;
 
         let yaml = r#"
 tasks: []
 "#;
-        let workflow: Workflow = parse_yaml(yaml).expect("Should parse at serde level");
+        let automation: Automation = parse_yaml(yaml).expect("Should parse at serde level");
 
         let config = create_test_config();
         let context = oxy::config::validate::ValidationContext {
@@ -359,7 +359,7 @@ tasks: []
             metadata: None,
         };
 
-        let result = workflow.validate_with(&context);
+        let result = automation.validate_with(&context);
         assert!(result.is_err(), "Empty tasks should fail garde validation");
 
         // Verify the error mentions length/min requirement
@@ -526,7 +526,7 @@ display:
 tasks:
   - name: my_workflow
     type: workflow
-    src: workflows/test.workflow.yml
+    src: workflows/test.automation.yml
 display:
   - type: table
     data: my_workflow.nested_task
@@ -561,7 +561,7 @@ display:
 tasks:
   - name: my_workflow
     type: workflow
-    src: workflows/test.workflow.yml
+    src: workflows/test.automation.yml
 display:
   - type: table
     data: typo_workflow.nested_task

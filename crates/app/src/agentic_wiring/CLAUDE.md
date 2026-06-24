@@ -11,11 +11,11 @@ refactor lands, the churn lives in this module.
 
 | Path | Role |
 | ------ | ------ |
-| [`project_ctx.rs`](project_ctx.rs) | `OxyProjectContext`: implements `ProjectContext` + `agentic_workflow::WorkspaceContext` (combined into `PlatformContext` via blanket impl) |
+| [`project_ctx.rs`](project_ctx.rs) | `OxyProjectContext`: implements `ProjectContext` + `agentic_automation::WorkspaceContext` (combined into `PlatformContext` via blanket impl) |
 | [`builder_bridges/database_provider.rs`](builder_bridges/database_provider.rs) | `OxyBuilderDatabaseProvider` — resolves and builds DB connectors for the builder domain |
 | [`builder_bridges/project_validator.rs`](builder_bridges/project_validator.rs) | `OxyBuilderProjectValidator` — validates workflow / agent / app / semantic files via oxy's `ConfigBuilder` |
 | [`builder_bridges/schema_provider.rs`](builder_bridges/schema_provider.rs) | `OxyBuilderSchemaProvider` — generates JSON schemas for builder-copilot tools via `schemars::schema_for!` on `oxy::config::model` types |
-| [`builder_bridges/semantic_compiler.rs`](builder_bridges/semantic_compiler.rs) | `OxyBuilderSemanticCompiler` — compiles semantic queries via `agentic_workflow::semantic_bridge` |
+| [`builder_bridges/semantic_compiler.rs`](builder_bridges/semantic_compiler.rs) | `OxyBuilderSemanticCompiler` — compiles semantic queries via `agentic_automation::semantic_bridge` |
 | [`thread_owner.rs`](thread_owner.rs) | `OxyThreadOwnerLookup` — implements the auth-facing `ThreadOwnerLookup` trait against `entity::threads` |
 | [`mod.rs`](mod.rs) | `build_builder_bridges(project_ctx)` — assembles the four builder bridges into `BuilderBridges` for `PipelineBuilder::with_builder_bridges` |
 

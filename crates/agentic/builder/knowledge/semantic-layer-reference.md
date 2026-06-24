@@ -500,7 +500,7 @@ correctly.
    the fastest way to confirm a view+topic pair is wired correctly.
 
 **Do NOT use `oxy validate` on view or topic files.** It is for
-`*.workflow.yml`, `*.agent.yml`, and `*.app.yml` files only. Running it on
+`*.automation.yml`, `*.agent.yml`, and `*.app.yml` files only. Running it on
 view/topic files will report misleading results — passing it does not
 mean the semantic layer compiles. Use `oxy build` instead.
 

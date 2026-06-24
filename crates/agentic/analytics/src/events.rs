@@ -79,12 +79,12 @@ pub enum AnalyticsEvent {
         dimensions: Vec<String>,
         /// Filter expressions extracted from the question.
         filters: Vec<String>,
-        /// Path to the procedure selected during Ground, if any.
+        /// Path to the automation selected during Ground, if any.
         ///
         /// When set, the pipeline skips SQL generation and executes the
-        /// procedure instead.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        selected_procedure: Option<String>,
+        /// automation instead.
+        #[serde(skip_serializing_if = "Option::is_none", alias = "selected_procedure")]
+        selected_automation: Option<String>,
     },
 
     /// The Specify stage produced a resolved query spec.
@@ -188,7 +188,7 @@ pub enum AnalyticsEvent {
 
     /// A subrun started execution.
     ///
-    /// Emitted by the workflow step orchestrator before launching the
+    /// Emitted by the automation step orchestrator before launching the
     /// subrun so the frontend can render the full step DAG with all
     /// steps in idle state immediately, then update each step as it
     /// begins and finishes.
@@ -201,7 +201,7 @@ pub enum AnalyticsEvent {
 
     /// A subrun completed execution (success or failure).
     ///
-    /// Emitted by the workflow step orchestrator after the subrun
+    /// Emitted by the automation step orchestrator after the subrun
     /// finishes. Paired with the preceding [`AnalyticsEvent::SubrunStarted`] event.
     SubrunCompleted {
         /// Human-readable subrun name, matching the paired `SubrunStarted`.
@@ -215,7 +215,7 @@ pub enum AnalyticsEvent {
 
     /// A step within a subrun started execution.
     ///
-    /// Emitted by the workflow step orchestrator when the analytics
+    /// Emitted by the automation step orchestrator when the analytics
     /// pipeline delegates execution to a subrun and an individual step
     /// begins. Lets the frontend show per-step progress during
     /// multi-step subrun runs.
@@ -226,7 +226,7 @@ pub enum AnalyticsEvent {
 
     /// A step within a subrun completed (successfully or not).
     ///
-    /// Emitted by the workflow step orchestrator when the corresponding
+    /// Emitted by the automation step orchestrator when the corresponding
     /// step finishes. Paired with the preceding
     /// [`AnalyticsEvent::SubrunStepStarted`] event by matching the
     /// `step` field.

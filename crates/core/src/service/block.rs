@@ -452,7 +452,7 @@ impl Handler for GroupBlockHandler {
                 run_id,
                 error,
             } => {
-                // Handle workflow finish
+                // Handle automation finish
                 self.end_group(format!("{workflow_id}::{run_id}"), error.clone());
             }
             EventKind::ArtifactStarted {

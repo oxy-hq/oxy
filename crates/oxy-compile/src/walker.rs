@@ -33,9 +33,9 @@ pub enum FileKind {
     SemanticTopic,
     /// `*.app.yml`.
     App,
-    /// `*.procedure.yml`, `*.workflow.yml`, `*.automation.yml`.
+    /// `*.procedure.yml` (back-compat), `*.automation.yml` (canonical).
     /// The exact extension is recorded so the row carries `extension`.
-    Procedure(ProcedureKind),
+    Automation(AutomationKind),
     /// `*.sql` outside `modeling/` (modeling SQL is dbt-shaped, handled by Airform later).
     VerifiedQuery,
     /// `*.airway.yml`.
@@ -48,19 +48,23 @@ pub enum FileKind {
     WorldModelConfig,
 }
 
+/// The kind of automation file. `.procedure.yml` is kept for back-compat;
+/// `.automation.yml` is canonical. The `.workflow.yml` extension is no longer
+/// recognized as a file kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ProcedureKind {
+pub enum AutomationKind {
     Procedure,
-    Workflow,
     Automation,
 }
 
-impl ProcedureKind {
+/// Back-compat alias — `AutomationKind` was historically named `ProcedureKind`.
+pub type ProcedureKind = AutomationKind;
+
+impl AutomationKind {
     pub fn extension(&self) -> &'static str {
         match self {
-            ProcedureKind::Procedure => "procedure",
-            ProcedureKind::Workflow => "workflow",
-            ProcedureKind::Automation => "automation",
+            AutomationKind::Procedure => "procedure",
+            AutomationKind::Automation => "automation",
         }
     }
 }
@@ -139,19 +143,13 @@ pub fn discover(workspace_root: &Path) -> Result<Vec<DiscoveredFile>, CompileErr
     push_glob(
         workspace_root,
         "**/*.procedure.yml",
-        FileKind::Procedure(ProcedureKind::Procedure),
-        &mut out,
-    )?;
-    push_glob(
-        workspace_root,
-        "**/*.workflow.yml",
-        FileKind::Procedure(ProcedureKind::Workflow),
+        FileKind::Automation(AutomationKind::Procedure),
         &mut out,
     )?;
     push_glob(
         workspace_root,
         "**/*.automation.yml",
-        FileKind::Procedure(ProcedureKind::Automation),
+        FileKind::Automation(AutomationKind::Automation),
         &mut out,
     )?;
     push_glob(
@@ -278,7 +276,6 @@ mod tests {
         write(root, "semantics/topics/sales.topic.yml", "name: sales");
         write(root, "apps/dash.app.yml", "name: dash");
         write(root, "workflows/x.procedure.yml", "name: x");
-        write(root, "workflows/legacy.workflow.yml", "name: legacy");
         write(root, "workflows/cron.automation.yml", "name: cron");
         write(root, "pipelines/data.airway.yml", "name: data");
         write(root, "queries/top.sql", "SELECT 1");

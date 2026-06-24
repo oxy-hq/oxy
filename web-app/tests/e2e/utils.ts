@@ -99,11 +99,11 @@ export async function cleanupTestFiles() {
       }
     }
 
-    // Delete test files in workflows subdirectory
+    // Delete test files in automations subdirectory
     const workflowsDir = path.join(examplesDir, "workflows");
     if (existsSync(workflowsDir)) {
-      const workflowFiles = await readdir(workflowsDir);
-      for (const file of workflowFiles) {
+      const automationFiles = await readdir(workflowsDir);
+      for (const file of automationFiles) {
         if (testPatterns.some((pattern) => pattern.test(file))) {
           const filePath = path.join(workflowsDir, file);
           await unlink(filePath).catch(() => {});

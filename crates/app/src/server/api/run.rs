@@ -51,7 +51,7 @@ pub struct PaginationQuery {
     ),
     tag = "Runs"
 )]
-pub async fn get_workflow_runs(
+pub async fn get_automation_runs(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
@@ -149,7 +149,7 @@ pub struct CreateRunResponse {
     ),
     tag = "Runs"
 )]
-pub async fn create_workflow_run(
+pub async fn create_automation_run(
     Path((_workspace_id, _pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(_workspace_manager): WorkspaceManagerExtractor,
@@ -193,7 +193,7 @@ pub struct CancelRunRequest {
     ),
     tag = "Runs"
 )]
-pub async fn cancel_workflow_run(
+pub async fn cancel_automation_run(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(_project_manager): WorkspaceManagerExtractor,
     payload: Path<CancelRunRequest>,
@@ -215,13 +215,13 @@ pub async fn cancel_workflow_run(
 }
 
 #[derive(serde::Deserialize, ToSchema, Debug)]
-pub struct WorkflowEventsRequest {
+pub struct AutomationEventsRequest {
     pub source_id: String,
     pub run_index: Option<i32>,
 }
 
-impl From<WorkflowEventsRequest> for RunInfo {
-    fn from(val: WorkflowEventsRequest) -> Self {
+impl From<AutomationEventsRequest> for RunInfo {
+    fn from(val: AutomationEventsRequest) -> Self {
         RunInfo {
             source_id: val.source_id,
             run_index: val.run_index,
@@ -251,10 +251,10 @@ impl From<WorkflowEventsRequest> for RunInfo {
         ("ApiKey" = [])
     )
 )]
-pub async fn workflow_events(
+pub async fn automation_events(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Query(request): Query<WorkflowEventsRequest>,
+    Query(request): Query<AutomationEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let run_info: RunInfo = request.into();
     let runs_manager = workspace_manager.runs_manager.as_ref().ok_or_else(|| {
@@ -306,7 +306,7 @@ pub async fn workflow_events(
 }
 
 #[derive(serde::Serialize, ToSchema, Debug)]
-pub struct WorkflowEventsResponse {
+pub struct AutomationEventsResponse {
     pub events: Vec<serde_json::Value>,
     pub completed: bool,
 }
@@ -326,7 +326,7 @@ pub struct WorkflowEventsResponse {
         ("run_index" = Option<i32>, Query, description = "Run index (defaults to latest run if not specified)")
     ),
     responses(
-        (status = 200, description = "All workflow events after completion", body = WorkflowEventsResponse),
+        (status = 200, description = "All workflow events after completion", body = AutomationEventsResponse),
         (status = 404, description = "Workflow run not found"),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
@@ -336,11 +336,11 @@ pub struct WorkflowEventsResponse {
     ),
     tag = "Runs"
 )]
-pub async fn workflow_events_sync(
+pub async fn automation_events_sync(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Query(request): Query<WorkflowEventsRequest>,
-) -> Result<axum::extract::Json<WorkflowEventsResponse>, StatusCode> {
+    Query(request): Query<AutomationEventsRequest>,
+) -> Result<axum::extract::Json<AutomationEventsResponse>, StatusCode> {
     let source_id = BASE64_STANDARD
         .decode(&request.source_id)
         .ok()
@@ -411,7 +411,7 @@ pub async fn workflow_events_sync(
             }
         }
 
-        Ok(axum::extract::Json(WorkflowEventsResponse {
+        Ok(axum::extract::Json(AutomationEventsResponse {
             events: all_events,
             completed: true,
         }))
@@ -442,7 +442,7 @@ pub async fn workflow_events_sync(
             })
             .unwrap_or_default();
 
-        Ok(axum::extract::Json(WorkflowEventsResponse {
+        Ok(axum::extract::Json(AutomationEventsResponse {
             events,
             completed: true,
         }))
@@ -558,7 +558,7 @@ pub async fn get_blocks(
     ),
     tag = "Runs"
 )]
-pub async fn delete_workflow_run(
+pub async fn delete_automation_run(
     _: WorkspaceAdmin,
     Path((_workspace_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
@@ -626,7 +626,7 @@ pub struct BulkDeleteRunsResponse {
     ),
     tag = "Runs"
 )]
-pub async fn bulk_delete_workflow_runs(
+pub async fn bulk_delete_automation_runs(
     _: WorkspaceAdmin,
     Path(_workspace_id): Path<Uuid>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,

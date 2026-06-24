@@ -100,7 +100,7 @@ export const SpanPreview: React.FC<{ span: ChildSpan | null }> = ({ span }) => {
 
       {span.step && (
         <p className='text-muted-foreground text-xs'>
-          Procedure step <span className='font-medium text-foreground'>{span.step.name}</span>{" "}
+          Automation step <span className='font-medium text-foreground'>{span.step.name}</span>{" "}
           {span.step.success ? "completed" : "failed"}
           {span.step.error ? ` — ${span.step.error}` : ""}.
         </p>

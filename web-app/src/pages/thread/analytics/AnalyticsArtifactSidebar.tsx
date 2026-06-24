@@ -6,7 +6,7 @@ import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
-import type { ArtifactItem, ProcedureItem, SqlItem } from "@/hooks/analyticsSteps";
+import type { ArtifactItem, AutomationItem, SqlItem } from "@/hooks/analyticsSteps";
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
 import { extractDisplayBlockForSeq } from "@/hooks/useAnalyticsRun";
 import useTheme from "@/stores/useTheme";
@@ -15,6 +15,7 @@ import { VERIFIED_SQL_FILE_TOOLTIP, VERIFIED_TOOLTIP } from "../constants";
 import {
   AnalyzeDbtProjectView,
   AskUserView,
+  AutomationStepView,
   ChartSection,
   CleanDbtProjectView,
   ColumnRangeView,
@@ -36,14 +37,13 @@ import {
   MetricSensitivityView,
   ParseDbtProjectView,
   PredictImpactView,
-  ProcedureStepView,
   RawArtifactView,
   RenderChartView,
   ResolveSchemaView,
   RunDbtModelsView,
   SampleColumnView,
+  SearchAutomationsView,
   SearchCatalogView,
-  SearchProceduresView,
   SeedDbtProjectView,
   TestDbtModelsView
 } from "./AnalyticsArtifactViews";
@@ -70,7 +70,7 @@ import {
 import ListDbtProjectsView from "./ListDbtProjectsView";
 
 interface Props {
-  item: ArtifactItem | SqlItem | ProcedureItem;
+  item: ArtifactItem | SqlItem | AutomationItem;
   displayBlocks?: AnalyticsDisplayBlock[];
   runEvents?: SseEvent[];
   isRunning?: boolean;
@@ -86,11 +86,11 @@ const AnalyticsArtifactSidebar = ({
 }: Props) => {
   const theme = useTheme((s) => s.theme);
   const monacoTheme = theme === "dark" ? "vs-dark" : "vs";
-  // ── kind === "procedure" → full DAG panel ─────────────────────────────────
-  if (item.kind === "procedure") {
+  // ── kind === "automation" → full DAG panel ─────────────────────────────────
+  if (item.kind === "automation") {
     return (
       <SubrunDagPanel
-        procedureName={item.procedureName}
+        automationName={item.automationName}
         steps={item.steps}
         events={runEvents}
         isRunning={isRunning}
@@ -379,17 +379,18 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
-  // ── search_procedures → procedure list ───────────────────────────────────
-  if (item.toolName === "search_procedures") {
+  // ── search_automations → automation list ──────────────────────────────────
+  // Match the legacy tool name too so runs persisted before the rename render.
+  if (item.toolName === "search_automations" || item.toolName === "search_procedures") {
     return (
       <Panel>
         <PanelHeader
-          title='Procedure Search'
+          title='Automation Search'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
         <PanelContent scrollable={false} padding={false} className='min-h-0'>
-          <SearchProceduresView item={item} />
+          <SearchAutomationsView item={item} />
         </PanelContent>
       </Panel>
     );
@@ -932,8 +933,8 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
-  // ── Procedure step → status view ─────────────────────────────────────────
-  // toolInput is the literal string "Running…" for procedure steps, never JSON.
+  // ── Automation step → status view ─────────────────────────────────────────
+  // toolInput is the literal string "Running…" for automation steps, never JSON.
   if (item.toolInput === "Running\u2026") {
     return (
       <Panel>
@@ -945,7 +946,7 @@ const AnalyticsArtifactSidebar = ({
           onClose={onClose}
         />
         <PanelContent scrollable={false} padding={false} className='min-h-0'>
-          <ProcedureStepView item={item} />
+          <AutomationStepView item={item} />
         </PanelContent>
       </Panel>
     );

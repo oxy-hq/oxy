@@ -173,7 +173,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
 
       const fileInFolder = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
       if (await fileInFolder.isVisible()) {

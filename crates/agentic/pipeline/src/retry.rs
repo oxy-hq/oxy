@@ -18,7 +18,7 @@ use agentic_runtime::crud::{TaskScope, get_run};
 use agentic_runtime::entity::run;
 
 use crate::airway_run::{StartAirwayRequest, start_airway_run};
-use crate::workflow_run::{StartWorkflowRequest, start_workflow_run};
+use crate::automation_run::{StartAutomationRequest, start_automation_run};
 
 #[derive(Debug)]
 pub enum RetryError {
@@ -57,7 +57,7 @@ impl From<DbErr> for RetryError {
 /// isn't probeable.
 ///
 /// `workspace` is needed for the airway path (it resolves the pipeline file
-/// off the workspace filesystem); workflow retries don't actually read it
+/// off the workspace filesystem); automation retries don't actually read it
 /// but the signature stays uniform with `run_schedule_now`.
 pub async fn retry_run(
     db: &DatabaseConnection,
@@ -79,7 +79,7 @@ pub async fn retry_run(
 
     let source = original.source_type.as_deref().unwrap_or("");
     match source {
-        "workflow" => retry_workflow(db, &original).await,
+        "workflow" => retry_automation(db, &original).await,
         "airway" => retry_airway(db, workspace, &original).await,
         other => Err(RetryError::NotRetryable(format!(
             "retry not supported for source_type {other:?}"
@@ -94,7 +94,7 @@ fn is_terminal_failed(r: &run::Model) -> bool {
     )
 }
 
-async fn retry_workflow(
+async fn retry_automation(
     db: &DatabaseConnection,
     original: &run::Model,
 ) -> Result<String, RetryError> {
@@ -109,7 +109,7 @@ async fn retry_workflow(
         .filter(|v| !v.is_null())
         .cloned();
 
-    let req = StartWorkflowRequest {
+    let req = StartAutomationRequest {
         workflow_ref,
         variables,
         retry_from_run_id: None,
@@ -122,7 +122,7 @@ async fn retry_workflow(
         logical_date: None,
         retry_of: Some(original.id.clone()),
     };
-    start_workflow_run(db, req, TaskScope::Global, original.workspace_id)
+    start_automation_run(db, req, TaskScope::Global, original.workspace_id)
         .await
         .map_err(|e| RetryError::SeedFailed(e.to_string()))
 }

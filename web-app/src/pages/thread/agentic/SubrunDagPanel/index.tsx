@@ -8,10 +8,10 @@ import { cn } from "@/libs/shadcn/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ProcedureStepStatus = "idle" | "running" | "done" | "failed";
+type AutomationStepStatus = "idle" | "running" | "done" | "failed";
 
 type StepState = {
-  status: ProcedureStepStatus;
+  status: AutomationStepStatus;
   taskType: string;
   subStepsStarted: number;
   subStepsCompleted: number;
@@ -74,28 +74,28 @@ function deriveStepStatuses(
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-const STATUS_ICON: Record<ProcedureStepStatus, React.ReactNode> = {
+const STATUS_ICON: Record<AutomationStepStatus, React.ReactNode> = {
   idle: <Circle className='h-3.5 w-3.5 text-muted-foreground' />,
   running: <Spinner className='size-3 text-primary' />,
   done: <CheckCircle2 className='h-3.5 w-3.5 text-success' />,
   failed: <XCircle className='h-3.5 w-3.5 text-destructive' />
 };
 
-const STATUS_LABEL: Record<ProcedureStepStatus, string | null> = {
+const STATUS_LABEL: Record<AutomationStepStatus, string | null> = {
   idle: null,
   running: "Running…",
   done: "Done",
   failed: "Failed"
 };
 
-const ICON_BG: Record<ProcedureStepStatus, string> = {
+const ICON_BG: Record<AutomationStepStatus, string> = {
   idle: "bg-secondary",
   running: "bg-primary/20",
   done: "bg-success/20",
   failed: "bg-destructive/20"
 };
 
-const NODE_BORDER: Record<ProcedureStepStatus, string> = {
+const NODE_BORDER: Record<AutomationStepStatus, string> = {
   idle: "border-border bg-card opacity-60",
   running:
     "border-primary bg-primary/10 shadow-[0_0_12px_color-mix(in_srgb,var(--blue-500)_15%,transparent)]",
@@ -106,8 +106,8 @@ const NODE_BORDER: Record<ProcedureStepStatus, string> = {
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface SubrunDagPanelProps {
-  /** Procedure name shown in the panel header (file stem). */
-  procedureName: string;
+  /** Automation name shown in the panel header (file stem). */
+  automationName: string;
   /** Ordered list of top-level task descriptors from the `subrun_started` event. */
   steps: Array<{ name: string; task_type: string }>;
   /** All SSE events for the active run — step statuses are derived from these. */
@@ -120,7 +120,7 @@ interface SubrunDagPanelProps {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const SubrunDagPanel = ({
-  procedureName,
+  automationName,
   steps,
   events,
   isRunning,
@@ -143,7 +143,11 @@ const SubrunDagPanel = ({
 
   return (
     <Panel>
-      <PanelHeader title={procedureName || "Procedure Run"} subtitle={subtitle} onClose={onClose} />
+      <PanelHeader
+        title={automationName || "Automation Run"}
+        subtitle={subtitle}
+        onClose={onClose}
+      />
 
       <PanelContent scrollable={false} padding={false} className='overflow-y-auto p-4'>
         <div className='flex flex-col items-center gap-0'>

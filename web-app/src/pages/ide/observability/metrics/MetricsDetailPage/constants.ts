@@ -3,8 +3,8 @@ import {
   Code,
   Database,
   HelpCircle,
+  LucideWorkflow as LucideAutomation,
   LucideBot,
-  LucideWorkflow,
   MessageCircle,
   Zap
 } from "lucide-react";
@@ -39,16 +39,16 @@ export const SOURCE_TYPE_CONFIG: Record<
     icon: createElement(LucideBot, { className: "h-3.5 w-3.5" })
   },
   workflow: {
-    label: "Workflow",
+    label: "Automation",
     color: "text-vis-purple",
     bgColor: "bg-vis-purple/10 border-vis-purple/20",
-    icon: createElement(LucideWorkflow, { className: "h-3.5 w-3.5" })
+    icon: createElement(LucideAutomation, { className: "h-3.5 w-3.5" })
   },
-  Workflow: {
-    label: "Workflow",
+  Automation: {
+    label: "Automation",
     color: "text-vis-purple",
     bgColor: "bg-vis-purple/10 border-vis-purple/20",
-    icon: createElement(LucideWorkflow, { className: "h-3.5 w-3.5" })
+    icon: createElement(LucideAutomation, { className: "h-3.5 w-3.5" })
   },
   task: {
     label: "Task",

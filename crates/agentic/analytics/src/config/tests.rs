@@ -38,10 +38,10 @@ fn llm_ref_empty_config_defaults() {
     assert!(config.llm.model.is_none());
 }
 
-// ── extract_procedure_databases ───────────────────────────────────────────
+// ── extract_automation_databases ───────────────────────────────────────────
 
 #[test]
-fn procedure_databases_flat_tasks() {
+fn automation_databases_flat_tasks() {
     let yaml = r#"
 name: my_proc
 tasks:
@@ -54,13 +54,13 @@ tasks:
     database: staging
     sql_query: SELECT 2
 "#;
-    let mut dbs = extract_procedure_databases(yaml);
+    let mut dbs = extract_automation_databases(yaml);
     dbs.sort();
     assert_eq!(dbs, vec!["staging", "warehouse"]);
 }
 
 #[test]
-fn procedure_databases_nested_loop_sequential() {
+fn automation_databases_nested_loop_sequential() {
     let yaml = r#"
 name: my_proc
 tasks:
@@ -73,12 +73,12 @@ tasks:
         database: local
         sql_query: SELECT 1
 "#;
-    let dbs = extract_procedure_databases(yaml);
+    let dbs = extract_automation_databases(yaml);
     assert_eq!(dbs, vec!["local"]);
 }
 
 #[test]
-fn procedure_databases_deduplication() {
+fn automation_databases_deduplication() {
     let yaml = r#"
 name: my_proc
 tasks:
@@ -95,12 +95,12 @@ tasks:
         database: local
         sql_query: SELECT 2
 "#;
-    let dbs = extract_procedure_databases(yaml);
+    let dbs = extract_automation_databases(yaml);
     assert_eq!(dbs, vec!["local"]);
 }
 
 #[test]
-fn procedure_databases_no_execute_sql() {
+fn automation_databases_no_execute_sql() {
     let yaml = r#"
 name: my_proc
 tasks:
@@ -108,12 +108,12 @@ tasks:
     type: formatter
     template: "hello"
 "#;
-    let dbs = extract_procedure_databases(yaml);
+    let dbs = extract_automation_databases(yaml);
     assert!(dbs.is_empty());
 }
 
 #[test]
-fn procedure_databases_multiple_nested_levels() {
+fn automation_databases_multiple_nested_levels() {
     // database appears at top-level task and inside a nested loop
     let yaml = r#"
 name: p
@@ -135,7 +135,7 @@ tasks:
             database: beta
             sql_query: SELECT 2
 "#;
-    let mut dbs = extract_procedure_databases(yaml);
+    let mut dbs = extract_automation_databases(yaml);
     dbs.sort();
     assert_eq!(dbs, vec!["alpha", "beta"]);
 }
@@ -198,7 +198,7 @@ fn resolve_context_infers_db_from_sql_oxy_comment() {
 }
 
 #[test]
-fn resolve_context_infers_db_from_procedure_file() {
+fn resolve_context_infers_db_from_automation_file() {
     let tmp = std::env::temp_dir().join("oxy_cfg_test_proc");
     fs::create_dir_all(&tmp).unwrap();
     write_temp(
@@ -215,13 +215,13 @@ fn resolve_context_infers_db_from_procedure_file() {
         "expected 'warehouse' in referenced_databases, got: {:?}",
         ctx.referenced_databases
     );
-    assert_eq!(ctx.procedure_files.len(), 1);
+    assert_eq!(ctx.automation_files.len(), 1);
 
     fs::remove_dir_all(&tmp).ok();
 }
 
 #[test]
-fn resolve_context_infers_db_from_nested_procedure_loop() {
+fn resolve_context_infers_db_from_nested_automation_loop() {
     let tmp = std::env::temp_dir().join("oxy_cfg_test_nested");
     fs::create_dir_all(&tmp).unwrap();
     write_temp(
@@ -280,7 +280,7 @@ fn resolve_context_deduplicates_databases_across_files() {
 }
 
 #[test]
-fn resolve_context_merges_databases_from_sql_and_procedure() {
+fn resolve_context_merges_databases_from_sql_and_automation() {
     let tmp = std::env::temp_dir().join("oxy_cfg_test_merge");
     fs::create_dir_all(&tmp).unwrap();
     write_temp(

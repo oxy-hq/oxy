@@ -2,7 +2,7 @@
 
 ## Overview
 
-The coordinator-worker architecture manages multi-agent task execution: delegation between agents, workflow procedure runs, human-in-the-loop (HITL), retry/fallback policies, and crash recovery. It sits between the pipeline layer (domain logic) and the transport layer (message delivery).
+The coordinator-worker architecture manages multi-agent task execution: delegation between agents, workflow automation runs, human-in-the-loop (HITL), retry/fallback policies, and crash recovery. It sits between the pipeline layer (domain logic) and the transport layer (message delivery).
 
 ```
 HTTP/CLI
@@ -181,18 +181,18 @@ When an analytics question triggers an agent pipeline:
        │     → Worker claims from queue, executes child
        │     → Child completes → Coordinator resumes parent
        │
-       └─ [If solver delegates to workflow/procedure]
+       └─ [If solver delegates to workflow/automation]
              TaskOutcome::Suspended { reason: Delegation { target: Workflow } }
              → Coordinator spawns child task via queue
-             → See "Procedure Flow" below
+             → See "Automation Flow" below
 ```
 
-## Procedure Flow (WorkflowDecider — stateless)
+## Automation Flow (WorkflowDecider — stateless)
 
 Workflows now use a **Temporal-inspired stateless decision pattern**. Instead of a long-lived `WorkflowStepOrchestrator` actor with in-memory channels, workflow progress is driven by short-lived `WorkflowDecision` tasks that load state from DB, decide the next action, and exit. No in-memory channels survive a crash.
 
 ```
-1. Analytics Executing stage detects SolutionSource::Procedure
+1. Analytics Executing stage detects SolutionSource::Automation
        │
 2. Suspends with Delegation { target: Workflow { "proc.yml" } }
        │

@@ -2,7 +2,7 @@
 
 Pattern B subsystem on `agentic-runtime`: queue-driven ELT pipeline
 runtime that wraps the external [airway] engine. Sibling of
-`agentic-workflow` in shape and dependency posture.
+`agentic-automation` in shape and dependency posture.
 
 [airway]: https://github.com/oxy-hq/airway-internal
 
@@ -40,7 +40,7 @@ Migrator: `AirwayMigrator`, tracking table `seaql_migrations_airway`.
 - Must NOT depend on `oxy`, `oxy-shared`, `entity`, or any other
   platform crate.
 - Must NOT depend on `agentic-analytics`, `agentic-builder`,
-  `agentic-workflow`, `agentic-pipeline`, or `agentic-http`.
+  `agentic-automation`, `agentic-pipeline`, or `agentic-http`.
 - May depend on `agentic-core`, `agentic-runtime`, `agentic-connector`
   (postgres feature, added in stage 3), and the external `airway`
   engine.

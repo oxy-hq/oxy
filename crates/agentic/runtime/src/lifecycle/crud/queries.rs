@@ -306,7 +306,7 @@ pub async fn llm_usage_for_runs(
 }
 
 /// Sum LLM token usage for one run from its persisted events. Returns
-/// `None` when the run has no llm events (e.g. a workflow or airway run,
+/// `None` when the run has no llm events (e.g. an automation or airway run,
 /// or an agent run that never called the LLM).
 pub async fn llm_usage_for_run(
     db: &DatabaseConnection,
@@ -346,13 +346,13 @@ pub async fn llm_usage_for_run(
     Ok(row.filter(|s| s.call_count > 0))
 }
 
-/// One row of the per-step workflow timing table — the load-bearing
+/// One row of the per-step automation timing table — the load-bearing
 /// metric for the DAG debugging unit. Reconstructed at query time from
 /// the `subrun_step_started` / `subrun_step_completed` event pair: no
 /// extension table or new column needed.
 #[derive(Debug, Clone, FromQueryResult, serde::Serialize)]
-pub struct WorkflowStepSummary {
-    /// Step name as it appears in the workflow YAML.
+pub struct AutomationStepSummary {
+    /// Step name as it appears in the automation YAML.
     pub step_name: String,
     /// `succeeded` | `failed` | `cached` | `running` — derived from the
     /// completed event's payload (or `running` if no completed event
@@ -370,19 +370,19 @@ pub struct WorkflowStepSummary {
     pub cached: bool,
 }
 
-/// Aggregate per-step timings + status for a workflow run from its
+/// Aggregate per-step timings + status for an automation run from its
 /// persisted events. Returns one row per `subrun_step_started` event;
 /// steps that haven't completed yet have `status = "running"` and
 /// `duration_ms = None`.
-pub async fn workflow_step_summary_for_run(
+pub async fn automation_step_summary_for_run(
     db: &DatabaseConnection,
     run_id: &str,
-) -> Result<Vec<WorkflowStepSummary>, DbErr> {
+) -> Result<Vec<AutomationStepSummary>, DbErr> {
     // For each `started` row, `DISTINCT ON (s.seq)` picks the very next
     // `completed` row (ordered by completed.seq ASC). This pairs each
     // start to its own completion even when the same step name fires
     // multiple times across a loop's iterations.
-    let rows = WorkflowStepSummary::find_by_statement(Statement::from_sql_and_values(
+    let rows = AutomationStepSummary::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT DISTINCT ON (s.seq) \
             (s.payload->>'step') AS step_name, \

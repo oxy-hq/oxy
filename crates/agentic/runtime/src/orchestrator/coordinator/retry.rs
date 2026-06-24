@@ -69,7 +69,7 @@ impl Coordinator {
                         extra,
                     }
                 }
-                DelegationTarget::Workflow { workflow_ref } => TaskSpec::Workflow {
+                DelegationTarget::Automation { workflow_ref } => TaskSpec::Automation {
                     workflow_ref: workflow_ref.clone(),
                     variables: None,
                     retry_from_run_id: None,
@@ -143,7 +143,7 @@ impl Coordinator {
                 node.parent_task_id.clone(),
                 node.attempt,
                 node.original_spec.as_ref().map(super::source_type_for_spec),
-                node.original_spec.as_ref().and_then(workflow_step_name),
+                node.original_spec.as_ref().and_then(automation_step_name),
             )
         };
 
@@ -296,7 +296,7 @@ impl Coordinator {
     ) {
         let target_str = match target {
             DelegationTarget::Agent { agent_id } => format!("agent:{agent_id}"),
-            DelegationTarget::Workflow { workflow_ref } => format!("workflow:{workflow_ref}"),
+            DelegationTarget::Automation { workflow_ref } => format!("workflow:{workflow_ref}"),
         };
 
         if let Some(node) = self.tasks.get_mut(parent_id) {
@@ -371,14 +371,14 @@ impl Coordinator {
     }
 }
 
-/// Pull `step_config["name"]` off a `TaskSpec::WorkflowStep` so
+/// Pull `step_config["name"]` off a `TaskSpec::AutomationStep` so
 /// `task_failed` can carry the failing step's name. Returns `None` for
 /// every other spec variant — there's no single step name for
-/// `TaskSpec::Agent` (consistency_run > 1 fans out), `TaskSpec::Workflow`
-/// (a whole sub-workflow), or `TaskSpec::WorkflowDecision` (a decider
+/// `TaskSpec::Agent` (consistency_run > 1 fans out), `TaskSpec::Automation`
+/// (a whole sub-automation), or `TaskSpec::AutomationDecision` (a decider
 /// pass, which has no "current step" until the decider runs).
-fn workflow_step_name(spec: &TaskSpec) -> Option<String> {
-    if let TaskSpec::WorkflowStep { step_config, .. } = spec {
+fn automation_step_name(spec: &TaskSpec) -> Option<String> {
+    if let TaskSpec::AutomationStep { step_config, .. } = spec {
         step_config
             .get("name")
             .and_then(|v| v.as_str())

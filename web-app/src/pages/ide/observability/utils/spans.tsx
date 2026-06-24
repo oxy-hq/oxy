@@ -4,15 +4,15 @@
 export function formatSpanLabel(spanName: string): string {
   // Map of specific span names to friendly labels
   const labelMap: Record<string, string> = {
-    // Workflow launcher
+    // Automation launcher
     "workflow.launcher.with_project": "Load Project",
     "workflow.launcher.get_global_context": "Get Global Context",
-    "workflow.launcher.launch": "Launch Workflow",
+    "workflow.launcher.launch": "Launch Automation",
 
-    // Workflow run
-    "workflow.run_workflow": "Workflow",
+    // Automation run
+    "workflow.run_workflow": "Automation",
 
-    // Workflow task execution
+    // Automation task execution
     "workflow.task.execute": "Execute Task",
     "workflow.task.agent.execute": "Execute Agent Task",
 
@@ -39,8 +39,8 @@ export function formatSpanLabel(spanName: string): string {
     // Formatter
     "workflow.task.formatter.execute": "Format Output",
 
-    // Sub-workflow
-    "workflow.task.sub_workflow.execute": "Execute Sub-Workflow",
+    // Sub-automation
+    "workflow.task.sub_workflow.execute": "Execute Sub-Automation",
 
     // LLM calls
     "llm.call": "LLM Call",
@@ -53,7 +53,7 @@ export function formatSpanLabel(spanName: string): string {
     "tool_call.execute": "Execute Tool Call",
     "sql.execute": "Execute SQL",
     "validate_sql.execute": "Validate SQL",
-    "workflow.execute": "Execute Workflow",
+    "workflow.execute": "Execute Automation",
     "retrieval.execute": "Retrieve Data",
     "omni_query.execute": "Execute Omni Query",
     "visualize.execute": "Visualize Data",

@@ -78,7 +78,7 @@ impl HumanInputProvider for AutoAcceptInputProvider {
 /// Returns a "no human available" string for every prompt.
 ///
 /// Used when an agent runs as a child of a parent run whose UI can't
-/// yet surface nested suspensions (today: workflow → analytics). The
+/// yet surface nested suspensions (today: automation → analytics). The
 /// agent's `ask_user` call returns immediately with a directive
 /// rather than suspending; the LLM proceeds with its best
 /// interpretation of the original question.

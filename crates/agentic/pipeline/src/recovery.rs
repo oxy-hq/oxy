@@ -421,11 +421,11 @@ async fn recover_single_run(
     // `from_db` returns a coordinator with the default no-op
     // completion policy + resolver — recovered runs may still
     // complete with `workflow_continue` metadata and may still
-    // suspend on workflow delegations, so re-attach both the
-    // workflow policy and resolver before driving.
+    // suspend on automation delegations, so re-attach both the
+    // automation policy and resolver before driving.
     let coordinator = coordinator
-        .with_completion_policy(Arc::new(agentic_workflow::WorkflowCompletionPolicy))
-        .with_delegation_resolver(Arc::new(agentic_workflow::WorkflowDelegationResolver));
+        .with_completion_policy(Arc::new(agentic_automation::AutomationCompletionPolicy))
+        .with_delegation_resolver(Arc::new(agentic_automation::AutomationDelegationResolver));
 
     // ── Step 2: Walk tree and classify each task ────────────────────────
     let tree = agentic_runtime::crud::load_task_tree(&db, &root.id)
@@ -543,8 +543,8 @@ async fn recover_single_run(
 
     // ── Step 3: Process pending resumes ─────────────────────────────────
     //
-    // For Temporal-style workflow runs, the coordinator's resume_parent will
-    // enqueue a WorkflowDecision task when it processes these resumes — no
+    // For Temporal-style automation runs, the coordinator's resume_parent will
+    // enqueue an AutomationDecision task when it processes these resumes — no
     // in-memory channel needed. For analytics/builder runs, resume_parent
     // assigns a TaskSpec::Resume which the worker handles.
     //

@@ -2,7 +2,7 @@
 //!
 //! `.view.yml` / `.topic.yml` discovery + parsing goes through the canonical
 //! `oxy-airlayer-compat` shim (NOT airlayer's native directory loader, which
-//! rejects oxy's `data_source` alias) so the workflow path agrees with
+//! rejects oxy's `data_source` alias) so the automation path agrees with
 //! analytics and the builder validator. See
 //! `internal-docs/semantic-validation-standardization.md`.
 

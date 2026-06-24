@@ -18,7 +18,9 @@ const KIND_LABEL: Record<string, string> = {
   view: "Views",
   topic: "Topics",
   app: "Data apps",
-  procedure: "Procedures",
+  automation: "Automations",
+  // Legacy kind key, kept so older compile responses still label correctly.
+  procedure: "Automations",
   verified_query: "Verified queries",
   pipeline: "Pipelines"
 };

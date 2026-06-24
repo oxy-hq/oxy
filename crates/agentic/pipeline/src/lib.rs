@@ -6,6 +6,7 @@
 
 pub mod agent_run;
 pub mod airway_run;
+pub mod automation_run;
 pub mod executor;
 pub mod pipeline_ref;
 pub mod platform;
@@ -14,7 +15,6 @@ pub mod retry;
 pub mod revert;
 pub mod scheduler;
 pub mod usage;
-pub mod workflow_run;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -44,6 +44,10 @@ pub use agentic_analytics::AnalyticsRunMeta;
 pub use agentic_analytics::SchemaCatalog as AnalyticsSchemaCatalog;
 pub use agentic_analytics::extension::AnalyticsMigrator;
 pub use agentic_analytics::{AnalyticsMetricSink, SharedMetricSink};
+pub use agentic_automation::{
+    AutomationMigrator, SOURCE_TYPE as WORKFLOW_SOURCE_TYPE,
+    WorkspaceContext as WorkflowWorkspaceContext,
+};
 pub use agentic_builder::BuilderAppRunner as BuilderAppRunnerTrait;
 pub use agentic_builder::BuilderTestRunner as BuilderTestRunnerTrait;
 pub use agentic_builder::KnowledgeCard;
@@ -56,10 +60,6 @@ pub use agentic_llm::{AnthropicProvider, OpenAiProvider};
 /// Re-exported so HTTP/CLI consumers name the seed-function ownership arg
 /// through the facade instead of importing `agentic-runtime` directly.
 pub use agentic_runtime::crud::TaskScope;
-pub use agentic_workflow::{
-    SOURCE_TYPE as WORKFLOW_SOURCE_TYPE, WorkflowMigrator,
-    WorkspaceContext as WorkflowWorkspaceContext,
-};
 
 // ── ThinkingMode ────────────────────────────────────────────────────────────
 
@@ -134,7 +134,7 @@ pub struct PipelineBuilder {
     /// Analytics SQL-generation mode. When `true`, the analytics FSM
     /// terminates after producing SQL (skip executing + interpreting
     /// for pre-validated paths; LIMIT-0 smoke check + terminate for
-    /// LLM-generated SQL). Used by the workflow `type: agent` step
+    /// LLM-generated SQL). Used by the automation `type: agent` step
     /// when `AgentTaskConfig.output.mode == Sql`.
     analytics_sql_mode: bool,
     /// Workspace owning the run; stamped onto `agentic_runs.workspace_id`
@@ -339,7 +339,7 @@ impl PipelineBuilder {
     /// FSM terminates after SQL is produced — pre-validated paths
     /// (semantic layer, verified `.sql`, vendor engine) skip
     /// executing entirely; LLM-generated SQL runs a `LIMIT 0` smoke
-    /// check before terminating. Used by the workflow `type: agent`
+    /// check before terminating. Used by the automation `type: agent`
     /// step when `AgentTaskConfig.output.mode == Sql`. No-op for the
     /// builder agent.
     pub fn analytics_sql_mode(mut self) -> Self {
@@ -592,27 +592,28 @@ impl PipelineBuilder {
         let mut connectors = agentic_connector::build_named_connectors(resolved.configs).await;
         connectors.extend(resolved.pre_built);
 
-        // Procedure runner.
+        // Automation runner.
         //
         // Only injected when the agent's `context:` glob actually
-        // resolves to procedure files. Without an explicit declaration
+        // resolves to automation files. Without an explicit declaration
         // we don't hand the FSM a SubrunRunner at all — an empty list
-        // would cause `OxyProcedureRunner::search()` to fall back to
-        // `workspace.list_workflow_files()` (every workflow in the
+        // would cause `OxyAutomationRunner::search()` to fall back to
+        // `workspace.list_automation_files()` (every automation in the
         // project), and a misparsed/empty agent would then chain
-        // `search_procedures` → arbitrary workflow → another agent
+        // `search_automations` → arbitrary automation → another agent
         // step → another empty agent → recursion. The previous
         // behavior was "always inject and let the runner fall back"
-        // — unwound here so an agent only sees procedures it asked for.
+        // — unwound here so an agent only sees automations it asked for.
         let subrun_runner: Option<Arc<dyn agentic_core::subrun::SubrunRunner>> = config
             .resolve_context(base_dir)
             .ok()
-            .map(|ctx| ctx.procedure_files)
+            .map(|ctx| ctx.automation_files)
             .filter(|files| !files.is_empty())
             .map(|files| {
-                let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = self.platform.clone();
-                let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
-                    .with_procedure_files(files);
+                let workspace: Arc<dyn agentic_automation::WorkspaceContext> =
+                    self.platform.clone();
+                let runner = agentic_automation::OxyAutomationRunner::new(workspace)
+                    .with_automation_files(files);
                 Arc::new(runner) as Arc<dyn agentic_core::subrun::SubrunRunner>
             });
 
@@ -668,7 +669,7 @@ impl PipelineBuilder {
         // the FSM is overhead for "format these numbers" prompts and
         // can spawn an unbounded subrun chain when `instructions:` is
         // ever empty. Detection is on the parsed config, no flag in
-        // the workflow YAML required.
+        // the automation YAML required.
         let handle = if agentic_analytics::is_brief_agent(&params.config) {
             agentic_analytics::start_brief_pipeline(params)
                 .await
@@ -760,27 +761,28 @@ impl PipelineBuilder {
         let mut connectors = agentic_connector::build_named_connectors(resolved.configs).await;
         connectors.extend(resolved.pre_built);
 
-        // Procedure runner.
+        // Automation runner.
         //
         // Only injected when the agent's `context:` glob actually
-        // resolves to procedure files. Without an explicit declaration
+        // resolves to automation files. Without an explicit declaration
         // we don't hand the FSM a SubrunRunner at all — an empty list
-        // would cause `OxyProcedureRunner::search()` to fall back to
-        // `workspace.list_workflow_files()` (every workflow in the
+        // would cause `OxyAutomationRunner::search()` to fall back to
+        // `workspace.list_automation_files()` (every automation in the
         // project), and a misparsed/empty agent would then chain
-        // `search_procedures` → arbitrary workflow → another agent
+        // `search_automations` → arbitrary automation → another agent
         // step → another empty agent → recursion. The previous
         // behavior was "always inject and let the runner fall back"
-        // — unwound here so an agent only sees procedures it asked for.
+        // — unwound here so an agent only sees automations it asked for.
         let subrun_runner: Option<Arc<dyn agentic_core::subrun::SubrunRunner>> = config
             .resolve_context(base_dir)
             .ok()
-            .map(|ctx| ctx.procedure_files)
+            .map(|ctx| ctx.automation_files)
             .filter(|files| !files.is_empty())
             .map(|files| {
-                let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = self.platform.clone();
-                let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
-                    .with_procedure_files(files);
+                let workspace: Arc<dyn agentic_automation::WorkspaceContext> =
+                    self.platform.clone();
+                let runner = agentic_automation::OxyAutomationRunner::new(workspace)
+                    .with_automation_files(files);
                 Arc::new(runner) as Arc<dyn agentic_core::subrun::SubrunRunner>
             });
 
@@ -1209,7 +1211,7 @@ fn spawn_bridge_tasks<Ev: agentic_core::DomainEvents + 'static>(
 
 /// Drive a pipeline using the coordinator-worker architecture.
 ///
-/// This is the new path that supports agent delegation and workflow execution
+/// This is the new path that supports agent delegation and automation execution
 /// as child tasks. It creates a [`LocalTransport`], [`Worker`], and
 /// [`Coordinator`], wires them together, and runs the pipeline to completion.
 ///
@@ -1242,13 +1244,13 @@ pub async fn drive_with_coordinator(
     // Create the durable transport backed by the task queue table,
     // scoped to this run's task tree. Without scoping, this worker
     // will happily claim a queued root task that belongs to a
-    // sibling run (e.g., a workflow just queued by
-    // `start_workflow_run`) — the LISTEN/NOTIFY matcher widened a
+    // sibling run (e.g., an automation just queued by
+    // `start_automation_run`) — the LISTEN/NOTIFY matcher widened a
     // pre-existing race window from ~1s to <10ms, making the
     // poaching almost certain. When that happens, the poached
     // task's events flow to *this* coordinator which doesn't know
     // about it (`event for unknown task` warn), the Done outcome's
-    // policy-driven WorkflowDecision chain never fires, and the
+    // policy-driven AutomationDecision chain never fires, and the
     // sibling run sits with a seeded `agentic_workflow_state` row
     // but no in-flight queue task driving it.
     //
@@ -1279,19 +1281,19 @@ pub async fn drive_with_coordinator(
         + 1;
 
     // Coordinator: manages the task tree. Wire in the
-    // workflow-aware completion policy + delegation resolver —
-    // analytics / builder runs can delegate to a workflow as a
+    // automation-aware completion policy + delegation resolver —
+    // analytics / builder runs can delegate to an automation as a
     // child task, so every coordinator could see a
-    // `workflow_continue` outcome from a chained `Workflow` spec
+    // `workflow_continue` outcome from a chained `Automation` spec
     // *and* needs the resolver to route loop bodies / single
-    // steps / on-disk workflows to the right TaskSpec variant.
+    // steps / on-disk automations to the right TaskSpec variant.
     let mut coordinator = Coordinator::new(
         db,
         state.clone(),
         transport.clone() as Arc<dyn CoordinatorTransport>,
     )
-    .with_completion_policy(Arc::new(agentic_workflow::WorkflowCompletionPolicy))
-    .with_delegation_resolver(Arc::new(agentic_workflow::WorkflowDelegationResolver));
+    .with_completion_policy(Arc::new(agentic_automation::AutomationCompletionPolicy))
+    .with_delegation_resolver(Arc::new(agentic_automation::AutomationDelegationResolver));
     coordinator.register_answer_channel(run_id.clone(), answer_rx);
 
     // For the root task, we already have an ExecutingTask from the started
@@ -1504,8 +1506,8 @@ pub fn build_event_registry() -> EventRegistry {
     registry.register("analytics", agentic_analytics::event_handler());
     registry.register("builder", agentic_builder::event_handler());
     registry.register(
-        agentic_workflow::SOURCE_TYPE,
-        agentic_workflow::event_handler(),
+        agentic_automation::SOURCE_TYPE,
+        agentic_automation::event_handler(),
     );
     registry.register(AIRWAY_SOURCE_TYPE, airway_event_handler());
     registry
@@ -1769,7 +1771,7 @@ async fn run_agentic_headless(
         .cloned();
     ctx.extra_connectors = connectors;
 
-    let (solver, procedure_files) = config
+    let (solver, automation_files) = config
         .build_solver_with_context(&base_dir, ctx)
         .await
         .map_err(|e| format!("failed to build agentic solver: {e}"))?;
@@ -1799,18 +1801,18 @@ async fn run_agentic_headless(
 
     let solver = solver.with_events(event_stream.clone());
     // Same rule as the two PipelineBuilder sites: only inject a
-    // procedure runner when the agent's `context:` actually resolved
+    // automation runner when the agent's `context:` actually resolved
     // some files. An empty list would fall through to
-    // `workspace.list_workflow_files()` (full project scan), giving
-    // the FSM access to every workflow in the project — which has
+    // `workspace.list_automation_files()` (full project scan), giving
+    // the FSM access to every automation in the project — which has
     // caused a runaway subrun chain when a misparsed agent had no
     // concrete instructions.
-    let solver = if procedure_files.is_empty() {
+    let solver = if automation_files.is_empty() {
         solver
     } else {
-        let workspace: Arc<dyn agentic_workflow::WorkspaceContext> = platform.clone();
-        let runner = agentic_workflow::OxyProcedureRunner::new(workspace)
-            .with_procedure_files(procedure_files);
+        let workspace: Arc<dyn agentic_automation::WorkspaceContext> = platform.clone();
+        let runner = agentic_automation::OxyAutomationRunner::new(workspace)
+            .with_automation_files(automation_files);
         solver.with_subrun_runner(std::sync::Arc::new(runner))
     };
 
@@ -1825,7 +1827,7 @@ async fn run_agentic_headless(
         filters: vec![],
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     };

@@ -70,20 +70,20 @@ pub struct RunSummary {
 }
 
 pub mod airway;
+pub mod automation;
 pub mod run;
 pub mod thread;
-pub mod workflow;
 
 pub use airway::{
     backfill_airway, cancel_airway_run, create_airway_run, discover_source_tables,
     list_airway_files, list_runs_for_pipeline,
+};
+pub use automation::{
+    cancel_automation_run, create_automation_run, get_automation_file, get_automation_run,
+    latest_run_for_thread, list_automation_files, list_runs_for_automation,
 };
 pub use run::{
     RevertFileChangesRequest, UpdateThinkingModeRequest, answer_run, cancel_run, create_run,
     revert_file_changes, stream_events, update_thinking_mode,
 };
 pub use thread::{get_run_by_thread, list_runs_by_thread};
-pub use workflow::{
-    cancel_workflow_run, create_workflow_run, get_workflow_file, get_workflow_run,
-    latest_run_for_thread, list_runs_for_workflow, list_workflow_files,
-};

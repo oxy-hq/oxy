@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use agentic_pipeline::airway_run::{StartAirwayRequest, start_airway_run};
-use agentic_pipeline::workflow_run::{StartWorkflowRequest, start_workflow_run};
-use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, WorkflowMigrator};
+use agentic_pipeline::automation_run::{StartAutomationRequest, start_automation_run};
+use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, AutomationMigrator};
 use agentic_runtime::migration::RuntimeMigrator;
 use clap::Parser;
 use migration::MigratorTrait;
@@ -43,7 +43,7 @@ pub enum AdminCommand {
 
 #[derive(Parser, Debug)]
 pub struct SeedGlobalRunArgs {
-    /// Seed a workflow run: path to a `.workflow.yml` /
+    /// Seed a workflow run: path to a `.automation.yml` /
     /// `.procedure.yml`, relative to the workspace root.
     #[clap(long, value_name = "REF", conflicts_with = "airway")]
     pub workflow: Option<String>,
@@ -125,7 +125,7 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
     AnalyticsMigrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("analytics migrations: {e}")))?;
-    WorkflowMigrator::up(&db, None)
+    AutomationMigrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("workflow migrations: {e}")))?;
     AirwayMigrator::up(&db, None)
@@ -134,7 +134,7 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
 
     let run_id = match target {
         SeedTarget::Workflow(workflow_ref) => {
-            let request = StartWorkflowRequest {
+            let request = StartAutomationRequest {
                 workflow_ref,
                 variables: None,
                 retry_from_run_id: None,
@@ -152,7 +152,7 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
             // CLI seeds against the local workspace (Uuid::nil() ==
             // LOCAL_WORKSPACE_ID); the global driver loop resolves the
             // matching cached PlatformContext via that key.
-            start_workflow_run(
+            start_automation_run(
                 &db,
                 request,
                 agentic_pipeline::TaskScope::Global,

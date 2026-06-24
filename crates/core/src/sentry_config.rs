@@ -105,10 +105,10 @@ pub fn add_database_context(database_name: &str, query_type: Option<&str>) {
     });
 }
 
-/// Add workflow context to Sentry scope
-pub fn add_workflow_context(workflow_name: &str, step: Option<&str>) {
+/// Add automation context to Sentry scope
+pub fn add_automation_context(automation_name: &str, step: Option<&str>) {
     sentry::configure_scope(|scope| {
-        scope.set_tag("workflow", workflow_name);
+        scope.set_tag("workflow", automation_name);
         if let Some(s) = step {
             scope.set_tag("workflow_step", s);
         }
@@ -192,7 +192,7 @@ mod tests {
         // Test that context helpers don't panic
         add_operation_context("test", Some("/path/to/file.sql"));
         add_database_context("test_db", Some("SELECT"));
-        add_workflow_context("test_workflow", Some("step1"));
+        add_automation_context("test_workflow", Some("step1"));
         add_agent_context("test_agent", Some("What is this?"));
         add_breadcrumb("Test action", "test", sentry::Level::Info);
     }

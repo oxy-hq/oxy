@@ -93,7 +93,7 @@ fn make_intent() -> AnalyticsIntent {
         filters: vec![],
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     }
@@ -534,14 +534,14 @@ async fn diagnose_value_anomaly_with_solve_back_is_fatal() {
 
 // should_skip tests removed — solving is absorbed into specifying.
 
-// ── Procedure path ───────────────────────────────────────────────────────
+// ── Automation path ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn specify_impl_short_circuits_when_selected_procedure_is_set() {
+async fn specify_impl_short_circuits_when_selected_automation_is_set() {
     let mut s = make_solver();
     let file_path = std::path::PathBuf::from("workflows/monthly_sales.procedure.yml");
     let intent = AnalyticsIntent {
-        selected_procedure: Some(file_path.clone()),
+        selected_automation: Some(file_path.clone()),
         ..make_intent()
     };
 
@@ -549,14 +549,14 @@ async fn specify_impl_short_circuits_when_selected_procedure_is_set() {
 
     let specs = result
         .map_err(|(e, _)| e)
-        .expect("specify_impl must succeed when selected_procedure is set");
+        .expect("specify_impl must succeed when selected_automation is set");
     assert_eq!(specs.len(), 1, "must return exactly one spec");
     assert_eq!(
         specs[0].solution_source,
-        SolutionSource::Procedure {
+        SolutionSource::Automation {
             file_path: file_path.clone()
         },
-        "spec must carry SolutionSource::Procedure with the selected path",
+        "spec must carry SolutionSource::Automation with the selected path",
     );
     assert!(
         specs[0].resolved_metrics.is_empty(),
@@ -566,16 +566,16 @@ async fn specify_impl_short_circuits_when_selected_procedure_is_set() {
 
 /// Regression: `build_specifying_handler` unconditionally overwrites
 /// `solution_source` to `LlmWithSemanticContext` after `specify_impl` returns,
-/// even when `specify_impl` short-circuited with `SolutionSource::Procedure`.
+/// even when `specify_impl` short-circuited with `SolutionSource::Automation`.
 ///
-/// This means that even when `intent.selected_procedure` is set, the spec
+/// This means that even when `intent.selected_automation` is set, the spec
 /// forwarded to the Solving stage has the wrong `solution_source`, causing
-/// `should_skip` to miss the procedure path and `SpecResolved` to emit `"Llm"`.
+/// `should_skip` to miss the automation path and `SpecResolved` to emit `"Llm"`.
 #[tokio::test]
-async fn specifying_handler_preserves_procedure_solution_source_when_selected_procedure_is_set() {
+async fn specifying_handler_preserves_automation_solution_source_when_selected_automation_is_set() {
     let file_path = std::path::PathBuf::from("workflows/monthly_sales.procedure.yml");
     let intent = AnalyticsIntent {
-        selected_procedure: Some(file_path.clone()),
+        selected_automation: Some(file_path.clone()),
         ..make_intent()
     };
 
@@ -599,16 +599,16 @@ async fn specifying_handler_preserves_procedure_solution_source_when_selected_pr
     )
     .await;
 
-    // Specifying handler now transitions directly to Executing for procedures.
+    // Specifying handler now transitions directly to Executing for automations.
     match result.state_data {
         ProblemState::Executing(solution) => {
             assert_eq!(
                 solution.solution_source,
-                SolutionSource::Procedure {
+                SolutionSource::Automation {
                     file_path: file_path.clone()
                 },
-                "specifying handler must preserve SolutionSource::Procedure when \
-                 selected_procedure is set — got {:?} instead",
+                "specifying handler must preserve SolutionSource::Automation when \
+                 selected_automation is set — got {:?} instead",
                 solution.solution_source,
             );
         }
@@ -663,7 +663,7 @@ async fn specifying_handler_short_circuits_for_sql_file_with_oxy_block() {
     let file_path = write_temp_sql("daily_revenue.sql", sql_content);
 
     let intent = AnalyticsIntent {
-        selected_procedure: Some(file_path.clone()),
+        selected_automation: Some(file_path.clone()),
         ..make_intent()
     };
 
@@ -718,7 +718,7 @@ async fn specifying_handler_short_circuits_for_sql_file_with_oxy_block() {
 async fn specifying_handler_returns_file_read_error_for_missing_sql_file() {
     let file_path = std::path::PathBuf::from("/nonexistent/path/missing_query.sql");
     let intent = AnalyticsIntent {
-        selected_procedure: Some(file_path.clone()),
+        selected_automation: Some(file_path.clone()),
         ..make_intent()
     };
 
@@ -767,7 +767,7 @@ async fn specifying_handler_routes_sql_file_to_database_from_oxy_annotation() {
     let file_path = write_temp_sql("by_db.sql", sql_content);
 
     let intent = AnalyticsIntent {
-        selected_procedure: Some(file_path.clone()),
+        selected_automation: Some(file_path.clone()),
         ..make_intent()
     };
 
@@ -813,7 +813,7 @@ async fn specifying_handler_falls_back_to_default_when_sql_oxy_db_unknown() {
     let file_path = write_temp_sql("unknown_db.sql", sql_content);
 
     let intent = AnalyticsIntent {
-        selected_procedure: Some(file_path.clone()),
+        selected_automation: Some(file_path.clone()),
         ..make_intent()
     };
 
@@ -855,8 +855,8 @@ async fn specifying_handler_falls_back_to_default_when_sql_oxy_db_unknown() {
 
 // ── workspace-relative SQL file path resolution ───────────────────────────
 
-/// A relative `selected_procedure` path must be joined against `workspace_path`
-/// and read successfully, matching the behaviour of `search_procedures` which
+/// A relative `selected_automation` path must be joined against `workspace_path`
+/// and read successfully, matching the behaviour of `search_automations` which
 /// returns workspace-relative paths.
 #[tokio::test]
 async fn specifying_handler_resolves_relative_sql_path_against_workspace() {
@@ -878,10 +878,10 @@ async fn specifying_handler_resolves_relative_sql_path_against_workspace() {
     )
     .unwrap();
 
-    // Supply only the relative path — as search_procedures would return it.
+    // Supply only the relative path — as search_automations would return it.
     let rel_path = std::path::PathBuf::from("example_sql/total_number_of_store.sql");
     let intent = AnalyticsIntent {
-        selected_procedure: Some(rel_path.clone()),
+        selected_automation: Some(rel_path.clone()),
         ..make_intent()
     };
 
@@ -935,7 +935,7 @@ async fn specifying_handler_resolves_relative_sql_path_against_workspace() {
 async fn specifying_handler_relative_sql_path_fails_without_workspace_path() {
     let rel_path = std::path::PathBuf::from("example_sql/this_file_does_not_exist_in_cwd.sql");
     let intent = AnalyticsIntent {
-        selected_procedure: Some(rel_path.clone()),
+        selected_automation: Some(rel_path.clone()),
         ..make_intent()
     };
 
@@ -992,7 +992,7 @@ async fn specifying_handler_rejects_traversal_path() {
     // step-0 branch, which only fires for `.sql` paths.
     let traversal = std::path::PathBuf::from("../../etc/passwd.sql");
     let intent = AnalyticsIntent {
-        selected_procedure: Some(traversal),
+        selected_automation: Some(traversal),
         ..make_intent()
     };
 
@@ -1133,7 +1133,7 @@ fn make_completed_turn(
             filters: vec![],
             history: vec![],
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         },
@@ -1156,7 +1156,7 @@ fn make_hypothesis() -> crate::types::DomainHypothesis {
         confidence: 0.9,
         ambiguities: vec![],
         ambiguity_questions: vec![],
-        selected_procedure_path: None,
+        selected_automation_path: None,
         semantic_query: None,
         semantic_confidence: 0.0,
         missing_members: vec![],
@@ -1172,8 +1172,8 @@ fn triage_prompt_includes_question() {
         "should contain the raw question"
     );
     assert!(
-        prompt.contains("search_procedures"),
-        "should instruct to call search_procedures"
+        prompt.contains("search_automations"),
+        "should instruct to call search_automations"
     );
     assert!(
         prompt.contains("search_catalog"),
@@ -2263,14 +2263,14 @@ async fn sql_gen_mode_vendor_path_is_rejected() {
     assert!(reason.contains("vendor"));
 }
 
-/// Procedure delegation produces no SQL until the child workflow runs.
+/// Automation delegation produces no SQL until the child automation runs.
 /// SQL-gen mode rejects this combination at the executing entry.
 #[tokio::test]
-async fn sql_gen_mode_procedure_path_is_rejected() {
+async fn sql_gen_mode_automation_path_is_rejected() {
     let solver = sql_mode_solver_with_ok_connector();
     let solution = AnalyticsSolution {
         payload: SolutionPayload::Sql(String::new()),
-        solution_source: SolutionSource::Procedure {
+        solution_source: SolutionSource::Automation {
             file_path: std::path::PathBuf::from("procedures/foo.procedure.yml"),
         },
         connector_name: "default".to_string(),
@@ -2280,5 +2280,5 @@ async fn sql_gen_mode_procedure_path_is_rejected() {
     let super::executing::SqlGenOutcome::IncompatiblePath { reason } = outcome else {
         panic!("expected IncompatiblePath");
     };
-    assert!(reason.contains("procedure"));
+    assert!(reason.contains("automation"));
 }

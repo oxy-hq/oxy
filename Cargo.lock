@@ -265,6 +265,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentic-automation"
+version = "0.5.82"
+dependencies = [
+ "agentic-connector",
+ "agentic-core",
+ "agentic-runtime",
+ "agentic-semantic",
+ "airlayer",
+ "async-trait",
+ "chrono",
+ "minijinja",
+ "omni",
+ "oxy-looker",
+ "oxy-shared",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.11.0",
+ "strsim",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "agentic-builder"
 version = "0.5.82"
 dependencies = [
@@ -381,12 +411,12 @@ version = "0.5.31"
 dependencies = [
  "agentic-airway",
  "agentic-analytics",
+ "agentic-automation",
  "agentic-builder",
  "agentic-connector",
  "agentic-core",
  "agentic-llm",
  "agentic-runtime",
- "agentic-workflow",
  "airlayer",
  "async-trait",
  "chrono",
@@ -452,36 +482,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
-]
-
-[[package]]
-name = "agentic-workflow"
-version = "0.5.82"
-dependencies = [
- "agentic-connector",
- "agentic-core",
- "agentic-runtime",
- "agentic-semantic",
- "airlayer",
- "async-trait",
- "chrono",
- "minijinja",
- "omni",
- "oxy-looker",
- "oxy-shared",
- "sea-orm",
- "sea-orm-migration",
- "serde",
- "serde_jcs",
- "serde_json",
- "serde_yaml",
- "sha2 0.11.0",
- "strsim",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -8589,6 +8589,7 @@ name = "oxy-app"
 version = "0.5.82"
 dependencies = [
  "agentic-analytics",
+ "agentic-automation",
  "agentic-builder",
  "agentic-connector",
  "agentic-core",
@@ -8597,7 +8598,6 @@ dependencies = [
  "agentic-pipeline",
  "agentic-runtime",
  "agentic-semantic",
- "agentic-workflow",
  "airhouse",
  "airlayer",
  "anyhow",

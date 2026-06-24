@@ -11,7 +11,11 @@ pub mod artifacts;
 pub mod checkpoints;
 pub mod custom_app_event;
 pub mod custom_app_view_event;
-pub mod customer_app_procedure_runs;
+pub mod customer_app_automation_runs;
+/// Back-compat alias for the renamed `customer_app_automation_runs` module.
+/// Procedures/Workflows were renamed to Automations; existing call sites
+/// referencing `entity::customer_app_procedure_runs` keep resolving here.
+pub use customer_app_automation_runs as customer_app_procedure_runs;
 pub mod feature_flag;
 pub mod git_namespaces;
 pub mod github_accounts;
@@ -52,9 +56,13 @@ pub mod workspaces;
 pub mod agent_definitions;
 pub mod airway_pipelines;
 pub mod app_definitions;
+pub mod automation_definitions;
+/// Back-compat alias for the renamed `automation_definitions` module
+/// (formerly `procedure_definitions`). Keeps existing
+/// `entity::procedure_definitions::*` call sites resolving.
+pub use automation_definitions as procedure_definitions;
 pub mod compiled_references;
 pub mod monitor_configs;
-pub mod procedure_definitions;
 pub mod revisions;
 pub mod semantic_topics;
 pub mod semantic_views;

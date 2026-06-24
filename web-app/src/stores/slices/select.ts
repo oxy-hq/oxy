@@ -1,5 +1,5 @@
 import type { StateCreator } from "zustand";
-import type { TaskConfigWithId } from "../useWorkflow";
+import type { TaskConfigWithId } from "../useAutomation";
 import type { GroupSlice } from "./group";
 
 export interface SelectSlice {
@@ -33,7 +33,7 @@ export const createSelectSlice: StateCreator<
   },
   setSelectedLoopIndex: (task: TaskConfigWithId, index: number) =>
     set((state) => {
-      const groupId = task.runId ? `${task.workflowId}::${task.runId}` : task.workflowId;
+      const groupId = task.runId ? `${task.automationId}::${task.runId}` : task.automationId;
       const selectedId = `${groupId}.${task.id}`;
       const isSelected = state.selectedIndexes[selectedId] === index;
       return {

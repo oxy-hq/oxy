@@ -68,26 +68,26 @@ test.describe("Navigation", () => {
   });
 
   test("should navigate to workflow page from sidebar", async ({ page }) => {
-    // Ensure sidebar workflows are loaded/expanded
+    // Ensure sidebar automations are loaded/expanded
     const showAllButton = page.getByRole("button", {
-      name: /Show all.*procedures/i
+      name: /Show all.*automations/i
     });
     if (await showAllButton.isVisible().catch(() => false)) {
       await showAllButton.click();
     }
 
-    // Prefer specific workflow link, otherwise fallback to first available
-    const specificWorkflow = page.getByTestId("workflow-link-fruit_sales_report");
-    const anyWorkflow = page.locator('[data-testid^="workflow-link-"]').first();
+    // Prefer specific automation link, otherwise fallback to first available
+    const specificAutomation = page.getByTestId("workflow-link-fruit_sales_report");
+    const anyAutomation = page.locator('[data-testid^="workflow-link-"]').first();
 
-    const target = (await specificWorkflow.count()) > 0 ? specificWorkflow : anyWorkflow;
+    const target = (await specificAutomation.count()) > 0 ? specificAutomation : anyAutomation;
 
-    // Wait for the workflow link to be visible and clickable
+    // Wait for the automation link to be visible and clickable
     await expect(target).toBeVisible({ timeout: 15000 });
     await target.scrollIntoViewIfNeeded();
     await target.click({ timeout: 15000 });
 
-    // Verify navigation to workflow page
+    // Verify navigation to automation page
     await expect(page).toHaveURL(/\/workflows\/.+/);
   });
 

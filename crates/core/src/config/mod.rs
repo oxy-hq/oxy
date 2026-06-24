@@ -14,9 +14,9 @@ pub mod oxy;
 mod storage;
 
 use anyhow;
-use model::{AppConfig, Config, Database, Model, SemanticModels, Workflow};
+use model::{AppConfig, Automation, Config, Database, Model, SemanticModels};
 
-use parser::{parse_semantic_model_config, parse_workflow_config};
+use parser::{parse_automation_config, parse_semantic_model_config};
 use std::{fs, io};
 use validate::{DataAppValidationContext, ValidationContext, ValidationContextMetadata};
 
@@ -40,16 +40,16 @@ impl Config {
         Ok(())
     }
 
-    pub fn validate_workflow(&self, workflow: &Workflow) -> anyhow::Result<()> {
+    pub fn validate_workflow(&self, automation: &Automation) -> anyhow::Result<()> {
         let context = ValidationContext {
             config: self.clone(),
             metadata: None,
         };
-        match workflow.validate_with(&context) {
+        match automation.validate_with(&context) {
             Ok(_) => Ok(()),
             Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
-                "Invalid workflow: {} \n{}",
-                workflow.name, e
+                "Invalid automation: {} \n{}",
+                automation.name, e
             ))),
         }
     }
@@ -73,9 +73,9 @@ impl Config {
     }
 
     pub fn validate_workflows(&self) -> anyhow::Result<()> {
-        for workflow_file in self.list_workflows(&self.workspace_path) {
-            let workflow = self.load_workflow(&workflow_file)?;
-            self.validate_workflow(&workflow)?;
+        for automation_file in self.list_workflows(&self.workspace_path) {
+            let automation = self.load_workflow(&automation_file)?;
+            self.validate_workflow(&automation)?;
         }
         Ok(())
     }
@@ -142,10 +142,10 @@ impl Config {
     }
 
     pub fn list_workflows(&self, dir: &PathBuf) -> Vec<PathBuf> {
-        let mut workflows = self.list_by_sub_extension(dir, "procedure");
-        workflows.extend(self.list_by_sub_extension(dir, "workflow"));
-        workflows.extend(self.list_by_sub_extension(dir, "automation"));
-        workflows
+        let mut automations = self.list_by_sub_extension(dir, "procedure");
+        automations.extend(self.list_by_sub_extension(dir, "workflow"));
+        automations.extend(self.list_by_sub_extension(dir, "automation"));
+        automations
     }
 
     pub fn list_apps(&self, dir: &PathBuf) -> Vec<PathBuf> {
@@ -156,24 +156,23 @@ impl Config {
         self.list_by_sub_extension(dir, "agentic")
     }
 
-    pub fn load_workflow(&self, workflow_path: &PathBuf) -> Result<Workflow, OxyError> {
-        if !workflow_path.exists() {
+    pub fn load_workflow(&self, automation_path: &PathBuf) -> Result<Automation, OxyError> {
+        if !automation_path.exists() {
             return Err(OxyError::ArgumentError(format!(
-                "Workflow configuration file not found: {workflow_path:?}"
+                "Automation configuration file not found: {automation_path:?}"
             )));
         }
 
-        let workflow_name = workflow_path.file_stem().unwrap().to_str().unwrap();
-        let workflow_name = workflow_name
+        let automation_name = automation_path.file_stem().unwrap().to_str().unwrap();
+        let automation_name = automation_name
             .strip_suffix(".procedure")
-            .or_else(|| workflow_name.strip_suffix(".workflow"))
-            .or_else(|| workflow_name.strip_suffix(".automation"))
-            .unwrap_or(workflow_name);
+            .or_else(|| automation_name.strip_suffix(".automation"))
+            .unwrap_or(automation_name);
 
-        let workflow_config =
-            parse_workflow_config(workflow_name, &workflow_path.to_string_lossy())?;
+        let automation_config =
+            parse_automation_config(automation_name, &automation_path.to_string_lossy())?;
 
-        Ok(workflow_config)
+        Ok(automation_config)
     }
 
     pub fn load_semantic_model(

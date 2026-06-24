@@ -44,8 +44,10 @@ pub use super::workspaces::Entity as Workspaces;
 pub use super::agent_definitions::Entity as AgentDefinitions;
 pub use super::airway_pipelines::Entity as AirwayPipelines;
 pub use super::app_definitions::Entity as AppDefinitions;
+pub use super::automation_definitions::Entity as AutomationDefinitions;
 pub use super::compiled_references::Entity as CompiledReferences;
-pub use super::procedure_definitions::Entity as ProcedureDefinitions;
+// Back-compat alias for the renamed entity (was `procedure_definitions`).
+pub use super::automation_definitions::Entity as ProcedureDefinitions;
 pub use super::revisions::Entity as Revisions;
 pub use super::semantic_topics::Entity as SemanticTopics;
 pub use super::semantic_views::Entity as SemanticViews;

@@ -1,6 +1,6 @@
 //! Shared start helper for scheduled agent runs.
 //!
-//! Mirrors [`crate::workflow_run::start_workflow_run`] /
+//! Mirrors [`crate::automation_run::start_automation_run`] /
 //! [`crate::airway_run::start_airway_run`]: seeds a fresh `agentic_runs`
 //! row + the analytics extension row, then enqueues a
 //! [`TaskSpec::Agent`] for the coordinator to drive through
@@ -100,7 +100,7 @@ fn validate_agent_id(agent_id: &str) -> Result<(), AgentRunError> {
 /// Returns the freshly minted `run_id`. `scope` should be
 /// [`TaskScope::Global`](crud::TaskScope::Global) for scheduler-driven
 /// runs (so the standalone consumer picks them up); the scoped variant
-/// exists for symmetry with the workflow / airway seed helpers but is
+/// exists for symmetry with the automation / airway seed helpers but is
 /// not exercised today.
 pub async fn start_agent_run(
     db: &DatabaseConnection,

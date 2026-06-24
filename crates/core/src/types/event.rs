@@ -6,7 +6,7 @@ use crate::{
         constants::{
             ARTIFACT_SOURCE, CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE,
         },
-        model::Workflow,
+        model::Automation,
     },
     execute::types::{
         Event, EventKind as ExecuteEventKind, Output, Usage,
@@ -22,7 +22,7 @@ pub enum EventKind {
     WorkflowStarted {
         workflow_id: String,
         run_id: String,
-        workflow_config: Workflow,
+        workflow_config: Automation,
     },
     WorkflowFinished {
         workflow_id: String,
@@ -120,7 +120,7 @@ impl TryFrom<Event> for EventKind {
                         .get("workflow_config")
                         .and_then(|s| serde_json::from_str(s).ok())
                         .ok_or(OxyError::RuntimeError(
-                            "Cannot find workflow config".to_string(),
+                            "Cannot find automation config".to_string(),
                         ))?,
                 }),
                 ExecuteEventKind::Finished {

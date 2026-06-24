@@ -6,7 +6,7 @@ llm:
     thinking: adaptive
 context:
   - ./semantics/**/*
-  - ./procedures/**/*.procedure.yml
+  - ./procedures/**/*.automation.yml
   - ./data/*.sql
 states:
   specifying:

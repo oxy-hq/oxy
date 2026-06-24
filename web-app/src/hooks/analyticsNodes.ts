@@ -111,14 +111,17 @@ export function buildAnalyticsNodes(events: SseEvent[]): AnalyticsNode[] {
         break;
 
       case "intent_clarified": {
-        const label = ev.data.selected_procedure ? `Procedure Selected` : "Intent Clarified";
+        // Read the canonical field, falling back to the legacy name for
+        // runs persisted before the procedure→automation rename.
+        const selectedAutomation = ev.data.selected_automation ?? ev.data.selected_procedure;
+        const label = selectedAutomation ? `Automation Selected` : "Intent Clarified";
         nodes.push(
           domainNode(counter++, label, "done", {
             question_type: ev.data.question_type,
             metrics: ev.data.metrics,
             dimensions: ev.data.dimensions,
             filters: ev.data.filters,
-            ...(ev.data.selected_procedure && { selected_procedure: ev.data.selected_procedure })
+            ...(selectedAutomation && { selected_automation: selectedAutomation })
           })
         );
         break;
@@ -172,15 +175,15 @@ export function buildAnalyticsNodes(events: SseEvent[]): AnalyticsNode[] {
 
       case "subrun_step_started":
         nodes.push(
-          domainNode(counter++, `Procedure: ${ev.data.step}`, "running", {
+          domainNode(counter++, `Automation: ${ev.data.step}`, "running", {
             step: ev.data.step
           })
         );
         break;
 
       case "subrun_step_completed": {
-        // Find the most recent running procedure node for this step and finalize it.
-        const stepLabel = `Procedure: ${ev.data.step}`;
+        // Find the most recent running automation node for this step and finalize it.
+        const stepLabel = `Automation: ${ev.data.step}`;
         let found = false;
         for (let i = nodes.length - 1; i >= 0; i--) {
           if (

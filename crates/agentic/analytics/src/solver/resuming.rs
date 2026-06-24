@@ -73,7 +73,7 @@ pub(super) fn problem_state_from_resume(
                 filters: vec![],
                 history: vec![],
                 spec_hint: None,
-                selected_procedure: None,
+                selected_automation: None,
                 semantic_query: Default::default(),
                 semantic_confidence: 0.0,
             })
@@ -98,7 +98,7 @@ pub(super) fn problem_state_from_resume(
                     filters: vec![],
                     history: vec![],
                     spec_hint: None,
-                    selected_procedure: None,
+                    selected_automation: None,
                     semantic_query: Default::default(),
                     semantic_confidence: 0.0,
                 });
@@ -135,7 +135,7 @@ pub(super) fn problem_state_from_resume(
                         filters: vec![],
                         history: vec![],
                         spec_hint: None,
-                        selected_procedure: None,
+                        selected_automation: None,
                         semantic_query: Default::default(),
                         semantic_confidence: 0.0,
                     })
@@ -157,10 +157,10 @@ pub(super) fn problem_state_from_resume(
             ))
         }
         "executing" => {
-            // Procedure delegation completed. Parse the workflow output
+            // Automation delegation completed. Parse the automation output
             // (JSON array of step results) into a real AnalyticsResult so
             // the frontend gets proper query_executed events with columns
-            // and rows — just like inline procedure execution used to produce.
+            // and rows — just like inline automation execution used to produce.
             let result = resume_answer
                 .and_then(parse_delegation_answer)
                 .unwrap_or_else(|| {
@@ -193,7 +193,7 @@ pub(super) fn problem_state_from_resume(
                 filters: vec![],
                 history: vec![],
                 spec_hint: None,
-                selected_procedure: None,
+                selected_automation: None,
                 semantic_query: Default::default(),
                 semantic_confidence: 0.0,
             })
@@ -204,9 +204,9 @@ pub(super) fn problem_state_from_resume(
 /// Parse a delegation answer into an `AnalyticsResult` with proper
 /// `QueryResult` entries.
 ///
-/// The workflow's terminal-answer shape is `{task_name: result, ...}`
+/// The automation's terminal-answer shape is `{task_name: result, ...}`
 /// (an object keyed by task name in declaration order) per
-/// `agentic_workflow::step_decider::build_final_answer`. Older runs
+/// `agentic_automation::step_decider::build_final_answer`. Older runs
 /// emitted a bare `Vec<Value>`; we still accept that shape for
 /// rolling-upgrade safety.
 ///
@@ -331,7 +331,7 @@ pub(super) fn populate_resume_context(
             filters: vec![],
             history: vec![],
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         });
@@ -342,14 +342,14 @@ pub(super) fn populate_resume_context(
 mod tests {
     use super::*;
 
-    /// Regression: a workflow's terminal answer is now an object keyed
-    /// by task name (per `agentic_workflow::step_decider::build_final_answer`).
+    /// Regression: an automation's terminal answer is now an object keyed
+    /// by task name (per `agentic_automation::step_decider::build_final_answer`).
     /// `parse_delegation_answer` must walk the object's values so the
     /// analytics interpreter sees one `QueryResultSet` per step. Without
-    /// this, charts that bind to the workflow's table results render
+    /// this, charts that bind to the automation's table results render
     /// empty.
     #[test]
-    fn object_shape_workflow_answer_produces_result_sets() {
+    fn object_shape_automation_answer_produces_result_sets() {
         let answer = r#"{
             "query": { "columns": ["a", "b"], "rows": [[1, 2], [3, 4]] },
             "report": { "text": "summary" }
@@ -382,7 +382,7 @@ mod tests {
     /// working so a queued resume from before the shape change still
     /// renders correctly.
     #[test]
-    fn array_shape_workflow_answer_still_parses() {
+    fn array_shape_automation_answer_still_parses() {
         let answer = r#"[
             { "columns": ["x"], "rows": [["v1"]] },
             { "text": "hi" }

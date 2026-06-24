@@ -108,7 +108,7 @@ impl agentic_pipeline::platform::ProjectContext for TmpWorkspace {
 }
 
 #[async_trait]
-impl agentic_workflow::WorkspaceContext for TmpWorkspace {
+impl agentic_automation::WorkspaceContext for TmpWorkspace {
     fn workspace_path(&self) -> &Path {
         &self.root
     }
@@ -124,13 +124,13 @@ impl agentic_workflow::WorkspaceContext for TmpWorkspace {
     async fn get_integration(
         &self,
         name: &str,
-    ) -> Result<agentic_workflow::workspace::IntegrationConfig, String> {
+    ) -> Result<agentic_automation::workspace::IntegrationConfig, String> {
         Err(format!("tmp workspace: integration '{name}' unavailable"))
     }
-    async fn list_workflow_files(&self) -> Result<Vec<PathBuf>, String> {
+    async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
         Ok(vec![])
     }
-    async fn resolve_workflow_yaml(&self, _workflow_ref: &str) -> Result<String, String> {
+    async fn resolve_automation_yaml(&self, _workflow_ref: &str) -> Result<String, String> {
         Err("tmp workspace: not available".into())
     }
 }

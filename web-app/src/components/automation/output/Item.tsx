@@ -1,0 +1,113 @@
+import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
+import { useCallback } from "react";
+import Markdown from "@/components/Markdown";
+import { Button } from "@/components/ui/shadcn/button";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
+import { cn } from "@/libs/shadcn/utils";
+import type { LogItem } from "@/services/types";
+import { useCopyTimeout } from "./useCopyTimeout";
+
+type OutputItemProps = {
+  onArtifactClick?: (id: string) => void;
+  log: LogItem;
+  depth?: number;
+  isExpandable?: boolean;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
+};
+
+const getAllChildrenContent = (item: LogItem): string => {
+  let content = "";
+  if (!item.children || item.children.length === 0) {
+    return item.content;
+  }
+  item.children.forEach((child) => {
+    content += `${getAllChildrenContent(child)}\n\n`;
+  });
+  return content.trim();
+};
+
+const OutputItem = ({
+  depth = 0,
+  log,
+  onArtifactClick,
+  isExpandable = false,
+  isExpanded = false,
+  onToggleExpanded
+}: OutputItemProps) => {
+  const { copied, handleCopy: copyToClipboard } = useCopyTimeout();
+  const { isMobile } = useSidebar();
+  const depthPadding = depth > 0 ? `${depth * (isMobile ? 12 : 24)}px` : undefined;
+
+  const handleCopy = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      // For expandable items, copy all children content
+      const contentToCopy = isExpandable ? getAllChildrenContent(log) : log.content;
+      await copyToClipboard(contentToCopy);
+    },
+    [isExpandable, log, copyToClipboard]
+  );
+
+  if (isExpandable && onToggleExpanded) {
+    return (
+      <div
+        className='group w-full'
+        style={{ paddingLeft: depthPadding }}
+        data-testid='automation-output-item'
+      >
+        <div
+          className='flex w-full cursor-pointer items-center justify-center gap-2 rounded py-2 hover:bg-accent/50'
+          onClick={onToggleExpanded}
+        >
+          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+
+          <div className='flex flex-1 items-center justify-between text-sm'>
+            <span>{log.content}</span>
+            <div className='flex items-center gap-2'>
+              <Button
+                variant='ghost'
+                size='sm'
+                className={cn(
+                  "h-6 w-6 p-1 opacity-0 transition-opacity group-hover:opacity-100",
+                  copied && "opacity-100"
+                )}
+                onClick={handleCopy}
+                title='Copy all results from this step'
+              >
+                {copied ? <Check size={14} className='text-success' /> : <Copy size={14} />}
+              </Button>
+              <span className='flex justify-end text-muted-foreground text-xs'>
+                {log.timestamp}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className='group relative'
+      style={{ paddingLeft: depthPadding }}
+      data-testid='automation-output-item'
+    >
+      <Markdown onArtifactClick={onArtifactClick}>{log.content}</Markdown>
+      <Button
+        variant='ghost'
+        size='sm'
+        className={cn(
+          "absolute top-1 right-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100",
+          copied && "opacity-100"
+        )}
+        onClick={handleCopy}
+        title='Copy output'
+      >
+        {copied ? <Check size={14} className='text-success' /> : <Copy size={14} />}
+      </Button>
+    </div>
+  );
+};
+
+export default OutputItem;

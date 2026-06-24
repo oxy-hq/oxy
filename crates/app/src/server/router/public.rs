@@ -111,20 +111,20 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/projects/{project_id}/agents/asks/{run_id}/cancel",
             post(projects::agent_ask::cancel_ask),
         )
-        // Phase 3 — long-running procedures. POST starts, GET polls,
+        // Phase 3 — long-running automations. POST starts, GET polls,
         // POST .../cancel stops in-flight. Persistent state in
         // `customer_app_procedure_runs` survives server restarts.
         .route(
             "/projects/{project_id}/procedures/{procedure_id}/runs",
-            post(projects::procedure_run::start_procedure_run),
+            post(projects::automation_run::start_automation_run),
         )
         .route(
             "/projects/{project_id}/procedures/runs/{run_id}",
-            get(projects::procedure_run::poll_procedure_run),
+            get(projects::automation_run::poll_automation_run),
         )
         .route(
             "/projects/{project_id}/procedures/runs/{run_id}/cancel",
-            post(projects::procedure_run::cancel_procedure_run),
+            post(projects::automation_run::cancel_automation_run),
         )
         // Phase 4 — agent-run SSE stream. Same pipeline as `useAsk`
         // but emitting events in real time. Bundle SDK exposes via

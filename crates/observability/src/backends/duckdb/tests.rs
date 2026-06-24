@@ -1571,7 +1571,7 @@ fn populate_realistic_data(storage: &DuckDBStorage) {
         },
     );
 
-    // ── Trace 4: Workflow run (no LLM calls, no agent) ──────────────────
+    // ── Trace 4: Automation run (no LLM calls, no agent) ──────────────────
 
     // Root span — workflow.run_workflow
     insert_span(
@@ -1592,7 +1592,7 @@ fn populate_realistic_data(storage: &DuckDBStorage) {
         },
     );
 
-    // Child: workflow step 1
+    // Child: automation step 1
     insert_span(
         storage,
         &SpanRecord {
@@ -1610,7 +1610,7 @@ fn populate_realistic_data(storage: &DuckDBStorage) {
         },
     );
 
-    // Child: workflow step 2
+    // Child: automation step 2
     insert_span(
         storage,
         &SpanRecord {
@@ -1977,21 +1977,21 @@ async fn test_token_zero_for_traces_without_llm_calls() {
         .expect("list_traces should succeed");
 
     // trace-workflow-4 has no LLM calls, tokens should be 0.
-    let workflow = traces
+    let automation = traces
         .iter()
         .find(|t| t.trace_id == "trace-workflow-4")
         .unwrap();
     assert_eq!(
-        workflow.prompt_tokens, 0,
-        "workflow trace should have 0 prompt tokens"
+        automation.prompt_tokens, 0,
+        "automation trace should have 0 prompt tokens"
     );
     assert_eq!(
-        workflow.completion_tokens, 0,
-        "workflow trace should have 0 completion tokens"
+        automation.completion_tokens, 0,
+        "automation trace should have 0 completion tokens"
     );
     assert_eq!(
-        workflow.total_tokens, 0,
-        "workflow trace should have 0 total tokens"
+        automation.total_tokens, 0,
+        "automation trace should have 0 total tokens"
     );
 
     storage.shutdown().await;
@@ -2516,12 +2516,12 @@ async fn test_trace_enrichments_realistic() {
     assert_eq!(error.status_code, "ERROR");
     assert_eq!(error.duration_ns, 2_000_000);
 
-    let workflow = enrichments
+    let automation = enrichments
         .iter()
         .find(|e| e.trace_id == "trace-workflow-4")
         .unwrap();
-    assert_eq!(workflow.status_code, "OK");
-    assert_eq!(workflow.duration_ns, 10_000_000);
+    assert_eq!(automation.status_code, "OK");
+    assert_eq!(automation.duration_ns, 10_000_000);
 
     storage.shutdown().await;
 }
@@ -2896,10 +2896,10 @@ async fn test_metric_detail_nonexistent_metric() {
     storage.shutdown().await;
 }
 
-// ── Trace detail for workflow ───────────────────────────────────────────────
+// ── Trace detail for automation ───────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_trace_detail_workflow() {
+async fn test_trace_detail_automation() {
     let storage = test_storage();
     populate_realistic_data(&storage);
 
@@ -2908,8 +2908,8 @@ async fn test_trace_detail_workflow() {
         .await
         .expect("get_trace_detail should succeed");
 
-    // workflow trace has 3 spans: root + 2 steps
-    assert_eq!(details.len(), 3, "workflow trace should have 3 spans");
+    // automation trace has 3 spans: root + 2 steps
+    assert_eq!(details.len(), 3, "automation trace should have 3 spans");
 
     assert_eq!(details[0].span_name, "workflow.run_workflow");
     assert_eq!(details[0].parent_span_id, "");

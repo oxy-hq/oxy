@@ -1,13 +1,13 @@
 import {
   AppWindow,
+  Workflow as Automation,
   BookOpen,
   ChartBar,
   Database,
   Eye,
   FlaskConical,
   Layers2,
-  Plus,
-  Workflow
+  Plus
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -44,7 +44,7 @@ import { QB_WIZARD_STASH_KEY } from "@/services/api/quickbooks";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
-type ObjectType = "agentic" | "workflow" | "view" | "topic" | "app" | "test";
+type ObjectType = "agentic" | "automation" | "view" | "topic" | "app" | "test";
 
 interface ObjectTypeConfig {
   type: ObjectType;
@@ -70,10 +70,10 @@ context: []
 `
   },
   {
-    type: "workflow",
-    label: "Procedure",
-    icon: Workflow,
-    extension: ".procedure.yml",
+    type: "automation",
+    label: "Automation",
+    icon: Automation,
+    extension: ".automation.yml",
     defaultContent: `name: ""
 description: ""
 

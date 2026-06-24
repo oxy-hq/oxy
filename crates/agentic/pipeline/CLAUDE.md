@@ -57,7 +57,7 @@ state goes through three traits declared in [`platform`]:
 | ------- | --------- |
 | `platform::ProjectContext` | `resolve_connector`, `resolve_model`, `resolve_secret` |
 | `platform::ThreadOwnerLookup` | `thread_owner(thread_id)` — used by HTTP for auth |
-| `platform::PlatformContext` | Supertrait: `ProjectContext + agentic_workflow::WorkspaceContext`. Anywhere pipeline needs both, take `Arc<dyn PlatformContext>`. |
+| `platform::PlatformContext` | Supertrait: `ProjectContext + agentic_automation::WorkspaceContext`. Anywhere pipeline needs both, take `Arc<dyn PlatformContext>`. |
 
 Plus a bundle for the builder domain:
 

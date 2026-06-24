@@ -20,7 +20,7 @@ pub use queue::{
     purge_old_terminal_tasks, reap_stale_tasks, requeue_task, update_queue_heartbeat,
 };
 pub use recovery::{
-    StuckRun, cleanup_stale_runs, find_pending_global_runs, find_stuck_runs,
-    find_stuck_workflow_runs, get_active_root_runs, get_max_child_counter, get_resumable_root_runs,
+    StuckRun, cleanup_stale_runs, find_pending_global_runs, find_stuck_automation_runs,
+    find_stuck_runs, get_active_root_runs, get_max_child_counter, get_resumable_root_runs,
     increment_attempt, mark_recovery_failed,
 };

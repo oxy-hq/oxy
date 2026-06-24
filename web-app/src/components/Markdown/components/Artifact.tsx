@@ -1,4 +1,10 @@
-import { Bot, CircleAlert, CircleCheck, SquareTerminal, Workflow } from "lucide-react";
+import {
+  Workflow as Automation,
+  Bot,
+  CircleAlert,
+  CircleCheck,
+  SquareTerminal
+} from "lucide-react";
 import React from "react";
 import {
   Tooltip,
@@ -27,7 +33,7 @@ const ArtifactContainer = React.memo(
     let icon = <SquareTerminal />;
     switch (kind) {
       case "workflow":
-        icon = <Workflow />;
+        icon = <Automation />;
         break;
       case "agent":
         icon = <Bot />;

@@ -1,6 +1,6 @@
 use crate::cli::ServeArgs;
 use crate::server::serve_mode::ServeMode;
-use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, WorkflowMigrator};
+use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, AutomationMigrator};
 use agentic_runtime::migration::RuntimeMigrator;
 use axum::handler::Handler;
 use axum::http::HeaderValue;
@@ -434,8 +434,8 @@ async fn run_all_migrators(db: &sea_orm::DatabaseConnection) -> Result<(), OxyEr
         .map_err(|e| OxyError::RuntimeError(format!("analytics migrations failed: {}", e)))?;
     println!("migrations: analytics migrations complete");
 
-    // Run workflow state migrations (separate tracking table).
-    WorkflowMigrator::up(db, None)
+    // Run automation state migrations (separate tracking table).
+    AutomationMigrator::up(db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("workflow migrations failed: {}", e)))?;
     println!("migrations: workflow migrations complete");

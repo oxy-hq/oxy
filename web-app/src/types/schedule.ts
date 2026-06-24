@@ -44,7 +44,7 @@ export interface ScheduleInput {
   target_kind: ScheduleTargetKind;
   target_ref: string;
   /** Required when `target_kind === "agent"`. Backend rejects an empty
-   *  question for agent schedules; ignored for workflow / airway. */
+   *  question for agent schedules; ignored for automation / airway. */
   question?: string | null;
   variables?: Record<string, unknown> | null;
   cron_expr: string;

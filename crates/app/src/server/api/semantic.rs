@@ -7,7 +7,7 @@
 //! - `POST /semantic` — compile **and execute** the same query, returning
 //!   rows (JSON) or a parquet file handle. Used by the IDE's "Run" button.
 //!
-//! Compile + execute both go through `agentic_workflow::semantic_bridge`
+//! Compile + execute both go through `agentic_automation::semantic_bridge`
 //! and `agentic_connector` — same code paths the agentic pipeline's
 //! `semantic_query` step uses, so IDE results stay in lockstep with
 //! runtime results without re-introducing `oxy-workflow`.
@@ -587,7 +587,7 @@ pub struct SemanticQueryCompileResponse {
 /// (`variables`, `session_filters`, `connections`, `result_format`) are
 /// tolerated by serde and ignored — compile doesn't need them.
 ///
-/// Compilation goes through `agentic_workflow::semantic_bridge`, which
+/// Compilation goes through `agentic_automation::semantic_bridge`, which
 /// drives airlayer end-to-end. Same code path the agentic-pipeline's
 /// `semantic_query` step uses, so the IDE preview and runtime stay in
 /// lockstep.
@@ -700,7 +700,7 @@ pub async fn execute_semantic_query(
         .collect();
 
     let query = payload.query;
-    // Compile through the same preagg-aware path the workflow runtime
+    // Compile through the same preagg-aware path the automation runtime
     // and analytics solver use. When a preagg cache is attached and a
     // rollup covers the request, `compiled` will be `LocalParquet` and
     // we serve from the on-disk Parquet via DuckDB instead of round-
@@ -877,4 +877,3 @@ fn sql_error_500(message: String) -> (StatusCode, extract::Json<SqlErrorResponse
         }),
     )
 }
-

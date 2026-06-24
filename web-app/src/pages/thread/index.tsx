@@ -4,7 +4,7 @@ import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import useThread from "@/hooks/api/threads/useThread";
 import AgenticThread from "./agentic";
 import AnalyticsThread from "./analytics";
-import WorkflowThread from "./workflow";
+import AutomationThread from "./automation";
 
 const ThreadNotFound = () => (
   <div className='flex h-64 flex-col items-center justify-center p-8 text-center'>
@@ -55,7 +55,11 @@ export const Thread = ({
     switch (thread.source_type) {
       case "workflow":
         return (
-          <WorkflowThread thread={thread} refetchThread={() => refetch()} hideHeader={hideHeader} />
+          <AutomationThread
+            thread={thread}
+            refetchThread={() => refetch()}
+            hideHeader={hideHeader}
+          />
         );
       case "agentic":
         return <AgenticThread key={thread.id} thread={thread} hideHeader={hideHeader} />;

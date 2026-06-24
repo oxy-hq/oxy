@@ -8,7 +8,8 @@ use oxy_shared::errors::OxyError;
 
 use super::{
     model::{
-        AppConfig, BuilderAgentConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables,
+        AppConfig, Automation, AutomationWithRawVariables, BuilderAgentConfig, Config, Database,
+        Model,
     },
     storage::{ConfigSource, ConfigStorage},
     test_config::TestFileConfig,
@@ -113,19 +114,19 @@ impl ConfigManager {
         Ok(expanded_paths)
     }
 
-    pub async fn resolve_workflow<P: AsRef<Path>>(
+    pub async fn resolve_automation<P: AsRef<Path>>(
         &self,
-        workflow_name: P,
-    ) -> Result<Workflow, OxyError> {
-        self.storage.load_workflow_config(workflow_name).await
+        automation_name: P,
+    ) -> Result<Automation, OxyError> {
+        self.storage.load_automation_config(automation_name).await
     }
 
-    pub async fn resolve_workflow_with_raw_variables<P: AsRef<Path>>(
+    pub async fn resolve_automation_with_raw_variables<P: AsRef<Path>>(
         &self,
-        workflow_name: P,
-    ) -> Result<WorkflowWithRawVariables, OxyError> {
+        automation_name: P,
+    ) -> Result<AutomationWithRawVariables, OxyError> {
         self.storage
-            .load_workflow_config_with_raw_variables(workflow_name)
+            .load_automation_config_with_raw_variables(automation_name)
             .await
     }
 

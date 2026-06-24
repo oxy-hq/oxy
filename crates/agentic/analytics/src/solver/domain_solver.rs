@@ -92,7 +92,7 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
         }
         match state {
             "clarifying" => {
-                if name == "search_procedures" {
+                if name == "search_automations" {
                     let query = params["query"].as_str().unwrap_or("");
                     let refs = match self.subrun_runner.as_ref() {
                         Some(runner) => runner.search(query).await,
@@ -108,7 +108,7 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
                             })
                         })
                         .collect();
-                    Ok(serde_json::json!({ "procedures": items }))
+                    Ok(serde_json::json!({ "automations": items }))
                 } else {
                     execute_clarifying_tool(name, params, &*self.catalog)
                 }

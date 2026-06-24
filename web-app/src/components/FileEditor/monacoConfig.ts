@@ -40,8 +40,14 @@ export const configureMonaco = (monaco: Monaco) => {
         uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/app.json"
       },
       {
-        fileMatch: ["**/*.workflow.yml", "**/*.workflow.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/workflow.json"
+        // Canonical automation files (formerly automations / automations).
+        fileMatch: [
+          "**/*.automation.yml",
+          "**/*.automation.yaml",
+          "**/*.procedure.yml",
+          "**/*.procedure.yaml"
+        ],
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/automation.json"
       },
       {
         fileMatch: ["**/config.yml", "**/config.yaml"],

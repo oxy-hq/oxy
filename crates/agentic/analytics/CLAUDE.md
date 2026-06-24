@@ -13,7 +13,7 @@ Clarifying → Specifying → Solving → Executing → Interpreting → Done
 
 | Stage | What it does | Tools available |
 | ------- | ------------- | ---------------- |
-| Clarifying | Triage question type, resolve metrics/dimensions | `search_catalog`, `search_procedures`, `ask_user` |
+| Clarifying | Triage question type, resolve metrics/dimensions | `search_catalog`, `search_automations`, `ask_user` |
 | Specifying | Ground intent into query spec, resolve joins | `get_valid_dimensions`, `get_column_range` |
 | Solving | Generate SQL (semantic layer or LLM) | `explain_plan`, `dry_run` |
 | Executing | Run SQL against connector, validate results | — |
@@ -47,11 +47,11 @@ Migrator: `AnalyticsMigrator` with tracking table `seaql_migrations_analytics`.
 
 ## Rules
 
-- Must NOT import any other domain crate (`agentic-builder`, `agentic-workflow`)
+- Must NOT import any other domain crate (`agentic-builder`, `agentic-automation`)
   or upward crates (`agentic-http`, `agentic-pipeline`).
 - May import `agentic-core`, `agentic-runtime`, `agentic-connector`, `agentic-llm`.
 - Cross-domain subrun delegation goes through `agentic_core::subrun::SubrunRunner`.
-  `agentic-pipeline` injects a concrete impl (workflow's `OxyProcedureRunner`)
+  `agentic-pipeline` injects a concrete impl (workflow's `OxyAutomationRunner`)
   via `AnalyticsSolver::with_subrun_runner`. Subrun lifecycle events
   (`SubrunStarted`, `SubrunCompleted`, `SubrunStepStarted`, `SubrunStepCompleted`)
   arrive on the analytics event stream when delegation runs.

@@ -166,6 +166,8 @@ type IntentClarifiedBlock = {
     metrics: string[];
     dimensions: string[];
     filters: string[];
+    selected_automation?: string;
+    /** Legacy field name, kept so runs persisted before the rename still type-check. */
     selected_procedure?: string;
   };
 };
@@ -270,9 +272,9 @@ type SubrunStartedBlock = {
   seq: number;
   event_type: "subrun_started";
   payload: {
-    /** Human-readable procedure name (file stem without `.procedure` suffix). */
+    /** Human-readable automation name (file stem without `.procedure` suffix). */
     subrun_name: string;
-    /** Ordered list of top-level task descriptors from the procedure definition. */
+    /** Ordered list of top-level task descriptors from the automation definition. */
     steps: Array<{ name: string; task_type: string }>;
   };
 };
@@ -281,9 +283,9 @@ type SubrunCompletedBlock = {
   seq: number;
   event_type: "subrun_completed";
   payload: {
-    /** Human-readable procedure name, matching the paired `subrun_started`. */
+    /** Human-readable automation name, matching the paired `subrun_started`. */
     subrun_name: string;
-    /** `true` when the procedure completed without error. */
+    /** `true` when the automation completed without error. */
     success: boolean;
     /** Error message when `success` is false. */
     error?: string;
@@ -294,7 +296,7 @@ type SubrunStepStartedBlock = {
   seq: number;
   event_type: "subrun_step_started";
   payload: {
-    /** Human-readable task name from the procedure YAML. */
+    /** Human-readable task name from the automation YAML. */
     step: string;
   };
 };

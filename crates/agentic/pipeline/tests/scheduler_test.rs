@@ -4,7 +4,7 @@
 //! validation, CAS exactly-once under concurrent ticks, misfire
 //! run-once-then-resume, and run-now (Global seed, cadence untouched).
 //!
-//! All fire-path tests use a `workflow` target: `start_workflow_run`
+//! All fire-path tests use a `workflow` target: `start_automation_run`
 //! validates the ref + seeds + enqueues at seed time and never touches
 //! the workspace (YAML loads at drive time), so the `FakeWorkspace` stub
 //! below is never actually invoked.
@@ -82,7 +82,7 @@ async fn test_db() -> Option<DatabaseConnection> {
 struct FakeWorkspace;
 
 #[async_trait]
-impl agentic_workflow::WorkspaceContext for FakeWorkspace {
+impl agentic_automation::WorkspaceContext for FakeWorkspace {
     fn workspace_path(&self) -> &std::path::Path {
         std::path::Path::new("")
     }
@@ -98,13 +98,13 @@ impl agentic_workflow::WorkspaceContext for FakeWorkspace {
     async fn get_integration(
         &self,
         _name: &str,
-    ) -> Result<agentic_workflow::workspace::IntegrationConfig, String> {
+    ) -> Result<agentic_automation::workspace::IntegrationConfig, String> {
         Err("unused".into())
     }
-    async fn list_workflow_files(&self) -> Result<Vec<std::path::PathBuf>, String> {
+    async fn list_automation_files(&self) -> Result<Vec<std::path::PathBuf>, String> {
         Ok(vec![])
     }
-    async fn resolve_workflow_yaml(&self, _r: &str) -> Result<String, String> {
+    async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
         Err("unused".into())
     }
 }
@@ -125,7 +125,7 @@ fn input(name: &str, target_ref: &str, cron_expr: &str) -> ScheduleInput {
 /// Unique workflow ref so fire-path assertions can count exactly the runs
 /// this test seeded (the testcontainer is shared/reused across tests).
 fn uniq_ref() -> String {
-    format!("workflows/sched-{}.workflow.yml", uuid::Uuid::new_v4())
+    format!("workflows/sched-{}.automation.yml", uuid::Uuid::new_v4())
 }
 
 async fn force_due(db: &DatabaseConnection, id: &str, secs_ago: i64) {

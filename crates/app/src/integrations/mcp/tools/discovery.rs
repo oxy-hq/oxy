@@ -5,7 +5,7 @@ use crate::integrations::mcp::ToolType;
 use oxy::config::ConfigManager;
 use oxy_shared::errors::OxyError;
 
-use super::{semantic, sql, workflow};
+use super::{automation, semantic, sql};
 use crate::integrations::mcp::types::OxyTool;
 
 /// Handles resolution of MCP tools from different resource types
@@ -21,8 +21,8 @@ impl McpToolResolver {
     /// Resolves a tool for a given path based on its resource type
     async fn resolve_tool(&self, path: &Path) -> Result<Option<(String, OxyTool)>, OxyError> {
         match detect_resource_type(path) {
-            Some(ToolType::Workflow) => {
-                workflow::resolve_workflow_tool(self.config_manager.clone(), path.to_path_buf())
+            Some(ToolType::Automation) => {
+                automation::resolve_automation_tool(self.config_manager.clone(), path.to_path_buf())
                     .await
                     .map(Some)
             }
@@ -51,7 +51,7 @@ impl McpToolResolver {
 /// 1. **Explicit MCP Configuration**: When `mcp.tools` is defined in config.yml,
 ///    only the specified patterns are used to discover tools.
 ///
-/// 2. **Default Behavior**: When no MCP configuration exists, all workflows
+/// 2. **Default Behavior**: When no MCP configuration exists, all automations
 ///    in the project are automatically exposed as MCP tools.
 pub async fn get_mcp_tools(
     config_manager: ConfigManager,
@@ -76,17 +76,19 @@ pub async fn get_mcp_tools(
             get_tools(config_manager, &patterns).await
         }
         None => {
-            tracing::info!("No MCP configuration found - using default discovery (workflows only)");
+            tracing::info!(
+                "No MCP configuration found - using default discovery (automations only)"
+            );
             get_default_tools(config_manager).await
         }
     }
 }
 
-/// Default discovery strategy: exposes all workflows as MCP tools
+/// Default discovery strategy: exposes all automations as MCP tools
 async fn get_default_tools(
     config_manager: ConfigManager,
 ) -> Result<HashMap<String, OxyTool>, OxyError> {
-    let tools_map = workflow::get_all_workflow_tools(config_manager.clone()).await?;
+    let tools_map = automation::get_all_automation_tools(config_manager.clone()).await?;
 
     tracing::debug!("Discovered MCP tools: {:?}", tools_map.keys());
     Ok(tools_map)
@@ -155,12 +157,10 @@ pub fn detect_resource_type(path: &Path) -> Option<ToolType> {
 
     if file_name.ends_with(".procedure.yml")
         || file_name.ends_with(".procedure.yaml")
-        || file_name.ends_with(".workflow.yml")
-        || file_name.ends_with(".workflow.yaml")
         || file_name.ends_with(".automation.yml")
         || file_name.ends_with(".automation.yaml")
     {
-        Some(ToolType::Workflow)
+        Some(ToolType::Automation)
     } else if file_name.ends_with(".topic.yml") || file_name.ends_with(".topic.yaml") {
         Some(ToolType::SemanticTopic)
     } else if file_name.ends_with(".sql") {

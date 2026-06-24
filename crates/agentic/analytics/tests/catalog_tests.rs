@@ -143,7 +143,7 @@ fn intent(metrics: &[&str], dimensions: &[&str]) -> AnalyticsIntent {
         filters: vec![],
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     }
@@ -159,7 +159,7 @@ fn intent_with_filters(metrics: &[&str], dimensions: &[&str], filters: &[&str]) 
         filters: filters.iter().map(|s| s.to_string()).collect(),
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     }
@@ -1431,7 +1431,7 @@ fn demo_project_semantic_layer_loads_and_compiles() {
         filters: vec![],
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     };
@@ -1460,7 +1460,7 @@ fn qualify_names_resolves_llm_raw_column_names() {
         filters: vec![],
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     };
@@ -1480,7 +1480,7 @@ fn qualify_names_resolves_llm_raw_column_names() {
         filters: vec![],
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     };
@@ -1623,7 +1623,7 @@ fn hybrid_catalog_cardio_raw_column_names_resolve() {
         filters: vec![],
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     };
@@ -1650,7 +1650,7 @@ fn hybrid_catalog_cardio_table_qualified_raw_names_resolve() {
         filters: vec![],
         history: vec![],
         spec_hint: None,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     };

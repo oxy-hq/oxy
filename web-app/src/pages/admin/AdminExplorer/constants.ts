@@ -48,7 +48,7 @@ export const RUN_SOURCE_TYPES: FilterOption[] = [
   { value: ALL, label: "All sources" },
   { value: "analytics", label: "Analytics" },
   { value: "builder", label: "Builder" },
-  { value: "workflow", label: "Workflow" },
+  { value: "workflow", label: "Automation" },
   { value: "airway", label: "Airway" }
 ];
 

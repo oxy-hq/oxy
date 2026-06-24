@@ -37,7 +37,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/
 import type {
   AnalyticsStep,
   ArtifactItem,
-  ProcedureItem,
+  AutomationItem,
   SelectableItem,
   SqlItem,
   StepLlmUsage,
@@ -47,8 +47,8 @@ import type {
 } from "@/hooks/analyticsSteps";
 import { cn } from "@/libs/shadcn/utils";
 import { VERIFIED_SQL_FILE_TOOLTIP, VERIFIED_TOOLTIP } from "../constants";
+import AutomationDelegationCard from "./AutomationDelegationCard";
 import BuilderDelegationCard from "./BuilderDelegationCard";
-import ProcedureDelegationCard from "./ProcedureDelegationCard";
 
 // ── LLM Usage Tooltip ────────────────────────────────────────────────────────
 
@@ -294,9 +294,11 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
       const metric = typeof input?.metric === "string" ? input.metric : "—";
       return { Icon: Layers, label: "Metric Definition", preview: metric };
     }
+    // Match the legacy tool name too so runs persisted before the rename render.
+    case "search_automations":
     case "search_procedures": {
-      const query = typeof input?.query === "string" ? input.query : "Search procedures";
-      return { Icon: Search, label: "Search Procedures", preview: trunc(query) };
+      const query = typeof input?.query === "string" ? input.query : "Search automations";
+      return { Icon: Search, label: "Search Automations", preview: trunc(query) };
     }
 
     // ── Specifying ────────────────────────────────────────────────────────────
@@ -818,11 +820,11 @@ const SqlChild = ({
   );
 };
 
-const ProcedureChild = ({
+const AutomationChild = ({
   item,
   onSelect
 }: {
-  item: ProcedureItem;
+  item: AutomationItem;
   onSelect: (item: SelectableItem) => void;
 }) => (
   <button
@@ -831,7 +833,9 @@ const ProcedureChild = ({
     className='flex w-full items-center gap-1.5 py-0.5 text-left transition-opacity hover:opacity-70'
   >
     <GitBranch className='h-3 w-3 shrink-0 text-muted-foreground' />
-    <span className='shrink-0 font-medium text-muted-foreground text-xs'>{item.procedureName}</span>
+    <span className='shrink-0 font-medium text-muted-foreground text-xs'>
+      {item.automationName}
+    </span>
     <span className='flex-1 font-mono text-muted-foreground/60 text-xs'>
       {item.stepsDone}/{item.steps.length}
     </span>
@@ -886,8 +890,8 @@ function collectPills(items: TraceItem[]): PillInfo[] {
         isPreagg: item.is_preagg ?? false,
         item
       });
-    } else if (item.kind === "procedure") {
-      pills.push({ id: item.id, icon: GitBranch, label: item.procedureName, item });
+    } else if (item.kind === "automation") {
+      pills.push({ id: item.id, icon: GitBranch, label: item.automationName, item });
     } else if (item.kind === "builder_delegation") {
       const label = item.status === "running" ? "Building…" : "Builder";
       pills.push({ id: item.id, icon: Hammer, label, item, variant: "builder" });
@@ -1007,11 +1011,11 @@ const AnalyticsStepRow = ({ step, onSelectArtifact, flat = false }: AnalyticsSte
                 return <ArtifactChild key={item.id} item={item} onSelect={onSelectArtifact} />;
               if (item.kind === "sql")
                 return <SqlChild key={item.id} item={item} onSelect={onSelectArtifact} />;
-              if (item.kind === "procedure")
+              if (item.kind === "automation")
                 return item.isStreaming ? (
-                  <ProcedureDelegationCard key={item.id} item={item} onSelect={onSelectArtifact} />
+                  <AutomationDelegationCard key={item.id} item={item} onSelect={onSelectArtifact} />
                 ) : (
-                  <ProcedureChild key={item.id} item={item} onSelect={onSelectArtifact} />
+                  <AutomationChild key={item.id} item={item} onSelect={onSelectArtifact} />
                 );
               if (item.kind === "builder_delegation")
                 return (

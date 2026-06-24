@@ -236,16 +236,21 @@ export const SearchCatalogView = ({ item }: { item: ArtifactItem }) => {
   );
 };
 
-// ── SearchProceduresView ──────────────────────────────────────────────────────
+// ── SearchAutomationsView ──────────────────────────────────────────────────────
 
-type ProcedureRefItem = { name: string; path: string; description?: string };
+type AutomationRefItem = { name: string; path: string; description?: string };
 
-export const SearchProceduresView = ({ item }: { item: ArtifactItem }) => {
+export const SearchAutomationsView = ({ item }: { item: ArtifactItem }) => {
   const input = parseToolJson<{ query?: string }>(item.toolInput);
   const query = input?.query ?? "";
 
-  const output = parseToolJson<{ procedures?: ProcedureRefItem[] }>(item.toolOutput);
-  const procedures = output?.procedures ?? [];
+  // Read the canonical key, falling back to the legacy `procedures` key for
+  // runs persisted before the procedure→automation rename.
+  const output = parseToolJson<{
+    automations?: AutomationRefItem[];
+    procedures?: AutomationRefItem[];
+  }>(item.toolOutput);
+  const automations = output?.automations ?? output?.procedures ?? [];
 
   return (
     <div className='h-full overflow-auto p-4'>
@@ -257,13 +262,13 @@ export const SearchProceduresView = ({ item }: { item: ArtifactItem }) => {
           </div>
         )}
 
-        {procedures.length > 0 ? (
+        {automations.length > 0 ? (
           <div>
             <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
-              Procedures ({procedures.length})
+              Automations ({automations.length})
             </p>
             <div className='space-y-1.5'>
-              {procedures.map((p, i) => (
+              {automations.map((p, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: static list
                 <div key={i} className='space-y-0.5 rounded border bg-muted/30 px-2.5 py-2'>
                   <p className='font-medium text-xs'>{p.name}</p>
@@ -277,7 +282,7 @@ export const SearchProceduresView = ({ item }: { item: ArtifactItem }) => {
           </div>
         ) : (
           item.toolOutput && (
-            <p className='text-muted-foreground text-xs'>No matching procedures found.</p>
+            <p className='text-muted-foreground text-xs'>No matching automations found.</p>
           )
         )}
       </div>
@@ -661,13 +666,13 @@ export const ResolveSchemaView = ({ item }: { item: ArtifactItem }) => {
   );
 };
 
-// ── ProcedureStepView ─────────────────────────────────────────────────────────
+// ── AutomationStepView ─────────────────────────────────────────────────────────
 //
-// Procedure steps set toolInput = "Running…" (a plain string, never JSON),
+// Automation steps set toolInput = "Running…" (a plain string, never JSON),
 // which reliably identifies them vs. LLM tool calls that always get
 // JSON.stringify(input).
 
-export const ProcedureStepView = ({ item }: { item: ArtifactItem }) => {
+export const AutomationStepView = ({ item }: { item: ArtifactItem }) => {
   const isRunning = item.isStreaming;
   const isSuccess = !item.isStreaming && item.toolOutput === "Completed";
   const error = !item.isStreaming && item.toolOutput !== "Completed" ? item.toolOutput : undefined;

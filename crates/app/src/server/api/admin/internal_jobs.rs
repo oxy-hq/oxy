@@ -306,7 +306,7 @@ const ENRICHED_SELECT: &str = "\
 /// (the column is purely informational).
 /// Defense-in-depth: blank out obviously secret-shaped values before the
 /// decoded `TaskSpec` is sent to the admin debug panel. Credentials are
-/// supposed to live in the secret manager, but a misconfigured airway/workflow
+/// supposed to live in the secret manager, but a misconfigured airway/automation
 /// pipeline could inline a token into `variables`/`payload`; this keeps it from
 /// surfacing verbatim in the UI. Operator-only guard already bounds exposure —
 /// this is the belt to that guard's braces.

@@ -147,7 +147,7 @@ impl DomainSolver<AnalyticsDomain> for FullPipelineSolver {
             filters: vec![],
             history: intent.history,
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         })
@@ -276,7 +276,7 @@ async fn full_pipeline_with_sqlite_returns_real_data() {
             filters: vec![],
             history: vec![],
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         })
@@ -343,7 +343,7 @@ impl DomainSolver<AnalyticsDomain> for PriorIntentSolver {
             filters: vec![],
             history: intent.history,
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         })
@@ -500,7 +500,7 @@ async fn follow_up_reuses_prior_intent_via_has_intent() {
             filters: vec![],
             history: vec![],
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         })
@@ -563,7 +563,7 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
                 filters: vec!["status = 'completed'".into()],
                 history: intent.history.clone(),
                 spec_hint: None,
-                selected_procedure: None,
+                selected_automation: None,
                 semantic_query: Default::default(),
                 semantic_confidence: 0.0,
             })
@@ -578,7 +578,7 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
                 filters: vec!["orders.status = 'completed'".into()],
                 history: intent.history,
                 spec_hint: None,
-                selected_procedure: None,
+                selected_automation: None,
                 semantic_query: Default::default(),
                 semantic_confidence: 0.0,
             })
@@ -732,7 +732,7 @@ async fn ambiguous_column_triggers_back_edge_to_clarifying() {
             filters: vec!["status = 'completed'".into()],
             history: vec![],
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         })
@@ -761,25 +761,25 @@ async fn ambiguous_column_triggers_back_edge_to_clarifying() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// 4. Selected procedure — procedure path bypasses LLM spec resolution
+// 4. Selected automation — automation path bypasses LLM spec resolution
 // ═════════════════════════════════════════════════════════════════════════════
 
-struct ProcedureSolver {
+struct AutomationSolver {
     specify_calls: u32,
     solve_calls: u32,
-    /// Set to true when execute receives a Procedure-sourced solution.
-    procedure_executed: bool,
+    /// Set to true when execute receives an Automation-sourced solution.
+    automation_executed: bool,
 }
 
 #[async_trait]
-impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
+impl DomainSolver<AnalyticsDomain> for AutomationSolver {
     async fn clarify(
         &mut self,
         intent: AnalyticsIntent,
         _ctx: &agentic_core::orchestrator::RunContext<AnalyticsDomain>,
         _memory: &agentic_core::orchestrator::SessionMemory<AnalyticsDomain>,
     ) -> Result<AnalyticsIntent, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        // Simulate the Ground sub-phase selecting a procedure.
+        // Simulate the Ground sub-phase selecting an automation.
         Ok(AnalyticsIntent {
             raw_question: intent.raw_question,
             summary: String::new(),
@@ -789,7 +789,7 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
             filters: vec![],
             history: intent.history,
             spec_hint: None,
-            selected_procedure: Some(std::path::PathBuf::from(
+            selected_automation: Some(std::path::PathBuf::from(
                 "workflows/monthly_sales.procedure.yml",
             )),
             semantic_query: Default::default(),
@@ -805,14 +805,14 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
     ) -> Result<QuerySpec, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
         self.specify_calls += 1;
         // Mirrors the AnalyticsSolver::specify_impl short-circuit: when
-        // selected_procedure is set, skip LLM resolution and return a
-        // minimal spec with SolutionSource::Procedure.
+        // selected_automation is set, skip LLM resolution and return a
+        // minimal spec with SolutionSource::Automation.
         let file_path = intent
-            .selected_procedure
+            .selected_automation
             .clone()
-            .expect("selected_procedure must be set when procedure path is taken");
+            .expect("selected_automation must be set when automation path is taken");
         Ok(QuerySpec {
-            solution_source: SolutionSource::Procedure { file_path },
+            solution_source: SolutionSource::Automation { file_path },
             resolved_metrics: vec![],
             resolved_filters: vec![],
             resolved_tables: vec![],
@@ -838,15 +838,15 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
     {
         self.solve_calls += 1;
         // Note: AnalyticsSolver.should_skip() bypasses this stage for
-        // SolutionSource::Procedure, but stubs always call solve since
-        // they don't override should_skip. Propagate the procedure source.
+        // SolutionSource::Automation, but stubs always call solve since
+        // they don't override should_skip. Propagate the automation source.
         let file_path = match &spec.solution_source {
-            SolutionSource::Procedure { file_path } => file_path.clone(),
-            _ => panic!("solve must receive a Procedure-sourced spec"),
+            SolutionSource::Automation { file_path } => file_path.clone(),
+            _ => panic!("solve must receive an Automation-sourced spec"),
         };
         Ok(agentic_analytics::AnalyticsSolution {
             payload: SolutionPayload::Sql(String::new()),
-            solution_source: SolutionSource::Procedure { file_path },
+            solution_source: SolutionSource::Automation { file_path },
             connector_name: String::new(),
             semantic_query: None,
         })
@@ -858,15 +858,15 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
         _ctx: &agentic_core::orchestrator::RunContext<AnalyticsDomain>,
         _memory: &agentic_core::orchestrator::SessionMemory<AnalyticsDomain>,
     ) -> Result<AnalyticsResult, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        // Verify the executor receives a procedure-sourced solution.
+        // Verify the executor receives an automation-sourced solution.
         assert!(
-            matches!(solution.solution_source, SolutionSource::Procedure { .. }),
-            "execute must receive SolutionSource::Procedure, got {:?}",
+            matches!(solution.solution_source, SolutionSource::Automation { .. }),
+            "execute must receive SolutionSource::Automation, got {:?}",
             solution.solution_source,
         );
-        self.procedure_executed = true;
+        self.automation_executed = true;
 
-        // Simulate procedure output: a JSON result from the runner.
+        // Simulate automation output: a JSON result from the runner.
         Ok(AnalyticsResult::single(
             QueryResult {
                 columns: vec!["result".to_string()],
@@ -900,7 +900,7 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
             .unwrap_or_default();
         Ok(agentic_analytics::AnalyticsAnswer {
             display_blocks: vec![],
-            text: format!("Procedure result: {text}"),
+            text: format!("Automation result: {text}"),
             spec_hint: None,
         })
     }
@@ -915,18 +915,18 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
     }
 }
 
-/// When `clarify` sets `selected_procedure`, the pipeline must:
+/// When `clarify` sets `selected_automation`, the pipeline must:
 /// 1. Call `specify_single` exactly once — it short-circuits LLM resolution
-///    and returns a `SolutionSource::Procedure` spec.
-/// 2. Route `execute` with a `SolutionSource::Procedure` solution so the
-///    procedure runner would be invoked.
-/// 3. Return the procedure output in the final answer.
+///    and returns a `SolutionSource::Automation` spec.
+/// 2. Route `execute` with a `SolutionSource::Automation` solution so the
+///    automation runner would be invoked.
+/// 3. Return the automation output in the final answer.
 #[tokio::test]
-async fn selected_procedure_routes_through_procedure_execution_path() {
-    let mut orch = Orchestrator::<AnalyticsDomain, _>::new(ProcedureSolver {
+async fn selected_automation_routes_through_automation_execution_path() {
+    let mut orch = Orchestrator::<AnalyticsDomain, _>::new(AutomationSolver {
         specify_calls: 0,
         solve_calls: 0,
-        procedure_executed: false,
+        automation_executed: false,
     });
 
     let answer = orch
@@ -939,29 +939,29 @@ async fn selected_procedure_routes_through_procedure_execution_path() {
             filters: vec![],
             history: vec![],
             spec_hint: None,
-            selected_procedure: None,
+            selected_automation: None,
             semantic_query: Default::default(),
             semantic_confidence: 0.0,
         })
         .await
-        .expect("pipeline must complete for procedure path");
+        .expect("pipeline must complete for automation path");
 
     let solver = orch.into_solver();
 
     // specify_single must be called — it handles the short-circuit itself.
     assert_eq!(
         solver.specify_calls, 1,
-        "specify_single must be called once for the procedure path",
+        "specify_single must be called once for the automation path",
     );
-    // execute must have received a Procedure-sourced solution.
+    // execute must have received an Automation-sourced solution.
     assert!(
-        solver.procedure_executed,
-        "execute must be called with SolutionSource::Procedure",
+        solver.automation_executed,
+        "execute must be called with SolutionSource::Automation",
     );
-    // The answer must include the procedure output JSON.
+    // The answer must include the automation output JSON.
     assert!(
         answer.text.contains("1250"),
-        "answer must contain the procedure result (1250): {}",
+        "answer must contain the automation result (1250): {}",
         answer.text,
     );
 }

@@ -28,15 +28,16 @@ use agentic_semantic::config::{
 };
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
+use super::semantic::{ErrorResponse, WorkspacePath};
 use crate::server::api::data::{
     SQLParams, SemanticQueryResponse, build_connector, run_via_agentic_connector,
     run_with_connector,
 };
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, SemanticEngineCacheCtx, SemanticLayerCacheCtx, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, SemanticEngineCacheCtx, SemanticLayerCacheCtx,
+    WorkspaceManagerExtractor,
 };
 use oxy::utils::create_sse_stream;
-use super::semantic::{ErrorResponse, WorkspacePath};
 
 #[derive(Deserialize)]
 pub struct WmInstancesQuery {
@@ -929,8 +930,11 @@ pub async fn get_world_model(
     // Apply .world-model.yml display config if present (filter + label overrides).
     // Compile boundary first (serve replicas have no working copy), FS fallback.
     let workspace_path = workspace_manager.config_manager.workspace_path();
-    match super::world_model_config::WorldModelConfig::resolve(layer_cache.workspace_id, workspace_path)
-        .await
+    match super::world_model_config::WorldModelConfig::resolve(
+        layer_cache.workspace_id,
+        workspace_path,
+    )
+    .await
     {
         Ok(Some(cfg)) => apply_world_model_config(&mut entities, &mut edges, &cfg),
         Ok(None) => {}
@@ -3024,4 +3028,3 @@ mod breakdown_tests {
         assert_eq!(f[0].field, "store.store_id");
     }
 }
-

@@ -143,7 +143,7 @@ impl RunsManager {
                     )
                     .await?;
                 run_info.ok_or(OxyError::RuntimeError(format!(
-                    "Run with index {run_index} not found for workflow {source_id}"
+                    "Run with index {run_index} not found for automation {source_id}"
                 )))
             }
             RetryStrategy::RetryWithVariables {
@@ -165,7 +165,7 @@ impl RunsManager {
             RetryStrategy::LastFailure => {
                 let run_info = self.last_run(source_id).await?;
                 run_info.ok_or(OxyError::RuntimeError(format!(
-                    "Last failure run not found for workflow {source_id}"
+                    "Last failure run not found for automation {source_id}"
                 )))
             }
             RetryStrategy::NoRetry { variables } => {

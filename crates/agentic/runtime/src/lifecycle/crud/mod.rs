@@ -21,12 +21,12 @@ pub use events::{
     get_events_after, get_max_seq, insert_event,
 };
 pub use queries::{
-    AirwayTableSummary, LlmTokenSummary, LlmTokenSummaryByRun, ScheduleDurationBaseline,
-    ThreadHistoryTurn, ToolExchangeRow, WorkflowStepSummary, airway_table_summary_for_run,
-    fetch_duration_baselines, get_effective_run_state, get_run, get_run_by_thread,
-    get_runs_by_thread, get_thread_history, get_thread_history_with_events, list_active_runs,
-    list_recent_runs, list_runs_filtered, llm_usage_for_run, llm_usage_for_runs, runs_in_workspace,
-    workflow_step_summary_for_run,
+    AirwayTableSummary, AutomationStepSummary, LlmTokenSummary, LlmTokenSummaryByRun,
+    ScheduleDurationBaseline, ThreadHistoryTurn, ToolExchangeRow, airway_table_summary_for_run,
+    automation_step_summary_for_run, fetch_duration_baselines, get_effective_run_state, get_run,
+    get_run_by_thread, get_runs_by_thread, get_thread_history, get_thread_history_with_events,
+    list_active_runs, list_recent_runs, list_runs_filtered, llm_usage_for_run, llm_usage_for_runs,
+    runs_in_workspace,
 };
 pub use runs::{
     heartbeat_driver, insert_run, insert_run_with_parent, insert_run_with_schedule,

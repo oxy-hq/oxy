@@ -66,7 +66,7 @@ export const CustomerAppsService = {
    *
    * Hits the `/customer-apps/*` mount (app-admin gated) rather than
    * `/admin/apps/*` (OXY_OWNER gated) — publishing is a normal
-   * Oxy-engineer workflow.
+   * Oxy-engineer automation.
    */
   async publish(id: string): Promise<CustomerApp> {
     const response = await apiClient.post(`/customer-apps/${id}/publish`);

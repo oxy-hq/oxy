@@ -3,9 +3,9 @@ import ChartCard from "./ChartCard";
 import type { TraceChartsProps } from "./types";
 import {
   useAnalyticsRunsChartOptions,
+  useAutomationRunsChartOptions,
   useDurationChartOptions,
-  useTokensChartOptions,
-  useWorkflowRunsChartOptions
+  useTokensChartOptions
 } from "./useChartOptions";
 import { aggregateByDuration, aggregateByTime, calculateStats } from "./utils";
 
@@ -16,7 +16,7 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
 
   const stats = useMemo(() => calculateStats(traces), [traces]);
 
-  const workflowRunsChartOptions = useWorkflowRunsChartOptions(timeBuckets);
+  const automationRunsChartOptions = useAutomationRunsChartOptions(timeBuckets);
   const analyticsRunsChartOptions = useAnalyticsRunsChartOptions(timeBuckets);
   const durationChartOptions = useDurationChartOptions(durationBuckets);
   const tokensChartOptions = useTokensChartOptions(timeBuckets);
@@ -24,10 +24,10 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
   return (
     <div className='mb-4 grid grid-cols-4 gap-4'>
       <ChartCard
-        title='Workflow Runs'
-        value={`${stats.workflowRuns} Workflow Runs`}
+        title='Automation Runs'
+        value={`${stats.automationRuns} Automation Runs`}
         subtitle=''
-        options={workflowRunsChartOptions}
+        options={automationRunsChartOptions}
         isLoading={isLoading}
       />
 

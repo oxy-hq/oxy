@@ -35,7 +35,7 @@ members = [
   "crates/agentic/pipeline",
   "crates/agentic/runtime",
   "crates/agentic/semantic",
-  "crates/agentic/workflow",
+  "crates/agentic/automation",
   "crates/airform",
   "crates/airhouse",
   "crates/platform",
@@ -70,7 +70,7 @@ agentic-llm = { path = "crates/agentic/llm" }
 agentic-pipeline = { path = "crates/agentic/pipeline" }
 agentic-runtime = { path = "crates/agentic/runtime" }
 agentic-semantic = { path = "crates/agentic/semantic" }
-agentic-workflow = { path = "crates/agentic/workflow" }
+agentic-automation = { path = "crates/agentic/automation" }
 airhouse = { path = "crates/airhouse" }
 entity = { path = "crates/entity" }
 migration = { path = "crates/migration" }

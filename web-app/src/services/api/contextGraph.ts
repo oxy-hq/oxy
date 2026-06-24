@@ -24,8 +24,8 @@ export class ContextGraphService {
       ModelingService.getLineage(projectId, "", branchName).catch(() => null)
     ]);
 
-    // Parse semantic models, agents, queries, workflows, and apps from file tree
-    const { views, topics, agents, sqlQueries, workflows } =
+    // Parse semantic models, agents, queries, automations, and apps from file tree
+    const { views, topics, agents, sqlQueries, automations } =
       await ContextGraphService.parseProjectFiles(projectId, branchName, fileTree.primary);
 
     // Build nodes
@@ -168,46 +168,46 @@ export class ContextGraphService {
       });
     });
 
-    // Add procedure, workflow, app, and automation nodes and link to their dependencies
-    workflows.forEach((workflow) => {
-      const isApp = workflow.path.endsWith(".app.yml");
+    // Add procedure, automation, app, and agent nodes and link to their dependencies
+    automations.forEach((automation) => {
+      const isApp = automation.path.endsWith(".app.yml");
       const isProcedure =
-        workflow.path.endsWith(".procedure.yml") || workflow.path.endsWith(".procedure.yaml");
-      const isAutomation = workflow.path.endsWith(".automation.yml");
+        automation.path.endsWith(".procedure.yml") || automation.path.endsWith(".procedure.yaml");
+      const isAutomation = automation.path.endsWith(".automation.yml");
 
       let nodeId: string;
       let nodeType: "procedure" | "workflow" | "app" | "automation";
 
       if (isApp) {
-        nodeId = `app:${workflow.path}`;
+        nodeId = `app:${automation.path}`;
         nodeType = "app";
       } else if (isProcedure) {
-        nodeId = `procedure:${workflow.path}`;
+        nodeId = `procedure:${automation.path}`;
         nodeType = "procedure";
       } else if (isAutomation) {
-        nodeId = `automation:${workflow.path}`;
+        nodeId = `automation:${automation.path}`;
         nodeType = "automation";
       } else {
-        nodeId = `workflow:${workflow.path}`;
+        nodeId = `workflow:${automation.path}`;
         nodeType = "workflow";
       }
 
       nodes.push({
         id: nodeId,
         type: nodeType,
-        label: workflow.name,
+        label: automation.name,
         data: {
-          name: workflow.name,
-          path: workflow.path,
-          description: workflow.description,
+          name: automation.name,
+          path: automation.path,
+          description: automation.description,
           metadata: {
-            tasks: workflow.tasks
+            tasks: automation.tasks
           }
         }
       });
 
-      // Analyze workflow/app tasks to find dependencies
-      ContextGraphService.extractWorkflowDependencies(workflow.tasks, nodeId, nodes, edges);
+      // Analyze automation/app tasks to find dependencies
+      ContextGraphService.extractAutomationDependencies(automation.tasks, nodeId, nodes, edges);
     });
 
     // Helper function to check if a path matches a pattern (with wildcards)
@@ -243,9 +243,9 @@ export class ContextGraphService {
       });
     };
 
-    // Check workflows for execute_sql tasks
-    workflows.forEach((workflow) => {
-      checkTasksForSqlReferences(workflow.tasks);
+    // Check automations for execute_sql tasks
+    automations.forEach((automation) => {
+      checkTasksForSqlReferences(automation.tasks);
     });
 
     // Helper to add SQL queries matching a pattern
@@ -342,16 +342,16 @@ export class ContextGraphService {
             }
           }
 
-          // Link agent to workflows
+          // Link agent to automations
           if (tool.type === "workflow" && tool.workflow_ref) {
-            const workflowNode = nodes.find(
+            const automationNode = nodes.find(
               (n) => n.type === "workflow" && n.data.path === tool.workflow_ref
             );
-            if (workflowNode) {
+            if (automationNode) {
               edges.push({
-                id: `${agentId}->${workflowNode.id}`,
+                id: `${agentId}->${automationNode.id}`,
                 source: agentId,
-                target: workflowNode.id,
+                target: automationNode.id,
                 label: "uses",
                 type: "uses"
               });
@@ -360,7 +360,7 @@ export class ContextGraphService {
         });
       }
 
-      // Link routing agent to topics and workflows via routes
+      // Link routing agent to topics and automations via routes
       if (agent.agentType === "routing" && agent.routes) {
         agent.routes.forEach((route) => {
           if (typeof route !== "string") return;
@@ -381,16 +381,16 @@ export class ContextGraphService {
             });
           }
 
-          // Handle workflow routes
-          if (route.endsWith(".workflow.yml")) {
-            const matchedWorkflows = nodes.filter(
+          // Handle automation routes
+          if (route.endsWith(".automation.yml") || route.endsWith(".procedure.yml")) {
+            const matchedAutomations = nodes.filter(
               (n) => n.type === "workflow" && n.data.path && matchesPattern(n.data.path, route)
             );
-            matchedWorkflows.forEach((workflowNode) => {
+            matchedAutomations.forEach((automationNode) => {
               edges.push({
-                id: `${agentId}->${workflowNode.id}`,
+                id: `${agentId}->${automationNode.id}`,
                 source: agentId,
-                target: workflowNode.id,
+                target: automationNode.id,
                 label: "routes to",
                 type: "uses"
               });
@@ -506,7 +506,7 @@ export class ContextGraphService {
   }
 
   /**
-   * Parses project files (views, topics, agents, SQL queries, workflows, apps, automations) from the file tree
+   * Parses project files (views, topics, agents, SQL queries, automations, apps, automations) from the file tree
    */
   private static async parseProjectFiles(
     projectId: string,
@@ -534,7 +534,7 @@ export class ContextGraphService {
       name: string;
       path: string;
     }>;
-    workflows: Array<{
+    automations: Array<{
       name: string;
       path: string;
       description?: string;
@@ -562,7 +562,7 @@ export class ContextGraphService {
       name: string;
       path: string;
     }> = [];
-    const workflows: Array<{
+    const automations: Array<{
       name: string;
       path: string;
       description?: string;
@@ -628,15 +628,15 @@ export class ContextGraphService {
               file.type === "app" ||
               file.type === "automation"
             ) {
-              const workflowName =
+              const automationName =
                 parsed.name ||
                 file.path
                   .split("/")
                   .pop()
                   ?.replace(/\.(procedure|workflow|app|automation)\.yml$/, "") ||
                 "unknown";
-              workflows.push({
-                name: workflowName,
+              automations.push({
+                name: automationName,
                 path: file.path,
                 description: parsed.description,
                 tasks: parsed.tasks || []
@@ -655,11 +655,11 @@ export class ContextGraphService {
       })
     );
 
-    return { views, topics, agents, sqlQueries, workflows };
+    return { views, topics, agents, sqlQueries, automations };
   }
 
   /**
-   * Recursively finds all project files (views, topics, agents, SQL, workflows, apps, automations) in the file tree
+   * Recursively finds all project files (views, topics, agents, SQL, automations, apps, automations) in the file tree
    */
   private static findProjectFiles(
     fileTree: FileTreeModel[],
@@ -683,8 +683,6 @@ export class ContextGraphService {
           files.push({ path: currentPath, type: "sql" });
         } else if (node.name.endsWith(".procedure.yml") || node.name.endsWith(".procedure.yaml")) {
           files.push({ path: currentPath, type: "procedure" });
-        } else if (node.name.endsWith(".workflow.yml") || node.name.endsWith(".workflow.yaml")) {
-          files.push({ path: currentPath, type: "workflow" });
         } else if (node.name.endsWith(".app.yml") || node.name.endsWith(".app.yaml")) {
           files.push({ path: currentPath, type: "app" });
         } else if (
@@ -700,11 +698,11 @@ export class ContextGraphService {
   }
 
   /**
-   * Extracts dependencies from workflow tasks
+   * Extracts dependencies from automation tasks
    */
-  private static extractWorkflowDependencies(
+  private static extractAutomationDependencies(
     tasks: unknown[],
-    workflowId: string,
+    automationId: string,
     nodes: ContextGraphNode[],
     edges: ContextGraphEdge[]
   ): void {
@@ -722,8 +720,8 @@ export class ContextGraphService {
         const topicNode = nodes.find((n) => n.type === "topic" && n.data.name === taskObj.topic);
         if (topicNode) {
           edges.push({
-            id: `${workflowId}->${topicNode.id}`,
-            source: workflowId,
+            id: `${automationId}->${topicNode.id}`,
+            source: automationId,
             target: topicNode.id,
             label: "uses",
             type: "uses"
@@ -758,8 +756,8 @@ export class ContextGraphService {
           const viewNode = nodes.find((n) => n.type === "view" && n.data.name === viewName);
           if (viewNode) {
             edges.push({
-              id: `${workflowId}->${viewNode.id}`,
-              source: workflowId,
+              id: `${automationId}->${viewNode.id}`,
+              source: automationId,
               target: viewNode.id,
               label: "queries",
               type: "uses"
@@ -775,8 +773,8 @@ export class ContextGraphService {
         );
         if (queryNode) {
           edges.push({
-            id: `${workflowId}->${queryNode.id}`,
-            source: workflowId,
+            id: `${automationId}->${queryNode.id}`,
+            source: automationId,
             target: queryNode.id,
             label: "uses",
             type: "uses"
@@ -791,8 +789,8 @@ export class ContextGraphService {
         );
         if (agentNode) {
           edges.push({
-            id: `${workflowId}->${agentNode.id}`,
-            source: workflowId,
+            id: `${automationId}->${agentNode.id}`,
+            source: automationId,
             target: agentNode.id,
             label: "uses",
             type: "uses"
@@ -800,16 +798,16 @@ export class ContextGraphService {
         }
       }
 
-      // Link to other workflows
+      // Link to other automations
       if (taskObj.type === "workflow" && typeof taskObj.workflow_ref === "string") {
-        const subWorkflowNode = nodes.find(
+        const subAutomationNode = nodes.find(
           (n) => n.type === "workflow" && n.data.path === taskObj.workflow_ref
         );
-        if (subWorkflowNode) {
+        if (subAutomationNode) {
           edges.push({
-            id: `${workflowId}->${subWorkflowNode.id}`,
-            source: workflowId,
-            target: subWorkflowNode.id,
+            id: `${automationId}->${subAutomationNode.id}`,
+            source: automationId,
+            target: subAutomationNode.id,
             label: "uses",
             type: "uses"
           });
@@ -818,7 +816,12 @@ export class ContextGraphService {
 
       // Recursively handle nested tasks
       if (Array.isArray(taskObj.tasks)) {
-        ContextGraphService.extractWorkflowDependencies(taskObj.tasks, workflowId, nodes, edges);
+        ContextGraphService.extractAutomationDependencies(
+          taskObj.tasks,
+          automationId,
+          nodes,
+          edges
+        );
       }
     });
   }

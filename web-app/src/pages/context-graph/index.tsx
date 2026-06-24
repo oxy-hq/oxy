@@ -34,7 +34,7 @@ export default function ContextGraphPage() {
               <Alert className='max-w-lg'>
                 <AlertTitle>No data available</AlertTitle>
                 <AlertDescription>
-                  The context graph is empty. Start by creating workflows, semantic models, or
+                  The context graph is empty. Start by creating automations, semantic models, or
                   tables to see their relationships here.
                 </AlertDescription>
               </Alert>

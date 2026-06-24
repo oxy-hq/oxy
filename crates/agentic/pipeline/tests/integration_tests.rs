@@ -79,9 +79,9 @@ async fn test_db() -> Option<DatabaseConnection> {
     agentic_analytics::extension::AnalyticsMigrator::up(&db, None)
         .await
         .expect("analytics migrations failed");
-    agentic_workflow::WorkflowMigrator::up(&db, None)
+    agentic_automation::AutomationMigrator::up(&db, None)
         .await
-        .expect("workflow migrations failed");
+        .expect("automation migrations failed");
     Some(db)
 }
 

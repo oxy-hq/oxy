@@ -1,13 +1,13 @@
 import {
   AppWindow,
+  Workflow as Automation,
   BookOpen,
   Bot,
   Braces,
   Eye,
   File,
   FileCode,
-  Table,
-  Workflow
+  Table
 } from "lucide-react";
 import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { cn } from "@/libs/shadcn/utils";
@@ -18,9 +18,8 @@ const getFileIcon = (filePath: string) => {
   const fileType = detectFileType(filePath);
   switch (fileType) {
     case FileType.PROCEDURE:
-    case FileType.WORKFLOW:
     case FileType.AUTOMATION:
-      return Workflow;
+      return Automation;
     case FileType.ANALYTICS_AGENT:
       return Bot;
     case FileType.APP:

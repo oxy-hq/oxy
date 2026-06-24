@@ -22,7 +22,7 @@ agentic-connector = { workspace = true, features = [
 agentic-core = { workspace = true }
 agentic-llm = { workspace = true }
 agentic-runtime = { workspace = true }
-agentic-workflow = { workspace = true }
+agentic-automation = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }

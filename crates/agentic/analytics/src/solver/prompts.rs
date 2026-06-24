@@ -42,9 +42,9 @@ opportunity decomposition (per-segment gaps + downstream propagation).
 
 /// System prompt for the **Triage** sub-phase of Clarify.
 ///
-/// Runs with a `search_procedures` tool so the model can check for an existing
-/// procedure before doing any schema discovery.  Its job is to identify topic
-/// area, question type, relevant tables, and optionally select a procedure.
+/// Runs with a `search_automations` tool so the model can check for an existing
+/// automation before doing any schema discovery.  Its job is to identify topic
+/// area, question type, relevant tables, and optionally select an automation.
 pub(super) const TRIAGE_SYSTEM_PROMPT: &str = "\
 <role>
 You are an analytics assistant performing the Triage phase. Given a natural-language \
@@ -55,7 +55,7 @@ question determine what the user is asking about.
 0. **GeneralInquiry fast path:** If the question does not require querying data \
 (e.g. asking about available tables/metrics, system capabilities, or any conversational \
 question), skip all tool calls — immediately call the triage_response tool with \
-question_type set to GeneralInquiry. Do NOT call search_procedures or search_catalog.
+question_type set to GeneralInquiry. Do NOT call search_automations or search_catalog.
 0a. **RootCause fast path:** If the question is asking *why* a metric changed, whether something \
 is anomalous, or whether there are unexpected spikes/drops (e.g. \"why did X drop\", \"what drove \
 the move in X\", \"what caused the spike\", \"are there anomalies in X?\", \"is X behaving unusually?\", \
@@ -70,11 +70,11 @@ exists for a metric (e.g. \"how do we make more money?\", \"where can we grow re
 classify as Opportunity. You may still call search_catalog to confirm the target metric exists, \
 then produce the triage_response with question_type=Opportunity — a dedicated downstream handler \
 will size the opportunity via the metric tree.
-1. **Procedure check (do this FIRST for data questions):** Call search_procedures with \
-the key terms from the user\u{2019}s question. If a procedure is returned that directly \
-answers the question, set selected_procedure_path to its exact \"path\" value and \
+1. **Automation check (do this FIRST for data questions):** Call search_automations with \
+the key terms from the user\u{2019}s question. If an automation is returned that directly \
+answers the question, set selected_automation_path to its exact \"path\" value and \
 produce the response — you are done.
-2. **Catalog discovery (do this SECOND, when no procedure matched):** Call search_catalog \
+2. **Catalog discovery (do this SECOND, when no automation matched):** Call search_catalog \
 with the key terms from the user\u{2019}s question to discover available measures and \
 dimensions. This is REQUIRED before producing your final response.
 3. **Semantic query (ALWAYS populate after catalog discovery):** After \
@@ -107,8 +107,8 @@ in your text response — always use the tool. Key fields:
 - confidence: 0.0\u{2013}1.0 honesty score.
 - ambiguities: list of language-level ambiguities that cannot be resolved without \
 asking the user. Empty array when the question is clear.
-- selected_procedure_path: path from search_procedures result when a procedure \
-directly answers the question. Null when no procedure matched.
+- selected_automation_path: path from search_automations result when an automation \
+directly answers the question. Null when no automation matched.
 - semantic_query: ALWAYS populate with best-matching view.member paths after catalog \
 discovery. Only null when the catalog returned absolutely nothing relevant.
 - semantic_confidence: 0.85\u{2013}1.0 when ALL members confirmed; 0.4\u{2013}0.84 for partial \
@@ -120,8 +120,8 @@ coverage; 0.0\u{2013}0.39 only when catalog returned nothing relevant.
 - question_type must be exactly one of: Trend, Comparison, Breakdown, SingleValue, Distribution, GeneralInquiry, RootCause, Opportunity.
 - Use GeneralInquiry when the question does not require querying data (e.g. asking about available \
 tables/metrics, system capabilities, or any conversational question).
-- CRITICAL: If search_procedures returned any matching procedure, you MUST set \
-selected_procedure_path to its exact \"path\" value.
+- CRITICAL: If search_automations returned any matching automation, you MUST set \
+selected_automation_path to its exact \"path\" value.
 - CRITICAL: After calling search_catalog, ALWAYS populate semantic_query with the best \
 matching member paths. Set semantic_confidence >= 0.85 when ALL required members are confirmed. \
 Set lower confidence (0.4–0.84) when coverage is partial. Only use null when the catalog \
@@ -180,13 +180,13 @@ Think step-by-step before producing the JSON:
 4. Which question_type best fits?
 Then produce the JSON output.
 
-**Procedure check (do this FIRST):** Before exploring the schema, call \
-search_procedures with the key terms from the user\u{2019}s question. \
-If any procedure is returned that directly answers the question, you MUST set \
-selected_procedure_path to its \"path\" value and you are done \u{2014} skip schema \
-discovery entirely. The pipeline will execute the procedure instead of generating SQL.
+**Automation check (do this FIRST):** Before exploring the schema, call \
+search_automations with the key terms from the user\u{2019}s question. \
+If any automation is returned that directly answers the question, you MUST set \
+selected_automation_path to its \"path\" value and you are done \u{2014} skip schema \
+discovery entirely. The pipeline will execute the automation instead of generating SQL.
 
-Schema discovery \u{2014} only needed when no procedure matched. You are given only \
+Schema discovery \u{2014} only needed when no automation matched. You are given only \
 table names and column counts, NOT column names. Before extracting the intent you \
 MUST use the provided tools:
 1. Call search_catalog with relevant query terms (e.g. [\"revenue\", \"orders\"]) to \
@@ -202,8 +202,8 @@ in your text response — always use the tool. Key fields:
 - metrics: business measures to compute (quantities being aggregated).
 - dimensions: axes to group or slice by (include time dims when implied).
 - filters: constraint expressions using schema column names.
-- selected_procedure_path: REQUIRED when search_procedures returned a matching procedure. \
-Set to the exact \"path\" string from the tool result. Set null when no procedure was found.
+- selected_automation_path: REQUIRED when search_automations returned a matching automation. \
+Set to the exact \"path\" string from the tool result. Set null when no automation was found.
 </output_format>
 
 <constraints>
@@ -216,8 +216,8 @@ Never use user-supplied terms or paraphrases — only names confirmed by the cat
 - dimensions MUST be exact 'name' values as returned by search_catalog \
 (in view.dimension format, e.g. 'orders.status', 'orders.order_date'). \
 Never invent dimension names — only use names from tool results.
-- CRITICAL: If search_procedures returned any matching procedure, you MUST set \
-selected_procedure_path. Omitting it when a procedure matched will cause the pipeline \
+- CRITICAL: If search_automations returned any matching automation, you MUST set \
+selected_automation_path. Omitting it when an automation matched will cause the pipeline \
 to regenerate SQL unnecessarily.
 </constraints>
 
@@ -280,17 +280,17 @@ Schema: macro(date, calories, protein, carbs, fat)
 
 <example>
 User: \"How does sales correlate with external economic factors like CPI and unemployment?\"
-search_procedures({\"query\": \"sales correlation external factors CPI unemployment\"}) returned:
+search_automations({\"query\": \"sales correlation external factors CPI unemployment\"}) returned:
 [{\"name\": \"Sales vs External Factors\", \"path\": \"workflows/sales/external_factors.procedure.yml\", \"description\": \"Analyzes correlation between sales and macroeconomic indicators\"}]
 
-Since a matching procedure was found, set selected_procedure_path and use placeholder values for the other fields:
+Since a matching automation was found, set selected_automation_path and use placeholder values for the other fields:
 
 {
   \"question_type\": \"Trend\",
   \"metrics\": [],
   \"dimensions\": [],
   \"filters\": [],
-  \"selected_procedure_path\": \"workflows/sales/external_factors.procedure.yml\"
+  \"selected_automation_path\": \"workflows/sales/external_factors.procedure.yml\"
 }
 </example>
 </examples>";

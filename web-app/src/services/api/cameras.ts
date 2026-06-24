@@ -163,7 +163,7 @@ export type Camera = {
    */
   role: string | null;
   /**
-   * Operator zone-approval workflow: pending proposal slot.
+   * Operator zone-approval automation: pending proposal slot.
    * `null` = no proposal. Distinct from an empty array — that
    * would CLEAR live zones on approval, not "no change."
    */
@@ -1122,7 +1122,7 @@ export const CameraService = {
     return response.data;
   },
 
-  // ── Operator zone approval workflow ──────────────────────────────────────
+  // ── Operator zone approval automation ──────────────────────────────────────
 
   async proposeCameraGeometry(
     workspaceId: string,

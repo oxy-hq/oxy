@@ -204,9 +204,9 @@ pub async fn get_resumable_root_runs(
     query.all(db).await
 }
 
-// ── Stuck-workflow-run sweeper ───────────────────────────────────────────────
+// ── Stuck-automation-run sweeper ─────────────────────────────────────────────
 
-/// A workflow run that has no active queue entry driving it forward.
+/// An automation run that has no active queue entry driving it forward.
 #[derive(Debug, Clone)]
 pub struct StuckRun {
     pub run_id: String,
@@ -217,7 +217,7 @@ pub struct StuckRun {
     pub workspace_id: Uuid,
 }
 
-/// Find workflow runs that are stranded: `task_status` is non-terminal but no
+/// Find automation runs that are stranded: `task_status` is non-terminal but no
 /// queue entry for the run or any descendant is in `queued`/`claimed`. These
 /// runs cannot make progress on their own — nothing will re-drive them.
 ///
@@ -228,9 +228,9 @@ pub struct StuckRun {
 /// Intentionally scoped to `source_type = 'workflow'`. Agent/analytics runs
 /// that get into this state are typically unrecoverable (no idempotent
 /// re-drive primitive), and a blanket sweep could false-positive on
-/// long-running LLM calls. Workflow decisions are pure + `decision_version`
+/// long-running LLM calls. Automation decisions are pure + `decision_version`
 /// gated, so a spurious re-enqueue is always safe.
-pub async fn find_stuck_workflow_runs(
+pub async fn find_stuck_automation_runs(
     db: &DatabaseConnection,
     grace_secs: u64,
 ) -> Result<Vec<StuckRun>, DbErr> {
@@ -278,7 +278,7 @@ pub async fn find_stuck_workflow_runs(
 }
 
 /// Find runs that are stranded **and** safe for the periodic global
-/// driver loop to pick up — generalized over `find_stuck_workflow_runs`
+/// driver loop to pick up — generalized over `find_stuck_automation_runs`
 /// for `workflow` + `airway` (the Phase 1/2 schedulable targets).
 ///
 /// "Stranded" means: no queue entry is `claimed` (a live worker — the

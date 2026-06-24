@@ -56,7 +56,7 @@ pub struct PipelineParams {
     /// `config.llm.extended_thinking`.  The caller no longer needs to extract
     /// these values manually.
     pub use_extended_thinking: bool,
-    /// Optional subrun search provider for the `search_procedures` tool.
+    /// Optional subrun search provider for the `search_automations` tool.
     /// Subrun *execution* is handled by the coordinator, not this runner.
     pub subrun_runner: Option<Arc<dyn SubrunRunner>>,
     /// Optional metric-tree runner powering the `explain` / `opportunity` /
@@ -74,10 +74,10 @@ pub struct PipelineParams {
     pub metric_sink: Option<SharedMetricSink>,
     /// Optional human-input provider override. When `None`, the solver
     /// uses its default [`DeferredInputProvider`] which suspends the
-    /// run on every `ask_user` call. Workflow delegations override
+    /// run on every `ask_user` call. Automation delegations override
     /// this with [`AutoAcceptInputProvider`] so a nested `ask_user`
-    /// doesn't deadlock the parent workflow run until live event
-    /// streaming reaches the workflow UI.
+    /// doesn't deadlock the parent automation run until live event
+    /// streaming reaches the automation UI.
     pub human_input: Option<agentic_core::human_input::HumanInputHandle>,
     /// SQL-generation mode. When `true`, the analytics FSM terminates
     /// after SQL is produced:
@@ -86,10 +86,10 @@ pub struct PipelineParams {
     ///     entirely; the SQL becomes the run's terminal answer.
     ///   - LLM-generated SQL (path D) runs a `LIMIT 0` smoke check
     ///     instead of materialising rows, then terminates.
-    ///   - Procedure delegation is incompatible with SQL mode and is
+    ///   - Automation delegation is incompatible with SQL mode and is
     ///     rejected at runtime.
     ///
-    /// Set via the workflow `type: agent` step when the
+    /// Set via the automation `type: agent` step when the
     /// `output: { mode: sql }` block is present on the task. The
     /// natural-language `interpreting` stage is bypassed.
     pub sql_generation_mode: bool,
@@ -161,7 +161,7 @@ pub async fn start_pipeline(
         timezone: params.timezone,
     };
 
-    let (solver, _procedure_files) = params
+    let (solver, _automation_files) = params
         .config
         .build_solver_with_context(&params.base_dir, build_ctx)
         .await?;
@@ -218,7 +218,7 @@ pub async fn start_pipeline(
         filters: vec![],
         history: params.history,
         spec_hint: params.prior_spec_hint,
-        selected_procedure: None,
+        selected_automation: None,
         semantic_query: Default::default(),
         semantic_confidence: 0.0,
     };
@@ -336,7 +336,7 @@ pub async fn resume_pipeline(
         timezone: params.timezone,
     };
 
-    let (solver, _procedure_files) = params
+    let (solver, _automation_files) = params
         .config
         .build_solver_with_context(&params.base_dir, build_ctx)
         .await?;

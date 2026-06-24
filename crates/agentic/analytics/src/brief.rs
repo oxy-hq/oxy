@@ -8,7 +8,7 @@
 //! data in the prompt itself and need only a single LLM round-trip.
 //!
 //! [`start_brief_pipeline`] returns the same [`PipelineHandle`] shape as
-//! [`crate::pipeline::start_pipeline`] so the workflow-step executor
+//! [`crate::pipeline::start_pipeline`] so the automation-step executor
 //! doesn't branch on which path produced the answer: events channel,
 //! outcomes channel, cancel token, join handle. It just emits one
 //! `PipelineOutcome::Done` (or `Failed`/`Cancelled`) and closes.
@@ -64,7 +64,7 @@ pub async fn start_brief_pipeline(
     let client = brief_llm_client(&params)?;
 
     // System prompt comes from `instructions:`; user prompt is the
-    // workflow step's `prompt:` field (already templated by the caller).
+    // automation step's `prompt:` field (already templated by the caller).
     let system = params.config.instructions.clone().unwrap_or_default();
     let user = params.question.clone();
 

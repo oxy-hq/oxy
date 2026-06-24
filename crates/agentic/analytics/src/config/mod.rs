@@ -102,13 +102,13 @@ pub struct ResolvedContext {
     pub sql_examples: Vec<String>,
     /// `.md` documentation files to inject into Clarifying and Interpreting.
     pub domain_docs: Vec<String>,
-    /// `.procedure.yml`, `.procedure.yaml`, `.workflow.yml`, `.workflow.yaml`,
+    /// `.procedure.yml`, `.procedure.yaml`, `.automation.yml`, `.automation.yaml`,
     /// and `.sql` files discovered via context globs.
     ///
-    /// When non-empty, the HTTP layer wires an `OxyProcedureRunner` initialised
-    /// with these paths so the `search_procedures` tool can locate them without
+    /// When non-empty, the HTTP layer wires an `OxyAutomationRunner` initialised
+    /// with these paths so the `search_automations` tool can locate them without
     /// scanning the entire project directory.
-    pub procedure_files: Vec<PathBuf>,
+    pub automation_files: Vec<PathBuf>,
     /// Database names discovered in context files:
     ///
     /// - `data_source:` field of `.view.yml` files
@@ -135,11 +135,11 @@ fn extract_view_data_source(content: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Extract all `database:` values from an `execute_sql` task in a procedure YAML file.
+/// Extract all `database:` values from an `execute_sql` task in an automation YAML file.
 ///
 /// Recursively walks the YAML value tree so that databases nested inside
 /// `loop_sequential` (or any other nested task container) are also discovered.
-fn extract_procedure_databases(content: &str) -> Vec<String> {
+fn extract_automation_databases(content: &str) -> Vec<String> {
     fn collect(val: &serde_yaml::Value, out: &mut Vec<String>) {
         match val {
             serde_yaml::Value::Mapping(m) => {
@@ -400,14 +400,14 @@ impl AgentConfig {
 
                 if name.ends_with(".procedure.yml")
                     || name.ends_with(".procedure.yaml")
-                    || name.ends_with(".workflow.yml")
-                    || name.ends_with(".workflow.yaml")
+                    || name.ends_with(".automation.yml")
+                    || name.ends_with(".automation.yaml")
                 {
                     let content = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
-                    for db in extract_procedure_databases(&content) {
+                    for db in extract_automation_databases(&content) {
                         push_unique(&mut ctx.referenced_databases, db);
                     }
-                    ctx.procedure_files.push(path);
+                    ctx.automation_files.push(path);
                 } else if name.ends_with(".view.yml") || name.ends_with(".view.yaml") {
                     // Quick parse to surface the data_source before full catalog load.
                     let content = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
@@ -420,7 +420,7 @@ impl AgentConfig {
                 } else if path.extension().is_some_and(|e| e == "sql") {
                     let content = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
                     // A `/* oxy: ... */` header opts the SQL file in as a
-                    // verified query — searchable via `search_procedures` and
+                    // verified query — searchable via `search_automations` and
                     // executed verbatim. Files without the header stay as
                     // LLM style examples only, so users can drop reference
                     // SQL into `context` without it becoming an authoritative
@@ -430,7 +430,7 @@ impl AgentConfig {
                             if let Some(db) = block.database {
                                 push_unique(&mut ctx.referenced_databases, db);
                             }
-                            ctx.procedure_files.push(path);
+                            ctx.automation_files.push(path);
                         }
                         None => {
                             ctx.sql_examples.push(content);
@@ -472,7 +472,7 @@ impl AgentConfig {
     /// 5. Build [`LlmClient`] with project/env-var fallbacks.
     /// 6. Construct [`AnalyticsSolver`] with context and global thinking.
     ///
-    /// Returns `(solver, procedure_files)` where `procedure_files` is the list
+    /// Returns `(solver, automation_files)` where `automation_files` is the list
     /// of `.procedure.yml` paths discovered via `context` globs.
     pub async fn build_solver_with_context(
         &self,
@@ -682,7 +682,7 @@ impl AgentConfig {
             build_ctx.semantic_scan_path,
         );
 
-        Ok((solver, ctx.procedure_files))
+        Ok((solver, ctx.automation_files))
     }
 }
 

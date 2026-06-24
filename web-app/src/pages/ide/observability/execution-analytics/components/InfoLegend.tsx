@@ -38,8 +38,8 @@ export default function InfoLegend() {
     },
     {
       icon: GitBranch,
-      label: "Workflow",
-      description: "Workflow defined inline in agent config",
+      label: "Automation",
+      description: "Automation defined inline in agent config",
       color: "text-vis-purple"
     }
   ];

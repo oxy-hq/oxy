@@ -82,7 +82,7 @@ pub(super) struct TaskNode {
 /// Iteration identity for a loop-sequential fan-out child.
 ///
 /// `step_name` is the *parent* loop step's name as it appears in the
-/// workflow YAML (e.g. `"iterate_stores"`); `index` is the 0-based
+/// automation YAML (e.g. `"iterate_stores"`); `index` is the 0-based
 /// position in the loop's `values:` array. Together they uniquely
 /// identify one iteration so the FE's `LoopProgressBar` can flip the
 /// right cell when a `subrun_step_iteration_completed` event
@@ -137,17 +137,17 @@ pub struct Coordinator {
     /// finalize, defer, or chain into a follow-up task. Defaults to
     /// [`DefaultCompletionPolicy`] (always finalize); production
     /// callers that need the workflow-continue chain semantics pass
-    /// `agentic_workflow::WorkflowCompletionPolicy` via
+    /// `agentic_automation::AutomationCompletionPolicy` via
     /// [`Self::with_completion_policy`].
     pub(super) completion_policy: Arc<dyn CompletionPolicy>,
     /// Resolver invoked when a worker suspends with a
     /// `DelegationTarget` and the coordinator needs to translate
     /// that wire-level triple into a concrete `TaskSpec`. Defaults
     /// to [`DefaultDelegationResolver`] (generic Agent + basic
-    /// Workflow mapping); production callers pass
-    /// `agentic_workflow::WorkflowDelegationResolver` via
+    /// Automation mapping); production callers pass
+    /// `agentic_automation::AutomationDelegationResolver` via
     /// [`Self::with_delegation_resolver`] to get the body/step
-    /// routing the workflow domain needs.
+    /// routing the automation domain needs.
     pub(super) delegation_resolver: Arc<dyn DelegationResolver>,
 }
 
@@ -185,21 +185,21 @@ impl Coordinator {
     }
 
     /// Replace the default no-op completion policy with a domain-aware
-    /// one. Production callers that have the workflow domain in scope
-    /// should pass `agentic_workflow::WorkflowCompletionPolicy` here so
+    /// one. Production callers that have the automation domain in scope
+    /// should pass `agentic_automation::AutomationCompletionPolicy` here so
     /// `workflow_continue` chain semantics work; tests and pure
-    /// non-workflow runs can leave the default in place.
+    /// non-automation runs can leave the default in place.
     pub fn with_completion_policy(mut self, policy: Arc<dyn CompletionPolicy>) -> Self {
         self.completion_policy = policy;
         self
     }
 
     /// Replace the default delegation resolver with a domain-aware
-    /// one. Production callers that have the workflow domain in
-    /// scope should pass `agentic_workflow::WorkflowDelegationResolver`
+    /// one. Production callers that have the automation domain in
+    /// scope should pass `agentic_automation::AutomationDelegationResolver`
     /// here so loop iterations and single-step delegations are
     /// routed to the right `TaskSpec` variant; tests and pure
-    /// non-workflow runs can leave the default in place.
+    /// non-automation runs can leave the default in place.
     pub fn with_delegation_resolver(mut self, resolver: Arc<dyn DelegationResolver>) -> Self {
         self.delegation_resolver = resolver;
         self
@@ -336,9 +336,9 @@ pub(crate) fn source_type_for_spec(spec: &TaskSpec) -> String {
                 "analytics".to_string()
             }
         }
-        TaskSpec::Workflow { .. } => "workflow".to_string(),
-        TaskSpec::WorkflowStep { .. } => "workflow_step".to_string(),
-        TaskSpec::WorkflowDecision { .. } => "workflow".to_string(),
+        TaskSpec::Automation { .. } => "workflow".to_string(),
+        TaskSpec::AutomationStep { .. } => "workflow_step".to_string(),
+        TaskSpec::AutomationDecision { .. } => "workflow".to_string(),
         TaskSpec::Resume { .. } => "analytics".to_string(),
         // Match agentic_airway::SOURCE_TYPE — inlined here to keep the
         // runtime free of a dep on the airway domain crate.

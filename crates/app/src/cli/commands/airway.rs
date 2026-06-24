@@ -11,7 +11,7 @@ use agentic_pipeline::airway_run::{
     AirwayRunError, StartAirwayRequest, spawn_airway_run_drive, start_airway_run,
 };
 use agentic_pipeline::{
-    AIRWAY_SOURCE_TYPE, AirwayMigrator, AnalyticsMigrator, WorkflowMigrator, airway_event_handler,
+    AIRWAY_SOURCE_TYPE, AirwayMigrator, AnalyticsMigrator, AutomationMigrator, airway_event_handler,
 };
 use agentic_runtime::crud;
 use agentic_runtime::event_registry::EventRegistry;
@@ -66,7 +66,7 @@ async fn connect_db() -> Result<sea_orm::DatabaseConnection, OxyError> {
     AnalyticsMigrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("analytics migrations: {e}")))?;
-    WorkflowMigrator::up(&db, None)
+    AutomationMigrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("workflow migrations: {e}")))?;
     AirwayMigrator::up(&db, None)

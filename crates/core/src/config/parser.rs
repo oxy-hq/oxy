@@ -2,20 +2,23 @@ use std::fs;
 
 use oxy_shared::errors::OxyError;
 
-use super::model::{SemanticModels, Workflow};
+use super::model::{Automation, SemanticModels};
 
-pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Workflow, OxyError> {
-    let workflow_content = fs::read_to_string(file_path).map_err(|e| {
-        OxyError::ArgumentError(format!("Couldn't read workflow file {file_path}: {e}"))
+pub fn parse_automation_config(
+    automation_name: &str,
+    file_path: &str,
+) -> Result<Automation, OxyError> {
+    let automation_content = fs::read_to_string(file_path).map_err(|e| {
+        OxyError::ArgumentError(format!("Couldn't read automation file {file_path}: {e}"))
     })?;
-    let mut workflow: Workflow = serde_yaml::from_str(&workflow_content).map_err(|e| {
-        OxyError::ConfigurationError(format!("Couldn't parse workflow file {file_path}: {e}"))
+    let mut automation: Automation = serde_yaml::from_str(&automation_content).map_err(|e| {
+        OxyError::ConfigurationError(format!("Couldn't parse automation file {file_path}: {e}"))
     })?;
 
     // Name is always derived from the filename, not the YAML content
-    workflow.name = workflow_name.to_string();
+    automation.name = automation_name.to_string();
 
-    Ok(workflow)
+    Ok(automation)
 }
 
 pub fn parse_semantic_model_config(file_path: &str) -> anyhow::Result<SemanticModels> {

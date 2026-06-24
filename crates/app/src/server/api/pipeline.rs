@@ -5,7 +5,7 @@
 //! the `agentic-http` crate (which can't reach `compiled_reader`) and walks the
 //! filesystem, so it 502s on a stateless serve node when the ide is down. This
 //! FleetOk endpoint serves the list from the boundary, falling through to the
-//! filesystem in local / not-yet-promoted mode — mirroring `procedure.rs`.
+//! filesystem in local / not-yet-promoted mode — mirroring `automation.rs`.
 
 use axum::extract::{self, Query};
 use axum::http::StatusCode;
@@ -18,7 +18,7 @@ use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtracto
 
 /// Decode a `path_b64` route param tolerantly — accept both the
 /// `URL_SAFE_NO_PAD` form our listers emit and the standard-padded form the FE
-/// `btoa` path historically produced. Shared by the procedure + pipeline
+/// `btoa` path historically produced. Shared by the automation + pipeline
 /// single-file fetches. Returns the decoded workspace-relative path.
 pub(crate) fn decode_path_b64(path_b64: &str) -> Option<String> {
     let bytes = URL_SAFE_NO_PAD.decode(path_b64).ok().or_else(|| {

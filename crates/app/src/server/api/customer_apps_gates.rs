@@ -2,7 +2,7 @@
 //!
 //! Today only `POST /api/projects/:id/query` exists, but the
 //! customer-apps platform is growing to three more endpoints
-//! (`/semantic-query`, `/agents/.../asks`, `/procedures/.../runs`).
+//! (`/semantic-query`, `/agents/.../asks`, `/automations/.../runs`).
 //! Each shares the same prelude: cookie / API-key auth → Origin
 //! allowlist → user lookup → DB connection → workspace lookup →
 //! org-membership check. Inlining that in every handler would mean

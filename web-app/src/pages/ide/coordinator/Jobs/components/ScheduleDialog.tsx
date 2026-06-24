@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/shadcn/select";
 import { Switch } from "@/components/ui/shadcn/switch";
 import { Textarea } from "@/components/ui/shadcn/textarea";
-import { useAgenticWorkflowFiles } from "@/hooks/api/agentic-workflows/useAgenticWorkflows";
+import { useAgenticAutomationFiles } from "@/hooks/api/agentic-automations/useAgenticAutomations";
 import {
   useAirwayFiles,
   useCreateSchedule,
@@ -59,7 +59,7 @@ interface Props {
   schedule?: Schedule | null;
 }
 
-/** Create / edit form for a scheduled job (workflow or airway pipeline). */
+/** Create / edit form for a scheduled job (automation or airway pipeline). */
 const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
   const isEdit = !!schedule;
   const createMut = useCreateSchedule();
@@ -85,14 +85,14 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
     setEnabled(schedule?.enabled ?? true);
   }, [open, schedule]);
 
-  const { data: workflowFiles } = useAgenticWorkflowFiles();
+  const { data: automationFiles } = useAgenticAutomationFiles();
   const { data: airwayFiles } = useAirwayFiles();
   const { data: agentFiles } = useScheduleAgents();
   const refs = useMemo(() => {
-    if (targetKind === "workflow") return workflowFiles?.map((f) => f.path) ?? [];
+    if (targetKind === "workflow") return automationFiles?.map((f) => f.path) ?? [];
     if (targetKind === "airway") return airwayFiles?.map((f) => f.path) ?? [];
     return agentFiles?.map((a) => a.path) ?? [];
-  }, [targetKind, workflowFiles, airwayFiles, agentFiles]);
+  }, [targetKind, automationFiles, airwayFiles, agentFiles]);
   // The picker selects a known ref or "free text"; in free-text mode the
   // ref comes from the input below.
   const isKnownRef = refs.includes(targetRef);
@@ -143,7 +143,7 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit job" : "Create job"}</DialogTitle>
           <DialogDescription>
-            Run a DAG workflow, ELT pipeline, agent, or metric monitor scan on a recurring cron
+            Run a DAG automation, ELT pipeline, agent, or metric monitor scan on a recurring cron
             schedule.
           </DialogDescription>
         </DialogHeader>
@@ -175,7 +175,7 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='workflow'>DAG workflow</SelectItem>
+                  <SelectItem value='workflow'>DAG automation</SelectItem>
                   <SelectItem value='airway'>ELT pipeline</SelectItem>
                   <SelectItem value='agent'>Agent</SelectItem>
                   {targetKind === "monitor_scan" && (

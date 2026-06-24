@@ -142,7 +142,7 @@ Column names come from the SELECT aliases (`x: region`, `y: total_sales`).
 ```yaml
 - name: ops
   type: workflow
-  src: workflows/operations.workflow.yml
+  src: workflows/operations.automation.yml
   variables:
     period: "2024-Q4"
 ```
@@ -598,7 +598,7 @@ display:
 - **Pre-test referenced workflows and agents before finalizing the app.**
   Each task that points at a `workflow_ref` / `agent_ref` is opaque to
   `oxy validate`; SQL errors inside those files won't surface until the
-  app runs. Run any referenced `*.workflow.yml` and `*.agent.yml` once
+  app runs. Run any referenced `*.automation.yml` and `*.agent.yml` once
   to confirm they execute clean before opening the app.
 - **After adding controls, smoke-test the app and change each control**
   to confirm dependent tasks re-run — control wiring fails only at

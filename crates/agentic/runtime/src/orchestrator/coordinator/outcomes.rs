@@ -488,9 +488,9 @@ impl Coordinator {
 fn chain_label(spec: &TaskSpec) -> &'static str {
     match spec {
         TaskSpec::Agent { .. } => "Agent (chain)",
-        TaskSpec::Workflow { .. } => "Workflow (chain)",
-        TaskSpec::WorkflowDecision { .. } => "WorkflowDecision (chain)",
-        TaskSpec::WorkflowStep { .. } => "WorkflowStep (chain)",
+        TaskSpec::Automation { .. } => "Automation (chain)",
+        TaskSpec::AutomationDecision { .. } => "AutomationDecision (chain)",
+        TaskSpec::AutomationStep { .. } => "AutomationStep (chain)",
         TaskSpec::Resume { .. } => "Resume (chain)",
         TaskSpec::Custom { .. } => "Custom (chain)",
         TaskSpec::Airway { .. } => "Airway (chain)",

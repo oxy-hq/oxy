@@ -61,7 +61,7 @@ pub struct DurableTransport {
     /// `"<value>."` (children/grandchildren by the
     /// `<parent>.<seq>` naming convention).
     ///
-    /// The per-request `spawn_workflow_run_drive` path sets this to the
+    /// The per-request `spawn_automation_run_drive` path sets this to the
     /// run id so its worker doesn't poach tasks from a sibling run's
     /// coordinator — when that happens, the wrong coordinator receives the
     /// outcome (the task isn't in its in-memory `self.tasks` map),
@@ -168,7 +168,7 @@ impl DurableTransport {
 
     /// Create a transport whose worker only sees tasks under the given root.
     ///
-    /// `root_task_id` typically equals the run id of the workflow this
+    /// `root_task_id` typically equals the run id of the automation this
     /// transport's coordinator owns. Children spawned by that coordinator
     /// follow the `<root>.<n>` naming convention and are also claimed by
     /// this transport's worker; tasks belonging to other runs are skipped.
@@ -185,7 +185,7 @@ impl DurableTransport {
     /// wake notifications.
     ///
     /// Production callers: pass a process-shared
-    /// [`crate::orchestrator::router::PostgresTaskRouter`] so every workflow run on
+    /// [`crate::orchestrator::router::PostgresTaskRouter`] so every automation run on
     /// this instance benefits from the same LISTEN connection rather
     /// than opening one per run. The router is cheap to clone (it's
     /// just an `Arc` to the shared listener state).
@@ -283,11 +283,11 @@ impl DurableTransport {
     // task per app instance. The old per-transport spawn was dead code
     // (no production caller) — see commit history for the audit trail.
 
-    /// Run a single stuck-workflow-run sweep.
+    /// Run a single stuck-automation-run sweep.
     ///
-    /// Finds workflow runs in non-terminal `task_status` with no queue entry
+    /// Finds automation runs in non-terminal `task_status` with no queue entry
     /// for themselves or any descendant, and re-enqueues a fresh
-    /// `WorkflowDecision` for each. The decider is idempotent under the
+    /// `AutomationDecision` for each. The decider is idempotent under the
     /// `decision_version` CAS, so a race where two sweepers (or a sweeper and
     /// a real worker) both re-enqueue is safe — one will win the CAS, the
     /// other will return `VersionConflict` and exit cleanly.
@@ -296,7 +296,7 @@ impl DurableTransport {
     /// to avoid racing with an in-flight commit. Returns the number of runs
     /// rescued in this pass.
     pub async fn run_stuck_run_sweeper(&self, grace_secs: u64) -> u64 {
-        let stuck = match crud::find_stuck_workflow_runs(&self.db, grace_secs).await {
+        let stuck = match crud::find_stuck_automation_runs(&self.db, grace_secs).await {
             Ok(s) => s,
             Err(e) => {
                 tracing::error!("stuck-run sweeper: query failed: {e}");
@@ -306,11 +306,11 @@ impl DurableTransport {
 
         let mut rescued: u64 = 0;
         for run in &stuck {
-            let spec = TaskSpec::WorkflowDecision {
+            let spec = TaskSpec::AutomationDecision {
                 run_id: run.run_id.clone(),
                 pending_child_answer: None,
             };
-            // Re-enqueue as a WorkflowDecision. `enqueue_task` upserts on
+            // Re-enqueue as an AutomationDecision. `enqueue_task` upserts on
             // conflict — if another writer has already re-driven the run
             // between our query and this call, we harmlessly overwrite with
             // the same spec shape. The stuck-run sweeper rescues orphaned
@@ -330,14 +330,14 @@ impl DurableTransport {
                 tracing::error!(
                     run_id = %run.run_id,
                     error = %e,
-                    "stuck-run sweeper: failed to re-enqueue WorkflowDecision"
+                    "stuck-run sweeper: failed to re-enqueue AutomationDecision"
                 );
                 continue;
             }
             tracing::warn!(
                 run_id = %run.run_id,
                 task_status = ?run.task_status,
-                "stuck-run sweeper: re-enqueued WorkflowDecision"
+                "stuck-run sweeper: re-enqueued AutomationDecision"
             );
             rescued += 1;
         }

@@ -38,7 +38,7 @@ pub struct LlmUsageReport {
 
 /// Pull the token sum for a run from the events table, multiply by the
 /// per-model rates, and roll it into one report. Returns `None` for
-/// runs that never invoked the LLM (workflows, airway pipelines, agent
+/// runs that never invoked the LLM (automations, airway pipelines, agent
 /// runs whose first action errored before any call).
 pub async fn usage_report_for_run(
     db: &DatabaseConnection,
@@ -52,7 +52,7 @@ pub async fn usage_report_for_run(
 
 /// Batched variant — one SQL trip + one pricing pass for an entire page
 /// of runs. Returned map only contains entries for runs that actually
-/// invoked the LLM; workflow / airway runs are silently absent.
+/// invoked the LLM; automation / airway runs are silently absent.
 pub async fn usage_reports_for_runs(
     db: &DatabaseConnection,
     run_ids: &[String],

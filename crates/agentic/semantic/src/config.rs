@@ -1,11 +1,11 @@
 //! Semantic-query configuration types.
 //!
 //! These are the subset of YAML config types the compile path needs. They
-//! were originally defined in `agentic_workflow::config`; lifting them into
-//! this crate keeps the workflow crate free of a back-edge dependency once
+//! were originally defined in `agentic_automation::config`; lifting them into
+//! this crate keeps the automation crate free of a back-edge dependency once
 //! the analytics domain also calls `resolve_and_compile`.
 //!
-//! `agentic-workflow::config` re-exports the same names so existing call
+//! `agentic-automation::config` re-exports the same names so existing call
 //! sites and YAML round-trips are unchanged.
 
 use serde::{Deserialize, Serialize};

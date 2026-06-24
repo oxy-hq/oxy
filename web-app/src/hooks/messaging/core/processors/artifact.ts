@@ -1,4 +1,4 @@
-import type { AgentArtifact, Artifact, WorkflowArtifact } from "@/types/artifact";
+import type { AgentArtifact, Artifact, AutomationArtifact } from "@/types/artifact";
 import type { ArtifactValueContent } from "@/types/chat";
 
 export const extractUpdatedValue = (
@@ -9,7 +9,7 @@ export const extractUpdatedValue = (
 
   switch (artifact_value.value.type) {
     case "log_item": {
-      const output = (updatedArtifact as WorkflowArtifact).content.value.output ?? [];
+      const output = (updatedArtifact as AutomationArtifact).content.value.output ?? [];
       const lastItem = output[output.length - 1];
 
       if (artifact_value.value.value.append && lastItem.append) {

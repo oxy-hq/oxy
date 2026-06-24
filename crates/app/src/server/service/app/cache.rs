@@ -83,7 +83,7 @@ impl AppCache {
     /// `OutputContainer::to_data` conversion that writes parquet from
     /// arrow batches.
     ///
-    /// Used by the inline-workflow app path where step results arrive
+    /// Used by the inline-automation app path where step results arrive
     /// as plain JSON (`{columns: [...], rows: [...]}` for tabular
     /// tasks) — there are no arrow batches to write, but we still want
     /// the `{file_path, json}` shape on the wire so the frontend can

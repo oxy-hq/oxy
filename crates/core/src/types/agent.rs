@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use crate::execute::types::{ReferenceKind, Usage};
 
-/// Log types for workflow execution
+/// Log types for automation execution
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, JsonSchema)]
 pub enum LogType {
     #[serde(rename = "success")]
@@ -18,7 +18,7 @@ pub enum LogType {
     Error,
 }
 
-/// A log item from workflow execution
+/// A log item from automation execution
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct LogItem {
     pub content: String,

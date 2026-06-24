@@ -44,9 +44,9 @@ vi.mock("@/components/ui/shadcn/resizable", () => ({
 }));
 
 vi.mock("./Header", () => ({ default: () => <div data-testid='thread-header' /> }));
-// Expose a test-only trigger that simulates clicking the ProcedureChild row inside
-// the real reasoning trace. onSelectArtifact is called with a procedure item to
-// mirror what ProcedureChild does when the user clicks it.
+// Expose a test-only trigger that simulates clicking the AutomationChild row inside
+// the real reasoning trace. onSelectArtifact is called with a automation item to
+// mirror what AutomationChild does when the user clicks it.
 vi.mock("./AnalyticsReasoningTrace", () => ({
   default: ({
     onSelectArtifact
@@ -61,15 +61,15 @@ vi.mock("./AnalyticsReasoningTrace", () => ({
         data-testid='proc-trigger'
         onClick={() =>
           onSelectArtifact({
-            kind: "procedure",
+            kind: "automation",
             id: "mock-proc",
-            procedureName: "mock",
+            automationName: "mock",
             stepCount: 1,
             isStreaming: false
           })
         }
       >
-        Open procedure
+        Open automation
       </button>
       <button
         type='button'
@@ -168,12 +168,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-// helper — click the mock trace trigger to open the procedure panel
+// helper — click the mock trace trigger to open the automation panel
 const openPanel = () => fireEvent.click(screen.getByTestId("proc-trigger"));
 
-// ── procedureInfo derivation ───────────────────────────────────────────────────
+// ── automationInfo derivation ───────────────────────────────────────────────────
 
-describe("AnalyticsThread — procedureInfo derivation", () => {
+describe("AnalyticsThread — automationInfo derivation", () => {
   it("does not render SubrunDagPanel when state is idle", () => {
     mockUseAnalyticsRun.mockReturnValue(makeResult({ state: { tag: "idle" } }));
     render(<AnalyticsThread thread={THREAD} />);
@@ -186,7 +186,7 @@ describe("AnalyticsThread — procedureInfo derivation", () => {
     expect(screen.queryByRole("heading")).toBeNull();
   });
 
-  it("shows panel with correct procedure name after triggering via trace row", async () => {
+  it("shows panel with correct automation name after triggering via trace row", async () => {
     const events: SseEvent[] = [
       sseEv("subrun_started", {
         subrun_name: "store_deep_dive",
@@ -276,7 +276,7 @@ describe("AnalyticsThread — panel open/close behavior", () => {
     expect(screen.queryByRole("heading")).toBeNull();
   });
 
-  it("panel is not shown when state is idle (no procedureInfo)", () => {
+  it("panel is not shown when state is idle (no automationInfo)", () => {
     mockUseAnalyticsRun.mockReturnValue(makeResult());
     render(<AnalyticsThread thread={THREAD} />);
     expect(screen.queryByRole("heading")).toBeNull();
@@ -321,7 +321,7 @@ describe("AnalyticsThread — panel open/close behavior", () => {
 
 // ── Close button ──────────────────────────────────────────────────────────────
 
-describe("AnalyticsThread — procedure panel close", () => {
+describe("AnalyticsThread — automation panel close", () => {
   it("hides SubrunDagPanel when onClose is triggered", async () => {
     const events: SseEvent[] = [
       sseEv("subrun_started", {
@@ -371,7 +371,7 @@ describe("AnalyticsThread — procedure panel close", () => {
   });
 });
 
-// ── Procedure step status propagation ────────────────────────────────────────
+// ── Automation step status propagation ────────────────────────────────────────
 
 describe("AnalyticsThread — step status propagation via events", () => {
   it("step shows Done when subrun_step_completed success=true", async () => {

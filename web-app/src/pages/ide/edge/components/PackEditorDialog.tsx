@@ -34,7 +34,7 @@ type Props = {
  *
  * **Why a single Save button** (vs per-row save): pack edits often
  * span multiple roles (variable change → tweak each prompt that
- * references it). Atomic save matches that workflow and avoids
+ * references it). Atomic save matches that automation and avoids
  * partial-state weirdness where roles A+B reference a variable C
  * but C hasn't been saved yet.
  *

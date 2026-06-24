@@ -1,7 +1,7 @@
 //! [`TaskExecutor`] implementation for the agentic pipeline layer.
 //!
 //! This is the composition point where domain knowledge (analytics, builder,
-//! workflow) meets the generic coordinator-worker infrastructure. The runtime
+//! automation) meets the generic coordinator-worker infrastructure. The runtime
 //! only sees [`TaskExecutor`]; this crate knows how to start the right pipeline
 //! for each [`TaskSpec`] variant.
 
@@ -20,7 +20,7 @@ use crate::{PipelineBuilder, ThinkingMode};
 
 // ── PipelineTaskExecutor ─────────────────────────────────────────────────────
 
-/// Knows how to start analytics/builder pipelines and workflow executions.
+/// Knows how to start analytics/builder pipelines and automation executions.
 ///
 /// Injected into the [`Worker`](agentic_runtime::worker::Worker) by the
 /// HTTP/CLI layer.
@@ -32,7 +32,7 @@ pub struct PipelineTaskExecutor {
     pub builder_test_runner: Option<Arc<dyn BuilderTestRunner>>,
     pub builder_app_runner: Option<Arc<dyn BuilderAppRunner>>,
     pub db: DatabaseConnection,
-    /// Runtime state for registering answer channels (needed by workflow
+    /// Runtime state for registering answer channels (needed by automation
     /// orchestrator tasks so the coordinator can resume them via answer channel
     /// instead of TaskSpec::Resume).
     pub state: Option<Arc<agentic_runtime::state::RuntimeState>>,
@@ -52,7 +52,7 @@ impl TaskExecutor for PipelineTaskExecutor {
                 extra,
             } => {
                 // Top-level scheduled agent runs pre-seed the run row in
-                // `start_agent_run` (mirrors the workflow / airway
+                // `start_agent_run` (mirrors the automation / airway
                 // pattern). Detect that case by checking the DB and pass
                 // `existing_run_id` so the analytics builder doesn't try
                 // to insert a duplicate row.
@@ -70,7 +70,7 @@ impl TaskExecutor for PipelineTaskExecutor {
                     .await
             }
 
-            TaskSpec::Workflow {
+            TaskSpec::Automation {
                 workflow_ref,
                 variables,
                 retry_from_run_id,
@@ -78,7 +78,7 @@ impl TaskExecutor for PipelineTaskExecutor {
                 body,
                 initial_render_context,
             } => {
-                self.execute_workflow(
+                self.execute_automation(
                     &assignment.run_id,
                     workflow_ref,
                     variables.clone(),
@@ -99,12 +99,12 @@ impl TaskExecutor for PipelineTaskExecutor {
                     .await
             }
 
-            TaskSpec::WorkflowStep {
+            TaskSpec::AutomationStep {
                 step_config,
                 render_context,
                 workflow_context,
             } => {
-                self.execute_workflow_step(
+                self.execute_automation_step(
                     step_config.clone(),
                     render_context.clone(),
                     workflow_context.clone(),
@@ -112,11 +112,11 @@ impl TaskExecutor for PipelineTaskExecutor {
                 .await
             }
 
-            TaskSpec::WorkflowDecision {
+            TaskSpec::AutomationDecision {
                 run_id,
                 pending_child_answer,
             } => {
-                self.execute_workflow_decision(run_id, pending_child_answer.clone())
+                self.execute_automation_decision(run_id, pending_child_answer.clone())
                     .await
             }
 
@@ -169,12 +169,12 @@ impl TaskExecutor for PipelineTaskExecutor {
     ) -> Result<ExecutingTask, String> {
         let source_type = run.source_type.as_deref().unwrap_or("analytics");
 
-        // Temporal-style workflow runs: if `agentic_workflow_state` exists for
-        // this run, resume by enqueuing a WorkflowDecision (stateless path).
+        // Temporal-style automation runs: if `agentic_workflow_state` exists for
+        // this run, resume by enqueuing an AutomationDecision (stateless path).
         if source_type == "workflow" {
-            match agentic_workflow::extension::load_workflow_state(&self.db, &run.id).await {
+            match agentic_automation::extension::load_automation_state(&self.db, &run.id).await {
                 Ok(Some(_)) => {
-                    return self.execute_workflow_decision(&run.id, None).await;
+                    return self.execute_automation_decision(&run.id, None).await;
                 }
                 Ok(None) => {
                     // No durable state (run started before the Temporal refactor).
@@ -185,34 +185,34 @@ impl TaskExecutor for PipelineTaskExecutor {
                         target: "pipeline",
                         run_id = %run.id,
                         error = %e,
-                        "failed to check workflow state; falling back to legacy resume"
+                        "failed to check automation state; falling back to legacy resume"
                     );
                 }
             }
         }
 
-        // Also check task_metadata for workflow orchestrator state.
+        // Also check task_metadata for automation orchestrator state.
         if let Some(ref meta) = run.task_metadata
             && meta.get("original_spec").is_some()
             && let Some(spec) = meta.get("original_spec")
             && spec.get("type").and_then(|t| t.as_str()) == Some("workflow")
         {
-            // This was a workflow child — try to re-run the workflow.
+            // This was an automation child — try to re-run the automation.
             if let Some(workflow_ref) = spec.get("workflow_ref").and_then(|v| v.as_str()) {
                 return self
-                    .execute_workflow(&run.id, workflow_ref, None, None, false, None, None)
+                    .execute_automation(&run.id, workflow_ref, None, None, false, None, None)
                     .await;
             }
         }
 
         match source_type {
             "workflow" | "workflow_step" => {
-                // Workflow tasks without orchestrator checkpoint.
+                // Automation tasks without orchestrator checkpoint.
                 if let Some(data) = suspend_data {
                     self.execute_resume(&run.id, data, String::new()).await
                 } else {
                     Err(format!(
-                        "cannot resume workflow run {}: no saved state",
+                        "cannot resume automation run {}: no saved state",
                         run.id
                     ))
                 }
@@ -265,7 +265,7 @@ impl PipelineTaskExecutor {
         .question(question)
         .thinking_mode(ThinkingMode::Auto);
 
-        // `extra` is an envelope packed by `agentic-workflow` carrying
+        // `extra` is an envelope packed by `agentic-automation` carrying
         // domain-opaque per-agent knobs. Today it carries the
         // analytics SQL-gen mode flag (`output_mode == "sql"`); the
         // builder path ignores it.
@@ -285,9 +285,9 @@ impl PipelineTaskExecutor {
 
         // Gate HITL when an agent runs as a delegation child
         // (existing_run_id is set → the coordinator created this
-        // task). The parent workflow's SSE stream doesn't yet
+        // task). The parent automation's SSE stream doesn't yet
         // surface child-run events, so a nested suspension leaves
-        // the workflow UI looking hung. The provider differs by
+        // the automation UI looking hung. The provider differs by
         // agent type because the expected answer shape differs:
         //
         //   - Builder: `Accept` clears file-change confirmations.
@@ -295,7 +295,7 @@ impl PipelineTaskExecutor {
         //     interpretation") is more useful than a literal
         //     `Accept` as the answer to an `ask_user` call.
         //
-        // Lift this gate once the workflow run page streams nested
+        // Lift this gate once the automation run page streams nested
         // analytics events (see the streaming-children audit).
         if existing_run_id.is_some() {
             let provider: agentic_core::human_input::HumanInputHandle =
@@ -344,7 +344,7 @@ impl PipelineTaskExecutor {
         // Delegation children are inserted by `insert_child_run` with
         // `metadata = None`, but their `task_metadata.original_spec`
         // carries the full `TaskSpec::Agent` — including `agent_id`.
-        // Without this fallback, resuming a workflow → analytics
+        // Without this fallback, resuming an automation → analytics
         // chain would feed `""` into `start_analytics`, which then
         // calls `base_dir.join("")` (returns the workspace root, a
         // directory) and fails with `IO error: Is a directory`.
@@ -823,9 +823,9 @@ impl agentic_airway::CredentialProvider for PlatformAirhouseCredentialProvider {
     }
 }
 
-mod workflow;
+mod automation;
 
-pub use workflow::run_decision_task;
+pub use automation::run_decision_task;
 
 #[cfg(test)]
 mod tests {

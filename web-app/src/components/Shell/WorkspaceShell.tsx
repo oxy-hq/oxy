@@ -1,4 +1,4 @@
-import { Globe, House, MessagesSquare, Workflow } from "lucide-react";
+import { Workflow as Automation, Globe, House, MessagesSquare } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AskPanel } from "@/components/Ask/AskPanel";
@@ -66,7 +66,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       key: "automations",
       label: "Automations",
       testId: "rail-automations",
-      icon: <Workflow className='h-4 w-4' />,
+      icon: <Automation className='h-4 w-4' />,
       active: path.startsWith(ws.WORKFLOWS),
       onSelect: () => navigate(ws.WORKFLOWS)
     },
@@ -85,7 +85,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     key: "core",
     label: "Oxygen Factory",
     tooltip:
-      "Oxygen Factory — the intelligence system behind your HQ: data sources, business model, agents, workflows, and deployments",
+      "Oxygen Factory — the intelligence system behind your HQ: data sources, business model, agents, automations, and deployments",
     testId: "rail-core",
     icon: <OxyCoreMark className='h-6 w-6' />,
     active: path.startsWith(ws.IDE.ROOT),

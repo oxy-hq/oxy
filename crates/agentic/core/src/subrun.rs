@@ -1,7 +1,7 @@
 //! Subrun-runner contract + shared helpers for cross-domain sub-execution.
 //!
 //! A "subrun" is an execution that one domain delegates to another. The
-//! analytics domain, for example, can hand off to a workflow procedure
+//! analytics domain, for example, can hand off to an automation
 //! when it determines a verified multi-step path exists. The types in
 //! this module form the abstract contract between the delegating domain
 //! and the executing one — they live in core so that no domain has to
@@ -33,8 +33,8 @@ pub struct SubrunRef {
     pub name: String,
     /// **Workspace-relative** path to the subrun file, e.g.
     /// `"workflows/sales/monthly_revenue.procedure.yml"`. The downstream
-    /// `DelegationTarget::Workflow { workflow_ref }` +
-    /// `WorkspaceContext::resolve_workflow_yaml` contract both reject
+    /// `DelegationTarget::Automation { workflow_ref }` +
+    /// `WorkspaceContext::resolve_automation_yaml` contract both reject
     /// absolute paths (containment guard against `..`-traversal), so
     /// callers that synthesize `SubrunRef`s must strip any workspace
     /// prefix before populating this field.
@@ -85,7 +85,7 @@ impl std::error::Error for SubrunError {}
 /// Adapter for subrun search and discovery.
 ///
 /// Delegating domains use this to find existing subruns (e.g. via a
-/// `search_procedures` tool). Subrun *execution* is delegated to the
+/// `search_automations` tool). Subrun *execution* is delegated to the
 /// coordinator-worker architecture, not this trait.
 #[async_trait::async_trait]
 pub trait SubrunRunner: Send + Sync {
@@ -105,7 +105,7 @@ pub trait SubrunRunner: Send + Sync {
 /// steps in [`inner_tasks`](Self::inner_tasks) recursively, so a single
 /// `subrun_started` event ships the full nested DAG. The frontend uses
 /// `inner_tasks` to drive per-task-type rendering inside loop
-/// iterations and sub-workflow expansions instead of dumping raw JSON.
+/// iterations and sub-automation expansions instead of dumping raw JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubrunStep {
     /// Human-readable step name from the subrun definition.
@@ -115,7 +115,7 @@ pub struct SubrunStep {
     /// Child steps for container task types.
     ///
     /// - `loop_sequential` — the loop body's task definitions.
-    /// - `workflow` — the referenced child workflow's tasks (recursive).
+    /// - `workflow` — the referenced child automation's tasks (recursive).
     /// - all others — empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inner_tasks: Vec<SubrunStep>,

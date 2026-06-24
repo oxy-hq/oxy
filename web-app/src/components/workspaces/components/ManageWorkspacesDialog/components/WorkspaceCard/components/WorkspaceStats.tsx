@@ -1,4 +1,4 @@
-import { Bot, LayoutDashboard, Workflow } from "lucide-react";
+import { Workflow as Automation, Bot, LayoutDashboard } from "lucide-react";
 import type { WorkspaceSummary } from "@/services/api/workspaces";
 
 export function WorkspaceStats({ workspace }: { workspace: WorkspaceSummary }) {
@@ -16,7 +16,7 @@ export function WorkspaceStats({ workspace }: { workspace: WorkspaceSummary }) {
       )}
       {workspace.workflow_count > 0 && (
         <span className='flex items-center gap-1 text-muted-foreground/50 text-xs'>
-          <Workflow className='size-3' />
+          <Automation className='size-3' />
           {workspace.workflow_count}
         </span>
       )}

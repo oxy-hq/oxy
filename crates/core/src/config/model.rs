@@ -21,6 +21,7 @@ use crate::config::validate::{
     validate_looker_integration_exists, validate_omni_integration_exists,
     validate_task_data_reference,
 };
+pub use automation::{AutomationWithRawVariables, WorkflowWithRawVariables};
 pub use duckdb::{
     CatalogConfig, DuckDBOptions, DuckDbS3Mirror, DuckDbS3Table, DuckLakeConfig, S3StorageSecret,
     StorageConfig,
@@ -30,11 +31,10 @@ pub use oxy_llm::{
     OpenAIModelConfig, default_openai_api_url,
 };
 use oxy_shared::errors::OxyError;
-pub use workflow::WorkflowWithRawVariables;
 
+mod automation;
 mod duckdb;
 mod variables;
-mod workflow;
 
 /// Configuration for the background pre-aggregation refresh worker.
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Default)]
@@ -117,7 +117,7 @@ pub struct Config {
     pub slack_legacy: Option<serde_yaml::Value>,
 
     /// Optional MCP configuration for exposing resources as tools
-    /// If not specified, all agents and workflows are exposed by default
+    /// If not specified, all agents and automations are exposed by default
     #[serde(skip_serializing_if = "Option::is_none")]
     #[garde(dive)]
     pub mcp: Option<McpConfig>,
@@ -348,7 +348,7 @@ pub struct McpConfig {
     /// Examples:
     /// - "agents/sql-generator.agent.yml" (specific file)
     /// - "agents/*.agent.yml" (all agents in directory)
-    /// - "workflows/**/*.workflow.yml" (all workflows recursively)
+    /// - "workflows/**/*.automation.yml" (all automations recursively)
     /// - "semantics/topics/*.topic.yml" (semantic topics)
     /// - "sqls/queries/*.sql" (SQL files)
     #[serde(default)]
@@ -1526,7 +1526,7 @@ pub struct AgentTask {
     pub variables: Option<HashMap<String, Value>>,
 
     /// Custom consistency evaluation prompt for this specific task
-    /// Overrides workflow-level consistency_prompt if specified
+    /// Overrides automation-level consistency_prompt if specified
     #[garde(custom(validate_consistency_prompt))]
     pub consistency_prompt: Option<String>,
 
@@ -2035,7 +2035,7 @@ impl Hash for FormatterTask {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
-pub struct WorkflowTask {
+pub struct SubAutomationTask {
     #[garde(skip)]
     pub src: PathBuf,
     #[garde(skip)]
@@ -2043,6 +2043,9 @@ pub struct WorkflowTask {
     #[garde(dive)]
     pub export: Option<TaskExport>,
 }
+
+/// Back-compat alias: the sub-automation task was historically named `WorkflowTask`.
+pub type WorkflowTask = SubAutomationTask;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
@@ -2060,7 +2063,7 @@ impl Hash for VisualizeTask {
     }
 }
 
-impl Hash for WorkflowTask {
+impl Hash for SubAutomationTask {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.src.hash(state);
         if let Some(ref vars) = self.variables {
@@ -2094,7 +2097,7 @@ impl Hash for OmniQueryTask {
     }
 }
 
-/// Task configuration for executing a Looker query within a workflow.
+/// Task configuration for executing a Looker query within an automation.
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct LookerQueryTask {
@@ -2278,8 +2281,9 @@ pub enum TaskType {
     LoopSequential(#[garde(dive)] LoopSequentialTask),
     #[serde(rename = "formatter")]
     Formatter(#[garde(dive)] FormatterTask),
+    // Wire tag stays `workflow` (sub-automation step); variant renamed to Automation term.
     #[serde(rename = "workflow")]
-    Workflow(#[garde(dive)] WorkflowTask),
+    SubAutomation(#[garde(dive)] SubAutomationTask),
     #[serde(rename = "conditional")]
     Conditional(#[garde(dive)] ConditionalTask),
     #[serde(rename = "visualize")]
@@ -2331,7 +2335,7 @@ impl Task {
             TaskType::LookerQuery(_) => "looker_query",
             TaskType::LoopSequential(_) => "loop",
             TaskType::Formatter(_) => "formatter",
-            TaskType::Workflow(_) => "sub_workflow",
+            TaskType::SubAutomation(_) => "sub_workflow",
             TaskType::Conditional(_) => "conditional",
             TaskType::Visualize(_) => "visualize",
             TaskType::Unknown => "unknown",
@@ -2457,9 +2461,9 @@ pub struct CorrectnessSolver {
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[garde(context(ValidationContext))]
-pub struct Workflow {
-    /// Workflow name. Accepted in YAML for documentation but always overwritten
-    /// by the filename (e.g., `foo.workflow.yml` -> name = "foo").
+pub struct Automation {
+    /// Automation name. Accepted in YAML for documentation but always overwritten
+    /// by the filename (e.g., `foo.automation.yml` -> name = "foo").
     #[serde(default)]
     #[schemars(skip)]
     #[garde(skip)]
@@ -2476,11 +2480,15 @@ pub struct Workflow {
     #[serde(default)]
     #[garde(dive)]
     pub retrieval: Option<RouteRetrievalConfig>,
-    /// Global consistency evaluation prompt for all agent tasks in this workflow
+    /// Global consistency evaluation prompt for all agent tasks in this automation.
     /// This can be overridden per-task via AgentTask.consistency_prompt
     #[garde(custom(validate_consistency_prompt))]
     pub consistency_prompt: Option<String>,
 }
+
+/// Back-compat alias: an automation was historically named `Workflow` (and before
+/// that, a Procedure). The canonical type is now [`Automation`].
+pub type Workflow = Automation;
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct MarkdownDisplay {

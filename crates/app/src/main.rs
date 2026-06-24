@@ -117,7 +117,7 @@ fn init_tracing_logging(observability_enabled: bool) {
     };
 
     // Filters are applied per-layer so that the observability layer captures
-    // agent/workflow spans independently of OXY_LOG_LEVEL. A global
+    // agent/automation spans independently of OXY_LOG_LEVEL. A global
     // `.with(env_filter)` would drop info-level spans before they reached
     // any layer — the legacy OTel pipeline masked this, but the custom
     // SpanCollectorLayer must be kept isolated from console verbosity.

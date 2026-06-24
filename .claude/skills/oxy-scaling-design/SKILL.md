@@ -33,7 +33,7 @@ description: Use when the user asks about Oxy's multi-instance scaling, the spli
 
 ## Hard constraints (don't violate)
 
-1. **Code-first is sacred** — the filesystem IS the data model (like dbt). Agents/procedures/apps/semantic views live as YAML in git. **Never introduce a parallel source of truth** (S3 snapshots, DB-backed file storage of definitions). Generated artifacts are different — those go to S3.
+1. **Code-first is sacred** — the filesystem IS the data model (like dbt). Agents/automations/apps/semantic views live as YAML in git. **Never introduce a parallel source of truth** (S3 snapshots, DB-backed file storage of definitions). Generated artifacts are different — those go to S3.
 2. **Git is the source of truth** — GitHub origin in cloud, local repo in local mode. PRs, branches, commits stay first-class ide actions. The Factory's local disk is a cache, re-cloned from origin on restart.
 3. **HTTP is stateless beyond the request** — anything a serve replica needs must be in Postgres, S3, or reconstructable from origin. Reads serve from any replica; only writes/execution touch the Factory.
 4. **One fencing primitive for the Factory:** the StatefulSet `replicas: 1` at-most-one guarantee. There is **no workspace-ownership lease** (it was built and reverted 2026-06-14 — at replicas=1 it guards a multi-producer race that can't occur) and **no leader election** (the `next_run_at` CAS gives exactly-once). The task-claim lease in `agentic_task_queue` is the worker's, and is unrelated.

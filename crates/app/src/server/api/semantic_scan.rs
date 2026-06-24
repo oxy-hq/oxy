@@ -293,7 +293,7 @@ pub struct MaterialisedContext {
 }
 
 /// Max distinct `(workspace, revision)` contexts a process keeps materialised.
-/// Each entry pins a tempdir (the full semantic layer + procedures + verified
+/// Each entry pins a tempdir (the full semantic layer + automations + verified
 /// SQL) on local disk for as long as it's cached, so an UNBOUNDED map would
 /// grow one tempdir per distinct workspace the process ever served — monotonic
 /// `/tmp` + inode pressure until restart. That bites hardest on a long-lived
@@ -306,7 +306,7 @@ const CONTEXT_CACHE_CAP: usize = 256;
 
 /// Process-global, size-bounded LRU of materialised contexts, keyed by
 /// `(workspace_id, revision_id)`. Lets the per-request materialise — writing
-/// every view / topic / procedure / verified-SQL to a fresh `/tmp` dir — run
+/// every view / topic / automation / verified-SQL to a fresh `/tmp` dir — run
 /// ONCE per promoted revision instead of on every request. Revisions are
 /// immutable, so a hit is always current; a promote yields a new `revision_id`
 /// → miss → re-materialise (and the prior revision of that workspace is dropped
@@ -333,7 +333,7 @@ fn context_cache() -> &'static Mutex<LruCache<(Uuid, Uuid), MaterialisedContext>
 /// globbing an absent filesystem and silently ending up with "no databases
 /// configured".
 ///
-/// Scope: semantic views + topics + procedures + verified `.sql` — the complete
+/// Scope: semantic views + topics + automations + verified `.sql` — the complete
 /// `context:` set an analytics run globs. The result is cached per
 /// (workspace, revision), so the materialise runs once per promoted revision.
 ///
@@ -366,7 +366,7 @@ pub async fn materialise_agent_context(
     // revision, so a config-broken current revision can't get cached under the
     // last-known-good key. On the HTTP path the ambient pin already equals
     // `revision_id`, so this is a harmless same-value re-scope.
-    let Some((views, topics, procedures, verified)) =
+    let Some((views, topics, automations, verified)) =
         compiled_reader::with_pinned_revision(Some(revision_id), async {
             let views = match compiled_reader::list_semantic_views(workspace_id, None).await {
                 Ok(Some(rows)) => rows,
@@ -387,19 +387,19 @@ pub async fn materialise_agent_context(
                     Vec::new()
                 }
             };
-            // Procedures + verified `.sql` complete the agent's `context:` set: the
+            // Automations + verified `.sql` complete the agent's `context:` set: the
             // solver globs them from `base_dir`, and a matched verified query is read
             // back by path at run time (`solver/specifying`). Without these in the
             // tempdir the run still hits the real FS for them — the leak this closes.
             // Both are additive (a miss yields an empty set), so they never gate the
             // not-promoted fall-through, which stays keyed on the semantic-view lookup.
-            let procedures =
-                match compiled_reader::list_procedure_artifacts(workspace_id, None).await {
+            let automations =
+                match compiled_reader::list_automation_artifacts(workspace_id, None).await {
                     Ok(Some(rows)) => rows,
                     Ok(None) => Vec::new(),
                     Err(e) => {
                         tracing::warn!(workspace_id = %workspace_id, error = ?e,
-                            "context materialise: procedures lookup failed; continuing without them");
+                            "context materialise: automations lookup failed; continuing without them");
                         Vec::new()
                     }
                 };
@@ -414,12 +414,12 @@ pub async fn materialise_agent_context(
             };
             if views.is_empty()
                 && topics.is_empty()
-                && procedures.is_empty()
+                && automations.is_empty()
                 && verified.is_empty()
             {
                 return None;
             }
-            Some((views, topics, procedures, verified))
+            Some((views, topics, automations, verified))
         })
         .await
     else {
@@ -430,7 +430,7 @@ pub async fn materialise_agent_context(
     let root = dir.path().to_path_buf();
     write_context_artifacts(&views, &root).await?;
     write_context_artifacts(&topics, &root).await?;
-    write_context_artifacts(&procedures, &root).await?;
+    write_context_artifacts(&automations, &root).await?;
     write_verified_queries(&verified, &root).await?;
 
     let ctx = MaterialisedContext {
@@ -463,7 +463,7 @@ pub async fn materialise_agent_context(
         revision_id = %revision_id,
         views = views.len(),
         topics = topics.len(),
-        procedures = procedures.len(),
+        automations = automations.len(),
         verified = verified.len(),
         root = %root.display(),
         "context materialise: materialised + cached agent context from compile boundary"

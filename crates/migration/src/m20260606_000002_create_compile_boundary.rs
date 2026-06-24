@@ -371,10 +371,9 @@ impl MigrationTrait for Migration {
             .await?;
 
         // ── procedure_definitions ─────────────────────────────────────────────
-        // Covers .procedure.yml, .workflow.yml, .automation.yml — the
-        // last two are legacy extensions that still parse to the same
-        // Workflow type. `extension` is recorded so a future
-        // deprecation step can grep for the legacy ones.
+        // Covers .procedure.yml (legacy, back-compat) and .automation.yml
+        // (canonical) — both parse to the same Workflow type. `extension`
+        // is recorded so a future deprecation step can grep for the legacy one.
         manager
             .create_table(
                 Table::create()

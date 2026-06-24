@@ -1,7 +1,7 @@
 //! Types for cross-agent delegation and task coordination.
 //!
 //! These types are used by the coordinator to manage a tree of tasks where
-//! agents and workflows can delegate work to each other via the suspend/resume
+//! agents and automations can delegate work to each other via the suspend/resume
 //! mechanism.
 
 use std::time::Duration;
@@ -32,7 +32,7 @@ fn is_false(b: &bool) -> bool {
 pub enum SuspendReason {
     /// The LLM invoked `ask_user` — a human must answer.
     HumanInput { questions: Vec<HumanInputQuestion> },
-    /// The solver requested delegation to another agent or workflow.
+    /// The solver requested delegation to another agent or automation.
     Delegation {
         target: DelegationTarget,
         /// The question/instruction for the delegate.
@@ -140,8 +140,11 @@ impl BackoffStrategy {
 pub enum DelegationTarget {
     /// Another agentic agent (analytics, builder, etc.).
     Agent { agent_id: String },
-    /// A workflow/procedure file.
-    Workflow { workflow_ref: String },
+    /// An automation file.
+    // Wire tag stays `workflow` (persisted in agentic_task_queue); only the
+    // Rust variant name is the canonical Automation term.
+    #[serde(rename = "workflow")]
+    Automation { workflow_ref: String },
 }
 
 // ── TaskSpec ─────────────────────────────────────────────────────────────────
@@ -158,15 +161,17 @@ pub enum TaskSpec {
         /// this through to the executor without inspection; the
         /// executor deserializes into whatever shape it expects.
         ///
-        /// Used by `agentic-workflow` to pass the analytics agent's
+        /// Used by `agentic-automation` to pass the analytics agent's
         /// `output_mode` ("answer" | "sql") into the analytics
         /// pipeline. Kept as `serde_json::Value` so `agentic-core`
         /// doesn't need to know about domain types.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extra: Option<Value>,
     },
-    /// Execute a workflow/procedure.
-    Workflow {
+    /// Execute an automation.
+    // Wire tag stays `workflow` (persisted task-queue contract).
+    #[serde(rename = "workflow")]
+    Automation {
         workflow_ref: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         variables: Option<Value>,
@@ -179,15 +184,15 @@ pub enum TaskSpec {
         /// consults `retry_from_run_id` when this is `true`.
         #[serde(default, skip_serializing_if = "is_false")]
         cache_enabled: bool,
-        /// Inline `WorkflowConfig` body. When `Some`, the executor uses
+        /// Inline `AutomationConfig` body. When `Some`, the executor uses
         /// this instead of resolving `workflow_ref` off disk. Set by the
         /// coordinator when a `loop_sequential` iteration is fanned out
         /// — each iteration's `{name, tasks}` body becomes a synthetic
-        /// sub-workflow run so multi-task iteration bodies (including
+        /// sub-automation run so multi-task iteration bodies (including
         /// ones with agent steps) can dispatch through the normal queue.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         body: Option<Value>,
-        /// Initial render context to seed onto the sub-workflow's state.
+        /// Initial render context to seed onto the sub-automation's state.
         /// Used in tandem with `body` so a loop iteration's parent results
         /// + the iteration variable (`{step_name}.value` / `.index`) are
         /// visible to inner template references like `{{ schedules.value }}`.
@@ -200,33 +205,37 @@ pub enum TaskSpec {
         resume_data: SuspendedRunData,
         answer: String,
     },
-    /// Execute a single workflow step (SQL, semantic query, etc.).
+    /// Execute a single automation step (SQL, semantic query, etc.).
     ///
     /// The step worker deserializes the config, builds a renderer from the
     /// render context, executes the step, and returns the `OutputContainer`
     /// as the answer string.
-    WorkflowStep {
+    // Wire tag stays `workflow_step` (persisted task-queue contract).
+    #[serde(rename = "workflow_step")]
+    AutomationStep {
         /// Serialized step config (the Task YAML parsed into JSON).
         step_config: Value,
         /// Accumulated render context from prior steps (`{{ step_name.field }}`).
         render_context: Value,
-        /// Workflow-level config (workspace path, database configs, globals).
+        /// Automation-level config (workspace path, database configs, globals).
         workflow_context: Value,
     },
-    /// Stateless "decision task" for a workflow (Temporal-inspired).
+    /// Stateless "decision task" for an automation (Temporal-inspired).
     ///
-    /// The worker loads the workflow state snapshot (from the workflow domain's
+    /// The worker loads the automation state snapshot (from the automation domain's
     /// extension table), folds any `pending_child_answer` into the state, runs
-    /// the pure `WorkflowDecider::decide()` function to compute the next action,
+    /// the pure `AutomationDecider::decide()` function to compute the next action,
     /// persists the new state, and exits. No in-memory channels span decision
     /// task boundaries — everything is in the DB.
-    WorkflowDecision {
-        /// The workflow run_id (also the PK of the workflow-state table).
+    // Wire tag stays `workflow_decision` (persisted task-queue contract).
+    #[serde(rename = "workflow_decision")]
+    AutomationDecision {
+        /// The automation run_id (also the PK of the automation-state table).
         run_id: String,
         /// Latest child completion to fold into state before deciding.
-        /// `None` on the initial decision (workflow just started) and on
+        /// `None` on the initial decision (automation just started) and on
         /// inline-chain decisions (an inline step produced an output but the
-        /// workflow isn't done — chain into the next decision).
+        /// automation isn't done — chain into the next decision).
         #[serde(skip_serializing_if = "Option::is_none")]
         pending_child_answer: Option<ChildCompletion>,
     },
@@ -238,7 +247,7 @@ pub enum TaskSpec {
     },
     /// Run an airway ELT pipeline end-to-end (extract → normalize → load).
     ///
-    /// Unlike [`TaskSpec::Workflow`], airway runs are atomic from the queue's
+    /// Unlike [`TaskSpec::Automation`], airway runs are atomic from the queue's
     /// perspective — no per-step decisions, no fan-out at the coordinator.
     /// The fan-out across resources happens inside the airway engine itself
     /// (see `airway::extract_parallel`).
@@ -247,7 +256,7 @@ pub enum TaskSpec {
         /// + parses this into an `AirwayPipelineSpec`.
         pipeline_ref: String,
         /// Variables to render into the YAML at run time. Same shape as
-        /// [`TaskSpec::Workflow::variables`].
+        /// [`TaskSpec::Automation::variables`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         variables: Option<Value>,
         /// Explicit subset of resources (tables) to run, overriding the
@@ -298,15 +307,15 @@ pub enum TaskSpec {
     },
 }
 
-/// A completed child task's outcome, packaged for folding into a workflow
+/// A completed child task's outcome, packaged for folding into an automation
 /// decision's input state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChildCompletion {
     /// The child task_id (e.g. `"<run_id>.3"`).
     pub child_task_id: String,
-    /// Which workflow step this child was spawned for.
+    /// Which automation step this child was spawned for.
     pub step_index: usize,
-    /// The step's name from the workflow config.
+    /// The step's name from the automation config.
     pub step_name: String,
     /// `"done"` | `"failed"` | `"cancelled"` | `"timed_out"`.
     pub status: String,

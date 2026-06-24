@@ -59,13 +59,13 @@ test.describe("IDE Files - Performance Stress Tests", () => {
       await workflowsFolder.click();
       await page.waitForTimeout(500);
 
-      const workflowFile = page
+      const automationFile = page
         .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".workflow.yml" })
+        .filter({ hasText: ".automation.yml" })
         .first();
 
-      if (await workflowFile.isVisible()) {
-        await workflowFile.click();
+      if (await automationFile.isVisible()) {
+        await automationFile.click();
         await page.waitForURL(/\/ide\/.+/);
 
         const formTab = page.getByRole("tab", { name: /form/i });

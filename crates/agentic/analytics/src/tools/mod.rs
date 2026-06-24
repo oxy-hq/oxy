@@ -7,7 +7,7 @@
 //!
 //! | State | Tools |
 //! |---|---|
-//! | `triage` | `search_procedures` |
+//! | `triage` | `search_automations` |
 //! | `clarifying` | `search_catalog`, `list_tables`, `describe_table` |
 //! | `specifying` | `search_catalog`, `sample_columns`, `get_join_path`, `list_tables`, `describe_table` |
 //! | `solving` | `execute_preview` |
@@ -71,7 +71,7 @@ pub(super) const SEARCH_CATALOG_DESC: &str = "Batch-search the semantic catalog 
      the question before attempting a semantic shortcut. Returns \
      {metrics: [{name, description}], dimensions: [{name, description, type}]}.";
 
-pub(super) const SEARCH_PROCEDURES_DESC: &str = "Search for existing procedure/workflow YAML files and verified SQL files \
+pub(super) const SEARCH_AUTOMATIONS_DESC: &str = "Search for existing automation YAML files and verified SQL files \
      that match a query. Returns a list of {name, path, description} entries. \
      Call this FIRST with key terms from the user's question. \
      If any entry directly answers the question, select it. \

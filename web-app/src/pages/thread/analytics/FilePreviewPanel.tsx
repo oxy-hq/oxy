@@ -13,10 +13,10 @@ import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import { Automation } from "@/pages/automation";
 import { EditorContext } from "@/pages/ide/Files/Editor/contexts/EditorContextTypes";
 import TopicEditor from "@/pages/ide/Files/Editor/Topic";
 import ViewEditor from "@/pages/ide/Files/Editor/View";
-import { Workflow } from "@/pages/workflow";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import { decodeFilePath, detectFileType, FileType } from "@/utils/fileTypes";
 
@@ -68,9 +68,8 @@ const FileTypePreview = ({ filePath }: { filePath: string }) => {
 
   switch (fileType) {
     case FileType.PROCEDURE:
-    case FileType.WORKFLOW:
     case FileType.AUTOMATION:
-      return <Workflow pathb64={pathb64} direction='vertical' hideHeader />;
+      return <Automation pathb64={pathb64} direction='vertical' hideHeader />;
     case FileType.APP:
       return <AppPreview key={pathb64} appPath64={pathb64} runButton={false} />;
     case FileType.VIEW:

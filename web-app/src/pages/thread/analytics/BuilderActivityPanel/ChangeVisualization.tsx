@@ -1,4 +1,5 @@
 import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
+import { AutomationGraph } from "./AutomationGraph";
 import { AwGraph } from "./AwGraph";
 import { DataAppGraph } from "./DataAppGraph";
 import { GenericFileDiff } from "./GenericFileDiff";
@@ -7,13 +8,12 @@ import { SemanticViewGraph } from "./SemanticViewGraph";
 import { TestGraph } from "./TestGraph";
 import {
   tryParseApp,
+  tryParseAutomation,
   tryParseAw,
   tryParseTest,
   tryParseTopic,
-  tryParseView,
-  tryParseWorkflow
+  tryParseView
 } from "./types";
-import { WorkflowGraph } from "./WorkflowGraph";
 
 interface ChangeVisualizationProps {
   change: BuilderFileChange;
@@ -24,9 +24,7 @@ const ChangeVisualization = ({ change }: ChangeVisualizationProps) => {
 
   const isViewFile = p.endsWith(".view.yml") || p.endsWith(".view.yaml");
   const isAppFile = p.endsWith(".app.yml") || p.endsWith(".app.yaml");
-  const isWorkflowFile =
-    p.endsWith(".workflow.yml") ||
-    p.endsWith(".workflow.yaml") ||
+  const isAutomationFile =
     p.endsWith(".procedure.yml") ||
     p.endsWith(".procedure.yaml") ||
     p.endsWith(".automation.yml") ||
@@ -43,8 +41,8 @@ const ChangeVisualization = ({ change }: ChangeVisualizationProps) => {
   const newApp = isAppFile ? tryParseApp(change.newContent) : null;
   const oldApp = isAppFile ? tryParseApp(old ?? "") : null;
 
-  const newWf = isWorkflowFile ? tryParseWorkflow(change.newContent) : null;
-  const oldWf = isWorkflowFile ? tryParseWorkflow(old ?? "") : null;
+  const newWf = isAutomationFile ? tryParseAutomation(change.newContent) : null;
+  const oldWf = isAutomationFile ? tryParseAutomation(old ?? "") : null;
 
   const newTopic = isTopicFile ? tryParseTopic(change.newContent) : null;
   const oldTopic = isTopicFile ? tryParseTopic(old ?? "") : null;
@@ -57,7 +55,7 @@ const ChangeVisualization = ({ change }: ChangeVisualizationProps) => {
 
   if (newView) return <SemanticViewGraph change={change} oldView={oldView} newView={newView} />;
   if (newApp) return <DataAppGraph change={change} oldApp={oldApp} newApp={newApp} />;
-  if (newWf) return <WorkflowGraph change={change} oldWf={oldWf} newWf={newWf} />;
+  if (newWf) return <AutomationGraph change={change} oldWf={oldWf} newWf={newWf} />;
   if (newTopic)
     return <SemanticTopicGraph change={change} oldTopic={oldTopic} newTopic={newTopic} />;
   if (newAw) return <AwGraph change={change} oldAw={oldAw} newAw={newAw} />;

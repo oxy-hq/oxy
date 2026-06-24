@@ -11,7 +11,7 @@ export interface DataAppContent {
   content: string;
 }
 
-interface WorkflowArtifactKind {
+interface AutomationArtifactKind {
   type: "workflow";
   value: {
     ref: string;
@@ -67,7 +67,7 @@ interface SandboxAppArtifactKind {
 }
 
 type ArtifactKind =
-  | WorkflowArtifactKind
+  | AutomationArtifactKind
   | AgentArtifactKind
   | ExecuteSQLArtifactKind
   | SemanticQueryArtifactKind
@@ -82,7 +82,7 @@ export interface ArtifactStartedContent {
   kind: ArtifactKind;
 }
 
-interface WorkflowArtifactValue {
+interface AutomationArtifactValue {
   type: "log_item";
   value: LogItem;
 }
@@ -152,7 +152,7 @@ interface SandboxAppArtifactValue {
 }
 
 type ArtifactValue =
-  | WorkflowArtifactValue
+  | AutomationArtifactValue
   | AgentArtifactValue
   | ExecuteSQLArtifactValue
   | SemanticQueryArtifactValue

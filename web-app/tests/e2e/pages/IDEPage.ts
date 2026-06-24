@@ -233,7 +233,7 @@ export class IDEPage {
         // Fallback: just check that Files tab is visible
       });
 
-    const hasWorkflowsFolder = await this.page
+    const hasAutomationsFolder = await this.page
       .getByRole("button", { name: "workflows", exact: true })
       .isVisible()
       .catch(() => false);
@@ -253,7 +253,7 @@ export class IDEPage {
 
     // At least one folder or file should be visible
     expect(
-      hasWorkflowsFolder || hasGeneratedFolder || hasExampleSqlFolder || hasConfigFile
+      hasAutomationsFolder || hasGeneratedFolder || hasExampleSqlFolder || hasConfigFile
     ).toBeTruthy();
   }
 
@@ -264,7 +264,7 @@ export class IDEPage {
 
     // In Objects mode, we should see grouped sections
     const semanticLayerHeading = this.page.locator("text=Semantic Layer");
-    const automationsHeading = this.page.locator("text=Procedures");
+    const automationsHeading = this.page.locator("text=Automations");
     const agentsHeading = this.page.locator("text=Agents");
     const appsHeading = this.page.locator("text=Apps");
 

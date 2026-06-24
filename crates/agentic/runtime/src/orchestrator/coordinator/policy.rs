@@ -1,10 +1,10 @@
 //! Pluggable post-`Done` policy for the coordinator.
 //!
 //! `Coordinator::handle_done` used to inline three pieces of
-//! agentic-workflow knowledge:
+//! agentic-automation knowledge:
 //!
 //! - `workflow_continue = true` metadata → chain a fresh
-//!   `WorkflowDecision` task under the same task_id, skipping the
+//!   `AutomationDecision` task under the same task_id, skipping the
 //!   normal terminal finalisation.
 //! - `workflow_waiting_siblings = true` or
 //!   `workflow_version_conflict = true` → silently return; another
@@ -12,12 +12,12 @@
 //! - anything else → propagate Done to the parent (or set root done).
 //!
 //! That hard-coded knowledge is a layering violation: the runtime
-//! crate is supposed to be domain-agnostic, but `TaskSpec::WorkflowDecision`
-//! is a workflow-domain enum variant. This trait moves the
+//! crate is supposed to be domain-agnostic, but `TaskSpec::AutomationDecision`
+//! is an automation-domain enum variant. This trait moves the
 //! decision-making out of the coordinator. The runtime ships a
 //! [`DefaultCompletionPolicy`] that always finalises (correct for
 //! any domain without chain semantics), and domains plug in their
-//! own — see `agentic_workflow::WorkflowCompletionPolicy`.
+//! own — see `agentic_automation::AutomationCompletionPolicy`.
 //!
 //! The trait is intentionally `async` so future policies can do
 //! DB lookups (e.g. "is this loop already at max iterations") without
@@ -49,15 +49,15 @@ pub enum CompletionAction {
     /// for any task whose completion has no domain-specific follow-up.
     Finalize,
     /// Suppress finalisation. Another path will drive the run
-    /// forward — for the workflow domain this means "parallel
+    /// forward — for the automation domain this means "parallel
     /// siblings still in flight" or "another worker won the
     /// optimistic-concurrency CAS." The coordinator does nothing
     /// further with this outcome.
     Defer,
     /// Don't finalise this task; instead, enqueue a follow-up
-    /// assignment that continues the run. Used by the workflow
+    /// assignment that continues the run. Used by the automation
     /// domain to chain from a completed step into the next
-    /// `agentic_workflow::WorkflowDecision`. The coordinator re-uses the existing
+    /// `agentic_automation::AutomationDecision`. The coordinator re-uses the existing
     /// task node (its status stays `Running`) and assigns the new
     /// spec under the same task_id + run_id + no parent.
     Chain { spec: TaskSpec },
@@ -78,8 +78,8 @@ pub trait CompletionPolicy: Send + Sync {
 /// any domain that doesn't chain follow-ups or defer terminals.
 ///
 /// Used as the [`crate::orchestrator::coordinator::Coordinator`] default so the
-/// runtime tests + non-workflow callers work without configuring a
-/// policy. Production wires in `agentic_workflow::WorkflowCompletionPolicy`.
+/// runtime tests + non-automation callers work without configuring a
+/// policy. Production wires in `agentic_automation::AutomationCompletionPolicy`.
 pub struct DefaultCompletionPolicy;
 
 #[async_trait]
@@ -95,22 +95,22 @@ impl CompletionPolicy for DefaultCompletionPolicy {
 /// arriving from a worker's `Suspended` outcome into a concrete
 /// [`TaskSpec`] that the coordinator can re-assign through the queue.
 ///
-/// Why a trait, not a free function: the workflow domain's
-/// [`DelegationTarget::Workflow`] mapping isn't a simple pass-through.
-/// A single `Workflow` target can mean three different things
+/// Why a trait, not a free function: the automation domain's
+/// [`DelegationTarget::Automation`] mapping isn't a simple pass-through.
+/// A single `Automation` target can mean three different things
 /// depending on the shape of `context`:
 ///
-/// - context.step_config is a `{name, tasks}` sub-workflow body →
-///   inline-body [`TaskSpec::Workflow`] (loop iterations).
-/// - context.step_config has a `type` field → [`TaskSpec::WorkflowStep`].
-/// - no step_config → real on-disk [`TaskSpec::Workflow`].
+/// - context.step_config is a `{name, tasks}` sub-automation body →
+///   inline-body [`TaskSpec::Automation`] (loop iterations).
+/// - context.step_config has a `type` field → [`TaskSpec::AutomationStep`].
+/// - no step_config → real on-disk [`TaskSpec::Automation`].
 ///
-/// That routing is workflow-domain knowledge, so it lives in
-/// `agentic-workflow::WorkflowDelegationResolver`. The default impl
+/// That routing is automation-domain knowledge, so it lives in
+/// `agentic_automation::AutomationDelegationResolver`. The default impl
 /// here handles `Agent` generically and falls back to a basic
-/// `TaskSpec::Workflow` mapping that doesn't do step/body inspection
+/// `TaskSpec::Automation` mapping that doesn't do step/body inspection
 /// — fine for the runtime tests and for any caller that never uses
-/// the workflow domain.
+/// the automation domain.
 ///
 /// The trait is sync (unlike [`CompletionPolicy`]) because the
 /// translation is pure: it inspects already-deserialised JSON and
@@ -123,8 +123,8 @@ pub trait DelegationResolver: Send + Sync {
     fn resolve(&self, target: DelegationTarget, request: String, context: Value) -> TaskSpec {
         match target {
             DelegationTarget::Agent { agent_id } => self.resolve_agent(agent_id, request, context),
-            DelegationTarget::Workflow { workflow_ref } => {
-                self.resolve_workflow(workflow_ref, request, context)
+            DelegationTarget::Automation { workflow_ref } => {
+                self.resolve_automation(workflow_ref, request, context)
             }
         }
     }
@@ -135,7 +135,7 @@ pub trait DelegationResolver: Send + Sync {
     /// `TaskSpec::Agent`.
     fn resolve_agent(&self, agent_id: String, request: String, context: Value) -> TaskSpec {
         // Pluck `extra` out of context so downstream resolvers (e.g.
-        // the workflow SQL-gen path) can pass typed payloads through
+        // the automation SQL-gen path) can pass typed payloads through
         // without changing this trait method's signature.
         let extra = context.get("extra").filter(|v| !v.is_null()).cloned();
         TaskSpec::Agent {
@@ -145,14 +145,19 @@ pub trait DelegationResolver: Send + Sync {
         }
     }
 
-    /// Default routes any `Workflow` target to a vanilla
-    /// `TaskSpec::Workflow` reading off disk, treating `context` as
-    /// `variables`. Sufficient for "delegate to a real .workflow.yml"
+    /// Default routes any `Automation` target to a vanilla
+    /// `TaskSpec::Automation` reading off disk, treating `context` as
+    /// `variables`. Sufficient for "delegate to a real .automation.yml"
     /// without the loop-iteration or single-step distinctions —
-    /// `agentic_workflow::WorkflowDelegationResolver` overrides this
+    /// `agentic_automation::AutomationDelegationResolver` overrides this
     /// to add those.
-    fn resolve_workflow(&self, workflow_ref: String, _request: String, context: Value) -> TaskSpec {
-        TaskSpec::Workflow {
+    fn resolve_automation(
+        &self,
+        workflow_ref: String,
+        _request: String,
+        context: Value,
+    ) -> TaskSpec {
+        TaskSpec::Automation {
             workflow_ref,
             variables: if context.is_null() {
                 None

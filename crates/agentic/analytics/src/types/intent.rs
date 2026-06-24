@@ -103,10 +103,10 @@ pub struct DomainHypothesis {
     /// with empty suggestions when absent.
     #[serde(default)]
     pub ambiguity_questions: Vec<HumanInputQuestion>,
-    /// Path of a matching procedure selected by triage, if any.
-    /// When set, the pipeline executes the procedure instead of generating SQL.
-    #[serde(default)]
-    pub selected_procedure_path: Option<String>,
+    /// Path of a matching automation selected by triage, if any.
+    /// When set, the pipeline executes the automation instead of generating SQL.
+    #[serde(default, alias = "selected_procedure_path")]
+    pub selected_automation_path: Option<String>,
 
     /// If the LLM found all required semantic members in the catalog, it
     /// constructs a `QueryRequestItem` here to attempt a fast airlayer compile
@@ -169,15 +169,15 @@ pub struct AnalyticsIntent {
     /// into the Specify prompt so the LLM reuses the prior structure.
     #[serde(default)]
     pub spec_hint: Option<SpecHint>,
-    /// Procedure file selected by the LLM during the Ground sub-phase.
+    /// Automation file selected by the LLM during the Ground sub-phase.
     ///
-    /// When the LLM calls `search_procedures` and finds a file that directly
+    /// When the LLM calls `search_automations` and finds a file that directly
     /// answers the question, it sets this path in its structured response.
     /// The Specifying stage short-circuits: it skips LLM resolution and
-    /// emits a `QuerySpec` with `SolutionSource::Procedure { file_path }`
+    /// emits a `QuerySpec` with `SolutionSource::Automation { file_path }`
     /// so execution jumps straight to the Executing stage.
-    #[serde(default)]
-    pub selected_procedure: Option<std::path::PathBuf>,
+    #[serde(default, alias = "selected_procedure")]
+    pub selected_automation: Option<std::path::PathBuf>,
     /// Best-effort semantic query produced by triage.
     ///
     /// Always populated — even when triage is not fully confident about the

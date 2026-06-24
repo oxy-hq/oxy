@@ -18,7 +18,7 @@ const MANIFEST_VERSION: &str = "2.0";
 ///
 /// This manifest is used to enable incremental builds by tracking:
 /// - File hashes of input files (semantic views/topics, config)
-/// - Embedding source file hashes (agents, workflows, SQL files)
+/// - Embedding source file hashes (agents, automations, SQL files)
 /// - Output file mappings (which generated files came from which sources)
 /// - Dependency graph (which views depend on which other views)
 /// - Build metadata (timestamp, version)
@@ -33,7 +33,7 @@ pub struct BuildManifest {
     /// Note: Using BTreeMap for stable iteration order (sorted keys)
     pub file_hashes: BTreeMap<String, String>,
 
-    /// SHA256 hashes of embedding source files (agents, workflows, SQL, topics)
+    /// SHA256 hashes of embedding source files (agents, automations, SQL, topics)
     /// Key: relative path from project root (e.g., "agents/default.agent.yml")
     /// Value: SHA256 hash of file contents
     /// Note: Using BTreeMap for stable iteration order (sorted keys)

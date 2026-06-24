@@ -3,11 +3,11 @@
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
+use agentic_automation::preagg_event::PreaggEvent;
+use agentic_automation::workspace::WorkspaceContext;
 use agentic_core::delegation::{TaskAssignment, TaskOutcome, TaskSpec};
 use agentic_runtime::worker::{ExecutingTask, TaskExecutor};
 use agentic_semantic::refresh_key_cache::RefreshKeyCache;
-use agentic_workflow::preagg_event::PreaggEvent;
-use agentic_workflow::workspace::WorkspaceContext;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;

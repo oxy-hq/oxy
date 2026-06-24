@@ -460,7 +460,7 @@ impl Coordinator {
                 // resume_parent handles: status update, input_resolved
                 // event, DB update, and TaskSpec::Resume assignment.
                 // HITL answers are treated as a successful "child" so the
-                // workflow decider can fold them in normally.
+                // automation decider can fold them in normally.
                 self.resume_parent(task_id, answer.to_string(), "done")
                     .await;
             }
@@ -503,9 +503,9 @@ impl Coordinator {
     }
 }
 
-// `translate_workflow_delegation` moved to
-// `agentic_workflow::WorkflowDelegationResolver` — the routing
-// between `TaskSpec::Workflow` (loop iteration body), `WorkflowStep`,
-// and `Workflow` (on-disk YAML) is workflow-domain knowledge and
+// `translate_automation_delegation` moved to
+// `agentic_automation::AutomationDelegationResolver` — the routing
+// between `TaskSpec::Automation` (loop iteration body), `AutomationStep`,
+// and `Automation` (on-disk YAML) is automation-domain knowledge and
 // doesn't belong in the generic coordinator. Coordinator now calls
 // `self.delegation_resolver.resolve(...)`.

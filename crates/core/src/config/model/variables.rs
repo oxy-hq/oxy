@@ -122,7 +122,7 @@ impl Variables {
 
 pub struct Variable(SchemaObject);
 
-// Convert Variables to default value for workflow run
+// Convert Variables to default value for automation run
 impl From<&Variables> for HashMap<String, Value> {
     fn from(val: &Variables) -> Self {
         val.variables

@@ -100,7 +100,7 @@ mod duckdb {
     }
 
     /// A multi-statement DDL/DML script ending in a returning SELECT — the
-    /// shape of a workflow `execute_sql` setup file
+    /// shape of an automation `execute_sql` setup file
     /// (`CREATE TABLE …; CREATE INDEX …; INSERT …; SELECT 'ready'`).
     /// Regression test: previously the connector wrapped the whole script
     /// in `CREATE TEMP TABLE _t AS (…)` and DuckDB rejected it with
@@ -173,7 +173,7 @@ mod duckdb {
     /// DuckDB ICU extension is loaded. The connector must load ICU on
     /// every connection (matching oxy-core); without it this fails with
     /// `No function matches … (STRING_LITERAL, DATE, DATE)` and an empty
-    /// candidate list. Reproduces the gallant-demo velocity workflow bug.
+    /// candidate list. Reproduces the gallant-demo velocity automation bug.
     #[tokio::test]
     async fn date_diff_string_literal_over_group_by_binds_with_icu() {
         let conn = DuckDbConnection::open_in_memory().unwrap();

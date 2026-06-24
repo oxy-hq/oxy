@@ -51,7 +51,7 @@ Events are split into two layers:
 - `ValidationPass / ValidationFail`
 
 **`DomainEvents`** trait — domain enum types. Concrete impls:
-- `AnalyticsEvent` ([analytics/src/events.rs](analytics/src/events.rs)): `TriageCompleted`, `IntentClarified`, `SpecResolved`, `SemanticShortcutAttempted/Resolved`, `QueryGenerated`, `QueryExecuted`, `AnalysisComplete`, `ProposedChart`, `ProcedureStarted/StepStarted/Completed`, `ToolUsed`
+- `AnalyticsEvent` ([analytics/src/events.rs](analytics/src/events.rs)): `TriageCompleted`, `IntentClarified`, `SpecResolved`, `SemanticShortcutAttempted/Resolved`, `QueryGenerated`, `QueryExecuted`, `AnalysisComplete`, `ProposedChart`, `AutomationStarted/StepStarted/Completed`, `ToolUsed`
 - `BuilderEvent` ([builder/src/events.rs](builder/src/events.rs)): `FileChangePending`, `FileChanged`, `ToolUsed`
 
 **Unified wrapper**:

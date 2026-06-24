@@ -22,8 +22,8 @@ describe("getObjectName", () => {
     ).toBe("training_coach");
   });
 
-  it("strips .workflow.yml (no regression)", () => {
-    expect(getObjectName(makeFile("etl.workflow.yml", "etl.workflow.yml"))).toBe("etl");
+  it("strips .automation.yml (no regression)", () => {
+    expect(getObjectName(makeFile("etl.automation.yml", "etl.automation.yml"))).toBe("etl");
   });
 
   it("strips .app.yml (no regression)", () => {
@@ -42,7 +42,7 @@ describe("groupObjectsByType", () => {
     const file = makeFile("analytics.agentic.yml", "analytics.agentic.yml");
     const result = groupObjectsByType([file]);
     expect(result.agents).toContain(file);
-    expect(result.procedures).toHaveLength(0);
+    expect(result.automations).toHaveLength(0);
     expect(result.apps).toHaveLength(0);
   });
 
@@ -52,10 +52,10 @@ describe("groupObjectsByType", () => {
     expect(result.agents).toContain(file);
   });
 
-  it("does NOT put .agentic.yml files into procedures group", () => {
+  it("does NOT put .agentic.yml files into automations group", () => {
     const file = makeFile("analytics.agentic.yml", "analytics.agentic.yml");
     const result = groupObjectsByType([file]);
-    expect(result.procedures).not.toContain(file);
+    expect(result.automations).not.toContain(file);
   });
 
   it("ignores directory entries", () => {

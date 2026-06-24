@@ -29,7 +29,7 @@ pub const EVENT_CHANNEL_SIZE: usize = 100;
 
 #[derive(Debug, Clone)]
 pub enum ToolType {
-    Workflow,
+    Automation,
     SemanticTopic,
     SqlFile,
 }
@@ -38,7 +38,7 @@ impl ToolType {
     /// Returns the executor for this tool type
     pub fn executor(&self) -> Arc<dyn ToolExecutor> {
         match self {
-            ToolType::Workflow => Arc::new(super::executor::WorkflowExecutor),
+            ToolType::Automation => Arc::new(super::executor::AutomationExecutor),
             ToolType::SemanticTopic => Arc::new(super::executor::SemanticExecutor),
             ToolType::SqlFile => Arc::new(super::executor::SqlExecutor),
         }

@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use tokio::sync::Mutex as TokioMutex;
 
+use agentic_automation::workspace::WorkspaceContext;
 use agentic_connector::{DatabaseConnector, SqlDialect};
 use agentic_semantic::refresh_key_cache::RefreshKeyCache;
-use agentic_workflow::workspace::WorkspaceContext;
 
 use crate::agentic_wiring::OxyProjectContext;
 

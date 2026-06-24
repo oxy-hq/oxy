@@ -294,7 +294,7 @@ fn normalize_table_name(stem: &str) -> String {
 /// `No function matches … (STRING_LITERAL, DATE, DATE)` with an empty
 /// candidate list. The agentic connector historically skipped this, so
 /// the same SQL worked through the classic agent / SQL-IDE path (oxy-core
-/// connector) but failed through workflow `execute_sql` (this connector).
+/// connector) but failed through automation `execute_sql` (this connector).
 ///
 /// Best-effort: the extension is bundled with libduckdb-sys so this
 /// succeeds offline, but a failure is logged rather than fatal so bare
@@ -333,7 +333,7 @@ impl DatabaseConnector for DuckDbConnector {
         // `execute_query` samples a single result set, so the rows/stats
         // path below wraps the user SQL in `CREATE TEMP TABLE _t AS (sql)`.
         // That wrap is only valid for one SELECT-family statement — a
-        // multi-statement DDL/DML script (e.g. a workflow `execute_sql`
+        // multi-statement DDL/DML script (e.g. an automation `execute_sql`
         // setup file: `CREATE TABLE …; CREATE INDEX …; SELECT …`) would
         // produce `Parser Error: syntax error at or near "CREATE"`. Run
         // any leading statements for their side effects first, then sample

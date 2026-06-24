@@ -18,7 +18,7 @@ pub struct RetrievalObject {
     /// Indicates whether it's a derived object (e.g. built from parameterized templates with enum variables)
     #[serde(default)]
     pub is_child: bool,
-    /// Optional enum variables from workflow (for enum index building)
+    /// Optional enum variables from automation (for enum index building)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enum_variables: Option<HashMap<String, Vec<serde_json::Value>>>,
 }
