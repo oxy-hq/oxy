@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.83] - 2026-06-24
+
+### 🚀 Features
+
+- *(world-model)* World Model graph — entity/measure visualization & instance drill-down (#2582)
+- Org subdomain routing for select customer orgs (#2587)
+
+### 🐛 Bug Fixes
+
+- *(cameras)* Coalesce edge ingest writes to airhouse (one commit/window, not per-POST) (#2604)
+
+### 🚜 Refactor
+
+- Rename workflow/procedures to automation (#2593)
+
+### 🧪 Testing
+
+- Verify per-target init lock prevents duplicate pool slots (#2606)
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump airway to 0.1.15 (#2607)
+
 ## [0.5.82] - 2026-06-24
 
 ### 🐛 Bug Fixes
@@ -11,6 +34,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Bump airway to 0.1.14 (#2603)
+- Release 0.5.82 (#2602)
 
 ## [0.5.81] - 2026-06-23
 
