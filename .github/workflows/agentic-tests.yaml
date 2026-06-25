@@ -218,7 +218,7 @@ jobs:
       # previous cache so unchanged step text still warm-replays even
       # when a sibling flow changed.
       - name: Restore agentic action cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         id: agentic-action-cache
         with:
           path: web-app/tests/agentic/.cache

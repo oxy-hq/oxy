@@ -190,7 +190,7 @@ jobs:
         run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm store cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ env.STORE_PATH }}
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -198,7 +198,7 @@ jobs:
             pnpm-store-${{ runner.os }}-
 
       - name: Cache TypeScript build info
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             web-app/tsconfig.app.tsbuildinfo
@@ -210,7 +210,7 @@ jobs:
             typescript-${{ runner.os }}-
 
       - name: Cache Vite
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: web-app/node_modules/.vite
           key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml',
@@ -219,7 +219,7 @@ jobs:
             vite-${{ runner.os }}-
 
       - name: Cache Turbo
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ hashFiles('web-app/**',

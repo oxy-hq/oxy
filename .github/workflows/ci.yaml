@@ -149,7 +149,7 @@ jobs:
       # Cache TypeScript build info for incremental compilation
       # Key on tsconfig only — tsbuildinfo handles incremental source changes internally
       - name: Cache TypeScript build info
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             web-app/tsconfig.app.tsbuildinfo
@@ -160,7 +160,7 @@ jobs:
 
       # Cache Vite pre-bundled deps (only invalidates when dependencies change, not source)
       - name: Cache Vite
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             web-app/node_modules/.vite
@@ -172,7 +172,7 @@ jobs:
 
       # Cache Turbo for monorepo builds
       - name: Cache Turbo
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
@@ -543,7 +543,7 @@ jobs:
 
       # Cache Turbo for monorepo builds
       - name: Cache Turbo
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
