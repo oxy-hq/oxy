@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Check typos
         uses: crate-ci/typos@v1.47.2
 
@@ -97,7 +97,7 @@ jobs:
     # pnpm store with generous headroom.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
@@ -133,7 +133,7 @@ jobs:
     # full TS rebuild while still bounding a hung Vite/tsc process.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
@@ -273,7 +273,7 @@ jobs:
             airway-internal
             snowflake-rs
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Collect Workflow Telemetry
@@ -420,7 +420,7 @@ jobs:
       DOMO_DEVELOPER_TOKEN: "empty"
       OXY_LOG_LEVEL: debug
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: gacts/install-hurl@v1
 
       - name: Download oxy binary
@@ -524,7 +524,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

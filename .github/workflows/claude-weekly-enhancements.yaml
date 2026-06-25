@@ -40,7 +40,7 @@ jobs:
               missing error handling, inconsistent patterns vs established
               conventions, TODO/FIXME/HACK comments in recently changed files
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

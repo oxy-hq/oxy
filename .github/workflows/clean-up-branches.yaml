@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: GitHub Branch Cleaner
         uses: fpicalausa/remove-stale-branches@v2.6.1
         with:
