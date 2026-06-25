@@ -1,25 +1,28 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
-# Smoke tests for the shell-v2 launcher. Chrome is a narrow left icon
-# rail ([data-testid=shell-rail]) on every workspace page outside /ide:
-# rail-hq returns home, rail-threads / rail-automations navigate to the
-# routed list pages (the old list modals are gone), rail-core opens
-# Oxygen Factory (the IDE). There is no top bar anywhere.
+# Smoke tests for the apps-first shell. Chrome is a narrow left icon rail
+# ([data-testid=shell-rail]) plus a universal top bar
+# ([data-testid=workspace-topbar]) on every workspace page outside /ide and
+# /onboarding:
+#   - rail-hq returns to the HQ launcher,
+#   - rail-chat opens the Chat page (/threads),
+#   - rail-core opens Oxygen Factory (the IDE).
+# The top bar's breadcrumb shows the current page name ("HQ" on the launcher,
+# "Chat" on /threads). "Ask Oxygen" ([data-testid=ask-oxygen-button]) opens the
+# right-side Ask dock ([data-testid=ask-dock]); ⌘K toggles it too.
 #
-# When there are zero published custom apps (the local CI backend's case),
-# home renders the **ask-forward fallback**: greeting + the ChatPanel
-# composer. The HQ heading renders only on the apps grid, so these cases
-# assert the rail + fallback, not the heading.
+# When there are zero published custom apps (the local CI backend's case), the
+# launcher renders the ask-forward fallback: greeting + the ask-locked
+# ChatPanel composer (no agent picker — the analytics agent is the default).
 #
-#   fallback-home        — greeting + composer visible; rail items
-#                          (HQ / Threads / Automations / Oxygen Factory) visible.
-#   ask-pill-roundtrip   — [data-testid=ask-pill] opens [data-testid=ask-panel];
-#                          submitting streams into the right-side drawer
-#                          ([data-testid=thread-drawer]) with no navigation;
-#                          "Full view" promotes to /threads/<id>.
-#   rail-pages-and-home  — rail-automations lands on the Automations list
-#                          page, rail-threads on the Threads list page,
-#                          rail-hq returns to the launcher.
+#   fallback-home       — greeting + composer + rail (HQ / Chat / Oxygen
+#                         Factory) + top bar visible.
+#   ask-dock-roundtrip  — ask-oxygen-button opens the ask-dock; submitting
+#                         streams in the dock; "Full view" promotes to
+#                         /threads/<id>.
+#   rail-chat-and-home  — rail-chat navigates to the Chat page (breadcrumb
+#                         "Chat"); rail-hq returns to the launcher
+#                         (breadcrumb "HQ").
 #
 # Backend mode: local (`oxy start --local --enterprise` at demo_project/).
 # Auth is disabled, so there is no login step.
@@ -32,74 +35,68 @@ settings:
   trace: on-failure
   cache_actions: true
   backend_mode: local
-  # fallback-home: 3 steps. ask-pill-roundtrip: 7 steps (click pill + wait
-  # panel + submit + wait drawer + wait stream + full view + wait). rail-
-  # pages-and-home: 6 steps (three rail clicks + three page waits). Pad
-  # generously.
   max_steps: 20
 
 setup:
   - "goto:/"
 
 cases:
-  - name: fallback-home shows greeting, chat composer, and the rail
+  - name: fallback-home shows greeting, chat composer, rail, and top bar
     tags: [launcher, chat, critical]
     steps:
       # The fallback greeting is time-of-day-aware ("Good Morning/Afternoon/
-      # Evening"). The selector covers the outer paragraph regardless of
-      # which greeting string is rendered.
+      # Evening"); the selector covers the outer paragraph regardless.
       - wait_for: "selector:text=How can I assist you?"
 
-      - wait_for: "selector:[data-testid=agent-selector-button]"
+      - wait_for: "selector:[data-testid=chat-panel-submit-button]"
 
       - act: |
-          Verify the icon rail is present on the left edge. Do NOT click
-          anything — browser_snapshot and check for [data-testid=shell-rail],
-          [data-testid=rail-hq], [data-testid=rail-threads],
-          [data-testid=rail-automations], and [data-testid=rail-core].
+          Verify the chrome is present without clicking anything —
+          browser_snapshot and check for [data-testid=shell-rail],
+          [data-testid=rail-hq], [data-testid=rail-chat],
+          [data-testid=rail-core], the top bar [data-testid=workspace-topbar],
+          and [data-testid=ask-oxygen-button] inside it.
 
     expect:
       - assert: "selector [data-testid=chat-panel-submit-button] is visible"
-      - assert: "selector [data-testid=agent-selector-button] is visible"
       - assert: "selector [data-testid=shell-rail] is visible"
-      - assert: "selector [data-testid=rail-threads] is visible"
-      - assert: "selector [data-testid=rail-automations] is visible"
+      - assert: "selector [data-testid=rail-hq] is visible"
+      - assert: "selector [data-testid=rail-chat] is visible"
       - assert: "selector [data-testid=rail-core] is visible"
+      - assert: "selector [data-testid=workspace-topbar] is visible"
+      - assert: "selector [data-testid=ask-oxygen-button] is visible"
 
-  - name: ask-pill-roundtrip submits into the thread drawer and promotes to full view
+  - name: ask-dock-roundtrip submits into the dock and promotes to full view
     tags: [launcher, chat, critical]
     steps:
-      - wait_for: "selector:[data-testid=ask-pill]"
+      - wait_for: "selector:[data-testid=ask-oxygen-button]"
 
       - act: |
-          browser_click [data-testid=ask-pill]. The Ask panel expands
-          from the bottom of the page; [data-testid=ask-panel] becomes
-          visible with a ChatPanel inside it.
+          browser_click [data-testid=ask-oxygen-button] in the top bar. The
+          right-side Ask dock ([data-testid=ask-dock]) opens with a ChatPanel
+          composer inside.
 
-      - wait_for: "selector:[data-testid=ask-panel]"
+      - wait_for: "selector:[data-testid=ask-dock]"
 
-      # Submit a question through the Ask panel. Submitting does NOT
-      # navigate: the panel closes and the new thread streams inside the
-      # right-side drawer.
+      # Submit a question through the dock. Submitting does NOT navigate: the
+      # dock switches to its thread view and the answer streams in place.
       - act: |
-          Submit a question via the Ask panel:
+          Submit a question via the Ask dock:
           1. browser_type into textarea[name=question] inside
-             [data-testid=ask-panel]: "What were the total weekly sales by store?"
-          2. browser_click [data-testid=chat-panel-submit-button].
-          End the turn once the thread drawer ([data-testid=thread-drawer])
-          opens on the right — the URL does not change.
-
-      - wait_for: "selector:[data-testid=thread-drawer]"
+             [data-testid=ask-dock]: "What were the total weekly sales by store?"
+          2. browser_click the [data-testid=chat-panel-submit-button] inside
+             [data-testid=ask-dock] (NOT the fallback composer behind it).
+          The dock shows the streaming thread; the URL does not change.
 
       - wait_for: streaming_complete
 
-      # Promote the drawer thread to the routed full view. The full page
-      # has no top bar — the rail is the chrome; the thread input's send
-      # button marks the routed page as loaded.
+      # Promote the in-dock thread to the routed full view via the dock
+      # header's "Full view" control. The thread input's send button marks
+      # the routed page as loaded.
       - act: |
-          browser_click [data-testid=thread-drawer-open-full]. The drawer
-          closes and the URL changes to /threads/<id> — the full thread
-          page, with the icon rail still on the left edge.
+          browser_click [data-testid=ask-dock-full]. The dock closes and the
+          URL changes to /threads/<id> — the full thread page, with the icon
+          rail still on the left edge.
 
       - wait_for: "selector:[data-testid=message-input-send-button]"
 
@@ -109,33 +106,25 @@ cases:
           The page is on a /threads/<id> URL showing the full thread view.
           The analytics agent answered the "total weekly sales by store"
           question with a coherent, data-backed result — per-store sales
-          figures as a table, chart, or written summary. No error banner
-          is visible and the run is not suspended awaiting a clarifying
-          question.
+          figures as a table, chart, or written summary. No error banner is
+          visible and the run is not suspended awaiting a clarifying question.
 
-  - name: rail-pages-and-home navigates Automations and Threads pages from the rail
+  - name: rail-chat-and-home navigates the Chat page and back via the rail
     tags: [launcher, regression]
     steps:
-      - wait_for: "selector:[data-testid=rail-automations]"
+      - wait_for: "selector:[data-testid=rail-chat]"
 
       - act: |
-          browser_click [data-testid=rail-automations]. The app navigates
-          to the Automations list page
-          ([data-testid=automations-list-page]) — a routed page, not a
-          modal; the rail stays on the left edge.
+          browser_click [data-testid=rail-chat]. The app navigates to the
+          Chat page (/threads); the top-bar breadcrumb page name becomes
+          "Chat" and the rail stays on the left edge.
 
-      - wait_for: "selector:[data-testid=automations-list-page]"
-
-      - act: |
-          browser_click [data-testid=rail-threads]. The app navigates to
-          the Threads list page ([data-testid=threads-list-page]).
-
-      - wait_for: "selector:[data-testid=threads-list-page]"
+      - wait_for: "selector:text=Chat"
 
       - act: |
-          browser_click [data-testid=rail-hq]. The app returns to the
-          launcher home — the greeting/composer fallback renders (zero
-          published custom apps on this backend).
+          browser_click [data-testid=rail-hq]. The app returns to the HQ
+          launcher; the breadcrumb page name becomes "HQ" and the greeting +
+          composer fallback renders (zero published custom apps on this backend).
 
       - wait_for: "selector:text=How can I assist you?"
 

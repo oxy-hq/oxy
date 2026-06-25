@@ -1,15 +1,13 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
-# Ask a sales question on the Home page using the demo project's sole
-# agent — `analytics` (analytics.agentic.yml, the agentic analytics
-# pipeline) — and verify it returns a coherent, data-backed answer.
-# (The classic `default.agent.yml` was removed from the demo in #2346;
-# the agentic agent is now the only ask agent.)
+# Ask a sales question via the universal "Ask Oxygen" dock and verify the
+# analytics agent — `analytics` (analytics.agentic.yml), the demo project's
+# sole agent since #2346 removed the classic `default.agent.yml` — returns a
+# coherent, data-backed answer.
 #
-# Home is the apps-first launcher: with zero published custom apps the
-# ask-forward fallback renders the same ChatPanel composer. Submitting
-# no longer navigates — the new thread opens and streams inside the
-# right-side drawer ([data-testid=thread-drawer]).
+# The Ask dock ([data-testid=ask-dock]) is the apps-first ask surface: the
+# top-bar "Ask Oxygen" button ([data-testid=ask-oxygen-button]) opens it, and
+# submitting streams the answer inside the dock in place — the URL stays put.
 
 name: chat ask returns an analytics answer
 target: chat
@@ -24,35 +22,38 @@ setup:
   - "goto:/"
 
 cases:
-  - name: ask a question and get a SQL artifact
+  - name: ask a question and get an analytics answer in the dock
     tags: [chat, critical]
     steps:
-      # Canonical chat-prelude. `cache_scope: shared` lets `threads-list`
-      # reuse this exact recording — see canonical-prompts.md. If you
-      # edit this step, mirror the change in `threads-list.flow.test.yml`
-      # or both flows pay cold cost on first record.
       - act: |
-          Submit "What were the total weekly sales by store?" to the
-          analytics agent on the home page. The demo project ships a single
-          agent (`analytics`, analytics.agentic.yml) selected by default, so
-          no agent-picker step is needed:
-          1. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
-          2. browser_click [data-testid=chat-panel-submit-button].
-          End the turn once the thread drawer ([data-testid=thread-drawer])
-          opens on the right — the URL does not change.
-        cache_scope: shared
+          browser_click [data-testid=ask-oxygen-button] in the top bar. The
+          right-side Ask dock ([data-testid=ask-dock]) opens with a ChatPanel
+          composer inside.
+
+      - wait_for: "selector:[data-testid=ask-dock]"
+
+      - act: |
+          Submit "What were the total weekly sales by store?" to the analytics
+          agent via the Ask dock. The demo project ships a single agent
+          (`analytics`, analytics.agentic.yml) selected by default, so no
+          agent-picker step is needed:
+          1. browser_type into textarea[name=question] inside
+             [data-testid=ask-dock]: "What were the total weekly sales by store?"
+          2. browser_click the [data-testid=chat-panel-submit-button] inside
+             [data-testid=ask-dock] (NOT any composer on the page behind it).
+          The dock switches to its thread view and the answer streams in place.
+
       - wait_for: streaming_complete
+
     expect:
       # The agentic analytics agent renders its result as reasoning-trace
-      # steps + an interpreted answer inside the thread drawer, not a
-      # classic `execute_sql` agent-artifact — so assert on the answer via
-      # the judge rather than a classic artifact kind. (streaming_complete
-      # already gates run completion.)
+      # steps + an interpreted answer inside the dock, not a classic
+      # `execute_sql` artifact — so assert on the answer via the judge.
+      # (streaming_complete already gates run completion.)
       - judge: |
-          The thread drawer on the right shows the analytics agent's answer
-          to the "total weekly sales by store" question — a coherent,
-          data-backed result with per-store sales figures as a table, chart,
-          or written summary. Fail if instead the drawer shows an error
-          banner, or the agentic run is suspended awaiting input on a
-          clarifying question (a prompt back to the user, not an answer —
-          the agentic pipeline can pause to clarify, which is not a result).
+          The Ask dock on the right shows the analytics agent's answer to the
+          "total weekly sales by store" question — a coherent, data-backed
+          result with per-store sales figures as a table, chart, or written
+          summary. Fail if instead the dock shows an error banner, or the
+          agentic run is suspended awaiting input on a clarifying question (a
+          prompt back to the user, not an answer).

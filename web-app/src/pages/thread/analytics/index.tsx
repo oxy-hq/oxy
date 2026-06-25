@@ -138,7 +138,7 @@ const AnalyticsDisplayBlockItem = memo(
 
 interface Props {
   thread: ThreadItem;
-  /** Hide the page header when embedded in the ThreadDrawer. */
+  /** Hide the page header when embedded in the Ask dock. */
   hideHeader?: boolean;
 }
 

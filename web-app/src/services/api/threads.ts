@@ -13,11 +13,13 @@ export class ThreadService {
   static async listThreads(
     projectId: string,
     page?: number,
-    limit?: number
+    limit?: number,
+    search?: string
   ): Promise<ThreadsResponse> {
     const params = new URLSearchParams();
     if (page !== undefined) params.append("page", page.toString());
     if (limit !== undefined) params.append("limit", limit.toString());
+    if (search) params.append("search", search);
 
     let url = `/${projectId}/threads`;
     const paramsStr = params.toString();

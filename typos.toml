@@ -57,4 +57,12 @@ extend-ignore-re = [
 ]
 
 [files]
-extend-exclude = ["CHANGELOG.md", "*/docker-entrypoints/*", "*/demo_project/**", "*/examples/**"]
+# Rendered HTML briefings/reports under internal-docs are markup, not prose —
+# CSS class names (e.g. `.ba`, `.ba-card`) trip the spell-checker. Skip them.
+extend-exclude = [
+  "CHANGELOG.md",
+  "*/docker-entrypoints/*",
+  "*/demo_project/**",
+  "*/examples/**",
+  "internal-docs/*.html",
+]

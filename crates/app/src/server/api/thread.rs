@@ -16,8 +16,10 @@ use oxy::{
 };
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, prelude::DateTimeWithTimeZone,
+    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect,
+    prelude::DateTimeWithTimeZone,
+    sea_query::{Expr, extension::postgres::PgExpr},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -57,6 +59,8 @@ pub struct PaginationInfo {
 pub struct PaginationQuery {
     pub page: Option<u64>,
     pub limit: Option<u64>,
+    /// Optional case-insensitive substring filter over thread title + input.
+    pub search: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -74,7 +78,8 @@ pub struct CreateThreadRequest {
     params(
         ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("page" = Option<u64>, Query, description = "Page number (default: 1)"),
-        ("limit" = Option<u64>, Query, description = "Items per page (default: 100, max: 100)")
+        ("limit" = Option<u64>, Query, description = "Items per page (default: 100, max: 100)"),
+        ("search" = Option<String>, Query, description = "Case-insensitive title/input filter")
     ),
     responses(
         (status = 200, description = "List of threads with pagination", body = ThreadsResponse),
@@ -96,13 +101,31 @@ pub async fn get_threads(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let page = pagination.page.unwrap_or(1);
+    let page = pagination.page.unwrap_or(1).max(1);
     let limit = pagination.limit.unwrap_or(100).clamp(1, 100);
-    let page = page.max(1);
+
+    // Shared filter: the user's own non-onboarding threads in this project,
+    // optionally narrowed by a case-insensitive search over title + input.
+    let mut base = Condition::all()
+        .add(threads::Column::UserId.eq(Some(user.id)))
+        .add(threads::Column::ProjectId.eq(project.id))
+        .add(threads::Column::Source.ne("__onboarding__"));
+    if let Some(term) = pagination
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let pattern = format!("%{term}%");
+        base = base.add(
+            Condition::any()
+                .add(Expr::col(threads::Column::Title).ilike(pattern.clone()))
+                .add(Expr::col(threads::Column::Input).ilike(pattern)),
+        );
+    }
+
     let total = Threads::find()
-        .filter(threads::Column::UserId.eq(Some(user.id)))
-        .filter(threads::Column::ProjectId.eq(project.id))
-        .filter(threads::Column::Source.ne("__onboarding__"))
+        .filter(base.clone())
         .count(&connection)
         .await
         .map_err(|e| {
@@ -130,9 +153,7 @@ pub async fn get_threads(
     let offset = (page - 1) * limit;
 
     let threads = Threads::find()
-        .filter(threads::Column::UserId.eq(Some(user.id)))
-        .filter(threads::Column::ProjectId.eq(project.id))
-        .filter(threads::Column::Source.ne("__onboarding__"))
+        .filter(base)
         .order_by_desc(threads::Column::CreatedAt)
         .offset(offset)
         .limit(limit)

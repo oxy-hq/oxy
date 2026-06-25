@@ -18,7 +18,16 @@ export function useWorldModel() {
     queryKey: queryKeys.worldModel.graph(projectId),
     queryFn: () => WorldModelService.getWorldModel(projectId),
     staleTime: 5 * 60 * 1000,
-    retry: false
+    retry: false,
+    // Harden against a partial response (e.g. a workspace whose semantic layer
+    // has no relationships, where `edges` comes back null/absent): the graph
+    // iterates `entities`/`edges`, so default them to arrays rather than
+    // crashing with "model.edges is not iterable".
+    select: (data) => ({
+      ...data,
+      entities: data?.entities ?? [],
+      edges: data?.edges ?? []
+    })
   });
 }
 

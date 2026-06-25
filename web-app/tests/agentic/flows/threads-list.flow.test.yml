@@ -1,21 +1,15 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
-# Verify the threads list page renders, a thread can be opened from the
-# list, and the thread detail page loads. Targets the "user wants to find
-# a past conversation" path.
-#
-# **Why a chat-ask prelude.** A fresh `oxy start --local --enterprise`
-# Postgres has zero threads, and `/threads` is empty until the user
-# submits at least one question. Rather than add a new `seed_thread`
-# fixture that calls into the API (extra surface area subject to the
-# read-only-against-external-systems policy), the flow drives a small
-# chat-ask interaction first — same surface as `chat-ask` but the goal
-# here is just to put a row in the list, then navigate.
+# "Find a past conversation" on the apps-first chat surface. The bulk
+# threads-management list page was removed; the Chat page (/threads) — a
+# composer with a searchable "Recent threads" history below it — is its
+# replacement. This flow submits a question on the Chat page, then reopens
+# that thread from the history via search.
 #
 # Navigation note: shell v2 chrome is the left icon rail
-# ([data-testid=shell-rail]) — submitting opens the thread in the right
-# drawer, and /threads is reachable via [data-testid=rail-threads] or
-# direct navigation.
+# ([data-testid=shell-rail]); the "Chat" rail item lands on /threads. The
+# Chat composer navigates to /threads/<id> on submit (it is not the in-place
+# Ask dock).
 
 name: threads list
 target: threads
@@ -25,61 +19,59 @@ settings:
   trace: on-failure
   cache_actions: true
   backend_mode: local
-  # 1 chat submit + waits + drawer close + 1 navigate + 1 click + judge.
-  # Pad for the initial chat-ask iteration plus the agentic analytics run
-  # on a single question.
+  # navigate + chat submit (1 analytics run) + navigate back + search + click
+  # + judge. Pad for the agentic analytics run on a single question.
   max_steps: 25
 
 setup:
   - "goto:/"
 
 cases:
-  - name: submit a question, navigate to /threads, open the seeded thread
+  - name: submit on the chat page, then reopen the thread from search
     tags: [threads, regression]
     steps:
-      # Canonical chat-prelude — byte-identical to chat-ask's step so
-      # `cache_scope: shared` lets both flows reuse the same recording.
-      # If you change this text, mirror it in chat-ask.flow.test.yml.
       - act: |
-          Submit "What were the total weekly sales by store?" to the
-          analytics agent on the home page. The demo project ships a single
+          browser_navigate to "/threads" — the Chat page, a composer with a
+          "Recent threads" history below it. Wait for the composer to render.
+
+      - wait_for: "selector:textarea[name=question]"
+
+      - act: |
+          Submit a question on the Chat page. The demo project ships a single
           agent (`analytics`, analytics.agentic.yml) selected by default, so
           no agent-picker step is needed:
           1. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
           2. browser_click [data-testid=chat-panel-submit-button].
-          End the turn once the thread drawer ([data-testid=thread-drawer])
-          opens on the right — the URL does not change.
-        cache_scope: shared
+          The URL changes to /threads/<id> and the analytics answer streams.
 
       - wait_for: streaming_complete
 
-      # The drawer is a modal sheet — close it before navigating so it
-      # doesn't block clicks on the threads list.
       - act: |
-          browser_press_key Escape to close the thread drawer
-          ([data-testid=thread-drawer] disappears).
+          browser_navigate back to "/threads". The thread just submitted now
+          appears in the searchable history ([data-testid=thread-history-list]).
 
-      - wait_for: "selector_hidden:[data-testid=thread-drawer]"
+      - wait_for: "selector:[data-testid=thread-history-list]"
 
       - act: |
-          browser_navigate to "/threads". The threads list page
-          ([data-testid=threads-list-page]) loads with a paginated
-          thread list; the icon rail stays on the left edge.
-
-      - wait_for: "selector:[data-testid=thread-item]"
-
-      - act: |
-          browser_click [data-testid=thread-title] on the first row.
-          URL changes to /threads/<id>; conversation history loads.
+          browser_type into [data-testid=thread-history-search]: "weekly".
+          The list filters server-side to threads whose title or input matches.
 
       - wait_for: network_idle
 
+      # The matching thread row is a [data-testid=thread-row] inside the list.
+      - wait_for: "selector:[data-testid=thread-history-list] [data-testid=thread-row]"
+
+      - act: |
+          browser_click the first [data-testid=thread-row] inside
+          [data-testid=thread-history-list] (a link to the thread). The URL
+          changes to /threads/<id> and the conversation loads.
+
+      # The thread detail's message input marks the routed page as loaded —
+      # a hard gate that fails loudly if the click did not navigate.
+      - wait_for: "selector:[data-testid=message-input-send-button]"
+
     expect:
-      # No `[data-testid=thread-item]` assert — by `expect:` runtime the
-      # flow has navigated from /threads (list) to /threads/<id> (detail).
-      # The judge covers what matters: real conversation rendered.
       - judge: |
-          The page is on a thread detail URL (/threads/<id>) with a past
-          conversation visible (at least one user message + one agent
-          response). The conversation is about weekly sales per store
-          (the question we submitted in the prelude). No error banner.
+          The page is on a thread detail URL (/threads/<id>) showing the past
+          conversation — at least one user message about weekly sales per
+          store plus one agent response. No error banner.

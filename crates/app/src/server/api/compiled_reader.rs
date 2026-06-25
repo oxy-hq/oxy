@@ -182,12 +182,14 @@ pub struct CompiledApp {
 
 /// Row shape for the analytics-agent listing endpoint. Includes the
 /// `llm.ref` value pulled from the JSONB so the home page can flag
-/// readiness gaps against the agent the chat will actually use.
+/// readiness gaps against the agent the chat will actually use, plus the
+/// `timezone` so the UI clock can render the workspace's local time.
 #[derive(Debug, Clone)]
 pub struct CompiledAgent {
     pub file_path: String,
     pub name: String,
     pub model_ref: Option<String>,
+    pub timezone: Option<String>,
 }
 
 /// Row shape for the automation listing. The legacy extensions
@@ -296,6 +298,7 @@ pub async fn list_analytics_agents(
             .map(|m| CompiledAgent {
                 file_path: m.file_path,
                 model_ref: extract_model_ref(&m.definition),
+                timezone: extract_timezone(&m.definition),
                 name: m.name,
             })
             .collect(),
@@ -811,6 +814,18 @@ fn extract_model_ref(definition: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Pull the top-level `timezone` out of the compiled agent `definition`
+/// JSONB — the compiler stores the full parsed YAML, so the agentic
+/// config's `timezone:` field is a top-level key here. Surfaced so the
+/// workspace clock can render local time instead of UTC.
+fn extract_timezone(definition: &Value) -> Option<String> {
+    definition
+        .as_object()?
+        .get("timezone")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,6 +841,28 @@ mod tests {
         // We don't trim whitespace; a literal space is technically a legal
         // git branch name, so we treat it as a real branch hint.
         assert_eq!(normalize_branch_hint(Some(" ")), Some(" "));
+    }
+
+    #[test]
+    fn extract_timezone_reads_top_level_field() {
+        use serde_json::json;
+        // The compiler stores the full parsed YAML, so `timezone` is a
+        // top-level key alongside `llm`.
+        let def = json!({
+            "name": "restaurant_analyst",
+            "llm": { "ref": "claude-sonnet-4-6" },
+            "timezone": "America/Los_Angeles"
+        });
+        assert_eq!(
+            extract_timezone(&def),
+            Some("America/Los_Angeles".to_string())
+        );
+        // Absent timezone → None (the frontend supplies the default).
+        let no_tz = json!({ "name": "x", "llm": { "ref": "gpt-4o" } });
+        assert_eq!(extract_timezone(&no_tz), None);
+        // A non-string timezone is ignored rather than panicking.
+        let bad = json!({ "timezone": 42 });
+        assert_eq!(extract_timezone(&bad), None);
     }
 
     #[test]

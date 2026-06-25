@@ -14,6 +14,9 @@ export type AgentInfo = {
   public: boolean;
   /// Model ref this agent resolves through.
   model?: string;
+  /// IANA timezone (e.g. `America/Los_Angeles`) the agent resolves relative
+  /// dates in. Surfaced so the workspace clock can show local time.
+  timezone?: string;
 };
 
 export const AgentService = {

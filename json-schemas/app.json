@@ -1150,7 +1150,7 @@
               "type": "string"
             },
             "consistency_prompt": {
-              "description": "Custom consistency evaluation prompt for this specific task Overrides workflow-level consistency_prompt if specified",
+              "description": "Custom consistency evaluation prompt for this specific task Overrides automation-level consistency_prompt if specified",
               "type": [
                 "string",
                 "null"
@@ -1414,7 +1414,7 @@
           }
         },
         {
-          "description": "Task configuration for executing a Looker query within a workflow.",
+          "description": "Task configuration for executing a Looker query within an automation.",
           "type": "object",
           "required": [
             "explore",

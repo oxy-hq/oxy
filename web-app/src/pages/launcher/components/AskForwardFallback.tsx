@@ -1,20 +1,14 @@
-import { askPlaceholder } from "@/components/Ask/AskPanel";
+import { askPlaceholder } from "@/components/Ask/askPlaceholder";
 import ChatPanel from "@/components/Chat/ChatPanel";
 import { cn } from "@/libs/shadcn/utils";
+import { getGreeting } from "@/libs/utils/greeting";
 import useCurrentOrg from "@/stores/useCurrentOrg";
-import useThreadDrawer from "@/stores/useThreadDrawer";
-
-const getGreeting = () => {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good Morning";
-  if (hour < 18) return "Good Afternoon";
-  return "Good Evening";
-};
 
 /**
  * Empty-state home for workspaces with zero published custom apps
  * (every `oxy init` user): the classic greeting + composer, so the
- * launcher never renders a dead grid.
+ * launcher never renders a dead grid. Submitting navigates to the full
+ * thread page (the Ask dock is the surface for in-context asks).
  */
 export function AskForwardFallback({ shouldDisableChat }: { shouldDisableChat: boolean }) {
   const orgName = useCurrentOrg((s) => s.org?.name);
@@ -35,12 +29,7 @@ export function AskForwardFallback({ shouldDisableChat }: { shouldDisableChat: b
             shouldDisableChat && "pointer-events-none select-none opacity-40"
           )}
         >
-          <ChatPanel
-            lockMode='ask'
-            hideAgentPicker
-            placeholderOverride={askPlaceholder(orgName)}
-            onThreadCreated={(id) => useThreadDrawer.getState().open(id)}
-          />
+          <ChatPanel lockMode='ask' hideAgentPicker placeholderOverride={askPlaceholder(orgName)} />
         </div>
       </div>
     </div>

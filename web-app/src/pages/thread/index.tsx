@@ -31,7 +31,7 @@ export const Thread = ({
   projectId?: string;
   threadId?: string;
   /** Suppress the per-thread page header — used when the thread is embedded
-   *  in the ThreadDrawer, which supplies its own header. */
+   *  in the Ask dock, which supplies its own header. */
   hideHeader?: boolean;
 }) => {
   const { threadId: threadIdParam } = useParams();

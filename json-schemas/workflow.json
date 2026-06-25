@@ -1,13 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Workflow",
+  "title": "Automation",
   "type": "object",
   "required": [
     "tasks"
   ],
   "properties": {
     "consistency_prompt": {
-      "description": "Global consistency evaluation prompt for all agent tasks in this workflow This can be overridden per-task via AgentTask.consistency_prompt",
+      "description": "Global consistency evaluation prompt for all agent tasks in this automation. This can be overridden per-task via AgentTask.consistency_prompt",
       "type": [
         "string",
         "null"
@@ -1173,7 +1173,7 @@
               "type": "string"
             },
             "consistency_prompt": {
-              "description": "Custom consistency evaluation prompt for this specific task Overrides workflow-level consistency_prompt if specified",
+              "description": "Custom consistency evaluation prompt for this specific task Overrides automation-level consistency_prompt if specified",
               "type": [
                 "string",
                 "null"
@@ -1437,7 +1437,7 @@
           }
         },
         {
-          "description": "Task configuration for executing a Looker query within a workflow.",
+          "description": "Task configuration for executing a Looker query within an automation.",
           "type": "object",
           "required": [
             "explore",

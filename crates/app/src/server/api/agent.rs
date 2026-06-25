@@ -46,13 +46,17 @@ pub async fn check_builder_availability(
 }
 
 /// Minimal subset of the agentic.yml schema — we only need `llm.ref` to
-/// populate `AgentConfigResponse.model`. Avoids importing the full
-/// `agentic_analytics::AgentConfig` (which pulls solver build types) into
-/// this listing endpoint.
+/// populate `AgentConfigResponse.model` and `timezone` for the workspace
+/// clock. Avoids importing the full `agentic_analytics::AgentConfig` (which
+/// pulls solver build types) into this listing endpoint.
 #[derive(Deserialize)]
 struct AgenticAgentSnippet {
     #[serde(default)]
     llm: Option<AgenticAgentLlmSnippet>,
+    /// IANA timezone (e.g. `America/Los_Angeles`) the agent resolves
+    /// relative dates in; surfaced so the UI clock can show local time.
+    #[serde(default)]
+    timezone: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -71,6 +75,12 @@ pub struct AgentConfigResponse {
     /// to "any LLM key is missing".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// IANA timezone (e.g. `America/Los_Angeles`) from the agent's
+    /// `.agentic.yml`. Lets the workspace top-bar clock render local time
+    /// instead of UTC; the frontend defaults to `America/Los_Angeles` when
+    /// this is absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
 }
 
 impl AgentConfigResponse {
@@ -80,6 +90,7 @@ impl AgentConfigResponse {
             path,
             public,
             model: None,
+            timezone: None,
         }
     }
 }
@@ -133,6 +144,7 @@ pub async fn get_agents(
                 .map(|r| {
                     let mut resp = AgentConfigResponse::new(r.name, r.file_path, true);
                     resp.model = r.model_ref;
+                    resp.timezone = r.timezone;
                     resp
                 })
                 .collect();
@@ -183,13 +195,17 @@ pub async fn get_agents(
                 .trim_end_matches(".agentic.yml")
                 .to_string();
             let abs_path = workspace_path.join(&path);
-            let model_ref = tokio::fs::read_to_string(&abs_path)
+            // Parse the snippet once and pull both `llm.ref` and `timezone`
+            // from it (avoids re-reading the file for each field).
+            let snippet = tokio::fs::read_to_string(&abs_path)
                 .await
                 .ok()
-                .and_then(|content| serde_yaml::from_str::<AgenticAgentSnippet>(&content).ok())
-                .and_then(|snippet| snippet.llm.and_then(|l| l.r#ref));
+                .and_then(|content| serde_yaml::from_str::<AgenticAgentSnippet>(&content).ok());
             let mut resp = AgentConfigResponse::new(agent_id, path, true);
-            resp.model = model_ref;
+            if let Some(snippet) = snippet {
+                resp.model = snippet.llm.and_then(|l| l.r#ref);
+                resp.timezone = snippet.timezone;
+            }
             Ok::<AgentConfigResponse, anyhow::Error>(resp)
         })
         .collect::<Vec<_>>();

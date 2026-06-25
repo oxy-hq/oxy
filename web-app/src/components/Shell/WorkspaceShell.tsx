@@ -1,9 +1,8 @@
-import { Workflow as Automation, Globe, House, MessagesSquare } from "lucide-react";
+import { House, MessagesSquare } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AskPanel } from "@/components/Ask/AskPanel";
-import { AskPill } from "@/components/Ask/AskPill";
-import { OxyCoreMark } from "@/components/OxyCoreMark";
+import { AskDock } from "@/components/Ask/AskDock";
+import { OxygenFactoryMark } from "@/components/OxygenFactoryMark";
 import WorkspaceStatus from "@/components/WorkspaceStatus";
 import { useCustomApps } from "@/hooks/api/customApps/useCustomApps";
 import ROUTES from "@/libs/utils/routes";
@@ -13,11 +12,13 @@ import { RailUserMenu } from "./RailUserMenu";
 import { RailWorkspaceSwitch } from "./RailWorkspaceSwitch";
 import { RailWorkspaceTile } from "./RailWorkspaceTile";
 import { type RailItem, ShellRail } from "./ShellRail";
+import { TopBar } from "./TopBar";
 
-/** The workspace chrome: icon rail + content column. Wraps every
- *  workspace route. The rail hides inside Oxygen Factory / the IDE (it has its
- *  own chrome) and on the onboarding wizard; the content column is identical
- *  everywhere so pages never re-layout between routes. */
+/** The workspace chrome: icon rail + universal top bar + content column + Ask
+ *  dock. Wraps every workspace route. The rail, top bar, and dock hide inside
+ *  Oxygen Factory / the IDE (it has its own chrome) and on the onboarding
+ *  wizard; the content column is identical everywhere so pages never re-layout
+ *  between routes. */
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -36,7 +37,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   // In local mode ws.ROOT is "" — the index route is "/".
   const isHome = path === ws.HOME || path === (ws.ROOT || "/");
 
-  // Conceptual groups (divided in the rail): HQ · Apps · Intelligence.
+  // Conceptual groups (divided in the rail): Home + Chat · Apps. (World Model
+  // moved into Oxygen Factory as its own IDE sidebar surface.)
   const hq: RailItem = {
     key: "hq",
     label: "HQ",
@@ -44,6 +46,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     icon: <House className='h-4 w-4' />,
     active: isHome,
     onSelect: () => navigate(ws.HOME)
+  };
+  // The Chat landing (composer + recent threads) reached at /threads. Replaces
+  // the old "Threads" list item; "Automations" was removed from the rail.
+  const chat: RailItem = {
+    key: "chat",
+    label: "Chat",
+    testId: "rail-chat",
+    icon: <MessagesSquare className='h-4 w-4' />,
+    active: path.startsWith(ws.THREADS),
+    onSelect: () => navigate(ws.THREADS)
   };
   const appItems: RailItem[] = customApps.map((app) => ({
     key: app.id,
@@ -53,32 +65,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     imageUrl: app.icon_url,
     href: app.url
   }));
-  const intelligence: RailItem[] = [
-    {
-      key: "threads",
-      label: "Threads",
-      testId: "rail-threads",
-      icon: <MessagesSquare className='h-4 w-4' />,
-      active: path.startsWith(ws.THREADS),
-      onSelect: () => navigate(ws.THREADS)
-    },
-    {
-      key: "automations",
-      label: "Automations",
-      testId: "rail-automations",
-      icon: <Automation className='h-4 w-4' />,
-      active: path.startsWith(ws.WORKFLOWS),
-      onSelect: () => navigate(ws.WORKFLOWS)
-    },
-    {
-      key: "world-model",
-      label: "World Model",
-      testId: "rail-world-model",
-      icon: <Globe className='h-4 w-4' />,
-      active: path.startsWith(ws.WORLD_MODEL),
-      onSelect: () => navigate(ws.WORLD_MODEL)
-    }
-  ];
   // System: the intelligence substrate powering the HQ. Pinned at the
   // bottom of the nav, distinct from the operator apps above.
   const core: RailItem = {
@@ -87,15 +73,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     tooltip:
       "Oxygen Factory — the intelligence system behind your HQ: data sources, business model, agents, automations, and deployments",
     testId: "rail-core",
-    icon: <OxyCoreMark className='h-6 w-6' />,
+    icon: <OxygenFactoryMark className='h-6 w-6' />,
     active: path.startsWith(ws.IDE.ROOT),
     onSelect: () => navigate(ws.IDE.ROOT)
   };
 
-  // Apps only get their own divided group when the workspace has any.
-  const groups: RailItem[][] = appItems.length
-    ? [[hq], appItems, intelligence]
-    : [[hq], intelligence];
+  // Home + Chat share one block (no divider — both are primary HQ nav); apps get
+  // their own divided group when the workspace has any.
+  const groups: RailItem[][] = appItems.length ? [[hq, chat], appItems] : [[hq, chat]];
 
   return (
     <div className='flex h-full w-full'>
@@ -112,14 +97,21 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           }
         />
       )}
-      <main className='relative flex h-full min-w-0 flex-1 flex-col bg-background'>
-        {!hideStatus && <WorkspaceStatus />}
-        <div className='w-full min-w-0 flex-1 overflow-hidden'>{children}</div>
-        {/* Mounted inside the relative <main> so they center on content,
-            not the viewport (the rail would skew viewport-centering). */}
-        <AskPill />
-        <AskPanel />
-      </main>
+      {/* Content column. The top bar sits to the RIGHT of the rail and is the
+          same height as the rail's logo cell (h-12), so the logo anchors the
+          top-left corner and the two bottom borders form one continuous line. */}
+      <div className='flex h-full min-w-0 flex-1 flex-col'>
+        {!hideRail && <TopBar />}
+        <div className='flex min-h-0 w-full flex-1'>
+          <main className='relative flex h-full min-w-0 flex-1 flex-col bg-background'>
+            {!hideStatus && <WorkspaceStatus />}
+            <div className='w-full min-w-0 flex-1 overflow-hidden'>{children}</div>
+          </main>
+          {/* The Ask dock is a flex sibling — opening it compacts <main>
+              (Cursor-style) rather than floating over it. */}
+          {!hideRail && <AskDock />}
+        </div>
+      </div>
     </div>
   );
 }

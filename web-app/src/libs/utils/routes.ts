@@ -126,6 +126,9 @@ const ROUTES = {
             SEMANTIC: {
               ROOT: `${wsBase}/ide/semantic`
             },
+            WORLD_MODEL: {
+              ROOT: `${wsBase}/ide/world-model`
+            },
             EDGE: {
               ROOT: `${wsBase}/ide/edge`,
               DASHBOARD: `${wsBase}/ide/edge`,
@@ -142,7 +145,6 @@ const ROUTES = {
           },
 
           CONTEXT_GRAPH: `${wsBase}/context-graph`,
-          WORLD_MODEL: `${wsBase}/world-model`,
           CUSTOMER_APPS: `${wsBase}/apps`,
           ONBOARDING: `${wsBase}/onboarding`
         };

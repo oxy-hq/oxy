@@ -16,9 +16,9 @@ import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import AirwayPage from "@/pages/airway";
 import AutomationPage from "@/pages/automation";
 import AutomationsListPage from "@/pages/automation/AutomationsListPage";
+import ChatPage from "@/pages/chat";
 import LauncherPage from "@/pages/launcher";
 import ThreadPage from "@/pages/thread";
-import Threads from "@/pages/threads";
 import "@xyflow/react/dist/style.css";
 import React, { Suspense, useEffect, useRef } from "react";
 import { HotkeysProvider, useHotkeys } from "react-hotkeys-hook";
@@ -28,7 +28,6 @@ import ROUTES from "@/libs/utils/routes";
 import ContextGraphPage from "@/pages/context-graph";
 import WorldModelView from "@/pages/ide/WorldModel";
 import { ErrorBoundary } from "@/sentry";
-import { ThreadDrawer } from "./components/Ask/ThreadDrawer";
 import { BuilderDialog } from "./components/BuilderDialog";
 import { FileQuickOpen } from "./components/FileQuickOpen";
 import OrgGuard from "./components/OrgGuard";
@@ -58,7 +57,7 @@ import OnboardingPage from "./pages/onboarding";
 import OrgOnboardingPage from "./pages/onboarding/OrgOnboardingPage";
 import PostLoginDispatcher from "./pages/PostLoginDispatcher";
 import QuickBooksConnected from "./pages/quickbooks/QuickBooksConnected";
-import useAskPanel from "./stores/useAskPanel";
+import useAskDock from "./stores/useAskDock";
 import useBuilderDialog from "./stores/useBuilderDialog";
 import useCurrentOrg from "./stores/useCurrentOrg";
 import useCurrentWorkspace from "./stores/useCurrentWorkspace";
@@ -176,7 +175,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
       if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey)) return;
       e.preventDefault();
       if (useBuilderDialog.getState().isOpen || useFileQuickOpen.getState().isOpen) return;
-      useAskPanel.getState().toggle();
+      useAskDock.getState().toggle();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -272,14 +271,15 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
       <FileQuickOpen />
       <SettingsDialog />
       <ManageWorkspacesDialog />
-      <ThreadDrawer />
 
       <WorkspaceShell>
         <Routes>
           <Route index element={<LauncherPage />} />
 
           <Route path='home' element={<LauncherPage />} />
-          <Route path='threads' element={<Threads />} />
+          {/* The rail "Chat" button lands here — a composer + recent threads
+              (replacing the old bulk threads-management list). */}
+          <Route path='threads' element={<ChatPage />} />
           <Route path='threads/:threadId' element={<ThreadPage />} />
           {/* Canonical "Automations" routes (formerly Automations / Automations). */}
           <Route path='automations' element={<AutomationsListPage />} />
@@ -322,6 +322,9 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
 
             {/* Semantic layer — explorer + metric tree */}
             <Route path='semantic' element={<SemanticLayerPage />} />
+
+            {/* World Model — business-model graph; first icon in the IDE sidebar */}
+            <Route path='world-model' element={<WorldModelView />} />
 
             {/* Edge routes — fleet topology, list management, timeline
               playback (subsumes the old Compliance pages), audit log,
@@ -381,12 +384,12 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
               </Route>
             )}
 
-            {/* Default redirect to files */}
-            <Route index element={<Navigate to='files' replace />} />
+            {/* Oxygen Factory lands on the World Model — the business-model
+              overview — rather than the raw file tree. */}
+            <Route index element={<Navigate to='world-model' replace />} />
           </Route>
           <Route path='onboarding' element={<AgenticSetupPage />} />
           <Route path='context-graph' element={<ContextGraphPage />} />
-          <Route path='world-model' element={<WorldModelView />} />
 
           <Route path='*' element={<Navigate to='.' />} />
         </Routes>

@@ -4,6 +4,7 @@ import {
   Database,
   Folder,
   GitBranch,
+  Globe,
   Network,
   Radio,
   ShieldCheck
@@ -19,6 +20,7 @@ import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 
 enum SidebarViewMode {
+  WORLD_MODEL = "world-model",
   FILES = "files",
   TESTS = "tests",
   COORDINATOR = "coordinator",
@@ -30,6 +32,9 @@ enum SidebarViewMode {
 }
 
 const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMode => {
+  if (pathname.includes("/ide/world-model")) {
+    return SidebarViewMode.WORLD_MODEL;
+  }
   if (pathname.includes("/ide/files") || pathname === filesRoot) {
     return SidebarViewMode.FILES;
   }
@@ -72,6 +77,9 @@ const Sidebar: React.FC = () => {
 
   const handleNavigate = (mode: SidebarViewMode) => {
     switch (mode) {
+      case SidebarViewMode.WORLD_MODEL:
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.WORLD_MODEL.ROOT);
+        break;
       case SidebarViewMode.FILES:
         navigate(filesRoot);
         break;
@@ -102,6 +110,22 @@ const Sidebar: React.FC = () => {
   return (
     <div className='flex h-full flex-col border-r bg-sidebar-background'>
       <div className='flex flex-col items-center gap-1 px-1 py-2'>
+        <Button
+          variant='ghost'
+          size='icon'
+          onClick={() => handleNavigate(SidebarViewMode.WORLD_MODEL)}
+          data-testid='ide-nav-world-model'
+          tooltip={{ content: "World Model", side: "right" }}
+          className={cn(
+            "h-8 w-8",
+            currentViewMode === SidebarViewMode.WORLD_MODEL
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "opacity-60 hover:opacity-100"
+          )}
+        >
+          <Globe className='h-4 w-4' />
+        </Button>
+
         <Button
           variant='ghost'
           size='icon'

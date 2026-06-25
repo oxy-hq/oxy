@@ -155,41 +155,37 @@ prompt body are stable but the body itself changes.)
 
 ## Chat panel
 
-### Submit the canonical "weekly sales by store" question (shared)
+### Ask a question via the Ask dock
 
-This exact text is used by `chat-ask` and `threads-list` so they
-resolve to the same `cache_scope: shared` entry. Editing it in one
-flow without editing the other forces a cold record on first run.
+The Ask dock ([data-testid=ask-dock]) is the universal ask surface: the
+top-bar "Ask Oxygen" button ([data-testid=ask-oxygen-button]) opens it, and
+submitting streams the answer inside the dock in place (the URL stays put).
+The dock header's "Full view" control ([data-testid=ask-dock-full]) promotes
+the in-dock thread to the routed `/threads/<id>` page.
 
 The demo project ships a single agent — `analytics` (analytics.agentic.yml),
-selected by default — since #2346 removed the classic `default` agent, so the
-prelude no longer opens the agent picker.
-
-Submitting does **not** navigate in the apps-first shell: the new thread
-opens and streams inside the right-side drawer
-(`[data-testid=thread-drawer]`) while the URL stays put. Flows that need
-the routed thread page afterwards click
-`[data-testid=thread-drawer-open-full]` or close the drawer (Escape) and
-`browser_navigate` directly.
+selected by default — since #2346 removed the classic `default` agent, so no
+agent-picker step is needed.
 
 ```yaml
 - act: |
-    Submit "What were the total weekly sales by store?" to the
-    analytics agent on the home page. The demo project ships a single
-    agent (`analytics`, analytics.agentic.yml) selected by default, so
-    no agent-picker step is needed:
-    1. browser_type into textarea[name=question]: "What were the total weekly sales by store?"
-    2. browser_click [data-testid=chat-panel-submit-button].
-    End the turn once the thread drawer ([data-testid=thread-drawer])
-    opens on the right — the URL does not change.
-  cache_scope: shared
+    browser_click [data-testid=ask-oxygen-button] in the top bar. The
+    right-side Ask dock ([data-testid=ask-dock]) opens with a composer.
+
+- wait_for: "selector:[data-testid=ask-dock]"
+
+- act: |
+    Submit a question via the Ask dock:
+    1. browser_type into textarea[name=question] inside
+       [data-testid=ask-dock]: "What were the total weekly sales by store?"
+    2. browser_click the [data-testid=chat-panel-submit-button] inside
+       [data-testid=ask-dock] (scope to the dock — the home fallback has its
+       own composer behind it).
+    The dock switches to its thread view and the answer streams in place.
 ```
 
-### Submit an arbitrary question (per-flow)
-
-If you need a different question, leave `cache_scope` at the default
-(`flow`) — the prelude above only shares when the prompt body is
-byte-identical.
+(Not `cache_scope: shared` today — no two flows submit byte-identical dock
+text. Promote to shared if a second flow needs the exact same submit.)
 
 ---
 

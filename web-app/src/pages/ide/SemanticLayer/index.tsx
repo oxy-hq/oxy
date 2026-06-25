@@ -2,11 +2,12 @@ import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { useMetricAnomalies } from "@/hooks/api/useMetricAnomalies";
 import MetricTreeView from "../MetricTree";
-import WorldModelView from "../WorldModel";
 import AnomaliesInbox from "./AnomaliesInbox";
 import SemanticExplorerTab from "./SemanticExplorerTab";
 
-const TAB_VALUES = ["explorer", "metric-tree", "anomalies", "world-model"] as const;
+// World Model graduated to its own first-class IDE sidebar surface
+// (`/ide/world-model`), so it is no longer a tab here.
+const TAB_VALUES = ["explorer", "metric-tree", "anomalies"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
 /** The Semantic Layer IDE tab: topic/view Explorer + Metric Tree + Anomalies inbox. */
@@ -32,7 +33,6 @@ export default function SemanticLayerPage() {
           <TabsList className='w-fit'>
             <TabsTrigger value='explorer'>Explorer</TabsTrigger>
             <TabsTrigger value='metric-tree'>Metric Tree</TabsTrigger>
-            <TabsTrigger value='world-model'>World Model</TabsTrigger>
             <TabsTrigger value='anomalies' className='gap-1.5'>
               Anomalies
               {newCount > 0 && (
@@ -48,9 +48,6 @@ export default function SemanticLayerPage() {
         </TabsContent>
         <TabsContent value='metric-tree' className='min-h-0 flex-1'>
           <MetricTreeView />
-        </TabsContent>
-        <TabsContent value='world-model' className='min-h-0 flex-1'>
-          <WorldModelView />
         </TabsContent>
         <TabsContent value='anomalies' className='min-h-0 flex-1'>
           <AnomaliesInbox />

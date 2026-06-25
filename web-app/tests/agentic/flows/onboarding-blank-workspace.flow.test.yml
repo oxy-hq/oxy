@@ -154,9 +154,9 @@ cases:
       # has no affordance to the generated .app.yml dashboards — the
       # completion screen's Explore buttons are the only stable path to
       # the first app. Spend the one click on the app, then exercise the
-      # agent via the global Ask pill (present on every non-onboarding
-      # surface), whose answer streams into the right-side thread drawer
-      # without leaving the app page:
+      # agent via the top-bar Ask Oxygen button (present on every
+      # non-onboarding surface), whose answer streams into the right-side
+      # Ask dock without leaving the app page:
       #
       #   1. App #1 — click the first Explore button. The buttons carry
       #      `onboarding-explore-app-<index>` testids and the overview
@@ -164,8 +164,8 @@ cases:
       #      depending on its builder-generated title (which varies per
       #      run and was the source of recurring Tier-2 selector-heal
       #      noise with name-based selectors).
-      #   2. Agent answer — Ask pill → Ask panel → submit a fixed sales
-      #      question → thread drawer streams the answer in place.
+      #   2. Agent answer — Ask Oxygen button → Ask dock → submit a fixed
+      #      sales question → the dock streams the answer in place.
       - act: |
           On the completion screen, browser_click
           [data-testid=onboarding-explore-app-0] — the first dashboard
@@ -181,36 +181,34 @@ cases:
       - wait_for: "selector_hidden:[data-testid=app-preview-loading];timeout_ms=60000"
 
       - act: |
-          browser_click [data-testid=ask-pill] (the floating "Ask Oxygen"
-          pill at the bottom of the app page). The Ask panel
-          ([data-testid=ask-panel]) expands with a chat composer inside.
+          browser_click [data-testid=ask-oxygen-button] (the "Ask Oxygen"
+          button in the top bar). The Ask dock ([data-testid=ask-dock])
+          opens on the right with a chat composer inside.
 
-      - wait_for: "selector:[data-testid=ask-panel]"
+      - wait_for: "selector:[data-testid=ask-dock]"
 
       - act: |
-          Submit a question via the Ask panel (the onboarded workspace
+          Submit a question via the Ask dock (the onboarded workspace
           ships a single analytics agent, selected by default):
           1. browser_type into textarea[name=question] inside
-             [data-testid=ask-panel]: "What were the total weekly sales by store?"
+             [data-testid=ask-dock]: "What were the total weekly sales by store?"
           2. browser_click [data-testid=chat-panel-submit-button].
-          End the turn once the thread drawer ([data-testid=thread-drawer])
-          opens on the right — the URL stays on the app page.
-
-      - wait_for: "selector:[data-testid=thread-drawer]"
+          The dock switches to the thread view and the answer streams in
+          place; the URL stays on the app page.
 
       - wait_for: streaming_complete
 
     expect:
-      # Note: by the time `expect` runs the thread drawer is open over
-      # the first app page. The dashboard render was already gated
-      # deterministically by the `app-preview-loading` hide above; the
-      # judge covers the agent's answer in the drawer.
+      # Note: by the time `expect` runs the Ask dock is open over the first
+      # app page. The dashboard render was already gated deterministically
+      # by the `app-preview-loading` hide above; the judge covers the
+      # agent's answer in the dock.
       - judge: |
-          The screenshot shows the right-side thread drawer with the
-          analytics agent's answer to the "total weekly sales by store"
-          question — a coherent, data-backed result (per-store figures as
-          a table, chart, or written summary), not an error banner and not
-          a run suspended awaiting a clarifying question. This evidence,
+          The screenshot shows the right-side Ask dock with the analytics
+          agent's answer to the "total weekly sales by store" question — a
+          coherent, data-backed result (per-store figures as a table, chart,
+          or written summary), not an error banner and not a run suspended
+          awaiting a clarifying question. This evidence,
           combined with the fact that the flow reached this final step at
           all, confirms:
           (a) cloud-mode org+workspace creation worked,

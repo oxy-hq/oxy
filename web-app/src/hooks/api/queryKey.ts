@@ -18,8 +18,8 @@ const analyticsKeys = {
 
 const threadKeys = {
   all: ["thread"] as const,
-  list: (projectId: string, page?: number, limit?: number) =>
-    [...threadKeys.all, "list", projectId, { page, limit }] as const,
+  list: (projectId: string, page?: number, limit?: number, search?: string) =>
+    [...threadKeys.all, "list", projectId, { page, limit, search }] as const,
   item: (projectId: string, threadId: string) =>
     [...threadKeys.all, projectId, { threadId }] as const,
   messages: (projectId: string, threadId: string) =>
