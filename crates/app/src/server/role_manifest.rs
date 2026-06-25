@@ -1651,6 +1651,10 @@ mod tests {
         "/oxy-access",
         "/custom-apps",
         "/builder-availability",
+        // org bare-subdomain status — read-only, resolves workspace→org→
+        // org_subdomains (Postgres only). Admin enable/disable lives under
+        // /api/admin and is classified separately.
+        "/org-subdomain",
         // Workspace logo: the org-uploaded logo is served from Postgres (the
         // org row) — fleet-safe. The code-first `logo.*` fallback reads the
         // workspace FS, but that read is best-effort: on a replica without the
