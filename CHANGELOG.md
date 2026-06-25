@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.84] - 2026-06-25
+
+### 🚀 Features
+
+- Add org subdomain route for read-only access
+- Web-app universal top bar, docked Ask panel, chat landing (#2597)
+
+### 💼 Other
+
+- *(deps)* Bump actions/checkout from 6 to 7 (#2610)
+- *(deps)* Bump actions/cache from 5 to 6 (#2609)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 1 directory with 10 updates (#2611)
+
+### ⚙️ Miscellaneous Tasks
+
+- Cargo clippy and format codes
+- Update deps
+
 ## [0.5.83] - 2026-06-24
 
 ### 🚀 Features
@@ -24,6 +42,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Bump airway to 0.1.15 (#2607)
+- Release 0.5.83 (#2605)
 
 ## [0.5.82] - 2026-06-24
 
