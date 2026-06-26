@@ -502,12 +502,20 @@ pub async fn list_semantic_views(
 pub async fn resolve_semantic_view(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
-    name: &str,
+    file_path: &str,
 ) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
     let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
         return Ok(None);
     };
-    let row = entity::semantic_views::Entity::find_by_id((revision_id, name.to_string()))
+    // Key by `file_path`, NOT the PK `name`. Callers (the IDE preview) only have
+    // the workspace-relative path; the row's `name` is the YAML `name:` field
+    // (e.g. `oxymart`), which never equals the path. Looking up by name with a
+    // path always missed → the read fell through to the working-copy FS, which a
+    // stateless serve replica doesn't have. One file → one row, so `.one()` is
+    // safe.
+    let row = entity::semantic_views::Entity::find()
+        .filter(entity::semantic_views::Column::RevisionId.eq(revision_id))
+        .filter(entity::semantic_views::Column::FilePath.eq(file_path))
         .one(&db)
         .await?;
     Ok(row.map(|m| CompiledArtifact {
@@ -542,16 +550,20 @@ pub async fn list_semantic_topics(
     ))
 }
 
-/// Single semantic-topic resolver, keyed by `name`.
+/// Single semantic-topic resolver, keyed by workspace-relative `file_path`
+/// (the row's PK `name` is the YAML `name:` field, which the caller doesn't have
+/// — see `resolve_semantic_view`).
 pub async fn resolve_semantic_topic(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
-    name: &str,
+    file_path: &str,
 ) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
     let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
         return Ok(None);
     };
-    let row = entity::semantic_topics::Entity::find_by_id((revision_id, name.to_string()))
+    let row = entity::semantic_topics::Entity::find()
+        .filter(entity::semantic_topics::Column::RevisionId.eq(revision_id))
+        .filter(entity::semantic_topics::Column::FilePath.eq(file_path))
         .one(&db)
         .await?;
     Ok(row.map(|m| CompiledArtifact {
