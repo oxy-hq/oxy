@@ -11,6 +11,16 @@ entities:
     type: primary
     description: "Individual store-week observation (grain of the data)"
     keys: ["store_id", "week_date"]
+    # Promotes to the store entity for store-level analysis.
+    parent: store
+  - name: store
+    type: foreign
+    description: "Store this observation belongs to"
+    key: store_id
+  - name: time_period
+    type: foreign
+    description: "Time period this observation belongs to"
+    key: week_date
 
 # Dimensions - Attributes for grouping, filtering, and segmenting
 dimensions:

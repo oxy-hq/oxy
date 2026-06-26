@@ -8,6 +8,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useState } from "react";
+import { cn } from "@/libs/shadcn/utils";
 import type { WmComputedMeasure, WmSelection, WorldModel } from "@/types/worldModel";
 import {
   EXPANDED_NODE_WIDTH,
@@ -258,7 +259,14 @@ export function WorldModelGraph({
           style={{ background: "var(--background)" }}
         >
           <Background variant={BackgroundVariant.Dots} color='var(--border)' gap={22} size={1} />
-          <Controls showInteractive={false} className='rounded-lg border border-border shadow-sm' />
+          <Controls
+            showInteractive={false}
+            className={cn(
+              "!overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-sm",
+              "[&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-foreground",
+              "[&_button:hover]:!bg-muted"
+            )}
+          />
         </ReactFlow>
       )}
     </div>

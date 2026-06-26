@@ -217,7 +217,14 @@ export function MetricTreeGraph({ tree, selectedId, onSelect }: MetricTreeGraphP
           proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} className='opacity-40' />
-          <Controls showInteractive={false} className='rounded-lg border border-border shadow-sm' />
+          <Controls
+            showInteractive={false}
+            className={cn(
+              "!overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-sm",
+              "[&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-foreground",
+              "[&_button:hover]:!bg-muted"
+            )}
+          />
         </ReactFlow>
       )}
     </div>

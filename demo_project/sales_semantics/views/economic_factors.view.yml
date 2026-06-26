@@ -10,6 +10,16 @@ entities:
     type: primary
     description: "Economic data point at store-week level"
     keys: ["store_id", "week_date"]
+    # Promotes to the store entity.
+    parent: store
+  - name: store
+    type: foreign
+    description: "Store this observation belongs to"
+    key: store_id
+  - name: time_period
+    type: foreign
+    description: "Time period this observation belongs to"
+    key: week_date
 
 dimensions:
   - name: store_id

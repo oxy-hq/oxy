@@ -1,0 +1,132 @@
+# World model for the OxyMart retail demo.
+#
+# Curates how the four sales_semantics views surface in the World Model explorer:
+# each entity `id` matches a view's primary entity, and the dimension/measure
+# `name`s reference fields defined in that view. `dimensions`/`measures` act as
+# allowlists — omit a block to show all fields, use `[]` to show none.
+entities:
+  - id: store_week
+    label: Store Week
+    description: A single store's sales for one week — the grain of the OxyMart dataset, with environmental and economic context.
+    dimensions:
+      - name: store_id
+        label: Store
+      - name: week_date
+        label: Week
+      - name: year
+        label: Year
+      - name: quarter
+        label: Quarter
+      - name: month_name
+        label: Month
+      - name: holiday_status
+        label: Holiday
+      - name: temperature_range
+        label: Temperature
+      - name: fuel_price_range
+        label: Fuel Price
+      - name: unemployment_category
+        label: Unemployment
+      - name: cpi_category
+        label: Inflation (CPI)
+    measures:
+      - name: total_sales
+        label: Total Sales
+      - name: average_weekly_sales
+        label: Avg Weekly Sales
+      - name: holiday_sales_lift_pct
+        label: Holiday Lift %
+      - name: store_count
+        label: Stores
+      - name: total_weeks
+        label: Weeks
+
+  - id: store
+    label: Store
+    description: An individual retail location, aggregated across its full history for ranking and consistency analysis.
+    dimensions:
+      - name: store_id
+        label: Store
+      - name: week_date
+        label: Week
+    measures:
+      - name: total_store_sales
+        label: Lifetime Sales
+      - name: average_weekly_sales
+        label: Avg Weekly Sales
+      - name: max_weekly_sales
+        label: Best Week
+      - name: min_weekly_sales
+        label: Worst Week
+      - name: sales_range
+        label: Sales Range
+      - name: coefficient_of_variation
+        label: Consistency (CV %)
+      - name: observation_count
+        label: Weeks Observed
+
+  - id: time_period
+    label: Time Period
+    description: A point on the calendar for seasonal and holiday trend analysis across all stores.
+    dimensions:
+      - name: week_date
+        label: Week
+      - name: year
+        label: Year
+      - name: quarter
+        label: Quarter
+      - name: quarter_name
+        label: Quarter Label
+      - name: month_name
+        label: Month
+      - name: season
+        label: Season
+      - name: year_half
+        label: Half
+      - name: holiday_status
+        label: Holiday
+    measures:
+      - name: total_sales
+        label: Total Sales
+      - name: average_sales
+        label: Avg Sales
+      - name: holiday_sales
+        label: Holiday Sales
+      - name: holiday_lift_pct
+        label: Holiday Lift %
+      - name: week_count
+        label: Weeks
+
+  - id: economic_observation
+    label: Economic Observation
+    description: A store-week data point viewed through its economic and environmental factors and their correlation with sales.
+    dimensions:
+      - name: store_id
+        label: Store
+      - name: week_date
+        label: Week
+      - name: temperature_range
+        label: Temperature
+      - name: fuel_price_range
+        label: Fuel Price
+      - name: cpi_category
+        label: Inflation (CPI)
+      - name: unemployment_category
+        label: Unemployment
+      - name: economic_conditions
+        label: Conditions
+    measures:
+      - name: total_sales
+        label: Total Sales
+      - name: avg_temperature
+        label: Avg Temperature
+      - name: avg_fuel_price
+        label: Avg Fuel Price
+      - name: avg_cpi
+        label: Avg CPI
+      - name: avg_unemployment
+        label: Avg Unemployment
+      - name: economic_sensitivity_index
+        label: Economic Sensitivity
+      - name: observation_count
+        label: Observations
