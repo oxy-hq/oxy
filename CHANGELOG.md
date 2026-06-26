@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.85] - 2026-06-26
+
+### 🚀 Features
+
+- Demo world model + fix dark-mode zoom controls (#2615)
+
+### 🐛 Bug Fixes
+
+- *(compile-boundary)* Resolve semantic views/topics by file_path, not name (#2613)
+
 ## [0.5.84] - 2026-06-25
 
 ### 🚀 Features
@@ -19,6 +29,7 @@ All notable changes to this project will be documented in this file.
 
 - Cargo clippy and format codes
 - Update deps
+- Release 0.5.84 (#2608)
 
 ## [0.5.83] - 2026-06-24
 
