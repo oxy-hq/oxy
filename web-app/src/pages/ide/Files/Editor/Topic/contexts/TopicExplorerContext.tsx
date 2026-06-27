@@ -112,12 +112,20 @@ const TopicExplorerProviderInner = ({
 
 const TopicExplorerProviderFromEditor = ({ children }: { children: ReactNode }) => {
   const { pathb64 } = useEditorContext();
-  return <TopicExplorerProviderInner pathb64={pathb64}>{children}</TopicExplorerProviderInner>;
+  return (
+    <TopicExplorerProviderInner key={pathb64} pathb64={pathb64}>
+      {children}
+    </TopicExplorerProviderInner>
+  );
 };
 
 export const TopicExplorerProvider = ({ children, pathb64 }: TopicExplorerProviderProps) => {
   if (pathb64 !== undefined) {
-    return <TopicExplorerProviderInner pathb64={pathb64}>{children}</TopicExplorerProviderInner>;
+    return (
+      <TopicExplorerProviderInner key={pathb64} pathb64={pathb64}>
+        {children}
+      </TopicExplorerProviderInner>
+    );
   }
   return <TopicExplorerProviderFromEditor>{children}</TopicExplorerProviderFromEditor>;
 };
