@@ -2,11 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.88] - 2026-06-27
+
+### 🐛 Bug Fixes
+
+- Web-app reset semantic Explorer state when switching view/topic (#2620)
+- Let operators view any tenant's thread from admin explorer (#2622)
+- Hydrate SPA auth from session cookie on org subdomains (#2624)
+
 ## [0.5.87] - 2026-06-27
 
 ### ⚙️ Miscellaneous Tasks
 
 - Bump airlayer to 0.3.4 (boolean filter typed literals) (#2618)
+- Release 0.5.87 (#2621)
 
 ## [0.5.86] - 2026-06-27
 
