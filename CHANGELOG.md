@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.86] - 2026-06-27
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump airlayer to 0.3.3 (default query row limit) (#2616)
+
 ## [0.5.85] - 2026-06-26
 
 ### 🚀 Features
@@ -11,6 +17,10 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 
 - *(compile-boundary)* Resolve semantic views/topics by file_path, not name (#2613)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.85 (#2614)
 
 ## [0.5.84] - 2026-06-25
 
