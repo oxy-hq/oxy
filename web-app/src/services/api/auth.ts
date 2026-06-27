@@ -42,6 +42,17 @@ export class AuthService {
     return response.data;
   }
 
+  /**
+   * Hydrate auth state from the `oxy_session` cookie. Used on org-subdomain
+   * boots where the cross-subdomain cookie is present but the per-origin
+   * localStorage token is not. Resolves with a fresh token+user on 200;
+   * rejects (401) when there's no valid session cookie.
+   */
+  static async getSession(): Promise<AuthResponse> {
+    const response = await apiClient.get("/auth/session");
+    return response.data;
+  }
+
   static async requestMagicLink(request: MagicLinkRequest): Promise<MessageResponse> {
     const response = await apiClient.post("/auth/magic-link/request", request);
     return response.data;

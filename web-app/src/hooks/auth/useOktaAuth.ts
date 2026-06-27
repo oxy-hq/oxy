@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { authOrigin } from "@/libs/orgSubdomain";
 import ROUTES from "@/libs/utils/routes";
 import { AuthService } from "@/services/api";
 import type { AuthResponse, OktaAuthRequest } from "@/types/auth";
@@ -12,7 +13,9 @@ import {
   stashReturnTo
 } from "./postLoginRedirect";
 
-const OKTA_REDIRECT_URI = `${window.location.origin}/auth/okta/callback`;
+// See useGoogleAuth: authOrigin() pins this to the registered app host on an
+// org subdomain.
+const OKTA_REDIRECT_URI = `${authOrigin()}/auth/okta/callback`;
 const OKTA_STATE_KEY = "okta_oauth_state";
 
 export const useOktaAuth = () => {

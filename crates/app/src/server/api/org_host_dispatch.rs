@@ -37,6 +37,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use entity::prelude::{OrgSubdomains, Organizations};
 use entity::{org_subdomains, organizations};
 use oxy::database::client::establish_connection;
+#[cfg(test)]
 use oxy_auth::constants::SESSION_COOKIE_NAME;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Serialize;
@@ -368,12 +369,10 @@ fn is_html_navigation(method: &axum::http::Method, headers: &HeaderMap) -> bool 
 }
 
 fn has_session_cookie(headers: &HeaderMap) -> bool {
-    let needle = format!("{SESSION_COOKIE_NAME}=");
-    headers
-        .get(header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .map(|c| c.split(';').any(|kv| kv.trim().starts_with(&needle)))
-        .unwrap_or(false)
+    // Reuse the canonical `oxy_session` parser (oxy-auth) so this presence
+    // check can't drift from the value extractor — e.g. on the empty-value
+    // guard, where a cleared `oxy_session=` now reads as no session.
+    oxy_auth::built_in::extract_session_cookie(headers).is_some()
 }
 
 fn request_base_url(headers: &HeaderMap) -> String {

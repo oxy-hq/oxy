@@ -31,6 +31,7 @@ import { ErrorBoundary } from "@/sentry";
 import { BuilderDialog } from "./components/BuilderDialog";
 import { FileQuickOpen } from "./components/FileQuickOpen";
 import OrgGuard from "./components/OrgGuard";
+import OrgSubdomainAuthGate from "./components/OrgSubdomainAuthGate";
 import OwnerRedirect from "./components/OwnerRedirect";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { WorkspaceShell } from "./components/Shell/WorkspaceShell";
@@ -580,7 +581,9 @@ function App() {
   return (
     <ErrorBoundary fallback={<div>Something went wrong. Please refresh.</div>} showDialog>
       <AuthProvider authConfig={authConfig}>
-        <RouterProvider router={router} />
+        <OrgSubdomainAuthGate>
+          <RouterProvider router={router} />
+        </OrgSubdomainAuthGate>
         <ShadcnToaster />
       </AuthProvider>
     </ErrorBoundary>

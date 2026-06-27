@@ -132,7 +132,10 @@ impl BuiltInAuthenticator {
 /// Returns `None` if the header is absent or the cookie is missing/empty.
 /// Cookie headers are formatted as `name1=value1; name2=value2; ...` per
 /// RFC 6265.
-fn extract_session_cookie(header: &axum::http::HeaderMap) -> Option<String> {
+///
+/// The canonical `oxy_session` parser — reuse this rather than re-implementing
+/// the RFC 6265 split (callers drifted on the empty-value guard before).
+pub fn extract_session_cookie(header: &axum::http::HeaderMap) -> Option<String> {
     let prefix = format!("{SESSION_COOKIE_NAME}=");
     for value in header.get_all("cookie").iter() {
         let raw = match value.to_str() {

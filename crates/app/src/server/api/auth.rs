@@ -237,6 +237,55 @@ fn login_response(
     (response_headers, Json(AuthResponse { token, user, orgs }))
 }
 
+/// `GET /auth/session` — hydrate the SPA's auth state from the `oxy_session`
+/// cookie.
+///
+/// The session cookie is scoped to `.oxygen-hq.com`, so it is shared across
+/// every org subdomain — but the SPA's bearer token lives in `localStorage`,
+/// which is **per-origin**. A browser that lands on `pokehouse.oxygen-hq.com`
+/// with a valid cookie therefore has no SPA token and would otherwise render a
+/// local login (whose OAuth `redirect_uri` is the subdomain → the provider
+/// rejects it). This endpoint re-reads the cookie JWT, re-issues a token +
+/// cookie, and returns the user + orgs so the SPA can `login()` without a
+/// redundant round-trip to the app-host login. Returns `401` when no valid
+/// session cookie is present, so the caller can fall back to centralized login.
+pub async fn get_session(
+    headers: HeaderMap,
+) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
+    let jwt =
+        oxy_auth::built_in::extract_session_cookie(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let claims = decode::<Claims>(
+        &jwt,
+        &DecodingKey::from_secret(AUTHENTICATION_SECRET_KEY.as_bytes()),
+        &Validation::default(),
+    )
+    .map_err(|e| {
+        tracing::debug!("session hydrate: cookie JWT rejected: {e}");
+        StatusCode::UNAUTHORIZED
+    })?
+    .claims;
+
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("session hydrate: db connect failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let user = Users::find_by_id(user_id)
+        .one(&connection)
+        .await
+        .map_err(|e| {
+            tracing::error!("session hydrate: user lookup failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .filter(|u| u.status == UserStatus::Active)
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let (token, user_info, orgs) = finalize_login(user, &connection).await?;
+    Ok(login_response(&headers, token, user_info, orgs))
+}
+
 #[derive(Deserialize)]
 pub struct GoogleAuthRequest {
     pub code: String,

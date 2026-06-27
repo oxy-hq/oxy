@@ -1,12 +1,15 @@
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { authOrigin } from "@/libs/orgSubdomain";
 import { AuthService } from "@/services/api";
 import { openSecureWindow } from "@/utils/githubAppInstall";
 import { waitForGitHubCallback } from "@/utils/githubCallbackMessage";
 import { handlePostLoginOrgs, resolveReturnTo, returnToFromUrl } from "./postLoginRedirect";
 
-const GITHUB_AUTH_REDIRECT_URI = `${window.location.origin}/github/callback`;
+// See useGoogleAuth: authOrigin() pins this to the registered app host on an
+// org subdomain.
+const GITHUB_AUTH_REDIRECT_URI = `${authOrigin()}/github/callback`;
 const GITHUB_STATE_KEY = "github_oauth_login_state";
 
 const buildGitHubAuthUrl = (clientId: string, state: string) => {

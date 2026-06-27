@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { authOrigin } from "@/libs/orgSubdomain";
 import ROUTES from "@/libs/utils/routes";
 import { AuthService } from "@/services/api";
 import type { AuthResponse, GoogleAuthRequest } from "@/types/auth";
@@ -12,7 +13,9 @@ import {
   stashReturnTo
 } from "./postLoginRedirect";
 
-const GOOGLE_REDIRECT_URI = `${window.location.origin}/auth/google/callback`;
+// On an org subdomain `authOrigin()` is the centralized app host, so the
+// provider's redirect_uri stays the one registered host (never the subdomain).
+const GOOGLE_REDIRECT_URI = `${authOrigin()}/auth/google/callback`;
 const GOOGLE_STATE_KEY = "google_oauth_state";
 
 export const useGoogleAuth = () => {

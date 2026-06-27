@@ -10,6 +10,11 @@ const publicAPIPaths = [
   "/auth/google",
   "/auth/okta",
   "/auth/config",
+  // Cookie→session hydration on org-subdomain boot. A 401 here just means
+  // "no valid session cookie" — OrgSubdomainAuthGate owns the fallback
+  // (bounce to the centralized app-host login), so the interceptor must not
+  // also redirect (double-bounce) on it.
+  "/auth/session",
   "/auth/magic-link/request",
   "/auth/magic-link/verify",
   // Logging out with an already-expired token 401s; let AuthContext.logout's

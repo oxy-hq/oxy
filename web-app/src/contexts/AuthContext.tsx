@@ -1,5 +1,5 @@
 import type React from "react";
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useCallback, useContext, useEffect } from "react";
 import { redirectToHome } from "@/libs/utils";
 import { clearAuthScopedStorage } from "@/libs/utils/authStorage";
 import {
@@ -37,10 +37,10 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children, authConfig }) => {
-  const login = (newToken: string, newUser: UserInfo) => {
+  const login = useCallback((newToken: string, newUser: UserInfo) => {
     localStorage.setItem("auth_token", newToken);
     localStorage.setItem("user", JSON.stringify(newUser));
-  };
+  }, []);
 
   const logout = async () => {
     // Clear the server-set `oxy_session` cookie FIRST, while the bearer token

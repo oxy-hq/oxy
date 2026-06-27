@@ -17,6 +17,7 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         .route("/live", get(healthcheck::liveness_check))
         .route("/version", get(healthcheck::version_info))
         .route("/auth/config", get(auth::get_config))
+        .route("/auth/session", get(auth::get_session))
         .route("/auth/oauth/state", post(auth::issue_oauth_state))
         .route("/auth/google", post(auth::google_auth))
         .route("/auth/github", post(auth::github_auth))
