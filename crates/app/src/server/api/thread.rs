@@ -1,3 +1,5 @@
+use crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin;
+use crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner;
 use crate::server::api::middlewares::role_guards::WorkspaceEditor;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::router::WorkspaceExtractor;
@@ -196,10 +198,38 @@ pub async fn get_threads(
     }))
 }
 
+/// Builds the thread-detail lookup with operator-aware scoping.
+///
+/// Always scopes by `project_id` — the authoritative tenant boundary already
+/// enforced by `WorkspaceExtractor`. For ordinary callers it additionally
+/// scopes by `user_id`, so a member can't read another member's thread.
+///
+/// A Global Owner (`OXY_OWNER`) or Global Admin (`app_admins`) opening a
+/// tenant for support/triage (`is_operator`) bypasses the `user_id` filter.
+/// The admin explorer deep-links operators straight into any tenant's
+/// conversation (see `admin/explorer.rs`) and the workspace gate already
+/// synthesizes their membership (see `workspace_context.rs`); without this
+/// bypass those deep links 404 even though the operator was authorized into
+/// the workspace.
+fn scoped_thread_query(
+    thread_id: Uuid,
+    project_id: Uuid,
+    user_id: Uuid,
+    is_operator: bool,
+) -> sea_orm::Select<Threads> {
+    let query = Threads::find_by_id(thread_id).filter(threads::Column::ProjectId.eq(project_id));
+    if is_operator {
+        query
+    } else {
+        query.filter(threads::Column::UserId.eq(Some(user_id)))
+    }
+}
+
 /// Get a specific thread by ID
 ///
 /// Retrieves detailed information about a single thread including its input, output,
-/// references, and processing status. The thread must belong to the authenticated user.
+/// references, and processing status. The thread must belong to the authenticated
+/// user, except for Global Owner / Global Admin operators (support/triage).
 #[utoipa::path(
     get,
     path = "/{workspace_id}/threads/{id}",
@@ -230,20 +260,40 @@ pub async fn get_thread(
     })?;
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    // SECURITY: scope by both user_id and project_id (workspace) so a user
-    // can't read threads from a workspace they're not currently scoped to.
-    // The URL workspace_id is enforced via WorkspaceExtractor; project.id is
-    // the authoritative tenant boundary.
-    let thread = Threads::find_by_id(thread_id)
-        .filter(threads::Column::UserId.eq(Some(user.id)))
-        .filter(threads::Column::ProjectId.eq(project.id))
+    // SECURITY: scope by user_id AND project_id (workspace) so a member can't
+    // read another member's thread or one from a workspace they're not scoped
+    // to. project.id is the authoritative tenant boundary (enforced by
+    // WorkspaceExtractor).
+    //
+    // Try the user-scoped lookup first: the overwhelmingly common case is a
+    // member opening their own thread, and that path must not pay the operator
+    // (`app_admins`) check. Only on a miss do we consider whether the caller is
+    // a Global Owner / Global Admin opening another user's thread for
+    // support/triage (the admin explorer deep-links them in — see
+    // `scoped_thread_query`) and retry without the user_id filter.
+    let thread = match scoped_thread_query(thread_id, project.id, user.id, false)
         .one(&connection)
         .await
         .map_err(|e| {
             tracing::error!("Failed to fetch thread {}: {}", thread_id, e);
             StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        })? {
+        Some(thread) => thread,
+        None => {
+            let is_operator = is_oxy_owner(&user.email) || is_oxy_app_admin(&user.email).await;
+            if !is_operator {
+                return Err(StatusCode::NOT_FOUND);
+            }
+            scoped_thread_query(thread_id, project.id, user.id, true)
+                .one(&connection)
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to fetch thread {} (operator): {}", thread_id, e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .ok_or(StatusCode::NOT_FOUND)?
+        }
+    };
 
     let thread_item = ThreadItem {
         id: thread.id.to_string(),
@@ -707,4 +757,52 @@ pub async fn get_logs(
         .collect();
 
     Ok(extract::Json(LogsResponse { logs: log_items }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{DatabaseBackend, QueryTrait};
+
+    // A `<col>" = $` fragment only appears in the WHERE clause: the SELECT list
+    // emits `"threads"."<col>",` / ` FROM`, never `= $`. Matching it therefore
+    // asserts on the actual filter rather than the column merely appearing in
+    // the (always-present) SELECT list — see the entity's `user_id` column.
+    const USER_FILTER: &str = "user_id\" = $";
+    const PROJECT_FILTER: &str = "project_id\" = $";
+
+    fn thread_query_sql(is_operator: bool) -> String {
+        scoped_thread_query(Uuid::nil(), Uuid::nil(), Uuid::nil(), is_operator)
+            .build(DatabaseBackend::Postgres)
+            .sql
+    }
+
+    #[test]
+    fn non_operator_query_scopes_by_user_and_project() {
+        // Regression: an ordinary caller must stay scoped to their own
+        // threads within the workspace.
+        let sql = thread_query_sql(false);
+        assert!(
+            sql.contains(PROJECT_FILTER),
+            "must filter by project_id: {sql}"
+        );
+        assert!(sql.contains(USER_FILTER), "must filter by user_id: {sql}");
+    }
+
+    #[test]
+    fn operator_query_drops_user_filter_keeps_project() {
+        // Regression for the admin-explorer 404: a Global Owner / Global Admin
+        // opening another user's thread must NOT be filtered by user_id (the
+        // thread belongs to a different user), but MUST still be scoped to the
+        // workspace tenant boundary.
+        let sql = thread_query_sql(true);
+        assert!(
+            sql.contains(PROJECT_FILTER),
+            "operator query must still filter by project_id: {sql}"
+        );
+        assert!(
+            !sql.contains(USER_FILTER),
+            "operator query must NOT filter by user_id: {sql}"
+        );
+    }
 }
