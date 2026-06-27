@@ -2,11 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.87] - 2026-06-27
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump airlayer to 0.3.4 (boolean filter typed literals) (#2618)
+
 ## [0.5.86] - 2026-06-27
 
 ### ⚙️ Miscellaneous Tasks
 
 - Bump airlayer to 0.3.3 (default query row limit) (#2616)
+- Release 0.5.86 (#2617)
 
 ## [0.5.85] - 2026-06-26
 
