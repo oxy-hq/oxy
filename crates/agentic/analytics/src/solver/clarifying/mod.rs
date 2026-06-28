@@ -392,6 +392,17 @@ impl AnalyticsSolver {
 
         // ── Builder delegation: ask the builder agent to create missing members ──
         //
+        // HARD-DISABLED: the analytics → builder hand-off (the "Builder Agent"
+        // auto-invocation that fires from Clarifying when the semantic layer is
+        // missing members) is currently too buggy to ship, so it is gated off
+        // here.  With delegation disabled the pipeline simply falls through to
+        // Specifying and answers the question as best it can with the existing
+        // catalog — the same behavior the original code used on delegation
+        // failure.  Flip `BUILDER_DELEGATION_ENABLED` back to `true` to restore
+        // the hand-off once it is stable.  Explicit builder usage (Cmd+I file
+        // edits, `.app.yml` creation) is unaffected — those go through the
+        // builder pipeline directly, not this branch.
+        //
         // When the triage LLM reports missing semantic members (measures or
         // dimensions that the catalog doesn't have) and confidence is below the
         // shortcut threshold, suspend the pipeline and delegate to the builder
@@ -404,7 +415,9 @@ impl AnalyticsSolver {
         // we would delegate again in an infinite loop.  When the builder
         // succeeded, the catalog is fresh and the members should be found, so
         // `missing_members` will be empty and this branch won't fire anyway.
-        if !had_user_answer
+        const BUILDER_DELEGATION_ENABLED: bool = false;
+        if BUILDER_DELEGATION_ENABLED
+            && !had_user_answer
             && !hypothesis.missing_members.is_empty()
             && semantic_confidence < SEMANTIC_CONFIDENCE_THRESHOLD
         {
