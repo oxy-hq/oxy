@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.89] - 2026-06-28
+
+### 🐛 Bug Fixes
+
+- Agentic disable analytics-to-builder auto-delegation (#2625)
+
 ## [0.5.88] - 2026-06-27
 
 ### 🐛 Bug Fixes
@@ -9,6 +15,10 @@ All notable changes to this project will be documented in this file.
 - Web-app reset semantic Explorer state when switching view/topic (#2620)
 - Let operators view any tenant's thread from admin explorer (#2622)
 - Hydrate SPA auth from session cookie on org subdomains (#2624)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.88 (#2623)
 
 ## [0.5.87] - 2026-06-27
 
