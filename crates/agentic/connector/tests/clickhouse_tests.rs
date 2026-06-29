@@ -304,3 +304,45 @@ async fn execute_query_full_reports_query_errors() {
         other => panic!("expected QueryFailed, got {other:?}"),
     }
 }
+
+/// Behavioral guardrail for the OOM fix: the connector's memory guard
+/// (`max_result_bytes` + `result_overflow_mode=break`) must cap a runaway scan
+/// to a *partial* result against a real ClickHouse, instead of streaming the
+/// whole column back — which is what peaked the pod at 3Gi and OOM-killed it.
+///
+/// We force the guard to trip on a tiny result via `with_max_result_bytes`
+/// rather than generating 256 MiB. `numbers()` is generated on the fly, so this
+/// stays cheap. Companion to `execute_query_full_no_truncation`, which proves
+/// the default ceiling leaves small results intact.
+#[tokio::test]
+async fn result_byte_guard_truncates_runaway_scan() {
+    let Some(conn) = test_connection().await else {
+        eprintln!("skipping: Docker not available");
+        return;
+    };
+    let connector = ClickHouseConnector::new(conn.url, conn.user, conn.password, conn.database)
+        .await
+        .expect("connect")
+        // 1 KiB — far below a single `numbers()` block, so the guard trips
+        // immediately and breaks with a partial result.
+        .with_max_result_bytes(1024);
+
+    // Without the guard this returns all 1,000,000 rows.
+    let stream = connector
+        .execute_query_full("SELECT number FROM system.numbers LIMIT 1000000")
+        .await
+        .expect("break mode returns a partial result, not an error");
+    let (_cols, rows) = collect_typed(stream).await;
+
+    // `break` returns at least the first block (never empty, never an error)...
+    assert!(
+        !rows.is_empty(),
+        "break mode must still return a partial result"
+    );
+    // ...but far short of the 1M requested — proving the cap actually fired.
+    assert!(
+        rows.len() < 1_000_000,
+        "memory guard must truncate the runaway scan, got {} rows",
+        rows.len()
+    );
+}

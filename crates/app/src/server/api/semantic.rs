@@ -770,6 +770,9 @@ pub async fn execute_semantic_query(
                     file_name,
                     is_preagg: true,
                     execution_time_ms: started.elapsed().as_millis() as u64,
+                    // Preaggregation bypasses the ad-hoc row cap (it reads a
+                    // bounded local rollup), so it's never truncated here.
+                    truncated: false,
                 }))
             } else {
                 let result = tokio::task::spawn_blocking(move || {

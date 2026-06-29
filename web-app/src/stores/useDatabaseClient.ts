@@ -77,6 +77,8 @@ interface QueryResult {
   result: string[][];
   resultFile: string | undefined;
   executionTime?: number;
+  /** Result hit the ad-hoc row cap (10k); more rows exist in the warehouse. */
+  truncated?: boolean;
 }
 
 interface DatabaseClientState {

@@ -109,11 +109,17 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
 
       // Handle parquet response (file reference)
       if (response && typeof response === "object" && "file_name" in response) {
-        toast.success(`Query executed in ${executionTime.toFixed(0)}ms (results saved to file)`);
+        const truncated = response.truncated === true;
+        toast.success(
+          truncated
+            ? `Query executed in ${executionTime.toFixed(0)}ms — showing first 10,000 rows`
+            : `Query executed in ${executionTime.toFixed(0)}ms (results saved to file)`
+        );
         setTabResults(activeTab.id, {
           result: [],
-          resultFile: (response as { file_name: string }).file_name,
-          executionTime
+          resultFile: response.file_name,
+          executionTime,
+          truncated
         });
         return;
       }

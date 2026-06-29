@@ -400,6 +400,34 @@ pub fn is_returning_statement(stmt: &str) -> bool {
     )
 }
 
+/// Best-effort check for whether `stmt` is safe to wrap as a derived table —
+/// i.e. `SELECT * FROM ( <stmt> ) AS alias LIMIT n` is valid SQL.
+///
+/// This is deliberately **narrower** than [`is_returning_statement`]. Several
+/// statements return rows yet are *not* legal subqueries: `SHOW`, `DESCRIBE`/
+/// `DESC`, `PRAGMA`, `EXPLAIN`, `SUMMARIZE`, `CALL`, `PIVOT`/`UNPIVOT`, and the
+/// DuckDB `TABLE`/`FROM` shorthands. Wrapping any of those produces a parse
+/// error in every dialect, and connectors like DuckDB/Postgres run them
+/// unwrapped today — so a row-cap that wraps must gate on THIS, not on
+/// `is_returning_statement`, or it regresses introspection queries.
+///
+/// Only `SELECT` and `WITH` are included: they are the statements that can
+/// produce an unbounded table-scan result needing a cap and are universally
+/// valid as derived tables. (`VALUES` is excluded — it yields tiny literal
+/// rows that never need a cap and its syntax varies by dialect.) A `WITH` that
+/// leads a write (`WITH x AS (…) INSERT …`) is a rare exception that wraps to a
+/// parse error rather than executing — a safe failure, and consistent with how
+/// the customer-app `/query` proxy already classifies `WITH` as read-shaped.
+pub fn is_wrappable_select(stmt: &str) -> bool {
+    let body = strip_leading_noise(stmt);
+    let kw: String = body
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect::<String>()
+        .to_ascii_uppercase();
+    matches!(kw.as_str(), "SELECT" | "WITH")
+}
+
 /// Strip leading whitespace and SQL comments so the first real keyword can
 /// be inspected.
 fn strip_leading_noise(sql: &str) -> &str {
@@ -449,6 +477,47 @@ mod tests {
         assert_eq!(normalize_sql("SELECT 1;\n"), "SELECT 1");
         assert_eq!(normalize_sql("SELECT 1"), "SELECT 1");
         assert_eq!(normalize_sql("SELECT 1\nLIMIT 100;"), "SELECT 1\nLIMIT 100");
+    }
+
+    #[test]
+    fn wrappable_select_is_narrower_than_returning() {
+        // The only statements safe to wrap as a derived table.
+        assert!(is_wrappable_select("SELECT 1"));
+        assert!(is_wrappable_select(
+            "  with t as (select 1) select * from t"
+        ));
+        assert!(is_wrappable_select("-- pick\nSELECT 1"));
+        assert!(is_wrappable_select("/* c */ SELECT 1"));
+
+        // Returning, but NOT valid as a derived table — wrapping would be a
+        // parse error, so these must be excluded even though
+        // `is_returning_statement` accepts them.
+        for s in [
+            "SHOW TABLES",
+            "DESCRIBE t",
+            "DESC t",
+            "PRAGMA database_list",
+            "EXPLAIN SELECT 1",
+            "SUMMARIZE t",
+            "CALL pragma_version()",
+            "PIVOT t ON x USING sum(y)",
+            "UNPIVOT t ON a, b",
+            "TABLE t",
+            "FROM t",
+            "VALUES (1), (2)",
+        ] {
+            assert!(is_returning_statement(s), "precondition: {s} is returning");
+            assert!(!is_wrappable_select(s), "{s} must not be wrappable");
+        }
+
+        // DDL/DML are neither returning nor wrappable.
+        for s in [
+            "CREATE TABLE t (a INT)",
+            "INSERT INTO t VALUES (1)",
+            "SET x = 1",
+        ] {
+            assert!(!is_wrappable_select(s), "{s} must not be wrappable");
+        }
     }
 
     #[test]

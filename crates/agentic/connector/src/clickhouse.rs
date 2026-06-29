@@ -133,6 +133,10 @@ pub struct ClickHouseConnector {
     password: String,
     database: String,
     cached_schema: SchemaInfo,
+    /// Per-result byte ceiling sent with every query (see `MAX_RESULT_BYTES`).
+    /// A field rather than a constant so tests can force the overflow guard to
+    /// trip on a small result.
+    max_result_bytes: u64,
 }
 
 impl ClickHouseConnector {
@@ -156,7 +160,16 @@ impl ClickHouseConnector {
             password,
             database,
             cached_schema,
+            max_result_bytes: MAX_RESULT_BYTES,
         })
+    }
+
+    /// Override the per-result byte ceiling (default [`MAX_RESULT_BYTES`]).
+    /// Primarily for tests that need to trip the overflow guard on a small
+    /// result; production constructs via [`new`](Self::new) with the default.
+    pub fn with_max_result_bytes(mut self, bytes: u64) -> Self {
+        self.max_result_bytes = bytes;
+        self
     }
 
     /// Execute a SQL string against ClickHouse via HTTP, returning the parsed
@@ -168,6 +181,7 @@ impl ClickHouseConnector {
             &self.user,
             &self.password,
             &self.database,
+            self.max_result_bytes,
             sql,
         )
         .await
@@ -202,6 +216,33 @@ impl ClickHouseConnector {
 
 // ── HTTP helper ────────────────────────────────────────────────────────────────
 
+/// Server-side ceiling on the bytes ClickHouse will assemble for a single
+/// result set. Sent as a query-string setting on every result-returning POST,
+/// paired with `result_overflow_mode=break` so ClickHouse stops and returns a
+/// *partial* result instead of streaming an unbounded payload back.
+///
+/// Why this matters: the connector buffers the entire HTTP body
+/// (`response.text()`), JSON-parses it into `Vec<Vec<Value>>`, then
+/// re-materializes every cell into typed rows — roughly 3x the payload live at
+/// once. An uncapped `SELECT col FROM huge_table` therefore peaks in the
+/// gigabytes and OOM-kills the (multi-tenant) pod, taking every other tenant on
+/// the replica down with it. 256 MiB of result keeps the transient peak well
+/// under 1 GiB even with the 3x amplification. This is a last-resort floor: the
+/// hot ad-hoc paths also inject an outer row `LIMIT`, so it only bites callers
+/// that bypass that (or genuinely wide rows).
+const MAX_RESULT_BYTES: u64 = 256 * 1024 * 1024;
+
+/// ClickHouse HTTP settings (passed as URL query params) that bound a single
+/// result's memory footprint. `result_overflow_mode=break` makes ClickHouse
+/// stop and return a *partial* result on overflow rather than throwing, so a
+/// runaway scan degrades gracefully instead of failing or OOM-killing the pod.
+fn result_guard_params(max_result_bytes: u64) -> [(&'static str, String); 2] {
+    [
+        ("max_result_bytes", max_result_bytes.to_string()),
+        ("result_overflow_mode", "break".to_string()),
+    ]
+}
+
 /// POST `sql` to the ClickHouse HTTP endpoint and parse the JSONCompact response.
 async fn http_query(
     client: &reqwest::Client,
@@ -209,12 +250,17 @@ async fn http_query(
     user: &str,
     password: &str,
     database: &str,
+    max_result_bytes: u64,
     sql: &str,
 ) -> Result<ChResponse, ConnectorError> {
     let body = format!("{sql} FORMAT JSONCompact");
 
     let response = client
         .post(url)
+        // Memory guard: cap the assembled result and break (return partial)
+        // rather than throw, so a runaway scan degrades gracefully instead of
+        // OOM-killing the pod. See `MAX_RESULT_BYTES` / `result_guard_params`.
+        .query(&result_guard_params(max_result_bytes))
         .header("X-ClickHouse-User", user)
         .header("X-ClickHouse-Key", password)
         .header("X-ClickHouse-Database", database)
@@ -469,7 +515,17 @@ async fn fetch_schema(
          ORDER BY table, position"
     );
 
-    let resp = http_query(client, url, user, password, database, &schema_sql).await?;
+    // Schema introspection is small; the default ceiling is plenty.
+    let resp = http_query(
+        client,
+        url,
+        user,
+        password,
+        database,
+        MAX_RESULT_BYTES,
+        &schema_sql,
+    )
+    .await?;
 
     let mut map: HashMap<String, Vec<SchemaColumnInfo>> = HashMap::new();
     for row in &resp.data {
@@ -532,6 +588,19 @@ fn detect_join_keys(tables: &[SchemaTableInfo]) -> Vec<(String, String, String)>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn result_guard_caps_bytes_and_breaks() {
+        let params = result_guard_params(MAX_RESULT_BYTES);
+        // The byte cap must be present and non-zero (the pod OOM backstop).
+        assert_eq!(params[0].0, "max_result_bytes");
+        assert_eq!(params[0].1, MAX_RESULT_BYTES.to_string());
+        assert!(MAX_RESULT_BYTES > 0);
+        // Must be `break` (partial result), NOT `throw` — flipping this turns
+        // graceful degradation into hard query failures for large scans.
+        assert_eq!(params[1].0, "result_overflow_mode");
+        assert_eq!(params[1].1, "break");
+    }
 
     fn is_numeric(t: &str) -> bool {
         matches!(clickhouse_type_category(t), TypeCategory::Numeric)

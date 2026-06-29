@@ -34,7 +34,9 @@ use uuid::Uuid;
 const BATCH_SIZE: usize = 10_000;
 
 /// Convert a [`TypedRowStream`] into a Parquet file in the workspace results
-/// directory. Returns the generated filename (with `.parquet` extension).
+/// directory. Returns the generated filename (with `.parquet` extension) and
+/// the number of rows written — callers compare the count against their row
+/// cap to detect truncation.
 ///
 /// Column types map to Arrow as follows:
 ///
@@ -59,7 +61,7 @@ pub const EMPTY_RESULT_SENTINEL: &str = "__empty__";
 pub async fn typed_stream_to_parquet(
     stream: TypedRowStream,
     workspace_manager: &WorkspaceManager,
-) -> Result<String, OxyError> {
+) -> Result<(String, usize), OxyError> {
     let TypedRowStream { columns, mut rows } = stream;
 
     // No column schema means DDL/DML or a connector that couldn't describe the
@@ -68,7 +70,7 @@ pub async fn typed_stream_to_parquet(
     if columns.is_empty() {
         // Drain the row stream so the connector can clean up.
         while rows.next().await.is_some() {}
-        return Ok(EMPTY_RESULT_SENTINEL.to_string());
+        return Ok((EMPTY_RESULT_SENTINEL.to_string(), 0));
     }
 
     let arrow_schema: Arc<Schema> = Arc::new(build_arrow_schema(&columns));
@@ -112,6 +114,7 @@ pub async fn typed_stream_to_parquet(
     let col_count = columns.len();
     let mut buffer: Vec<Vec<TypedValue>> = Vec::with_capacity(BATCH_SIZE);
     let mut sent_any_batch = false;
+    let mut total_rows: usize = 0;
 
     while let Some(row) = rows.next().await {
         let row = row.map_err(|e| OxyError::DBError(format!("row stream: {e}")))?;
@@ -122,6 +125,7 @@ pub async fn typed_stream_to_parquet(
                 row.len()
             )));
         }
+        total_rows += 1;
         buffer.push(row);
         if buffer.len() >= BATCH_SIZE {
             let batch = build_record_batch(&arrow_schema, &columns, &buffer)?;
@@ -167,7 +171,7 @@ pub async fn typed_stream_to_parquet(
             .await;
     }
 
-    Ok(file_name)
+    Ok((file_name, total_rows))
 }
 
 /// Collect a [`TypedRowStream`] into the `Vec<Vec<String>>` shape used by

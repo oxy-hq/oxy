@@ -1,3 +1,4 @@
+import { Info } from "lucide-react";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Spinner } from "@/components/ui/shadcn/spinner";
@@ -102,7 +103,7 @@ export default function QueryResults() {
     );
   }
 
-  const { result, resultFile } = activeTab.results;
+  const { result, resultFile, truncated } = activeTab.results;
 
   return (
     <div
@@ -110,6 +111,16 @@ export default function QueryResults() {
       style={{ width: "100%", height: "100%" }}
     >
       <div className='flex flex-1 flex-col overflow-hidden'>
+        {truncated && (
+          <div className='flex shrink-0 items-center gap-2 border-b bg-muted/40 px-3 py-1.5 text-muted-foreground text-xs'>
+            <Info className='h-3.5 w-3.5 shrink-0' />
+            <span>
+              Showing the first 10,000 rows. Add a{" "}
+              <code className='rounded bg-muted px-1 font-mono'>LIMIT</code> or filters to see the
+              rest.
+            </span>
+          </div>
+        )}
         <div className='flex-1 overflow-hidden'>
           <SqlResultsTable result={result} resultFile={resultFile} />
         </div>

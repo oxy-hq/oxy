@@ -15,8 +15,15 @@ import fetchSSE from "./fetchSSE";
 
 // Response can be either:
 // - string[][] (default JSON format) - the result array directly
-// - { file_name: string } (Parquet format) - when result_format is "parquet"
-export type ExecuteSqlResponse = string[][] | { file_name: string };
+// - Parquet metadata (when result_format is "parquet") - a file handle plus
+//   `truncated`, which is `true` when the result hit the ad-hoc 10k row cap.
+export type ExecuteSqlParquetResponse = {
+  file_name: string;
+  is_preagg?: boolean;
+  execution_time_ms?: number;
+  truncated?: boolean;
+};
+export type ExecuteSqlResponse = string[][] | ExecuteSqlParquetResponse;
 
 export class DatabaseService {
   static async getDatabaseSchema(

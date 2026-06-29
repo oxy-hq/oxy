@@ -25,10 +25,17 @@ pub enum SemanticQueryResponse {
         file_name: String,
         is_preagg: bool,
         execution_time_ms: u64,
+        /// `true` when the result hit the ad-hoc row cap (`IDE_MAX_ROWS`) and
+        /// more rows exist in the warehouse. The IDE surfaces this so users
+        /// know they're seeing a capped view, not the full result.
+        #[serde(default)]
+        truncated: bool,
     },
 }
 use crate::server::service::retrieval::{ReindexInput, reindex};
-use agentic_connector::{ConnectorError, DatabaseConnector, QueryFailedDetails};
+use agentic_connector::{
+    ConnectorError, DatabaseConnector, QueryFailedDetails, is_wrappable_select,
+};
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -194,6 +201,44 @@ pub(crate) fn agentic_error_response(
     (status, extract::Json(body))
 }
 
+/// Row cap applied to ad-hoc IDE Database/SQL-tab queries. Matches the
+/// customer-app `/query` proxy `MAX_ROWS` so the two ad-hoc surfaces stay
+/// consistent. 10k rows is plenty for eyeballing data in the IDE and keeps a
+/// `SELECT col FROM huge_table` from pulling an entire column into the pod's
+/// heap (the connector fully materializes the result before returning).
+const IDE_MAX_ROWS: usize = 10_000;
+
+/// Wrap a `SELECT`/`WITH` query in an outer `LIMIT` so an unbounded scan can't
+/// OOM the pod, mirroring the customer-app `/query` proxy.
+///
+/// The gate is [`is_wrappable_select`], NOT `is_returning_statement`: only
+/// statements valid as a derived table get wrapped. DDL/DML (`CREATE`/`INSERT`/
+/// …) **and** introspection statements that return rows but are not legal
+/// subqueries (`SHOW`/`DESCRIBE`/`PRAGMA`/`EXPLAIN`/`SUMMARIZE`/`CALL`/`PIVOT`/
+/// `UNPIVOT`/`TABLE`/`FROM`-shorthand) pass through untouched. Wrapping those
+/// would be a parse error — and DuckDB (the default local IDE backend) and
+/// Postgres run them unwrapped today, so wrapping would regress them. They're
+/// cheap; the connector byte guard is the OOM backstop for anything uncapped.
+///
+/// Returns the SQL to run plus whether a cap was applied. When capped, the
+/// caller compares the returned row count to `IDE_MAX_ROWS` to decide if the
+/// result was actually truncated (so the IDE can flag a partial view).
+///
+/// Note: trailing `;` is stripped before wrapping. A genuine multi-statement
+/// string whose first keyword is `SELECT` (e.g. `SELECT 1; DROP TABLE x`) wraps
+/// to invalid SQL and *fails* rather than executing — an acceptable (safe)
+/// outcome for what is already unsupported on the single-statement full path.
+fn cap_ide_result_rows(sql: &str) -> (String, bool) {
+    if is_wrappable_select(sql) {
+        let trimmed = sql.trim_end().trim_end_matches(';').trim_end();
+        let wrapped =
+            format!("SELECT * FROM (\n{trimmed}\n) AS oxy_ide_query LIMIT {IDE_MAX_ROWS}");
+        (wrapped, true)
+    } else {
+        (sql.to_string(), false)
+    }
+}
+
 /// Execute a SQL query through `agentic-connector` and shape the response
 /// according to the requested `result_format`. Every `DatabaseType` in
 /// `oxy::config::model` has a landing spot in `OxyProjectContext`, so this
@@ -209,9 +254,19 @@ pub(crate) async fn run_via_agentic_connector(
         .with_role(role);
     let connector = ctx.build_connector_for(&payload.database).await?;
 
+    // The 10k cap applies to *every* caller of this shared function — not just
+    // the IDE Database tab, but also `/semantic`, `world_model_graph`, and the
+    // metric-tree runner. Those internal callers already build their own,
+    // smaller `LIMIT`, so the outer wrap is a harmless ceiling. Caveat: the
+    // JSON branch below can't carry the `truncated` flag (the variant is a bare
+    // `Vec<Vec<String>>`), so a programmatic JSON consumer capped at exactly
+    // 10k is not signalled — acceptable since the IDE (the only surface that
+    // shows truncation to a human) always requests Parquet.
+    let (sql_to_run, capped) = cap_ide_result_rows(&payload.sql);
+
     let query_start = std::time::Instant::now();
     let stream = connector
-        .execute_query_full(&payload.sql)
+        .execute_query_full(&sql_to_run)
         .await
         .map_err(SqlExecuteError::Connector)?;
     let execution_time_ms = query_start.elapsed().as_millis() as u64;
@@ -222,7 +277,7 @@ pub(crate) async fn run_via_agentic_connector(
         .unwrap_or(&ResultFormat::Json);
     match result_format {
         ResultFormat::Parquet => {
-            let file_name = typed_stream_to_parquet(stream, workspace_manager)
+            let (file_name, row_count) = typed_stream_to_parquet(stream, workspace_manager)
                 .await
                 .map_err(SqlExecuteError::Other)?;
             if file_name == EMPTY_RESULT_SENTINEL {
@@ -234,6 +289,10 @@ pub(crate) async fn run_via_agentic_connector(
                     file_name,
                     is_preagg: false,
                     execution_time_ms,
+                    // Only a capped (returning) query that filled the cap is a
+                    // genuine truncation; an exactly-`IDE_MAX_ROWS` natural
+                    // result reads as truncated too, which is acceptable.
+                    truncated: capped && row_count >= IDE_MAX_ROWS,
                 })
             }
         }
@@ -492,4 +551,90 @@ async fn handle_omni_sync(workspace: &WorkspaceManager) -> Result<(), OxyError> 
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn caps_returning_selects() {
+        let (out, capped) = cap_ide_result_rows("SELECT guid FROM order_selections");
+        assert!(capped);
+        assert!(out.contains("AS oxy_ide_query LIMIT 10000"), "{out}");
+        assert!(out.contains("SELECT guid FROM order_selections"), "{out}");
+    }
+
+    #[test]
+    fn caps_with_cte() {
+        let (out, capped) = cap_ide_result_rows("WITH t AS (SELECT 1) SELECT * FROM t");
+        assert!(capped);
+        assert!(out.contains("LIMIT 10000"), "{out}");
+    }
+
+    #[test]
+    fn strips_trailing_semicolon_before_wrapping() {
+        let (out, capped) = cap_ide_result_rows("SELECT 1;");
+        assert!(capped);
+        // The inner statement must not retain the `;`, which would make
+        // `SELECT * FROM (SELECT 1;) ...` a syntax error.
+        assert!(
+            out.contains("SELECT 1\n) AS oxy_ide_query LIMIT 10000"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn passes_ddl_through_untouched() {
+        // DDL/DML must NOT be wrapped — wrapping turns them into syntax errors,
+        // and the IDE legitimately runs these. They are also not "capped", so no
+        // truncation is ever reported for them.
+        for sql in [
+            "CREATE TABLE t (id Int64)",
+            "INSERT INTO t VALUES (1)",
+            "DROP TABLE t",
+            "ALTER TABLE t ADD COLUMN c Int64",
+            "SET max_threads = 4",
+        ] {
+            let (out, capped) = cap_ide_result_rows(sql);
+            assert_eq!(out, sql, "DDL/DML should pass through");
+            assert!(!capped, "DDL/DML must not be marked capped: {sql}");
+        }
+    }
+
+    #[test]
+    fn ignores_leading_comments_when_classifying() {
+        // A leading comment must not hide the SELECT keyword from the gate.
+        let (out, capped) = cap_ide_result_rows("-- pick guids\nSELECT guid FROM t");
+        assert!(capped);
+        assert!(out.contains("LIMIT 10000"), "{out}");
+    }
+
+    #[test]
+    fn passes_introspection_through_unwrapped() {
+        // These return rows but are NOT valid derived tables — wrapping them in
+        // `SELECT * FROM (...)` is a parse error in every dialect. DuckDB (the
+        // default local IDE backend) and Postgres run them directly today, so
+        // they MUST pass through unwrapped. The connector byte guard is the OOM
+        // backstop. Regression guard for the over-broad `is_returning_statement`
+        // gate that this PR replaced with `is_wrappable_select`.
+        for sql in [
+            "SHOW TABLES",
+            "DESCRIBE my_table",
+            "DESC my_table",
+            "PRAGMA database_list",
+            "EXPLAIN SELECT 1",
+            "SUMMARIZE my_table",
+            "CALL pragma_version()",
+            "PIVOT t ON x USING sum(y)",
+            "UNPIVOT t ON a, b",
+            "TABLE my_table",
+            "FROM my_table",
+            "VALUES (1), (2)",
+        ] {
+            let (out, capped) = cap_ide_result_rows(sql);
+            assert_eq!(out, sql, "introspection must pass through unwrapped: {sql}");
+            assert!(!capped, "introspection must not be marked capped: {sql}");
+        }
+    }
 }
