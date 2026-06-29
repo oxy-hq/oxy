@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useWmFilterCounts, useWmInstanceDetail, useWorldModel } from "@/hooks/api/useWorldModel";
 import type { WmFilterSeed, WmInstance, WmSelection } from "@/types/worldModel";
 import { FilterPill } from "./components/FilterPill";
@@ -97,15 +98,16 @@ export default function WorldModelView() {
 
   if (isLoading) {
     return (
-      <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
-        Loading world model…
+      <div className='flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground'>
+        <Spinner className='size-6' />
+        <p className='text-sm'>Loading world model…</p>
       </div>
     );
   }
 
   if (error || !model) {
     return (
-      <div className='flex h-full items-center justify-center text-destructive text-sm'>
+      <div className='flex h-full w-full items-center justify-center text-destructive text-sm'>
         {error instanceof Error ? error.message : "Failed to load world model"}
       </div>
     );
