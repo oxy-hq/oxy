@@ -34,6 +34,7 @@ Three deployment modes — almost every bug report depends on which one:
 - **Customer Apps Platform** (code-first React+Vite bundles, shipped with `oxy publish`) is **not** the same thing as YAML **Data Apps** (`.app.yml` dashboards).
 - Four similarly-named third-party engines that are easy to confuse: **airlayer** (semantic layer), **Airform** (dbt-style modeling), **Airway** (ELT), **Airhouse** (a warehouse + connector).
 - **Verified Query** = a plain `.sql` file the analytics agent runs *as-is* when it matches the question (bypassing LLM SQL generation); surfaces a **Verified** badge.
+- **Two subdomain schemes, easy to confuse** — an **org subdomain** (`<org-slug>.oxygen-hq.com`) boots the whole product pre-scoped to that org's default project (skips the org/workspace picker), serving its custom apps under `/a/<slug>/`; a **customer-app subdomain** (`<org>--<slug>.customer-apps.oxygen-hq.com`) serves a single externally-hosted custom app at its own root.
 
 ---
 
@@ -48,14 +49,15 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 
 ## Surfaces (for "which component is this?" triage)
 
-- **Home / HQ launcher** (`/`, `/home`) — apps-first landing: org-branded **HQ** heading, a grid of **custom-app cards**, a status line, and a muted **Recent activity** list. A bottom-center **Ask pill** (⌘K) streams answers into a right-side **thread drawer** without navigating ("Full view" promotes to `/threads/:id`). Zero-app workspaces fall back to a greeting + chat composer. The only chrome is a 48px **icon rail** — **no left sidebar, no top bar**; interior pages are reached from the rail.
+- **Home / HQ launcher** (`/`, `/home`) — apps-first landing: org-branded **HQ** heading, a grid of **custom-app cards**, a status line, and a **Recent activity** list. **Ask Oxygen** (⌘K) opens a resizable right-side **drawer** that compacts the page beside it (not a floating overlay); "Full view" promotes to `/threads/:id`. Chrome is a **universal top bar** (Workspace/Page breadcrumb + status) plus a 48px **icon rail** (Home · **Chat** · Apps); no left sidebar. The rail's **Chat** entry was formerly "Threads".
 - **Thread** (`/threads/:id`) — conversation; messages carry free-text plus structured artifacts (the `execute_sql` artifact shows the SQL the agent ran).
-- **Workflows** (`/workflows/:id`) — a Procedure as a node diagram (node border color = step status; emerald = success).
+- **Workflows** (`/workflows/:id`) — a Procedure as a node diagram (node border color = step status).
 - **Apps** (`/apps/:id`) — a Data App; auto-runs on load; Controls inject Jinja values and re-run dependent tasks; results cached by parameter hash (`?refresh` forces re-run).
 - **Developer Portal / IDE** (`/ide`) — Monaco editor; sidebar tabs **Files / Objects / Database (SQL IDE) / Modeling / Pipelines / Observability**. Git flow: protected `main` auto-redirects edits to a new branch; `oxy serve --readonly` makes all writes 405.
 - **Orchestrator Dashboard** — Overview / Jobs / Runs across workflows, ELT, and agents.
 - **Unified Settings Dialog** — one modal for org-level + workspace-level settings, incl. **Schedules** (cron builder targeting workflows / Airway pipelines / agents).
 - **Agent Testing** (`/tests`), **Context Graph** (`/context-graph`).
+- **World Model Graph** (Globe icon in the rail) — interactive map of the semantic layer (entities, their measures, and how measures promote across the entity hierarchy), driven by a `.world-model.yml` display config. Distinct from the **Context Graph** and the **Metric Tree** — three different graph surfaces.
 
 ---
 
@@ -69,7 +71,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Airhouse** — first-class connector with **ephemeral** credentials (workspaces mint short-lived creds from a service account; no rotation surface).
 - **Metric Tree & Anomaly Monitoring** — a `.monitor.yml` defines monitors that watch a measure over time (per-segment via `filters`/`group_by`); detected anomalies land in the **Insights Inbox** with AI root-cause, and the analytics agent can list/run/explain them in chat. The **Metric Tree** (a Semantic Layer IDE tab consolidating the semantic explorer) decomposes a top-line metric into driver metrics. Scans exclude the current *incomplete* period, so a partial day/week never reads as a false drop.
 - **Authentication** — magic-link only (passwordless, AWS SES); legacy password auth removed.
-- **Design system** — three-layer tokens; Light / Dark / System (Light default). Use semantic tokens, not raw hex; brand-blue chart ramps auto-invert in dark mode; **emerald is reserved for workflow-node success only**.
+- **Design system** — three-layer tokens; Light / Dark / System (Light default). Use semantic tokens, not raw hex; **emerald is reserved for workflow-node success only**.
 
 ---
 
