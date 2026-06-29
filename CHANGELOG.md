@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.91] - 2026-06-29
+
+### 🐛 Bug Fixes
+
+- Scope serve port env vars (OXY_HTTP_PORT) to dodge k8s service-link collision (#2639)
+
 ## [0.5.90] - 2026-06-29
 
 ### 🚀 Features
@@ -14,6 +20,10 @@ All notable changes to this project will be documented in this file.
 - Redirect unknown org-subdomain hosts to the app host (#2628)
 - Stop unbounded ClickHouse IDE queries from OOM-killing the pod (#2636)
 - Web-app world model loading state (#2633)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.90 (#2635)
 
 ## [0.5.89] - 2026-06-28
 
