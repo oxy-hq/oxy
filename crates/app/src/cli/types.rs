@@ -8,8 +8,22 @@ pub struct ServeArgs {
     /// Port number for the web application server
     ///
     /// Specify which port to bind the Oxy web interface.
-    /// Reads `OXY_PORT` when the flag is omitted; default is 3000.
-    #[clap(long, env = "OXY_PORT", default_value_t = 3000)]
+    /// Reads `OXY_HTTP_PORT` when the flag is omitted; default is 3000.
+    ///
+    /// NAME MATTERS — do NOT use `OXY_PORT` or `OXY_<role>_PORT`. Kubernetes
+    /// injects Docker-link service-discovery vars `<SVCNAME>_PORT=tcp://<ip>:<port>`
+    /// into every pod, for every Service in the namespace. So `OXY_<X>_PORT` is
+    /// silently overwritten with `tcp://...` whenever a Service named `oxy-<x>`
+    /// exists, and clap then can't parse it as a u16 — crashlooping the pod.
+    ///   - `OXY_PORT` collided with the prod Service `oxy` (incident 2026-06-29,
+    ///     release 0.5.90).
+    ///   - `OXY_SERVE_PORT` would collide with a future `oxy-serve` fleet Service
+    ///     (split-fleet design, internal-docs/multi-instance-fleet.md) — avoided.
+    /// `http` is not a fleet role (serve/ide/worker), so `oxy-http` is not a
+    /// plausible Service name. The durable, name-independent fix is
+    /// `enableServiceLinks: false` on the pod spec (oxy-app Helm chart). See
+    /// DEVELOPMENT.md "Kubernetes env-var collision".
+    #[clap(long, env = "OXY_HTTP_PORT", default_value_t = 3000)]
     pub port: u16,
     /// Host address to bind the web application server
     ///
@@ -34,8 +48,9 @@ pub struct ServeArgs {
     ///
     /// The internal port serves the same API routes without authentication.
     /// Binds to 127.0.0.1 by default for security. Set to 0 to disable.
-    /// Reads `OXY_INTERNAL_PORT` when the flag is omitted; default is 3001.
-    #[clap(long, env = "OXY_INTERNAL_PORT", default_value_t = 3001)]
+    /// Reads `OXY_HTTP_INTERNAL_PORT` when the flag is omitted; default is 3001.
+    /// (Not `OXY_INTERNAL_PORT` — same Kubernetes service-link reason as `port`.)
+    #[clap(long, env = "OXY_HTTP_INTERNAL_PORT", default_value_t = 3001)]
     pub internal_port: u16,
 
     /// Host address to bind the internal API server

@@ -95,12 +95,39 @@ All ports are configurable from the repo-root `.env`, which **both** the backend
 `loadEnv`) load. The flags still win when passed explicitly; otherwise the env
 var is used, then the default.
 
-| Variable               | Used by  | Default                 | Purpose                                              |
-| ---------------------- | -------- | ----------------------- | ---------------------------------------------------- |
-| `OXY_PORT`             | backend  | `3000`                  | API server port (same as `serve --port`)             |
-| `OXY_INTERNAL_PORT`    | backend  | `3001`                  | internal port (same as `serve --internal-port`)      |
-| `OXY_DEV_PORT`         | frontend | `5173`                  | Vite dev server port                                 |
-| `OXY_DEV_PROXY_TARGET` | frontend | `http://localhost:3000` | backend the Vite dev server proxies API requests to  |
+| Variable                 | Used by  | Default                 | Purpose                                             |
+| ------------------------ | -------- | ----------------------- | --------------------------------------------------- |
+| `OXY_HTTP_PORT`          | backend  | `3000`                  | API server port (same as `serve --port`)            |
+| `OXY_HTTP_INTERNAL_PORT` | backend  | `3001`                  | internal port (same as `serve --internal-port`)     |
+| `OXY_DEV_PORT`           | frontend | `5173`                  | Vite dev server port                                |
+| `OXY_DEV_PROXY_TARGET`   | frontend | `http://localhost:3000` | backend the Vite dev server proxies API requests to |
+
+> ### Kubernetes env-var collision
+>
+> These vars are named `OXY_HTTP_*` — **not** `OXY_PORT` / `OXY_INTERNAL_PORT`,
+> and **not** `OXY_SERVE_*`. Kubernetes injects Docker-link service-discovery
+> vars of the form `<SVCNAME>_PORT=tcp://<clusterIP>:<port>` into every pod, for
+> every Service in the namespace. So an env var `OXY_<X>_PORT` is silently
+> overwritten with `tcp://...` whenever a Service named `oxy-<x>` exists — and
+> clap then can't parse `tcp://...` as a port, crashlooping the pod (exit 2,
+> `invalid digit found in string`).
+>
+> - `OXY_PORT` collided with the prod Service `oxy`. It shipped in release
+>   **0.5.90** and took prod down on **2026-06-29**. Staging was unaffected only
+>   because its Service is named `oxy-staging` (→ `OXY_STAGING_PORT`), so the bug
+>   passed pre-prod undetected.
+> - `OXY_SERVE_PORT` is **also** unsafe: the split-fleet design
+>   (`internal-docs/multi-instance-fleet.md`) adds `serve`/`ide`/`worker` roles,
+>   and a Service fronting the serve replicas (plausibly `oxy-serve`) would
+>   inject `OXY_SERVE_PORT` — the identical crashloop. `http` is not a fleet
+>   role, so `oxy-http` is not a plausible Service name.
+>
+> Rule of thumb: never name an env var `OXY_PORT` or `OXY_<role>_PORT` where
+> `oxy`/`oxy-<role>` could be a Service name. **The durable, name-independent fix
+> is `enableServiceLinks: false` on the pod spec** (in the `oxy-app` Helm chart,
+> `ghcr.io/oxy-hq/helm-charts`), which disables the injection mechanism entirely;
+> the `OXY_HTTP_*` naming is just defense-in-depth for deployments that don't set
+> it.
 
 Give each checkout its own `.env` with a non-overlapping set of ports, and point
 that checkout's frontend at its own backend. For example:
@@ -108,8 +135,8 @@ that checkout's frontend at its own backend. For example:
 **Checkout A** — `.env`:
 
 ```bash
-OXY_PORT=3000
-OXY_INTERNAL_PORT=3001
+OXY_HTTP_PORT=3000
+OXY_HTTP_INTERNAL_PORT=3001
 OXY_DEV_PORT=5173
 OXY_DEV_PROXY_TARGET=http://localhost:3000
 ```
@@ -117,8 +144,8 @@ OXY_DEV_PROXY_TARGET=http://localhost:3000
 **Checkout B** — `.env`:
 
 ```bash
-OXY_PORT=3100
-OXY_INTERNAL_PORT=3101
+OXY_HTTP_PORT=3100
+OXY_HTTP_INTERNAL_PORT=3101
 OXY_DEV_PORT=5273
 OXY_DEV_PROXY_TARGET=http://localhost:3100
 ```
