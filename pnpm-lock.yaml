@@ -24,11 +24,11 @@ importers:
         specifier: ^17.0.8
         version: 17.0.8
       prettier:
-        specifier: ^3.8.4
-        version: 3.8.4
+        specifier: ^3.9.1
+        version: 3.9.1
       turbo:
-        specifier: ^2.9.18
-        version: 2.9.18
+        specifier: ^2.10.0
+        version: 2.10.0
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -58,13 +58,13 @@ importers:
         version: 19.2.17
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.62.0
-        version: 8.62.0(@typescript-eslint/parser@8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)
+        version: 8.62.0(@typescript-eslint/parser@8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)
       '@typescript-eslint/parser':
         specifier: ^8.62.0
-        version: 8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)
+        version: 8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)
       eslint:
-        specifier: ^10.5.0
-        version: 10.5.0(jiti@2.7.0)
+        specifier: ^10.6.0
+        version: 10.6.0(jiti@2.7.0)
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -334,8 +334,8 @@ importers:
         version: 5.0.14(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
     devDependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.104.2
-        version: 0.104.2
+        specifier: ^0.106.0
+        version: 0.106.0
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -405,8 +405,8 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@anthropic-ai/sdk@0.104.2':
-    resolution: {integrity: sha512-s1wEVDAtEwkS7Ajgep6PZKJLFqybRkmD3Byz+iVVsSpbDY0gjROXE9aOft6V3PMqynn3NTcycV5whga9tCzmKA==}
+  '@anthropic-ai/sdk@0.106.0':
+    resolution: {integrity: sha512-ufwVvYNDBj2dzOGupBCTaNzBLxqcTnGOzI4z8Wouxlt+mT3J3HuOmatgCy1VmwCHOUueqZ41ERhm0O99OUcbWA==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -2393,33 +2393,33 @@ packages:
     peerDependencies:
       '@testing-library/dom': '>=7.21.4'
 
-  '@turbo/darwin-64@2.9.18':
-    resolution: {integrity: sha512-9f27peFu16ur8c0v9nUFUEyBnbKuuFsUTjHFWfmwGfzySBXbHwzU44QhZon6Mznz0cHsIr3984NQj/bVrnGSRw==}
+  '@turbo/darwin-64@2.10.0':
+    resolution: {integrity: sha512-EwvHThXzpY0KGd1/NAmuewI5D+aVa3Rl/OlxE36yfjUKb/+ySrfJrSlEFt8aD1OXwnnaHnQnPKHFndor0Zxlsg==}
     cpu: [x64]
     os: [darwin]
 
-  '@turbo/darwin-arm64@2.9.18':
-    resolution: {integrity: sha512-9A6TMRq/Ib+QnbhLlgkhOm+624wO4pzSQ/yQviQfWHOlFvaYxdnIAYmu2H6TS6y7kSVL0DvzNe04NbESTOzFVQ==}
+  '@turbo/darwin-arm64@2.10.0':
+    resolution: {integrity: sha512-9d2fTyyG0lf5Wq1bwJA9qUaeecViMkLcdctWaMMmCkxZ/JqypmqOwK3W6vmejeKVgkr06gSoiX8bD+xN5Jpxcg==}
     cpu: [arm64]
     os: [darwin]
 
-  '@turbo/linux-64@2.9.18':
-    resolution: {integrity: sha512-zCdIDtz69AnbYh913elJRRoF3QY5aa2HNnf+4rAkc7bQ+tWujiDkCNV7stazOUPggaDvhKIf2Z87qHftTeXSkw==}
+  '@turbo/linux-64@2.10.0':
+    resolution: {integrity: sha512-sZBtjMuufitanjzi6UssoUpJMnnPlLMcdcJj3m3ptNsSq31Xh7MnjhwA5nWvLDTfEFg8GPcbYFXMo8vSdKRfqQ==}
     cpu: [x64]
     os: [linux]
 
-  '@turbo/linux-arm64@2.9.18':
-    resolution: {integrity: sha512-Va1kXI04naMgYwqv/5Dfa36dTDx8015U7oaQAjrXa45ua9OoFjSV4OmvkML4EmXvUclQHCiBRbY8bvd0jV7eAg==}
+  '@turbo/linux-arm64@2.10.0':
+    resolution: {integrity: sha512-vkq/Z8R+1DQ+kifWFa810IjRy2NNBVvha3cg9sWA3nFh6nnGrHSMnnJKrzH7c/No9kq4Jb55Ru44YKsCSBgrKg==}
     cpu: [arm64]
     os: [linux]
 
-  '@turbo/windows-64@2.9.18':
-    resolution: {integrity: sha512-m0kDhZANxSNz9ck1ybogFscHabriAsp4eDFNrN/1H5WrgTF7b3VlcPZnhuO3v2+E2KnCbeAc+UUT10BZZHdDKw==}
+  '@turbo/windows-64@2.10.0':
+    resolution: {integrity: sha512-CRUEguLWxFQHptYZS7HjPhNhAFawfea07iR+xAQ5e4klgLrPCMdexBkXwSCwOxqTFknJ7RZFN3gOaADsw+Gttg==}
     cpu: [x64]
     os: [win32]
 
-  '@turbo/windows-arm64@2.9.18':
-    resolution: {integrity: sha512-nUdR8WqoomUys9iIQmG45TMiizJ+5BV8egSeLLZba/AWblyp3fVBcIH1kSE58OtK4g2YzbMJEth6Ttv9w5rqMA==}
+  '@turbo/windows-arm64@2.10.0':
+    resolution: {integrity: sha512-dVHGaf9F8twzgibcBqKoADT/LLqf9++jDb+hq/LPWWaOmRpp4M+/pVOm7vy4z9D++xg8eaxWLT0+wQxFwhYu9A==}
     cpu: [arm64]
     os: [win32]
 
@@ -3278,8 +3278,8 @@ packages:
     resolution: {integrity: sha512-tD40eHxA35h0PEIZNeIjkHoDR4YjjJp34biM0mDvplBe//mB+IHCqHDGV7pxF+7MklTvighcCPPZC7ynWyjdTA==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
 
-  eslint@10.5.0:
-    resolution: {integrity: sha512-1y+7C+vi12bUK1IpZeaV3gsH9fHLBmPvYmPx42pvT/E9yG0IC8g3PUZZgp0+JLJl7ZDK0flc2gc+Aw9dpCvIsQ==}
+  eslint@10.6.0:
+    resolution: {integrity: sha512-6lVbcqSodALYo+4ELD0heG6lFiFxnLMuLkiMi2qV8LMp54N8tE8FT1GMH+ev4Ti00nFjNze2+Su6DsV5OQW3Dg==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
     hasBin: true
     peerDependencies:
@@ -4327,8 +4327,8 @@ packages:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
 
-  prettier@3.8.4:
-    resolution: {integrity: sha512-N2MylSdi48+5N/6S5j+maeHbUSIzzZ5uOcX5Hm4QpV8Dkb1HFjfAKTKX6yNPJQD9AhcT3ifHNB66tWTTJDi11Q==}
+  prettier@3.9.1:
+    resolution: {integrity: sha512-ppiDo2CSwexck1eyZUwJHg/N3nf1+6IRCv7W/VJ5vaLnVCmB7+3CdRfMwoCHBBX6xTrREDTksZ4OZl5SSf4zXA==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -4940,8 +4940,8 @@ packages:
   tty-browserify@0.0.1:
     resolution: {integrity: sha512-C3TaO7K81YvjCgQH9Q1S3R3P3BtN3RIM8n+OvX4il1K1zgE8ZhI0op7kClgkxtutIE8hQrcrHBXvIheqKUUCxw==}
 
-  turbo@2.9.18:
-    resolution: {integrity: sha512-bwabv6PupzeavybzEoArBAkwq5fnzwf8OFnRtpHwnviFWuwJPFxtyH+aVp36TmIqK3aYYgtTJ3J0m2ysxxSzQg==}
+  turbo@2.10.0:
+    resolution: {integrity: sha512-o016H9PPtuH2deb3mh3Vci3Avfi9UYgM/RONQisY7HnloupP0IFSbFS3gFYJgFJP8nwBrByHWFQIDa8T2zIXPw==}
     hasBin: true
 
   type-check@0.4.0:
@@ -5303,7 +5303,7 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@anthropic-ai/sdk@0.104.2':
+  '@anthropic-ai/sdk@0.106.0':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
@@ -5732,9 +5732,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@eslint-community/eslint-utils@4.9.1(eslint@10.5.0(jiti@2.7.0))':
+  '@eslint-community/eslint-utils@4.9.1(eslint@10.6.0(jiti@2.7.0))':
     dependencies:
-      eslint: 10.5.0(jiti@2.7.0)
+      eslint: 10.6.0(jiti@2.7.0)
       eslint-visitor-keys: 3.4.3
 
   '@eslint-community/regexpp@4.12.2': {}
@@ -7157,22 +7157,22 @@ snapshots:
     dependencies:
       '@testing-library/dom': 10.4.1
 
-  '@turbo/darwin-64@2.9.18':
+  '@turbo/darwin-64@2.10.0':
     optional: true
 
-  '@turbo/darwin-arm64@2.9.18':
+  '@turbo/darwin-arm64@2.10.0':
     optional: true
 
-  '@turbo/linux-64@2.9.18':
+  '@turbo/linux-64@2.10.0':
     optional: true
 
-  '@turbo/linux-arm64@2.9.18':
+  '@turbo/linux-arm64@2.10.0':
     optional: true
 
-  '@turbo/windows-64@2.9.18':
+  '@turbo/windows-64@2.10.0':
     optional: true
 
-  '@turbo/windows-arm64@2.9.18':
+  '@turbo/windows-arm64@2.10.0':
     optional: true
 
   '@tybys/wasm-util@0.10.3':
@@ -7283,15 +7283,15 @@ snapshots:
 
   '@types/unist@3.0.3': {}
 
-  '@typescript-eslint/eslint-plugin@8.62.0(@typescript-eslint/parser@8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)':
+  '@typescript-eslint/eslint-plugin@8.62.0(@typescript-eslint/parser@8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
-      '@typescript-eslint/parser': 8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/parser': 8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)
       '@typescript-eslint/scope-manager': 8.62.0
-      '@typescript-eslint/type-utils': 8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)
-      '@typescript-eslint/utils': 8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/type-utils': 8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.62.0
-      eslint: 10.5.0(jiti@2.7.0)
+      eslint: 10.6.0(jiti@2.7.0)
       ignore: 7.0.5
       natural-compare: 1.4.0
       ts-api-utils: 2.5.0(typescript@6.0.3)
@@ -7299,14 +7299,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/parser@8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)':
+  '@typescript-eslint/parser@8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/scope-manager': 8.62.0
       '@typescript-eslint/types': 8.62.0
       '@typescript-eslint/typescript-estree': 8.62.0(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.62.0
       debug: 4.4.3
-      eslint: 10.5.0(jiti@2.7.0)
+      eslint: 10.6.0(jiti@2.7.0)
       typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
@@ -7329,13 +7329,13 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  '@typescript-eslint/type-utils@8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)':
+  '@typescript-eslint/type-utils@8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/types': 8.62.0
       '@typescript-eslint/typescript-estree': 8.62.0(typescript@6.0.3)
-      '@typescript-eslint/utils': 8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)
       debug: 4.4.3
-      eslint: 10.5.0(jiti@2.7.0)
+      eslint: 10.6.0(jiti@2.7.0)
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
     transitivePeerDependencies:
@@ -7358,13 +7358,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/utils@8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)':
+  '@typescript-eslint/utils@8.62.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
-      '@eslint-community/eslint-utils': 4.9.1(eslint@10.5.0(jiti@2.7.0))
+      '@eslint-community/eslint-utils': 4.9.1(eslint@10.6.0(jiti@2.7.0))
       '@typescript-eslint/scope-manager': 8.62.0
       '@typescript-eslint/types': 8.62.0
       '@typescript-eslint/typescript-estree': 8.62.0(typescript@6.0.3)
-      eslint: 10.5.0(jiti@2.7.0)
+      eslint: 10.6.0(jiti@2.7.0)
       typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
@@ -8133,9 +8133,9 @@ snapshots:
 
   eslint-visitor-keys@5.0.1: {}
 
-  eslint@10.5.0(jiti@2.7.0):
+  eslint@10.6.0(jiti@2.7.0):
     dependencies:
-      '@eslint-community/eslint-utils': 4.9.1(eslint@10.5.0(jiti@2.7.0))
+      '@eslint-community/eslint-utils': 4.9.1(eslint@10.6.0(jiti@2.7.0))
       '@eslint-community/regexpp': 4.12.2
       '@eslint/config-array': 0.23.5
       '@eslint/config-helpers': 0.6.0
@@ -9233,7 +9233,7 @@ snapshots:
       monaco-types: 0.1.2
       monaco-worker-manager: 2.0.1(monaco-editor@0.55.1)
       path-browserify: 1.0.1
-      prettier: 3.8.4
+      prettier: 3.9.1
       proxy-disposable: 1.0.0
       vscode-languageserver-textdocument: 1.0.12
       vscode-languageserver-types: 3.18.0
@@ -9451,7 +9451,7 @@ snapshots:
 
   prelude-ls@1.2.1: {}
 
-  prettier@3.8.4: {}
+  prettier@3.9.1: {}
 
   pretty-format@27.5.1:
     dependencies:
@@ -10150,14 +10150,14 @@ snapshots:
 
   tty-browserify@0.0.1: {}
 
-  turbo@2.9.18:
+  turbo@2.10.0:
     optionalDependencies:
-      '@turbo/darwin-64': 2.9.18
-      '@turbo/darwin-arm64': 2.9.18
-      '@turbo/linux-64': 2.9.18
-      '@turbo/linux-arm64': 2.9.18
-      '@turbo/windows-64': 2.9.18
-      '@turbo/windows-arm64': 2.9.18
+      '@turbo/darwin-64': 2.10.0
+      '@turbo/darwin-arm64': 2.10.0
+      '@turbo/linux-64': 2.10.0
+      '@turbo/linux-arm64': 2.10.0
+      '@turbo/windows-64': 2.10.0
+      '@turbo/windows-arm64': 2.10.0
 
   type-check@0.4.0:
     dependencies:
