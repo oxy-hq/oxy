@@ -25,8 +25,11 @@
 //!      unauthenticated navigation to the **app host** login (centralized
 //!      auth — one OAuth callback for the whole fleet, no per-org domain).
 //!
-//! Unknown / disabled subdomain → 302 to the app host root. In local dev
-//! (no org zone derivable) the middleware is entirely inert.
+//! Unknown / disabled subdomain — or a reserved infra label that isn't the
+//! product host (e.g. `aip` before the `app→aip` rename, `www`, `cdn`) — →
+//! 302 to the app host root. Only the canonical product host (`app`, tracked
+//! via `OXY_API_URL` so it follows the rename) and `/api/*` pass through. In
+//! local dev (no org zone derivable) the middleware is entirely inert.
 
 use axum::body::Body;
 use axum::extract::Request;
@@ -59,8 +62,10 @@ pub struct OrgSubdomainCtx {
 // ── Reserved labels ──────────────────────────────────────────────────────
 
 /// First labels that must never resolve to an org subdomain — infra hosts,
-/// the product/admin host, and the customer-apps zone. Anything here on the
-/// org zone passes straight through to its normal handler.
+/// the product/admin host, and the customer-apps zone. Used in two places: the
+/// dispatch path (only the *product* host serves through; every other reserved
+/// label bounces to the app host) and the org-subdomain enable guard (block a
+/// slug from squatting an infra label).
 const RESERVED_SUBDOMAINS: &[&str] = &[
     "app", "aip", "www", "api", "auth", "admin", "docs", "static", "assets", "cdn", "mail",
     "status", "login", "signup", "help", "support", "blog", "mx", "ns",
@@ -132,21 +137,53 @@ pub fn parse_org_subdomain(host: &str) -> Option<String> {
     parse_org_subdomain_in_zone(host, &zone)
 }
 
-/// Pure core of [`parse_org_subdomain`] — testable without env.
-pub fn parse_org_subdomain_in_zone(host: &str, zone: &str) -> Option<String> {
+/// The in-zone first label, whatever it is (`app`, `aip`, `pokehouse`, …),
+/// reserved or not. Strips a port and a trailing FQDN dot; rejects a bare
+/// zone, an empty prefix, or a multi-label prefix (`a.b.<zone>` — the
+/// wildcard-hijack shape also guarded in customer_apps_host_dispatch). The
+/// dispatch middleware needs the raw label to tell the product host (serve it)
+/// from a reserved-but-unbacked infra host (bounce to app) from an org
+/// candidate (resolve).
+pub fn parse_host_label_in_zone(host: &str, zone: &str) -> Option<String> {
     let host_no_port = host.split(':').next().unwrap_or(host);
     let host_no_port = host_no_port.trim_end_matches('.'); // tolerate FQDN trailing dot
     let suffix = format!(".{zone}");
     let label = host_no_port.strip_suffix(&suffix)?;
-    // A multi-label prefix (`a.b.<zone>`) or empty prefix must NOT match —
-    // mirrors the wildcard-hijack defense in customer_apps_host_dispatch.
     if label.is_empty() || label.contains('.') {
         return None;
     }
-    if is_reserved_label(label) {
+    Some(label.to_ascii_lowercase())
+}
+
+/// Pure core of [`parse_org_subdomain`] — the in-zone label with reserved
+/// labels filtered out (they are never org candidates). Testable without env.
+pub fn parse_org_subdomain_in_zone(host: &str, zone: &str) -> Option<String> {
+    let label = parse_host_label_in_zone(host, zone)?;
+    if is_reserved_label(&label) {
         return None;
     }
-    Some(label.to_ascii_lowercase())
+    Some(label)
+}
+
+/// The first DNS label of the canonical product host this fleet serves,
+/// derived from `OXY_API_URL`'s admin host (`app.oxygen-hq.com` → `app`).
+/// After the `app→aip` rename this follows config automatically (→ `aip`),
+/// so the pass-through host tracks the rename with no code change.
+fn app_host_label() -> Option<String> {
+    let base = super::customer_apps_host_dispatch::admin_base_url()?;
+    let url: url::Url = base.parse().ok()?;
+    let first = url.host_str()?.split('.').next()?;
+    Some(first.to_ascii_lowercase())
+}
+
+/// True when `label` is the canonical product host this fleet must serve
+/// (and therefore not redirect). Tracks `OXY_API_URL`; falls back to the
+/// static `app` / `app-<env>` shape when the app host isn't derivable.
+fn is_app_host_label(label: &str) -> bool {
+    match app_host_label() {
+        Some(app) => label == app,
+        None => label == "app" || label.starts_with("app-"),
+    }
 }
 
 // ── TTL cache (label → resolved org, incl. negative entries) ─────────────
@@ -280,21 +317,40 @@ pub async fn org_host_dispatch_middleware(request: Request, next: Next) -> Respo
     else {
         return next.run(request).await;
     };
-    let Some(label) = parse_org_subdomain(host) else {
+    // Outside our org zone (localhost, custom-branded host, no zone derivable)
+    // the middleware is inert. Inside it, classify the bare first label.
+    let Some(zone) = org_subdomain_zone() else {
+        return next.run(request).await;
+    };
+    let Some(label) = parse_host_label_in_zone(host, &zone) else {
         return next.run(request).await;
     };
 
     let path = request.uri().path().to_string();
 
-    // (1) Same-origin product API — never rewrite; cookie authenticates it.
+    // (1) Same-origin product API — never rewrite/redirect; cookie authenticates
+    //     it, on any host. The data plane stays host-agnostic.
     if path == "/api" || path.starts_with("/api/") {
         return next.run(request).await;
     }
 
+    // (2) The canonical product host this fleet serves (`app`, tracking the
+    //     app→aip rename via OXY_API_URL) passes straight through.
+    if is_app_host_label(&label) {
+        return next.run(request).await;
+    }
+
+    // (3) A reserved infra label that is NOT the product host (`aip` before the
+    //     rename, `www`, `cdn`, …) has no org-less SPA to show — bounce it to
+    //     the app host rather than serving a bare, contextless shell.
+    if is_reserved_label(&label) {
+        return redirect_unknown_to_app();
+    }
+
+    // (4) A non-reserved label is an org candidate. Unknown / disabled → bounce
+    //     to the app host so a probe can't distinguish a real org subdomain from
+    //     a fake one, and so a mistyped label lands somewhere useful.
     let Some(ctx) = resolve(&label).await else {
-        // Unknown / disabled subdomain. Bounce to the app host so a probe
-        // can't distinguish a real org subdomain from a fake one, and so a
-        // mistyped label lands somewhere useful.
         return redirect_unknown_to_app();
     };
 
@@ -600,6 +656,78 @@ mod tests {
             parse_org_subdomain_in_zone("pokehouse.example.com", "oxygen-hq.com"),
             None
         );
+    }
+
+    // ── raw label parse (reserved included) ───────────────────────────────
+
+    #[test]
+    fn raw_label_keeps_reserved_and_org_labels() {
+        // Unlike parse_org_subdomain_in_zone, the raw parse does NOT filter
+        // reserved labels — the dispatch classifier needs to see `app`/`aip`.
+        for (host, want) in [
+            ("aip.oxygen-hq.com", Some("aip")),
+            ("app.oxygen-hq.com", Some("app")),
+            ("www.oxygen-hq.com", Some("www")),
+            ("pokehouse.oxygen-hq.com", Some("pokehouse")),
+        ] {
+            assert_eq!(
+                parse_host_label_in_zone(host, "oxygen-hq.com"),
+                want.map(str::to_string),
+                "host={host}"
+            );
+        }
+    }
+
+    #[test]
+    fn raw_label_rejects_bare_zone_and_multi_label() {
+        assert_eq!(
+            parse_host_label_in_zone("oxygen-hq.com", "oxygen-hq.com"),
+            None
+        );
+        assert_eq!(
+            parse_host_label_in_zone("evil.pokehouse.oxygen-hq.com", "oxygen-hq.com"),
+            None
+        );
+        assert_eq!(
+            parse_host_label_in_zone("pokehouse.example.com", "oxygen-hq.com"),
+            None
+        );
+    }
+
+    // ── product-host classification (the unknown-host redirect fix) ────────
+
+    #[test]
+    fn app_host_label_tracks_api_url() {
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "https://app.oxygen-hq.com/api");
+        }
+        assert_eq!(app_host_label(), Some("app".to_string()));
+        // Today: `app` serves through; `aip` is reserved-but-not-product, so it
+        // falls into the redirect-to-app branch (the reported bug).
+        assert!(is_app_host_label("app"));
+        assert!(!is_app_host_label("aip"));
+        assert!(is_reserved_label("aip") && !is_app_host_label("aip"));
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
+    }
+
+    #[test]
+    fn app_host_label_follows_rename() {
+        // After the app→aip rename, OXY_API_URL points at the aip host: now
+        // `aip` serves through and `app` is the one that redirects. No code
+        // change needed — the classifier follows config.
+        let _g = env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("OXY_API_URL", "https://aip.oxygen-hq.com/api");
+        }
+        assert_eq!(app_host_label(), Some("aip".to_string()));
+        assert!(is_app_host_label("aip"));
+        assert!(!is_app_host_label("app"));
+        unsafe {
+            std::env::remove_var("OXY_API_URL");
+        }
     }
 
     // ── zone derivation ───────────────────────────────────────────────────
