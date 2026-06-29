@@ -2,11 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.90] - 2026-06-29
+
+### 🚀 Features
+
+- Configurable dev ports + oauth bounce proxy for multi-instance local dev (#2630)
+- Admin Tenant 360 investigation cockpit (#2627)
+
+### 🐛 Bug Fixes
+
+- Redirect unknown org-subdomain hosts to the app host (#2628)
+- Stop unbounded ClickHouse IDE queries from OOM-killing the pod (#2636)
+- Web-app world model loading state (#2633)
+
 ## [0.5.89] - 2026-06-28
 
 ### 🐛 Bug Fixes
 
 - Agentic disable analytics-to-builder auto-delegation (#2625)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.89 (#2626)
 
 ## [0.5.88] - 2026-06-27
 
