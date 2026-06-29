@@ -8,8 +8,8 @@ pub struct ServeArgs {
     /// Port number for the web application server
     ///
     /// Specify which port to bind the Oxy web interface.
-    /// Default is 3000 if not specified.
-    #[clap(long, default_value_t = 3000)]
+    /// Reads `OXY_PORT` when the flag is omitted; default is 3000.
+    #[clap(long, env = "OXY_PORT", default_value_t = 3000)]
     pub port: u16,
     /// Host address to bind the web application server
     ///
@@ -34,7 +34,8 @@ pub struct ServeArgs {
     ///
     /// The internal port serves the same API routes without authentication.
     /// Binds to 127.0.0.1 by default for security. Set to 0 to disable.
-    #[clap(long, default_value_t = 3001)]
+    /// Reads `OXY_INTERNAL_PORT` when the flag is omitted; default is 3001.
+    #[clap(long, env = "OXY_INTERNAL_PORT", default_value_t = 3001)]
     pub internal_port: u16,
 
     /// Host address to bind the internal API server

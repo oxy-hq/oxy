@@ -94,6 +94,13 @@ dev-backend:
 dev-frontend:
     pnpm run dev
 
+# Start the OAuth bounce proxy (http://localhost:8429). Lets several local
+# dev instances share one registered redirect URI per provider (Google + GitHub);
+# it forwards each callback back to the instance that started the flow.
+# See scripts/oauth-bounce.mjs.
+oauth-proxy:
+    node scripts/oauth-bounce.mjs
+
 # ── Database / Seed ────────────────────────────────────────────────────────────
 
 # Seed the demo project (guest user + Local org + nil-UUID workspace at ./examples).

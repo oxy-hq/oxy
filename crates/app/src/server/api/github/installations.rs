@@ -9,7 +9,7 @@ use oxy::database::client::establish_connection;
 use oxy::github::client::GitHubClient;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
-use super::state::{Flow, StatePayload, encode_state};
+use super::state::{Flow, StatePayload, bounce_redirect, encode_state};
 
 // ──────────────────────── DTOs ────────────────────────
 
@@ -50,8 +50,12 @@ pub async fn get_new_installation_url(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let origin = q.origin.trim_end_matches('/');
-    let redirect_uri = format!("{origin}/github/callback");
+    // Bounce proxy (local multi-instance dev): redirect_uri points at the proxy
+    // and the instance origin rides along in `state`; otherwise straight to the
+    // instance origin with no suffix.
+    let (redirect_base, state_suffix) = bounce_redirect(&q.origin);
+    let state = format!("{state}{state_suffix}");
+    let redirect_uri = format!("{redirect_base}/github/callback");
 
     let url = format!(
         "https://github.com/apps/{}/installations/new?state={}&redirect_uri={}",

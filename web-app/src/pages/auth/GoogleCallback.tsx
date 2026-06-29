@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { useGoogleAuth, validateGoogleState } from "@/hooks/auth/useGoogleAuth";
+import { oauthStateToken, useGoogleAuth, validateGoogleState } from "@/hooks/auth/useGoogleAuth";
 import ROUTES from "@/libs/utils/routes";
 
 const GoogleCallback = () => {
@@ -35,7 +35,10 @@ const GoogleCallback = () => {
     // Proceed with authentication if we have a valid code. validateGoogleState
     // already confirmed `state` is non-null above (early returns otherwise).
     if (code && state) {
-      googleAuthMutation.mutate({ code, state });
+      // `state` may carry an appended instance origin (bounce proxy); the
+      // backend only wants the bare CSRF JWT. CSRF was validated above on the
+      // full value, so stripping here is safe.
+      googleAuthMutation.mutate({ code, state: oauthStateToken(state) });
     } else {
       navigate(`${ROUTES.AUTH.LOGIN}?error=no_code`);
     }

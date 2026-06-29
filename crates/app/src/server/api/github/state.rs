@@ -1,10 +1,35 @@
 use axum::http::StatusCode;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use uuid::Uuid;
 
 const STATE_TTL: Duration = Duration::hours(1);
+
+/// Compute the OAuth callback `redirect_uri` base and the `state` origin suffix
+/// for the bounce proxy (local multi-instance dev).
+///
+/// `OXY_OAUTH_REDIRECT_ORIGIN`, when set, holds the single registered proxy
+/// origin. The callback `redirect_uri` then points at the proxy, and the
+/// instance origin is carried in `state` as `~base64url(origin)` so the proxy
+/// can forward the callback back to the instance that started the flow. Unset →
+/// the instance origin is used directly with an empty suffix, exactly as before.
+pub fn bounce_redirect(instance_origin: &str) -> (String, String) {
+    let instance_origin = instance_origin.trim_end_matches('/');
+    match std::env::var("OXY_OAUTH_REDIRECT_ORIGIN")
+        .ok()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+    {
+        Some(proxy) => {
+            let suffix = format!("~{}", URL_SAFE_NO_PAD.encode(instance_origin));
+            (proxy, suffix)
+        }
+        None => (instance_origin.to_string(), String::new()),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Flow {
@@ -75,6 +100,10 @@ pub fn encode_state_with_timestamp(payload: &StatePayload, ts: i64) -> Result<St
 
 pub fn decode_state(state: &str) -> Result<StatePayload, StateError> {
     let key = secret()?;
+    // Local multi-instance dev: the OAuth bounce proxy appends the instance
+    // origin to `state` as `~base64url(origin)` so it knows where to forward the
+    // callback. That suffix is outside the HMAC body — strip it before verifying.
+    let state = state.split('~').next().unwrap_or(state);
     let parts: Vec<&str> = state.split(':').collect();
     if parts.len() != 4 {
         return Err(StateError::Malformed);
@@ -138,6 +167,22 @@ mod tests {
         };
         let encoded = encode_state(&payload).unwrap();
         let decoded = decode_state(&encoded).unwrap();
+        assert!(matches!(decoded.flow, Flow::Install));
+    }
+
+    #[test]
+    fn bounce_proxy_origin_suffix_stripped_before_verify() {
+        env_secret();
+        let org_id = Uuid::new_v4();
+        let state = encode_state(&StatePayload {
+            org_id,
+            flow: Flow::Install,
+        })
+        .unwrap();
+        // The bounce proxy appends `~base64url(origin)` to state.
+        let with_origin = format!("{state}~aHR0cDovL2xvY2FsaG9zdDo1MTc0");
+        let decoded = decode_state(&with_origin).unwrap();
+        assert_eq!(decoded.org_id, org_id);
         assert!(matches!(decoded.flow, Flow::Install));
     }
 

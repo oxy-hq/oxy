@@ -3,7 +3,7 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
 import { visualizer } from "rollup-plugin-visualizer";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 // Shared dependency configuration for both dev optimization and production chunking
@@ -159,111 +159,129 @@ function manualChunks(id: string): string | undefined {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  base: "/",
-  optimizeDeps: {
-    include: allDependencies,
-    // Exclude packages that you're actively developing or that cause issues when pre-bundled
-    exclude: [
-      // These are optional Node.js-only peer dependencies of memfs that don't exist in browser
-      "@jsonjoy.com/fs-node",
-      "@jsonjoy.com/fs-node-utils"
-    ]
-  },
-  resolve: {
-    alias: [
-      { find: "@", replacement: resolve(__dirname, "./src") },
-      { find: "styled-system", replacement: resolve(__dirname, "./styled-system") },
-      { find: "elkjs", replacement: "elkjs/lib/elk.bundled.js" },
-      // react-syntax-highlighter@16 imports "refractor/lib/core|all" and "refractor/lang/*.js"
-      // directly, but refractor@5 only exposes these via its exports map as
-      // "refractor/core", "refractor/all", and "refractor/<lang>" (no lib/ or lang/ prefix).
-      { find: "refractor/lib/core", replacement: "refractor/core" },
-      { find: "refractor/lib/all", replacement: "refractor/all" },
-      { find: /^refractor\/lang\/([^/]+)\.js$/, replacement: "refractor/$1" }
-    ]
-  },
-  plugins: [
-    react(),
-    tailwindcss(),
-    nodePolyfills({
-      overrides: {
-        // Since `fs` is not supported in browsers, we can use the `memfs` package to polyfill it.
-        fs: "memfs"
-      }
-    }),
-    !process.env.CI &&
-      visualizer({
-        open: true,
-        filename: "bundle-report.html",
-        gzipSize: true,
-        brotliSize: true
-      }),
-    sentryVitePlugin({
-      org: process.env.SENTRY_ORG || "oxy-z9",
-      project: process.env.VITE_SENTRY_PROJECT || "oxy-frontend",
-      authToken: process.env.SENTRY_AUTH_TOKEN
-    })
-  ],
-  publicDir: "public",
-  clearScreen: false,
-  server: {
-    port: 5173,
-    // Accept requests from any *.trycloudflare.com subdomain so cloudflared
-    // quick tunnels (used for Slack webhook testing) aren't rejected.
-    allowedHosts: [".trycloudflare.com"],
-    // https: {
-    //   key: "../localhost+2-key.pem",
-    //   cert: "../localhost+2.pem",
-    // },
-    // Proxy everything the backend serves (all under /api/* — see
-    // crates/app/src/cli/commands/serve.rs where the api_router is nested
-    // under /api) so Slack webhooks, OAuth callbacks, and API calls routed
-    // through the dev tunnel all reach the Rust backend on :3000.
-    proxy: {
-      "/api": {
-        target: "http://localhost:3000",
-        changeOrigin: true
-      },
-      // Customer-app bundles live at the same origin as the SPA in
-      // production (e.g. https://app.oxygen-hq.com/customer-apps/<uuid>/). Locally
-      // the SPA is on :5173 and oxy is on :3000, so forward those requests
-      // through to oxy; otherwise vite's catch-all hands back the SPA
-      // index.html and the bundle never renders.
-      //
-      // `xfwd: true` adds X-Forwarded-Host/Proto so oxy's redirect_to_login
-      // in customer_apps_serve.rs can build a return_to URL pointing back at
-      // the SPA host (:5173), not at oxy's own host (:3000).
-      "/customer-apps": {
-        target: "http://localhost:3000",
-        changeOrigin: true,
-        xfwd: true
-      }
+// Dev-server port and backend proxy target are overridable via env so more than
+// one dev server can run at once without colliding on :5173 / :3000. Set
+// OXY_DEV_PORT to move the Vite server and OXY_DEV_PROXY_TARGET to point /api +
+// /customer-apps at a backend on another port. These are read from the repo-root
+// .env (the same file the Rust backend loads) so a checkout only sets them once.
+export default defineConfig(({ mode }) => {
+  const rootEnv = loadEnv(mode, resolve(__dirname, ".."), "");
+  const DEV_PORT = Number(rootEnv.OXY_DEV_PORT) || 5173;
+  const DEV_PROXY_TARGET = rootEnv.OXY_DEV_PROXY_TARGET || "http://localhost:3000";
+  // Origin of the OAuth bounce proxy (the single port registered with Google).
+  // When set, the Google sign-in flow sends this as the redirect_uri and the
+  // proxy bounces the callback back to this instance. Empty → per-origin flow.
+  const OAUTH_PROXY_ORIGIN = rootEnv.OXY_OAUTH_PROXY_ORIGIN || "";
+
+  return {
+    base: "/",
+    define: {
+      __OXY_OAUTH_PROXY_ORIGIN__: JSON.stringify(OAUTH_PROXY_ORIGIN)
     },
-    // Enable faster dependency pre-bundling during development
-    fs: {
-      // Allow serving files from one level up to the project root
-      allow: [".."]
-    },
-    // Warm up frequently used files
-    warmup: {
-      clientFiles: [
-        "./src/main.tsx",
-        "./src/App.tsx",
-        "./src/components/**/*.tsx",
-        "./src/pages/**/*.tsx"
+    optimizeDeps: {
+      include: allDependencies,
+      // Exclude packages that you're actively developing or that cause issues when pre-bundled
+      exclude: [
+        // These are optional Node.js-only peer dependencies of memfs that don't exist in browser
+        "@jsonjoy.com/fs-node",
+        "@jsonjoy.com/fs-node-utils"
       ]
-    }
-  },
-  build: {
-    target: "es2020",
-    sourcemap: false, // Disable source maps to reduce memory usage
-    // Increase chunk size warning limit (500kb)
-    chunkSizeWarningLimit: 500,
-    rollupOptions: {
-      output: {
-        manualChunks
+    },
+    resolve: {
+      alias: [
+        { find: "@", replacement: resolve(__dirname, "./src") },
+        { find: "styled-system", replacement: resolve(__dirname, "./styled-system") },
+        { find: "elkjs", replacement: "elkjs/lib/elk.bundled.js" },
+        // react-syntax-highlighter@16 imports "refractor/lib/core|all" and "refractor/lang/*.js"
+        // directly, but refractor@5 only exposes these via its exports map as
+        // "refractor/core", "refractor/all", and "refractor/<lang>" (no lib/ or lang/ prefix).
+        { find: "refractor/lib/core", replacement: "refractor/core" },
+        { find: "refractor/lib/all", replacement: "refractor/all" },
+        { find: /^refractor\/lang\/([^/]+)\.js$/, replacement: "refractor/$1" }
+      ]
+    },
+    plugins: [
+      react(),
+      tailwindcss(),
+      nodePolyfills({
+        overrides: {
+          // Since `fs` is not supported in browsers, we can use the `memfs` package to polyfill it.
+          fs: "memfs"
+        }
+      }),
+      !process.env.CI &&
+        visualizer({
+          open: true,
+          filename: "bundle-report.html",
+          gzipSize: true,
+          brotliSize: true
+        }),
+      sentryVitePlugin({
+        org: process.env.SENTRY_ORG || "oxy-z9",
+        project: process.env.VITE_SENTRY_PROJECT || "oxy-frontend",
+        authToken: process.env.SENTRY_AUTH_TOKEN
+      })
+    ],
+    publicDir: "public",
+    clearScreen: false,
+    server: {
+      port: DEV_PORT,
+      // Accept requests from any *.trycloudflare.com subdomain so cloudflared
+      // quick tunnels (used for Slack webhook testing) aren't rejected.
+      allowedHosts: [".trycloudflare.com"],
+      // https: {
+      //   key: "../localhost+2-key.pem",
+      //   cert: "../localhost+2.pem",
+      // },
+      // Proxy everything the backend serves (all under /api/* — see
+      // crates/app/src/cli/commands/serve.rs where the api_router is nested
+      // under /api) so Slack webhooks, OAuth callbacks, and API calls routed
+      // through the dev tunnel all reach the Rust backend on :3000.
+      proxy: {
+        "/api": {
+          target: DEV_PROXY_TARGET,
+          changeOrigin: true
+        },
+        // Customer-app bundles live at the same origin as the SPA in
+        // production (e.g. https://app.oxygen-hq.com/customer-apps/<uuid>/). Locally
+        // the SPA is on :5173 and oxy is on :3000, so forward those requests
+        // through to oxy; otherwise vite's catch-all hands back the SPA
+        // index.html and the bundle never renders.
+        //
+        // `xfwd: true` adds X-Forwarded-Host/Proto so oxy's redirect_to_login
+        // in customer_apps_serve.rs can build a return_to URL pointing back at
+        // the SPA host (:5173), not at oxy's own host (:3000).
+        "/customer-apps": {
+          target: DEV_PROXY_TARGET,
+          changeOrigin: true,
+          xfwd: true
+        }
+      },
+      // Enable faster dependency pre-bundling during development
+      fs: {
+        // Allow serving files from one level up to the project root
+        allow: [".."]
+      },
+      // Warm up frequently used files
+      warmup: {
+        clientFiles: [
+          "./src/main.tsx",
+          "./src/App.tsx",
+          "./src/components/**/*.tsx",
+          "./src/pages/**/*.tsx"
+        ]
+      }
+    },
+    build: {
+      target: "es2020",
+      sourcemap: false, // Disable source maps to reduce memory usage
+      // Increase chunk size warning limit (500kb)
+      chunkSizeWarningLimit: 500,
+      rollupOptions: {
+        output: {
+          manualChunks
+        }
       }
     }
-  }
+  };
 });

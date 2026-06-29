@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { oauthStateToken } from "@/hooks/auth/oauthProxyState";
 import { validateGitHubAuthState } from "@/hooks/auth/useGitHubAuth";
 import { AuthService, GitHubApiService } from "@/services/api";
 import type { CallbackMessage } from "@/utils/githubCallbackMessage";
@@ -48,7 +49,9 @@ export default function GitHubCallback() {
       try {
         if (validateGitHubAuthState(state)) {
           if (!code) throw new Error("Missing code parameter");
-          const auth = await AuthService.githubAuth({ code, state });
+          // CSRF validated above on the full value; the backend wants the bare
+          // CSRF token without the bounce-proxy origin suffix.
+          const auth = await AuthService.githubAuth({ code, state: oauthStateToken(state) });
           post({ type: "github-callback-success", flow: "auth", auth });
         } else {
           const result = await GitHubApiService.completeCallback({

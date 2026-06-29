@@ -118,7 +118,7 @@ enum_dispatch = { workspace = true }
 rapidfuzz = { workspace = true }
 
 # CLI
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true, features = ["derive", "env"] }
 colored = { workspace = true }
 indicatif = { workspace = true }
 headless_chrome = { workspace = true }

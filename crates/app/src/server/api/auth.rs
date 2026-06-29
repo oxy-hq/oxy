@@ -814,6 +814,21 @@ struct GitHubEmailEntry {
 /// Exchange a GitHub OAuth authorization code for user profile info and the raw
 /// GitHub access token. The token is returned so callers can store it for later
 /// use (e.g. listing GitHub App installations without a second sign-in).
+/// Base origin for an OAuth `redirect_uri` at token-exchange time.
+///
+/// Local multi-instance dev: when several instances share one registered
+/// redirect URI via the OAuth bounce proxy, the token-exchange `redirect_uri`
+/// must equal the one the provider saw at authorize time (the proxy origin),
+/// not this instance's request origin. `OXY_OAUTH_REDIRECT_ORIGIN` overrides it;
+/// unset → the request origin, exactly as before.
+fn oauth_redirect_base(base_url: &str) -> String {
+    std::env::var("OXY_OAUTH_REDIRECT_ORIGIN")
+        .ok()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| base_url.to_string())
+}
+
 async fn exchange_github_code_for_user_info(
     code: &str,
     base_url: &str,
@@ -824,7 +839,7 @@ async fn exchange_github_code_for_user_info(
         OxyError::ConfigurationError("GITHUB_CLIENT_SECRET not configured".to_string())
     })?;
 
-    let redirect_uri = format!("{base_url}/github/callback");
+    let redirect_uri = format!("{}/github/callback", oauth_redirect_base(base_url));
 
     let client = reqwest::Client::builder()
         .user_agent("Oxy/1.0")
@@ -1097,7 +1112,7 @@ async fn exchange_google_code_for_user_info(
 
     let client = reqwest::Client::new();
 
-    let redirect_uri = format!("{base_url}/auth/google/callback");
+    let redirect_uri = format!("{}/auth/google/callback", oauth_redirect_base(base_url));
 
     let client_secret = google_config.client_secret;
 

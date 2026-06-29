@@ -5,11 +5,13 @@ import { authOrigin } from "@/libs/orgSubdomain";
 import { AuthService } from "@/services/api";
 import { openSecureWindow } from "@/utils/githubAppInstall";
 import { waitForGitHubCallback } from "@/utils/githubCallbackMessage";
+import { encodeOAuthState, OAUTH_PROXY_ORIGIN } from "./oauthProxyState";
 import { handlePostLoginOrgs, resolveReturnTo, returnToFromUrl } from "./postLoginRedirect";
 
-// See useGoogleAuth: authOrigin() pins this to the registered app host on an
-// org subdomain.
-const GITHUB_AUTH_REDIRECT_URI = `${authOrigin()}/github/callback`;
+// The origin GitHub must redirect back to. Normally the registered auth origin;
+// for local multi-instance dev the bounce proxy's origin is registered instead
+// and forwards the callback here (see useGoogleAuth + oauthProxyState).
+const GITHUB_AUTH_REDIRECT_URI = `${OAUTH_PROXY_ORIGIN || authOrigin()}/github/callback`;
 const GITHUB_STATE_KEY = "github_oauth_login_state";
 
 const buildGitHubAuthUrl = (clientId: string, state: string) => {
@@ -35,9 +37,12 @@ export const useGitHubAuth = (clientId: string) => {
       // `return_to` is still readable when the popup resolves — no stash needed.
       const returnTo = returnToFromUrl();
       const { state } = await AuthService.issueOAuthState();
-      sessionStorage.setItem(GITHUB_STATE_KEY, state);
+      // In proxy mode `state` carries this instance's origin so the bounce proxy
+      // can forward the callback here; stored as-is so the CSRF check matches.
+      const stateParam = encodeOAuthState(state);
+      sessionStorage.setItem(GITHUB_STATE_KEY, stateParam);
 
-      const popup = openSecureWindow(buildGitHubAuthUrl(clientId, state));
+      const popup = openSecureWindow(buildGitHubAuthUrl(clientId, stateParam));
       try {
         const result = await waitForGitHubCallback(popup, "auth");
         login(result.auth.token, result.auth.user);

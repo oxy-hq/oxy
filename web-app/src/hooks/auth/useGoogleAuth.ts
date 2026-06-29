@@ -5,6 +5,7 @@ import { authOrigin } from "@/libs/orgSubdomain";
 import ROUTES from "@/libs/utils/routes";
 import { AuthService } from "@/services/api";
 import type { AuthResponse, GoogleAuthRequest } from "@/types/auth";
+import { encodeOAuthState, OAUTH_PROXY_ORIGIN, oauthStateToken } from "./oauthProxyState";
 import {
   consumeReturnTo,
   handlePostLoginOrgs,
@@ -13,9 +14,13 @@ import {
   stashReturnTo
 } from "./postLoginRedirect";
 
-// On an org subdomain `authOrigin()` is the centralized app host, so the
-// provider's redirect_uri stays the one registered host (never the subdomain).
-const GOOGLE_REDIRECT_URI = `${authOrigin()}/auth/google/callback`;
+export { oauthStateToken };
+
+// The origin Google must redirect back to. Normally the current auth origin
+// (the one registered with Google). For local multi-instance dev, the bounce
+// proxy's origin is registered instead, and it forwards the callback here.
+const redirectOrigin = OAUTH_PROXY_ORIGIN || authOrigin();
+const GOOGLE_REDIRECT_URI = `${redirectOrigin}/auth/google/callback`;
 const GOOGLE_STATE_KEY = "google_oauth_state";
 
 export const useGoogleAuth = () => {
@@ -52,7 +57,10 @@ export const initiateGoogleAuth = async (client_id: string) => {
   // through Google's `state` round-trip; the backend re-verifies signature
   // + purpose claim when we send it back with the code.
   const { state } = await AuthService.issueOAuthState();
-  sessionStorage.setItem(GOOGLE_STATE_KEY, state);
+  // The value round-tripped through Google: the CSRF JWT plus (in proxy mode)
+  // this instance's origin. Stored as-is so the callback's CSRF check matches.
+  const stateParam = encodeOAuthState(state);
+  sessionStorage.setItem(GOOGLE_STATE_KEY, stateParam);
   // Carry the login page's `return_to` across the provider round-trip so the
   // callback can send the user back where they came from.
   stashReturnTo(returnToFromUrl());
@@ -63,7 +71,7 @@ export const initiateGoogleAuth = async (client_id: string) => {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
   url.searchParams.set("access_type", "offline");
-  url.searchParams.set("state", state);
+  url.searchParams.set("state", stateParam);
 
   window.location.href = url.toString();
 };
