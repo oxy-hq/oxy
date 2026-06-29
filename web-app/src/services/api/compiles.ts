@@ -128,6 +128,7 @@ export const CompilesService = {
   async list(params: {
     limit?: number;
     workspace_id?: string;
+    org_id?: string;
     status?: string;
   }): Promise<ListCompilesResponse> {
     const res = await apiClient.get<ListCompilesResponse>(BASE, {

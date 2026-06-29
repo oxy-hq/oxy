@@ -47,9 +47,28 @@ export interface LlmUsageOverview {
   by_org: OrgCost[];
 }
 
+/**
+ * Usage scoped to a single org. Distinct from picking an org out of
+ * `LlmUsageOverview.by_org` — that list is a top-10 leaderboard, so an org
+ * outside it would read as zero. This is correct for any tenant and carries
+ * the daily series for a trend.
+ */
+export interface OrgUsageDetail {
+  window_days: number;
+  total: UsageTotals;
+  by_day: DayCost[];
+}
+
 export const AdminMetricsService = {
   async llmUsage(days = 30): Promise<LlmUsageOverview> {
     const res = await apiClient.get<LlmUsageOverview>("/admin/metrics/llm-usage", {
+      params: { days }
+    });
+    return res.data;
+  },
+
+  async orgUsage(orgId: string, days = 30): Promise<OrgUsageDetail> {
+    const res = await apiClient.get<OrgUsageDetail>(`/admin/metrics/orgs/${orgId}/llm-usage`, {
       params: { days }
     });
     return res.data;

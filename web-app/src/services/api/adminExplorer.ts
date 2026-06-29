@@ -44,6 +44,8 @@ export interface ExplorerQueryParams {
   /** Resource-specific: run `task_status`, or "live"/"done" for threads. */
   status?: string;
   sourceType?: string;
+  /** Scope results to one tenant's workspaces. Omit for the cross-tenant view. */
+  orgId?: string;
   /** 1-indexed. */
   page?: number;
   pageSize?: number;
@@ -56,6 +58,7 @@ export const AdminExplorerService = {
         search: params.search,
         status: params.status,
         source_type: params.sourceType,
+        org_id: params.orgId,
         page: params.page,
         page_size: params.pageSize
       }
@@ -68,6 +71,7 @@ export const AdminExplorerService = {
         search: params.search,
         status: params.status,
         source_type: params.sourceType,
+        org_id: params.orgId,
         page: params.page,
         page_size: params.pageSize
       }

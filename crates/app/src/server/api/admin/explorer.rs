@@ -9,9 +9,11 @@
 //!
 //! Results are paginated (`page`, `page_size`, 1-indexed) and can be narrowed
 //! with `status` and `source_type` filters on top of the free-text `search`.
-//! Each response carries a `total` row count via a `COUNT(*) OVER()` window
-//! function so the frontend can render pagination controls without a second
-//! round trip.
+//! An optional `org_id` scopes results to a single tenant — this is what powers
+//! the org-360 Activity tab (vs. the cross-tenant Explorer page, which omits
+//! it). Each response carries a `total` row count via a `COUNT(*) OVER()`
+//! window function so the frontend can render pagination controls without a
+//! second round trip.
 //!
 //! Perf note: the search uses leading-wildcard `ILIKE '%term%'`, which can't
 //! use a btree index and falls back to a sequential scan across every tenant's
@@ -24,6 +26,7 @@
 use axum::Json;
 use axum::Router;
 use axum::extract::Query;
+use axum::http::StatusCode;
 use axum::routing::get;
 use chrono::{DateTime, FixedOffset};
 use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
@@ -32,7 +35,7 @@ use uuid::Uuid;
 
 use super::internal_jobs::{connect, db_err};
 use crate::server::router::AppState;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -45,8 +48,28 @@ struct SearchQuery {
     search: Option<String>,
     status: Option<String>,
     source_type: Option<String>,
+    /// Scope results to one tenant's workspaces. Omitted/empty = all tenants.
+    org_id: Option<String>,
     page: Option<u64>,
     page_size: Option<u64>,
+}
+
+/// Validate and normalize the optional `org_id` filter.
+///
+/// `None` / blank means "all tenants" and maps to `None`, which the SQL treats
+/// as a passthrough (`$n IS NULL OR …`). A non-blank value MUST be a
+/// well-formed UUID — anything else is a 400 rather than a silent all-tenant
+/// scan, so a typo'd id can never widen an org-scoped query back to the whole
+/// fleet. Returns a native `Uuid` so the predicate compares against the indexed
+/// `workspaces.org_id` column directly, with no per-row `::text` cast.
+fn normalize_org_id(raw: Option<String>) -> Result<Option<Uuid>, StatusCode> {
+    match raw {
+        None => Ok(None),
+        Some(s) if s.trim().is_empty() => Ok(None),
+        Some(s) => Uuid::parse_str(s.trim())
+            .map(Some)
+            .map_err(|_| StatusCode::BAD_REQUEST),
+    }
 }
 
 /// A page of rows plus enough metadata to render pagination controls without
@@ -109,14 +132,15 @@ async fn search_threads(
     // Threads have no `status` column; the explorer's status filter maps onto
     // `is_processing` ("live" = still running, "done" = finished).
     let status = q.status.unwrap_or_default();
+    let org_id = normalize_org_id(q.org_id).map_err(IntoResponse::into_response)?;
     let pagination = paginate(q.page, q.page_size);
 
     let rows = ThreadRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         // $1 = raw term (exact-id match + empty-term passthrough), $2 = ILIKE
         // pattern, $3 = source_type filter, $4 = status filter ("live" /
-        // "done" / ""), $5 = limit, $6 = offset. Threads link to a workspace
-        // via `project_id`.
+        // "done" / ""), $5 = limit, $6 = offset, $7 = org_id scope (NULL =
+        // all tenants). Threads link to a workspace via `project_id`.
         "SELECT t.id AS id, t.title AS title, left(t.input, 200) AS input_snippet, \
                 t.source_type AS source_type, t.is_processing AS is_processing, \
                 t.created_at AS created_at, u.email AS user_email, \
@@ -133,6 +157,7 @@ async fn search_threads(
            AND ($4 = '' \
                 OR ($4 = 'live' AND t.is_processing) \
                 OR ($4 = 'done' AND NOT t.is_processing)) \
+           AND ($7 IS NULL OR w.org_id = $7) \
          ORDER BY t.created_at DESC \
          LIMIT $5 OFFSET $6",
         [
@@ -142,6 +167,7 @@ async fn search_threads(
             status.into(),
             pagination.limit.into(),
             pagination.offset.into(),
+            org_id.into(),
         ],
     ))
     .all(&db)
@@ -182,13 +208,14 @@ async fn search_runs(
     let like = format!("%{search}%");
     let status = q.status.unwrap_or_default();
     let source_type = q.source_type.unwrap_or_default();
+    let org_id = normalize_org_id(q.org_id).map_err(IntoResponse::into_response)?;
     let pagination = paginate(q.page, q.page_size);
 
     let rows = RunRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         // $1 = raw term, $2 = ILIKE pattern, $3 = task_status filter,
-        // $4 = source_type filter, $5 = limit, $6 = offset. Originating
-        // user comes via the run's thread.
+        // $4 = source_type filter, $5 = limit, $6 = offset, $7 = org_id scope
+        // (NULL = all tenants). Originating user comes via the run's thread.
         "SELECT ar.id AS id, left(ar.question, 200) AS question_snippet, \
                 ar.task_status AS task_status, ar.source_type AS source_type, \
                 ar.error_message AS error_message, ar.created_at AS created_at, \
@@ -204,6 +231,7 @@ async fn search_runs(
          WHERE ($1 = '' OR ar.question ILIKE $2 OR ar.error_message ILIKE $2 OR ar.id = $1) \
            AND ($3 = '' OR ar.task_status = $3) \
            AND ($4 = '' OR ar.source_type = $4) \
+           AND ($7 IS NULL OR w.org_id = $7) \
          ORDER BY ar.created_at DESC \
          LIMIT $5 OFFSET $6",
         [
@@ -213,6 +241,7 @@ async fn search_runs(
             source_type.into(),
             pagination.limit.into(),
             pagination.offset.into(),
+            org_id.into(),
         ],
     ))
     .all(&db)
@@ -260,5 +289,39 @@ impl HasTotalCount for ThreadRow {
 impl HasTotalCount for RunRow {
     fn total_count(&self) -> i64 {
         self.total_count
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_org_id_treats_none_and_blank_as_all_tenants() {
+        assert_eq!(normalize_org_id(None).unwrap(), None);
+        assert_eq!(normalize_org_id(Some(String::new())).unwrap(), None);
+        assert_eq!(normalize_org_id(Some("   ".to_string())).unwrap(), None);
+    }
+
+    #[test]
+    fn normalize_org_id_accepts_a_uuid_trimming_whitespace() {
+        let id = "550e8400-e29b-41d4-a716-446655440000";
+        assert_eq!(
+            normalize_org_id(Some(format!(" {id} "))).unwrap(),
+            Some(Uuid::parse_str(id).unwrap())
+        );
+    }
+
+    #[test]
+    fn normalize_org_id_rejects_non_uuid_with_bad_request() {
+        // A typo'd id must 400, never silently fall back to an all-tenant scan.
+        assert_eq!(
+            normalize_org_id(Some("not-a-uuid".to_string())),
+            Err(StatusCode::BAD_REQUEST)
+        );
+        assert_eq!(
+            normalize_org_id(Some("123".to_string())),
+            Err(StatusCode::BAD_REQUEST)
+        );
     }
 }

@@ -1,6 +1,15 @@
-import { Building2, CalendarDays, FolderOpen, Loader2, Pencil, Trash2, Users } from "lucide-react";
+import {
+  Activity,
+  Building2,
+  DollarSign,
+  FolderOpen,
+  Loader2,
+  Pencil,
+  Trash2,
+  Users
+} from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,11 +24,13 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAdminOrgUsage } from "@/hooks/api/adminMetrics/useAdminOrgUsage";
 import {
   useAdminOrgDetail,
   useDeleteAdminOrg,
   useRenameAdminOrg
 } from "@/hooks/api/adminTenants/useAdminOrgs";
+import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import ROUTES from "@/libs/utils/routes";
 import { AdminDetailEyebrow, AdminDetailHeader } from "../../components/AdminDetailHeader";
 import { AdminDetailStats } from "../../components/AdminDetailStats";
@@ -28,39 +39,68 @@ import { AdminEmptyState } from "../../components/AdminEmptyState";
 import { AdminLinkedList, AdminLinkedRow } from "../../components/AdminLinkedRow";
 import { AdminSectionLabel } from "../../components/AdminSectionLabel";
 import { AdminStatusPill } from "../../components/AdminStatusPill";
+import { OrgActivityTab } from "./components/OrgActivityTab";
+import { OrgBillingTab } from "./components/OrgBillingTab";
+import { OrgCompilesTab } from "./components/OrgCompilesTab";
+import { OrgOverviewTab } from "./components/OrgOverviewTab";
+import { RoleBadge, WorkspaceStatusPill } from "./components/StatusBadges";
+import { compactInt, usd } from "./format";
 import { OrgSubdomainSettings } from "./OrgSubdomainSettings";
+import type { OrgTabId } from "./tabs";
 
-type TabId = "overview" | "members" | "workspaces" | "settings";
-
-const ROLE_TONE: Record<string, "ok" | "info" | "muted"> = {
-  owner: "ok",
-  admin: "info",
-  member: "muted"
-};
+const USAGE_DAYS = 30;
+const ALL_TABS: OrgTabId[] = [
+  "overview",
+  "members",
+  "workspaces",
+  "activity",
+  "compiles",
+  "billing",
+  "settings"
+];
 
 const ageDays = (iso: string) =>
   Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
 
 /**
- * `/admin/orgs/:orgId` — full-page operator surface for one organization.
- * Replaces the previous slide-out sheet; every related entity (members,
- * workspaces) is rendered as a clickable linked row that traverses to
- * its own detail page. This is the centerpiece of the unified tenants
- * console: the org page IS the user list scoped to that org AND the
- * workspace list scoped to that org, with cross-links wired both ways.
+ * `/admin/orgs/:orgId` — the **Tenant 360**: the operator's single surface for
+ * investigating one organization. Spine of the unified tenants console — the
+ * org page IS the org's user list, workspace list, activity feed, cost
+ * snapshot, and (for owners) billing, all cross-linked. The active tab is
+ * mirrored to `?tab=` so the command palette and the overview's "needs
+ * attention" feed can deep-link straight to the right section.
  */
 export default function AdminOrgDetail() {
   const { orgId = "" } = useParams<{ orgId: string }>();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<TabId>("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: detail, isLoading } = useAdminOrgDetail(orgId);
+  const { data: currentUser } = useCurrentUser();
+  const usage = useAdminOrgUsage(orgId, USAGE_DAYS);
   const rename = useRenameAdminOrg();
   const remove = useDeleteAdminOrg();
+
+  const isOwner = currentUser?.is_owner ?? false;
+
+  // Tab lives in the URL so it's deep-linkable (palette, attention feed) and
+  // survives a refresh. `billing` is owner-only — anyone else falls back to
+  // overview rather than seeing an empty/403 panel.
+  const rawTab = searchParams.get("tab") as OrgTabId | null;
+  const tab: OrgTabId =
+    rawTab && ALL_TABS.includes(rawTab) && (rawTab !== "billing" || isOwner) ? rawTab : "overview";
+  const setTab = (next: OrgTabId) =>
+    setSearchParams(
+      (prev) => {
+        prev.set("tab", next);
+        return prev;
+      },
+      { replace: true }
+    );
 
   useEffect(() => {
     if (detail) {
@@ -79,7 +119,9 @@ export default function AdminOrgDetail() {
 
   const ownerCount = detail.owners.filter((m) => m.role === "owner").length;
   const adminCount = detail.owners.filter((m) => m.role === "admin").length;
-  const age = ageDays(detail.created_at);
+  const readyWorkspaces = detail.workspaces.filter((w) => w.status === "ready").length;
+  // Compile rows carry only workspace_id; map to names for the Compiles tab.
+  const workspaceNames = Object.fromEntries(detail.workspaces.map((w) => [w.id, w.name]));
 
   const handleSave = () => {
     rename.mutate(
@@ -123,6 +165,8 @@ export default function AdminOrgDetail() {
             <span className='font-mono text-xs'>/{detail.slug}</span>
             <span aria-hidden>·</span>
             <span>Owner {detail.owner_email ?? "—"}</span>
+            <span aria-hidden>·</span>
+            <span>{ageDays(detail.created_at).toLocaleString()}d old</span>
           </>
         }
         status={
@@ -161,114 +205,51 @@ export default function AdminOrgDetail() {
           {
             label: "Workspaces",
             value: detail.workspace_count.toLocaleString(),
-            sub:
-              detail.workspaces.length > 0
-                ? `${detail.workspaces.filter((w) => w.status === "ready").length} ready`
-                : "—",
+            sub: detail.workspaces.length > 0 ? `${readyWorkspaces} ready` : "—",
             icon: FolderOpen
           },
           {
-            label: "Age",
-            value: age.toLocaleString(),
-            sub: `days · since ${new Date(detail.created_at).toLocaleDateString(undefined, {
-              year: "numeric",
-              month: "short"
-            })}`,
-            icon: CalendarDays
+            label: `LLM cost · ${USAGE_DAYS}d`,
+            value: usage.isLoading ? "—" : usd(usage.data?.total.cost_usd ?? 0),
+            sub: usage.isLoading
+              ? "loading…"
+              : usage.data && usage.data.total.run_count > 0
+                ? `${compactInt(usage.data.total.run_count)} runs`
+                : "no activity",
+            icon: DollarSign
+          },
+          {
+            label: `Runs · ${USAGE_DAYS}d`,
+            value: usage.isLoading ? "—" : compactInt(usage.data?.total.run_count ?? 0),
+            sub: "agent runs",
+            icon: Activity
           }
         ]}
       />
 
-      <AdminDetailTabs<TabId>
+      <AdminDetailTabs<OrgTabId>
         value={tab}
         onChange={setTab}
         tabs={[
           { id: "overview", label: "Overview" },
           { id: "members", label: "Members", count: detail.member_count },
           { id: "workspaces", label: "Workspaces", count: detail.workspace_count },
+          { id: "activity", label: "Activity" },
+          { id: "compiles", label: "Compiles" },
+          ...(isOwner ? [{ id: "billing" as const, label: "Billing" }] : []),
           { id: "settings", label: "Settings" }
         ]}
       />
 
       {tab === "overview" ? (
         <AdminDetailTabPanel>
-          <div className='grid gap-6 lg:grid-cols-2'>
-            <section className='space-y-3'>
-              <AdminSectionLabel
-                trailing={
-                  detail.owners.length > 4 ? (
-                    <button
-                      type='button'
-                      onClick={() => setTab("members")}
-                      className='font-medium text-[10px] uppercase tracking-[0.14em] hover:text-foreground'
-                    >
-                      View all →
-                    </button>
-                  ) : null
-                }
-              >
-                Top members
-              </AdminSectionLabel>
-              {detail.owners.length === 0 ? (
-                <AdminEmptyState
-                  icon={Users}
-                  title='No members yet'
-                  description='Add members via the organization settings page.'
-                />
-              ) : (
-                <AdminLinkedList>
-                  {detail.owners.slice(0, 4).map((m) => (
-                    <AdminLinkedRow
-                      key={m.user_id}
-                      to={ROUTES.ADMIN.USER_DETAIL(m.user_id)}
-                      icon={Users}
-                      primary={m.name || m.email}
-                      secondary={m.email}
-                      meta={<RoleBadge role={m.role} />}
-                    />
-                  ))}
-                </AdminLinkedList>
-              )}
-            </section>
-
-            <section className='space-y-3'>
-              <AdminSectionLabel
-                trailing={
-                  detail.workspaces.length > 4 ? (
-                    <button
-                      type='button'
-                      onClick={() => setTab("workspaces")}
-                      className='font-medium text-[10px] uppercase tracking-[0.14em] hover:text-foreground'
-                    >
-                      View all →
-                    </button>
-                  ) : null
-                }
-              >
-                Recent workspaces
-              </AdminSectionLabel>
-              {detail.workspaces.length === 0 ? (
-                <AdminEmptyState
-                  icon={FolderOpen}
-                  title='No workspaces yet'
-                  description='Workspaces appear here when members import a repository.'
-                />
-              ) : (
-                <AdminLinkedList>
-                  {detail.workspaces.slice(0, 4).map((w) => (
-                    <AdminLinkedRow
-                      key={w.id}
-                      to={ROUTES.ADMIN.WORKSPACE_DETAIL(w.id)}
-                      icon={FolderOpen}
-                      primary={w.name}
-                      secondary={`Created ${new Date(w.created_at).toLocaleDateString()}`}
-                      meta={<WorkspaceStatusPill status={w.status} />}
-                    />
-                  ))}
-                </AdminLinkedList>
-              )}
-            </section>
-          </div>
+          <OrgOverviewTab
+            detail={detail}
+            usage={usage.data}
+            usageLoading={usage.isLoading}
+            usageDays={USAGE_DAYS}
+            onSelectTab={setTab}
+          />
         </AdminDetailTabPanel>
       ) : null}
 
@@ -327,6 +308,24 @@ export default function AdminOrgDetail() {
               ))}
             </AdminLinkedList>
           )}
+        </AdminDetailTabPanel>
+      ) : null}
+
+      {tab === "activity" ? (
+        <AdminDetailTabPanel>
+          <OrgActivityTab orgId={detail.id} />
+        </AdminDetailTabPanel>
+      ) : null}
+
+      {tab === "compiles" ? (
+        <AdminDetailTabPanel>
+          <OrgCompilesTab orgId={detail.id} workspaceNames={workspaceNames} />
+        </AdminDetailTabPanel>
+      ) : null}
+
+      {tab === "billing" && isOwner ? (
+        <AdminDetailTabPanel>
+          <OrgBillingTab orgId={detail.id} />
         </AdminDetailTabPanel>
       ) : null}
 
@@ -479,19 +478,3 @@ export default function AdminOrgDetail() {
     </div>
   );
 }
-
-const RoleBadge = ({ role }: { role: string }) => {
-  const tone = ROLE_TONE[role.toLowerCase()] ?? "muted";
-  return <AdminStatusPill tone={tone} label={role} />;
-};
-
-const WorkspaceStatusPill = ({ status }: { status: string }) => {
-  const map: Record<string, { tone: "ok" | "warn" | "danger" | "muted"; label: string }> = {
-    ready: { tone: "ok", label: "Ready" },
-    cloning: { tone: "warn", label: "Cloning" },
-    failed: { tone: "danger", label: "Failed" },
-    not_oxy_project: { tone: "muted", label: "Not Oxy" }
-  };
-  const v = map[status] ?? { tone: "muted" as const, label: status };
-  return <AdminStatusPill tone={v.tone} label={v.label} />;
-};

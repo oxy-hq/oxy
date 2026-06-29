@@ -11,7 +11,7 @@
 use agentic_llm::pricing::cost_for_call;
 use axum::Json;
 use axum::Router;
-use axum::extract::Query;
+use axum::extract::{Path, Query};
 use axum::response::Response;
 use axum::routing::get;
 use sea_orm::{DatabaseBackend, DbErr, FromQueryResult, Statement};
@@ -23,7 +23,9 @@ use super::internal_jobs::{connect, db_err};
 use crate::server::router::AppState;
 
 pub(crate) fn router() -> Router<AppState> {
-    Router::new().route("/metrics/llm-usage", get(llm_usage))
+    Router::new()
+        .route("/metrics/llm-usage", get(llm_usage))
+        .route("/metrics/orgs/{org_id}/llm-usage", get(org_llm_usage))
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +84,17 @@ pub struct LlmUsageOverview {
     pub by_day: Vec<DayCost>,
     pub by_model: Vec<ModelCost>,
     pub by_org: Vec<OrgCost>,
+}
+
+/// Per-org usage detail. Unlike `LlmUsageOverview.by_org` (a cross-tenant
+/// leaderboard truncated to the top 10 by cost), this is scoped to a single
+/// org server-side, so it's correct for *any* tenant — and carries the daily
+/// series for a trend sparkline.
+#[derive(Serialize, Debug)]
+pub struct OrgUsageDetail {
+    pub window_days: i32,
+    pub total: UsageTotals,
+    pub by_day: Vec<DayCost>,
 }
 
 #[derive(Deserialize)]
@@ -207,6 +220,64 @@ async fn fetch_org_model_rows(
     .await
 }
 
+async fn org_llm_usage(
+    Path(org_id): Path<Uuid>,
+    Query(q): Query<UsageQuery>,
+) -> Result<Json<OrgUsageDetail>, Response> {
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    let db = connect().await?;
+    let day_rows = fetch_org_usage_day_rows(&db, days, org_id)
+        .await
+        .map_err(db_err)?;
+    Ok(Json(build_org_detail(days, day_rows)))
+}
+
+/// Per-(day, model) token rollup scoped to one org's workspaces. Same shape as
+/// [`fetch_day_model_rows`] but the run-usage CTE is narrowed with a
+/// `workspaces.org_id` join so the result is correct for any tenant, not just
+/// the top-10 cost leaders the cross-tenant `by_org` keeps. $1 = days,
+/// $2 = org_id.
+async fn fetch_org_usage_day_rows(
+    db: &sea_orm::DatabaseConnection,
+    days: i32,
+    org_id: Uuid,
+) -> Result<Vec<DayModelRow>, DbErr> {
+    let sql = "\
+        WITH run_usage AS ( \
+            SELECT ar.id AS run_id, ar.created_at AS created_at, \
+                max(e.payload->>'model') FILTER (WHERE e.event_type = 'llm_end') AS model, \
+                COALESCE(SUM((e.payload->>'prompt_tokens')::bigint) \
+                    FILTER (WHERE e.event_type = 'llm_start'), 0) AS input_tokens, \
+                COALESCE(SUM((e.payload->>'output_tokens')::bigint) \
+                    FILTER (WHERE e.event_type = 'llm_end'), 0) AS output_tokens, \
+                COALESCE(SUM((e.payload->>'cache_creation_input_tokens')::bigint) \
+                    FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_creation, \
+                COALESCE(SUM((e.payload->>'cache_read_input_tokens')::bigint) \
+                    FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_read \
+            FROM agentic_runs ar \
+            JOIN agentic_run_events e \
+                ON e.run_id = ar.id AND e.event_type IN ('llm_start', 'llm_end') \
+            JOIN workspaces w ON ar.workspace_id = w.id \
+            WHERE ar.created_at > now() - make_interval(days => $1) AND w.org_id = $2 \
+            GROUP BY ar.id, ar.created_at \
+        ) \
+        SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, \
+               model, \
+               SUM(input_tokens)::bigint AS input_tokens, \
+               SUM(output_tokens)::bigint AS output_tokens, \
+               SUM(cache_creation)::bigint AS cache_creation, \
+               SUM(cache_read)::bigint AS cache_read, \
+               COUNT(*)::bigint AS run_count \
+        FROM run_usage GROUP BY 1, 2 ORDER BY 1";
+    DayModelRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        [days.into(), org_id.into()],
+    ))
+    .all(db)
+    .await
+}
+
 /// Price a single model bucket. `None` model or an unknown model yields
 /// `None` cost (tokens still count toward usage, just not dollars).
 fn price(model: &Option<String>, input: i64, output: i64, cc: i64, cr: i64) -> Option<f64> {
@@ -220,18 +291,15 @@ fn price(model: &Option<String>, input: i64, output: i64, cc: i64, cr: i64) -> O
     )
 }
 
-fn build_overview(
-    days: i32,
-    day_rows: Vec<DayModelRow>,
-    org_rows: Vec<OrgModelRow>,
-) -> LlmUsageOverview {
+/// Fold per-(day, model) rows into the window total + the day series. Shared by
+/// the cross-tenant overview and the per-org detail so both price identically.
+/// Day order is preserved from the SQL `ORDER BY day`.
+fn fold_days(day_rows: &[DayModelRow]) -> (UsageTotals, Vec<DayCost>) {
     let mut total = UsageTotals::default();
-    // Preserve insertion (day) order from the SQL `ORDER BY day`.
     let mut by_day: Vec<DayCost> = Vec::new();
     let mut day_index: BTreeMap<String, usize> = BTreeMap::new();
-    let mut by_model: BTreeMap<String, ModelCost> = BTreeMap::new();
 
-    for r in &day_rows {
+    for r in day_rows {
         let cost = price(
             &r.model,
             r.input_tokens,
@@ -240,7 +308,6 @@ fn build_overview(
             r.cache_read,
         );
 
-        // total
         total.input_tokens += r.input_tokens;
         total.output_tokens += r.output_tokens;
         total.cache_creation_tokens += r.cache_creation;
@@ -251,7 +318,6 @@ fn build_overview(
             total.priced_run_count += r.run_count;
         }
 
-        // by_day
         let idx = *day_index.entry(r.day.clone()).or_insert_with(|| {
             by_day.push(DayCost {
                 day: r.day.clone(),
@@ -267,8 +333,37 @@ fn build_overview(
         d.input_tokens += r.input_tokens;
         d.output_tokens += r.output_tokens;
         d.run_count += r.run_count;
+    }
 
-        // by_model
+    (total, by_day)
+}
+
+fn build_org_detail(days: i32, day_rows: Vec<DayModelRow>) -> OrgUsageDetail {
+    let (total, by_day) = fold_days(&day_rows);
+    OrgUsageDetail {
+        window_days: days,
+        total,
+        by_day,
+    }
+}
+
+fn build_overview(
+    days: i32,
+    day_rows: Vec<DayModelRow>,
+    org_rows: Vec<OrgModelRow>,
+) -> LlmUsageOverview {
+    let (total, by_day) = fold_days(&day_rows);
+
+    // by_model — fold the same day rows by model and price each bucket.
+    let mut by_model: BTreeMap<String, ModelCost> = BTreeMap::new();
+    for r in &day_rows {
+        let cost = price(
+            &r.model,
+            r.input_tokens,
+            r.output_tokens,
+            r.cache_creation,
+            r.cache_read,
+        );
         let key = r.model.clone().unwrap_or_else(|| "unknown".to_string());
         let m = by_model.entry(key.clone()).or_insert_with(|| ModelCost {
             model: key,

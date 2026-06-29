@@ -513,12 +513,13 @@ const preaggKeys = {
 
 const compilesKeys = {
   all: ["admin", "compiles"] as const,
-  list: (params: { limit?: number; workspace_id?: string; status?: string }) =>
+  list: (params: { limit?: number; workspace_id?: string; org_id?: string; status?: string }) =>
     [
       ...compilesKeys.all,
       "list",
       params.limit ?? 50,
       params.workspace_id ?? "",
+      params.org_id ?? "",
       params.status ?? ""
     ] as const,
   detail: (revisionId: string) => [...compilesKeys.all, "detail", revisionId] as const,
@@ -548,13 +549,16 @@ const adminOrgsKeys = {
 
 const adminMetricsKeys = {
   all: ["admin", "metrics"] as const,
-  llmUsage: (days: number) => [...adminMetricsKeys.all, "llm-usage", days] as const
+  llmUsage: (days: number) => [...adminMetricsKeys.all, "llm-usage", days] as const,
+  orgLlmUsage: (orgId: string, days: number) =>
+    [...adminMetricsKeys.all, "llm-usage", "org", orgId, days] as const
 };
 
 interface ExplorerQueryKeyParams {
   search?: string;
   status?: string;
   sourceType?: string;
+  orgId?: string;
   page?: number;
   pageSize?: number;
 }

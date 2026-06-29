@@ -15,7 +15,7 @@ const DEFAULT_INTERVAL_MS = 5_000;
  * compiling row actually ticks.
  */
 export const useCompiles = (
-  params: { limit?: number; workspace_id?: string; status?: string } = {},
+  params: { limit?: number; workspace_id?: string; org_id?: string; status?: string } = {},
   options: { paused?: boolean; intervalMs?: number } = {}
 ) => {
   const { paused = false, intervalMs = DEFAULT_INTERVAL_MS } = options;

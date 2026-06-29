@@ -26,6 +26,10 @@ pub struct ListQuery {
     /// Filter to one workspace.
     #[serde(default)]
     pub workspace_id: Option<Uuid>,
+    /// Filter to every workspace in one organization (powers the org-360
+    /// Compiles tab).
+    #[serde(default)]
+    pub org_id: Option<Uuid>,
     /// Filter by status. One of `compiling` / `ready` / `failed`.
     #[serde(default)]
     pub status: Option<String>,
@@ -67,6 +71,17 @@ pub(super) async fn list_compiles(
         entity::revisions::Entity::find().order_by_desc(entity::revisions::Column::StartedAt);
     if let Some(ws) = query.workspace_id {
         find = find.filter(entity::revisions::Column::WorkspaceId.eq(ws));
+    }
+    if let Some(org) = query.org_id {
+        // Scope to revisions whose workspace belongs to this org. A subquery
+        // keeps it one round trip and lets `limit` apply to the joined set.
+        use sea_orm::QueryTrait;
+        let org_workspaces = entity::workspaces::Entity::find()
+            .select_only()
+            .column(entity::workspaces::Column::Id)
+            .filter(entity::workspaces::Column::OrgId.eq(org))
+            .into_query();
+        find = find.filter(entity::revisions::Column::WorkspaceId.in_subquery(org_workspaces));
     }
     if let Some(ref status) = query.status {
         find = find.filter(entity::revisions::Column::Status.eq(status.clone()));

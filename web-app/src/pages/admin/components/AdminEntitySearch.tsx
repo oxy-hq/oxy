@@ -1,4 +1,4 @@
-import { Building2, FolderOpen, MessageSquare, Search, User } from "lucide-react";
+import { Building2, FolderOpen, MessageSquare, Play, Search, User } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
@@ -11,7 +11,7 @@ import {
   CommandList,
   CommandSeparator
 } from "@/components/ui/shadcn/command";
-import { useExplorerThreads } from "@/hooks/api/adminExplorer";
+import { useExplorerRuns, useExplorerThreads } from "@/hooks/api/adminExplorer";
 import { useAdminOrgsList } from "@/hooks/api/adminTenants/useAdminOrgs";
 import { useAdminUsersList } from "@/hooks/api/adminTenants/useAdminUsers";
 import { useAdminWorkspacesList } from "@/hooks/api/adminTenants/useAdminWorkspaces";
@@ -57,14 +57,17 @@ export const AdminEntitySearch = () => {
   const orgsQuery = useAdminOrgsList({ search: query }, { enabled: open });
   const usersQuery = useAdminUsersList({ search: query }, { enabled: open });
   const workspacesQuery = useAdminWorkspacesList({ search: query }, { enabled: open });
-  // Only search threads once the operator has typed something — an unfiltered
-  // cross-tenant thread scan on every palette-open isn't worth the round trip.
+  // Only search threads/runs once the operator has typed something — an
+  // unfiltered cross-tenant scan on every palette-open isn't worth the round
+  // trip.
   const threadsQuery = useExplorerThreads({ search: query }, { enabled: open && query.length > 1 });
+  const runsQuery = useExplorerRuns({ search: query }, { enabled: open && query.length > 1 });
 
   const orgs = useMemo(() => orgsQuery.data?.slice(0, 6) ?? [], [orgsQuery.data]);
   const users = useMemo(() => usersQuery.data?.slice(0, 6) ?? [], [usersQuery.data]);
   const workspaces = useMemo(() => workspacesQuery.data?.slice(0, 6) ?? [], [workspacesQuery.data]);
   const threads = useMemo(() => threadsQuery.data?.items.slice(0, 6) ?? [], [threadsQuery.data]);
+  const runs = useMemo(() => runsQuery.data?.items.slice(0, 6) ?? [], [runsQuery.data]);
 
   const go = (path: string) => {
     setOpen(false);
@@ -201,6 +204,43 @@ export const AdminEntitySearch = () => {
                       {t.workspace_name ? (
                         <span className='hidden truncate font-mono text-[11px] text-muted-foreground sm:inline'>
                           {t.workspace_name}
+                        </span>
+                      ) : null}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </>
+          ) : null}
+
+          {runs.length > 0 ? (
+            <>
+              <CommandSeparator />
+              <CommandGroup heading='Runs'>
+                {runs.map((r) => {
+                  const openable = r.org_slug && r.workspace_id && r.thread_id;
+                  return (
+                    <CommandItem
+                      key={`run-${r.id}`}
+                      value={`run ${r.question_snippet} ${r.workspace_name ?? ""} ${r.org_name ?? ""}`}
+                      disabled={!openable}
+                      onSelect={() => {
+                        if (openable) {
+                          go(
+                            ROUTES.ORG(r.org_slug as string)
+                              .WORKSPACE(r.workspace_id as string)
+                              .THREAD(r.thread_id as string)
+                          );
+                        }
+                      }}
+                    >
+                      <Play className='size-4 text-muted-foreground' />
+                      <span className='flex-1 truncate'>
+                        {r.question_snippet || "(no question)"}
+                      </span>
+                      {r.task_status ? (
+                        <span className='hidden font-mono text-[11px] text-muted-foreground sm:inline'>
+                          {r.task_status}
                         </span>
                       ) : null}
                     </CommandItem>
