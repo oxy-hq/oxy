@@ -14,7 +14,7 @@
 
 #![cfg(feature = "postgres")]
 
-use agentic_connector::{DatabaseConnector, PostgresConnector};
+use agentic_connector::{DatabaseConnector, PostgresConnector, ResultCap};
 use agentic_core::result::{ColumnSpec, TypedDataType, TypedRowStream, TypedValue};
 use futures::StreamExt;
 
@@ -113,7 +113,9 @@ async fn skip_without_docker() -> Option<PostgresConnector> {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 async fn collect_typed(stream: TypedRowStream) -> (Vec<ColumnSpec>, Vec<Vec<TypedValue>>) {
-    let TypedRowStream { columns, mut rows } = stream;
+    let TypedRowStream {
+        columns, mut rows, ..
+    } = stream;
     let mut out = Vec::new();
     while let Some(row) = rows.next().await {
         match row {
@@ -122,6 +124,50 @@ async fn collect_typed(stream: TypedRowStream) -> (Vec<ColumnSpec>, Vec<Vec<Type
         }
     }
     (columns, out)
+}
+
+/// A runaway `generate_series` scan must come back as a bounded *partial*
+/// result (never an error, never the full 1M rows) with the truncation flag
+/// set — the connector's [`ResultCap`] backstop generalizing the ClickHouse
+/// byte guard to Postgres. Mirrors `result_byte_guard_truncates_runaway_scan`.
+#[tokio::test]
+async fn result_cap_truncates_runaway_scan() {
+    let Some(dsn) = test_dsn().await else {
+        eprintln!("skipping: Docker not available and OXY_TEST_POSTGRES_URL not set");
+        return;
+    };
+    let connector =
+        PostgresConnector::new(&dsn.host, dsn.port, &dsn.user, &dsn.password, &dsn.database)
+            .with_result_cap(ResultCap {
+                max_rows: 5,
+                max_bytes: u64::MAX,
+            });
+
+    // Without the cap this streams all 1,000,000 rows into the pod.
+    let stream = connector
+        .execute_query_full("SELECT g AS n FROM generate_series(1, 1000000) AS g")
+        .await
+        .expect("cap returns a partial result, not an error");
+
+    let TypedRowStream {
+        mut rows,
+        truncated,
+        ..
+    } = stream;
+    let mut count = 0usize;
+    while let Some(row) = rows.next().await {
+        row.expect("row decodes");
+        count += 1;
+    }
+
+    assert!(
+        (1..=5).contains(&count),
+        "row cap must bound the runaway scan, got {count}"
+    );
+    assert!(
+        agentic_core::result::truncation_flag_set(&truncated),
+        "connector must flag the partial result truncated"
+    );
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

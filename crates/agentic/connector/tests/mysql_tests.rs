@@ -11,7 +11,7 @@
 
 #![cfg(feature = "mysql")]
 
-use agentic_connector::{DatabaseConnector, MysqlConnector};
+use agentic_connector::{DatabaseConnector, MysqlConnector, ResultCap};
 use agentic_core::result::{ColumnSpec, TypedDataType, TypedRowStream, TypedValue};
 use futures::StreamExt;
 
@@ -97,7 +97,9 @@ async fn skip_without_docker() -> Option<MysqlConnector> {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 async fn collect_typed(stream: TypedRowStream) -> (Vec<ColumnSpec>, Vec<Vec<TypedValue>>) {
-    let TypedRowStream { columns, mut rows } = stream;
+    let TypedRowStream {
+        columns, mut rows, ..
+    } = stream;
     let mut out = Vec::new();
     while let Some(row) = rows.next().await {
         match row {
@@ -106,6 +108,55 @@ async fn collect_typed(stream: TypedRowStream) -> (Vec<ColumnSpec>, Vec<Vec<Type
         }
     }
     (columns, out)
+}
+
+/// A multi-row scan must come back as a bounded *partial* result with the
+/// truncation flag set — MySQL streams via `fetch`, so this exercises the
+/// shared `guard_row_stream` adaptor wrapping the [`ResultCap`].
+#[tokio::test]
+async fn result_cap_truncates_runaway_scan() {
+    let Some(dsn) = test_dsn().await else {
+        eprintln!("skipping: Docker not available and OXY_TEST_MYSQL_URL not set");
+        return;
+    };
+    let connector =
+        MysqlConnector::new(&dsn.host, dsn.port, &dsn.user, &dsn.password, &dsn.database)
+            .await
+            .expect("connect")
+            .with_result_cap(ResultCap {
+                max_rows: 3,
+                max_bytes: u64::MAX,
+            });
+
+    // 10-row inline generator (MySQL has no generate_series); cap at 3 rows.
+    let sql = "SELECT n FROM (\
+        SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 \
+        UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10\
+        ) g";
+    let stream = connector
+        .execute_query_full(sql)
+        .await
+        .expect("cap returns a partial result, not an error");
+
+    let TypedRowStream {
+        mut rows,
+        truncated,
+        ..
+    } = stream;
+    let mut count = 0usize;
+    while let Some(row) = rows.next().await {
+        row.expect("row decodes");
+        count += 1;
+    }
+
+    assert!(
+        (1..=3).contains(&count),
+        "row cap must bound the scan, got {count}"
+    );
+    assert!(
+        agentic_core::result::truncation_flag_set(&truncated),
+        "connector must flag the partial result truncated"
+    );
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

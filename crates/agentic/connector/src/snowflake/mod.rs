@@ -20,14 +20,18 @@ mod typed;
 use async_trait::async_trait;
 use snowflake_api::{QueryResult as SnowflakeQueryResult, SnowflakeApi};
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use agentic_core::result::{
     CellValue, ColumnSpec, QueryResult, QueryRow, TypedRowError, TypedRowStream, TypedValue,
 };
 
 use crate::config::{SnowflakeAuth, SsoUrlCallback};
 use crate::connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary, SchemaInfo,
-    SqlDialect, is_returning_statement, normalize_sql, plan_sql_script,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultCap, ResultSummary,
+    SchemaInfo, SqlDialect, estimate_row_bytes, is_returning_statement, normalize_sql,
+    plan_sql_script,
 };
 
 use conversion::{arrow_to_cell, json_value_to_cell};
@@ -43,6 +47,8 @@ pub struct SnowflakeConnector {
     database: Option<String>,
     schema_str: Option<String>,
     cached_schema: SchemaInfo,
+    /// In-pod memory backstop for the row-building loops (see [`ResultCap`]).
+    result_cap: ResultCap,
 }
 
 impl SnowflakeConnector {
@@ -91,7 +97,14 @@ impl SnowflakeConnector {
             database,
             schema_str,
             cached_schema,
+            result_cap: ResultCap::default(),
         })
+    }
+
+    /// Override the [`ResultCap`] memory backstop. Primarily for tests.
+    pub fn with_result_cap(mut self, cap: ResultCap) -> Self {
+        self.result_cap = cap;
+        self
     }
 
     /// Create and authenticate a fresh [`SnowflakeApi`] for a single query.
@@ -222,9 +235,17 @@ impl DatabaseConnector for SnowflakeConnector {
                     })
                     .unwrap_or_default();
 
+                // Build only up to `sample_limit` rows — `total_row_count` comes
+                // from a separate stats/count query below, so we never need to
+                // materialize the full result just to sample it. (The driver's
+                // `exec` above already buffered the batches; this bounds the
+                // second copy.)
                 let mut rows: Vec<QueryRow> = Vec::new();
-                for batch in &batches {
+                'arrow_sample: for batch in &batches {
                     for row_idx in 0..batch.num_rows() {
+                        if rows.len() as u64 >= sample_limit {
+                            break 'arrow_sample;
+                        }
                         let cells = (0..batch.num_columns())
                             .map(|col_idx| arrow_to_cell(batch.column(col_idx).as_ref(), row_idx))
                             .collect();
@@ -247,6 +268,9 @@ impl DatabaseConnector for SnowflakeConnector {
                         outer
                             .iter()
                             .filter_map(|r| r.as_array())
+                            // Only the sample is needed; `total_row_count` is
+                            // sourced separately below.
+                            .take(sample_limit as usize)
                             .map(|vals| {
                                 let cells = vals.iter().map(json_value_to_cell).collect();
                                 QueryRow(cells)
@@ -357,6 +381,16 @@ impl DatabaseConnector for SnowflakeConnector {
             .await
             .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
+        // ResultCap backstop on the row-building loops. NOTE: `api.exec` above
+        // already materialized the full result (the snowflake-api driver has no
+        // streaming exec), so this bounds the *typed-row* copy + downstream
+        // Parquet/disk and flags truncation — it does not prevent the driver's
+        // own materialization. The hot IDE path is bounded upstream by the
+        // `LIMIT 10000` wrap; pushing a server-side `ROWS_PER_RESULTSET` is the
+        // follow-up to bound `exec` itself. See the large-query design note.
+        let cap = self.result_cap;
+        let mut truncated = false;
+
         // Arrow is the common case — Snowflake's driver decodes to
         // `Vec<RecordBatch>` directly. JSON fallback mirrors the existing
         // `execute_query` behaviour (coerce everything through
@@ -381,7 +415,8 @@ impl DatabaseConnector for SnowflakeConnector {
                         columns.iter().map(|c| c.data_type.clone()).collect();
 
                     let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
-                    for batch in &batches {
+                    let mut bytes: u64 = 0;
+                    'arrow: for batch in &batches {
                         for row_idx in 0..batch.num_rows() {
                             let cells: Vec<TypedValue> = (0..batch.num_columns())
                                 .map(|col_idx| {
@@ -392,7 +427,12 @@ impl DatabaseConnector for SnowflakeConnector {
                                     )
                                 })
                                 .collect();
+                            bytes += estimate_row_bytes(&cells);
                             rows.push(Ok(cells));
+                            if cap.exceeded(rows.len() as u64, bytes) {
+                                truncated = true;
+                                break 'arrow;
+                            }
                         }
                     }
                     (columns, rows)
@@ -409,35 +449,37 @@ impl DatabaseConnector for SnowflakeConnector {
                             data_type: agentic_core::result::TypedDataType::Text,
                         })
                         .collect();
-                    let rows = json_rows
-                        .value
-                        .as_array()
-                        .map(|outer| {
-                            outer
+                    let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+                    let mut bytes: u64 = 0;
+                    if let Some(outer) = json_rows.value.as_array() {
+                        'json: for r in outer.iter().filter_map(|r| r.as_array()) {
+                            let cells: Vec<TypedValue> = r
                                 .iter()
-                                .filter_map(|r| r.as_array())
-                                .map(|vals| {
-                                    let cells = vals
-                                        .iter()
-                                        .map(|v| match v {
-                                            serde_json::Value::Null => TypedValue::Null,
-                                            serde_json::Value::String(s) => {
-                                                TypedValue::Text(s.clone())
-                                            }
-                                            other => TypedValue::Text(other.to_string()),
-                                        })
-                                        .collect();
-                                    Ok(cells)
+                                .map(|v| match v {
+                                    serde_json::Value::Null => TypedValue::Null,
+                                    serde_json::Value::String(s) => TypedValue::Text(s.clone()),
+                                    other => TypedValue::Text(other.to_string()),
                                 })
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
+                                .collect();
+                            bytes += estimate_row_bytes(&cells);
+                            rows.push(Ok(cells));
+                            if cap.exceeded(rows.len() as u64, bytes) {
+                                truncated = true;
+                                break 'json;
+                            }
+                        }
+                    }
                     (columns, rows)
                 }
                 SnowflakeQueryResult::Empty => (Vec::new(), Vec::new()),
             };
 
-        Ok(TypedRowStream::from_rows(columns, typed_rows))
+        let stream = TypedRowStream::from_rows(columns, typed_rows);
+        Ok(if truncated {
+            stream.with_truncation(Arc::new(AtomicBool::new(true)))
+        } else {
+            stream
+        })
     }
 
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {

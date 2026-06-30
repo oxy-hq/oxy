@@ -22,9 +22,12 @@ use agentic_core::result::{
     TypedValue,
 };
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use crate::connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails,
-    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails, ResultCap,
+    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, estimate_row_bytes,
     is_returning_statement, normalize_sql, plan_sql_script,
 };
 use crate::postgres_typed::{decode_row, pg_typname_to_typed, select_expr_for_pg_type};
@@ -114,6 +117,8 @@ pub struct PostgresConnector {
     cached_schema: std::sync::RwLock<SchemaInfo>,
     /// Set when schema pre-fetch fails so `introspect_schema` can surface the error.
     schema_error: std::sync::RwLock<Option<String>>,
+    /// In-pod memory backstop for `execute_query_full` (see [`ResultCap`]).
+    result_cap: ResultCap,
 }
 
 impl PostgresConnector {
@@ -134,7 +139,15 @@ impl PostgresConnector {
             client: tokio::sync::Mutex::new(None),
             cached_schema: std::sync::RwLock::new(SchemaInfo::default()),
             schema_error: std::sync::RwLock::new(None),
+            result_cap: ResultCap::default(),
         }
+    }
+
+    /// Override the [`ResultCap`] memory backstop. Primarily for tests that need
+    /// to trip the guard on a small result.
+    pub fn with_result_cap(mut self, cap: ResultCap) -> Self {
+        self.result_cap = cap;
+        self
     }
 }
 
@@ -430,17 +443,47 @@ impl DatabaseConnector for PostgresConnector {
 
         // Inline subquery: no temp table, casts applied to the live result set.
         let cast_sql = format!("SELECT {} FROM ({sql}) __q", cast_exprs.join(", "));
-        let rows = client
-            .query(cast_sql.as_str(), &[])
+
+        // Stream rows via `query_raw` and stop at the `ResultCap` so an unbounded
+        // scan (an uncapped `world_model_graph` query, or 10k very wide rows)
+        // can't materialize gigabytes in the pod. Plain `query()` would buffer
+        // the whole result before we could cap it. The row that crosses the
+        // threshold is kept; everything after is dropped and the result flagged
+        // truncated.
+        use futures::{TryStreamExt, pin_mut};
+        let no_params: [&(dyn tokio_postgres::types::ToSql + Sync); 0] = [];
+        let row_stream = client
+            .query_raw(cast_sql.as_str(), no_params)
             .await
             .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))?;
+        pin_mut!(row_stream);
 
-        let typed_rows = rows
-            .iter()
-            .map(|r| decode_row(r, &columns))
-            .collect::<Vec<_>>();
+        let cap = self.result_cap;
+        let mut typed_rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+        let mut bytes: u64 = 0;
+        let mut truncated = false;
+        while let Some(row) = row_stream
+            .try_next()
+            .await
+            .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))?
+        {
+            let decoded = decode_row(&row, &columns);
+            if let Ok(values) = &decoded {
+                bytes += estimate_row_bytes(values);
+            }
+            typed_rows.push(decoded);
+            if cap.exceeded(typed_rows.len() as u64, bytes) {
+                truncated = true;
+                break;
+            }
+        }
 
-        Ok(TypedRowStream::from_rows(columns, typed_rows))
+        let stream = TypedRowStream::from_rows(columns, typed_rows);
+        Ok(if truncated {
+            stream.with_truncation(Arc::new(AtomicBool::new(true)))
+        } else {
+            stream
+        })
     }
 
     async fn prepare_schema(&self) -> Result<(), ConnectorError> {

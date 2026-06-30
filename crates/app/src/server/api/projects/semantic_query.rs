@@ -383,7 +383,7 @@ async fn execute_compiled_sql(
         }
     };
 
-    let objects = match typed_stream_to_json_objects(stream).await {
+    let (objects, connector_truncated) = match typed_stream_to_json_objects(stream).await {
         Ok(rows) => rows,
         Err(e) => {
             error!("row conversion failed: {e}");
@@ -394,7 +394,10 @@ async fn execute_compiled_sql(
         }
     };
 
-    let truncated = objects.len() == MAX_ROWS;
+    // Truncated if the soft row cap filled OR the connector hit its byte/row
+    // backstop — the latter can stop *below* MAX_ROWS on wide rows, which the
+    // length check alone would miss.
+    let truncated = objects.len() == MAX_ROWS || connector_truncated;
     Ok(json_objects_to_table(objects, truncated))
 }
 

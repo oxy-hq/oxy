@@ -14,8 +14,12 @@
 
 use async_trait::async_trait;
 use std::fmt;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use agentic_core::result::{CellValue, QueryResult, TypedRowError, TypedRowStream};
+use agentic_core::result::{
+    BoxedRowStream, CellValue, QueryResult, TypedRowError, TypedRowStream, TypedValue,
+};
 
 // ── Dialect ───────────────────────────────────────────────────────────────────
 
@@ -428,6 +432,113 @@ pub fn is_wrappable_select(stmt: &str) -> bool {
     matches!(kw.as_str(), "SELECT" | "WITH")
 }
 
+// ── Result memory backstop (ResultCap) ───────────────────────────────────────
+
+/// Last-resort, in-pod ceiling on what a single query may materialize, enforced
+/// *inside* the connector beneath the soft row `LIMIT` that ad-hoc surfaces
+/// inject (`cap_ide_result_rows`, the `/query` proxy, `sample_limit`).
+///
+/// Why a second layer: the soft row cap bounds the row *count*, but not bytes —
+/// 10 000 rows of a multi-megabyte `TEXT`/`JSON` column still peak in the
+/// gigabytes — and some callers (`world_model_graph`) bypass the wrap entirely.
+/// When a result exceeds either bound the connector **stops reading and returns
+/// the rows gathered so far, flagged truncated** (via [`TypedRowStream::with_truncation`]).
+/// It never errors and never OOM-kills the (multi-tenant) pod. This mirrors
+/// ClickHouse's `result_overflow_mode=break` (graceful partial) over `throw`.
+///
+/// There is no env-var knob: the defaults are a `const` floor and tests inject a
+/// tiny cap via each connector's `with_result_cap`, mirroring ClickHouse's
+/// existing `with_max_result_bytes`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResultCap {
+    /// Stop after this many rows have been gathered.
+    pub max_rows: u64,
+    /// Stop once the gathered rows' estimated in-pod size reaches this many bytes.
+    pub max_bytes: u64,
+}
+
+impl ResultCap {
+    /// 256 MiB — matches ClickHouse's `MAX_RESULT_BYTES`. With the ~3x
+    /// materialization amplification (driver buffer + typed rows + Arrow) this
+    /// keeps the transient peak well under 1 GiB.
+    pub const DEFAULT_MAX_BYTES: u64 = 256 * 1024 * 1024;
+    /// 1,000,000 rows — generous; `max_bytes` is the real guard. Bounds the
+    /// row-count dimension so a narrow-but-enormous scan (e.g. one `INT` column)
+    /// still stops in finite time/disk.
+    pub const DEFAULT_MAX_ROWS: u64 = 1_000_000;
+
+    /// `true` once the running totals reach either bound. Called after each row
+    /// is gathered; `>=` so the cap is the last row kept.
+    pub fn exceeded(&self, rows: u64, bytes: u64) -> bool {
+        rows >= self.max_rows || bytes >= self.max_bytes
+    }
+}
+
+impl Default for ResultCap {
+    fn default() -> Self {
+        Self {
+            max_rows: Self::DEFAULT_MAX_ROWS,
+            max_bytes: Self::DEFAULT_MAX_BYTES,
+        }
+    }
+}
+
+/// Cheap in-pod memory proxy for one typed row — the sum of its cells' sizes.
+/// Not an exact wire size: fixed-width scalars use their Rust width and
+/// variable-width cells (`Text`/`Bytes`/`Decimal`/`Json`) use their content
+/// length. Good enough to bound the materialization peak without re-serializing.
+pub fn estimate_row_bytes(row: &[TypedValue]) -> u64 {
+    row.iter().map(estimate_value_bytes).sum()
+}
+
+fn estimate_value_bytes(v: &TypedValue) -> u64 {
+    match v {
+        TypedValue::Null | TypedValue::Bool(_) => 1,
+        TypedValue::Int32(_) | TypedValue::Date(_) => 4,
+        TypedValue::Int64(_) | TypedValue::Float64(_) | TypedValue::Timestamp(_) => 8,
+        TypedValue::Text(s) | TypedValue::Decimal(s) => s.len() as u64,
+        TypedValue::Bytes(b) => b.len() as u64,
+        // `to_string().len()` sizes a JSON cell without naming the `serde_json`
+        // crate (an *optional* dep of this crate) — it uses the value's inherent
+        // `Display`. JSON cells are rare on the hot path, so the per-row
+        // allocation is acceptable for a backstop accounting estimate.
+        TypedValue::Json(j) => j.to_string().len() as u64,
+    }
+}
+
+/// Wrap a streaming connector's row stream so it stops yielding once `cap` is
+/// reached, setting `flag` to signal truncation. Used by connectors whose
+/// driver streams rows lazily (e.g. MySQL `fetch`): the eager connectors enforce
+/// the cap in their collection loop instead. The row that crosses the threshold
+/// is yielded before the stream ends, so the partial result includes it.
+pub fn guard_row_stream(
+    mut inner: BoxedRowStream,
+    cap: ResultCap,
+    flag: Arc<AtomicBool>,
+) -> BoxedRowStream {
+    use futures::StreamExt;
+    let stream = async_stream::stream! {
+        let mut rows: u64 = 0;
+        let mut bytes: u64 = 0;
+        while let Some(item) = inner.next().await {
+            match item {
+                Ok(row) => {
+                    rows += 1;
+                    bytes += estimate_row_bytes(&row);
+                    yield Ok(row);
+                    if cap.exceeded(rows, bytes) {
+                        flag.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+                // Surface driver errors unchanged; they terminate the stream.
+                Err(e) => yield Err(e),
+            }
+        }
+    };
+    Box::pin(stream)
+}
+
 /// Strip leading whitespace and SQL comments so the first real keyword can
 /// be inspected.
 fn strip_leading_noise(sql: &str) -> &str {
@@ -518,6 +629,79 @@ mod tests {
         ] {
             assert!(!is_wrappable_select(s), "{s} must not be wrappable");
         }
+    }
+
+    #[test]
+    fn result_cap_exceeded_on_rows_or_bytes() {
+        let cap = ResultCap {
+            max_rows: 10,
+            max_bytes: 1_000,
+        };
+        assert!(!cap.exceeded(9, 999));
+        assert!(cap.exceeded(10, 0), "row bound trips");
+        assert!(cap.exceeded(0, 1_000), "byte bound trips");
+        assert!(cap.exceeded(10, 1_000));
+    }
+
+    #[test]
+    fn result_cap_default_is_the_clickhouse_floor() {
+        let cap = ResultCap::default();
+        assert_eq!(cap.max_bytes, 256 * 1024 * 1024);
+        assert_eq!(cap.max_rows, 1_000_000);
+    }
+
+    #[test]
+    fn estimate_row_bytes_sums_cell_sizes() {
+        let row = vec![
+            TypedValue::Int64(1),             // 8
+            TypedValue::Text("hello".into()), // 5
+            TypedValue::Null,                 // 1
+            TypedValue::Bytes(vec![0u8; 16]), // 16
+        ];
+        assert_eq!(estimate_row_bytes(&row), 8 + 5 + 1 + 16);
+    }
+
+    #[tokio::test]
+    async fn guard_row_stream_stops_at_row_cap_and_flags() {
+        use futures::StreamExt;
+        let rows: Vec<Result<Vec<TypedValue>, TypedRowError>> =
+            (0..100).map(|i| Ok(vec![TypedValue::Int64(i)])).collect();
+        let inner: BoxedRowStream = Box::pin(futures::stream::iter(rows));
+        let cap = ResultCap {
+            max_rows: 3,
+            max_bytes: u64::MAX,
+        };
+        let flag = Arc::new(AtomicBool::new(false));
+        let mut guarded = guard_row_stream(inner, cap, flag.clone());
+
+        let mut count = 0;
+        while let Some(item) = guarded.next().await {
+            item.unwrap();
+            count += 1;
+        }
+        assert_eq!(count, 3, "stops at the row cap (keeps the boundary row)");
+        assert!(flag.load(Ordering::Relaxed), "flags truncation");
+    }
+
+    #[tokio::test]
+    async fn guard_row_stream_passes_through_under_cap() {
+        use futures::StreamExt;
+        let rows: Vec<Result<Vec<TypedValue>, TypedRowError>> =
+            (0..5).map(|i| Ok(vec![TypedValue::Int64(i)])).collect();
+        let inner: BoxedRowStream = Box::pin(futures::stream::iter(rows));
+        let flag = Arc::new(AtomicBool::new(false));
+        let mut guarded = guard_row_stream(inner, ResultCap::default(), flag.clone());
+
+        let mut count = 0;
+        while let Some(item) = guarded.next().await {
+            item.unwrap();
+            count += 1;
+        }
+        assert_eq!(count, 5);
+        assert!(
+            !flag.load(Ordering::Relaxed),
+            "no truncation when fully under the cap"
+        );
     }
 
     #[test]

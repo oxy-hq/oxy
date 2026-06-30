@@ -61,10 +61,10 @@ pub use config::{
 // ── Trait re-exports ──────────────────────────────────────────────────────────
 
 pub use connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails, ResultCap,
     ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, SqlScript,
-    is_returning_statement, is_wrappable_select, normalize_sql, plan_sql_script,
-    split_sql_statements,
+    estimate_row_bytes, guard_row_stream, is_returning_statement, is_wrappable_select,
+    normalize_sql, plan_sql_script, split_sql_statements,
 };
 
 #[cfg(feature = "arrow")]

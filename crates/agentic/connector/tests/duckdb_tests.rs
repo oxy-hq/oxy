@@ -10,6 +10,7 @@
 mod duckdb {
     use agentic_connector::{
         ConnectorError, DatabaseConnector, DuckDbConnection, DuckDbConnector, LoadStrategy,
+        ResultCap,
     };
     use agentic_core::result::{
         CellValue, ColumnSpec, TypedDataType, TypedRowError, TypedRowStream, TypedValue,
@@ -19,7 +20,9 @@ mod duckdb {
     /// Drain a [`TypedRowStream`] into a flat `Vec<Vec<TypedValue>>`, failing
     /// the test on any per-row error. Used across typed-stream tests.
     async fn collect_typed(stream: TypedRowStream) -> (Vec<ColumnSpec>, Vec<Vec<TypedValue>>) {
-        let TypedRowStream { columns, mut rows } = stream;
+        let TypedRowStream {
+            columns, mut rows, ..
+        } = stream;
         let mut out = Vec::new();
         while let Some(row) = rows.next().await {
             match row {
@@ -28,6 +31,43 @@ mod duckdb {
             }
         }
         (columns, out)
+    }
+
+    /// A 1M-row `range()` scan must come back as a bounded *partial* result with
+    /// the truncation flag set — the [`ResultCap`] backstop on the eager
+    /// `execute_query_full` collection loop.
+    #[tokio::test]
+    async fn result_cap_truncates_runaway_scan() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        let connector = DuckDbConnector::new(conn).with_result_cap(ResultCap {
+            max_rows: 5,
+            max_bytes: u64::MAX,
+        });
+
+        let stream = connector
+            .execute_query_full("SELECT i FROM range(1000000) t(i)")
+            .await
+            .expect("cap returns a partial result, not an error");
+
+        let TypedRowStream {
+            mut rows,
+            truncated,
+            ..
+        } = stream;
+        let mut count = 0usize;
+        while let Some(row) = rows.next().await {
+            row.expect("row decodes");
+            count += 1;
+        }
+
+        assert!(
+            (1..=5).contains(&count),
+            "row cap must bound the runaway scan, got {count}"
+        );
+        assert!(
+            agentic_core::result::truncation_flag_set(&truncated),
+            "connector must flag the partial result truncated"
+        );
     }
 
     // ensure TypedRowError is exported / usable for negative-path tests

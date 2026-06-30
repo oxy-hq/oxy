@@ -34,9 +34,13 @@ use uuid::Uuid;
 const BATCH_SIZE: usize = 10_000;
 
 /// Convert a [`TypedRowStream`] into a Parquet file in the workspace results
-/// directory. Returns the generated filename (with `.parquet` extension) and
-/// the number of rows written — callers compare the count against their row
-/// cap to detect truncation.
+/// directory. Returns `(file_name, row_count, connector_truncated)`:
+/// - `file_name` — the generated filename (with `.parquet` extension);
+/// - `row_count` — rows written (callers compare against their row cap);
+/// - `connector_truncated` — `true` when the connector itself stopped early at
+///   its [`ResultCap`](agentic_connector::ResultCap) byte/row backstop. This is
+///   how byte-truncation of *wide* rows is surfaced: the row count can stay well
+///   under the soft cap yet the result is still partial.
 ///
 /// Column types map to Arrow as follows:
 ///
@@ -61,8 +65,12 @@ pub const EMPTY_RESULT_SENTINEL: &str = "__empty__";
 pub async fn typed_stream_to_parquet(
     stream: TypedRowStream,
     workspace_manager: &WorkspaceManager,
-) -> Result<(String, usize), OxyError> {
-    let TypedRowStream { columns, mut rows } = stream;
+) -> Result<(String, usize, bool), OxyError> {
+    let TypedRowStream {
+        columns,
+        mut rows,
+        truncated,
+    } = stream;
 
     // No column schema means DDL/DML or a connector that couldn't describe the
     // result set. Writing a zero-column Parquet file would break DuckDB WASM
@@ -70,7 +78,7 @@ pub async fn typed_stream_to_parquet(
     if columns.is_empty() {
         // Drain the row stream so the connector can clean up.
         while rows.next().await.is_some() {}
-        return Ok((EMPTY_RESULT_SENTINEL.to_string(), 0));
+        return Ok((EMPTY_RESULT_SENTINEL.to_string(), 0, false));
     }
 
     let arrow_schema: Arc<Schema> = Arc::new(build_arrow_schema(&columns));
@@ -171,7 +179,10 @@ pub async fn typed_stream_to_parquet(
             .await;
     }
 
-    Ok((file_name, total_rows))
+    // Read the producer truncation flag now that the row stream is fully
+    // drained: streaming connectors only set it once they hit the cap mid-drain.
+    let connector_truncated = agentic_core::result::truncation_flag_set(&truncated);
+    Ok((file_name, total_rows, connector_truncated))
 }
 
 /// Collect a [`TypedRowStream`] into the `Vec<Vec<String>>` shape used by
@@ -180,7 +191,9 @@ pub async fn typed_stream_to_parquet(
 pub async fn typed_stream_to_json_array(
     stream: TypedRowStream,
 ) -> Result<Vec<Vec<String>>, OxyError> {
-    let TypedRowStream { columns, mut rows } = stream;
+    let TypedRowStream {
+        columns, mut rows, ..
+    } = stream;
     let header: Vec<String> = columns.iter().map(|c| c.name.clone()).collect();
     let mut out: Vec<Vec<String>> = vec![header];
 
@@ -197,10 +210,21 @@ pub async fn typed_stream_to_json_array(
 /// shape customer-app producers return — charting libraries inside bundles
 /// expect numeric axes, so we don't stringify everything the way the legacy
 /// `Vec<Vec<String>>` shape does.
+///
+/// Returns `(rows, connector_truncated)`. `connector_truncated` is `true` when
+/// the connector stopped early at its [`ResultCap`](agentic_connector::ResultCap)
+/// backstop — the external `/query` + `/semantic-query` proxies must OR this into
+/// their `objects.len() == MAX_ROWS` check, or a wide-row byte-truncation that
+/// stopped below `MAX_ROWS` reads as a complete result.
+
 pub async fn typed_stream_to_json_objects(
     stream: TypedRowStream,
-) -> Result<Vec<serde_json::Value>, OxyError> {
-    let TypedRowStream { columns, mut rows } = stream;
+) -> Result<(Vec<serde_json::Value>, bool), OxyError> {
+    let TypedRowStream {
+        columns,
+        mut rows,
+        truncated,
+    } = stream;
     let names: Vec<String> = columns.iter().map(|c| c.name.clone()).collect();
     let mut out: Vec<serde_json::Value> = Vec::new();
 
@@ -213,7 +237,12 @@ pub async fn typed_stream_to_json_objects(
         }
         out.push(serde_json::Value::Object(obj));
     }
-    Ok(out)
+    // Read the producer truncation flag now that the stream is drained, and
+    // return it alongside the rows: the customer-app `/query` + `/semantic-query`
+    // proxies infer truncation from `len() == MAX_ROWS`, which misses a wide-row
+    // byte-truncation that stopped *below* MAX_ROWS. Callers OR this in.
+    let connector_truncated = agentic_core::result::truncation_flag_set(&truncated);
+    Ok((out, connector_truncated))
 }
 
 /// Sibling of [`typed_value_to_string`] that preserves native JSON types.
@@ -554,5 +583,43 @@ mod tests {
         assert_eq!(typed_value_to_string(TypedValue::Null), "");
         assert_eq!(typed_value_to_string(TypedValue::Int64(-7)), "-7");
         assert_eq!(typed_value_to_string(TypedValue::Text("hi".into())), "hi");
+    }
+
+    #[tokio::test]
+    async fn json_objects_surfaces_connector_truncation_flag() {
+        use agentic_core::result::{TypedRowError, TypedRowStream};
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
+
+        let columns = vec![ColumnSpec {
+            name: "n".into(),
+            data_type: TypedDataType::Int64,
+        }];
+        let rows: Vec<Result<Vec<TypedValue>, TypedRowError>> =
+            vec![Ok(vec![TypedValue::Int64(1)])];
+        // Producer flagged the result partial *below* the row cap — the wide-row
+        // byte-truncation case the proxies' `len() == MAX_ROWS` check misses.
+        let flag = Arc::new(AtomicBool::new(true));
+        let stream = TypedRowStream::from_rows(columns, rows).with_truncation(flag);
+
+        let (objects, truncated) = typed_stream_to_json_objects(stream).await.unwrap();
+        assert_eq!(objects.len(), 1);
+        assert!(truncated, "must surface the connector truncation flag");
+    }
+
+    #[tokio::test]
+    async fn json_objects_not_truncated_without_flag() {
+        use agentic_core::result::{TypedRowError, TypedRowStream};
+
+        let columns = vec![ColumnSpec {
+            name: "n".into(),
+            data_type: TypedDataType::Int64,
+        }];
+        let rows: Vec<Result<Vec<TypedValue>, TypedRowError>> =
+            vec![Ok(vec![TypedValue::Int64(1)])];
+        let stream = TypedRowStream::from_rows(columns, rows); // truncated: None
+
+        let (_objects, truncated) = typed_stream_to_json_objects(stream).await.unwrap();
+        assert!(!truncated, "no flag → not truncated");
     }
 }

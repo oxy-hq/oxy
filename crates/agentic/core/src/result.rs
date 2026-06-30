@@ -10,6 +10,8 @@
 //!    or render them in a typed data grid.
 
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures_core::Stream;
 
@@ -162,6 +164,21 @@ impl std::error::Error for TypedRowError {}
 pub struct TypedRowStream {
     pub columns: Vec<ColumnSpec>,
     pub rows: BoxedRowStream,
+    /// Set by the producer when it stopped reading early at the connector's
+    /// [`ResultCap`](../../connector/src/connector.rs) memory backstop, i.e. the
+    /// rows below are a *partial* result. Consumers (the Parquet writer) read
+    /// this **after** fully draining `rows` and surface it as the response
+    /// `truncated` flag. `None` means the backend does not signal truncation —
+    /// treat as not truncated. Use [`truncation_flag_set`] to read it.
+    pub truncated: Option<Arc<AtomicBool>>,
+}
+
+/// Read a producer truncation flag (as carried by [`TypedRowStream::truncated`]),
+/// returning `false` when the flag is absent. Call this **after** the row stream
+/// has been fully drained: streaming producers only set the flag once they hit
+/// the cap mid-drain.
+pub fn truncation_flag_set(flag: &Option<Arc<AtomicBool>>) -> bool {
+    flag.as_ref().is_some_and(|f| f.load(Ordering::Relaxed))
 }
 
 impl std::fmt::Debug for TypedRowStream {
@@ -190,6 +207,16 @@ impl TypedRowStream {
         Self {
             columns,
             rows: Box::pin(stream),
+            truncated: None,
         }
+    }
+
+    /// Attach a producer truncation flag, marking this stream as a *potentially*
+    /// partial result. Eager (collect-then-stream) producers set the flag's
+    /// value during collection and pass the same `Arc` here; streaming producers
+    /// hand the flag to their stream adaptor, which sets it on overflow.
+    pub fn with_truncation(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.truncated = Some(flag);
+        self
     }
 }

@@ -26,11 +26,14 @@ use agentic_core::result::{
     CellValue, ColumnSpec, QueryResult, QueryRow, TypedRowError, TypedRowStream, TypedValue,
 };
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use crate::bigquery_typed::{bq_field_to_typed, decode_bq_row};
 use crate::connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, is_returning_statement,
-    normalize_sql, plan_sql_script,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultCap, ResultSummary,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, estimate_row_bytes,
+    is_returning_statement, normalize_sql, plan_sql_script,
 };
 
 // ── Connector ─────────────────────────────────────────────────────────────────
@@ -42,6 +45,8 @@ pub struct BigQueryConnector {
     cached_schema: SchemaInfo,
     /// Set when schema pre-fetch fails so `introspect_schema` can surface the error.
     schema_error: Option<String>,
+    /// In-pod memory backstop for `execute_query_full` (see [`ResultCap`]).
+    result_cap: ResultCap,
 }
 
 impl BigQueryConnector {
@@ -71,7 +76,14 @@ impl BigQueryConnector {
             project_id,
             cached_schema,
             schema_error,
+            result_cap: ResultCap::default(),
         })
+    }
+
+    /// Override the [`ResultCap`] memory backstop. Primarily for tests.
+    pub fn with_result_cap(mut self, cap: ResultCap) -> Self {
+        self.result_cap = cap;
+        self
     }
 }
 
@@ -297,9 +309,11 @@ impl DatabaseConnector for BigQueryConnector {
 
     async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
         let sql = normalize_sql(sql);
-        // No per-query row cap — `execute_query_full` must return the full
-        // result. BigQuery paginates internally, but `ResultSet::next_row`
-        // iterates all pages.
+        // `execute_query_full` returns the full result, bounded only by the
+        // `ResultCap` memory backstop below so an unbounded scan can't OOM the
+        // pod (the hot IDE path is also bounded upstream by the `LIMIT 10000`
+        // wrap). The `max_results` server-side cap is only used on the bounded
+        // sample path (`execute_query`).
         let request = QueryRequest {
             query: sql.to_string(),
             use_legacy_sql: false,
@@ -334,12 +348,28 @@ impl DatabaseConnector for BigQueryConnector {
         let mut rs = gcp_bigquery_client::model::query_response::ResultSet::new_from_query_response(
             response,
         );
+        let cap = self.result_cap;
         let mut typed_rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+        let mut bytes: u64 = 0;
+        let mut truncated = false;
         while rs.next_row() {
-            typed_rows.push(decode_bq_row(&rs, &columns));
+            let decoded = decode_bq_row(&rs, &columns);
+            if let Ok(values) = &decoded {
+                bytes += estimate_row_bytes(values);
+            }
+            typed_rows.push(decoded);
+            if cap.exceeded(typed_rows.len() as u64, bytes) {
+                truncated = true;
+                break;
+            }
         }
 
-        Ok(TypedRowStream::from_rows(columns, typed_rows))
+        let stream = TypedRowStream::from_rows(columns, typed_rows);
+        Ok(if truncated {
+            stream.with_truncation(Arc::new(AtomicBool::new(true)))
+        } else {
+            stream
+        })
     }
 
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {

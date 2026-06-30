@@ -87,7 +87,8 @@
               "build/connect-data/mysql",
               "build/connect-data/looker",
               "build/connect-data/domo",
-              "build/connect-data/sync-schema"
+              "build/connect-data/sync-schema",
+              "build/connect-data/query-limits"
             ]
           },
           {

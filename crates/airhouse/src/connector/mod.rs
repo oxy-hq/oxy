@@ -539,6 +539,10 @@ impl DatabaseConnector for AirhouseConnector {
         Ok(TypedRowStream {
             columns,
             rows: stream,
+            // TODO(large-query-guards): wire the agentic-connector `ResultCap`
+            // backstop here too (airhouse is pgwire/DuckDB-dialect). Tracked as a
+            // follow-up alongside Domo. None = does not signal truncation.
+            truncated: None,
         })
     }
 

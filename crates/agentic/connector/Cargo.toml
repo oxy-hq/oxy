@@ -13,7 +13,7 @@ authors.workspace = true
 # `DatabaseConnector::as_arrow()` method. Backends that natively produce
 # Arrow (DuckDB, Snowflake) implement the extension under this feature.
 # Row-based backends never need it.
-arrow = ["dep:arrow", "dep:futures"]
+arrow = ["dep:arrow"]
 
 duckdb = ["dep:duckdb", "dep:slugify"]
 # `dep:chrono` — for decoding DATE / TIMESTAMP / TIMESTAMPTZ into owned
@@ -31,7 +31,6 @@ mysql = [
     "sqlx/json",
     "sqlx/runtime-tokio-rustls",
     "dep:chrono",
-    "dep:futures",
     "dep:serde_json",
 ]
 # Snowflake's driver decodes Arrow internally, so turning on `snowflake`
@@ -53,7 +52,9 @@ tracing = { workspace = true }
 
 # Arrow (feature-gated via `arrow`)
 arrow = { workspace = true, features = ["ipc"], optional = true }
-futures = { workspace = true, optional = true }
+# Non-optional: `guard_row_stream` (always-compiled in `connector.rs`) and the
+# Postgres `query_raw` streaming path both depend on `futures`.
+futures = { workspace = true }
 
 # DuckDB
 duckdb = { workspace = true, optional = true }

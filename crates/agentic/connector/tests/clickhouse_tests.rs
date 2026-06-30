@@ -92,7 +92,9 @@ async fn skip_without_docker() -> Option<ClickHouseConnector> {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 async fn collect_typed(stream: TypedRowStream) -> (Vec<ColumnSpec>, Vec<Vec<TypedValue>>) {
-    let TypedRowStream { columns, mut rows } = stream;
+    let TypedRowStream {
+        columns, mut rows, ..
+    } = stream;
     let mut out = Vec::new();
     while let Some(row) = rows.next().await {
         match row {

@@ -1,0 +1,87 @@
+---
+title: Large query results
+description: How Oxygen bounds large query results so a runaway scan never crashes the server
+---
+
+Oxygen runs your SQL against your own warehouse, but it has to pull results
+back into the Oxygen server to render them, write Parquet, or hand them to an
+agent. A query like `SELECT * FROM huge_table` with no `LIMIT` could return
+hundreds of millions of rows — enough to exhaust the server's memory.
+
+To keep that from taking the server (and every other tenant on it) down,
+Oxygen applies **two layers of protection**. The result is simple: **large
+queries still run and return useful results — you just get a bounded, clearly
+labeled partial result instead of a crash.**
+
+## Layer 1 — row caps per surface
+
+Each place you can run SQL applies a row cap before the query result is
+materialized. Where the statement allows it, Oxygen wraps your SQL as
+`SELECT * FROM ( <your query> ) LIMIT <cap>`, so the warehouse itself returns
+at most that many rows.
+
+| Where you run SQL | Row cap |
+| --- | --- |
+| **Developer Portal — Database / SQL tab** | 10,000 rows |
+| **Data App / custom-app `/query`** | 10,000 rows |
+| **Semantic queries** | 10,000 rows |
+| **Automations (`execute_sql`)** | 10,000 rows |
+| **Analytics agent (chat)** | 1,000 rows |
+| **Builder agent (file copilot)** | 100 rows |
+
+Only `SELECT` / `WITH` queries are wrapped. Statements that return rows but
+aren't valid as a sub-query — `SHOW`, `DESCRIBE`, `PRAGMA`, `EXPLAIN`,
+`SUMMARIZE`, `CALL`, `PIVOT`/`UNPIVOT`, and DuckDB's `TABLE`/`FROM`
+shorthands — run unwrapped, as do `CREATE` / `INSERT` / `UPDATE` / `DELETE`.
+
+### The "first N rows" banner
+
+When a result is capped, the SQL tab shows a banner — *"Showing the first
+10,000 rows"* — and a toast, so a partial view is never mistaken for the full
+result. To see specific rows, add your own `WHERE` / `ORDER BY` / `LIMIT` and
+re-run.
+
+## Layer 2 — the memory backstop
+
+A row cap bounds the row *count*, but not the number of *bytes*: 10,000 rows of
+a multi-megabyte `TEXT`, `JSON`, or `BLOB` column is still huge. And a few
+internal queries deliberately bypass the row cap.
+
+So every connector also enforces a **last-resort memory ceiling** while it
+reads a result. When a result crosses the ceiling, the connector **stops and
+returns what it has so far, marked truncated** — it never errors and never
+exhausts the server.
+
+- Default ceiling: **256 MiB** of result, or **1,000,000 rows**, whichever comes
+  first.
+- The result is flagged truncated, so the SQL tab shows the same partial-result
+  banner even when the row count is under the soft cap (this is how a wide-row
+  byte truncation gets surfaced).
+
+This backstop applies across warehouses:
+
+| Warehouse | Memory backstop |
+| --- | --- |
+| **ClickHouse** | Server-side `max_result_bytes` (`result_overflow_mode=break`) — the warehouse stops sending past the ceiling |
+| **PostgreSQL / Redshift** | Streamed and stopped at the ceiling client-side |
+| **MySQL** | Streamed and stopped at the ceiling client-side |
+| **DuckDB / MotherDuck** | Stopped at the ceiling while reading |
+| **Snowflake** | Stopped at the ceiling while reading |
+| **BigQuery** | Stopped at the ceiling while reading (plus server-side `maxResults` on the sample path) |
+
+<Note>
+The two layers are independent. The row cap handles the common case (you typed
+a broad query); the memory backstop is the safety net for wide rows and for any
+query path that isn't row-capped. You normally only ever see the row cap.
+</Note>
+
+## What this means for you
+
+- **Exploring data?** Expect at most 10,000 rows in the SQL tab. Add a `LIMIT`
+  or filter to target the rows you care about.
+- **Need the full result set?** Export it from your warehouse directly, or
+  narrow the query — Oxygen is for analysis and rendering, not bulk extract.
+- **Building an automation or app?** The same caps apply; design tasks to
+  aggregate or paginate rather than pull raw rows.
+- **A result looks short?** Check for the truncation banner. A banner means
+  it's partial by design, not a data problem.

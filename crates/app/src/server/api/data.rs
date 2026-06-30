@@ -258,10 +258,14 @@ pub(crate) async fn run_via_agentic_connector(
     // the IDE Database tab, but also `/semantic`, `world_model_graph`, and the
     // metric-tree runner. Those internal callers already build their own,
     // smaller `LIMIT`, so the outer wrap is a harmless ceiling. Caveat: the
-    // JSON branch below can't carry the `truncated` flag (the variant is a bare
-    // `Vec<Vec<String>>`), so a programmatic JSON consumer capped at exactly
-    // 10k is not signalled — acceptable since the IDE (the only surface that
-    // shows truncation to a human) always requests Parquet.
+    // `ResultFormat::Json` branch below returns a bare `Vec<Vec<String>>`
+    // (`SemanticQueryResponse::Json`) with no field for a `truncated` flag, so
+    // neither a row-cap fill nor a connector byte-truncation (which can now stop
+    // *below* 10k on wide rows) is signalled on this branch. Acceptable: the IDE
+    // — the only surface that shows truncation to a human — always requests
+    // Parquet (which does carry the flag). The external customer-app `/query` +
+    // `/semantic-query` proxies use `typed_stream_to_json_objects`, which DOES
+    // return the connector flag, so programmatic JSON consumers there are covered.
     let (sql_to_run, capped) = cap_ide_result_rows(&payload.sql);
 
     let query_start = std::time::Instant::now();
@@ -277,9 +281,10 @@ pub(crate) async fn run_via_agentic_connector(
         .unwrap_or(&ResultFormat::Json);
     match result_format {
         ResultFormat::Parquet => {
-            let (file_name, row_count) = typed_stream_to_parquet(stream, workspace_manager)
-                .await
-                .map_err(SqlExecuteError::Other)?;
+            let (file_name, row_count, connector_truncated) =
+                typed_stream_to_parquet(stream, workspace_manager)
+                    .await
+                    .map_err(SqlExecuteError::Other)?;
             if file_name == EMPTY_RESULT_SENTINEL {
                 // DDL/DML or zero-column result — return empty JSON so the
                 // frontend shows an empty table instead of a broken Parquet read.
@@ -289,10 +294,12 @@ pub(crate) async fn run_via_agentic_connector(
                     file_name,
                     is_preagg: false,
                     execution_time_ms,
-                    // Only a capped (returning) query that filled the cap is a
-                    // genuine truncation; an exactly-`IDE_MAX_ROWS` natural
-                    // result reads as truncated too, which is acceptable.
-                    truncated: capped && row_count >= IDE_MAX_ROWS,
+                    // Truncated if the soft row cap filled OR the connector hit
+                    // its byte/row backstop. The latter catches wide-row
+                    // byte-truncation: the row count can stay under the soft cap
+                    // yet the result is still partial. (An exactly-`IDE_MAX_ROWS`
+                    // natural result reads as truncated too, which is acceptable.)
+                    truncated: (capped && row_count >= IDE_MAX_ROWS) || connector_truncated,
                 })
             }
         }

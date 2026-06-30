@@ -14,7 +14,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
 
 use async_trait::async_trait;
@@ -26,9 +26,9 @@ use agentic_core::result::{CellValue, QueryResult, QueryRow};
 use agentic_core::result::{ColumnSpec, TypedRowError, TypedRowStream, TypedValue};
 
 use crate::connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, is_returning_statement, normalize_sql,
-    plan_sql_script,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultCap, ResultSummary,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, estimate_row_bytes, is_returning_statement,
+    normalize_sql, plan_sql_script,
 };
 
 // Re-export Connection so callers / integration tests can construct connections
@@ -82,6 +82,8 @@ pub struct DuckDbConnector {
     conn: Arc<Mutex<Connection>>,
     /// Tables / views registered during construction.
     loaded_tables: Vec<TableInfo>,
+    /// In-pod memory backstop for `execute_query_full` (see [`ResultCap`]).
+    result_cap: ResultCap,
 }
 
 // ── Constructors ──────────────────────────────────────────────────────────────
@@ -93,7 +95,15 @@ impl DuckDbConnector {
         Self {
             conn: Arc::new(Mutex::new(conn)),
             loaded_tables: Vec::new(),
+            result_cap: ResultCap::default(),
         }
+    }
+
+    /// Override the [`ResultCap`] memory backstop. Primarily for tests that need
+    /// to trip the guard on a small result.
+    pub fn with_result_cap(mut self, cap: ResultCap) -> Self {
+        self.result_cap = cap;
+        self
     }
 
     /// Fresh in-memory DuckDB instance with no pre-loaded tables.
@@ -251,6 +261,7 @@ impl DuckDbConnector {
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             loaded_tables,
+            result_cap: ResultCap::default(),
         })
     }
 
@@ -525,6 +536,7 @@ impl DatabaseConnector for DuckDbConnector {
         let sql = normalize_sql(sql);
         let conn = self.conn.clone();
         let sql_owned = sql.to_string();
+        let cap = self.result_cap;
         // Move all blocking DuckDB work off the Tokio worker thread so concurrent
         // callers (e.g. join_all of 29 filter-count queries) can run in parallel
         // rather than serialising on the limited worker-thread pool.  Pattern is
@@ -564,16 +576,32 @@ impl DatabaseConnector for DuckDbConnector {
                 })
                 .map_err(|e| ConnectorError::query_failed(sql_owned.clone(), e.to_string()))?;
 
-            // Collect eagerly so we can release the Mutex and return a `'static` stream.
+            // Collect eagerly so we can release the Mutex and return a `'static`
+            // stream — but stop at the ResultCap so an unbounded scan can't
+            // materialize gigabytes in the pod before we hand back the stream.
             let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+            let mut bytes: u64 = 0;
+            let mut truncated = false;
             for row in rows_iter {
                 match row {
-                    Ok(cells) => rows.push(Ok(cells)),
+                    Ok(cells) => {
+                        bytes += estimate_row_bytes(&cells);
+                        rows.push(Ok(cells));
+                    }
                     Err(e) => rows.push(Err(TypedRowError::DriverError(e.to_string()))),
+                }
+                if cap.exceeded(rows.len() as u64, bytes) {
+                    truncated = true;
+                    break;
                 }
             }
 
-            Ok(TypedRowStream::from_rows(columns, rows))
+            let stream = TypedRowStream::from_rows(columns, rows);
+            Ok(if truncated {
+                stream.with_truncation(Arc::new(AtomicBool::new(true)))
+            } else {
+                stream
+            })
         })
         .await
         .map_err(|e| ConnectorError::ConnectionError(format!("blocking task panicked: {e}")))?

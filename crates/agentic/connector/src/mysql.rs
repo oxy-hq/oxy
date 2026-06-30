@@ -21,15 +21,18 @@ use async_trait::async_trait;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions, MySqlRow};
 use sqlx::{Column, Executor, Row, TypeInfo};
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use agentic_core::result::{
-    CellValue, ColumnSpec, QueryResult, QueryRow, TypedDataType, TypedRowError, TypedRowStream,
-    TypedValue,
+    BoxedRowStream, CellValue, ColumnSpec, QueryResult, QueryRow, TypedDataType, TypedRowError,
+    TypedRowStream, TypedValue,
 };
 
 use crate::connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, is_returning_statement,
-    normalize_sql, plan_sql_script,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultCap, ResultSummary,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, guard_row_stream,
+    is_returning_statement, normalize_sql, plan_sql_script,
 };
 
 // ── Value / type helpers ────────────────────────────────────────────────────
@@ -252,6 +255,8 @@ fn decode_cell(row: &MySqlRow, idx: usize, col: &ColumnSpec) -> Result<TypedValu
 pub struct MysqlConnector {
     pool: MySqlPool,
     cached_schema: SchemaInfo,
+    /// In-pod memory backstop for `execute_query_full` (see [`ResultCap`]).
+    result_cap: ResultCap,
 }
 
 impl MysqlConnector {
@@ -283,7 +288,15 @@ impl MysqlConnector {
         Ok(Self {
             pool,
             cached_schema,
+            result_cap: ResultCap::default(),
         })
+    }
+
+    /// Override the [`ResultCap`] memory backstop. Primarily for tests that need
+    /// to trip the guard on a small result.
+    pub fn with_result_cap(mut self, cap: ResultCap) -> Self {
+        self.result_cap = cap;
+        self
     }
 }
 
@@ -612,9 +625,17 @@ impl DatabaseConnector for MysqlConnector {
                 };
             }
         };
+        // MySQL streams lazily via `fetch`, so the per-batch Parquet flush
+        // already bounds memory — but wrap it in the shared `ResultCap` guard
+        // for uniform behavior with the eager connectors: stop at the byte/row
+        // ceiling and flag truncation so a runaway scan never streams unbounded.
+        let flag = Arc::new(AtomicBool::new(false));
+        let inner: BoxedRowStream = Box::pin(row_stream);
+        let guarded = guard_row_stream(inner, self.result_cap, flag.clone());
         Ok(TypedRowStream {
             columns,
-            rows: Box::pin(row_stream),
+            rows: guarded,
+            truncated: Some(flag),
         })
     }
 
