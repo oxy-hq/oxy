@@ -438,9 +438,9 @@ jobs:
             Message: ${{ steps.commit-msg.outputs.message }}
             Tag: ${{ needs.determine-build-type.outputs.version }}
             To install latest:
-            `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxygen-hq.com)`
+            `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
             To install this exact build:
-            `OXY_VERSION=${{ needs.determine-build-type.outputs.version }} bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxygen-hq.com)`
+            `OXY_VERSION=${{ needs.determine-build-type.outputs.version }} bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
 
   # ============================================================================
   # Job 6: Build and Publish Docker Images (linux/amd64 + linux/arm64)

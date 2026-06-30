@@ -202,7 +202,7 @@ render_stable() {
 	fi
 
 	echo ""
-	echo "  Install: OXY_VERSION=<version> bash <(curl -sSfL https://get.oxygen-hq.com)"
+	echo "  Install: OXY_VERSION=<version> bash <(curl -sSfL https://get.oxy.tech)"
 }
 
 # ─── Render: Edge ────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ render_edge() {
 	fi
 
 	echo ""
-	echo "  Install: OXY_VERSION=<tag> bash <(curl -sSfL https://nightly.oxygen-hq.com)"
+	echo "  Install: OXY_VERSION=<tag> bash <(curl -sSfL https://nightly.oxy.tech)"
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────────
