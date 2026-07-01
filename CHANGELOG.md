@@ -2,11 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.92] - 2026-07-01
+
+### 🚀 Features
+
+- Workspace health monitoring (per-workspace checks + reconciliation) (#2637)
+
+### 🐛 Bug Fixes
+
+- Generalize large-query result guards beyond ClickHouse (#2641)
+
+### 📚 Documentation
+
+- Update installation URLs to use new domain for edge and stable releases
+
 ## [0.5.91] - 2026-06-29
 
 ### 🐛 Bug Fixes
 
 - Scope serve port env vars (OXY_HTTP_PORT) to dodge k8s service-link collision (#2639)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2638)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.91 (#2640)
 
 ## [0.5.90] - 2026-06-29
 
