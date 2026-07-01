@@ -36,6 +36,10 @@ pub struct PipelineTaskExecutor {
     /// orchestrator tasks so the coordinator can resume them via answer channel
     /// instead of TaskSpec::Resume).
     pub state: Option<Arc<agentic_runtime::state::RuntimeState>>,
+    /// Host-supplied handlers for `TaskSpec::Custom` kinds (e.g. workspace
+    /// health eval). `None`/empty means Custom tasks are unhandled. Injected by
+    /// the global-run driver so the pipeline crate need not import the host.
+    pub custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
 }
 
 #[async_trait]
@@ -120,9 +124,14 @@ impl TaskExecutor for PipelineTaskExecutor {
                     .await
             }
 
-            TaskSpec::Custom { kind, .. } => Err(format!(
-                "PipelineTaskExecutor does not handle Custom tasks (kind: {kind})"
-            )),
+            TaskSpec::Custom { kind, .. } => {
+                if let Some(handler) = self.custom_executors.as_ref().and_then(|r| r.get(kind)) {
+                    return handler.execute(assignment).await;
+                }
+                Err(format!(
+                    "PipelineTaskExecutor: no registered executor for Custom kind {kind:?}"
+                ))
+            }
 
             TaskSpec::Airway {
                 pipeline_ref,

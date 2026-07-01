@@ -122,6 +122,13 @@ pub struct Config {
     #[garde(dive)]
     pub mcp: Option<McpConfig>,
 
+    /// Per-workspace health-check cadence. When unset, the workspace is
+    /// evaluated on the default 10-minute cadence. Drives the workspace's
+    /// `health_eval` schedule row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub health_check: Option<crate::config::health_check::HealthCheckConfig>,
+
     /// Branches that are protected: saving a file while on one of these branches
     /// will auto-create a new feature branch instead of writing directly.
     /// Defaults to [default_branch] (usually "main") when not set.
@@ -212,6 +219,8 @@ pub enum IntegrationType {
     Looker(LookerIntegration),
     #[serde(rename = "toast")]
     Toast(ToastIntegration),
+    #[serde(rename = "toast_analytics")]
+    ToastAnalytics(ToastAnalyticsIntegration),
     #[serde(rename = "openweathermap")]
     OpenWeatherMap(OpenWeatherMapIntegration),
     #[serde(rename = "besttime")]
@@ -304,6 +313,41 @@ pub struct ToastIntegration {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(skip)]
     pub restaurant_guids: Vec<String>,
+}
+
+/// Toast Analytics API integration — the **reconciliation** source.
+///
+/// Distinct from `ToastIntegration` (webhooks): this carries the credentials and
+/// gateway the workspace-health **Reconciliation** dimension uses to call
+/// Toast's async Analytics Metrics API. A `reconcile.yml` check binds to it by
+/// name via `integration:`. Keeping it separate leaves the webhook integration
+/// (managed through the world-model Apps UI) untouched.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct ToastAnalyticsIntegration {
+    /// Workspace-secret name holding the Toast OAuth client id. Paired with
+    /// `client_secret_var` for client-credentials auth; absent ⇒ fall back to
+    /// `api_token_var`. (Validation is skipped: in cloud mode the value lives in
+    /// the workspace secret store, not the process env.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub client_id_var: Option<String>,
+    /// Workspace-secret name holding the Toast OAuth client secret. See
+    /// `client_id_var`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub client_secret_var: Option<String>,
+    /// Workspace-secret name holding a static Toast API bearer token, used when
+    /// the OAuth client pair is not configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub api_token_var: Option<String>,
+    /// Toast API gateway base URL (e.g. `https://ws-api.toasttab.com` prod,
+    /// `https://ws-sandbox-api.toasttab.com` sandbox). Absent ⇒ fall back to the
+    /// `OXY_TOAST_BASE_URL` env var, then the prod gateway default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub base_url: Option<String>,
 }
 
 /// OpenWeatherMap weather data integration.
@@ -2883,6 +2927,47 @@ fn default_consistency_concurrency() -> usize {
 #[cfg(test)]
 mod tests {
     use schemars::schema_for;
+
+    /// The webhook `toast` integration keeps its original shape — adding the
+    /// separate `toast_analytics` type must not have touched it.
+    #[test]
+    fn webhook_toast_integration_unchanged() {
+        use super::{Integration, IntegrationType};
+        let yaml = r#"
+name: toast
+type: toast
+webhook_secret_var: TOAST_WEBHOOK_SECRET
+"#;
+        let integration: Integration = serde_yaml::from_str(yaml).unwrap();
+        let IntegrationType::Toast(t) = integration.integration_type else {
+            panic!("expected toast integration");
+        };
+        assert_eq!(t.webhook_secret_var, "TOAST_WEBHOOK_SECRET");
+        assert!(t.restaurant_guids.is_empty());
+    }
+
+    /// The new reconciliation source parses as its own `toast_analytics` kind,
+    /// independent of any webhook `toast` integration.
+    #[test]
+    fn toast_analytics_integration_parses() {
+        use super::{Integration, IntegrationType};
+        let yaml = r#"
+name: toast_reconcile
+type: toast_analytics
+client_id_var: TOAST_CLIENT_ID
+client_secret_var: TOAST_CLIENT_SECRET
+base_url: https://ws-api.toasttab.com
+"#;
+        let integration: Integration = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(integration.name, "toast_reconcile");
+        let IntegrationType::ToastAnalytics(t) = integration.integration_type else {
+            panic!("expected toast_analytics integration");
+        };
+        assert_eq!(t.client_id_var.as_deref(), Some("TOAST_CLIENT_ID"));
+        assert_eq!(t.client_secret_var.as_deref(), Some("TOAST_CLIENT_SECRET"));
+        assert_eq!(t.api_token_var, None);
+        assert_eq!(t.base_url.as_deref(), Some("https://ws-api.toasttab.com"));
+    }
 
     #[test]
     fn test_semantic_query_params_schema() {

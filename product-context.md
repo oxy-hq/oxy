@@ -105,4 +105,5 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 | `.sql` | Verified Query | Auto-discovered, run as-is when matched; shows a Verified badge |
 | `.airway.yml` | Airway ELT pipeline | Source + destination; never holds credentials |
 | `.monitor.yml` | Anomaly monitor | Watches a measure over time; per-granularity `schedule:`; gated by `OXY_INPROC_GLOBAL_WORKER` |
+| `reconcile.yml` | Reconciliation checks | Root-only singleton; compares Oxy measures to a live external source (Toast) with abs+pct tolerance; drives the admin workspace-health **Reconciliation** dimension |
 | `oxy.yml` (under `modeling/<project>/`) | Modeling project config | Maps dbt targets to Oxy connections |

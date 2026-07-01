@@ -40,6 +40,17 @@
         }
       ]
     },
+    "health_check": {
+      "description": "Per-workspace health-check cadence. When unset, the workspace is evaluated on the default 10-minute cadence. Drives the workspace's `health_eval` schedule row.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/HealthCheckConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "integrations": {
       "default": [],
       "type": "array",
@@ -1016,6 +1027,24 @@
         }
       ]
     },
+    "HealthCheckConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "When false, the workspace's health schedule row is disabled and no eval is enqueued. Defaults to true.",
+          "default": true,
+          "type": "boolean"
+        },
+        "interval": {
+          "description": "Evaluation cadence as a humantime duration (e.g. `\"30m\"`, `\"2h\"`). Absent → 10m. Out-of-range or unparseable values clamp/fall back to the safe default rather than erroring — a malformed cadence must never wedge the scheduler.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "InstanceType": {
       "description": "The possible types of values in JSON Schema documents.\n\nSee [JSON Schema 4.2.1. Instance Data Model](https://tools.ietf.org/html/draft-handrews-json-schema-02#section-4.2.1).",
       "type": "string",
@@ -1130,6 +1159,49 @@
             "webhook_secret_var": {
               "description": "Environment variable / workspace secret name containing the Toast webhook signing secret.",
               "type": "string"
+            }
+          }
+        },
+        {
+          "description": "Toast Analytics API integration — the **reconciliation** source.\n\nDistinct from `ToastIntegration` (webhooks): this carries the credentials and gateway the workspace-health **Reconciliation** dimension uses to call Toast's async Analytics Metrics API. A `reconcile.yml` check binds to it by name via `integration:`. Keeping it separate leaves the webhook integration (managed through the world-model Apps UI) untouched.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "api_token_var": {
+              "description": "Workspace-secret name holding a static Toast API bearer token, used when the OAuth client pair is not configured.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "base_url": {
+              "description": "Toast API gateway base URL (e.g. `https://ws-api.toasttab.com` prod, `https://ws-sandbox-api.toasttab.com` sandbox). Absent ⇒ fall back to the `OXY_TOAST_BASE_URL` env var, then the prod gateway default.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "client_id_var": {
+              "description": "Workspace-secret name holding the Toast OAuth client id. Paired with `client_secret_var` for client-credentials auth; absent ⇒ fall back to `api_token_var`. (Validation is skipped: in cloud mode the value lives in the workspace secret store, not the process env.)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "client_secret_var": {
+              "description": "Workspace-secret name holding the Toast OAuth client secret. See `client_id_var`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "toast_analytics"
+              ]
             }
           }
         },

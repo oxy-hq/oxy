@@ -78,3 +78,10 @@
   # streaming run in the roundtrip case; warm is just judge calls.
   cold_usd: 0.60
   warm_usd: 0.008
+
+- flow: admin-workspace-health
+  # Navigate to /admin/workspace-health, assert table renders, click
+  # refresh. No streaming LLM run — just a REST fetch + DOM assertions +
+  # one judge call.
+  cold_usd: 0.20
+  warm_usd: 0.005

@@ -24,8 +24,8 @@ use agentic_runtime::lifecycle::crud::runs::{
 };
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, Statement,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -94,10 +94,10 @@ fn validate_input(input: &ScheduleInput) -> Result<(), ScheduleError> {
     }
     if !matches!(
         input.target_kind.as_str(),
-        "workflow" | "airway" | "agent" | "monitor_scan"
+        "workflow" | "airway" | "agent" | "monitor_scan" | "health_eval"
     ) {
         return Err(ScheduleError::Invalid(format!(
-            "target_kind must be 'workflow', 'airway', 'agent', or 'monitor_scan', got {:?}",
+            "target_kind must be 'workflow', 'airway', 'agent', 'monitor_scan', or 'health_eval', got {:?}",
             input.target_kind
         )));
     }
@@ -118,7 +118,61 @@ fn validate_input(input: &ScheduleInput) -> Result<(), ScheduleError> {
             "question must not be empty for agent schedules".into(),
         ));
     }
+    if input.cron_expr.starts_with(INTERVAL_PREFIX) {
+        // Interval-sentinel cadence for per-workspace `health_eval` rows —
+        // validated by `next_run_for`, not the cron engine.
+        return Ok(());
+    }
     validate_cron(&input.cron_expr, &input.timezone).map_err(ScheduleError::Invalid)
+}
+
+/// Sentinel prefix stored in a schedule row's `cron_expr` for per-workspace
+/// `health_eval` rows. The cadence is arbitrary (`health_check.interval` in
+/// `config.yml`) and doesn't always map to a clean cron, so health rows encode
+/// `@interval:<secs>` and `next_run_for` advances by that many seconds.
+const INTERVAL_PREFIX: &str = "@interval:";
+
+/// Max `health_eval` rows a single [`tick_health_schedules`] pass will fire.
+/// Bounds the enqueue burst after a long outage: when every workspace's
+/// `next_run_at` has elapsed together, the oldest-due rows fire first
+/// (`ORDER BY next_run_at ASC`) and the backlog drains over successive ticks
+/// instead of one N-wide spike. Comfortably above the steady-state per-tick due
+/// count (tick interval ≪ health interval, so only a small fraction is due each
+/// pass), so it never throttles normal operation.
+const MAX_HEALTH_FIRES_PER_TICK: u64 = 256;
+
+/// Encode a per-workspace health cadence as a schedule `cron_expr` sentinel.
+pub fn health_interval_cron(interval: std::time::Duration) -> String {
+    format!("{INTERVAL_PREFIX}{}", interval.as_secs())
+}
+
+/// Compute the next fire time for a `cron_expr`. Health rows carry an
+/// `@interval:<secs>` sentinel (arbitrary cadence that isn't a clean cron) and
+/// advance by that many seconds from `after`; every other expression uses the
+/// cron engine unchanged. This is the single seam both the CRUD create/update
+/// path and the tick use, so a sentinel cadence never reaches `validate_cron`
+/// or `next_occurrence_after`.
+pub fn next_after(
+    cron_expr: &str,
+    timezone: &str,
+    after: chrono::DateTime<chrono::Utc>,
+) -> Result<chrono::DateTime<chrono::FixedOffset>, String> {
+    if let Some(rest) = cron_expr.strip_prefix(INTERVAL_PREFIX) {
+        let secs: i64 = rest
+            .parse()
+            .map_err(|_| format!("invalid interval sentinel: {cron_expr:?}"))?;
+        return Ok((after + chrono::Duration::seconds(secs)).fixed_offset());
+    }
+    next_occurrence_after(cron_expr, timezone, after).map(|n| n.fixed_offset())
+}
+
+/// Compute the next fire time for a schedule row. Convenience wrapper over
+/// [`next_after`] for the tick, which already holds the row.
+pub fn next_run_for(
+    s: &schedule::Model,
+    after: chrono::DateTime<chrono::Utc>,
+) -> Result<chrono::DateTime<chrono::FixedOffset>, String> {
+    next_after(&s.cron_expr, &s.timezone, after)
 }
 
 // ── CRUD (workspace-scoped) ─────────────────────────────────────────────────
@@ -157,9 +211,8 @@ pub async fn create_schedule(
 ) -> Result<schedule::Model, ScheduleError> {
     validate_input(&input)?;
     let now = agentic_runtime::crud::now();
-    let next = next_occurrence_after(&input.cron_expr, &input.timezone, chrono::Utc::now())
-        .map_err(ScheduleError::Invalid)?
-        .fixed_offset();
+    let next = next_after(&input.cron_expr, &input.timezone, chrono::Utc::now())
+        .map_err(ScheduleError::Invalid)?;
     // Only persist a question for agent schedules; automation / airway
     // rows ignore it. Trim before storing so accidental whitespace
     // doesn't slip through.
@@ -208,9 +261,8 @@ pub async fn update_schedule(
     let cadence_changed =
         existing.cron_expr != input.cron_expr || existing.timezone != input.timezone;
     let next = if cadence_changed {
-        next_occurrence_after(&input.cron_expr, &input.timezone, chrono::Utc::now())
+        next_after(&input.cron_expr, &input.timezone, chrono::Utc::now())
             .map_err(ScheduleError::Invalid)?
-            .fixed_offset()
     } else {
         existing.next_run_at
     };
@@ -305,6 +357,12 @@ pub async fn tick_schedules(
         .filter(schedule::Column::WorkspaceId.eq(workspace_id))
         .filter(schedule::Column::Enabled.eq(true))
         .filter(schedule::Column::NextRunAt.lte(now))
+        // Specialized tick functions own these kinds (`tick_monitor_schedules`,
+        // `tick_health_schedules`); `fire_schedule` cannot handle them. Excluding
+        // them here prevents the generic tick from CAS-advancing their
+        // `next_run_at` and then failing — which would starve the specialized
+        // tick in the same pass (the row would no longer be due).
+        .filter(schedule::Column::TargetKind.is_not_in(["monitor_scan", "health_eval"]))
         .all(db)
         .await
     {
@@ -592,6 +650,285 @@ pub async fn tick_monitor_schedules(
     }
 
     fired
+}
+
+/// Fire due per-workspace `health_eval` schedule rows. Each row's `target_ref`
+/// is a workspace id; for each due row this CAS-advances `next_run_at` (via the
+/// interval sentinel) and **enqueues** a `TaskScope::Global`
+/// `TaskSpec::Custom { kind: "health_eval_workspace", payload: { workspace_id } }`
+/// onto the durable queue. The heavy eval runs on the worker/global-run fleet
+/// (see `HealthEvalTaskExecutor`), not inline here. Never errors the caller —
+/// per-schedule failures are logged and skipped.
+pub async fn tick_health_schedules(db: &DatabaseConnection) -> usize {
+    let now = chrono::Utc::now().fixed_offset();
+    let due = match schedule::Entity::find()
+        .filter(schedule::Column::TargetKind.eq("health_eval"))
+        .filter(schedule::Column::Enabled.eq(true))
+        .filter(schedule::Column::NextRunAt.lte(now))
+        // Oldest-due first + a per-tick cap so a post-outage backlog (every
+        // workspace elapsed at once) drains over several ticks rather than a
+        // single N-wide enqueue spike.
+        .order_by_asc(schedule::Column::NextRunAt)
+        .limit(MAX_HEALTH_FIRES_PER_TICK)
+        .all(db)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!(target: "scheduler", error = %e, "health tick: query failed");
+            return 0;
+        }
+    };
+    if due.len() as u64 == MAX_HEALTH_FIRES_PER_TICK {
+        tracing::info!(
+            target: "health_eval",
+            cap = MAX_HEALTH_FIRES_PER_TICK,
+            "health tick hit per-tick fire cap; remaining due rows drain next tick"
+        );
+    }
+
+    let mut fired = 0;
+    for s in due {
+        let next = match next_run_for(&s, chrono::Utc::now()) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!(
+                    target: "scheduler",
+                    schedule_id = %s.id,
+                    error = %e,
+                    "health tick: bad cadence; skipping"
+                );
+                set_schedule_last_error(db, &s.id, Some(&e)).await;
+                continue;
+            }
+        };
+        if !cas_advance_next_run(db, &s.id, s.next_run_at, next).await {
+            // Another replica won the CAS race for this fire slot.
+            continue;
+        }
+        let workspace_id = match s.target_ref.parse::<uuid::Uuid>() {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::warn!(
+                    target: "scheduler",
+                    schedule_id = %s.id,
+                    error = %e,
+                    "health tick: target_ref is not a workspace uuid; skipping"
+                );
+                set_schedule_last_error(db, &s.id, Some(&format!("bad target_ref: {e}"))).await;
+                continue;
+            }
+        };
+        match start_health_eval_run(db, workspace_id, Some(&s.id)).await {
+            Ok(run_id) => {
+                fired += 1;
+                record_fire_success(db, &s.id, &run_id).await;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "scheduler",
+                    schedule_id = %s.id,
+                    error = %e,
+                    "health tick: enqueue failed"
+                );
+                set_schedule_last_error(db, &s.id, Some(&e)).await;
+            }
+        }
+    }
+    fired
+}
+
+/// CAS-advance `next_run_at` for a schedule. Returns `true` only when this
+/// replica's UPDATE affected exactly one row (exactly-once fire). The simple
+/// shape (no missed-runs accounting) suits the singleton health row, which
+/// catches up on the next tick regardless of how many slots were skipped.
+async fn cas_advance_next_run(
+    db: &DatabaseConnection,
+    id: &str,
+    observed: chrono::DateTime<chrono::FixedOffset>,
+    next: chrono::DateTime<chrono::FixedOffset>,
+) -> bool {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_schedules SET next_run_at = $1, last_fired_at = now(), \
+         updated_at = now() WHERE id = $2 AND next_run_at = $3",
+        [next.into(), id.to_string().into(), observed.into()],
+    ))
+    .await
+    .map(|r| r.rows_affected() == 1)
+    .unwrap_or(false)
+}
+
+/// Seed a `TaskScope::Global` run carrying the per-workspace health-eval Custom
+/// task. The fleet's `HealthEvalTaskExecutor` (registered via the host's
+/// `CustomTaskRegistry`) drains it and runs `run_eval_pass_single`.
+///
+/// The root task_id **must** equal the run_id, exactly like every other Global
+/// seed (`start_automation_run` / `start_agent_run` / `start_airway_run` all do
+/// `enqueue_task(db, &run_id, &run_id, …)`). The latency worker's pickup query
+/// (`find_pending_global_runs`) and the run-scoped `DurableTransport::with_router`
+/// both key the root off `task_id = run_id`; a root task with any other id is
+/// invisible to both, so the run sits `running` forever (the original bug here,
+/// where the id was `health_eval:{ws}:{fire_slot}`). Per-fire dedup is already
+/// guaranteed upstream by `cas_advance_next_run`, and each fire mints a fresh
+/// `run_id`, so no deterministic task_id is needed.
+///
+/// The run row is stamped with `schedule_id` (via `insert_run_with_schedule`,
+/// like every other scheduled kind) so the per-job run-history query
+/// (`WHERE schedule_id = $1`) surfaces scheduled fires under the job's "Recent
+/// runs"; a plain `insert_run` leaves `schedule_id` NULL and the fire is
+/// invisible on the job page even though it ran.
+async fn start_health_eval_run(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    schedule_id: Option<&str>,
+) -> Result<String, String> {
+    use agentic_core::delegation::TaskSpec;
+    use agentic_runtime::crud::{TaskScope, enqueue_task};
+    use agentic_runtime::lifecycle::crud::runs::insert_run;
+
+    let run_id = uuid::Uuid::new_v4().to_string();
+    // Scheduled fires stamp `schedule_id` so they surface under the job's run
+    // history; an on-demand fire before the workspace's health row exists has no
+    // schedule to attribute to and uses the plain insert.
+    match schedule_id {
+        Some(schedule_id) => insert_run_with_schedule(
+            db,
+            &run_id,
+            HEALTH_SCHEDULE_NAME,
+            None,
+            "health_eval_workspace",
+            None,
+            schedule_id,
+            workspace_id,
+        )
+        .await
+        .map_err(|e| e.to_string())?,
+        None => insert_run(
+            db,
+            &run_id,
+            HEALTH_SCHEDULE_NAME,
+            None,
+            "health_eval_workspace",
+            None,
+            workspace_id,
+        )
+        .await
+        .map_err(|e| e.to_string())?,
+    }
+
+    let spec = TaskSpec::Custom {
+        kind: "health_eval_workspace".into(),
+        payload: serde_json::json!({ "workspace_id": workspace_id.to_string() }),
+    };
+    enqueue_task(db, &run_id, &run_id, None, &spec, None, TaskScope::Global)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(run_id)
+}
+
+/// Enqueue an on-demand (operator-triggered) health eval for one workspace and
+/// return its `run_id` for status polling.
+///
+/// Mirrors the scheduled fire path — seeds a `TaskScope::Global`
+/// `health_eval_workspace` Custom task drained by the worker fleet's
+/// `HealthEvalTaskExecutor` — so the heavy eval (Postgres signals + live Toast
+/// reconciliation) runs off the HTTP handler and survives instance death, rather
+/// than blocking the request inline. Stamps the run with the workspace's health
+/// `schedule_id` when one exists so manual runs surface under the job's run
+/// history alongside scheduled fires; before the workspace's first compile there
+/// is no row to attribute to and the run is inserted unattributed.
+pub async fn enqueue_health_eval(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+) -> Result<String, String> {
+    let schedule_id = schedule::Entity::find()
+        .filter(schedule::Column::TargetKind.eq("health_eval"))
+        .filter(schedule::Column::TargetRef.eq(workspace_id.to_string()))
+        .filter(schedule::Column::WorkspaceId.eq(workspace_id))
+        .one(db)
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|r| r.id);
+    start_health_eval_run(db, workspace_id, schedule_id.as_deref()).await
+}
+
+/// User-facing name for the per-workspace health-eval schedule row (shown in the
+/// Schedules surface). Reconciled onto existing rows so a rename propagates on
+/// the next compile/startup pass.
+pub const HEALTH_SCHEDULE_NAME: &str = "Health check";
+
+/// Idempotently reconcile a workspace's single `health_eval` schedule row to the
+/// given cadence/enabled state. Creates the row when absent; on an existing row,
+/// updates `cron_expr`/`enabled` (and recomputes `next_run_at`) only when the
+/// cadence or enabled flag actually changed — an unchanged reconcile preserves
+/// the next fire slot. Called from the compile worker (config.yml is the source
+/// of truth), workspace-create, and startup reconcile. The row's `target_ref`
+/// is the workspace id.
+pub async fn reconcile_health_schedule(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    interval: std::time::Duration,
+    enabled: bool,
+) -> Result<(), ScheduleError> {
+    let cron = health_interval_cron(interval);
+    let existing = schedule::Entity::find()
+        .filter(schedule::Column::TargetKind.eq("health_eval"))
+        .filter(schedule::Column::TargetRef.eq(workspace_id.to_string()))
+        .filter(schedule::Column::WorkspaceId.eq(workspace_id))
+        .one(db)
+        .await?;
+
+    match existing {
+        None => {
+            create_schedule(
+                db,
+                workspace_id,
+                ScheduleInput {
+                    name: HEALTH_SCHEDULE_NAME.to_string(),
+                    target_kind: "health_eval".to_string(),
+                    target_ref: workspace_id.to_string(),
+                    question: None,
+                    variables: None,
+                    cron_expr: cron,
+                    timezone: "UTC".to_string(),
+                    enabled,
+                },
+            )
+            .await?;
+        }
+        Some(row)
+            if row.cron_expr != cron
+                || row.enabled != enabled
+                || row.name != HEALTH_SCHEDULE_NAME =>
+        {
+            // Only recompute the fire slot when the cadence actually changed;
+            // a rename / enable-toggle must not reset next_run_at.
+            let cadence_changed = row.cron_expr != cron;
+            let next = if cadence_changed {
+                Some(
+                    next_after(&cron, &row.timezone, chrono::Utc::now())
+                        .map_err(ScheduleError::Invalid)?,
+                )
+            } else {
+                None
+            };
+            let mut active: schedule::ActiveModel = row.into();
+            active.cron_expr = Set(cron);
+            active.enabled = Set(enabled);
+            active.name = Set(HEALTH_SCHEDULE_NAME.to_string());
+            if let Some(next) = next {
+                active.next_run_at = Set(next);
+            }
+            active.updated_at = Set(agentic_runtime::crud::now());
+            active.update(db).await?;
+        }
+        Some(_) => {
+            // Cadence, enabled, and name all unchanged — leave the row (and its
+            // next fire slot) untouched. Steady-state path on every compile.
+        }
+    }
+    Ok(())
 }
 
 // ── Shared firing ───────────────────────────────────────────────────────────
@@ -935,5 +1272,65 @@ pub async fn set_schedule_last_error(
         .await
     {
         tracing::warn!(target: "scheduler", %schedule_id, error = %e, "set last_error failed");
+    }
+}
+
+#[cfg(test)]
+mod interval_tests {
+    use super::*;
+    use agentic_runtime::entity::schedule;
+
+    fn row(cron: &str) -> schedule::Model {
+        let now = chrono::Utc::now().fixed_offset();
+        schedule::Model {
+            id: "s1".into(),
+            workspace_id: uuid::Uuid::nil(),
+            project_id: None,
+            branch_id: None,
+            name: "h".into(),
+            target_kind: "health_eval".into(),
+            target_ref: uuid::Uuid::nil().to_string(),
+            question: None,
+            variables: None,
+            cron_expr: cron.into(),
+            timezone: "UTC".into(),
+            enabled: true,
+            next_run_at: now,
+            last_fired_at: None,
+            last_run_id: None,
+            last_error: None,
+            missed_runs: 0,
+            last_missed_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn cron_string_for_interval() {
+        assert_eq!(
+            health_interval_cron(std::time::Duration::from_secs(1800)),
+            "@interval:1800"
+        );
+    }
+
+    #[test]
+    fn next_run_for_interval_is_now_plus_interval() {
+        let now = chrono::Utc::now();
+        let next = next_run_for(&row("@interval:1800"), now).unwrap();
+        assert_eq!((next.to_utc() - now).num_seconds(), 1800);
+    }
+
+    #[test]
+    fn next_run_for_plain_cron_uses_cron_engine() {
+        // "*/10 * * * *" — next fire is within 10 minutes, never +1800s arithmetic.
+        let now = chrono::Utc::now();
+        let next = next_run_for(&row("*/10 * * * *"), now).unwrap();
+        assert!((next.to_utc() - now).num_seconds() <= 600);
+    }
+
+    #[test]
+    fn malformed_interval_is_error() {
+        assert!(next_run_for(&row("@interval:nope"), chrono::Utc::now()).is_err());
     }
 }

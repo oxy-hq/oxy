@@ -167,6 +167,7 @@ async fn test_automation_decision_executor_arm_returns_done() {
         builder_app_runner: None,
         db: db.clone(),
         state: None,
+        custom_executors: None,
     };
 
     let assignment = TaskAssignment {
@@ -199,6 +200,79 @@ async fn test_automation_decision_executor_arm_returns_done() {
         matches!(outcome, TaskOutcome::Done { .. }),
         "expected Done outcome, got {outcome:?}"
     );
+}
+
+// ── Test: Custom kinds delegate to the injected registry ─────────────────────
+
+/// An executor that proves it was reached by returning a sentinel error.
+struct Echo;
+#[async_trait]
+impl TaskExecutor for Echo {
+    async fn execute(&self, _a: TaskAssignment) -> Result<ExecutingTask, String> {
+        Err("reached-echo".into())
+    }
+}
+
+/// A `TaskSpec::Custom` whose kind is registered in `custom_executors` is
+/// delegated to that handler; without the registry the same spec is rejected.
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_kind_delegates_to_registry() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let mut reg = agentic_runtime::worker::CustomTaskRegistry::new();
+    reg.register("health_eval_workspace", Arc::new(Echo));
+
+    let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> =
+        Arc::new(FakePlatform::default());
+    let executor = agentic_pipeline::executor::PipelineTaskExecutor {
+        platform,
+        builder_bridges: None,
+        schema_cache: None,
+        builder_test_runner: None,
+        builder_app_runner: None,
+        db: db.clone(),
+        state: None,
+        custom_executors: Some(Arc::new(reg)),
+    };
+
+    let assignment = TaskAssignment {
+        task_id: "t".into(),
+        parent_task_id: None,
+        run_id: "r".into(),
+        spec: TaskSpec::Custom {
+            kind: "health_eval_workspace".into(),
+            payload: json!({}),
+        },
+        policy: None,
+    };
+
+    // Delegation reached Echo (sentinel error), proving the registry path.
+    // `ExecutingTask` isn't `Debug`, so match rather than `unwrap_err`.
+    let err = match executor.execute(assignment).await {
+        Ok(_) => panic!("expected delegation to Echo to error"),
+        Err(e) => e,
+    };
+    assert_eq!(err, "reached-echo");
+
+    // An unregistered kind falls through to the "no registered executor" error.
+    let unknown = TaskAssignment {
+        task_id: "t2".into(),
+        parent_task_id: None,
+        run_id: "r2".into(),
+        spec: TaskSpec::Custom {
+            kind: "nope".into(),
+            payload: json!({}),
+        },
+        policy: None,
+    };
+    let err = match executor.execute(unknown).await {
+        Ok(_) => panic!("expected unregistered Custom kind to error"),
+        Err(e) => e,
+    };
+    assert!(err.contains("no registered executor"), "got: {err}");
 }
 
 // ── Test: decision_version advances correctly after decide() ─────────────────
@@ -1363,6 +1437,7 @@ async fn test_recovery_processes_stuck_needs_resume_analytics_run() {
         None,
         None,
         Arc::new(agentic_runtime::router::NoopTaskRouter),
+        None,
         None,
     )
     .await;

@@ -1268,6 +1268,7 @@ pub async fn drive_with_coordinator(
         builder_app_runner,
         db: db.clone(),
         state: Some(state.clone()),
+        custom_executors: None,
     });
 
     // Worker: handles task execution (including the initial root task).

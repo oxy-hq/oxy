@@ -13,7 +13,7 @@ mod global;
 mod openapi;
 mod protected;
 mod public;
-mod recovery;
+pub(crate) mod recovery;
 mod secrets;
 mod workspace;
 pub(crate) mod workspace_cache;

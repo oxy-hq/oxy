@@ -155,6 +155,13 @@ async fn drive(
                 o.file_count_failed
             );
             let task_outcome = if matches!(o.status, RevisionStatus::Ready) {
+                // config.yml is the source of truth for the per-workspace health
+                // cadence. A promoted compile is the sync point: refresh the
+                // workspace's `health_eval` schedule row from the freshly
+                // compiled `health_check`. Best-effort — never fail the compile.
+                if spec.promote {
+                    reconcile_health_from_compiled(&db, spec.workspace_id).await;
+                }
                 TaskOutcome::Done {
                     answer,
                     metadata: Some(summarise_outcome(&o)),
@@ -178,6 +185,43 @@ async fn drive(
                 .send(TaskOutcome::Failed(compile_error_to_string(&e)))
                 .await;
         }
+    }
+}
+
+/// Derive the health-eval `(interval, enabled)` from a compiled config JSON
+/// value's `health_check` section. Absent / unparseable → default cadence,
+/// enabled. Pure (no IO) so it's directly unit-testable.
+fn health_settings_from_config(config: Option<&Value>) -> (std::time::Duration, bool) {
+    let hc = config.and_then(|v| v.get("health_check")).and_then(|hc| {
+        serde_json::from_value::<oxy::config::health_check::HealthCheckConfig>(hc.clone()).ok()
+    });
+    let interval = oxy::config::health_check::resolve_interval(hc.as_ref());
+    let enabled = hc.as_ref().map(|h| h.enabled).unwrap_or(true);
+    (interval, enabled)
+}
+
+/// Read the workspace's promoted compiled config and reconcile its `health_eval`
+/// schedule row to the configured cadence. Best-effort: a read error or missing
+/// config falls back to the default cadence; a reconcile error is logged.
+pub(crate) async fn reconcile_health_from_compiled(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+) {
+    let config = crate::server::api::compiled_reader::resolve_workspace_config(workspace_id, None)
+        .await
+        .ok()
+        .flatten();
+    let (interval, enabled) = health_settings_from_config(config.as_ref());
+    if let Err(e) =
+        agentic_pipeline::scheduler::reconcile_health_schedule(db, workspace_id, interval, enabled)
+            .await
+    {
+        tracing::warn!(
+            target: "health_eval",
+            error = %e,
+            %workspace_id,
+            "failed to reconcile health schedule from compiled config"
+        );
     }
 }
 
@@ -232,4 +276,41 @@ pub fn spec_from_taskspec(
         kind,
         owner_user_id,
     })
+}
+
+#[cfg(test)]
+mod health_settings_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn absent_config_is_default_cadence_enabled() {
+        let (interval, enabled) = health_settings_from_config(None);
+        assert_eq!(interval, std::time::Duration::from_secs(600));
+        assert!(enabled);
+    }
+
+    #[test]
+    fn absent_health_check_section_is_default() {
+        let cfg = json!({ "databases": [] });
+        let (interval, enabled) = health_settings_from_config(Some(&cfg));
+        assert_eq!(interval, std::time::Duration::from_secs(600));
+        assert!(enabled);
+    }
+
+    #[test]
+    fn reads_interval_and_enabled() {
+        let cfg = json!({ "health_check": { "interval": "45m", "enabled": true } });
+        let (interval, enabled) = health_settings_from_config(Some(&cfg));
+        assert_eq!(interval, std::time::Duration::from_secs(2700));
+        assert!(enabled);
+    }
+
+    #[test]
+    fn disabled_is_respected() {
+        let cfg = json!({ "health_check": { "enabled": false } });
+        let (interval, enabled) = health_settings_from_config(Some(&cfg));
+        assert_eq!(interval, std::time::Duration::from_secs(600));
+        assert!(!enabled);
+    }
 }

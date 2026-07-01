@@ -153,8 +153,11 @@ fn summarize_app(integration: &Integration) -> Option<AppSummary> {
                 api_key_var: u.api_key_var.clone(),
             },
         ),
-        // Omni and Looker are surfaced through other settings panels.
-        IntegrationType::Omni(_) | IntegrationType::Looker(_) => return None,
+        // Omni and Looker are surfaced through other settings panels;
+        // toast_analytics is an admin-only reconciliation source (config.yml).
+        IntegrationType::Omni(_)
+        | IntegrationType::Looker(_)
+        | IntegrationType::ToastAnalytics(_) => return None,
     };
     Some(AppSummary {
         kind: kind.to_string(),

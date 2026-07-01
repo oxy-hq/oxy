@@ -127,12 +127,34 @@ const tzOffsetMinutes = (date: Date, tz: string): number => {
  * interpreted in `tz`. The timezone offset is sampled once, so DST shifts
  * inside the preview window are approximate — fine for a next-runs preview.
  */
+/**
+ * Parse the `@interval:<secs>` sentinel schedule format (e.g. `@interval:600`)
+ * into its cadence in seconds. Returns `null` for any non-interval expression.
+ */
+const parseIntervalSeconds = (expr: string): number | null => {
+  const m = expr.trim().match(/^@interval:(\d+)$/);
+  if (!m) return null;
+  const secs = Number(m[1]);
+  return Number.isFinite(secs) && secs > 0 ? secs : null;
+};
+
 export const cronNextRuns = (
   expr: string,
   tz: string,
   count: number,
   from: Date = new Date()
 ): Date[] => {
+  const intervalSecs = parseIntervalSeconds(expr);
+  if (intervalSecs !== null) {
+    const out: Date[] = [];
+    let t = from.getTime();
+    for (let i = 0; i < count; i++) {
+      t += intervalSecs * 1000;
+      out.push(new Date(t));
+    }
+    return out;
+  }
+
   const fields = expr.trim().split(/\s+/);
   if (fields.length < 5) return [];
   const minutes = parseCronField(fields[0], 0, 59);
@@ -183,6 +205,15 @@ export const cronCountBetween = (
 
 /** Best-effort human summary of a 5-field cron expression. */
 export const describeCron = (expr: string): string => {
+  const intervalSecs = parseIntervalSeconds(expr);
+  if (intervalSecs !== null) {
+    if (intervalSecs % 3600 === 0)
+      return `Every ${intervalSecs / 3600} hour${intervalSecs === 3600 ? "" : "s"}`;
+    if (intervalSecs % 60 === 0)
+      return `Every ${intervalSecs / 60} minute${intervalSecs === 60 ? "" : "s"}`;
+    return `Every ${intervalSecs} second${intervalSecs === 1 ? "" : "s"}`;
+  }
+
   const f = expr.trim().split(/\s+/);
   if (f.length < 5) return expr;
   const [min, hour, dom, , dow] = f;

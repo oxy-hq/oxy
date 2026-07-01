@@ -19,6 +19,7 @@ pub mod orgs_admin;
 pub mod oxy_access;
 pub mod routing;
 pub mod users_admin;
+pub(crate) mod workspace_health;
 pub mod workspaces_admin;
 
 use axum::Router;
@@ -74,6 +75,7 @@ use crate::server::router::AppState;
 ///   - PATCH  /admin/workspaces/{workspace_id}
 ///   - DELETE /admin/workspaces/{workspace_id}
 ///   - POST   /admin/workspaces/{workspace_id}/transfer-org
+///   - POST   /admin/workspace-health/{workspace_id}/eval
 /// Admin routes. The outer nest layer in `router::global` is permissive
 /// (OXY_OWNER **or** app_admins). `billing` and `app_admins` sub-routers
 /// escalate to strict OXY_OWNER via `route_layer` — the inner layer runs
@@ -97,6 +99,7 @@ pub(crate) fn router() -> Router<AppState> {
         .merge(users_admin::router())
         .merge(workspaces_admin::router())
         .merge(routing::router())
+        .merge(workspace_health::router())
         .merge(billing::router().route_layer(strict.clone()))
         .merge(app_admins::router().route_layer(strict))
 }

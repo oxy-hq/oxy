@@ -27,6 +27,7 @@ use crate::platform::{BuilderBridges, PlatformContext};
 /// with the wrong workspace's connectors/secrets). `None` resumes every
 /// workspace's runs — appropriate for local mode (single workspace) and
 /// tests.
+#[allow(clippy::too_many_arguments)]
 pub async fn recover_active_runs(
     db: DatabaseConnection,
     state: Arc<RuntimeState>,
@@ -37,6 +38,7 @@ pub async fn recover_active_runs(
     builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
     workspace_id: Option<uuid::Uuid>,
+    custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
 ) -> usize {
     // Pre-pass: clean up stale queue entries from the previous server lifetime.
     // Tasks "claimed" by now-dead workers get re-queued or dead-lettered.
@@ -73,6 +75,7 @@ pub async fn recover_active_runs(
             builder_test_runner.clone(),
             builder_app_runner.clone(),
             router.clone(),
+            custom_executors.clone(),
         )
         .await
         {
@@ -106,6 +109,7 @@ pub async fn recover_active_runs(
 /// `workspace_id` — see [`recover_active_runs`]. The cloud-mode periodic
 /// loop passes the iteration's workspace id so it never drives a
 /// foreign workspace's row with this context.
+#[allow(clippy::too_many_arguments)]
 pub async fn recover_stranded_runs(
     db: DatabaseConnection,
     state: Arc<RuntimeState>,
@@ -116,6 +120,7 @@ pub async fn recover_stranded_runs(
     builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
     workspace_id: Option<uuid::Uuid>,
+    custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
 ) -> usize {
     /// A run untouched for this long with no queue entry is genuinely
     /// stranded (not a worker mid-commit between state write and enqueue).
@@ -163,6 +168,7 @@ pub async fn recover_stranded_runs(
             builder_test_runner.clone(),
             builder_app_runner.clone(),
             router.clone(),
+            custom_executors.clone(),
         )
         .await
         {
@@ -196,6 +202,7 @@ pub async fn recover_stranded_runs(
 /// worker passes `None` (single workspace); the cloud-mode worker passes
 /// the iteration's workspace id so it routes per-row to the right
 /// `PlatformContext`.
+#[allow(clippy::too_many_arguments)]
 pub async fn recover_pending_global_runs(
     db: DatabaseConnection,
     state: Arc<RuntimeState>,
@@ -206,6 +213,7 @@ pub async fn recover_pending_global_runs(
     builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
     workspace_id: Option<uuid::Uuid>,
+    custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
 ) -> usize {
     let pending = match agentic_runtime::crud::find_pending_global_runs(&db, workspace_id).await {
         Ok(p) => p,
@@ -239,6 +247,7 @@ pub async fn recover_pending_global_runs(
             builder_test_runner.clone(),
             builder_app_runner.clone(),
             router.clone(),
+            custom_executors.clone(),
         )
         .await
         {
@@ -257,6 +266,7 @@ pub async fn recover_pending_global_runs(
     driven
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn recover_single_run(
     root: &agentic_runtime::entity::run::Model,
     db: DatabaseConnection,
@@ -267,6 +277,7 @@ async fn recover_single_run(
     builder_test_runner: Option<Arc<dyn agentic_builder::BuilderTestRunner>>,
     builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
+    custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
 ) -> Result<(), String> {
     use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
 
@@ -304,6 +315,7 @@ async fn recover_single_run(
         builder_app_runner,
         db: db.clone(),
         state: Some(state.clone()),
+        custom_executors,
     });
 
     // ── Step 0: Transparent recovery — clean up partial events ──────────

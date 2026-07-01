@@ -1,0 +1,207 @@
+import { AlertTriangle, CheckCircle2, CircleAlert, HeartPulse, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useTriggerWorkspaceHealthEval } from "@/hooks/api/workspaceHealth/useTriggerWorkspaceHealthEval";
+import { useWorkspaceHealthEntry } from "@/hooks/api/workspaceHealth/useWorkspaceHealthEntry";
+import { timeAgo } from "@/libs/utils/date";
+import type {
+  WorkspaceHealthDimensionKey,
+  WorkspaceHealthReconciliationCheck,
+  WorkspaceHealthSignals,
+  WorkspaceHealthStatus
+} from "@/services/api/workspaceHealth";
+import { AdminDetailTabPanel } from "../../../components/AdminDetailTabs";
+import { AdminEmptyState } from "../../../components/AdminEmptyState";
+import { AdminSectionLabel } from "../../../components/AdminSectionLabel";
+import { AdminStatusPill } from "../../../components/AdminStatusPill";
+import { workspaceHealthTone } from "../../../components/workspaceHealthTone";
+
+const DIMENSION_LABELS: Record<WorkspaceHealthDimensionKey, string> = {
+  job_liveness: "Jobs",
+  pipeline: "Pipeline",
+  correctness: "Correctness",
+  queue: "Queue",
+  reconciliation: "Reconciliation"
+};
+
+/** Numeric signal counts, in display order. Airway flags are rendered separately. */
+const SIGNAL_ROWS: { key: keyof WorkspaceHealthSignals; label: string }[] = [
+  { key: "total_runs", label: "Total runs (window)" },
+  { key: "failed_runs", label: "Failed runs" },
+  { key: "timed_out_runs", label: "Timed-out runs" },
+  { key: "open_high_anomalies", label: "Open high-severity anomalies" },
+  { key: "open_medium_anomalies", label: "Open medium-severity anomalies" },
+  { key: "dead_letter_count", label: "Dead-letter tasks" }
+];
+
+// Shades mirror `AdminStatusPill`'s tones so the icon and the status pill read
+// as one unit. emerald/amber are sanctioned on the admin operator console (see
+// `workspaceHealthTone` — the customer-facing "emerald = workflow-node success
+// only" rule does not apply to this surface).
+const HealthIcon = ({ status }: { status: WorkspaceHealthStatus }) => {
+  switch (status) {
+    case "healthy":
+      return <CheckCircle2 className='size-4 text-emerald-700 dark:text-emerald-400' />;
+    case "degraded":
+      return <AlertTriangle className='size-4 text-amber-700 dark:text-amber-400' />;
+    case "unhealthy":
+      return <CircleAlert className='size-4 text-destructive' />;
+  }
+};
+
+/**
+ * Per-workspace Health tab. Derives its data from the cross-tenant rollup
+ * (`useWorkspaceHealthEntry`) and surfaces three layers of detail beyond the
+ * top-line status: the per-dimension breakdown, the "in this state since"
+ * transition time, and the raw signal counts behind each dimension.
+ */
+export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: string }) {
+  const { data: health, isLoading } = useWorkspaceHealthEntry(workspaceId);
+  const triggerEval = useTriggerWorkspaceHealthEval();
+
+  return (
+    <AdminDetailTabPanel>
+      <AdminSectionLabel
+        trailing={
+          <Button
+            variant='outline'
+            size='sm'
+            className='gap-1.5'
+            onClick={() => triggerEval.mutate(workspaceId)}
+            disabled={triggerEval.isPending}
+          >
+            <RefreshCw className={triggerEval.isPending ? "size-3.5 animate-spin" : "size-3.5"} />
+            Run health check
+          </Button>
+        }
+      >
+        Health
+      </AdminSectionLabel>
+
+      {isLoading ? (
+        <div className='flex items-center gap-2 text-muted-foreground text-sm'>
+          <Spinner /> Loading health…
+        </div>
+      ) : !health ? (
+        <AdminEmptyState
+          icon={HeartPulse}
+          title='No health data'
+          description='This workspace does not appear in the current health rollup.'
+        />
+      ) : (
+        <div className='space-y-6'>
+          <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
+            <div className='flex flex-wrap items-center gap-3'>
+              <HealthIcon status={health.status} />
+              <AdminStatusPill tone={workspaceHealthTone(health.status)} label={health.status} />
+              {health.changed_at ? (
+                <span className='text-muted-foreground text-xs'>
+                  in this state since {new Date(health.changed_at).toLocaleString()}
+                </span>
+              ) : null}
+              {health.checked_at ? (
+                <span
+                  className='text-muted-foreground/70 text-xs'
+                  title={new Date(health.checked_at).toLocaleString()}
+                >
+                  · last checked {timeAgo(health.checked_at)}
+                </span>
+              ) : (
+                <span className='text-muted-foreground/70 text-xs'>· awaiting first check</span>
+              )}
+            </div>
+
+            <div className='space-y-2'>
+              <AdminSectionLabel>Dimensions</AdminSectionLabel>
+              <ul className='space-y-1.5'>
+                {health.dimensions.map((d) => (
+                  <li
+                    key={d.dimension}
+                    className='flex items-center justify-between gap-3 rounded-md border border-border/50 px-3 py-2'
+                  >
+                    <span className='font-medium text-sm'>
+                      {DIMENSION_LABELS[d.dimension] ?? d.dimension}
+                    </span>
+                    <div className='flex min-w-0 items-center gap-2'>
+                      {d.reason ? (
+                        <span className='truncate text-muted-foreground text-xs'>{d.reason}</span>
+                      ) : null}
+                      <AdminStatusPill tone={workspaceHealthTone(d.status)} label={d.status} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+
+          <section className='space-y-3 rounded-lg border border-border/60 bg-card p-6'>
+            <AdminSectionLabel>Signals (recent window)</AdminSectionLabel>
+            <dl className='grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2'>
+              {SIGNAL_ROWS.map((row) => (
+                <div key={row.key} className='flex items-center justify-between gap-3 text-sm'>
+                  <dt className='text-muted-foreground'>{row.label}</dt>
+                  <dd className='tabular-nums'>
+                    {health.signals ? (health.signals[row.key] as number) : "—"}
+                  </dd>
+                </div>
+              ))}
+              <div className='flex items-center justify-between gap-3 text-sm'>
+                <dt className='text-muted-foreground'>Latest Airway run</dt>
+                <dd>{health.signals ? airwayLabel(health.signals) : "—"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          {health.reconciliation.length > 0 ? (
+            <section className='space-y-3 rounded-lg border border-border/60 bg-card p-6'>
+              <AdminSectionLabel>Reconciliation</AdminSectionLabel>
+              <ul className='space-y-1.5'>
+                {health.reconciliation.map((check) => (
+                  <ReconciliationRow key={check.check} check={check} />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+      )}
+    </AdminDetailTabPanel>
+  );
+}
+
+/**
+ * One reconciliation check: the Oxy measure against the external source, the
+ * absolute and percent drift, an optional reason, and its drift status pill.
+ */
+const ReconciliationRow = ({ check }: { check: WorkspaceHealthReconciliationCheck }) => (
+  <li className='flex items-center justify-between gap-3 rounded-md border border-border/50 px-3 py-2'>
+    <div className='min-w-0 space-y-1'>
+      <span className='font-medium text-sm'>{check.check}</span>
+      <div className='flex flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground text-xs tabular-nums'>
+        <span>Oxy {formatNumber(check.oxy)}</span>
+        <span>External {formatNumber(check.ext)}</span>
+        <span>
+          Δ {formatNumber(check.abs_diff)}
+          {check.pct_diff !== null ? ` (${check.pct_diff.toFixed(1)}%)` : null}
+        </span>
+      </div>
+      {check.reason ? (
+        <span className='block truncate text-muted-foreground text-xs'>{check.reason}</span>
+      ) : null}
+    </div>
+    <AdminStatusPill tone={workspaceHealthTone(check.status)} label={check.status} />
+  </li>
+);
+
+/** `null` (source unreachable/errored) and non-finite values render as an em dash. */
+const formatNumber = (value: number | null): string => {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return Number.isInteger(value)
+    ? value.toLocaleString()
+    : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+};
+
+const airwayLabel = (s: WorkspaceHealthSignals): string => {
+  if (s.airway_last_run_failed) return "Failed";
+  if (s.airway_completed_with_errors) return "Completed with errors";
+  return "OK";
+};

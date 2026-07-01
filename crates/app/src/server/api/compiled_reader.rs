@@ -454,6 +454,22 @@ pub async fn resolve_monitor_config(
     Ok(row.map(|m| m.definition))
 }
 
+/// Resolve the workspace's compiled `reconcile.yml` (singleton per revision).
+/// `Ok(None)` on draft/local mode, no promoted revision, or no file — callers
+/// fall through to the FS path.
+pub async fn resolve_reconcile_config(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+) -> Result<Option<Value>, sea_orm::DbErr> {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+        return Ok(None);
+    };
+    let row = entity::reconcile_configs::Entity::find_by_id(revision_id)
+        .one(&db)
+        .await?;
+    Ok(row.map(|m| m.definition))
+}
+
 /// Resolve the workspace's compiled `.world-model.yml`. Singleton per
 /// revision, so the row's `definition` JSONB is the full
 /// `WorldModelConfig` (top-level `entities`) ready to round-trip back

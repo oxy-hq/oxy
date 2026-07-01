@@ -204,6 +204,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         base_branch: None,
         repositories: vec![],
         admins: vec![],
+        health_check: None,
         pre_aggregations: None,
     };
     serde_yaml::to_writer(

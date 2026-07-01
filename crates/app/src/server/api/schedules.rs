@@ -228,6 +228,70 @@ pub async fn run_now(
         });
 
         Json(RunNowResponse { run_id }).into_response()
+    } else if schedule.target_kind == "health_eval" {
+        // Internal per-workspace health eval. `fire_schedule` can't handle this
+        // kind (it only seeds workflow/airway/agent runs), so route it like the
+        // monitor_scan branch: seed a run row, evaluate inline on the fleet's
+        // `run_eval_pass_single`, and mark the run done/failed. `target_ref` is
+        // the workspace id; the eval is workspace-scoped.
+        let run_id = Uuid::new_v4().to_string();
+        let mut meta = serde_json::json!({});
+        agentic_pipeline::scheduler::stamp_trigger_metadata(
+            &mut meta,
+            &Some("manual".into()),
+            &None,
+            &None,
+        );
+        if let Err(e) = insert_run_with_schedule(
+            &state.db,
+            &run_id,
+            agentic_pipeline::scheduler::HEALTH_SCHEDULE_NAME,
+            None,
+            "health_eval_workspace",
+            Some(meta),
+            &schedule.id,
+            workspace_id,
+        )
+        .await
+        {
+            tracing::error!(error = %e, "run_now: failed to create health eval run row");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response();
+        }
+        record_fire_success(&state.db, &schedule.id, &run_id).await;
+
+        let (answer_tx, _answer_rx) = mpsc::channel::<String>(1);
+        let (cancel_tx, _cancel_rx) = watch::channel(false);
+        state.register(&run_id, answer_tx, cancel_tx);
+
+        let db = state.db.clone();
+        let state_bg = state.clone();
+        let run_id_bg = run_id.clone();
+        let schedule_id_bg = schedule.id.clone();
+        tokio::spawn(async move {
+            use crate::server::api::admin::workspace_health::eval_pass::run_eval_pass_single;
+            match run_eval_pass_single(&db, workspace_id).await {
+                Ok(summary) => {
+                    if let Err(e) = update_run_done(&db, &run_id_bg, &summary, None).await {
+                        tracing::error!(error = %e, run_id = %run_id_bg, "failed to mark health run done");
+                    }
+                }
+                Err(e) => {
+                    if let Err(db_err) = update_run_failed(&db, &run_id_bg, &e).await {
+                        tracing::error!(error = %db_err, run_id = %run_id_bg, "failed to mark health run failed");
+                    }
+                    agentic_pipeline::scheduler::set_schedule_last_error(
+                        &db,
+                        &schedule_id_bg,
+                        Some(&e),
+                    )
+                    .await;
+                }
+            }
+            state_bg.notify(&run_id_bg);
+            state_bg.deregister(&run_id_bg);
+        });
+
+        Json(RunNowResponse { run_id }).into_response()
     } else {
         let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
         match run_schedule_now(&state.db, workspace_id, workspace.as_ref(), &id).await {

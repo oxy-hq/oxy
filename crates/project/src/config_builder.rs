@@ -42,6 +42,7 @@ impl ConfigBuilder {
             base_branch: None,
             repositories: vec![],
             admins: vec![],
+            health_check: None,
             pre_aggregations: None,
         };
 

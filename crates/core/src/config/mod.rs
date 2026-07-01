@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 pub mod apps_helpers;
 pub mod auth;
+pub mod health_check;
 pub mod model;
 mod parser;
 pub mod schema_type_converter;

@@ -91,6 +91,54 @@ pub trait TaskExecutor: Send + Sync + 'static {
     }
 }
 
+// ── CustomTaskRegistry ───────────────────────────────────────────────────────
+
+/// Maps `TaskSpec::Custom { kind }` → executor. Built by the host (which owns
+/// the concrete executors, e.g. `oxy-app`'s `HealthEvalTaskExecutor`) and
+/// injected into the global-run driver. The pipeline layer's
+/// `PipelineTaskExecutor` consults it in its `Custom` arm, so a new Custom kind
+/// gets a durable fleet execution path without the pipeline crate importing the
+/// host. See `internal-docs/2026-06-26-workspace-scoped-health-checks-design.md`.
+#[derive(Default, Clone)]
+pub struct CustomTaskRegistry {
+    handlers: std::collections::HashMap<String, Arc<dyn TaskExecutor>>,
+}
+
+impl CustomTaskRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register(&mut self, kind: impl Into<String>, exec: Arc<dyn TaskExecutor>) {
+        self.handlers.insert(kind.into(), exec);
+    }
+
+    pub fn get(&self, kind: &str) -> Option<Arc<dyn TaskExecutor>> {
+        self.handlers.get(kind).cloned()
+    }
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    struct Dummy;
+    #[async_trait]
+    impl TaskExecutor for Dummy {
+        async fn execute(&self, _a: TaskAssignment) -> Result<ExecutingTask, String> {
+            Err("dummy".into())
+        }
+    }
+
+    #[test]
+    fn register_and_get() {
+        let mut reg = CustomTaskRegistry::new();
+        reg.register("health_eval_workspace", Arc::new(Dummy));
+        assert!(reg.get("health_eval_workspace").is_some());
+        assert!(reg.get("nope").is_none());
+    }
+}
+
 // ── Worker ───────────────────────────────────────────────────────────────────
 
 /// A pull-based worker that receives assignments and executes them.

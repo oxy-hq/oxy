@@ -11,7 +11,7 @@ import {
   Users
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,8 +39,12 @@ import { AdminEmptyState } from "../../components/AdminEmptyState";
 import { AdminLinkedList, AdminLinkedRow } from "../../components/AdminLinkedRow";
 import { AdminSectionLabel } from "../../components/AdminSectionLabel";
 import { AdminStatusPill, type AdminStatusTone } from "../../components/AdminStatusPill";
+import WorkspaceHealthPanel from "./components/WorkspaceHealthPanel";
 
-type TabId = "overview" | "members" | "settings";
+type TabId = "overview" | "health" | "members" | "settings";
+
+const isTabId = (v: string | null): v is TabId =>
+  v === "overview" || v === "health" || v === "members" || v === "settings";
 
 const ageDays = (iso: string) =>
   Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
@@ -62,7 +66,19 @@ const STATUS_MAP: Record<string, { tone: AdminStatusTone; label: string }> = {
 export default function AdminWorkspaceDetail() {
   const { workspaceId = "" } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<TabId>("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const tab: TabId = isTabId(tabParam) ? tabParam : "overview";
+  const setTab = (next: TabId) =>
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === "overview") params.delete("tab");
+        else params.set("tab", next);
+        return params;
+      },
+      { replace: true }
+    );
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -193,6 +209,7 @@ export default function AdminWorkspaceDetail() {
         onChange={setTab}
         tabs={[
           { id: "overview", label: "Overview" },
+          { id: "health", label: "Health" },
           { id: "members", label: "Members", count: detail.member_count },
           { id: "settings", label: "Settings" }
         ]}
@@ -282,6 +299,8 @@ export default function AdminWorkspaceDetail() {
           </div>
         </AdminDetailTabPanel>
       ) : null}
+
+      {tab === "health" ? <WorkspaceHealthPanel workspaceId={workspaceId} /> : null}
 
       {tab === "members" ? (
         <AdminDetailTabPanel>

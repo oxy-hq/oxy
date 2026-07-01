@@ -113,8 +113,11 @@ mod m20260606_000001_create_custom_app_tracking;
 mod m20260606_000002_create_compile_boundary;
 mod m20260612_000001_add_logo_to_organizations;
 mod m20260622_000001_create_org_subdomains;
+mod m20260622_000001_create_workspace_health_state;
 mod m20260623_000001_rename_procedures_to_automations;
+mod m20260624_000001_create_reconcile_configs;
 mod m20260624_000001_create_world_model_configs;
+mod m20260624_000002_health_state_add_payload;
 
 pub struct Migrator;
 
@@ -229,8 +232,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260606_000002_create_compile_boundary::Migration),
             Box::new(m20260612_000001_add_logo_to_organizations::Migration),
             Box::new(m20260622_000001_create_org_subdomains::Migration),
+            Box::new(m20260622_000001_create_workspace_health_state::Migration),
             Box::new(m20260623_000001_rename_procedures_to_automations::Migration),
+            Box::new(m20260624_000001_create_reconcile_configs::Migration),
             Box::new(m20260624_000001_create_world_model_configs::Migration),
+            Box::new(m20260624_000002_health_state_add_payload::Migration),
         ]
     }
 }

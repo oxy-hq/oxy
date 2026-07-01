@@ -547,6 +547,13 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/projects/{project_id}/procedures/{procedure_id}/runs",
         role: RouteRole::IdeOnly,
     },
+    // NB: the on-demand single-workspace health eval
+    // (`POST /api/admin/workspace-health/{workspace_id}/eval`) is intentionally
+    // NOT here — it is a pure Postgres enqueue (FS-free) and serves FleetOk by
+    // default. The heavy eval (workspace-context build + reconcile.yml FS
+    // fallthrough) runs in the fleet executor that drains the Global
+    // `health_eval_workspace` task, which lands on an FS-owning node regardless
+    // of where the request was accepted. See `workspace_health_eval_is_fleet_ok`.
 ];
 
 /// Set once at process startup. Subsequent calls to
@@ -636,6 +643,12 @@ pub fn ensure_fs_writable(operation: &str) -> Result<(), OxyError> {
 /// Postgres (or S3) read. Anything that executes, edits, or streams a live run
 /// stays `IdeOnly`.
 const FLEET_OK_READ_PATTERNS: &[ManifestEntry] = &[
+    // Cross-tenant health rollup — pure Postgres read, safe on any replica.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/admin/workspace-health",
+        role: RouteRole::FleetOk,
+    },
     // Analytics conversation history — list_runs_by_thread / get_run_by_thread
     // (agentic-http, `state.db` only).
     ManifestEntry {
@@ -1018,6 +1031,30 @@ mod tests {
                 "{method} {path} executes/streams/reads-FS — must stay IdeOnly"
             );
         }
+    }
+
+    #[test]
+    fn workspace_health_is_fleet_ok() {
+        assert_eq!(
+            classify("GET", "/api/admin/workspace-health"),
+            RouteRole::FleetOk
+        );
+    }
+
+    #[test]
+    fn workspace_health_eval_is_fleet_ok() {
+        // The on-demand eval handler is a pure Postgres enqueue: it seeds a
+        // Global `health_eval_workspace` task and returns 202. The heavy work
+        // (workspace-context build + reconcile.yml FS fallthrough) runs in the
+        // fleet executor that drains the task, NOT in this handler — route class
+        // doesn't govern task execution. So the POST is FS-free and must serve
+        // FleetOk: pinning it IdeOnly would block an operator from triggering an
+        // eval whenever the ide is down, undercutting the offload's whole point.
+        let ws = "d9830be4-c6a4";
+        assert_eq!(
+            classify("POST", &format!("/api/admin/workspace-health/{ws}/eval")),
+            RouteRole::FleetOk
+        );
     }
 
     #[test]

@@ -91,6 +91,26 @@ pub trait MetricTreeRunner: Send + Sync {
         period: (String, String),
         filters: Vec<QueryFilter>,
     ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError>;
+
+    /// Aggregate a single measure over `period` into ONE scalar — the time
+    /// dimension is used only to bound the window (no `granularity` bucketing),
+    /// so the warehouse returns a single aggregated row. Correct for any measure
+    /// type (sum, average, count-distinct), unlike summing time-series buckets.
+    /// `filters` are `equals` dimension filters (e.g. one restaurant). Used by
+    /// external-source reconciliation. Defaults to unsupported so existing
+    /// runners need no change.
+    async fn run_scalar(
+        &self,
+        measure: String,
+        time_dimension: String,
+        period: (String, String),
+        filters: Vec<QueryFilter>,
+    ) -> Result<f64, MetricTreeRunnerError> {
+        let _ = (measure, time_dimension, period, filters);
+        Err(MetricTreeRunnerError::Op(
+            "run_scalar not supported by this runner".to_string(),
+        ))
+    }
 }
 
 /// Failure modes for runner construction. Op-level errors come back as

@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Verify the admin Workspace Health dashboard renders the cross-tenant
+# health rollup table. Targets the OXY_OWNER operator path:
+#   1. Navigate to /admin/workspace-health.
+#   2. Table renders with at least one row.
+#   3. An unhealthy row shows a destructive-tone badge + reason text.
+#   4. Manual refresh button is present and clickable.
+#
+# Backend: `--enterprise` with OXY_OWNER set so the admin surface + the
+# cross-tenant health endpoint are exercised end-to-end. Do NOT use
+# `--local` — the admin routes require the enterprise code path and
+# server-side OXY_OWNER gating.
+
+name: admin workspace health
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: cloud
+  # navigate + wait + table assertion + refresh click + judge = ~8 steps
+  max_steps: 15
+
+setup:
+  - "goto:/admin/workspace-health"
+
+cases:
+  - name: workspace health table renders worst-first with status badges
+    tags: [admin, workspace-health, regression]
+    steps:
+      - wait_for: "selector:[data-testid=admin-workspace-health-page]"
+
+      - act: |
+          Verify the Workspace Health page has loaded:
+          1. The heading "Workspace health" is visible.
+          2. The table with columns "Workspace ID", "Status", and "Reasons"
+             is present ([data-testid=admin-workspace-health-page]).
+          3. At least one [data-testid=workspace-health-row] row is visible.
+          Do not click anything — just confirm the table is rendered.
+
+      - wait_for: "selector:[data-testid=workspace-health-row]"
+
+      - act: |
+          Click the Refresh button (text "Refresh", variant outline, near the
+          top-right of the page) to trigger a manual re-fetch. The button may
+          briefly show a spinning icon. Wait for the table to re-appear after
+          the refresh.
+
+      - wait_for: "selector:[data-testid=workspace-health-row]"
+
+    expect:
+      - judge: |
+          The page is at /admin/workspace-health and shows:
+          - A heading "Workspace health" in the Operations breadcrumb section.
+          - A table with columns for Workspace ID, Status, and Reasons.
+          - At least one row. If any row has status "unhealthy", its status
+            badge uses a red/destructive color (NOT green/emerald) and shows
+            at least one reason string in the Reasons column.
+          - A "Refresh" button visible in the top-right header area.
+          - No error banner ("Failed to load workspace health data").

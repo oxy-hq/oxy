@@ -347,6 +347,68 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         .map_err(|e| MetricTreeRunnerError::Op(format!("time-series task panicked: {e}")))?
     }
 
+    async fn run_scalar(
+        &self,
+        measure: String,
+        time_dimension: String,
+        period: (String, String),
+        filters: Vec<airlayer::engine::query::QueryFilter>,
+    ) -> Result<f64, MetricTreeRunnerError> {
+        use airlayer::engine::query::{QueryRequest, TimeDimensionQuery};
+        let inputs = self.snapshot_for_blocking().await?;
+        let measure_alias = measure.replace('.', "__");
+        // No `granularity` ⇒ the time dimension only bounds the window; the
+        // warehouse returns a single aggregated row.
+        let request = QueryRequest {
+            measures: vec![measure.clone()],
+            filters,
+            time_dimensions: vec![TimeDimensionQuery {
+                dimension: time_dimension,
+                granularity: None,
+                date_range: Some(vec![period.0.clone(), period.1.clone()]),
+            }],
+            ..QueryRequest::new()
+        };
+        tokio::task::spawn_blocking(move || {
+            let RunInputs {
+                databases,
+                engine,
+                workspace_manager,
+                user_id,
+                role,
+                handle,
+                scan_path,
+                preagg_cache,
+                preagg_renewal_threshold_secs,
+                ..
+            } = inputs;
+            let executor = build_query_executor(
+                &measure,
+                engine,
+                databases,
+                workspace_manager,
+                user_id,
+                role,
+                handle,
+                scan_path,
+                preagg_cache,
+                preagg_renewal_threshold_secs,
+            );
+            let rows =
+                (executor)(&request).map_err(|e| MetricTreeRunnerError::Op(e.to_string()))?;
+            // Single aggregate row; the measure is aliased `view__measure`. An
+            // empty window (no rows) reads as 0.0 — a SUM/COUNT of nothing.
+            let value = rows
+                .first()
+                .and_then(|row| row.get(&measure_alias))
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            Ok(value)
+        })
+        .await
+        .map_err(|e| MetricTreeRunnerError::Op(format!("scalar task panicked: {e}")))?
+    }
+
     async fn run_opportunity(
         &self,
         target: String,

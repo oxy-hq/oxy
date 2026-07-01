@@ -260,6 +260,7 @@ pub fn spawn_airway_run_drive(
         builder_app_runner: None,
         db: db.clone(),
         state: Some(state.clone()),
+        custom_executors: None,
     });
 
     let transport = DurableTransport::with_router(db.clone(), router, Some(run_id.clone()));

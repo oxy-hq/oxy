@@ -334,6 +334,7 @@ async fn recover_local(
             builder_app_runner,
             router,
             Some(LOCAL_WORKSPACE_ID),
+            Some(build_custom_task_registry(db)),
         )
         .await;
         // Periodic tick drives the cron scheduler, scoped to this
@@ -359,8 +360,20 @@ async fn recover_local(
                 "monitor tick enqueued scans"
             );
         }
+        // Fire due per-workspace health rows. Cheap indexed SELECT of due rows
+        // only; reconciliation of the rows themselves is NOT done here (see the
+        // startup branch below).
+        let health_fired = agentic_pipeline::scheduler::tick_health_schedules(db).await;
+        if health_fired > 0 {
+            tracing::info!(target: "health_eval", "health schedule fired");
+        }
         recovered + fired
     } else {
+        // One-time startup backfill of per-workspace health schedule rows from
+        // compiled config. Steady-state sync is event-driven at compile time
+        // (compile_worker::reconcile_health_from_compiled) — never per tick, so
+        // the periodic driver never re-resolves config for every workspace.
+        reconcile_all_health_schedules(db).await;
         recover_active_runs(
             db.clone(),
             runtime,
@@ -371,6 +384,7 @@ async fn recover_local(
             builder_app_runner,
             router,
             Some(LOCAL_WORKSPACE_ID),
+            Some(build_custom_task_registry(db)),
         )
         .await
     }
@@ -406,6 +420,10 @@ async fn recover_all_workspaces(
     }
 
     let mut total = 0usize;
+    // The health tick enqueues per-workspace eval tasks and needs no platform
+    // handle; this flag is just a "did we build any workspace context this pass"
+    // proxy so the tick fires once per pass after the loop (not per workspace).
+    let mut health_platform: Option<Arc<dyn PlatformContext>> = None;
     for ws in &workspaces {
         let Some(ref path) = ws.path else {
             continue;
@@ -422,6 +440,9 @@ async fn recover_all_workspaces(
         };
         let platform: Arc<dyn PlatformContext> = project_ctx.clone();
         let platform_for_monitor: Arc<dyn PlatformContext> = project_ctx.clone();
+        if periodic && health_platform.is_none() {
+            health_platform = Some(project_ctx.clone());
+        }
         // §12 FU4b: keep a workspace handle for the per-workspace
         // scheduler tick below; airway targets need it to resolve the
         // pipeline file on THIS workspace's filesystem.
@@ -443,6 +464,7 @@ async fn recover_all_workspaces(
                 builder_app_runner.clone(),
                 router.clone(),
                 Some(ws.id),
+                Some(build_custom_task_registry(db)),
             )
             .await;
             // Per-workspace scheduler tick (§12 FU4b). Each workspace
@@ -485,6 +507,7 @@ async fn recover_all_workspaces(
                 builder_app_runner.clone(),
                 router.clone(),
                 Some(ws.id),
+                Some(build_custom_task_registry(db)),
             )
             .await
         };
@@ -498,6 +521,23 @@ async fn recover_all_workspaces(
             );
         }
         total += n;
+    }
+    if !periodic {
+        // One-time startup backfill of per-workspace health schedule rows from
+        // compiled config. Steady-state sync is event-driven at compile time
+        // (compile_worker::reconcile_health_from_compiled) — never per tick, so
+        // the periodic driver never re-resolves config for every workspace.
+        reconcile_all_health_schedules(db).await;
+    }
+    // Per-workspace health tick: fire due eval rows once per pass, but only
+    // after at least one workspace context was built this pass (proxy for "this
+    // node has work to do"). Cheap indexed SELECT of due rows; the tick enqueues
+    // per-workspace eval tasks and needs no platform handle.
+    if health_platform.is_some() {
+        let health_fired = agentic_pipeline::scheduler::tick_health_schedules(db).await;
+        if health_fired > 0 {
+            tracing::info!(target: "health_eval", "cloud health schedule fired");
+        }
     }
     total
 }
@@ -730,6 +770,22 @@ async fn tick_cloud(
 }
 
 /// Shared drive helper: hand the (already resolved) workspace context to
+/// Build the host-side registry of `TaskSpec::Custom` executors injected into
+/// the global-run driver. Currently just per-workspace health eval; future
+/// Custom kinds register here. See
+/// `internal-docs/2026-06-26-workspace-scoped-health-checks-design.md`.
+fn build_custom_task_registry(
+    db: &sea_orm::DatabaseConnection,
+) -> Arc<agentic_runtime::worker::CustomTaskRegistry> {
+    use crate::server::health_eval_executor::{HEALTH_EVAL_KIND, HealthEvalTaskExecutor};
+    let mut reg = agentic_runtime::worker::CustomTaskRegistry::new();
+    reg.register(
+        HEALTH_EVAL_KIND,
+        Arc::new(HealthEvalTaskExecutor { db: db.clone() }),
+    );
+    Arc::new(reg)
+}
+
 /// `recover_pending_global_runs` with the matching workspace filter.
 #[allow(clippy::too_many_arguments)]
 async fn drive_pending(
@@ -750,6 +806,10 @@ async fn drive_pending(
 ) -> usize {
     let platform: Arc<dyn PlatformContext> = ctx.clone();
     let bridges: Option<BuilderBridges> = Some(build_builder_bridges(ctx));
+    // The latency worker is where freshly-seeded Global runs (incl. per-workspace
+    // `health_eval_workspace` Custom tasks) are drained, so inject the host's
+    // Custom-kind executors here. Cheap to build per call (a few Arc clones).
+    let custom_executors = Some(build_custom_task_registry(db));
     agentic_pipeline::recovery::recover_pending_global_runs(
         db.clone(),
         runtime.clone(),
@@ -760,6 +820,7 @@ async fn drive_pending(
         builder_app_runner.cloned(),
         router.clone(),
         workspace_id,
+        custom_executors,
     )
     .await
 }
@@ -832,6 +893,31 @@ fn with_db_secrets_manager(
     }
 }
 
+/// Build a workspace-scoped `OxyProjectContext` for a background sweep given
+/// only a `workspace_id` (resolving its path from the `workspaces` table).
+/// Returns `None` when the workspace has no path (e.g. a local-mode sentinel) —
+/// the caller degrades gracefully. Cloud path only; reuses
+/// [`build_cloud_project_ctx`]. Not cached here — callers that touch many
+/// checks should build once per workspace and reuse.
+pub(crate) async fn build_workspace_ctx(
+    workspace_id: uuid::Uuid,
+    db: &DatabaseConnection,
+) -> Option<Arc<OxyProjectContext>> {
+    let path = match entity::workspaces::Entity::find_by_id(workspace_id)
+        .one(db)
+        .await
+    {
+        Ok(Some(ws)) => ws.path?,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::warn!(target: "recovery", %workspace_id, error = %e,
+                "build_workspace_ctx: workspace lookup failed");
+            return None;
+        }
+    };
+    build_cloud_project_ctx(workspace_id, &path, db).await
+}
+
 async fn build_cloud_project_ctx(
     workspace_id: uuid::Uuid,
     path: &str,
@@ -876,6 +962,50 @@ async fn build_cloud_project_ctx(
     Some(Arc::new(
         OxyProjectContext::new(wm).with_db(Arc::new(db.clone())),
     ))
+}
+
+/// Reconcile per-workspace `health_eval` schedule rows on startup. Removes the
+/// legacy cross-tenant singleton row (`target_ref = 'global'`, the old 10-minute
+/// sweep) if present, then ensures every workspace has its own row with a cadence
+/// derived from its compiled `config.yml` `health_check` (default 10m when
+/// unconfigured). Idempotent and best-effort — a per-workspace failure is logged
+/// and skipped. Replaces the old `bootstrap_health_schedule`.
+async fn reconcile_all_health_schedules(db: &DatabaseConnection) {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    // Drop the legacy global singleton row — superseded by per-workspace rows.
+    if let Err(e) = db
+        .execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "DELETE FROM agentic_schedules \
+             WHERE target_kind = 'health_eval' AND target_ref = 'global'",
+        ))
+        .await
+    {
+        tracing::warn!(
+            target: "health_eval",
+            error = %e,
+            "startup reconcile: failed to delete legacy global health row"
+        );
+    }
+
+    let workspaces = match entity::workspaces::Entity::find().all(db).await {
+        Ok(ws) => ws,
+        Err(e) => {
+            tracing::warn!(
+                target: "health_eval",
+                error = %e,
+                "startup reconcile: failed to list workspaces; skipping health backfill"
+            );
+            return;
+        }
+    };
+    for ws in workspaces {
+        // Reads the workspace's compiled config (FS fallback on miss) and
+        // reconciles its row to the configured cadence — never clobbers a
+        // config-set cadence with a default.
+        crate::server::compile_worker::reconcile_health_from_compiled(db, ws.id).await;
+    }
 }
 
 /// Read `.monitor.yml`'s `schedule:` block and create `monitor_scan` schedule

@@ -5,6 +5,7 @@ import {
   FileCheck,
   Flag,
   FolderOpen,
+  HeartPulse,
   Inbox,
   LayoutDashboard,
   ShieldCheck,
@@ -23,6 +24,8 @@ import {
   SidebarMenuItem
 } from "@/components/ui/shadcn/sidebar";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
+import { useWorkspaceHealth } from "@/hooks/api/workspaceHealth/useWorkspaceHealth";
+import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import { Footer } from "./components/Footer";
 
@@ -92,6 +95,13 @@ const ADMIN_NAV: AdminNavItem[] = [
     adminOrAppAdmin: true,
     group: "operations"
   },
+  {
+    to: ROUTES.ADMIN.WORKSPACE_HEALTH,
+    label: "Workspace health",
+    icon: HeartPulse,
+    adminOrAppAdmin: true,
+    group: "operations"
+  },
   // Tenant management: cross-cutting directory of orgs / users / workspaces.
   // Open to owner OR app admin — both flavors of operator triage tenants.
   // Overview hub at the top of the group is the natural landing surface
@@ -132,6 +142,13 @@ export function AdminSidebar() {
   const isOwner = user?.is_owner ?? false;
   const isAppAdmin = user?.is_app_admin ?? false;
 
+  // Surface a count of workspaces needing attention right on the nav item,
+  // so operators see trouble without opening the Workspace health page.
+  // Same 30s-stale rollup the health page reads — worst-first, cross-tenant.
+  const { data: health } = useWorkspaceHealth();
+  const attentionCount = health?.workspaces.filter((ws) => ws.status !== "healthy").length ?? 0;
+  const hasUnhealthy = health?.workspaces.some((ws) => ws.status === "unhealthy") ?? false;
+
   const visibleItems = ADMIN_NAV.filter((item) => {
     if (item.ownerOnly) return isOwner;
     if (item.adminOrAppAdmin) return isOwner || isAppAdmin;
@@ -167,6 +184,8 @@ export function AdminSidebar() {
               <SidebarMenu>
                 {items.map(({ to, label, icon: Icon }) => {
                   const isActive = location.pathname.startsWith(to);
+                  const showHealthBadge =
+                    to === ROUTES.ADMIN.WORKSPACE_HEALTH && attentionCount > 0;
                   return (
                     <SidebarMenuItem key={to}>
                       <SidebarMenuButton
@@ -177,6 +196,20 @@ export function AdminSidebar() {
                         <Link to={to}>
                           <Icon />
                           <span className='tracking-tight'>{label}</span>
+                          {showHealthBadge && (
+                            <span
+                              data-testid='workspace-health-nav-badge'
+                              title={`${attentionCount} workspace${attentionCount === 1 ? "" : "s"} need attention`}
+                              className={cn(
+                                "ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-medium text-[10px] tabular-nums ring-1 ring-inset",
+                                hasUnhealthy
+                                  ? "bg-destructive/10 text-destructive ring-destructive/20"
+                                  : "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-400"
+                              )}
+                            >
+                              {attentionCount}
+                            </span>
+                          )}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

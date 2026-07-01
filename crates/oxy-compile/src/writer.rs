@@ -438,6 +438,7 @@ async fn write_compiled_rows(
     let mut pipelines = Vec::new();
     let mut references = Vec::new();
     let mut monitor_cfgs = Vec::new();
+    let mut reconcile_cfgs = Vec::new();
     let mut world_model_cfgs = Vec::new();
 
     for row in rows {
@@ -535,6 +536,12 @@ async fn write_compiled_rows(
                     definition: Set(m.definition.clone()),
                 })
             }
+            CompiledRow::ReconcileConfig(m) => {
+                reconcile_cfgs.push(entity::reconcile_configs::ActiveModel {
+                    revision_id: Set(revision_id),
+                    definition: Set(m.definition.clone()),
+                })
+            }
             CompiledRow::WorldModelConfig(w) => {
                 world_model_cfgs.push(entity::world_model_configs::ActiveModel {
                     revision_id: Set(revision_id),
@@ -591,6 +598,11 @@ async fn write_compiled_rows(
     }
     if !monitor_cfgs.is_empty() {
         entity::monitor_configs::Entity::insert_many(monitor_cfgs)
+            .exec(txn)
+            .await?;
+    }
+    if !reconcile_cfgs.is_empty() {
+        entity::reconcile_configs::Entity::insert_many(reconcile_cfgs)
             .exec(txn)
             .await?;
     }

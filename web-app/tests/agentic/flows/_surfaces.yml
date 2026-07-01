@@ -46,3 +46,11 @@
     - "src/pages/thread/"
   flows:
     - threads-list
+
+- surface: admin-workspace-health
+  paths:
+    - "src/pages/admin/AdminWorkspaceHealth/"
+    - "src/hooks/api/workspaceHealth/"
+    - "src/services/api/workspaceHealth.ts"
+  flows:
+    - admin-workspace-health

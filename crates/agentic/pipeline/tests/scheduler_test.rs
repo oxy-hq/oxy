@@ -14,8 +14,9 @@
 use std::sync::Arc;
 
 use agentic_pipeline::scheduler::{
-    ScheduleError, ScheduleInput, create_schedule, delete_schedule, get_schedule, list_schedules,
-    run_schedule_now, tick_schedules, update_schedule,
+    ScheduleError, ScheduleInput, create_schedule, delete_schedule, enqueue_health_eval,
+    get_schedule, health_interval_cron, list_schedules, reconcile_health_schedule,
+    run_schedule_now, tick_health_schedules, tick_schedules, update_schedule,
 };
 use agentic_runtime::migration::RuntimeMigrator;
 use async_trait::async_trait;
@@ -591,4 +592,360 @@ async fn agent_schedule_tick_fires_once() {
     assert!(after.next_run_at > agentic_runtime::crud::now());
     assert!(after.last_fired_at.is_some());
     assert_eq!(after.last_run_id.as_deref(), Some(runs[0].id.as_str()));
+}
+
+/// Health-eval queue rows for a given workspace: count + scope flag.
+#[derive(sea_orm::FromQueryResult)]
+struct HealthQueueRow {
+    workspace_id: String,
+    scope_owned: bool,
+}
+
+async fn health_tasks_for(db: &DatabaseConnection, ws: uuid::Uuid) -> Vec<HealthQueueRow> {
+    HealthQueueRow::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT spec->'payload'->>'workspace_id' AS workspace_id, scope_owned \
+         FROM agentic_task_queue \
+         WHERE spec->>'kind' = 'health_eval_workspace' \
+           AND spec->'payload'->>'workspace_id' = $1",
+        [ws.to_string().into()],
+    ))
+    .all(db)
+    .await
+    .unwrap()
+}
+
+/// A due per-workspace `health_eval` row enqueues exactly one Global
+/// `health_eval_workspace` Custom task and advances its cadence; a second tick
+/// does not double-enqueue.
+#[tokio::test]
+async fn due_health_row_enqueues_one_global_custom_task() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    // Per-workspace health row: target_ref = workspace id, interval sentinel.
+    let s = create_schedule(
+        &db,
+        ws,
+        ScheduleInput {
+            name: "Health check".to_string(),
+            target_kind: "health_eval".to_string(),
+            target_ref: ws.to_string(),
+            question: None,
+            variables: None,
+            cron_expr: health_interval_cron(std::time::Duration::from_secs(600)),
+            timezone: "UTC".to_string(),
+            enabled: true,
+        },
+    )
+    .await
+    .unwrap();
+    force_due(&db, &s.id, 5).await;
+
+    // `tick_health_schedules` is a global tick and the testcontainer is shared
+    // across tests, so the returned `fired` count includes other workspaces'
+    // due rows — assert per-workspace effects instead.
+    let fired = tick_health_schedules(&db).await;
+    assert!(fired >= 1, "at least this workspace's row fired");
+
+    let tasks = health_tasks_for(&db, ws).await;
+    assert_eq!(tasks.len(), 1, "exactly one queued health task for the ws");
+    assert_eq!(tasks[0].workspace_id, ws.to_string());
+    assert!(!tasks[0].scope_owned, "health task is TaskScope::Global");
+
+    // Cadence advanced ~600s into the future; this workspace's row is not due
+    // again, so a second tick must not enqueue a second task for it.
+    let after = get_schedule(&db, ws, &s.id).await.unwrap();
+    assert!(after.next_run_at > agentic_runtime::crud::now());
+    assert!(after.last_fired_at.is_some());
+
+    tick_health_schedules(&db).await;
+    assert_eq!(
+        health_tasks_for(&db, ws).await.len(),
+        1,
+        "this workspace's row not due → no double-enqueue"
+    );
+}
+
+/// Regression: the health run a tick seeds must be visible to the latency
+/// worker's pickup query (`find_pending_global_runs`), or it sits `running`
+/// forever and the dashboard shows "Health check" hung indefinitely while a
+/// manual run-now (which evaluates inline) succeeds.
+///
+/// The bug: `start_health_eval_run` enqueued the root task with a custom id
+/// (`health_eval:{ws}:{fire_slot}`) instead of `task_id = run_id`. The pickup
+/// query's `q.task_id = r.id OR q.task_id LIKE r.id || '.%'` clause then never
+/// matched, so the run was never driven. Every other Global seed uses
+/// `task_id == run_id`; this test pins the health path to the same contract.
+#[tokio::test]
+async fn fired_health_run_is_picked_up_by_latency_worker() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    let s = create_schedule(
+        &db,
+        ws,
+        ScheduleInput {
+            name: "Health check".to_string(),
+            target_kind: "health_eval".to_string(),
+            target_ref: ws.to_string(),
+            question: None,
+            variables: None,
+            cron_expr: health_interval_cron(std::time::Duration::from_secs(600)),
+            timezone: "UTC".to_string(),
+            enabled: true,
+        },
+    )
+    .await
+    .unwrap();
+    force_due(&db, &s.id, 5).await;
+
+    let fired = tick_health_schedules(&db).await;
+    assert!(fired >= 1, "at least this workspace's row fired");
+
+    // The seeded Global run must be returned by the latency worker's selection
+    // (scoped to this workspace), with a non-`scope_owned` queued root task —
+    // exactly what `find_pending_global_runs` keys off `task_id = run_id`.
+    let pending = agentic_runtime::crud::find_pending_global_runs(&db, Some(ws))
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.len(),
+        1,
+        "the fired health run must be picked up by find_pending_global_runs; \
+         a custom root task_id (≠ run_id) makes it invisible and it hangs forever",
+    );
+    assert_eq!(pending[0].workspace_id, ws);
+
+    // The run must carry `schedule_id` so the per-job run-history query
+    // (`WHERE schedule_id = $1`) surfaces scheduled fires under "Recent runs".
+    // A plain `insert_run` leaves it NULL → the fire ran but is invisible on
+    // the job page (only manual run-now, which stamps it, would show).
+    #[derive(sea_orm::FromQueryResult)]
+    struct ScheduleIdRow {
+        schedule_id: Option<String>,
+    }
+    let row = ScheduleIdRow::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT schedule_id FROM agentic_runs WHERE id = $1",
+        [pending[0].run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("seeded health run row exists");
+    assert_eq!(
+        row.schedule_id.as_deref(),
+        Some(s.id.as_str()),
+        "scheduled health run must stamp schedule_id or it won't appear in the job's run history",
+    );
+}
+
+/// An operator-triggered eval (`enqueue_health_eval`) enqueues the same Global
+/// `health_eval_workspace` Custom task the scheduled fire does — the heavy eval
+/// runs on the worker fleet, not inline in the HTTP handler — and attributes the
+/// run to the workspace's health schedule when one exists (so manual fires show
+/// under the job's run history alongside scheduled ones).
+#[tokio::test]
+async fn manual_health_eval_enqueues_global_custom_task() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    // A reconciled health row exists (created at compile/startup); the manual
+    // run should attribute to it.
+    reconcile_health_schedule(&db, ws, std::time::Duration::from_secs(600), true)
+        .await
+        .unwrap();
+    let schedule_id = health_rows_for(&db, ws).await[0].id.clone();
+
+    let run_id = enqueue_health_eval(&db, ws).await.unwrap();
+    assert!(
+        !run_id.is_empty(),
+        "returns the enqueued run id for polling"
+    );
+
+    let tasks = health_tasks_for(&db, ws).await;
+    assert_eq!(tasks.len(), 1, "manual eval enqueues exactly one task");
+    assert_eq!(tasks[0].workspace_id, ws.to_string());
+    assert!(
+        !tasks[0].scope_owned,
+        "manual health task is TaskScope::Global, drained by the worker fleet",
+    );
+
+    #[derive(sea_orm::FromQueryResult)]
+    struct ScheduleIdRow {
+        schedule_id: Option<String>,
+    }
+    let row = ScheduleIdRow::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT schedule_id FROM agentic_runs WHERE id = $1",
+        [run_id.into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("manual health run row exists");
+    assert_eq!(
+        row.schedule_id.as_deref(),
+        Some(schedule_id.as_str()),
+        "manual eval attributes to the workspace's health schedule when present",
+    );
+}
+
+/// A manual eval fired before the workspace's health row exists
+/// (pre-first-compile) still enqueues the task — the run is just inserted
+/// unattributed (no `schedule_id` to stamp), exercising the `insert_run` branch.
+#[tokio::test]
+async fn manual_health_eval_without_schedule_row_still_enqueues() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    let run_id = enqueue_health_eval(&db, ws).await.unwrap();
+    assert!(!run_id.is_empty());
+
+    let tasks = health_tasks_for(&db, ws).await;
+    assert_eq!(
+        tasks.len(),
+        1,
+        "enqueues even with no schedule row (insert_run branch)",
+    );
+    assert_eq!(tasks[0].workspace_id, ws.to_string());
+}
+
+/// Total `health_eval_workspace` tasks queued across the given workspaces.
+async fn enqueued_for(db: &DatabaseConnection, wss: &[uuid::Uuid]) -> usize {
+    let mut n = 0;
+    for ws in wss {
+        n += health_tasks_for(db, *ws).await.len();
+    }
+    n
+}
+
+/// The per-tick cap bounds a post-outage burst: with more due rows than
+/// `MAX_HEALTH_FIRES_PER_TICK` (every workspace elapsed together), one tick fires
+/// at most the cap and the backlog drains over the next tick — not one N-wide
+/// enqueue spike. Regression guard for the `ORDER BY next_run_at … LIMIT` in
+/// `tick_health_schedules`; without it a future change to the due query could
+/// silently reintroduce the burst.
+#[tokio::test]
+async fn health_tick_caps_fires_per_pass() {
+    let Some(db) = test_db().await else { return };
+    // Mirror MAX_HEALTH_FIRES_PER_TICK in scheduler.rs.
+    const CAP: usize = 256;
+    const EXTRA: usize = 20;
+    let total = CAP + EXTRA;
+
+    // Seed > CAP per-workspace health rows, all forced due (staggered into the
+    // past so ordering is well-defined). Unique workspace ids so we can count
+    // exactly our own enqueues against the shared container.
+    let mut wss = Vec::with_capacity(total);
+    for i in 0..total {
+        let ws = uuid::Uuid::new_v4();
+        let s = create_schedule(
+            &db,
+            ws,
+            ScheduleInput {
+                name: "Health check".to_string(),
+                target_kind: "health_eval".to_string(),
+                target_ref: ws.to_string(),
+                question: None,
+                variables: None,
+                cron_expr: health_interval_cron(std::time::Duration::from_secs(600)),
+                timezone: "UTC".to_string(),
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        force_due(&db, &s.id, (i + 1) as i64).await;
+        wss.push(ws);
+    }
+
+    // One tick is bounded by the cap even though all `total` rows are due — the
+    // regression this guards: without the LIMIT this fires all `total` at once.
+    // Robust to any unrelated due rows the shared/reused container carries: with
+    // >= CAP rows due, a capped tick fires exactly CAP.
+    let fired1 = tick_health_schedules(&db).await;
+    assert_eq!(fired1, CAP, "one tick fires at most the per-tick cap");
+
+    // Not all of *our* rows drained in that single pass — a backlog remains.
+    let after1 = enqueued_for(&db, &wss).await;
+    assert!(after1 <= CAP, "our fired count can't exceed the cap");
+    assert!(
+        after1 < total,
+        "a backlog of our rows remains for the next tick"
+    );
+
+    // Drain the rest; every one of our workspaces ends up enqueued exactly once.
+    let mut ticks = 1;
+    while tick_health_schedules(&db).await > 0 {
+        ticks += 1;
+        assert!(ticks < 100, "health tick must converge");
+    }
+    assert!(
+        ticks >= 2,
+        "a more-than-cap backlog needs more than one tick"
+    );
+    assert_eq!(
+        enqueued_for(&db, &wss).await,
+        total,
+        "every seeded workspace fired exactly once across the ticks"
+    );
+}
+
+async fn health_rows_for(
+    db: &DatabaseConnection,
+    ws: uuid::Uuid,
+) -> Vec<agentic_runtime::entity::schedule::Model> {
+    use agentic_runtime::entity::schedule;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    schedule::Entity::find()
+        .filter(schedule::Column::TargetKind.eq("health_eval"))
+        .filter(schedule::Column::WorkspaceId.eq(ws))
+        .all(db)
+        .await
+        .unwrap()
+}
+
+/// `reconcile_health_schedule` creates the per-workspace row, is a no-op on an
+/// unchanged cadence (next fire slot preserved), and updates the cron on change.
+#[tokio::test]
+async fn reconcile_creates_then_updates_idempotently() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    reconcile_health_schedule(&db, ws, std::time::Duration::from_secs(1800), true)
+        .await
+        .unwrap();
+    let rows = health_rows_for(&db, ws).await;
+    assert_eq!(rows.len(), 1, "creates exactly one row");
+    assert_eq!(rows[0].cron_expr, "@interval:1800");
+    let first_next = rows[0].next_run_at;
+
+    // Same cadence → no churn, next_run_at preserved.
+    reconcile_health_schedule(&db, ws, std::time::Duration::from_secs(1800), true)
+        .await
+        .unwrap();
+    let rows = health_rows_for(&db, ws).await;
+    assert_eq!(rows.len(), 1, "still one row");
+    assert_eq!(
+        rows[0].next_run_at, first_next,
+        "unchanged cadence preserves the fire slot"
+    );
+
+    // Changed cadence → cron updated.
+    reconcile_health_schedule(&db, ws, std::time::Duration::from_secs(3600), true)
+        .await
+        .unwrap();
+    let rows = health_rows_for(&db, ws).await;
+    assert_eq!(rows.len(), 1, "still one row after update");
+    assert_eq!(rows[0].cron_expr, "@interval:3600");
+
+    // Disable → enabled flips, still one row.
+    reconcile_health_schedule(&db, ws, std::time::Duration::from_secs(3600), false)
+        .await
+        .unwrap();
+    let rows = health_rows_for(&db, ws).await;
+    assert_eq!(rows.len(), 1);
+    assert!(!rows[0].enabled, "enabled flag reconciled to false");
 }

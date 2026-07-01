@@ -159,6 +159,22 @@ impl ConfigManager {
             .collect()
     }
 
+    /// Every `toast_analytics` integration paired with its declared `name`.
+    /// Reconciliation binds a check to a specific Toast account by name (falling
+    /// back to the first when a check names none).
+    pub fn toast_analytics_integrations(
+        &self,
+    ) -> Vec<(&str, &super::model::ToastAnalyticsIntegration)> {
+        self.config
+            .integrations
+            .iter()
+            .filter_map(|i| match &i.integration_type {
+                super::model::IntegrationType::ToastAnalytics(t) => Some((i.name.as_str(), t)),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_apps().await
     }
@@ -473,6 +489,7 @@ fn integration_kind(integration: &crate::config::model::Integration) -> &'static
         IntegrationType::Omni(_) => "omni",
         IntegrationType::Looker(_) => "looker",
         IntegrationType::Toast(_) => "toast",
+        IntegrationType::ToastAnalytics(_) => "toast_analytics",
         IntegrationType::OpenWeatherMap(_) => "openweathermap",
         IntegrationType::BestTime(_) => "besttime",
         IntegrationType::Unifi(_) => "unifi",

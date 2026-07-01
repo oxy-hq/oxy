@@ -633,6 +633,23 @@ pub async fn list_env_secrets(
                     )),
                 ));
             }
+            IntegrationType::ToastAnalytics(ta) => {
+                // Each auth var is optional (OAuth pair OR static token); register
+                // only the ones the integration actually references.
+                for (var, field) in [
+                    (&ta.client_id_var, "client_id_var"),
+                    (&ta.client_secret_var, "client_secret_var"),
+                    (&ta.api_token_var, "api_token_var"),
+                ] {
+                    if let Some(v) = var {
+                        seen_vars.insert(v.clone());
+                        env_secrets.push(make_entry(
+                            v.clone(),
+                            Some(format!("integrations.{}.{}", integration.name, field)),
+                        ));
+                    }
+                }
+            }
             IntegrationType::OpenWeatherMap(owm) => {
                 seen_vars.insert(owm.api_key_var.clone());
                 env_secrets.push(make_entry(

@@ -228,6 +228,26 @@ async fn register_project(
         )
     })?;
     tracing::info!("Registered workspace '{}' at '{}'", name, path_str);
+
+    // Seed the per-workspace health schedule with the default 10-minute cadence.
+    // The compile worker refines it from config.yml's `health_check` once the
+    // workspace first compiles. Best-effort — never fail onboarding on this.
+    if let Err(e) = agentic_pipeline::scheduler::reconcile_health_schedule(
+        &db,
+        workspace_id,
+        std::time::Duration::from_secs(600),
+        true,
+    )
+    .await
+    {
+        tracing::warn!(
+            target: "health_eval",
+            error = %e,
+            %workspace_id,
+            "failed to seed health schedule for new workspace"
+        );
+    }
+
     Ok(workspace_id)
 }
 

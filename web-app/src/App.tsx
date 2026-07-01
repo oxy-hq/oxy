@@ -138,6 +138,7 @@ const AdminWorkspaces = React.lazy(() => import("./pages/admin/AdminWorkspaces")
 const AdminWorkspaceDetail = React.lazy(
   () => import("./pages/admin/AdminWorkspaces/AdminWorkspaceDetail")
 );
+const AdminWorkspaceHealth = React.lazy(() => import("./pages/admin/AdminWorkspaceHealth"));
 
 const CheckoutSuccessPage = React.lazy(() => import("./pages/billing/CheckoutSuccess"));
 const CheckoutCancelledPage = React.lazy(() => import("./pages/billing/CheckoutCancelled"));
@@ -500,6 +501,7 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/users/:userId' element={<AdminUserDetail />} />
             <Route path='admin/workspaces' element={<AdminWorkspaces />} />
             <Route path='admin/workspaces/:workspaceId' element={<AdminWorkspaceDetail />} />
+            <Route path='admin/workspace-health' element={<AdminWorkspaceHealth />} />
           </Route>
 
           {/* User-facing routes — owners get bounced to the admin queue. */}

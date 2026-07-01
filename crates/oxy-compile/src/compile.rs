@@ -55,11 +55,17 @@ pub enum CompiledRow {
     Pipeline(CompiledPipeline),
     Reference(CompiledReference),
     MonitorConfig(CompiledMonitorConfig),
+    ReconcileConfig(CompiledReconcileConfig),
     WorldModelConfig(CompiledWorldModelConfig),
 }
 
 #[derive(Debug, Clone)]
 pub struct CompiledMonitorConfig {
+    pub definition: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompiledReconcileConfig {
     pub definition: Value,
 }
 
@@ -552,6 +558,7 @@ async fn compile_one(file: &DiscoveredFile) -> Result<Vec<CompiledRow>, FileFail
         }),
         FileKind::VerifiedQuery => compile_verified_query(file, &content),
         FileKind::MonitorConfig => compile_monitor_config(file, &content),
+        FileKind::ReconcileConfig => compile_reconcile_config(file, &content),
         FileKind::WorldModelConfig => compile_world_model_config(file, &content),
     }
 }
@@ -564,6 +571,16 @@ fn compile_monitor_config(
     Ok(vec![CompiledRow::MonitorConfig(CompiledMonitorConfig {
         definition: value,
     })])
+}
+
+fn compile_reconcile_config(
+    file: &DiscoveredFile,
+    content: &str,
+) -> Result<Vec<CompiledRow>, FileFailure> {
+    let value = parse_yaml(file, content)?;
+    Ok(vec![CompiledRow::ReconcileConfig(
+        CompiledReconcileConfig { definition: value },
+    )])
 }
 
 fn compile_world_model_config(
@@ -871,6 +888,24 @@ mod redact_tests {
     /// Regression (oxygen-internal#2520): an inline LLM `api_key` in
     /// `models` and credentials embedded in a `repositories[].git_url` URL
     /// must not survive into the compiled config.
+    /// `health_check` is not a projected `CompiledConfig` column, so it must
+    /// land in the `other` JSONB catch-all and survive the compile boundary
+    /// without a migration. If a future change adds `health_check` to the
+    /// projected keys, this test fails — keep it in `other` so the per-workspace
+    /// cadence round-trips (see
+    /// `internal-docs/2026-06-26-workspace-scoped-health-checks-design.md`).
+    #[test]
+    fn health_check_lands_in_other_catch_all() {
+        let yaml = json!({
+            "databases": [],
+            "health_check": { "interval": "30m", "enabled": true }
+        });
+        let cfg = build_compiled_config(yaml, None).expect("compiles");
+        let other = cfg.other.expect("health_check must land in `other`");
+        assert_eq!(other["health_check"]["interval"], "30m");
+        assert_eq!(other["health_check"]["enabled"], true);
+    }
+
     #[test]
     fn redacts_model_keys_and_git_url_credentials() {
         let mut models = json!([
@@ -1226,6 +1261,7 @@ fn row_dedupe_key(row: &CompiledRow, _kind: &FileKind) -> Option<String> {
         CompiledRow::Pipeline(p) => Some(format!("pipe:{}", p.name)),
         CompiledRow::Reference(_) => None,
         CompiledRow::MonitorConfig(_) => None,
+        CompiledRow::ReconcileConfig(_) => None,
         CompiledRow::WorldModelConfig(_) => None,
     }
 }
@@ -1354,6 +1390,26 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(path, content).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reconcile_yml_compiles_to_reconcile_row() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(root, "reconcile.yml", "checks: []\n");
+        let files = discover(root).unwrap();
+        let file = files
+            .iter()
+            .find(|f| matches!(f.kind, FileKind::ReconcileConfig))
+            .unwrap();
+        let rows = compile_one(file).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        match &rows[0] {
+            CompiledRow::ReconcileConfig(c) => {
+                assert!(c.definition.get("checks").unwrap().is_array());
+            }
+            other => panic!("expected ReconcileConfig, got {:?}", other),
+        }
     }
 
     #[tokio::test]

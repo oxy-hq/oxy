@@ -282,6 +282,7 @@ mod tests {
                 protected_branches: None,
                 base_branch: None,
                 admins: vec![],
+                health_check: None,
                 pre_aggregations: None,
             },
             metadata: None,

@@ -675,6 +675,7 @@ impl WorkspaceContext for OxyProjectContext {
             // there's no corresponding `IntegrationConfig` variant — surface a
             // clear error if a pipeline ever asks for one by name.
             IntegrationType::Toast(_)
+            | IntegrationType::ToastAnalytics(_)
             | IntegrationType::OpenWeatherMap(_)
             | IntegrationType::BestTime(_)
             | IntegrationType::Unifi(_) => Err(format!(

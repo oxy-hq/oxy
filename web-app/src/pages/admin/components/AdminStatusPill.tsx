@@ -31,15 +31,18 @@ const TONE: Record<AdminStatusTone, { dot: string; text: string; ring: string }>
 export const AdminStatusPill = ({
   tone,
   label,
-  className
+  className,
+  "data-testid": dataTestId
 }: {
   tone: AdminStatusTone;
   label: string;
   className?: string;
+  "data-testid"?: string;
 }) => {
   const v = TONE[tone];
   return (
     <span
+      data-testid={dataTestId}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full bg-muted/40 px-2 py-0.5 font-medium text-xs ring-1 ring-inset",
         v.text,

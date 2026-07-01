@@ -1,0 +1,453 @@
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::server::api::admin::workspace_health::reconcile::DriftVerdict;
+
+/// Workspace status. Declaration order matters: `Ord` makes
+/// `Unhealthy > Degraded > Healthy`, so the worst dimension is `.max()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthStatus {
+    Healthy,
+    Degraded,
+    Unhealthy,
+}
+
+impl HealthStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HealthStatus::Healthy => "healthy",
+            HealthStatus::Degraded => "degraded",
+            HealthStatus::Unhealthy => "unhealthy",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthDimension {
+    JobLiveness,
+    Pipeline,
+    Correctness,
+    Queue,
+    Reconciliation,
+}
+
+/// Raw per-workspace signal counts gathered from Postgres. Pure input —
+/// no DB handle, no I/O. Window-bounded counts are computed by the query layer.
+#[derive(Debug, Clone)]
+pub struct WorkspaceSignals {
+    pub workspace_id: Uuid,
+    pub failed_runs: i64,
+    pub timed_out_runs: i64,
+    pub total_runs: i64,
+    pub airway_last_run_failed: bool,
+    pub airway_completed_with_errors: bool,
+    pub open_high_anomalies: i64,
+    pub open_medium_anomalies: i64,
+    pub dead_letter_count: i64,
+    pub reconciliation: Vec<DriftVerdict>,
+}
+
+impl WorkspaceSignals {
+    /// A zeroed signal set for `workspace_id` — no runs, no anomalies, no
+    /// reconciliation. Evaluates to Healthy. Used when a workspace has no
+    /// activity in the window so the single-workspace eval still persists a row.
+    pub fn empty(workspace_id: Uuid) -> Self {
+        Self {
+            workspace_id,
+            failed_runs: 0,
+            timed_out_runs: 0,
+            total_runs: 0,
+            airway_last_run_failed: false,
+            airway_completed_with_errors: false,
+            open_high_anomalies: 0,
+            open_medium_anomalies: 0,
+            dead_letter_count: 0,
+            reconciliation: Vec::new(),
+        }
+    }
+}
+
+/// Tunable cutoffs. Env-overridable so ops can retune without a redeploy.
+#[derive(Debug, Clone)]
+pub struct HealthThresholds {
+    pub window_hours: i64,
+    pub job_failure_rate_unhealthy: f64,
+    pub job_failure_rate_degraded: f64,
+    pub min_runs_for_rate: i64,
+}
+
+impl Default for HealthThresholds {
+    fn default() -> Self {
+        Self {
+            window_hours: 24,
+            job_failure_rate_unhealthy: 0.5,
+            job_failure_rate_degraded: 0.2,
+            min_runs_for_rate: 5,
+        }
+    }
+}
+
+impl HealthThresholds {
+    /// Read overrides from env, falling back to `Default`. Invalid values are
+    /// ignored (kept at default) rather than failing the eval pass. Parsed values
+    /// are then clamped to sane ranges so a hostile/typo'd override can't silently
+    /// invert the signal: a non-positive `window_hours` would make
+    /// `now() - make_interval(hours => $1)` resolve to a future timestamp, so
+    /// `created_at > <future>` matches nothing and every workspace reads Healthy
+    /// with zero signals — a false OK. Rates must stay a valid `[0.0, 1.0]`
+    /// fraction, and `min_runs_for_rate` must be at least 1.
+    pub fn from_env() -> Self {
+        let d = Self::default();
+        Self {
+            window_hours: env_i64("OXY_HEALTH_WINDOW_HOURS", d.window_hours).max(1),
+            job_failure_rate_unhealthy: env_f64(
+                "OXY_HEALTH_FAIL_RATE_UNHEALTHY",
+                d.job_failure_rate_unhealthy,
+            )
+            .clamp(0.0, 1.0),
+            job_failure_rate_degraded: env_f64(
+                "OXY_HEALTH_FAIL_RATE_DEGRADED",
+                d.job_failure_rate_degraded,
+            )
+            .clamp(0.0, 1.0),
+            min_runs_for_rate: env_i64("OXY_HEALTH_MIN_RUNS", d.min_runs_for_rate).max(1),
+        }
+    }
+}
+
+fn env_i64(key: &str, fallback: i64) -> i64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(fallback)
+}
+
+fn env_f64(key: &str, fallback: f64) -> f64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(fallback)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DimensionResult {
+    pub dimension: HealthDimension,
+    pub status: HealthStatus,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceHealth {
+    pub workspace_id: Uuid,
+    pub status: HealthStatus,
+    pub dimensions: Vec<DimensionResult>,
+    pub reasons: Vec<String>,
+}
+
+/// Pure rollup: evaluate each dimension, take the worst as the workspace status.
+pub fn evaluate(s: &WorkspaceSignals, t: &HealthThresholds) -> WorkspaceHealth {
+    let dimensions = vec![
+        eval_job_liveness(s, t),
+        eval_pipeline(s),
+        eval_correctness(s),
+        eval_queue(s),
+        eval_reconciliation(s),
+    ];
+    let status = dimensions
+        .iter()
+        .map(|d| d.status)
+        .max()
+        .unwrap_or(HealthStatus::Healthy);
+    let reasons = dimensions
+        .iter()
+        .filter(|d| d.status != HealthStatus::Healthy)
+        .filter_map(|d| d.reason.clone())
+        .collect();
+    WorkspaceHealth {
+        workspace_id: s.workspace_id,
+        status,
+        dimensions,
+        reasons,
+    }
+}
+
+fn eval_job_liveness(s: &WorkspaceSignals, t: &HealthThresholds) -> DimensionResult {
+    let failures = s.failed_runs + s.timed_out_runs;
+    if s.total_runs < t.min_runs_for_rate || failures == 0 {
+        return clear(HealthDimension::JobLiveness);
+    }
+    let rate = failures as f64 / s.total_runs as f64;
+    if rate >= t.job_failure_rate_unhealthy {
+        unhealthy(
+            HealthDimension::JobLiveness,
+            format!(
+                "{failures}/{} runs failed in window ({:.0}%)",
+                s.total_runs,
+                rate * 100.0
+            ),
+        )
+    } else if rate >= t.job_failure_rate_degraded {
+        degraded(
+            HealthDimension::JobLiveness,
+            format!("elevated run failure rate ({:.0}%)", rate * 100.0),
+        )
+    } else {
+        clear(HealthDimension::JobLiveness)
+    }
+}
+
+fn eval_pipeline(s: &WorkspaceSignals) -> DimensionResult {
+    if s.airway_last_run_failed {
+        unhealthy(HealthDimension::Pipeline, "latest Airway run failed".into())
+    } else if s.airway_completed_with_errors {
+        unhealthy(
+            HealthDimension::Pipeline,
+            "latest Airway run completed with errors".into(),
+        )
+    } else {
+        clear(HealthDimension::Pipeline)
+    }
+}
+
+fn eval_correctness(s: &WorkspaceSignals) -> DimensionResult {
+    if s.open_high_anomalies > 0 {
+        unhealthy(
+            HealthDimension::Correctness,
+            format!("{} open high-severity anomaly(ies)", s.open_high_anomalies),
+        )
+    } else if s.open_medium_anomalies > 0 {
+        degraded(
+            HealthDimension::Correctness,
+            format!(
+                "{} open medium-severity anomaly(ies)",
+                s.open_medium_anomalies
+            ),
+        )
+    } else {
+        clear(HealthDimension::Correctness)
+    }
+}
+
+fn eval_queue(s: &WorkspaceSignals) -> DimensionResult {
+    if s.dead_letter_count > 0 {
+        unhealthy(
+            HealthDimension::Queue,
+            format!("{} dead-letter task(s)", s.dead_letter_count),
+        )
+    } else {
+        clear(HealthDimension::Queue)
+    }
+}
+
+/// Worst reconciliation verdict drives the dimension. Empty (no `reconcile.yml`)
+/// reads clear, exactly like the other dimensions with no signals.
+fn eval_reconciliation(s: &WorkspaceSignals) -> DimensionResult {
+    let worst = s.reconciliation.iter().max_by_key(|v| v.status);
+    match worst {
+        None => clear(HealthDimension::Reconciliation),
+        Some(v) if v.status == HealthStatus::Healthy => clear(HealthDimension::Reconciliation),
+        Some(v) => DimensionResult {
+            dimension: HealthDimension::Reconciliation,
+            status: v.status,
+            reason: v.reason.clone(),
+        },
+    }
+}
+
+fn clear(dimension: HealthDimension) -> DimensionResult {
+    DimensionResult {
+        dimension,
+        status: HealthStatus::Healthy,
+        reason: None,
+    }
+}
+
+fn degraded(dimension: HealthDimension, reason: String) -> DimensionResult {
+    DimensionResult {
+        dimension,
+        status: HealthStatus::Degraded,
+        reason: Some(reason),
+    }
+}
+
+fn unhealthy(dimension: HealthDimension, reason: String) -> DimensionResult {
+    DimensionResult {
+        dimension,
+        status: HealthStatus::Unhealthy,
+        reason: Some(reason),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    fn base() -> WorkspaceSignals {
+        WorkspaceSignals {
+            workspace_id: Uuid::nil(),
+            failed_runs: 0,
+            timed_out_runs: 0,
+            total_runs: 0,
+            airway_last_run_failed: false,
+            airway_completed_with_errors: false,
+            open_high_anomalies: 0,
+            open_medium_anomalies: 0,
+            dead_letter_count: 0,
+            reconciliation: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn all_clear_is_healthy() {
+        let h = evaluate(&base(), &HealthThresholds::default());
+        assert_eq!(h.status, HealthStatus::Healthy);
+        assert!(h.reasons.is_empty());
+    }
+
+    #[test]
+    fn from_env_clamps_hostile_overrides() {
+        // nextest runs each test in its own process, so these env mutations are
+        // isolated. A non-positive window or out-of-range rate must clamp rather
+        // than invert the signal (a future `created_at >` cutoff → false Healthy).
+        // SAFETY: single-threaded test process, no concurrent env access.
+        unsafe {
+            std::env::set_var("OXY_HEALTH_WINDOW_HOURS", "0");
+            std::env::set_var("OXY_HEALTH_FAIL_RATE_UNHEALTHY", "5.0");
+            std::env::set_var("OXY_HEALTH_FAIL_RATE_DEGRADED", "-1.0");
+            std::env::set_var("OXY_HEALTH_MIN_RUNS", "0");
+        }
+        let t = HealthThresholds::from_env();
+        assert_eq!(t.window_hours, 1);
+        assert_eq!(t.job_failure_rate_unhealthy, 1.0);
+        assert_eq!(t.job_failure_rate_degraded, 0.0);
+        assert_eq!(t.min_runs_for_rate, 1);
+    }
+
+    #[test]
+    fn high_anomaly_is_unhealthy() {
+        let mut s = base();
+        s.open_high_anomalies = 1;
+        let h = evaluate(&s, &HealthThresholds::default());
+        assert_eq!(h.status, HealthStatus::Unhealthy);
+        assert!(h.reasons.iter().any(|r| r.contains("high-severity")));
+    }
+
+    #[test]
+    fn airway_errors_are_unhealthy() {
+        let mut s = base();
+        s.airway_completed_with_errors = true;
+        assert_eq!(
+            evaluate(&s, &HealthThresholds::default()).status,
+            HealthStatus::Unhealthy
+        );
+    }
+
+    #[test]
+    fn dead_letter_is_unhealthy() {
+        let mut s = base();
+        s.dead_letter_count = 2;
+        assert_eq!(
+            evaluate(&s, &HealthThresholds::default()).status,
+            HealthStatus::Unhealthy
+        );
+    }
+
+    #[test]
+    fn high_failure_rate_is_unhealthy() {
+        let mut s = base();
+        s.total_runs = 10;
+        s.failed_runs = 6; // 0.6 > 0.5 default unhealthy cutoff
+        assert_eq!(
+            evaluate(&s, &HealthThresholds::default()).status,
+            HealthStatus::Unhealthy
+        );
+    }
+
+    #[test]
+    fn moderate_failure_rate_is_degraded() {
+        let mut s = base();
+        s.total_runs = 10;
+        s.failed_runs = 3; // 0.3: between degraded(0.2) and unhealthy(0.5)
+        assert_eq!(
+            evaluate(&s, &HealthThresholds::default()).status,
+            HealthStatus::Degraded
+        );
+    }
+
+    #[test]
+    fn small_sample_does_not_flag_rate() {
+        let mut s = base();
+        s.total_runs = 2; // below min_runs_for_rate (5)
+        s.failed_runs = 2;
+        assert_eq!(
+            evaluate(&s, &HealthThresholds::default()).status,
+            HealthStatus::Healthy
+        );
+    }
+
+    #[test]
+    fn reconciliation_within_tolerance_is_healthy() {
+        let h = evaluate(&base(), &HealthThresholds::default());
+        let dim = h
+            .dimensions
+            .iter()
+            .find(|d| d.dimension == HealthDimension::Reconciliation)
+            .unwrap();
+        assert_eq!(dim.status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn reconciliation_worst_verdict_drives_dimension() {
+        let mut s = base();
+        s.reconciliation = vec![
+            DriftVerdict {
+                check: "a".into(),
+                oxy: 1.0,
+                ext: 1.0,
+                abs_diff: 0.0,
+                pct_diff: 0.0,
+                status: HealthStatus::Healthy,
+                reason: None,
+            },
+            DriftVerdict {
+                check: "b".into(),
+                oxy: 110.0,
+                ext: 100.0,
+                abs_diff: 10.0,
+                pct_diff: 10.0,
+                status: HealthStatus::Unhealthy,
+                reason: Some("b drifts 10.0% from source".into()),
+            },
+        ];
+        let h = evaluate(&s, &HealthThresholds::default());
+        assert_eq!(h.status, HealthStatus::Unhealthy);
+        assert!(h.reasons.iter().any(|r| r.contains("drifts 10.0%")));
+    }
+
+    #[test]
+    fn empty_signals_are_healthy() {
+        let ws = Uuid::new_v4();
+        let s = WorkspaceSignals::empty(ws);
+        assert_eq!(s.workspace_id, ws);
+        assert_eq!(s.total_runs, 0);
+        assert!(s.reconciliation.is_empty());
+        assert_eq!(
+            evaluate(&s, &HealthThresholds::default()).status,
+            HealthStatus::Healthy
+        );
+    }
+
+    #[test]
+    fn worst_dimension_wins() {
+        let mut s = base();
+        s.open_medium_anomalies = 1; // degraded on correctness
+        s.dead_letter_count = 1; // unhealthy on queue
+        assert_eq!(
+            evaluate(&s, &HealthThresholds::default()).status,
+            HealthStatus::Unhealthy
+        );
+    }
+}

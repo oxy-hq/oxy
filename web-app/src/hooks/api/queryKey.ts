@@ -584,6 +584,11 @@ const adminWorkspacesKeys = {
   detail: (workspaceId: string) => [...adminWorkspacesKeys.all, "detail", workspaceId] as const
 };
 
+const workspaceHealthKeys = {
+  all: ["admin", "workspace-health"] as const,
+  list: () => [...workspaceHealthKeys.all, "list"] as const
+};
+
 const authConfigKeys = {
   all: ["authConfig"] as const,
   current: () => [...authConfigKeys.all] as const
@@ -739,7 +744,8 @@ const queryKeys = {
   humanVerdict: humanVerdictKeys,
   modeling: modelingKeys,
   github: githubKeys,
-  preagg: preaggKeys
+  preagg: preaggKeys,
+  workspaceHealth: workspaceHealthKeys
 };
 
 export default queryKeys;

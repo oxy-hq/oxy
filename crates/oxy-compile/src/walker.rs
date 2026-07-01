@@ -43,6 +43,9 @@ pub enum FileKind {
     /// `.monitor.yml` at the workspace root — the anomaly-monitor
     /// configuration. Singleton per workspace.
     MonitorConfig,
+    /// `reconcile.yml` at the workspace root — reconciliation checks.
+    /// Singleton per workspace.
+    ReconcileConfig,
     /// `.world-model.yml` at the workspace root — the world-model entity
     /// labels / display fields / allowlist. Singleton per workspace.
     WorldModelConfig,
@@ -105,6 +108,16 @@ pub fn discover(workspace_root: &Path) -> Result<Vec<DiscoveredFile>, CompileErr
             rel_path: ".monitor.yml".to_string(),
             abs_path: monitor_path,
             kind: FileKind::MonitorConfig,
+        });
+    }
+
+    // reconcile.yml — root-only, reconciliation configuration. Optional.
+    let reconcile_path = workspace_root.join("reconcile.yml");
+    if reconcile_path.is_file() {
+        out.push(DiscoveredFile {
+            rel_path: "reconcile.yml".to_string(),
+            abs_path: reconcile_path,
+            kind: FileKind::ReconcileConfig,
         });
     }
 

@@ -111,12 +111,6 @@ async fn run_preagg_task(
         // rollup hard-fail on `get_connector` and fail the whole cycle.
         if !ctx.is_database_configured(database_name) {
             skipped_no_datasource += rollups.len();
-            tracing::debug!(
-                view = %view.name,
-                database = %database_name,
-                rollups = rollups.len(),
-                "preagg: skipping view; datasource not configured in this workspace"
-            );
             for rollup in &rollups {
                 let _ = event_tx
                     .send(
