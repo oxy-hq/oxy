@@ -49,6 +49,12 @@ const airwayKeys = {
   run: (projectId: string, runId: string) => [...airwayKeys.all, "run", projectId, runId] as const,
   runsForPipeline: (projectId: string, pipelineRef: string) =>
     [...airwayKeys.all, "runs-for-pipeline", projectId, pipelineRef] as const,
+  /** A pipeline's list of backfill ranges (the gantt). */
+  ranges: (projectId: string, pipelineRef: string) =>
+    [...airwayKeys.all, "ranges", projectId, pipelineRef] as const,
+  /** Per-range chunk coverage (the drill-in grid). */
+  coverage: (projectId: string, rangeId: string) =>
+    [...airwayKeys.all, "coverage", projectId, rangeId] as const,
   files: (projectId: string) => [...airwayKeys.all, "files", projectId] as const
 };
 

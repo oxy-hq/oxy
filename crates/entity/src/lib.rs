@@ -61,6 +61,8 @@ pub mod agent_definitions;
 pub mod airway_pipelines;
 pub mod app_definitions;
 pub mod automation_definitions;
+pub mod backfill_checkpoints;
+pub mod backfill_ranges;
 /// Back-compat alias for the renamed `automation_definitions` module
 /// (formerly `procedure_definitions`). Keeps existing
 /// `entity::procedure_definitions::*` call sites resolving.

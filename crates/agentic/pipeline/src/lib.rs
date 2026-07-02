@@ -7,6 +7,7 @@
 pub mod agent_run;
 pub mod airway_run;
 pub mod automation_run;
+pub mod backfill;
 pub mod executor;
 pub mod pipeline_ref;
 pub mod platform;

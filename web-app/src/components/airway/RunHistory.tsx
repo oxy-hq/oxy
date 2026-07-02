@@ -17,6 +17,9 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
   cancelled: <X className='h-3.5 w-3.5' />
 };
 
+/** ISO datetime → `YYYY-MM-DD`. */
+const day = (iso: string) => iso.slice(0, 10);
+
 type Props = {
   pipelineRef: string;
   activeRunId?: string;
@@ -74,6 +77,14 @@ const RunHistory: React.FC<Props> = ({ pipelineRef, activeRunId, onSelect }) => 
               >
                 {r.status}
               </Badge>
+              {r.backfill_from && r.backfill_to && (
+                <span
+                  className='text-muted-foreground text-xs'
+                  title={`Backfill window ${r.backfill_from} → ${r.backfill_to}`}
+                >
+                  {day(r.backfill_from)} → {day(r.backfill_to)}
+                </span>
+              )}
               <span className='ml-auto text-muted-foreground text-xs'>{timeAgo(r.created_at)}</span>
             </button>
           </li>

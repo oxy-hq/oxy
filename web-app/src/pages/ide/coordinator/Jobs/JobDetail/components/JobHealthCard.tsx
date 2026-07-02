@@ -11,18 +11,26 @@ import { formatTimestamp } from "../../../components/utils";
  * The reliability side of a job — last error, missed-run coverage, and the
  * backfill entry point. A missing run is silent; this card makes the gap as
  * visible as a failure.
+ *
+ * Airway jobs are date-window (not cron-slot) backfilled and own "coverage" in
+ * the backfill-ranges gantt, so for them this collapses to just schedule health
+ * (last fire status): the missed-occurrences block and the cron backfill button
+ * are hidden and the title drops "& coverage".
  */
-export const JobHealthCard: React.FC<{ schedule: Schedule; canManage: boolean }> = ({
-  schedule,
-  canManage
-}) => {
+export const JobHealthCard: React.FC<{
+  schedule: Schedule;
+  canManage: boolean;
+  isAirway?: boolean;
+}> = ({ schedule, canManage, isAirway = false }) => {
   const [backfillOpen, setBackfillOpen] = useState(false);
 
   return (
     <div className='rounded-xl border border-border bg-card'>
       <div className='flex items-center justify-between border-border border-b px-3 py-2'>
-        <h3 className='font-semibold text-sm'>Health &amp; coverage</h3>
-        {canManage && (
+        <h3 className='font-semibold text-sm'>
+          {isAirway ? "Schedule health" : "Health & coverage"}
+        </h3>
+        {canManage && !isAirway && (
           <Button
             size='sm'
             variant='outline'
@@ -50,31 +58,35 @@ export const JobHealthCard: React.FC<{ schedule: Schedule; canManage: boolean }>
           </div>
         )}
 
-        <div className='rounded-md border border-border px-3 py-2'>
-          <div className='flex items-baseline justify-between'>
-            <span className='text-muted-foreground text-xs uppercase tracking-wide'>
-              Missed occurrences
-            </span>
-            <span
-              className={cn(
-                "font-semibold text-lg tabular-nums",
-                schedule.missed_runs > 0 ? "text-warning" : "text-foreground"
-              )}
-            >
-              {schedule.missed_runs}
-            </span>
+        {!isAirway && (
+          <div className='rounded-md border border-border px-3 py-2'>
+            <div className='flex items-baseline justify-between'>
+              <span className='text-muted-foreground text-xs uppercase tracking-wide'>
+                Missed occurrences
+              </span>
+              <span
+                className={cn(
+                  "font-semibold text-lg tabular-nums",
+                  schedule.missed_runs > 0 ? "text-warning" : "text-foreground"
+                )}
+              >
+                {schedule.missed_runs}
+              </span>
+            </div>
+            <p className='mt-1 text-muted-foreground text-xs'>
+              {schedule.missed_runs > 0
+                ? `Slots skipped during scheduler downtime (last detected ${formatTimestamp(
+                    schedule.last_missed_at
+                  )}). Policy is run-once-then-resume — only the first missed slot fires automatically; backfill the rest.`
+                : "Every scheduled slot has fired on time."}
+            </p>
           </div>
-          <p className='mt-1 text-muted-foreground text-xs'>
-            {schedule.missed_runs > 0
-              ? `Slots skipped during scheduler downtime (last detected ${formatTimestamp(
-                  schedule.last_missed_at
-                )}). Policy is run-once-then-resume — only the first missed slot fires automatically; backfill the rest.`
-              : "Every scheduled slot has fired on time."}
-          </p>
-        </div>
+        )}
       </div>
 
-      <BackfillDialog open={backfillOpen} onOpenChange={setBackfillOpen} schedule={schedule} />
+      {!isAirway && (
+        <BackfillDialog open={backfillOpen} onOpenChange={setBackfillOpen} schedule={schedule} />
+      )}
     </div>
   );
 };

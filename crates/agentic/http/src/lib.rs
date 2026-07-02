@@ -152,6 +152,14 @@ where
         // Bounded date-window backfill (toast, quickbooks): seeds a run with
         // the window pinned on the source.
         .route("/backfill", post(routes::backfill_airway))
+        // Resumable chunked backfill: splits a long window into checkpointed
+        // chunks and drives them detached; `/coverage` reports progress.
+        .route("/chunked-backfill", post(routes::chunked_backfill))
+        // Resume: re-run only a range's not-`done` chunks (no window needed).
+        .route("/resume-backfill", post(routes::airway_resume))
+        // List a pipeline's backfill ranges (the gantt); per-range coverage.
+        .route("/backfill-ranges", get(routes::airway_backfill_ranges))
+        .route("/coverage", get(routes::airway_coverage))
         // Reuse the domain-agnostic SSE handler.
         .route("/runs/{id}/events", get(routes::stream_events))
         .route("/runs/{id}/cancel", post(routes::cancel_airway_run))

@@ -39,12 +39,96 @@ export type BackfillAirwayRequest = {
   resources?: string[];
 };
 
+export type ChunkGranularity = "month" | "week" | "day";
+
+export type ChunkedBackfillRequest = {
+  /** Path to a `.airway.yml`, relative to the workspace root. */
+  pipeline_ref: string;
+  /** Inclusive lower bound (ISO 8601 / RFC3339). Window is half-open `[from, to)`. */
+  from: string;
+  /** Exclusive upper bound (ISO 8601 / RFC3339). */
+  to: string;
+  /** Chunk size — one checkpoint per chunk. */
+  granularity: ChunkGranularity;
+  /** Max chunks to run at once (default 4 server-side, clamped 1..=16). */
+  concurrency?: number;
+};
+
+export type ChunkedBackfillResponse = {
+  /** The backfill range created for this window. Poll coverage(range_id), or
+   *  list ranges, for progress. */
+  range_id: string;
+  /** How many chunks the window split into (also the checkpoint count). */
+  chunk_count: number;
+};
+
+export type ResumeBackfillRequest = {
+  /** The backfill range to resume — re-runs its not-`done` chunks at the
+   *  range's stored concurrency. */
+  range_id: string;
+};
+
+/** One chunk's coverage row (mirrors a `backfill_checkpoints` row). */
+export type CoverageChunk = {
+  /** ISO 8601. Half-open `[period_start, period_end)`. */
+  period_start: string;
+  period_end: string;
+  /** `pending` | `running` | `done` | `completed_with_errors` | `failed` | `cancelled` | `timed_out`. */
+  status: string;
+  run_id: string | null;
+  row_count: number | null;
+  attempts: number;
+  error: string | null;
+};
+
+export type CoverageSummary = {
+  total: number;
+  done: number;
+  /** Loaded envelope: min/max over `done` chunks — NOT necessarily gap-free;
+   *  null when nothing is done. Check `missing` / per-chunk status for gaps. */
+  loaded_from: string | null;
+  loaded_to: string | null;
+  missing: number;
+};
+
+export type CoverageReport = {
+  pipeline_ref: string;
+  /** The range this report covers, or null for a pipeline-wide aggregate. */
+  range_id: string | null;
+  chunks: CoverageChunk[];
+  summary: CoverageSummary;
+};
+
+/** One backfill range plus its chunk tally (mirrors `BackfillRangeInfo`). The
+ *  parent of a set of coverage chunks; the ranges list backs the gantt. */
+export type BackfillRangeInfo = {
+  id: string;
+  pipeline_ref: string;
+  /** Requested half-open window `[requested_from, requested_to)` (ISO 8601). */
+  requested_from: string;
+  requested_to: string;
+  granularity: string;
+  concurrency: number;
+  created_by: string | null;
+  /** Rollup: `running` | `done` | `degraded` | `failed` | `cancelled`. */
+  status: string;
+  created_at: string;
+  updated_at: string;
+  total: number;
+  done: number;
+  missing: number;
+};
+
 export type AirwayRunSummary = {
   run_id: string;
   status: string;
   /** ISO 8601 (`chrono::DateTime`). */
   created_at: string;
   updated_at: string;
+  /** Backfill window `[from, to)` (ISO 8601) if this run was a backfill; null
+   *  for a normal/incremental run. Lets the list show which period it covers. */
+  backfill_from: string | null;
+  backfill_to: string | null;
 };
 
 /** `.airway.yml` file ref (parity with `AutomationFile`). */
@@ -259,6 +343,58 @@ export class AirwayService {
     request: BackfillAirwayRequest
   ): Promise<{ run_id: string }> {
     const { data } = await apiClient.post(`${AirwayService.base(projectId)}/backfill`, request);
+    return data;
+  }
+
+  /**
+   * Start a resumable chunked backfill. Returns immediately with the chunk
+   * count; the server drives the chunks detached. Poll {@link coverage} for
+   * progress. Re-invoking the same window resumes (skips `done` chunks).
+   */
+  static async chunkedBackfill(
+    projectId: string,
+    request: ChunkedBackfillRequest
+  ): Promise<ChunkedBackfillResponse> {
+    const { data } = await apiClient.post(
+      `${AirwayService.base(projectId)}/chunked-backfill`,
+      request
+    );
+    return data;
+  }
+
+  /**
+   * Resume a chunked backfill: re-run only the not-`done` chunks, read from
+   * coverage (no window/granularity needed). Returns the count it will re-run;
+   * `chunk_count` is the number of missing chunks. Poll {@link coverage}.
+   */
+  static async resumeBackfill(
+    projectId: string,
+    request: ResumeBackfillRequest
+  ): Promise<ChunkedBackfillResponse> {
+    const { data } = await apiClient.post(
+      `${AirwayService.base(projectId)}/resume-backfill`,
+      request
+    );
+    return data;
+  }
+
+  /** Coverage for a single backfill range (per-chunk status + rollup). */
+  static async coverage(projectId: string, rangeId: string): Promise<CoverageReport> {
+    const { data } = await apiClient.get(`${AirwayService.base(projectId)}/coverage`, {
+      params: { range_id: rangeId }
+    });
+    return data;
+  }
+
+  /** List a pipeline's backfill ranges (newest first) with each range's chunk
+   *  tally — the source for the ranges gantt. */
+  static async listBackfillRanges(
+    projectId: string,
+    pipelineRef: string
+  ): Promise<BackfillRangeInfo[]> {
+    const { data } = await apiClient.get(`${AirwayService.base(projectId)}/backfill-ranges`, {
+      params: { pipeline_ref: pipelineRef }
+    });
     return data;
   }
 

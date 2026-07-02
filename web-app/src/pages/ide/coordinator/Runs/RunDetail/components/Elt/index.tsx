@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import BackfillRangesPanel from "@/components/airway/BackfillRangesPanel";
 import RetryFailedTablesButton from "@/components/airway/RetryFailedTablesButton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { useStartAirwayRun } from "@/hooks/api/airway/useAirway";
@@ -97,6 +98,7 @@ export const EltBody: React.FC<{
         <TabsList>
           <TabsTrigger value='graph'>Graph</TabsTrigger>
           <TabsTrigger value='events'>Events</TabsTrigger>
+          {pipelineRef && <TabsTrigger value='coverage'>Coverage</TabsTrigger>}
         </TabsList>
         {pipelineRef && (
           <RetryFailedTablesButton
@@ -159,6 +161,15 @@ export const EltBody: React.FC<{
       <TabsContent value='events' className='mt-0'>
         <AgentEventLog events={events} />
       </TabsContent>
+
+      {/* Pipeline-wide chunked-backfill coverage (same panel as the IDE airway
+          page) — surfaced here so job details show what period is loaded vs
+          missing + the Resume action, not just this run's tables. */}
+      {pipelineRef && (
+        <TabsContent value='coverage' className='mt-0'>
+          <BackfillRangesPanel pipelineRef={pipelineRef} />
+        </TabsContent>
+      )}
     </Tabs>
   );
 };

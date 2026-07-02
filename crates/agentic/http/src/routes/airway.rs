@@ -34,6 +34,10 @@ use agentic_pipeline::WorkflowWorkspaceContext;
 use agentic_pipeline::airway_run::{
     AirwayRunError, StartAirwayRequest, list_airway_runs, spawn_airway_run_drive, start_airway_run,
 };
+use agentic_pipeline::backfill::{
+    ChunkGranularity, create_backfill_range, drive_backfill_range, enumerate_chunks,
+    list_backfill_ranges, load_range_coverage, resume_backfill_range,
+};
 use agentic_pipeline::platform::PlatformContext;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use uuid::Uuid;
@@ -209,6 +213,211 @@ pub async fn backfill_airway(
     };
 
     start_and_drive(state, platform, request).await
+}
+
+// ── POST /agentic-airway/chunked-backfill ──────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ChunkedBackfillRequest {
+    /// Path to a `.airway.yml`, relative to the workspace root.
+    pub pipeline_ref: String,
+    /// Inclusive lower bound (RFC3339). The window is half-open `[from, to)`.
+    pub from: chrono::DateTime<chrono::Utc>,
+    /// Exclusive upper bound (RFC3339).
+    pub to: chrono::DateTime<chrono::Utc>,
+    /// Chunk size: `month` | `week` | `day`.
+    pub granularity: String,
+    /// Max chunks to run concurrently (default 4, clamped to 1..=16). Higher
+    /// parallelizes extract but contends on DuckLake's per-table commit lock.
+    #[serde(default)]
+    pub concurrency: Option<usize>,
+}
+
+#[derive(Serialize)]
+pub struct ChunkedBackfillResponse {
+    /// The backfill range created for this window. Poll
+    /// `/coverage?range_id=…`, or list via `/backfill-ranges`, for progress.
+    pub range_id: Uuid,
+    /// Number of chunks the window was split into (also the number of
+    /// checkpoint rows the driver will drive).
+    pub chunk_count: usize,
+}
+
+/// Start a chunked backfill: create a `backfill_ranges` row for `[from, to)`,
+/// split it into `granularity` chunks, and drive each as a bounded window,
+/// checkpointing each outcome under the range.
+///
+/// Returns immediately with the range id + chunk count — the actual drive runs
+/// detached (it can take far longer than a request). Each POST creates a NEW
+/// range (a distinct entry in the ranges gantt); to resume a range's failed or
+/// interrupted chunks — including recovering a mid-drive process restart — POST
+/// `/resume-backfill { range_id }`, which re-drives only the range's not-`done`
+/// chunks. Progress is read via `GET /coverage?range_id`.
+pub async fn chunked_backfill(
+    Extension(state): Extension<Arc<AgenticState>>,
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(body): Json<ChunkedBackfillRequest>,
+) -> Response {
+    if body.from >= body.to {
+        return (
+            StatusCode::BAD_REQUEST,
+            "backfill `from` must be strictly before `to`",
+        )
+            .into_response();
+    }
+    let granularity = match ChunkGranularity::parse(&body.granularity) {
+        Some(g) => g,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "invalid granularity `{}` (expected month|week|day)",
+                    body.granularity
+                ),
+            )
+                .into_response();
+        }
+    };
+    let workspace_id = platform.workspace_id();
+    let concurrency = body.concurrency.unwrap_or(4).clamp(1, 16);
+    // No merge: this range owns exactly the chunks its window enumerates.
+    let chunk_count = enumerate_chunks(body.from, body.to, granularity).len();
+
+    // Record the range up front (captures the initiating user), then drive it
+    // detached — the drive runs the chunks (up to `concurrency` at once) well
+    // beyond a request's lifetime. Checkpoints make it resumable; losing this
+    // task (restart) just means a Resume of the range continues from its
+    // not-`done` chunks. Variables are None — the HTTP path renders the spec
+    // from persisted config, like the single-window backfill.
+    let range_id = match create_backfill_range(
+        &state.db,
+        workspace_id,
+        &body.pipeline_ref,
+        body.from,
+        body.to,
+        granularity,
+        concurrency as i32,
+        Some(user.id),
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!(%e, "chunked backfill: create range failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("backfill: {e}")).into_response();
+        }
+    };
+
+    let db = state.db.clone();
+    let pref = body.pipeline_ref.clone();
+    tokio::spawn(async move {
+        if let Err(e) = drive_backfill_range(&db, platform, range_id, None, |_| {}).await {
+            tracing::error!(%e, pipeline_ref = %pref, %range_id, "chunked backfill driver failed");
+        }
+    });
+
+    Json(ChunkedBackfillResponse {
+        range_id,
+        chunk_count,
+    })
+    .into_response()
+}
+
+// ── POST /agentic-airway/resume-backfill ───────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ResumeBackfillRequest {
+    /// The backfill range to resume.
+    pub range_id: Uuid,
+}
+
+/// Resume a backfill range: re-run exactly its not-`done` chunks (read straight
+/// from the range's checkpoints, at the range's stored concurrency). Returns the
+/// count it will re-run; the drive is detached like `chunked_backfill`, and
+/// progress is read via `GET /coverage?range_id=…`.
+pub async fn airway_resume(
+    Extension(state): Extension<Arc<AgenticState>>,
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Json(body): Json<ResumeBackfillRequest>,
+) -> Response {
+    let range_id = body.range_id;
+    // Count the missing chunks up front (for the response) — the same not-`done`
+    // set the detached resume will drive. Workspace-scoped read.
+    let missing = match load_range_coverage(&state.db, platform.workspace_id(), range_id).await {
+        Ok(report) => report.summary.missing,
+        Err(e) => {
+            tracing::error!(%e, "airway resume: coverage read failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("resume: {e}")).into_response();
+        }
+    };
+    let db = state.db.clone();
+    // Detach, same deferral as `chunked_backfill` (KNOWN / DEFERRED, per
+    // oxy-task-spec-default): this drive is a bare `tokio::spawn`, not a durable
+    // `TaskSpec`, so a mid-drive restart drops the in-flight resume. Checkpoints
+    // make that safe — another Resume just continues from the still-not-`done`
+    // chunks. `resume_backfill_range` re-checks the range's workspace.
+    tokio::spawn(async move {
+        if let Err(e) = resume_backfill_range(&db, platform, range_id, None, |_| {}).await {
+            tracing::error!(%e, %range_id, "airway resume driver failed");
+        }
+    });
+
+    Json(ChunkedBackfillResponse {
+        range_id,
+        chunk_count: missing,
+    })
+    .into_response()
+}
+
+// ── GET /agentic-airway/backfill-ranges?pipeline_ref=... ───────────────────
+
+#[derive(Deserialize)]
+pub struct BackfillRangesQuery {
+    pub pipeline_ref: String,
+}
+
+/// List a pipeline's backfill ranges (newest first) with each range's chunk
+/// tally — the source for the ranges gantt. Read-only, workspace-scoped.
+pub async fn airway_backfill_ranges(
+    Extension(state): Extension<Arc<AgenticState>>,
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    axum::extract::Query(q): axum::extract::Query<BackfillRangesQuery>,
+) -> Response {
+    match list_backfill_ranges(&state.db, platform.workspace_id(), &q.pipeline_ref).await {
+        Ok(ranges) => Json(ranges).into_response(),
+        Err(e) => {
+            tracing::error!(%e, "airway backfill ranges failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("ranges: {e}")).into_response()
+        }
+    }
+}
+
+// ── GET /agentic-airway/coverage?range_id=... ──────────────────────────────
+
+#[derive(Deserialize)]
+pub struct CoverageQuery {
+    pub range_id: Uuid,
+}
+
+/// Coverage for a single backfill range: every checkpoint chunk plus a rollup
+/// (done/total, loaded envelope, missing count). Read-only, workspace-scoped —
+/// drives the UI's per-range coverage grid.
+pub async fn airway_coverage(
+    Extension(state): Extension<Arc<AgenticState>>,
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    axum::extract::Query(q): axum::extract::Query<CoverageQuery>,
+) -> Response {
+    match load_range_coverage(&state.db, platform.workspace_id(), q.range_id).await {
+        Ok(report) => Json(report).into_response(),
+        Err(e) => {
+            tracing::error!(%e, "airway coverage failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("coverage: {e}")).into_response()
+        }
+    }
 }
 
 // ── POST /agentic-airway/runs/:id/cancel ───────────────────────────────────

@@ -118,7 +118,10 @@ mod m20260623_000001_rename_procedures_to_automations;
 mod m20260624_000001_create_reconcile_configs;
 mod m20260624_000001_create_world_model_configs;
 mod m20260624_000002_health_state_add_payload;
+mod m20260630_000001_create_backfill_checkpoints;
+mod m20260701_000001_add_workspace_id_to_backfill_checkpoints;
 mod m20260702_000001_create_app_publish_tokens;
+mod m20260702_000001_create_backfill_ranges;
 
 pub struct Migrator;
 
@@ -238,7 +241,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260624_000001_create_reconcile_configs::Migration),
             Box::new(m20260624_000001_create_world_model_configs::Migration),
             Box::new(m20260624_000002_health_state_add_payload::Migration),
+            Box::new(m20260630_000001_create_backfill_checkpoints::Migration),
+            Box::new(m20260701_000001_add_workspace_id_to_backfill_checkpoints::Migration),
             Box::new(m20260702_000001_create_app_publish_tokens::Migration),
+            Box::new(m20260702_000001_create_backfill_ranges::Migration),
         ]
     }
 }

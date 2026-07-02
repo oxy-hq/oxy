@@ -26,6 +26,8 @@ agentic-automation = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+entity = { workspace = true }
+futures = { workspace = true }
 serde_yaml = { workspace = true }
 
 sea-orm = { workspace = true }

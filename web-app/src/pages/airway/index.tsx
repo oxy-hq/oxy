@@ -15,10 +15,11 @@
 
 import { AlertTriangle, ChevronRight, Database, Loader2, PlayIcon, StopCircle } from "lucide-react";
 import type React from "react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import BackfillAirwayModal from "@/components/airway/BackfillAirwayModal";
+import BackfillRangesPanel from "@/components/airway/BackfillRangesPanel";
 import LineageGraph from "@/components/airway/LineageGraph";
 import PhaseBar from "@/components/airway/PhaseBar";
 import PipelineOverview from "@/components/airway/PipelineOverview";
@@ -104,6 +105,8 @@ export const AirwayPipelinePage: React.FC<{
   const pipelineRef = useMemo(() => decodeBase64(pathb64), [pathb64]);
   const ctrl = useAirwayRunController();
   const navigate = useNavigate();
+  // Controlled so a started chunked backfill can jump straight to Coverage.
+  const [tab, setTab] = useState("overview");
 
   const openRun = (runId: string) => {
     if (onOpenRun) onOpenRun(runId);
@@ -126,7 +129,11 @@ export const AirwayPipelinePage: React.FC<{
   return (
     <div className='flex h-full flex-col'>
       <Chrome hideHeader={hideHeader} pipelineRef={pipelineRef}>
-        <BackfillAirwayModal pipelineRef={pipelineRef} onStarted={openRun} />
+        <BackfillAirwayModal
+          pipelineRef={pipelineRef}
+          onStarted={openRun}
+          onChunkedStarted={() => setTab("coverage")}
+        />
         <Button size='sm' onClick={run} disabled={ctrl.starting} aria-label='Run this pipeline'>
           {ctrl.starting ? (
             <Loader2 className='h-4 w-4 animate-spin' />
@@ -137,16 +144,20 @@ export const AirwayPipelinePage: React.FC<{
         </Button>
       </Chrome>
 
-      <Tabs defaultValue='overview' className='flex min-h-0 flex-1 flex-col'>
+      <Tabs value={tab} onValueChange={setTab} className='flex min-h-0 flex-1 flex-col'>
         <TabsList className='mx-4 mt-2'>
           <TabsTrigger value='overview'>Overview</TabsTrigger>
           <TabsTrigger value='runs'>Runs</TabsTrigger>
+          <TabsTrigger value='coverage'>Coverage</TabsTrigger>
         </TabsList>
         <TabsContent value='overview' className='min-h-0 flex-1 overflow-auto'>
           <PipelineOverview pipelineRef={pipelineRef} onOpenRun={openRun} />
         </TabsContent>
         <TabsContent value='runs' className='min-h-0 flex-1 overflow-auto'>
           <RunHistory pipelineRef={pipelineRef} onSelect={openRun} />
+        </TabsContent>
+        <TabsContent value='coverage' className='min-h-0 flex-1 overflow-auto'>
+          <BackfillRangesPanel pipelineRef={pipelineRef} />
         </TabsContent>
       </Tabs>
     </div>

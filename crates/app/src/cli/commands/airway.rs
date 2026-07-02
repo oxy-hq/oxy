@@ -10,6 +10,10 @@ use std::time::Duration;
 use agentic_pipeline::airway_run::{
     AirwayRunError, StartAirwayRequest, spawn_airway_run_drive, start_airway_run,
 };
+use agentic_pipeline::backfill::{
+    ChunkDisposition, ChunkGranularity, ChunkProgress, drive_backfill_range,
+    find_or_create_backfill_range, load_coverage,
+};
 use agentic_pipeline::{
     AIRWAY_SOURCE_TYPE, AirwayMigrator, AnalyticsMigrator, AutomationMigrator, airway_event_handler,
 };
@@ -17,6 +21,7 @@ use agentic_runtime::crud;
 use agentic_runtime::event_registry::EventRegistry;
 use agentic_runtime::migration::RuntimeMigrator;
 use agentic_runtime::state::RuntimeState;
+use chrono::{DateTime, Utc};
 use clap::Parser;
 use migration::MigratorTrait;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
@@ -24,6 +29,7 @@ use oxy::config::resolve_local_workspace_path;
 use oxy::database::client::establish_connection;
 use oxy::theme::StyledText;
 use oxy_shared::errors::OxyError;
+use sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
@@ -38,6 +44,14 @@ pub struct AirwayArgs {
 pub enum AirwayCommand {
     /// Run an airway pipeline defined by a `.airway.yml` file.
     Run(AirwayRunArgs),
+    /// Chunked, resumable backfill of a pipeline over a date range. Splits
+    /// `[from, to)` into period chunks, runs each as a bounded backfill, and
+    /// records every chunk in `backfill_checkpoints` — so a crash/cancel resumes
+    /// by skipping `done` chunks and re-running failed ones.
+    Backfill(AirwayBackfillArgs),
+    /// Show backfill coverage for a pipeline (done / failed / pending chunks)
+    /// from `backfill_checkpoints` — i.e. what period is loaded vs missing.
+    Coverage(AirwayCoverageArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -49,9 +63,44 @@ pub struct AirwayRunArgs {
     pub json: bool,
 }
 
+#[derive(Parser, Debug)]
+pub struct AirwayBackfillArgs {
+    /// Path to the `.airway.yml`, relative to the workspace root.
+    pub pipeline_ref: String,
+    /// Inclusive window start (RFC3339, e.g. `2020-01-01T00:00:00Z`).
+    #[clap(long)]
+    pub from: String,
+    /// Exclusive window end (RFC3339).
+    #[clap(long)]
+    pub to: String,
+    /// Chunk size: `month` (default), `week`, or `day`.
+    #[clap(long, default_value = "month")]
+    pub granularity: String,
+    /// Max chunks to run concurrently. Each chunk is a full airway run writing
+    /// the same table, and DuckLake serializes catalog commits per table — so a
+    /// high value trades parallel extract for commit conflict-retries (safe:
+    /// resumable). ≈4 is a good default; 1 is fully sequential.
+    #[clap(long, default_value = "4")]
+    pub concurrency: usize,
+    /// Emit one JSON object per event instead of pretty output.
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct AirwayCoverageArgs {
+    /// Path to the `.airway.yml`, relative to the workspace root.
+    pub pipeline_ref: String,
+    /// Emit JSON instead of a table.
+    #[clap(long)]
+    pub json: bool,
+}
+
 pub async fn handle_airway_command(args: AirwayArgs) -> Result<(), OxyError> {
     match args.command {
         AirwayCommand::Run(a) => cmd_run(a).await,
+        AirwayCommand::Backfill(a) => cmd_backfill(a).await,
+        AirwayCommand::Coverage(a) => cmd_coverage(a).await,
     }
 }
 
@@ -278,6 +327,193 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
         }
     }
 
+    Ok(())
+}
+
+// ─── chunked backfill (resumable) ───────────────────────────────────────────
+//
+// The orchestration (chunk enumeration, per-chunk windowed runs, checkpointing,
+// coverage rollup) lives in `agentic_pipeline::backfill` so the HTTP
+// `/agentic-airway/chunked-backfill` + `/coverage` handlers share it. The CLI
+// here is a thin wrapper: build the local context, drive, print.
+
+fn parse_rfc3339(s: &str, field: &str) -> Result<DateTime<Utc>, OxyError> {
+    DateTime::parse_from_rfc3339(s)
+        .map(|d| d.with_timezone(&Utc))
+        .map_err(|e| OxyError::ConfigurationError(format!("invalid --{field} `{s}`: {e}")))
+}
+
+/// Set up the same db + platform/workspace context `cmd_run` uses, plus the
+/// pipeline's env-var variables, so a chunk run is identical to a normal run.
+async fn airway_context(
+    pipeline_ref: &str,
+) -> Result<
+    (
+        DatabaseConnection,
+        Arc<dyn agentic_pipeline::platform::PlatformContext>,
+        Arc<dyn agentic_pipeline::WorkflowWorkspaceContext>,
+        Value,
+    ),
+    OxyError,
+> {
+    let db = connect_db().await?;
+    let project_path = resolve_local_workspace_path()?;
+    let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&project_path)
+        .await?
+        .with_runs_manager(oxy::adapters::runs::RunsManager::noop())
+        .build()
+        .await?;
+    let project_ctx = Arc::new(crate::agentic_wiring::OxyProjectContext::new(
+        workspace_manager,
+    ));
+    let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = project_ctx.clone();
+    let workspace: Arc<dyn agentic_pipeline::WorkflowWorkspaceContext> = project_ctx;
+    let variables = Value::Object(build_env_vars_for_yaml(&project_path, pipeline_ref));
+    Ok((db, platform, workspace, variables))
+}
+
+async fn cmd_backfill(args: AirwayBackfillArgs) -> Result<(), OxyError> {
+    let granularity = ChunkGranularity::parse(&args.granularity).ok_or_else(|| {
+        OxyError::ConfigurationError(format!(
+            "invalid --granularity `{}` (expected month|week|day)",
+            args.granularity
+        ))
+    })?;
+    let from = parse_rfc3339(&args.from, "from")?;
+    let to = parse_rfc3339(&args.to, "to")?;
+    if from >= to {
+        return Err(OxyError::ConfigurationError(
+            "empty window — --from must be before --to".to_string(),
+        ));
+    }
+
+    let (db, platform, _workspace, variables) = airway_context(&args.pipeline_ref).await?;
+    if !args.json {
+        println!(
+            "{}",
+            format!(
+                "Backfill {} ({} chunks)",
+                args.pipeline_ref, args.granularity
+            )
+            .info()
+        );
+    }
+
+    // Single-tenant local: LOCAL_WORKSPACE_ID (Uuid::nil()), no initiating user.
+    // find-or-create so re-running the same window resumes that range (drives
+    // only its not-`done` chunks) instead of spawning a duplicate.
+    let range_id = find_or_create_backfill_range(
+        &db,
+        Uuid::nil(),
+        &args.pipeline_ref,
+        from,
+        to,
+        granularity,
+        args.concurrency as i32,
+        None,
+    )
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("resolve backfill range: {e}")))?;
+
+    let json = args.json;
+    let summary = drive_backfill_range(
+        &db,
+        platform,
+        range_id,
+        Some(variables),
+        |p: ChunkProgress| {
+            if json {
+                return;
+            }
+            match p.disposition {
+                ChunkDisposition::Resumed => {
+                    println!("  {}", format!("↪ {} (already done)", p.label).secondary())
+                }
+                ChunkDisposition::Done => println!("  {}", format!("✓ {}", p.label).success()),
+                ChunkDisposition::Degraded | ChunkDisposition::Failed => {
+                    let note = p.note.unwrap_or_default();
+                    println!("  {}", format!("✗ {} ({note})", p.label).error());
+                }
+            }
+        },
+    )
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("chunked backfill: {e}")))?;
+
+    println!(
+        "{}",
+        format!(
+            "done={} resumed={} degraded={} failed={}",
+            summary.done, summary.resumed, summary.degraded, summary.failed
+        )
+        .info()
+    );
+    if summary.degraded + summary.failed > 0 {
+        println!(
+            "{}",
+            "re-run the same command to retry failed / partial chunks.".secondary()
+        );
+    }
+    Ok(())
+}
+
+async fn cmd_coverage(args: AirwayCoverageArgs) -> Result<(), OxyError> {
+    let db = connect_db().await?;
+    // Single-tenant local: LOCAL_WORKSPACE_ID (Uuid::nil()), matching the
+    // `airway_context` platform that cmd_backfill drives with.
+    let report = load_coverage(&db, Uuid::nil(), &args.pipeline_ref)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("coverage: {e}")))?;
+
+    if args.json {
+        println!("{}", json!(report));
+        return Ok(());
+    }
+    if report.chunks.is_empty() {
+        println!("no backfill checkpoints for `{}`", args.pipeline_ref);
+        return Ok(());
+    }
+    println!(
+        "{}",
+        format!(
+            "Coverage {} — {}/{} chunks done",
+            args.pipeline_ref, report.summary.done, report.summary.total
+        )
+        .info()
+    );
+    if let (Some(f), Some(t)) = (report.summary.loaded_from, report.summary.loaded_to) {
+        println!("  loaded range: {} → {}", f.date_naive(), t.date_naive());
+    }
+    let missing: Vec<_> = report
+        .chunks
+        .iter()
+        .filter(|r| r.status != "done")
+        .collect();
+    if missing.is_empty() {
+        println!("  {}", "no missing periods.".success());
+    } else {
+        println!("  {} period(s) not done:", missing.len());
+        for r in missing {
+            let note = r
+                .error
+                .as_deref()
+                .map(|e| format!(": {e}"))
+                .unwrap_or_default();
+            let mark = match r.status.as_str() {
+                "failed" | "cancelled" | "timed_out" => "✗",
+                "completed_with_errors" => "⚠",
+                _ => "•", // pending / running
+            };
+            println!(
+                "    {mark} {} → {} [{}] (attempts {}){note}",
+                r.period_start.date_naive(),
+                r.period_end.date_naive(),
+                r.status,
+                r.attempts,
+            );
+        }
+    }
     Ok(())
 }
 

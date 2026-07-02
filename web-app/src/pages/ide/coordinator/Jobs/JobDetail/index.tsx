@@ -1,7 +1,9 @@
 import { ArrowLeft, Pencil, Play } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import BackfillAirwayModal from "@/components/airway/BackfillAirwayModal";
+import BackfillRangesPanel from "@/components/airway/BackfillRangesPanel";
 import { Button } from "@/components/ui/shadcn/button";
 import { useSchedules } from "@/hooks/api/schedules/useSchedules";
 import { useRole } from "@/hooks/useRole";
@@ -22,6 +24,7 @@ const JobDetailPage: React.FC = () => {
   const { scheduleId } = useParams<{ scheduleId: string }>();
   const { data, isPending, error, refetch } = useSchedules();
   const routes = useCoordinatorRoutes();
+  const navigate = useNavigate();
   const canManage = useRole().is.workspaceAdmin;
 
   const [editOpen, setEditOpen] = useState(false);
@@ -47,6 +50,9 @@ const JobDetailPage: React.FC = () => {
 
   const jobType = targetKindToJobType(schedule.target_kind);
   const isSystem = isSystemSchedule(schedule);
+  // airway (ELT) jobs get the same backfill + coverage surface as the IDE
+  // pipeline page; `target_ref` is the `.airway.yml` pipeline_ref.
+  const isAirway = schedule.target_kind === "airway";
 
   return (
     <div className='flex h-full flex-col'>
@@ -71,6 +77,12 @@ const JobDetailPage: React.FC = () => {
         </span>
         {canManage && (
           <div className='ml-auto flex items-center gap-2'>
+            {isAirway && (
+              <BackfillAirwayModal
+                pipelineRef={schedule.target_ref}
+                onStarted={(runId) => navigate(routes.RUN_DETAIL(runId))}
+              />
+            )}
             <Button
               size='sm'
               variant='outline'
@@ -96,9 +108,17 @@ const JobDetailPage: React.FC = () => {
       <div className='flex-1 overflow-y-auto'>
         <div className='grid grid-cols-1 gap-4 p-4 lg:grid-cols-2'>
           <JobDefinitionCard schedule={schedule} />
-          <JobHealthCard schedule={schedule} canManage={canManage} />
+          <JobHealthCard schedule={schedule} canManage={canManage} isAirway={isAirway} />
           <JobRunsCard scheduleId={schedule.id} />
         </div>
+        {/* airway jobs: the backfill-ranges gantt (a gantt of user backfill
+            windows → drill into each range's chunk coverage), keyed on the
+            job's `target_ref`. This owns "coverage" — JobHealthCard drops it. */}
+        {isAirway && (
+          <div className='px-4 pb-4'>
+            <BackfillRangesPanel pipelineRef={schedule.target_ref} />
+          </div>
+        )}
       </div>
 
       <ScheduleDialog open={editOpen} onOpenChange={setEditOpen} schedule={schedule} />

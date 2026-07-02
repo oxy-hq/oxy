@@ -702,6 +702,23 @@ const FLEET_OK_READ_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/agentic-airway/runs",
         role: RouteRole::FleetOk,
     },
+    // Airway backfill coverage — airway_coverage (GET /coverage, `state.db`). A
+    // read like run history, so it serves off the stateless fleet; the
+    // chunked-backfill write stays on the ide node via the wildcard below.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-airway/coverage",
+        role: RouteRole::FleetOk,
+    },
+    // Airway backfill ranges — airway_backfill_ranges (GET /backfill-ranges,
+    // `state.db`). A workspace-scoped read like coverage/runs, and the entry
+    // point for the coverage gantt (the UI lists ranges before drilling into a
+    // range's coverage), so it must serve off the stateless fleet too.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/agentic-airway/backfill-ranges",
+        role: RouteRole::FleetOk,
+    },
 ];
 
 /// Classify `(method, request_uri_path)`. Returns [`RouteRole::FleetOk`] when

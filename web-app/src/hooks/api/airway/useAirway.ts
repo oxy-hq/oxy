@@ -27,6 +27,10 @@ import {
   type AirwayRunSummary,
   AirwayService,
   type BackfillAirwayRequest,
+  type BackfillRangeInfo,
+  type ChunkedBackfillRequest,
+  type ChunkedBackfillResponse,
+  type CoverageReport,
   type DiscoveredTable,
   type DiscoverSourceRequest,
   type StartAirwayRequest
@@ -73,6 +77,66 @@ export const useBackfillAirway = (): UseMutationResult<
   });
 };
 
+/**
+ * Start a resumable chunked backfill. The server drives the chunks detached;
+ * on success we kick coverage polling + refresh run history so both reflect
+ * the in-flight backfill. Re-invoking the same window resumes (skips `done`).
+ */
+export const useChunkedBackfill = (): UseMutationResult<
+  ChunkedBackfillResponse,
+  Error,
+  ChunkedBackfillRequest
+> => {
+  const { project } = useCurrentProjectBranch();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: ChunkedBackfillRequest) =>
+      AirwayService.chunkedBackfill(project.id, request),
+    onSuccess: (data, variables) => {
+      // Refresh the ranges list so the new range appears (newest first), its
+      // own coverage, and run history.
+      queryClient.invalidateQueries({
+        queryKey: keys.ranges(project.id, variables.pipeline_ref)
+      });
+      queryClient.invalidateQueries({
+        queryKey: keys.coverage(project.id, data.range_id)
+      });
+      queryClient.invalidateQueries({
+        queryKey: keys.runsForPipeline(project.id, variables.pipeline_ref)
+      });
+    }
+  });
+};
+
+/**
+ * Resume a backfill range: re-run only its not-`done` chunks (the server reads
+ * them from the range's checkpoints — no window needed). `pipeline_ref` is
+ * carried only for cache invalidation. On success, refresh the range's coverage,
+ * the ranges list, and run history.
+ */
+export const useResumeBackfill = (): UseMutationResult<
+  ChunkedBackfillResponse,
+  Error,
+  { range_id: string; pipeline_ref: string }
+> => {
+  const { project } = useCurrentProjectBranch();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ range_id }) => AirwayService.resumeBackfill(project.id, { range_id }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: keys.coverage(project.id, variables.range_id)
+      });
+      queryClient.invalidateQueries({
+        queryKey: keys.ranges(project.id, variables.pipeline_ref)
+      });
+      queryClient.invalidateQueries({
+        queryKey: keys.runsForPipeline(project.id, variables.pipeline_ref)
+      });
+    }
+  });
+};
+
 const useCancelAirwayRun = (): UseMutationResult<void, Error, string> => {
   const { project } = useCurrentProjectBranch();
   return useMutation({
@@ -108,6 +172,45 @@ export const useAirwayRuns = (
     queryKey: keys.runsForPipeline(project.id, pipelineRef),
     queryFn: () => AirwayService.listRuns(project.id, pipelineRef, limit),
     enabled: !!pipelineRef
+  });
+};
+
+/**
+ * A pipeline's backfill ranges (newest first) with each range's chunk tally —
+ * the source for the ranges gantt. Polls every 5s while any range is still
+ * `running`, then goes quiet.
+ */
+export const useBackfillRanges = (pipelineRef: string): UseQueryResult<BackfillRangeInfo[]> => {
+  const { project } = useCurrentProjectBranch();
+  return useQuery({
+    queryKey: keys.ranges(project.id, pipelineRef),
+    queryFn: () => AirwayService.listBackfillRanges(project.id, pipelineRef),
+    enabled: !!pipelineRef,
+    refetchInterval: (query) => {
+      const active = query.state.data?.some((r) => r.status === "running");
+      return active ? 5000 : false;
+    }
+  });
+};
+
+/**
+ * Per-range chunk coverage (status grid + rollup). Polls every 5s while any
+ * chunk is still `pending`/`running`, so an in-flight range's progress streams
+ * in, then goes quiet once everything is terminal. Disabled until a range is
+ * selected.
+ */
+export const useAirwayCoverage = (rangeId: string | undefined): UseQueryResult<CoverageReport> => {
+  const { project } = useCurrentProjectBranch();
+  return useQuery({
+    queryKey: keys.coverage(project.id, rangeId ?? ""),
+    queryFn: () => AirwayService.coverage(project.id, rangeId as string),
+    enabled: !!rangeId,
+    refetchInterval: (query) => {
+      const active = query.state.data?.chunks.some(
+        (c) => c.status === "pending" || c.status === "running"
+      );
+      return active ? 5000 : false;
+    }
   });
 };
 

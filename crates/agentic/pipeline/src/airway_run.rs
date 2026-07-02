@@ -84,6 +84,11 @@ pub struct AirwayRunSummary {
     pub status: String,
     pub created_at: chrono::DateTime<chrono::FixedOffset>,
     pub updated_at: chrono::DateTime<chrono::FixedOffset>,
+    /// Backfill window `[from, to)` (RFC3339) if this run was a backfill; `None`
+    /// for a normal/incremental run. Lets the UI show which period a run covers
+    /// instead of only its wall-clock timestamp.
+    pub backfill_from: Option<String>,
+    pub backfill_to: Option<String>,
 }
 
 /// Errors from seeding an airway run.
@@ -327,12 +332,16 @@ pub async fn list_airway_runs(
         task_status: Option<String>,
         created_at: chrono::DateTime<chrono::FixedOffset>,
         updated_at: chrono::DateTime<chrono::FixedOffset>,
+        backfill_from: Option<String>,
+        backfill_to: Option<String>,
     }
 
     let stmt = Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         r#"
-        SELECT id, task_status, created_at, updated_at
+        SELECT id, task_status, created_at, updated_at,
+               metadata->>'backfill_from' AS backfill_from,
+               metadata->>'backfill_to'   AS backfill_to
         FROM agentic_runs
         WHERE source_type = $1
           AND parent_run_id IS NULL
@@ -355,6 +364,8 @@ pub async fn list_airway_runs(
             status: r.task_status.unwrap_or_else(|| "unknown".into()),
             created_at: r.created_at,
             updated_at: r.updated_at,
+            backfill_from: r.backfill_from,
+            backfill_to: r.backfill_to,
         })
         .collect())
 }

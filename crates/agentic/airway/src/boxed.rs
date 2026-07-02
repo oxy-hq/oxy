@@ -16,11 +16,12 @@
 use airway::connector::{ExtractionResult, ResourceInfo, SourceConnector};
 use airway::destination::writer::LoadWriter;
 use airway::destination::{Destination, DestinationCapabilities, LoadInfo};
-use airway::normalizer::relational::NormalizedOutput;
+use airway::normalizer::relational::{KeyPropagation, NormalizedOutput};
 use airway::source::resource::{RecordStream, ResourceStateHandle};
 use airway::types::RecordBatch;
 use airway::{AirwayError, Schema};
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 /// Newtype wrapping a `Box<dyn SourceConnector>` so it satisfies the
 /// `impl SourceConnector + 'static` bound on
@@ -57,6 +58,43 @@ impl SourceConnector for BoxedSourceConnector {
         state: Option<&serde_json::Value>,
     ) -> Result<(RecordStream, ResourceStateHandle), AirwayError> {
         self.0.extract_stream(resource, state).await
+    }
+
+    // The remaining `SourceConnector` methods are all trait-defaulted, so —
+    // exactly like `extract_stream` above — the box silently substitutes the
+    // default unless we forward. `partition_keys`/`sort_keys`/`key_propagation`
+    // carry the DuckLake partition + sort + ancestor-key hints a connector
+    // declares (e.g. Toast's `orders`: partition by restaurant_guid +
+    // year(business_date), sort by business_date); dropping them leaves
+    // `Table.partition_by`/`sort_by` empty so the destination's
+    // `SET PARTITIONED BY`/`SET SORTED BY` never fire. `table_name_mappings`
+    // renames tables, and `extract_all` is overridden by Toast/rest_api — the
+    // box's default would bypass those. Every defaulted method MUST be forwarded.
+    fn table_name_mappings(&self) -> HashMap<String, String> {
+        self.0.table_name_mappings()
+    }
+
+    fn key_propagation(&self) -> KeyPropagation {
+        self.0.key_propagation()
+    }
+
+    fn partition_keys(&self) -> HashMap<String, Vec<String>> {
+        self.0.partition_keys()
+    }
+
+    fn sort_keys(&self) -> HashMap<String, Vec<String>> {
+        self.0.sort_keys()
+    }
+
+    fn excluded_tables(&self) -> Vec<String> {
+        self.0.excluded_tables()
+    }
+
+    async fn extract_all(
+        &self,
+        states: &HashMap<String, serde_json::Value>,
+    ) -> Result<HashMap<String, ExtractionResult>, AirwayError> {
+        self.0.extract_all(states).await
     }
 }
 
