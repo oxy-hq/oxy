@@ -39,6 +39,7 @@ pub async fn run_automation_step(
 
         TaskType::OmniQuery(cfg) => execute_omni_query(workspace, cfg).await,
         TaskType::LookerQuery(cfg) => execute_looker_query(workspace, cfg).await,
+        TaskType::HttpRequest(cfg) => execute_http_request(workspace, cfg, &render_context).await,
 
         // Catches the retired `type: visualize` (now `#[serde(other)]`)
         // and any unknown task type the schema doesn't recognise.
@@ -441,5 +442,286 @@ pub fn extract_automation_steps(output: &Value) -> Vec<Value> {
             "step_name": "result",
             "text": other.to_string(),
         })],
+    }
+}
+
+/// Execute an `http_request` task: make an outbound HTTP call from a workflow.
+///
+/// Fields (read from the opaque task `cfg`):
+/// - `url` (templated), `method` (default POST), `headers` (templated values),
+/// - `body` (templated raw) OR `form` (templated map → urlencoded),
+/// - `secrets: [NAME]` resolved into the `{{ secrets.NAME }}` template scope,
+/// - `timeout_secs` (1–120, default 30), `expected_status` (default any 2xx),
+/// - `allow_hosts` (extra egress allowlist), `persist_to_secret { from, name }`.
+///
+/// Returns `{ status, json, text }`. Secrets are injected into the request but
+/// never echoed in the output. The rotating-OAuth-token path is `persist_to_secret`,
+/// which writes a JSON-pointer field of the response back to a project secret.
+async fn execute_http_request(
+    workspace: &dyn WorkspaceContext,
+    cfg: &Value,
+    render_context: &Value,
+) -> Result<Value, String> {
+    let url_tmpl = cfg
+        .get("url")
+        .and_then(|v| v.as_str())
+        .ok_or("http_request: missing 'url'")?;
+    let method = cfg
+        .get("method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("POST")
+        .to_ascii_uppercase();
+    let timeout_secs = cfg
+        .get("timeout_secs")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(30)
+        .clamp(1, 120);
+
+    // Resolve declared secrets into a `{{ secrets.NAME }}` scope layered onto the
+    // render context. Missing secrets fail loudly rather than rendering empty.
+    let mut secrets_map = serde_json::Map::new();
+    if let Some(names) = cfg.get("secrets").and_then(|v| v.as_array()) {
+        for name in names.iter().filter_map(|v| v.as_str()) {
+            match workspace.fetch_secret(name).await {
+                Some(val) => {
+                    secrets_map.insert(name.to_string(), Value::String(val));
+                }
+                None => return Err(format!("http_request: secret {name:?} not found")),
+            }
+        }
+    }
+    let mut ctx = render_context.clone();
+    if let Some(obj) = ctx.as_object_mut() {
+        obj.insert("secrets".to_string(), Value::Object(secrets_map));
+    } else {
+        ctx = json!({ "secrets": Value::Object(secrets_map) });
+    }
+
+    let url = render_jinja_string(url_tmpl, &ctx).map_err(|e| format!("render url: {e}"))?;
+
+    let allow_hosts: Vec<String> = cfg
+        .get("allow_hosts")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    validate_egress(&url, &allow_hosts)?;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        // Do NOT follow redirects: `validate_egress` only vets the initial URL, so a
+        // 3xx to a private IP or a non-`allow_hosts` host would slip past the egress
+        // guard — and this task ships declared secrets to the endpoint.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("http_request: client build failed: {e}"))?;
+    let method_parsed = reqwest::Method::from_bytes(method.as_bytes())
+        .map_err(|_| format!("http_request: invalid method {method:?}"))?;
+    let mut req = client.request(method_parsed, &url);
+
+    if let Some(headers) = cfg.get("headers").and_then(|v| v.as_object()) {
+        for (k, v) in headers {
+            if let Some(val_tmpl) = v.as_str() {
+                let val = render_jinja_string(val_tmpl, &ctx)
+                    .map_err(|e| format!("render header {k}: {e}"))?;
+                req = req.header(k, val);
+            }
+        }
+    }
+
+    // `form` (urlencoded) takes precedence over a raw `body`.
+    if let Some(form) = cfg.get("form").and_then(|v| v.as_object()) {
+        let mut pairs: Vec<(String, String)> = Vec::with_capacity(form.len());
+        for (k, v) in form {
+            if let Some(val_tmpl) = v.as_str() {
+                let val = render_jinja_string(val_tmpl, &ctx)
+                    .map_err(|e| format!("render form {k}: {e}"))?;
+                pairs.push((k.clone(), val));
+            }
+        }
+        req = req.form(&pairs);
+    } else if let Some(body_tmpl) = cfg.get("body").and_then(|v| v.as_str()) {
+        let body = render_jinja_string(body_tmpl, &ctx).map_err(|e| format!("render body: {e}"))?;
+        req = req.body(body);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("http_request: send failed: {e}"))?;
+    let status = resp.status().as_u16();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("http_request: failed to read response body: {e}"))?;
+
+    let expected: Vec<u16> = cfg
+        .get("expected_status")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_u64().and_then(|n| u16::try_from(n).ok()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let ok = if expected.is_empty() {
+        (200..300).contains(&status)
+    } else {
+        expected.contains(&status)
+    };
+    if !ok {
+        let snippet: String = text.chars().take(500).collect();
+        return Err(format!(
+            "http_request: unexpected status {status}: {snippet}"
+        ));
+    }
+
+    // Parse JSON if the body is JSON; otherwise `json` stays null and `text` carries it.
+    let json: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+
+    // Rotating-secret write-back (e.g. the OAuth refresh_token).
+    if let Some(pts) = cfg.get("persist_to_secret").and_then(|v| v.as_object()) {
+        let from = pts
+            .get("from")
+            .and_then(|v| v.as_str())
+            .ok_or("http_request: persist_to_secret missing 'from'")?;
+        let name = pts
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or("http_request: persist_to_secret missing 'name'")?;
+        let extracted = json.pointer(from).and_then(|v| v.as_str()).ok_or_else(|| {
+            format!("http_request: persist_to_secret found no string at {from:?}")
+        })?;
+        workspace
+            .store_secret(name, extracted)
+            .await
+            .map_err(|e| format!("http_request: persist_to_secret failed: {e}"))?;
+    }
+
+    Ok(json!({ "status": status, "json": json, "text": text }))
+}
+
+/// SSRF guard for `http_request`. Requires HTTPS, denies localhost / cloud
+/// metadata hostnames and private/loopback/link-local IP literals, and — when
+/// `allow_hosts` is non-empty — requires the URL host to be in it.
+fn validate_egress(url_str: &str, allow_hosts: &[String]) -> Result<(), String> {
+    let parsed = url::Url::parse(url_str)
+        .map_err(|e| format!("http_request: invalid url {url_str:?}: {e}"))?;
+    if parsed.scheme() != "https" {
+        return Err(format!(
+            "http_request: only https is allowed (got scheme {:?})",
+            parsed.scheme()
+        ));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or("http_request: url has no host")?
+        .to_ascii_lowercase();
+
+    if host == "localhost" || host.ends_with(".localhost") || host == "metadata.google.internal" {
+        return Err(format!("http_request: host {host:?} is not allowed"));
+    }
+    // IP-LITERAL guard only. A hostname that RESOLVES to a private IP (DNS
+    // rebinding) is NOT caught here — the parse below fails for a non-literal
+    // host, so `allow_hosts` is the real security boundary for hostname targets
+    // and callers sending secrets should always set it. Fully closing the
+    // rebinding gap needs a resolving connector that validates every resolved IP
+    // (follow-up); disabling redirects above removes the redirect-to-private vector.
+    //
+    // `host_str()` serializes an IPv6 literal with brackets (`[::1]`); strip them
+    // so it parses as an IpAddr.
+    let ip_str = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = ip_str.parse::<std::net::IpAddr>() {
+        let blocked = match ip {
+            std::net::IpAddr::V4(v4) => ipv4_blocked(&v4),
+            // Fold an IPv4-mapped literal (`::ffff:a.b.c.d`) down to its V4 form so
+            // e.g. `[::ffff:169.254.169.254]` can't tunnel past the V4 ranges; for a
+            // genuine V6 address also reject ULA (fc00::/7) and link-local (fe80::/10).
+            std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+                Some(v4) => ipv4_blocked(&v4),
+                None => {
+                    v6.is_loopback()
+                        || v6.is_unspecified()
+                        || v6.is_unique_local()
+                        || v6.is_unicast_link_local()
+                }
+            },
+        };
+        if blocked {
+            return Err(format!(
+                "http_request: target IP {ip} is in a blocked range"
+            ));
+        }
+    }
+    if !allow_hosts.is_empty() && !allow_hosts.iter().any(|h| h.eq_ignore_ascii_case(&host)) {
+        return Err(format!(
+            "http_request: host {host:?} is not in allow_hosts {allow_hosts:?}"
+        ));
+    }
+    Ok(())
+}
+
+/// IPv4 ranges we never allow outbound: private, loopback, link-local (incl.
+/// 169.254.169.254 cloud-metadata), unspecified, and broadcast. Shared by the
+/// direct-V4 path and the IPv4-mapped-V6 path so neither can bypass the other.
+fn ipv4_blocked(v4: &std::net::Ipv4Addr) -> bool {
+    v4.is_private()
+        || v4.is_loopback()
+        || v4.is_link_local()
+        || v4.is_unspecified()
+        || v4.is_broadcast()
+}
+
+#[cfg(test)]
+mod http_request_tests {
+    use super::validate_egress;
+
+    #[test]
+    fn egress_requires_https() {
+        assert!(validate_egress("http://quickbooks.api.intuit.com/x", &[]).is_err());
+        assert!(validate_egress("https://quickbooks.api.intuit.com/x", &[]).is_ok());
+    }
+
+    #[test]
+    fn egress_denies_localhost_and_metadata() {
+        assert!(validate_egress("https://localhost/x", &[]).is_err());
+        assert!(validate_egress("https://foo.localhost/x", &[]).is_err());
+        assert!(validate_egress("https://metadata.google.internal/x", &[]).is_err());
+    }
+
+    #[test]
+    fn egress_denies_private_and_loopback_ips() {
+        for u in [
+            "https://127.0.0.1/x",
+            "https://10.0.0.5/x",
+            "https://192.168.1.1/x",
+            "https://172.16.0.1/x",
+            "https://169.254.169.254/x", // cloud metadata
+            "https://[::1]/x",
+        ] {
+            assert!(validate_egress(u, &[]).is_err(), "should deny {u}");
+        }
+    }
+
+    #[test]
+    fn egress_denies_ipv6_mapped_and_scoped() {
+        for u in [
+            "https://[::ffff:169.254.169.254]/x", // IPv4-mapped cloud metadata
+            "https://[::ffff:10.0.0.5]/x",        // IPv4-mapped private
+            "https://[fd00::1]/x",                // unique-local (fc00::/7)
+            "https://[fe80::1]/x",                // link-local (fe80::/10)
+        ] {
+            assert!(validate_egress(u, &[]).is_err(), "should deny {u}");
+        }
+    }
+
+    #[test]
+    fn egress_enforces_allow_hosts() {
+        let allow = vec!["quickbooks.api.intuit.com".to_string()];
+        assert!(validate_egress("https://quickbooks.api.intuit.com/v3/x", &allow).is_ok());
+        assert!(validate_egress("https://evil.example.com/x", &allow).is_err());
     }
 }

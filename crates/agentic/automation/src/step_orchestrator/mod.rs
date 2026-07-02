@@ -371,6 +371,7 @@ impl AutomationStepOrchestrator {
             | TaskType::SemanticQuery(_)
             | TaskType::OmniQuery(_)
             | TaskType::LookerQuery(_)
+            | TaskType::HttpRequest(_)
             | TaskType::Unknown => StepKind::Delegated,
         }
     }

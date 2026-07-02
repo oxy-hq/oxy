@@ -111,6 +111,17 @@ fn add_global_helpers(env: &mut minijinja::Environment<'static>) {
             Ok(format!("'{escaped}'"))
         },
     );
+
+    // Base64 (standard) encode — primarily for HTTP Basic auth headers in
+    // `http_request` tasks, e.g.
+    //   Authorization: "Basic {{ (secrets.ID ~ ':' ~ secrets.SECRET) | b64encode }}"
+    env.add_filter(
+        "b64encode",
+        |value: minijinja::Value| -> Result<String, minijinja::Error> {
+            use base64::Engine;
+            Ok(base64::engine::general_purpose::STANDARD.encode(value.to_string().as_bytes()))
+        },
+    );
 }
 
 /// Render a Jinja template string against the given context.
@@ -265,6 +276,17 @@ mod tests {
         assert_eq!(
             render_jinja_string("{{ y | tojson }}", &ctx).unwrap(),
             "\"abc\""
+        );
+    }
+
+    /// `b64encode` standard-encodes a string — used to build HTTP Basic auth
+    /// headers in `http_request` tasks.
+    #[test]
+    fn b64encode_filter_encodes() {
+        let ctx = json!({"id": "abc", "secret": "s3cr3t"});
+        assert_eq!(
+            render_jinja_string("{{ (id ~ ':' ~ secret) | b64encode }}", &ctx).unwrap(),
+            "YWJjOnMzY3IzdA==",
         );
     }
 

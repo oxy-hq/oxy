@@ -274,11 +274,13 @@ dependencies = [
  "agentic-semantic",
  "airlayer",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "minijinja",
  "omni",
  "oxy-looker",
  "oxy-shared",
+ "reqwest 0.12.28",
  "sea-orm",
  "sea-orm-migration",
  "serde",
@@ -291,6 +293,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 

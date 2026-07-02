@@ -125,6 +125,24 @@
         "desc"
       ]
     },
+    "PersistToSecret": {
+      "description": "Persist a field of an `http_request` JSON response back into a project secret.\n\nThis is the rotating-OAuth-token path: the QuickBooks token-refresh response returns a new `refresh_token`, which we write back to the secret store so the next run starts from the latest value (mirrors the Airway Intuit source).",
+      "type": "object",
+      "required": [
+        "from",
+        "name"
+      ],
+      "properties": {
+        "from": {
+          "description": "JSON pointer into the parsed response body, e.g. `/refresh_token`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Project secret name to upsert with the extracted value.",
+          "type": "string"
+        }
+      }
+    },
     "RouteRetrievalConfig": {
       "type": "object",
       "properties": {
@@ -1670,6 +1688,103 @@
               "enum": [
                 "visualize"
               ]
+            }
+          }
+        },
+        {
+          "description": "`type: http_request` — make an outbound HTTP request from a workflow.\n\nThe reusable primitive behind the QuickBooks JE-posting automation (and the stop-gap for Oxy Functions' `ctx.fetch`). Templated fields render against the prior-step render context; `{{ secrets.NAME }}` resolves declared `secrets`. Egress is constrained (private/loopback/link-local hosts are always denied; `allow_hosts`, when set, is an additional allowlist).",
+          "type": "object",
+          "required": [
+            "type",
+            "url"
+          ],
+          "properties": {
+            "allow_hosts": {
+              "description": "Allowed target hostnames (in addition to the always-on private-IP deny). Empty means \"any public host\"; set it to lock a task to specific APIs.",
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "body": {
+              "description": "Raw request body (Jinja-templated). Mutually exclusive with `form`.",
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "expected_status": {
+              "description": "Accepted HTTP status codes. Empty → any 2xx is accepted; anything else fails the task.",
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint16",
+                "minimum": 0.0
+              }
+            },
+            "form": {
+              "description": "Form fields serialized as `application/x-www-form-urlencoded` (values templated).",
+              "default": null,
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "headers": {
+              "description": "Request headers; values are Jinja-templated and may reference `{{ secrets.X }}`.",
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "method": {
+              "description": "HTTP method (GET/POST/PUT/PATCH/DELETE). Defaults to POST.",
+              "default": "POST",
+              "type": "string"
+            },
+            "persist_to_secret": {
+              "description": "Optionally write a field of the JSON response back into a project secret.",
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/PersistToSecret"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "secrets": {
+              "description": "Project secret names to resolve into the `{{ secrets.NAME }}` template scope.",
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "description": "Request timeout in seconds (1–120). Defaults to 30.",
+              "default": 30,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "http_request"
+              ]
+            },
+            "url": {
+              "description": "Request URL (Jinja-templated).",
+              "type": "string"
             }
           }
         },

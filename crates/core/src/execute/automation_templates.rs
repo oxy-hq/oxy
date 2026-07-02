@@ -45,6 +45,10 @@ impl TemplateRegister for &Task {
             TaskType::Visualize(_visualize_task) => {
                 // VisualizeTask doesn't have file templates to register
             }
+            TaskType::HttpRequest(_http_task) => {
+                // HttpRequestTask fields are inline templates (url/headers/body),
+                // not file references — nothing to register.
+            }
             TaskType::Unknown => {
                 // Unknown task type, skip
             }

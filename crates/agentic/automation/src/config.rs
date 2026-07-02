@@ -143,6 +143,8 @@ pub enum TaskType {
     OmniQuery(Value),
     #[serde(rename = "looker_query")]
     LookerQuery(Value),
+    #[serde(rename = "http_request")]
+    HttpRequest(Value),
 
     // `type: visualize` was a legacy automation task that ran an LLM to
     // render a chart from the previous step's data. The chat agent's
@@ -168,6 +170,7 @@ impl TaskType {
             TaskType::SemanticQuery(_) => "semantic_query",
             TaskType::OmniQuery(_) => "omni_query",
             TaskType::LookerQuery(_) => "looker_query",
+            TaskType::HttpRequest(_) => "http_request",
             TaskType::Unknown => "unknown",
         }
     }

@@ -615,6 +615,37 @@ impl WorkspaceContext for OxyProjectContext {
         self.build_connector_lazy(name).await
     }
 
+    // Forward the `http_request` task's secret read/write to the real secret
+    // manager (the `WorkspaceContext` trait defaults to None/Err). Mirrors the
+    // pipeline `ProjectContext::resolve_secret`/`persist_secret` impls above so a
+    // workflow and a pipeline resolve and rotate the same secret store. (Named
+    // `fetch_secret`/`store_secret` to avoid colliding with that trait.)
+    async fn fetch_secret(&self, var_name: &str) -> Option<String> {
+        match self
+            .workspace_manager
+            .secrets_manager
+            .resolve_secret(var_name)
+            .await
+        {
+            Ok(Some(v)) => return Some(v),
+            Ok(None) => {}
+            Err(e) => tracing::warn!(
+                key_var = %var_name,
+                error = %e,
+                "secrets_manager.resolve_secret failed; falling back to std::env::var"
+            ),
+        }
+        std::env::var(var_name).ok()
+    }
+
+    async fn store_secret(&self, var_name: &str, value: &str) -> Result<(), String> {
+        self.workspace_manager
+            .secrets_manager
+            .upsert_secret(var_name, value, uuid::Uuid::nil())
+            .await
+            .map_err(|e| format!("persist secret `{var_name}`: {e}"))
+    }
+
     async fn get_integration(&self, name: &str) -> Result<IntegrationConfig, String> {
         let integration = self
             .workspace_manager

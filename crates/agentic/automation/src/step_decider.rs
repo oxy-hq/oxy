@@ -1012,6 +1012,7 @@ fn classify_step(state: &AutomationRunState, task_type: &TaskType) -> StepKind {
         | TaskType::SemanticQuery(_)
         | TaskType::OmniQuery(_)
         | TaskType::LookerQuery(_)
+        | TaskType::HttpRequest(_)
         | TaskType::Unknown => StepKind::Delegated,
     }
 }

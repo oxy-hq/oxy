@@ -87,6 +87,25 @@ pub trait WorkspaceContext: Send + Sync {
     /// Get resolved integration credentials by name.
     async fn get_integration(&self, name: &str) -> Result<IntegrationConfig, String>;
 
+    /// Fetch a project secret by name (Oxy Secrets, falling back to env var).
+    ///
+    /// Used by the `http_request` task to inject credentials into headers/body.
+    /// Defaults to `None` so existing impls (test fakes) need no change; the real
+    /// host adapter overrides it to forward to the `SecretsManager`. (Named
+    /// distinctly from the pipeline `ProjectContext::resolve_secret` so a type
+    /// implementing both traits has no ambiguous call.)
+    async fn fetch_secret(&self, _name: &str) -> Option<String> {
+        None
+    }
+
+    /// Store (upsert) a project secret — used by `http_request`'s
+    /// `persist_to_secret` to write a rotated OAuth refresh token back to the
+    /// secret store (mirrors the Airway Intuit source). Defaults to an error so
+    /// only hosts with real secret storage allow it.
+    async fn store_secret(&self, _name: &str, _value: &str) -> Result<(), String> {
+        Err("secret persistence is not supported in this context".to_string())
+    }
+
     /// List all automation files in the workspace.
     async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String>;
 

@@ -2077,6 +2077,105 @@ impl Hash for FormatterTask {
     }
 }
 
+fn default_http_method() -> String {
+    "POST".to_string()
+}
+
+fn default_http_timeout_secs() -> u64 {
+    30
+}
+
+/// Persist a field of an `http_request` JSON response back into a project secret.
+///
+/// This is the rotating-OAuth-token path: the QuickBooks token-refresh response
+/// returns a new `refresh_token`, which we write back to the secret store so the
+/// next run starts from the latest value (mirrors the Airway Intuit source).
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash)]
+#[garde(context(ValidationContext))]
+pub struct PersistToSecret {
+    /// JSON pointer into the parsed response body, e.g. `/refresh_token`.
+    #[garde(length(min = 1))]
+    pub from: String,
+    /// Project secret name to upsert with the extracted value.
+    #[garde(length(min = 1))]
+    pub name: String,
+}
+
+/// `type: http_request` — make an outbound HTTP request from a workflow.
+///
+/// The reusable primitive behind the QuickBooks JE-posting automation (and the
+/// stop-gap for Oxy Functions' `ctx.fetch`). Templated fields render against the
+/// prior-step render context; `{{ secrets.NAME }}` resolves declared `secrets`.
+/// Egress is constrained (private/loopback/link-local hosts are always denied;
+/// `allow_hosts`, when set, is an additional allowlist).
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct HttpRequestTask {
+    /// Request URL (Jinja-templated).
+    #[garde(length(min = 1))]
+    pub url: String,
+    /// HTTP method (GET/POST/PUT/PATCH/DELETE). Defaults to POST.
+    #[serde(default = "default_http_method")]
+    #[garde(skip)]
+    pub method: String,
+    /// Request headers; values are Jinja-templated and may reference `{{ secrets.X }}`.
+    #[serde(default)]
+    #[garde(skip)]
+    pub headers: HashMap<String, String>,
+    /// Raw request body (Jinja-templated). Mutually exclusive with `form`.
+    #[serde(default)]
+    #[garde(skip)]
+    pub body: Option<String>,
+    /// Form fields serialized as `application/x-www-form-urlencoded` (values templated).
+    #[serde(default)]
+    #[garde(skip)]
+    pub form: Option<HashMap<String, String>>,
+    /// Project secret names to resolve into the `{{ secrets.NAME }}` template scope.
+    #[serde(default)]
+    #[garde(skip)]
+    pub secrets: Vec<String>,
+    /// Request timeout in seconds (1–120). Defaults to 30.
+    #[serde(default = "default_http_timeout_secs")]
+    #[garde(range(min = 1, max = 120))]
+    pub timeout_secs: u64,
+    /// Accepted HTTP status codes. Empty → any 2xx is accepted; anything else fails the task.
+    #[serde(default)]
+    #[garde(skip)]
+    pub expected_status: Vec<u16>,
+    /// Allowed target hostnames (in addition to the always-on private-IP deny).
+    /// Empty means "any public host"; set it to lock a task to specific APIs.
+    #[serde(default)]
+    #[garde(skip)]
+    pub allow_hosts: Vec<String>,
+    /// Optionally write a field of the JSON response back into a project secret.
+    #[serde(default)]
+    #[garde(dive)]
+    pub persist_to_secret: Option<PersistToSecret>,
+}
+
+impl Hash for HttpRequestTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.url.hash(state);
+        self.method.hash(state);
+        for (k, v) in self.headers.iter().sorted_by_cached_key(|(k, _)| *k) {
+            k.hash(state);
+            v.hash(state);
+        }
+        self.body.hash(state);
+        if let Some(ref form) = self.form {
+            for (k, v) in form.iter().sorted_by_cached_key(|(k, _)| *k) {
+                k.hash(state);
+                v.hash(state);
+            }
+        }
+        self.secrets.hash(state);
+        self.timeout_secs.hash(state);
+        self.expected_status.hash(state);
+        self.allow_hosts.hash(state);
+        self.persist_to_secret.hash(state);
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct SubAutomationTask {
@@ -2332,6 +2431,8 @@ pub enum TaskType {
     Conditional(#[garde(dive)] ConditionalTask),
     #[serde(rename = "visualize")]
     Visualize(#[garde(dive)] VisualizeTask),
+    #[serde(rename = "http_request")]
+    HttpRequest(#[garde(dive)] HttpRequestTask),
     #[serde(other)]
     Unknown,
 }
@@ -2382,6 +2483,7 @@ impl Task {
             TaskType::SubAutomation(_) => "sub_workflow",
             TaskType::Conditional(_) => "conditional",
             TaskType::Visualize(_) => "visualize",
+            TaskType::HttpRequest(_) => "http_request",
             TaskType::Unknown => "unknown",
         }
     }
