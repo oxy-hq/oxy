@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.93] - 2026-07-02
+
+### 🚀 Features
+
+- *(automation)* Add `http_request` workflow task type (#2643)
+- Sdk streamline customer-app launcher-card screenshots (#2654)
+
+### ⚙️ Miscellaneous Tasks
+
+- Add scripts + docs to connect to cloud airhouse (#2632)
+- Exclude scripts/airhouse from push
+
 ## [0.5.92] - 2026-07-01
 
 ### 🚀 Features
@@ -15,6 +27,10 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Update installation URLs to use new domain for edge and stable releases
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.92 (#2642)
 
 ## [0.5.91] - 2026-06-29
 
