@@ -53,6 +53,7 @@ jobs:
           destination_repo: oxy-hq/oxygen
           push_exclude: >-
             internal-docs/**
+            scripts/airhouse/**
           # pr_move: |-
           #   crates/core/dist||oss/dist||**
           committer: "${{ steps.app-token.outputs.app-slug }}[bot] <${{
