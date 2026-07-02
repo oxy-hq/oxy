@@ -6,6 +6,7 @@ pub mod apalis_jobs;
 pub mod api_keys;
 pub mod app_admins;
 pub mod app_builds;
+pub mod app_publish_tokens;
 pub mod apps;
 pub mod artifacts;
 pub mod checkpoints;

@@ -4,6 +4,7 @@ pub use super::apalis_jobs::Entity as ApalisJobs;
 pub use super::api_keys::Entity as ApiKeys;
 pub use super::app_admins::Entity as AppAdmins;
 pub use super::app_builds::Entity as AppBuilds;
+pub use super::app_publish_tokens::Entity as AppPublishTokens;
 pub use super::apps::Entity as Apps;
 pub use super::artifacts::Entity as Artifacts;
 pub use super::checkpoints::Entity as Checkpoints;

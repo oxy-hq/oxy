@@ -7,6 +7,7 @@ import {
   FolderOpen,
   HeartPulse,
   Inbox,
+  KeyRound,
   LayoutDashboard,
   ShieldCheck,
   Telescope,
@@ -92,6 +93,13 @@ const ADMIN_NAV: AdminNavItem[] = [
     to: ROUTES.ADMIN.CUSTOMER_APPS,
     label: "Custom apps",
     icon: AppWindow,
+    adminOrAppAdmin: true,
+    group: "operations"
+  },
+  {
+    to: ROUTES.ADMIN.PUBLISH_TOKENS,
+    label: "Publish tokens",
+    icon: KeyRound,
     adminOrAppAdmin: true,
     group: "operations"
   },

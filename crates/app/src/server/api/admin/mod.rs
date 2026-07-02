@@ -8,6 +8,7 @@
 //! denies app-admin callers with 403.
 
 pub mod app_admins;
+pub mod app_publish_tokens;
 pub mod apps;
 pub mod billing;
 pub mod compiles;
@@ -92,6 +93,7 @@ pub(crate) fn router() -> Router<AppState> {
     let strict = middleware::from_fn(oxy_owner_guard::oxy_owner_guard_middleware);
     feature_flags::routes::router()
         .merge(apps::router())
+        .merge(app_publish_tokens::router())
         .merge(explorer::router())
         .merge(metrics::router())
         .merge(orgs_admin::router())

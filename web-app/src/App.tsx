@@ -126,6 +126,7 @@ const AdminExplorer = React.lazy(() => import("./pages/admin/AdminExplorer"));
 // customer-apps registry (Add / Link / Sync / Publish). Lazy-loaded
 // alongside the rest of admin since most users never visit it.
 const AdminAppAdmins = React.lazy(() => import("./pages/admin/AdminAppAdmins"));
+const AdminPublishTokens = React.lazy(() => import("./pages/admin/AdminPublishTokens"));
 const AdminCustomerApps = React.lazy(() => import("./pages/admin/AdminCustomerApps"));
 // Tenant-management admin surfaces (OXY_OWNER-only). Lazy-loaded alongside
 // the rest of admin since most users never visit /admin/* at all.
@@ -486,6 +487,8 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/explorer' element={<AdminExplorer />} />
             {/* ROUTES.ADMIN.EXPLORER */}
             <Route path='admin/app-admins' element={<AdminAppAdmins />} />
+            {/* ROUTES.ADMIN.PUBLISH_TOKENS — open to any Global Admin */}
+            <Route path='admin/publish-tokens' element={<AdminPublishTokens />} />
             {/* Customer-apps admin is mounted at /admin/apps (canonical
                 ROUTES.ADMIN.CUSTOMER_APPS in libs/utils/routes.ts) with an
                 optional master-detail tail. AdminCustomerApps reads

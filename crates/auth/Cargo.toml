@@ -23,6 +23,9 @@ entity = { workspace = true }
 # Cryptography
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 base64 = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

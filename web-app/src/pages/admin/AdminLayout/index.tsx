@@ -13,6 +13,7 @@ const PAGE_TITLES: Record<string, string> = {
   [ROUTES.ADMIN.COMPILES]: "Compile revisions",
   [ROUTES.ADMIN.EXPLORER]: "Explorer",
   [ROUTES.ADMIN.APP_ADMINS]: "Global admins",
+  [ROUTES.ADMIN.PUBLISH_TOKENS]: "Publish tokens",
   [ROUTES.ADMIN.CUSTOMER_APPS]: "Custom apps",
   [ROUTES.ADMIN.TENANTS]: "Tenants overview",
   [ROUTES.ADMIN.ORGS]: "Organizations",
@@ -31,6 +32,7 @@ const PAGE_TITLES: Record<string, string> = {
 // `is_owner` / `is_app_admin` API fields) keep their on-the-wire names.
 const APP_ADMIN_ROUTE_PREFIXES = [
   ROUTES.ADMIN.CUSTOMER_APPS,
+  ROUTES.ADMIN.PUBLISH_TOKENS,
   ROUTES.ADMIN.INTERNAL_JOBS,
   ROUTES.ADMIN.COMPILES,
   ROUTES.ADMIN.EXPLORER,

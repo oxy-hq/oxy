@@ -8,6 +8,7 @@
 
 pub mod api_key_domain;
 pub mod api_key_infra;
+pub mod app_publish_token_domain;
 pub mod authenticator;
 pub mod built_in;
 pub mod constants;
@@ -19,6 +20,7 @@ pub mod user;
 // Re-export commonly used items
 pub use api_key_domain::*;
 pub use api_key_infra::*;
+pub use app_publish_token_domain::*;
 pub use authenticator::*;
 pub use built_in::*;
 pub use extractor::*;

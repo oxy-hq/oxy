@@ -83,12 +83,25 @@ pub async fn auth_middleware<T: Authenticator>(
         return Ok(next.run(request).await);
     }
 
-    let headers = request.headers();
+    // App-publish-token bearer: a long-lived machine credential (`oxypublish_...`) that
+    // resolves to its owning app-admin. Checked before the standard
+    // authenticator because it is neither a JWT nor an X-API-Key and would
+    // otherwise fall through to a 401. On success we attach the resolved user
+    // AND an `AppPublishTokenAuth` marker so the scope-enforcement middleware can
+    // confine these requests to the customer-apps admin surface. On a
+    // present-but-invalid admin bearer we reject immediately rather than
+    // falling through — a revoked/unknown app publish token must never be retried as
+    // some other credential.
+    if let Some(bearer) = extract_bearer(request.headers())
+        && crate::app_publish_token_domain::is_app_publish_token(&bearer)
+    {
+        return authenticate_app_publish_token(&bearer, request, next).await;
+    }
 
     // Authenticate using the configured authenticator
     let claims = auth_state
         .authenticator
-        .authenticate(headers)
+        .authenticate(request.headers())
         .await
         .map_err(|err| {
             tracing::error!("Authentication failed: {}", err);
@@ -116,6 +129,64 @@ pub async fn auth_middleware<T: Authenticator>(
     // Add user to request extensions for downstream handlers
     request.extensions_mut().insert(user);
 
+    Ok(next.run(request).await)
+}
+
+/// Pull a bearer token out of the `Authorization` header, tolerating the
+/// case-insensitive `Bearer ` scheme prefix. Returns `None` when the header is
+/// absent/undecodable or empty after trimming.
+fn extract_bearer(headers: &axum::http::HeaderMap) -> Option<String> {
+    let raw = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())?;
+    let token = raw
+        .strip_prefix("Bearer ")
+        .or_else(|| raw.strip_prefix("bearer "))
+        .unwrap_or(raw)
+        .trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
+/// Resolve an app-publish-token bearer to its owner and attach both the user and the
+/// `AppPublishTokenAuth` scope marker before running downstream. A revoked/unknown
+/// token, an inactive owner, or a DB error all yield `401`.
+async fn authenticate_app_publish_token(
+    bearer: &str,
+    mut request: Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let db = oxy_platform::db::establish_connection()
+        .await
+        .map_err(|e| {
+            tracing::error!("app-publish-token auth: DB connection failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let resolved = crate::app_publish_token_domain::resolve_app_publish_token(&db, bearer)
+        .await
+        .map_err(|e| {
+            tracing::error!("app-publish-token auth: resolve failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::warn!("app-publish-token auth: presented token is unknown or revoked");
+            StatusCode::UNAUTHORIZED
+        })?;
+
+    if resolved.user.status != UserStatus::Active {
+        tracing::warn!(
+            "app-publish-token auth: owner {} is not active — refusing",
+            resolved.user.email
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    request
+        .extensions_mut()
+        .insert(crate::types::AppPublishTokenAuth {
+            token_id: resolved.token_id,
+        });
+    request.extensions_mut().insert(resolved.user);
     Ok(next.run(request).await)
 }
 

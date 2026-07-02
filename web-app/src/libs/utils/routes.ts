@@ -23,6 +23,7 @@ const ROUTES = {
     EXPLORER: "/admin/explorer",
     CUSTOMER_APPS: "/admin/apps",
     APP_ADMINS: "/admin/app-admins",
+    PUBLISH_TOKENS: "/admin/publish-tokens",
     TENANTS: "/admin/tenants",
     ORGS: "/admin/orgs",
     ORG_DETAIL: (orgId: string) => `/admin/orgs/${orgId}`,

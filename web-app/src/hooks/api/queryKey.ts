@@ -472,6 +472,11 @@ const appAdminKeys = {
   list: () => [...appAdminKeys.all, "list"] as const
 };
 
+const publishTokenKeys = {
+  all: ["publishTokens"] as const,
+  list: () => [...publishTokenKeys.all, "list"] as const
+};
+
 const orgSubdomainKeys = {
   all: ["orgSubdomain"] as const,
   status: (workspaceId: string) => [...orgSubdomainKeys.all, "status", workspaceId] as const
@@ -692,6 +697,7 @@ const queryKeys = {
   adminBilling: adminBillingKeys,
   customerApps: customerAppKeys,
   appAdmins: appAdminKeys,
+  publishTokens: publishTokenKeys,
   oxyAccess: oxyAccessKeys,
   orgSubdomain: orgSubdomainKeys,
   customApps: customAppKeys,

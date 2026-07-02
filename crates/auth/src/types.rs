@@ -29,6 +29,18 @@ impl From<users::Model> for AuthenticatedUser {
     }
 }
 
+/// Request-extension marker: the request authenticated via an app publish token
+/// (`oxypublish_...` bearer), not a session JWT/cookie or an API key.
+///
+/// App publish tokens are deliberately narrow — they authorize the customer-apps
+/// admin surface only. This marker is what the scope-enforcement middleware
+/// keys off to reject an app-publish-token request that targets any other route.
+/// Its presence means "downstream must treat this identity as scope-limited."
+#[derive(Debug, Clone, Copy)]
+pub struct AppPublishTokenAuth {
+    pub token_id: uuid::Uuid,
+}
+
 #[cfg(test)]
 #[path = "types_tests.rs"]
 mod types_tests;

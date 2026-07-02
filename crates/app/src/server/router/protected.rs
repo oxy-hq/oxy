@@ -14,6 +14,7 @@ use oxy_auth::middleware::{AuthState, api_key_only_middleware, auth_middleware};
 use oxy_shared::errors::OxyError;
 
 use crate::api::middlewares::api_key_query::api_key_query_middleware;
+use crate::api::middlewares::app_publish_token_scope::app_publish_token_scope_middleware;
 use crate::api::middlewares::local_context::local_context_middleware;
 use crate::api::middlewares::subscription_guard::workspace_subscription_guard_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
@@ -43,6 +44,11 @@ pub(super) fn apply_middleware(
     protected_routes: Router<AppState>,
 ) -> Result<Router<AppState>, OxyError> {
     Ok(protected_routes
+        // Innermost: runs AFTER auth has attached identity + any admin-token
+        // marker, so it can confine admin-token requests to the customer-apps
+        // admin surface before they reach a handler. No-op for cookie/JWT/
+        // API-key sessions.
+        .layer(middleware::from_fn(app_publish_token_scope_middleware))
         .layer(middleware::from_fn(timeout_middleware))
         .layer(middleware::from_fn_with_state(
             AuthState::built_in(),
