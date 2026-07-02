@@ -170,7 +170,9 @@ Done. Next steps:
 
   cd ${args.name}
   pnpm install
-  pnpm dev          # local dev against http://localhost:3000
+  pnpm dev          # Vite dev server at http://localhost:5173
+  pnpm run screenshot   # capture public/card.png for the HQ launcher card
+                        # (then set "art": "card.png" in oxy-app.json)
 
 Then register the app via the admin UI (Customer apps → Add new).
 The Link flow will pick up oxy-app.json automatically.

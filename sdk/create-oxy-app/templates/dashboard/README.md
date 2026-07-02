@@ -1,40 +1,54 @@
 # {{APP_DISPLAY_NAME}}
 
 Customer-app bundle scaffolded by `pnpm dlx create-oxy-app`. Vite + React +
-`@oxy-hq/sdk`.
+`@oxy-hq/sdk`, pre-wired with `@oxy-hq/vite-plugin`.
 
 ## Quick start
 
 ```bash
-npm install
-npm run dev     # local dev on :5174, proxies /api → oxy on :3000
+pnpm install
+pnpm dev        # local dev on :5173, proxies /api → oxy on :3000
 ```
 
-Then either:
-
-- Open `http://localhost:5174` directly and paste a
-  `window.__OXY_APP__ = { orgSlug: "...", slug: "...", ... }` snippet
-  in DevTools to simulate oxy's runtime injection.
-- Or register this folder as a customer-app in oxy (admin UI), build
-  with `OXY_APP_BASE_PATH=/customer-apps/<org>/<slug>/ npm run build`,
-  and open the served URL.
+`oxyApp()` (in `vite.config.ts`) resolves the base path, validates + copies
+`oxy-app.json`, proxies `/api`, and injects `window.__OXY_APP__` in dev. If the
+app isn't registered in your local oxy yet, register it (admin UI) or set
+`OXY_PROJECT=<uuid>`; data calls need `OXY_TOKEN` in cross-origin dev. See
+`internal-docs/customer-apps.md` §3 for the full local loop.
 
 ## Editing
 
-- **`public/oxy-app.json`** — declares which data products this
-  bundle consumes. Each product names a producer (today: `app_task`
-  or `parquet_file`); the server resolves them server-side. Edit
-  this when you add a product.
-- **`src/App.tsx`** — your UI. Replace the scaffold with whatever
-  you actually want to render.
+- **`oxy-app.json`** (project root, next to `vite.config.ts` — **not** under
+  `public/`) — the bundle's identity + launcher-card metadata: `slug`, `name`,
+  optional `description`, `art`, `icon`, `status`, `ask`. The plugin copies it
+  into `out/` at build.
+- **`src/App.tsx`** — your UI. Replace the scaffold with whatever you want to
+  render.
+
+## Launcher-card image
+
+The Oxy HQ home shows each app as a card. The image is the manifest `art`
+field — a **relative** path served from the bundle root. To capture it:
+
+```bash
+pnpm run screenshot     # boots dev, screenshots → public/card.png (1280×640)
+```
+
+Then set `"art": "card.png"` in `oxy-app.json` and republish. `public/card.png`
+is copied to the bundle root, so it serves at
+`/customer-apps/<org>/<slug>/card.png` — keep `art` relative; never hardcode the
+base path. `pnpm run screenshot -- --help` lists flags (`--wait`, `--selector`,
+`--url`, `--settle`). Playwright is installed on demand (the script prints the
+one-liner); it is not a default dependency.
 
 ## Deploying
 
 ```bash
-oxy apps deploy . --org <org_slug> --slug {{APP_SLUG}} \
-    --workspace <workspace_uuid>
+oxy login   --env production    # once per env; caches a token
+oxy publish --env production    # build + ship to the draft channel
+oxy publish --env production --promote   # …straight to live
 ```
 
-The deploy command builds the bundle, uploads `out/` to the configured
-target (local folder or S3), and creates/updates the corresponding
-customer-app row in oxy. Idempotent — safe to re-run on CI retries.
+`oxy publish` reads `oxy-app.json`, runs the build (`pnpm install` → `pnpm
+build` → `out/` by default), resolves the target + project, and uploads the
+bundle. No CI, no project id in git. See `internal-docs/customer-apps.md` §5.
