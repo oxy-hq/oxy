@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.94] - 2026-07-02
+
+### 🚀 Features
+
+- App publish tokens for machine auth (publish + read scoped) (#2655)
+
+### 💼 Other
+
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 10 updates (#2656)
+- *(deps-dev)* Bump the dev-npm-major-dependencies group across 2 directories with 1 update (#2652)
+
 ## [0.5.93] - 2026-07-02
 
 ### 🚀 Features
@@ -13,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 - Add scripts + docs to connect to cloud airhouse (#2632)
 - Exclude scripts/airhouse from push
+- Release 0.5.93 (#2653)
 
 ## [0.5.92] - 2026-07-01
 
