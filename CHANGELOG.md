@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.95] - 2026-07-03
+
+### 🚀 Features
+
+- *(airway)* Generic resumable chunked backfill + coverage (#2644)
+
+### 🐛 Bug Fixes
+
+- *(customer-apps)* Wire project-scoped secrets into build_project_context (#2659)
+
+### 💼 Other
+
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 28 updates (#2650)
+- *(deps)* Bump crate-ci/typos from 1.47.2 to 1.48.0 (#2649)
+
 ## [0.5.94] - 2026-07-02
 
 ### 🚀 Features
@@ -12,6 +27,10 @@ All notable changes to this project will be documented in this file.
 
 - *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 10 updates (#2656)
 - *(deps-dev)* Bump the dev-npm-major-dependencies group across 2 directories with 1 update (#2652)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.94 (#2657)
 
 ## [0.5.93] - 2026-07-02
 
