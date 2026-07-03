@@ -81,7 +81,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Check typos
-        uses: crate-ci/typos@v1.47.2
+        uses: crate-ci/typos@v1.48.0
 
   fmt-web:
     name: Format web
