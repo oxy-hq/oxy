@@ -38,6 +38,7 @@ use axum::Json;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use entity::prelude::Workspaces;
+use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::{builder::WorkspaceBuilder, effective_workspace_path};
 use oxy::database::client::establish_connection;
 use oxy_auth::authenticator::Authenticator;
@@ -53,6 +54,7 @@ use oxy_auth::types::AuthenticatedUser;
 use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::customer_apps_auth::{is_app_admin_email, is_org_member};
 use crate::server::router::is_allowed_origin;
+use crate::server::service::secret_manager::SecretManagerService;
 
 /// Resolved context produced by [`check_customer_app_gates`]. The
 /// handler unpacks whichever fields it needs; the struct is the
@@ -329,7 +331,7 @@ async fn build_project_context(
             ));
         }
     };
-    let builder = match WorkspaceBuilder::new(project_id)
+    let mut builder = match WorkspaceBuilder::new(project_id)
         .with_workspace_path_and_fallback_config(&effective_path)
         .await
     {
@@ -342,6 +344,28 @@ async fn build_project_context(
             ));
         }
     };
+    // Wire the project-scoped DB secrets manager (DB-first, env fallback) so
+    // customer-app requests — including procedure-run automations — can read the
+    // project's UI-managed secrets: the ClickHouse connection (CLICKHOUSE_HOST
+    // etc.) and any http_request `secrets:`. Without this, WorkspaceBuilder falls
+    // back to an env-only SecretsManager, so on the stateless serve fleet those
+    // secrets resolve to nothing and e.g. the ClickHouse connector defaults to
+    // localhost. Same DB-first+env-fallback wiring as workspace_context.rs /
+    // local_context.rs, but deliberately fails CLOSED here (500) rather than their
+    // warn-and-continue: this path exists specifically to reach the project's data
+    // + secrets, so proceeding without them would silently reintroduce the env-only
+    // bug. The Err arm is defensive — from_database_with_env_fallback is currently
+    // infallible.
+    match SecretsManager::from_database_with_env_fallback(SecretManagerService::new(project_id)) {
+        Ok(secrets_manager) => builder = builder.with_secrets_manager(secrets_manager),
+        Err(e) => {
+            error!("project secrets manager failed: {e}");
+            return Err(err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not configure workspace secrets",
+            ));
+        }
+    }
     let workspace_manager = match builder.build().await {
         Ok(m) => m,
         Err(e) => {

@@ -465,10 +465,19 @@ impl ProjectContext for OxyProjectContext {
         // Atomic upsert: a single UPDATE when the secret exists (no
         // remove/recreate window), create when it doesn't. On a fresh
         // env-only token this writes a DB secret that then takes
-        // precedence (DB-first fallback storage).
+        // precedence (DB-first fallback storage). created_by is the
+        // requesting user — `secrets.created_by` is NOT NULL with an FK to
+        // `users`, so a hardcoded Uuid::nil() INSERT (a first-time write,
+        // e.g. rotating QB_REFRESH_TOKEN into a project that never had it)
+        // violates fk_secrets_created_by. self.subject is set by
+        // build_project_context(user.id); nil only for subject-less cron.
         self.workspace_manager
             .secrets_manager
-            .upsert_secret(var_name, value, uuid::Uuid::nil())
+            .upsert_secret(
+                var_name,
+                value,
+                self.subject.unwrap_or_else(uuid::Uuid::nil),
+            )
             .await
             .map_err(|e| format!("persist secret `{var_name}`: {e}"))
     }
@@ -641,7 +650,11 @@ impl WorkspaceContext for OxyProjectContext {
     async fn store_secret(&self, var_name: &str, value: &str) -> Result<(), String> {
         self.workspace_manager
             .secrets_manager
-            .upsert_secret(var_name, value, uuid::Uuid::nil())
+            .upsert_secret(
+                var_name,
+                value,
+                self.subject.unwrap_or_else(uuid::Uuid::nil),
+            )
             .await
             .map_err(|e| format!("persist secret `{var_name}`: {e}"))
     }
