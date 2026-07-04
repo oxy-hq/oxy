@@ -75,7 +75,7 @@ pub mod crud {
         update_run_terminal_from_events, update_task_status, upsert_suspension,
     };
     pub use crate::lifecycle::crud::{
-        DRIVER_LEASE_TTL_SECS, now, transition_run, user_facing_status,
+        DRIVER_LEASE_TTL_SECS, now, reset_run_for_retry, transition_run, user_facing_status,
     };
     pub use crate::lifecycle::crud::{events, queries, runs, suspension};
     pub use crate::orchestrator::crud::{
@@ -85,8 +85,9 @@ pub mod crud {
         find_pending_global_runs, find_stuck_automation_runs, find_stuck_runs,
         get_active_root_runs, get_max_child_counter, get_outcomes_for_parent, get_queue_entry,
         get_queue_stats, get_resumable_root_runs, get_run_answer, increment_attempt,
-        insert_child_run, insert_task_outcome, mark_recovery_failed, purge_old_terminal_tasks,
-        reap_stale_tasks, requeue_task, suspend_with_data_txn, update_queue_heartbeat,
+        insert_child_run, insert_task_outcome, mark_recovery_failed, mark_task_global,
+        purge_old_terminal_tasks, reap_stale_tasks, requeue_task, reset_task_to_queued,
+        suspend_with_data_txn, update_queue_heartbeat,
     };
     pub use crate::orchestrator::crud::{outcomes, queue, recovery};
 }

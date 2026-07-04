@@ -46,3 +46,6 @@ tempfile = { workspace = true }
 testcontainers = { version = "0.27", features = ["blocking", "reusable-containers"] }
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 airlayer = { workspace = true }
+# Engine types (StateStore trait, PipelineState/Schema) for the run-scoped store
+# e2e — `AirwayRunScopedStateStore` implements `airway::StateStore`.
+airway = { workspace = true }

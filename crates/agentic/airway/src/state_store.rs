@@ -22,13 +22,15 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, QueryFilter, Statement,
 };
 
 use crate::extension::load_audit::{self, Entity as LoadAuditEntity, status as load_status};
 use crate::extension::pipeline_state::{
     self, Column as PipelineStateColumn, Entity as PipelineStateEntity,
 };
+use crate::extension::run_extension::Entity as RunExtEntity;
 
 /// SeaORM-backed [`StateStore`] for a single pipeline_name.
 ///
@@ -249,6 +251,152 @@ impl StateStore for AirwayPgStateStore {
             .await
             .map_err(|e| AirwayError::State(format!("record_load_failed: {e}")))?;
         Ok(())
+    }
+}
+
+/// Run-scoped [`StateStore`] for a backfill chunk.
+///
+/// Persists the incremental **cursor** to `airway_run_extensions.resume_state`
+/// (keyed by `run_id`) so a reset-in-place retry resumes mid-window instead of
+/// re-extracting the whole window. The **schema** and the load-audit log are
+/// delegated to the pipeline-global [`AirwayPgStateStore`]: a backfill reads the
+/// live schema but never writes it (so it can't clobber/race the live schema),
+/// and never advances the live incremental cursor (`resume_state` is per-run).
+///
+/// Single writer per run, so `save` skips optimistic concurrency on
+/// `resume_state` (the pipeline-global schema is never written here).
+///
+/// NOTE: this is the host seam for mid-window resume (P2c-1). It is inert until
+/// the airway engine gains a mid-run persist hook and the Toast source stops
+/// freezing the cursor during a backfill (P2c-2/3) — see
+/// `docs/plans/airway-midwindow-resume.md`. Wiring it in for backfill runs is
+/// safe before then: the source still emits no advanced cursor, so `resume_state`
+/// just round-trips an empty cursor and the run re-extracts as it does today.
+#[derive(Clone)]
+pub struct AirwayRunScopedStateStore {
+    db: Arc<DatabaseConnection>,
+    run_id: String,
+    global: AirwayPgStateStore,
+}
+
+impl AirwayRunScopedStateStore {
+    pub fn new(
+        db: Arc<DatabaseConnection>,
+        run_id: impl Into<String>,
+        pipeline_name: impl Into<String>,
+    ) -> Self {
+        let global = AirwayPgStateStore::new(Arc::clone(&db), pipeline_name);
+        Self {
+            db,
+            run_id: run_id.into(),
+            global,
+        }
+    }
+
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+}
+
+#[async_trait]
+impl StateStore for AirwayRunScopedStateStore {
+    async fn load(&self) -> Result<StateSnapshot, AirwayError> {
+        // Schema + pipeline identity come from the pipeline-global row.
+        let global = self.global.load().await?;
+        // Cursor comes from THIS run's resume_state if a prior attempt persisted
+        // one; otherwise start with an empty cursor so the source runs from the
+        // window start — never inheriting the live incremental position.
+        let ext = RunExtEntity::find_by_id(self.run_id.clone())
+            .one(self.db.as_ref())
+            .await
+            .map_err(|e| AirwayError::State(format!("load run_extension: {e}")))?;
+        let resume: Option<PipelineState> = ext
+            .and_then(|m| m.resume_state)
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(|e| AirwayError::State(format!("deserialize resume_state: {e}")))?;
+        let state = match resume {
+            Some(s) => s,
+            None => {
+                // Keep pipeline identity + schema_version_hash from the global
+                // state, but clear the cursors so we don't inherit the live one.
+                let mut s = global.state.clone();
+                s.resource_states.clear();
+                s
+            }
+        };
+        Ok(StateSnapshot {
+            state,
+            schema: global.schema,
+            // Run-scoped single writer: optimistic concurrency not needed.
+            version: 0,
+        })
+    }
+
+    async fn save(
+        &self,
+        state: &PipelineState,
+        _schema: &Schema,
+        _expected_version: i64,
+    ) -> Result<(), AirwayError> {
+        // Persist ONLY the cursor, to this run's resume_state. The schema is
+        // deliberately not written — a backfill must not touch the live schema.
+        let state_json = serde_json::to_value(state)
+            .map_err(|e| AirwayError::State(format!("serialize resume_state: {e}")))?;
+        let res = self
+            .db
+            .as_ref()
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE airway_run_extensions SET resume_state = $1 WHERE run_id = $2",
+                [state_json.into(), self.run_id.clone().into()],
+            ))
+            .await
+            .map_err(|e| AirwayError::State(format!("save resume_state: {e}")))?;
+        if res.rows_affected() == 0 {
+            // The extension row is inserted at run start, so a miss means the run
+            // is non-airway or its row was purged — the cursor is silently lost and
+            // resume degrades to a full re-extract. Surface it so a future
+            // regression (a store keyed off a missing run) doesn't go unnoticed.
+            tracing::warn!(
+                run_id = %self.run_id,
+                "run-scoped resume_state UPDATE matched no airway_run_extensions row"
+            );
+        }
+        Ok(())
+    }
+
+    async fn record_load_start(
+        &self,
+        load_id: &str,
+        pipeline_name: &str,
+        schema_hash: &str,
+    ) -> Result<(), AirwayError> {
+        self.global
+            .record_load_start(load_id, pipeline_name, schema_hash)
+            .await
+    }
+
+    async fn record_load_complete(
+        &self,
+        load_id: &str,
+        table_counts: &std::collections::HashMap<String, usize>,
+    ) -> Result<(), AirwayError> {
+        self.global
+            .record_load_complete(load_id, table_counts)
+            .await
+    }
+
+    async fn record_load_partial(
+        &self,
+        load_id: &str,
+        table_counts: &std::collections::HashMap<String, usize>,
+    ) -> Result<(), AirwayError> {
+        self.global.record_load_partial(load_id, table_counts).await
+    }
+
+    async fn record_load_failed(&self, load_id: &str, error: &str) -> Result<(), AirwayError> {
+        self.global.record_load_failed(load_id, error).await
     }
 }
 

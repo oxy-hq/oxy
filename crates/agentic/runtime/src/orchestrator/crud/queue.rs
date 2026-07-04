@@ -250,6 +250,55 @@ pub async fn requeue_task(
     Ok(())
 }
 
+/// Reset an EXISTING **terminal** task row back to `queued` in place — for a
+/// reset-in-place retry. Unlike [`requeue_task`], this does NOT re-create the row
+/// (no spec is re-supplied): it only revives a still-present task, keeping its
+/// stored spec.
+///
+/// The `WHERE` guard excludes tasks that are already `queued` or `claimed`: a
+/// retry only runs on a run-level-terminal run whose task is itself terminal, so
+/// this never legitimately targets a live task — but the guard makes that intent
+/// explicit and rules out revoking an in-flight worker's claim (a double-drive)
+/// if this is ever called on a live task by mistake.
+///
+/// Returns rows affected; `0` means the task row was reaped **or** is still live
+/// (queued/claimed) — either way the caller should fall back to a fresh run
+/// rather than reset in place.
+pub async fn reset_task_to_queued(db: &DatabaseConnection, task_id: &str) -> Result<u64, DbErr> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE agentic_task_queue SET \
+                 queue_status = 'queued', worker_id = NULL, last_heartbeat = NULL, \
+                 claimed_at = NULL, claim_count = 0, updated_at = now() \
+             WHERE task_id = $1 AND queue_status NOT IN ('queued', 'claimed')",
+            [task_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected())
+}
+
+/// Make a task globally claimable by the coordinator (`scope_owned = false`).
+///
+/// The global [`claim_task`] only picks up `scope_owned = false` tasks; a
+/// SCOPE_OWNED task (e.g. a backfill chunk, normally driven under its range's
+/// scope) is otherwise never re-claimed. A reset-in-place retry of such a run
+/// must call this so the coordinator actually re-drives the re-queued task. A
+/// no-op for an already-global run. Returns rows affected (`0` = task reaped).
+pub async fn mark_task_global(db: &DatabaseConnection, task_id: &str) -> Result<u64, DbErr> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE agentic_task_queue SET scope_owned = false, updated_at = now() \
+             WHERE task_id = $1",
+            [task_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected())
+}
+
 /// Cancel a queued (not yet claimed) task.
 pub async fn cancel_queued_task(db: &DatabaseConnection, task_id: &str) -> Result<(), DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};

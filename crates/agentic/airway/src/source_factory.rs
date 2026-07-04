@@ -507,7 +507,12 @@ fn build_toast(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
     }
     if let Some((start, end)) = parse_backfill_window(&params.backfill_start, &params.backfill_end)?
     {
-        source = source.with_backfill_window(start, end);
+        // Toast backfills are RESUMABLE: the cursor advances into the run's
+        // resume_state so a reset-in-place retry resumes mid-window. This MUST
+        // be paired with the run-scoped state store (the worker selects it for
+        // backfill runs) — otherwise the advanced cursor would corrupt the live
+        // pipeline cursor, the exact hazard the non-resumable freeze guards.
+        source = source.with_resumable_backfill_window(start, end);
     }
     Ok(Box::new(source))
 }

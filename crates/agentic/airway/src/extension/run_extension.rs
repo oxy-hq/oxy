@@ -31,6 +31,14 @@ pub struct Model {
     pub concurrency: i32,
     /// Selected resources (empty array = "all the source advertises").
     pub resources: Json,
+    /// How many times this run has been retried in place (reset-in-place retry).
+    /// Surfaced in the run UI. `0` on first launch (DB default).
+    pub retry_count: i32,
+    /// The run's persisted cursor — a serialized resume point written by the
+    /// worker as it loads, so a reset-in-place retry resumes where it left off
+    /// instead of re-extracting the whole window. `None` until first persisted
+    /// (and for runs that don't resume, e.g. non-backfill).
+    pub resume_state: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -62,6 +70,10 @@ where
         load_id: ActiveValue::Set(None),
         concurrency: ActiveValue::Set(spec.concurrency as i32),
         resources: ActiveValue::Set(resources_json),
+        // DB defaults: retry_count → 0, resume_state → NULL. Written later by
+        // the worker (resume_state) and the reset-in-place retry (retry_count).
+        retry_count: ActiveValue::NotSet,
+        resume_state: ActiveValue::NotSet,
     };
     Entity::insert(model).exec(db).await?;
     Ok(())
@@ -74,4 +86,19 @@ where
     C: ConnectionTrait,
 {
     Entity::find_by_id(run_id.to_string()).one(db).await
+}
+
+/// Bump the reset-in-place retry counter for a run. Best-effort — a missing
+/// extension row (a non-airway run, or one predating the extension) is a no-op.
+pub async fn increment_retry_count<C>(db: &C, run_id: &str) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if let Some(model) = Entity::find_by_id(run_id.to_string()).one(db).await? {
+        let next = model.retry_count + 1;
+        let mut active: ActiveModel = model.into();
+        active.retry_count = ActiveValue::Set(next);
+        active.update(db).await?;
+    }
+    Ok(())
 }

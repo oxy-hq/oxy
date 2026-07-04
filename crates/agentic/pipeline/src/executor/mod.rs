@@ -141,6 +141,7 @@ impl TaskExecutor for PipelineTaskExecutor {
                 backfill_to,
             } => {
                 self.execute_airway(
+                    &assignment.run_id,
                     pipeline_ref,
                     variables.as_ref(),
                     resources,
@@ -429,6 +430,7 @@ impl PipelineTaskExecutor {
     /// lands in a follow-up alongside the CLI/HTTP entry points.
     async fn execute_airway(
         &self,
+        run_id: &str,
         pipeline_ref: &str,
         variables: Option<&serde_json::Value>,
         resources: &[String],
@@ -481,6 +483,7 @@ impl PipelineTaskExecutor {
             obj.remove("backfill_start");
             obj.remove("backfill_end");
         }
+        let mut resumable_backfill = false;
         if let (Some(from), Some(to)) = (backfill_from, backfill_to) {
             match spec.source.kind.as_str() {
                 // toast/quickbooks read `backfill_start`/`backfill_end`; any
@@ -495,6 +498,10 @@ impl PipelineTaskExecutor {
                         serde_json::Value::String(from.into()),
                     );
                     obj.insert("backfill_end".into(), serde_json::Value::String(to.into()));
+                    // Toast backfills are resumable (run-scoped cursor → the
+                    // worker uses the run-scoped store). QuickBooks stays
+                    // non-resumable (frozen cursor, pipeline-global store).
+                    resumable_backfill = spec.source.kind == "toast";
                 }
                 other => {
                     return Err(format!(
@@ -531,7 +538,10 @@ impl PipelineTaskExecutor {
                 });
             worker = worker.with_credential_provider(provider);
         }
-        Ok(worker.execute(spec))
+        // A resumable backfill drives the run-scoped state store keyed by run_id
+        // (cursor → resume_state); everything else uses the pipeline-global store.
+        let resume_run_id = resumable_backfill.then(|| run_id.to_string());
+        Ok(worker.execute(spec, resume_run_id))
     }
 
     /// Dispatch a `TaskSpec::Compile` through the host-supplied

@@ -175,13 +175,17 @@ async fn classify_run_outcome(
     db: &DatabaseConnection,
     run_id: &str,
     task_status: &str,
+    since_seq: i64,
 ) -> (String, Option<i64>, Option<String>) {
     let mut processor = build_event_registry().stream_processor(AIRWAY_SOURCE_TYPE);
     let mut failed_resources: Vec<String> = Vec::new();
     let mut hard_error: Option<String> = None;
     let mut rows_loaded: i64 = 0;
     let mut saw_load_completed = false;
-    for row in crud::get_events_after(db, run_id, -1)
+    // `since_seq` isolates THIS attempt's events: on a reset-in-place re-drive the
+    // prior failed attempt's events are still on the run, so reading from `-1`
+    // would mis-classify a successful retry as failed.
+    for row in crud::get_events_after(db, run_id, since_seq)
         .await
         .unwrap_or_default()
     {
@@ -235,10 +239,29 @@ async fn classify_run_outcome(
     ("done".to_string(), row_count, None)
 }
 
+/// The highest `agentic_run_events.seq` currently recorded for `run_id`, or `-1`
+/// if none. Used as the classify watermark when re-driving a run in place so
+/// only the new attempt's events are read.
+async fn latest_event_seq(db: &DatabaseConnection, run_id: &str) -> i64 {
+    crud::get_events_after(db, run_id, -1)
+        .await
+        .unwrap_or_default()
+        .iter()
+        .map(|r| r.seq)
+        .max()
+        .unwrap_or(-1)
+}
+
 /// Run one bounded `[from, to)` backfill of `pipeline_ref`, block until it
 /// terminates (or `MAX_CHUNK_WAIT` elapses), and classify the outcome. Uses a
 /// fresh `RuntimeState` + `NoopTaskRouter` per chunk so it's self-contained
 /// (no shared orchestrator state required).
+///
+/// `existing_run_id`: when set (a chunk retry — the checkpoint already carries a
+/// run_id), the run is re-driven **in place** — its queued task is revived, its
+/// status flipped back to `running`, and `retry_count` bumped — keeping a stable
+/// run_id (and, once the cursor lands, resuming instead of re-extracting).
+/// Otherwise a fresh run is seeded.
 async fn run_airway_window(
     db: &DatabaseConnection,
     platform: &Arc<dyn PlatformContext>,
@@ -246,29 +269,68 @@ async fn run_airway_window(
     variables: Option<Value>,
     backfill_from: String,
     backfill_to: String,
+    existing_run_id: Option<&str>,
 ) -> Result<ChunkOutcome, AirwayRunError> {
-    let request = StartAirwayRequest {
-        pipeline_ref: pipeline_ref.to_string(),
-        variables,
-        thread_id: None,
-        resources: Vec::new(),
-        schedule_id: None,
-        trigger: Some("backfill".to_string()),
-        logical_date: None,
-        retry_of: None,
-        backfill_from: Some(backfill_from),
-        backfill_to: Some(backfill_to),
+    // Reset-in-place re-drive of the chunk's prior run — but only if its queued
+    // task still exists. `reset_task_to_queued` returns 0 rows when the task was
+    // reaped/purged (e.g. resuming an old backfill) or is still live; re-driving
+    // then would hang (the spawned worker has nothing to claim until
+    // `MAX_CHUNK_WAIT`), so fall back to a fresh run instead.
+    let reused = match existing_run_id {
+        Some(rid) => {
+            // `reset_task_to_queued` revives the task in place; 0 rows = it was
+            // reaped, so there's nothing to re-drive → seed a fresh run below.
+            if crud::reset_task_to_queued(db, rid).await? > 0 {
+                // Drop the prior attempt's events + clear its terminal error so
+                // the re-run shows clean; `since = -1` (no old events left).
+                crud::delete_events_from_seq(db, rid, 0).await.ok();
+                crud::reset_run_for_retry(db, rid).await?;
+                if let Err(e) =
+                    agentic_airway::extension::run_extension::increment_retry_count(db, rid).await
+                {
+                    tracing::warn!(run_id = %rid, error = %e, "backfill retry: retry_count bump failed");
+                }
+                Some((rid.to_string(), latest_event_seq(db, rid).await))
+            } else {
+                tracing::warn!(
+                    run_id = %rid,
+                    "backfill retry: prior run's task was reaped; seeding a fresh run"
+                );
+                None
+            }
+        }
+        None => None,
     };
-    let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
-    let workspace_id = platform.workspace_id();
-    let run_id = start_airway_run(
-        db,
-        workspace.as_ref(),
-        request,
-        TaskScope::Scoped,
-        workspace_id,
-    )
-    .await?;
+
+    let (run_id, since) = match reused {
+        Some(pair) => pair,
+        // First attempt, or a reaped re-drive — seed a fresh run.
+        None => {
+            let request = StartAirwayRequest {
+                pipeline_ref: pipeline_ref.to_string(),
+                variables,
+                thread_id: None,
+                resources: Vec::new(),
+                schedule_id: None,
+                trigger: Some("backfill".to_string()),
+                logical_date: None,
+                retry_of: None,
+                backfill_from: Some(backfill_from),
+                backfill_to: Some(backfill_to),
+            };
+            let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
+            let workspace_id = platform.workspace_id();
+            let rid = start_airway_run(
+                db,
+                workspace.as_ref(),
+                request,
+                TaskScope::Scoped,
+                workspace_id,
+            )
+            .await?;
+            (rid, -1)
+        }
+    };
 
     let state = Arc::new(RuntimeState::new());
     let (cancel_tx, cancel_rx) = watch::channel(false);
@@ -289,7 +351,7 @@ async fn run_airway_window(
             Some(run) if is_terminal(run.task_status.as_deref()) => {
                 let task_status = run.task_status.unwrap_or_else(|| "done".into());
                 let (status, row_count, detail) =
-                    classify_run_outcome(db, &run_id, &task_status).await;
+                    classify_run_outcome(db, &run_id, &task_status, since).await;
                 return Ok(ChunkOutcome {
                     run_id,
                     status,
@@ -449,6 +511,8 @@ async fn run_one_chunk(
         });
     }
     checkpoint_set(&db, &cp, "running", None, None, None, true).await?;
+    // Re-drive the chunk's prior run in place if it already has one (a retry);
+    // otherwise seed a fresh run. Keeps the checkpoint's run_id stable.
     let (disposition, note) = match run_airway_window(
         &db,
         &platform,
@@ -456,6 +520,7 @@ async fn run_one_chunk(
         variables,
         chunk.start.to_rfc3339(),
         chunk.end.to_rfc3339(),
+        cp.run_id.as_deref(),
     )
     .await
     {

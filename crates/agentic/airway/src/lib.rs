@@ -30,7 +30,7 @@ pub use extension::AirwayMigrator;
 pub use source_factory::{
     DiscoveredColumn, DiscoveredTable, build_source_connector, discover_source_tables,
 };
-pub use state_store::AirwayPgStateStore;
+pub use state_store::{AirwayPgStateStore, AirwayRunScopedStateStore};
 pub use worker::AirwayWorker;
 
 /// QuickBooks refresh-token write-back port. The host (via

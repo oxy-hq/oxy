@@ -128,7 +128,8 @@ destination:
 
     // ── Drive the worker ──────────────────────────────────────────────────
     let worker = AirwayWorker::new(Arc::new(db.clone()));
-    let mut task = worker.execute(spec);
+    // Normal run (no resumable-backfill run-scoped store).
+    let mut task = worker.execute(spec, None);
 
     // Collect events until the task produces its terminal outcome.
     let mut event_types: Vec<String> = Vec::new();

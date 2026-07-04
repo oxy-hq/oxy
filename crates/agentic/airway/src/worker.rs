@@ -29,7 +29,7 @@ use crate::destination_factory::build_destination;
 use crate::error::AirwayError;
 use crate::events::AirwayEvent;
 use crate::source_factory::build_source_connector;
-use crate::state_store::AirwayPgStateStore;
+use crate::state_store::{AirwayPgStateStore, AirwayRunScopedStateStore};
 
 /// Buffer for engine→runtime event forwarding. Sized so a burst of
 /// resource completions in a wide pipeline doesn't make the engine
@@ -103,7 +103,17 @@ impl AirwayWorker {
     /// channel rather than as the function's return type — this keeps
     /// the worker shape uniform with how other domain executors plug
     /// into the runtime.
-    pub fn execute(&self, spec: AirwayPipelineSpec) -> ExecutingTask {
+    /// `resume_run_id`: when `Some`, this run uses a RUN-SCOPED state store
+    /// keyed by that run_id (persisting the cursor to
+    /// `airway_run_extensions.resume_state`) instead of the pipeline-global
+    /// store — set for resumable backfills so a reset-in-place retry resumes
+    /// mid-window and the live pipeline cursor is never touched. `None` = normal
+    /// run against the pipeline-global store.
+    pub fn execute(
+        &self,
+        spec: AirwayPipelineSpec,
+        resume_run_id: Option<String>,
+    ) -> ExecutingTask {
         let (event_tx, event_rx) = mpsc::channel::<(String, Value)>(EVENT_BUFFER);
         let (outcome_tx, outcome_rx) = mpsc::channel::<TaskOutcome>(OUTCOME_BUFFER);
         let cancel = CancellationToken::new();
@@ -121,6 +131,7 @@ impl AirwayWorker {
         tokio::spawn(async move {
             let handle = tokio::spawn(drive(
                 spec,
+                resume_run_id,
                 db,
                 refresh_sink,
                 credential_provider,
@@ -157,6 +168,7 @@ impl AirwayWorker {
 /// [`TaskOutcome`] shape.
 async fn drive(
     spec: AirwayPipelineSpec,
+    resume_run_id: Option<String>,
     db: Arc<DatabaseConnection>,
     refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
     credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
@@ -174,6 +186,7 @@ async fn drive(
     let saw_error = Arc::new(AtomicBool::new(false));
     let outcome = match run_pipeline(
         spec,
+        resume_run_id,
         db,
         refresh_sink,
         credential_provider,
@@ -209,6 +222,7 @@ async fn drive(
 /// [`AirwayWorker::execute`].
 async fn run_pipeline(
     spec: AirwayPipelineSpec,
+    resume_run_id: Option<String>,
     db: Arc<DatabaseConnection>,
     refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
     credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
@@ -226,7 +240,17 @@ async fn run_pipeline(
         source = source.with_resources(&names);
     }
 
-    let state_store: Arc<dyn StateStore> = Arc::new(AirwayPgStateStore::new(db, spec.name.clone()));
+    let state_store: Arc<dyn StateStore> = match resume_run_id {
+        // Resumable backfill: run-scoped store — cursor → `resume_state` keyed by
+        // run_id, schema + audit delegated to the pipeline-global row, live
+        // cursor never touched.
+        Some(run_id) => Arc::new(AirwayRunScopedStateStore::new(
+            db,
+            run_id,
+            spec.name.clone(),
+        )),
+        None => Arc::new(AirwayPgStateStore::new(db, spec.name.clone())),
+    };
 
     // ── Event bridge ──────────────────────────────────────────────────────
     let mut bus = EventBus::new();

@@ -96,3 +96,24 @@ pub async fn transition_run(
     run::Entity::update(model).exec(db).await?;
     Ok(())
 }
+
+/// Reset a terminal run back to `running` for a **reset-in-place retry**: set
+/// `running` AND explicitly clear the prior attempt's `error_message`, `answer`,
+/// and driver lease. Unlike [`transition_run`] / [`update_run_running`] (whose
+/// `error_message: None` means "leave unchanged"), this NULLs the error so the
+/// UI doesn't keep showing a stale failure after a retry. Pair it with
+/// `delete_events_from_seq(.., 0)` to drop the failed attempt's events too.
+pub async fn reset_run_for_retry(db: &DatabaseConnection, run_id: &str) -> Result<(), DbErr> {
+    let model = run::ActiveModel {
+        id: Set(run_id.to_string()),
+        task_status: Set(Some("running".to_string())),
+        error_message: Set(None),
+        answer: Set(None),
+        driver_id: Set(None),
+        driver_heartbeat_at: Set(None),
+        updated_at: Set(now()),
+        ..Default::default()
+    };
+    run::Entity::update(model).exec(db).await?;
+    Ok(())
+}

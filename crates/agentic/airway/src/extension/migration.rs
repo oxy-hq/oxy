@@ -18,6 +18,7 @@ impl MigratorTrait for AirwayMigrator {
             Box::new(CreateLoadAudit),
             Box::new(CreateRunExtensions),
             Box::new(AddPartialToLoadAudit),
+            Box::new(AddRetryStateToRunExtensions),
         ]
     }
 
@@ -63,6 +64,8 @@ enum AirwayRunExtensions {
     LoadId,
     Concurrency,
     Resources,
+    RetryCount,
+    ResumeState,
 }
 
 /// Mirror of the runtime's `agentic_runs` table — only the `Id`
@@ -328,6 +331,71 @@ impl MigrationTrait for AddPartialToLoadAudit {
                 Table::alter()
                     .table(AirwayLoadAudit::Table)
                     .drop_column(AirwayLoadAudit::Partial)
+                    .to_owned(),
+            )
+            .await
+    }
+}
+
+// ── Migration 5: airway_run_extensions.retry_count + resume_state ────────────
+
+/// Adds per-run `retry_count` (the reset-in-place retry counter, surfaced in the
+/// run UI) and `resume_state` (the run's persisted cursor, so a reset-in-place
+/// retry resumes where it left off instead of re-extracting the window).
+/// Separate migration — never edit a shipped one — so fresh and existing DBs
+/// converge.
+struct AddRetryStateToRunExtensions;
+
+impl MigrationName for AddRetryStateToRunExtensions {
+    fn name(&self) -> &str {
+        "m20260520_000005_add_retry_state_to_airway_run_extensions"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddRetryStateToRunExtensions {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AirwayRunExtensions::Table)
+                    .add_column(
+                        ColumnDef::new(AirwayRunExtensions::RetryCount)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AirwayRunExtensions::Table)
+                    .add_column(
+                        ColumnDef::new(AirwayRunExtensions::ResumeState)
+                            .json_binary()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AirwayRunExtensions::Table)
+                    .drop_column(AirwayRunExtensions::RetryCount)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AirwayRunExtensions::Table)
+                    .drop_column(AirwayRunExtensions::ResumeState)
                     .to_owned(),
             )
             .await

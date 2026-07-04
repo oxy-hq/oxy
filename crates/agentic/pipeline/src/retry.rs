@@ -1,16 +1,18 @@
-//! Retry path — clone a terminal-failed run into a fresh run that flows
-//! through the queue normally.
+//! Retry path for a terminal-failed run.
 //!
-//! Semantics: clone-and-reseed. The original run row stays as-is; a brand
-//! new run is seeded with the same target (workflow_ref or pipeline_ref),
-//! the same variables, the same `schedule_id` (so per-job history threads
-//! both runs together), and is tagged `trigger="retry"` with
-//! `metadata.retry_of=<original>` so the dashboard can link them.
+//! - **airway** runs retry **in place**: the run's existing queued task is
+//!   revived and the run flipped back to `running` under the SAME `run_id`, so
+//!   the coordinator re-drives it and the worker resumes from its persisted
+//!   cursor (`airway_run_extensions.resume_state`). Only if the task row was
+//!   reaped does it fall back to clone-and-reseed.
+//! - **workflow** (automation) runs still **clone-and-reseed**: a brand-new run
+//!   is seeded with the same target/variables/`schedule_id`, tagged
+//!   `trigger="retry"` + `metadata.retry_of=<original>` so the dashboard links
+//!   them.
 //!
-//! Only `workflow` and `airway` source types are retryable in v1 —
-//! analytics and builder runs need per-domain reconstruction that doesn't
-//! exist yet (the original interactive context is lost the moment the
-//! original session ends).
+//! Only `workflow` and `airway` source types are retryable in v1 — analytics
+//! and builder runs need per-domain reconstruction that doesn't exist yet (the
+//! original interactive context is lost the moment the original session ends).
 
 use sea_orm::{DatabaseConnection, DbErr};
 
@@ -132,6 +134,38 @@ async fn retry_airway(
     workspace: &dyn crate::WorkflowWorkspaceContext,
     original: &run::Model,
 ) -> Result<String, RetryError> {
+    // ── Reset-in-place (the normal path) ─────────────────────────────────────
+    // Revive the run's existing queued task (keeping its stored spec) and flip
+    // the run back to `running`, so the coordinator re-drives the SAME run_id —
+    // no new run row. The per-run cursor (`airway_run_extensions.resume_state`)
+    // lets the worker resume where it left off. `0` rows means the task was
+    // reaped (or is still live — the guard skips live tasks), so we fall through
+    // to a clone-reseed.
+    let run_id = original.id.clone();
+    let reset = agentic_runtime::crud::reset_task_to_queued(db, &run_id).await?;
+    if reset > 0 {
+        // Drop the failed attempt's events + clear its terminal error so the run
+        // shows a clean re-run, not a stale failure, then flip it to running.
+        if let Err(e) = agentic_runtime::crud::delete_events_from_seq(db, &run_id, 0).await {
+            tracing::warn!(%run_id, error = %e, "airway retry: clearing prior events failed");
+        }
+        agentic_runtime::crud::reset_run_for_retry(db, &run_id).await?;
+        // A backfill chunk's task is `scope_owned` (driven under its range's
+        // scope); the global coordinator's `claim_task` only picks up
+        // `scope_owned = false`, so a reset-in-place retry would never be
+        // re-driven. Make it global so the coordinator re-drives it. No-op for a
+        // normal (already-global) run.
+        agentic_runtime::crud::mark_task_global(db, &run_id).await?;
+        // Best-effort — the retry succeeding matters more than the counter.
+        if let Err(e) =
+            agentic_airway::extension::run_extension::increment_retry_count(db, &run_id).await
+        {
+            tracing::warn!(%run_id, error = %e, "airway retry: retry_count bump failed");
+        }
+        return Ok(run_id);
+    }
+
+    // ── Reap fallback: the task row is gone → clone-and-reseed a fresh run. ───
     let metadata = original.metadata.as_ref();
     let pipeline_ref = metadata
         .and_then(|m| m.get("pipeline_ref"))
