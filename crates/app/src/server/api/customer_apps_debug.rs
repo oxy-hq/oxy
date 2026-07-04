@@ -77,7 +77,7 @@ pub async fn get_debug(
     Path((org_slug, app_slug)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Response {
-    let AuthOutcome { app, is_staff } =
+    let AuthOutcome { app, is_staff, .. } =
         match authenticate_and_authorize(&headers, &org_slug, &app_slug).await {
             Ok(v) => v,
             Err(status) => return status.into_response(),

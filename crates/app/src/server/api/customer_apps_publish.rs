@@ -22,7 +22,7 @@ use axum::Json;
 use axum::extract::Multipart;
 use axum::http::StatusCode;
 use chrono::Utc;
-use entity::{app_builds, apps, organizations, workspaces};
+use entity::{app_builds, app_functions, apps, organizations, workspaces};
 use flate2::read::GzDecoder;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
@@ -390,6 +390,52 @@ async fn record_build(
     Ok(build_pk)
 }
 
+/// Extract `(name, per-function manifest JSON)` pairs from the bundle
+/// manifest's `functions` block. Empty when the manifest declares none
+/// (today's static-bundle default), so this is a no-op for function-less apps.
+fn function_specs(manifest_json: Option<&serde_json::Value>) -> Vec<(String, serde_json::Value)> {
+    manifest_json
+        .and_then(|m| m.get("functions"))
+        .and_then(|f| f.as_object())
+        .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .unwrap_or_default()
+}
+
+/// Build-store key of a function's bundled JS artifact, matching the layout
+/// `oxy publish` uploads (`<build_prefix>functions/<name>.js`) and the
+/// `app_functions.artifact_key` contract.
+fn function_artifact_key(build_prefix: &str, name: &str) -> String {
+    format!("{build_prefix}functions/{name}.js")
+}
+
+/// Record one `app_functions` row per declared function, keyed to this build,
+/// so the `/fn/<name>` route can resolve them. Without this the bundled JS
+/// ships in the build store but the runtime can never find it (→ 404).
+async fn record_functions(
+    db: &DatabaseConnection,
+    app_id: Uuid,
+    build_pk: Uuid,
+    build_prefix: &str,
+    specs: &[(String, serde_json::Value)],
+) -> Result<(), PublishError> {
+    for (name, spec) in specs {
+        let model = app_functions::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            app_id: ActiveValue::Set(app_id),
+            build_id: ActiveValue::Set(build_pk),
+            name: ActiveValue::Set(name.clone()),
+            manifest_json: ActiveValue::Set(Some(spec.clone())),
+            artifact_key: ActiveValue::Set(function_artifact_key(build_prefix, name)),
+            created_at: ActiveValue::Set(Utc::now().fixed_offset()),
+        };
+        model
+            .insert(db)
+            .await
+            .map_err(|e| PublishError::Db(e.to_string()))?;
+    }
+    Ok(())
+}
+
 /// Point the channel(s) at the new build. Draft always; published +
 /// `published_at` when promoting.
 async fn set_pointers(
@@ -471,6 +517,10 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
 
     let (app_id, is_new_app) = upsert_app(&db, &org, &input).await?;
     let s3_prefix = store::put_build(app_id, &input.build_id, files).await?;
+    // Capture the function specs + build prefix before `record_build` consumes
+    // `manifest_json` and `s3_prefix`.
+    let fn_specs = function_specs(manifest_json.as_ref());
+    let build_prefix = s3_prefix.clone();
     // Bytes are now stored. If recording the row or moving the pointer fails,
     // roll the orphaned build back out so a partial publish leaves no
     // half-state (leaked storage prefix, or a row no channel points at).
@@ -483,6 +533,18 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
             return Err(e);
         }
     };
+    // Register the bundle's functions against this build so `/fn/<name>`
+    // resolves. On failure roll the orphan build back out (the app_functions
+    // FK cascades when the build row is deleted).
+    if let Err(e) = record_functions(&db, app_id, build_pk, &build_prefix, &fn_specs).await {
+        if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {
+            tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
+        }
+        if let Ok(Some(row)) = app_builds::Entity::find_by_id(build_pk).one(&db).await {
+            let _ = row.delete(&db).await;
+        }
+        return Err(e);
+    }
     if let Err(e) = set_pointers(&db, app_id, build_pk, input.promote).await {
         if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {
             tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
@@ -678,6 +740,38 @@ mod tests {
         let gz = make_tar_gz(&[("assets/app.js", b"x")]);
         let err = unpack_tar_gz(&gz).unwrap_err();
         assert!(matches!(err, PublishError::BadTarball(_)));
+    }
+
+    #[test]
+    fn function_specs_extracts_declared_functions() {
+        let manifest = serde_json::json!({
+            "slug": "hello-oxy",
+            "functions": {
+                "top-stores": { "route": true, "timeoutSeconds": 15 },
+            },
+        });
+        let specs = function_specs(Some(&manifest));
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].0, "top-stores");
+        assert_eq!(specs[0].1["route"], serde_json::json!(true));
+        assert_eq!(specs[0].1["timeoutSeconds"], serde_json::json!(15));
+    }
+
+    #[test]
+    fn function_specs_empty_when_no_functions_block() {
+        // A static-bundle manifest (today's default) records no functions.
+        assert!(function_specs(Some(&serde_json::json!({ "slug": "x" }))).is_empty());
+        assert!(function_specs(None).is_empty());
+        // A present-but-empty block is also a no-op.
+        assert!(function_specs(Some(&serde_json::json!({ "functions": {} }))).is_empty());
+    }
+
+    #[test]
+    fn function_artifact_key_matches_build_store_layout() {
+        assert_eq!(
+            function_artifact_key("customer-apps/abc/builds/v1/", "top-stores"),
+            "customer-apps/abc/builds/v1/functions/top-stores.js"
+        );
     }
 
     #[test]

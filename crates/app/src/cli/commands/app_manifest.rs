@@ -21,6 +21,41 @@ pub struct OxyAppManifest {
     pub name: Option<String>,
     pub build: Option<BuildSpec>,
     pub environments: Option<HashMap<String, EnvSpec>>,
+    /// Optional Oxy Functions shipped in the bundle's `functions/` dir,
+    /// keyed by function name. See
+    /// `internal-docs/2026-06-12-customer-apps-functions-design.md`.
+    pub functions: Option<HashMap<String, FunctionSpec>>,
+}
+
+/// Per-function manifest entry. Mirrors `OxyAppFunctionManifest` in the
+/// TypeScript SDK; unknown fields ignored for forward-compat.
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct FunctionSpec {
+    pub entry: Option<String>,
+    pub schedule: Option<String>,
+    pub timezone: Option<String>,
+    pub route: Option<bool>,
+    #[serde(rename = "airwayStep")]
+    pub airway_step: Option<AirwayStepSpec>,
+    #[serde(rename = "timeoutSeconds")]
+    pub timeout_seconds: Option<u32>,
+}
+
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct AirwayStepSpec {
+    pub pipeline: String,
+    pub resource: String,
+}
+
+impl FunctionSpec {
+    /// Source entry path relative to the app dir. Default
+    /// `functions/<name>.ts`.
+    pub fn entry_for(&self, name: &str) -> String {
+        self.entry
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| format!("functions/{name}.ts"))
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

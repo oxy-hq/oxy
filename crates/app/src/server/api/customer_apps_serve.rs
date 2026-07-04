@@ -100,6 +100,43 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
     };
     let rest = rest_parts.next().unwrap_or("").to_string();
 
+    // Oxy Functions route invocation: `POST .../fn/<name>`. Dispatched
+    // before `serve_pretty`'s static-bundle logic — see
+    // internal-docs/2026-06-12-customer-apps-functions-design.md §11.10.
+    if let Some(function_name) = rest.strip_prefix("fn/") {
+        if function_name.is_empty() || function_name.contains('/') {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        let body_bytes = match axum::body::to_bytes(
+            body,
+            super::customer_apps_proxy::REQUEST_BODY_LIMIT,
+        )
+        .await
+        {
+            Ok(b) => b,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
+        // `?refresh` bypasses the opt-in function result cache (same convention
+        // as the /query endpoint).
+        let refresh = uri
+            .query()
+            .map(|q| {
+                q.split('&')
+                    .any(|kv| kv == "refresh" || kv.starts_with("refresh="))
+            })
+            .unwrap_or(false);
+        return super::customer_apps_functions::handle_function_request(
+            first,
+            app_slug,
+            function_name,
+            method,
+            headers,
+            body_bytes,
+            refresh,
+        )
+        .await;
+    }
+
     serve_pretty(first, app_slug, rest, method, headers, uri, body).await
 }
 

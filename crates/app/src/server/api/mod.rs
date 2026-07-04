@@ -18,6 +18,7 @@ pub mod customer_apps_build_store;
 pub mod customer_apps_bundle_cache;
 pub mod customer_apps_cache;
 pub mod customer_apps_debug;
+pub mod customer_apps_functions;
 pub mod customer_apps_gates;
 pub mod customer_apps_host_dispatch;
 pub mod customer_apps_manifest;

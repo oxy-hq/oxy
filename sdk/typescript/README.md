@@ -83,6 +83,7 @@ couldn't already read.
 | `useSemanticQuery({ topic, dimensions, measures, … })` | Semantic-layer query compiled by airlayer. |
 | `useAgentRun({ agentId })` | `.ask(question)` starts an analytics agent run; streams events over SSE; `.cancel()`. |
 | `useProcedureRun({ procedureId })` | Start a long-running procedure, poll, cancel (beta). |
+| `useFunction(name)` | `.invoke(body?)` runs a server-side **Oxy Function** (`functions/<name>.ts`) on oxy's isolate runtime; returns its JSON `Response`. For work the browser shouldn't do — warehouse writes, ELT, external APIs. |
 | `<OxyChat agentId="…" />` | Drop-in chat UI over `useAgentRun`. |
 | `<OxyAnswer … />` | Renders markdown + SQL artifacts + thread link. URL schemes are allowlisted (rejects `javascript:` etc.). |
 | `OxyApiError` | Structured `{ message, code? }` server-error envelope. |

@@ -307,3 +307,57 @@ describe("identity precedence (injection > manifest)", () => {
     }
   });
 });
+
+// ── v2 functions block ────────────────────────────────────────────────────────
+
+describe("parseOxyAppManifest — functions", () => {
+  it("parses a valid functions map", async () => {
+    mockFetchReturning({
+      schemaVersion: 2,
+      slug: "demo",
+      functions: {
+        "refresh-sales": { schedule: "0 6 * * *", timezone: "UTC", timeoutSeconds: 60 },
+        "sync-stripe": { airwayStep: { pipeline: "stripe_sync", resource: "transform" } }
+      }
+    });
+    const resolved = await loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" });
+    expect(Object.keys(resolved.manifest.functions ?? {})).toEqual([
+      "refresh-sales",
+      "sync-stripe"
+    ]);
+    expect(resolved.manifest.functions?.["refresh-sales"].timeoutSeconds).toBe(60);
+  });
+
+  it("rejects an invalid function name", async () => {
+    mockFetchReturning({
+      schemaVersion: 2,
+      slug: "demo",
+      functions: { Bad_Name: { route: true } }
+    });
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /function name "Bad_Name" must match/
+    );
+  });
+
+  it("rejects a function with no active invocation surface", async () => {
+    mockFetchReturning({
+      schemaVersion: 2,
+      slug: "demo",
+      functions: { noop: { route: false } }
+    });
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /must enable at least one of route\/schedule\/airwayStep/
+    );
+  });
+
+  it("rejects an out-of-range timeoutSeconds", async () => {
+    mockFetchReturning({
+      schemaVersion: 2,
+      slug: "demo",
+      functions: { slow: { route: true, timeoutSeconds: 9999 } }
+    });
+    await expect(loadCustomerAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /timeoutSeconds.*\[1, 300\]/
+    );
+  });
+});

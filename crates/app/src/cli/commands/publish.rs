@@ -140,6 +140,94 @@ fn run_build_step(label: &str, cmd: &str, cwd: &Path, base_path: &str) -> Result
     Ok(())
 }
 
+/// Function names come straight from the untrusted `oxy-app.json` manifest and
+/// are interpolated into an output path (`functions/<name>.js`). Enforce the
+/// documented `^[a-z][a-z0-9-]{0,63}$` shape so a key like `"../../x"` can't
+/// make esbuild write outside the bundle dir.
+fn is_valid_function_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name.starts_with(|c: char| c.is_ascii_lowercase())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Bundle each declared Oxy Function into `<bundle_dir>/functions/<name>.js`
+/// via esbuild, so the server can run it in an isolated runtime. The
+/// bundled files ride along in the existing tarball — no separate upload.
+///
+/// esbuild is invoked through the app's own toolchain (`pnpm exec esbuild`)
+/// so the author's dependencies resolve exactly as they do in `pnpm build`.
+/// Run from `app_dir` (where `package.json` / `node_modules` live), not the
+/// output dir.
+fn bundle_functions(
+    manifest: &super::app_manifest::OxyAppManifest,
+    app_dir: &Path,
+    bundle_dir: &Path,
+) -> Result<(), OxyError> {
+    let Some(functions) = manifest.functions.as_ref().filter(|f| !f.is_empty()) else {
+        return Ok(());
+    };
+    let out_fns = bundle_dir.join("functions");
+    std::fs::create_dir_all(&out_fns)
+        .map_err(|e| OxyError::RuntimeError(format!("mkdir {}: {e}", out_fns.display())))?;
+
+    for (name, spec) in functions {
+        // The manifest key is untrusted; reject anything outside
+        // `^[a-z][a-z0-9-]{0,63}$` before it reaches `out_fns.join("<name>.js")`
+        // — a key like "../../x" would make esbuild write outside the bundle.
+        if !is_valid_function_name(name) {
+            return Err(OxyError::RuntimeError(format!(
+                "invalid function name {name:?}: must match ^[a-z][a-z0-9-]{{0,63}}$"
+            )));
+        }
+        let entry = spec.entry_for(name);
+        let outfile = out_fns.join(format!("{name}.js"));
+        // `--platform=neutral` keeps the bundle host-agnostic (the runtime
+        // provides `ctx`/`fetch` ops, not Node built-ins); `--format=esm`
+        // matches how the runtime loads the module.
+        //
+        // Passed as argv (not a shell string) so an `entry` path containing
+        // spaces or shell metacharacters can't break or inject into the
+        // command line.
+        // esbuild requires `--outfile=<path>` (a single `=`-joined token);
+        // a space-separated `--outfile <path>` is rejected as an invalid flag.
+        let outfile_flag = format!("--outfile={}", outfile.display());
+        let args = [
+            "exec",
+            "esbuild",
+            entry.as_str(),
+            "--bundle",
+            "--format=esm",
+            "--platform=neutral",
+            // Inline source map so a runtime stack trace (surfaced to the app on
+            // error) points at the author's original `.ts` line, not the bundled
+            // output. deno_core remaps stacks from the inline `//# sourceMappingURL`.
+            "--sourcemap=inline",
+            outfile_flag.as_str(),
+        ];
+        let label = format!("fn:{name}");
+        println!(
+            "{}",
+            format!("[{label}] $ pnpm {}", args.join(" ")).tertiary()
+        );
+        let status = std::process::Command::new("pnpm")
+            .args(args)
+            .current_dir(app_dir)
+            .status()
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("failed to spawn `pnpm exec esbuild`: {e}"))
+            })?;
+        if !status.success() {
+            return Err(OxyError::RuntimeError(format!(
+                "esbuild for function `{name}` failed ({status})"
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 struct BuildConfigResp {
     project_id: String,
@@ -261,6 +349,12 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
             cwd.join(out_dir)
         }
     };
+
+    // Bundle any declared Oxy Functions into <bundle_dir>/functions/<name>.js.
+    // No-op when the manifest declares none (today's static-bundle default).
+    if let Some(m) = manifest.as_ref() {
+        bundle_functions(m, &cwd, &bundle_dir)?;
+    }
 
     // Project: --project → OXY_PROJECT → build-config on the target.
     let project = match args.project.clone().or_else(|| env_var("OXY_PROJECT")) {

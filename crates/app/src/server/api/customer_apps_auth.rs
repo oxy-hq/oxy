@@ -201,15 +201,17 @@ pub async fn load_app_by_slugs(
 // ── Auth helper ──────────────────────────────────────────────────────────────
 
 /// What the auth flow returns on success.
-pub(super) struct AuthOutcome {
+pub(crate) struct AuthOutcome {
     pub app: apps::Model,
+    pub user_id: Uuid,
+    pub user_email: String,
     pub is_staff: bool,
 }
 
 /// Authenticate the request and confirm the caller has access to
 /// (org, app). Returns the app row + user info on success; an HTTP
 /// status on any failure.
-pub(super) async fn authenticate_and_authorize(
+pub(crate) async fn authenticate_and_authorize(
     headers: &axum::http::HeaderMap,
     org_slug: &str,
     app_slug: &str,
@@ -274,7 +276,12 @@ pub(super) async fn authenticate_and_authorize(
 
     let is_staff = is_app_admin_email(&db, &user.email).await.unwrap_or(false);
 
-    Ok(AuthOutcome { app, is_staff })
+    Ok(AuthOutcome {
+        app,
+        user_id: user.id,
+        user_email: user.email,
+        is_staff,
+    })
 }
 
 // ── Bootstrap: OXY_GLOBAL_ADMINS env → app_admins table ─────────────────────

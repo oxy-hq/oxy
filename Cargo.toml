@@ -214,6 +214,13 @@ pulldown-cmark = "0.13"
 rand = "0.10"
 rapidfuzz = "0.5.0"
 reqwest = { version = "0.12", features = ["rustls-tls", "multipart"]  }
+# V8-isolate runtime for Oxy Functions (customer-app `functions/*.ts`).
+# See internal-docs/2026-06-12-customer-apps-functions-design.md.
+deno_core = "0.331"
+# deno_core 0.331's `op2` macro requires fallible ops to return an error type
+# implementing `deno_error::JsErrorClass` (plain `anyhow::Error` no longer
+# qualifies); `JsErrorBox` is that type. Kept on the 0.5.x line deno_core pins.
+deno_error = "0.5"
 rkyv = "0.7.46"
 rmcp = "0.10.0"
 rusqlite = "0.32"

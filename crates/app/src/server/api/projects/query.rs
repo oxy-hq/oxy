@@ -243,6 +243,52 @@ async fn run_sql_query(
 
 // ── LIMIT wrapper ─────────────────────────────────────────────────────────────
 
+/// Function-scoped row cap for `ctx.query` (design doc §11.5): 10x the UI
+/// `MAX_ROWS` cap, since ETL functions legitimately need more rows than a
+/// rendered table. Genuinely large scans use `ctx.queryStream` instead.
+pub(crate) const FUNCTION_MAX_ROWS: usize = 100_000;
+
+/// Row cap for `ctx.queryStream` (design doc §11.5): a higher ceiling than
+/// `FUNCTION_MAX_ROWS` for genuinely large scans. The MVP implementation
+/// fetches up to this many rows in one shot and yields them to the isolate
+/// in client-side batches (see `ctx.queryStream` in `customer_apps_functions`);
+/// a true warehouse-cursor implementation is future work.
+pub(crate) const FUNCTION_STREAM_MAX_ROWS: usize = 1_000_000;
+
+/// Execute read-only SQL for an Oxy Function's `ctx.query`, returning the
+/// rows as JSON objects capped at `max_rows`. Shares the read-only gate and
+/// outer-LIMIT wrap with the customer-app `/query` endpoint so the safety
+/// rules can't drift between the two call sites. Errors are returned as
+/// human-readable strings (the function runtime surfaces them to the isolate
+/// as a rejected promise).
+pub(crate) async fn execute_function_query(
+    connector: Arc<dyn DatabaseConnector>,
+    sql: &str,
+    max_rows: usize,
+) -> Result<Vec<JsonValue>, String> {
+    if !is_read_only_sql(sql) {
+        return Err("only SELECT/WITH queries are allowed".to_string());
+    }
+    let limited_sql = wrap_with_limit(sql, max_rows);
+    let stream = connector
+        .execute_query_full(&limited_sql)
+        .await
+        .map_err(|e| match e {
+            ConnectorError::QueryFailed(detail) => {
+                format!("query failed: {}", detail.message)
+            }
+            ConnectorError::ConnectionError(msg) => format!("warehouse connection failed: {msg}"),
+            ConnectorError::Other(msg) => format!("query execution failed: {msg}"),
+        })?;
+    // `typed_stream_to_json_objects` returns `(rows, connector_truncated)`; the
+    // function runtime tracks truncation itself via a +1 overfetch
+    // (`host::query_with_truncation`), so drop the flag here and return the rows.
+    typed_stream_to_json_objects(stream)
+        .await
+        .map(|(objects, _truncated)| objects)
+        .map_err(|e| format!("failed to convert query results: {e}"))
+}
+
 /// Wrap `sql` in `SELECT * FROM (...) AS oxy_proxy_query LIMIT {max_rows}`.
 ///
 /// Trailing semicolons (and surrounding whitespace) are stripped first so that

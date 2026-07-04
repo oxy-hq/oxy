@@ -16,6 +16,47 @@ import { getOxyAppLogger } from "./logger";
 
 // ── Manifest types ──────────────────────────────────────────────────────────
 
+/**
+ * Declaration of a single Oxy Function shipped in the bundle's
+ * `functions/` dir. See `internal-docs/2026-06-12-customer-apps-functions-design.md`.
+ *
+ * All fields optional except that at least one invocation surface
+ * (`route`, `schedule`, or `airwayStep`) must be active. Absent =
+ * `route: true` (HTTP-invocable via `useFunction`).
+ */
+export interface OxyAppFunctionManifest {
+  /** Source entry, relative to the app dir. Default: `functions/<name>.ts`. */
+  entry?: string;
+  /** Cron expression. When set, the function fires on this schedule. */
+  schedule?: string;
+  /** IANA timezone for `schedule`. Default: `UTC`. */
+  timezone?: string;
+  /** Expose `POST .../fn/<name>` (called via `useFunction`). Default: true. */
+  route?: boolean;
+  /** Wire the function in as an Airway pipeline transform step. */
+  airwayStep?: { pipeline: string; resource: string };
+  /** Wall-clock timeout. Default 30, max 300. */
+  timeoutSeconds?: number;
+  /**
+   * Opt-in result caching for route invocations. Omit (the default) to never
+   * cache — the safe choice for a side-effectful function (writes, external
+   * POSTs, ELT). Set `ttlSeconds` ONLY for read-only / idempotent functions:
+   * results are then cached per (build, function, user, request body) for that
+   * window, and a repeat `useFunction().invoke(sameBody)` returns the cached
+   * result without re-running. A `?refresh` query bypasses it.
+   */
+  cache?: { ttlSeconds?: number };
+  /**
+   * Databases this function's `ctx.warehouse.*` writes may target. Omit (or
+   * leave empty) and the function may NOT write to any database — writes are
+   * fail-closed and rejected before any connection is opened. Declare a
+   * destination here ONLY for a function that legitimately writes to it; a
+   * read-only function omits it. This scopes writes away from the project's
+   * source warehouse.
+   */
+  destinations?: string[];
+}
+
 /** Wire shape of `oxy-app.json` (v2 only). */
 export interface OxyAppManifest {
   /** Must be 2. v1 manifests are no longer supported. */
@@ -45,6 +86,12 @@ export interface OxyAppManifest {
    * `/api/projects/:id/query` URL.
    */
   projectId?: string;
+  /**
+   * Optional map of Oxy Functions (server-side handlers) shipped in the
+   * bundle's `functions/` dir, keyed by function name. Omit for a pure
+   * static bundle (today's default). See the functions design doc.
+   */
+  functions?: Record<string, OxyAppFunctionManifest>;
 }
 
 // ── Resolved manifest ───────────────────────────────────────────────────────
@@ -221,8 +268,106 @@ function validateManifest(raw: unknown, url: string): OxyAppManifest {
   const slug = raw.slug;
   const orgSlug = typeof raw.orgSlug === "string" ? raw.orgSlug : undefined;
   const projectId = typeof raw.projectId === "string" ? raw.projectId : undefined;
+  const functions = raw.functions !== undefined ? validateFunctions(raw.functions) : undefined;
 
-  return { schemaVersion: 2, name, slug, orgSlug, projectId };
+  return { schemaVersion: 2, name, slug, orgSlug, projectId, functions };
+}
+
+const FUNCTION_NAME_RE = /^[a-z][a-z0-9-]{0,63}$/;
+
+/**
+ * Validate the optional `functions` map. Each key is a function name;
+ * each value declares how the function is invoked. Mirrors the
+ * server-side validation in `customer_apps_publish.rs` so a bad
+ * manifest fails at build, not at publish.
+ */
+function validateFunctions(raw: unknown): Record<string, OxyAppFunctionManifest> {
+  if (!isRecord(raw)) {
+    throw new Error("oxy-app.json: `functions` must be an object keyed by function name");
+  }
+  const out: Record<string, OxyAppFunctionManifest> = {};
+  for (const [fnName, value] of Object.entries(raw)) {
+    if (!FUNCTION_NAME_RE.test(fnName)) {
+      throw new Error(`oxy-app.json: function name "${fnName}" must match ^[a-z][a-z0-9-]{0,63}$`);
+    }
+    if (!isRecord(value)) {
+      throw new Error(`oxy-app.json: function "${fnName}" must be an object`);
+    }
+    const fn: OxyAppFunctionManifest = {};
+    if (value.entry !== undefined) {
+      if (typeof value.entry !== "string" || !value.entry.trim()) {
+        throw new Error(`oxy-app.json: function "${fnName}" \`entry\` must be a non-empty string`);
+      }
+      fn.entry = value.entry;
+    }
+    if (value.schedule !== undefined) {
+      if (typeof value.schedule !== "string" || !value.schedule.trim()) {
+        throw new Error(`oxy-app.json: function "${fnName}" \`schedule\` must be a cron string`);
+      }
+      fn.schedule = value.schedule;
+    }
+    if (value.timezone !== undefined) {
+      if (typeof value.timezone !== "string") {
+        throw new Error(`oxy-app.json: function "${fnName}" \`timezone\` must be a string`);
+      }
+      fn.timezone = value.timezone;
+    }
+    if (value.route !== undefined) {
+      if (typeof value.route !== "boolean") {
+        throw new Error(`oxy-app.json: function "${fnName}" \`route\` must be a boolean`);
+      }
+      fn.route = value.route;
+    }
+    if (value.airwayStep !== undefined) {
+      const step = value.airwayStep;
+      if (
+        !isRecord(step) ||
+        typeof step.pipeline !== "string" ||
+        typeof step.resource !== "string"
+      ) {
+        throw new Error(
+          `oxy-app.json: function "${fnName}" \`airwayStep\` must be { pipeline, resource }`
+        );
+      }
+      fn.airwayStep = { pipeline: step.pipeline, resource: step.resource };
+    }
+    if (value.timeoutSeconds !== undefined) {
+      const t = value.timeoutSeconds;
+      if (typeof t !== "number" || !Number.isInteger(t) || t < 1 || t > 300) {
+        throw new Error(
+          `oxy-app.json: function "${fnName}" \`timeoutSeconds\` must be an integer in [1, 300]`
+        );
+      }
+      fn.timeoutSeconds = t;
+    }
+    if (value.cache !== undefined) {
+      const c = value.cache;
+      if (!isRecord(c)) {
+        throw new Error(`oxy-app.json: function "${fnName}" \`cache\` must be an object`);
+      }
+      if (c.ttlSeconds !== undefined) {
+        const ttl = c.ttlSeconds;
+        if (typeof ttl !== "number" || !Number.isInteger(ttl) || ttl < 1) {
+          throw new Error(
+            `oxy-app.json: function "${fnName}" \`cache.ttlSeconds\` must be a positive integer`
+          );
+        }
+        fn.cache = { ttlSeconds: ttl };
+      }
+    }
+    // At least one invocation surface must be active. `route` defaults
+    // to true only when no other surface is declared, matching the doc.
+    const hasSchedule = fn.schedule !== undefined;
+    const hasAirway = fn.airwayStep !== undefined;
+    const routeActive = fn.route ?? !(hasSchedule || hasAirway);
+    if (!routeActive && !hasSchedule && !hasAirway) {
+      throw new Error(
+        `oxy-app.json: function "${fnName}" must enable at least one of route/schedule/airwayStep`
+      );
+    }
+    out[fnName] = fn;
+  }
+  return out;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

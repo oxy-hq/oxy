@@ -87,6 +87,7 @@ mod m20260528_000003_create_app_builds;
 mod m20260528_000004_app_builds_add_published_by;
 mod m20260528_000005_apps_add_last_promoted;
 mod m20260604_000001_metric_anomalies_filters;
+mod m20260612_000001_create_app_functions;
 // Legacy single-tenant Slack tables. The original CREATE migrations were
 // deleted when the universal multi-tenant Slack bot replaced them, but
 // dev/prod databases that had already applied them required the files
@@ -212,6 +213,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260528_000003_create_app_builds::Migration),
             Box::new(m20260528_000004_app_builds_add_published_by::Migration),
             Box::new(m20260528_000005_apps_add_last_promoted::Migration),
+            Box::new(m20260612_000001_create_app_functions::Migration),
             // Legacy single-tenant Slack tables — see module-level comment above.
             Box::new(m20251114_000002_create_slack_channel_bindings_table::Migration),
             Box::new(m20251114_000003_create_slack_user_identities_table::Migration),

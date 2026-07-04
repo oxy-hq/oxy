@@ -547,6 +547,25 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/projects/{project_id}/procedures/{procedure_id}/runs",
         role: RouteRole::IdeOnly,
     },
+    // ── Customer-Apps FUNCTION invocation (`POST /customer-apps/<org>/<slug>/fn/<name>`) ──
+    // Oxy Functions execute IN-PROCESS on the isolate runtime, and their data
+    // plane builds a WorkspaceManager from the working copy
+    // (`build_project_context` → `effective_workspace_path`) and reads the
+    // semantic layer from disk (`ctx.semantic` → `semantics_scan_path` +
+    // `resolve_and_compile`). On a stateless serve replica with no working copy
+    // the invocation 500s, so pin it to the ide (the fleet self-proxies via
+    // OXY_IDE_UPSTREAM). The isolate and the JS artifact (S3 build-store) are
+    // themselves fleet-safe — only the FS-bound config/semantic reads force this;
+    // lifting them onto the compile boundary would make this FleetOk (see the §4
+    // fleet note in `2026-06-12-customer-apps-functions-design.md`). Static bundle
+    // assets under `/customer-apps/<org>/<slug>/...` stay FleetOk (served from
+    // S3): the 5-segment `.../fn/{name}` pattern matches ONLY the execution entry
+    // point, never asset serving.
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/customer-apps/{org}/{app}/fn/{name}",
+        role: RouteRole::IdeOnly,
+    },
     // NB: the on-demand single-workspace health eval
     // (`POST /api/admin/workspace-health/{workspace_id}/eval`) is intentionally
     // NOT here — it is a pure Postgres enqueue (FS-free) and serves FleetOk by
@@ -1499,6 +1518,30 @@ mod tests {
                  (reads/writes Postgres run state, no working copy)"
             );
         }
+    }
+
+    /// Oxy Functions execute in-process from the working copy
+    /// (`build_project_context` + `ctx.semantic` FS reads), so their invocation
+    /// route must be IdeOnly — a serve replica forwards it to the ide. Static
+    /// bundle assets are S3-backed and stay FleetOk.
+    #[test]
+    fn customer_app_function_route_is_ide_only() {
+        assert_eq!(
+            classify("POST", "/customer-apps/acme/hello-oxy/fn/post-je"),
+            RouteRole::IdeOnly,
+            "customer-app fn invocation must be IdeOnly (runs in-process from the working copy)"
+        );
+        // Static assets + index are served from S3 → any replica → FleetOk. The
+        // 5-segment `.../fn/{name}` pattern must not capture these.
+        assert_eq!(
+            classify("GET", "/customer-apps/acme/hello-oxy/assets/main.js"),
+            RouteRole::FleetOk,
+            "customer-app static assets stay FleetOk"
+        );
+        assert_eq!(
+            classify("GET", "/customer-apps/acme/hello-oxy"),
+            RouteRole::FleetOk
+        );
     }
 
     /// Path string of every `.route("PATH", ...)` mounted directly in

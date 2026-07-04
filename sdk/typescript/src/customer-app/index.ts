@@ -33,6 +33,7 @@ export type { OxyAppLogger, OxyAppLogLevel } from "./logger";
 export { getOxyAppLogger, setOxyAppLogger } from "./logger";
 export type {
   LoadManifestOptions,
+  OxyAppFunctionManifest,
   OxyAppManifest,
   ResolvedCustomerAppManifest
 } from "./manifest";
@@ -59,6 +60,7 @@ export type {
   SemanticTimeDimension,
   UseAgentRunInput,
   UseAgentRunResult,
+  UseFunctionResult,
   UseProcedureRunInput,
   UseProcedureRunOpts,
   UseProcedureRunResult,
@@ -76,6 +78,7 @@ export {
   OxyAppProvider,
   OxyChat,
   useAgentRun,
+  useFunction,
   useProcedureRun,
   useQuery,
   useResolvedManifest,

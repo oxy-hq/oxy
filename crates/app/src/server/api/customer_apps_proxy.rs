@@ -141,7 +141,7 @@ pub async fn proxy(
 /// 32 MiB request-body ceiling. Customer-app POSTs are normally tiny;
 /// anything larger is almost certainly user-uploaded media that should
 /// hit S3 directly, not be proxied through oxy.
-const REQUEST_BODY_LIMIT: usize = 32 * 1024 * 1024;
+pub(crate) const REQUEST_BODY_LIMIT: usize = 32 * 1024 * 1024;
 
 fn client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -241,6 +241,11 @@ fn is_safe_upstream(url: &reqwest::Url) -> bool {
 }
 
 fn is_public_ip(ip: &std::net::IpAddr) -> bool {
+    // Fold an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) back to IPv4 before
+    // classifying, or `::ffff:169.254.169.254` (cloud metadata) / `::ffff:10.x`
+    // slip through the v6 arm as "public". Mirrors the sibling in
+    // customer_apps_functions/host.rs — keep them in sync.
+    let ip = ip.to_canonical();
     if ip.is_loopback() || ip.is_unspecified() {
         return false;
     }

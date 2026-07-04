@@ -386,9 +386,9 @@
       "properties": {
         "rules": {
           "default": {
+            "specified": [],
             "solvable": [],
-            "solved": [],
-            "specified": []
+            "solved": []
           },
           "allOf": [
             {

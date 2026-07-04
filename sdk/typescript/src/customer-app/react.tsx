@@ -22,6 +22,13 @@
 
 import * as React from "react";
 import { type CustomerAppErrorReport, interpretCustomerAppError } from "./errors";
+import { functionInvokeKey, sharedFunctionInvoke } from "./function-invoke";
+import {
+  type FunctionError,
+  type FunctionLog,
+  type FunctionResult,
+  readFunctionSseStream
+} from "./function-sse";
 import { interpolateSqlParams } from "./interpolate";
 import {
   type LoadManifestOptions,
@@ -395,6 +402,130 @@ export function useQuery<Row = Record<string, unknown>>(
     loading: state.loading,
     error: state.error,
     refetch: () => setNonce((n) => n + 1)
+  };
+}
+
+// ── useFunction ─────────────────────────────────────────────────────────────
+//
+// Invoke a server-side Oxy Function shipped in the bundle's `functions/`
+// dir and declared in `oxy-app.json`. Unlike `useQuery` (which fires on
+// mount), a function is invoked imperatively via `invoke(body?)` —
+// functions do side-effectful work (ETL, writes, external calls), so the
+// caller decides when to run them (a button click, a form submit).
+//
+// The request lands on `POST <base>/customer-apps/<org>/<slug>/fn/<name>`
+// with the session cookie attached (same same-origin auth as useQuery),
+// runs in an isolated runtime against a data-plane-native `ctx`, and
+// returns whatever JSON the function's `Response` carried.
+
+// `readFunctionSseStream` lives in ./function-sse (React-free, unit-tested).
+
+export interface UseFunctionResult<Data = unknown> {
+  /**
+   * Invoke the function with an optional JSON body. Resolves to the parsed
+   * result. Pass `{ idempotencyKey }` to make a side-effectful invocation
+   * exactly-once: a retry with the same key replays the stored result instead
+   * of re-executing. Send a fresh key per logical action (e.g. a UUID per
+   * journal entry).
+   */
+  invoke: (body?: unknown, opts?: { idempotencyKey?: string }) => Promise<Data>;
+  /** Last successful result, or null before the first invoke. */
+  data: Data | null;
+  /** True while an invocation is in flight. */
+  isLoading: boolean;
+  /** Last invocation error, or null. On error this carries `.logs` too. */
+  error: Error | null;
+  /**
+   * `console.*` / `ctx.log` output from the last invoke (success or error), so
+   * a developer can see what the function printed without opening the oxy
+   * server logs. Empty for a cache hit or idempotent replay — no run happened,
+   * so there is nothing to log.
+   */
+  logs: FunctionLog[];
+}
+
+/**
+ * Imperative hook for invoking an Oxy Function by name.
+ *
+ * ```tsx
+ * const refresh = useFunction("refresh-sales");
+ * <button disabled={refresh.isLoading} onClick={() => refresh.invoke({ full: true })}>
+ *   Refresh
+ * </button>
+ * ```
+ */
+export function useFunction<Data = unknown>(name: string): UseFunctionResult<Data> {
+  const ctx = React.useContext(OxyAppContext);
+  if (!ctx) {
+    throw new Error("useFunction must be called inside <OxyAppProvider>");
+  }
+  const fetcher = ctx.fetcher;
+  const resolved = ctx.resolved;
+
+  const [state, setState] = React.useState<{
+    data: Data | null;
+    isLoading: boolean;
+    error: Error | null;
+    logs: FunctionLog[];
+  }>({ data: null, isLoading: false, error: null, logs: [] });
+
+  const invoke = React.useCallback(
+    async (body?: unknown, opts?: { idempotencyKey?: string }): Promise<Data> => {
+      if (!resolved) {
+        throw new Error(
+          "useFunction.invoke called before the manifest finished loading. " +
+            "Render behind the provider's `fallback` until ready."
+        );
+      }
+      const { orgSlug, appSlug, apiBaseUrl } = resolved;
+      const base = apiBaseUrl || "";
+      const url = `${base}/customer-apps/${encodeURIComponent(orgSlug)}/${encodeURIComponent(
+        appSlug
+      )}/fn/${encodeURIComponent(name)}`;
+      setState((s) => ({ ...s, isLoading: true, error: null }));
+      try {
+        // In-flight dedup: concurrent identical invokes (a double-click, or two
+        // components) share ONE request — never a memoized result, since a
+        // function may be side-effectful.
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          accept: "text/event-stream"
+        };
+        if (opts?.idempotencyKey) headers["idempotency-key"] = opts.idempotencyKey;
+        const result = await sharedFunctionInvoke<FunctionResult<Data>>(
+          functionInvokeKey(name, body),
+          async () => {
+            const resp = await fetcher(url, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(body ?? {})
+            });
+            if (!resp.ok && resp.status !== 200) {
+              throw await apiErrorFromResponse(resp);
+            }
+            return readFunctionSseStream<Data>(resp);
+          }
+        );
+        setState({ data: result.value, isLoading: false, error: null, logs: result.logs });
+        return result.value;
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        // A function throw carries the logs it printed before failing — surface
+        // them so the developer sees context without opening the oxy logs.
+        const logs = (e as FunctionError).logs ?? [];
+        setState((s) => ({ ...s, isLoading: false, error: e, logs }));
+        throw e;
+      }
+    },
+    [resolved, fetcher, name]
+  );
+
+  return {
+    invoke,
+    data: state.data,
+    isLoading: state.isLoading,
+    error: state.error,
+    logs: state.logs
   };
 }
 
