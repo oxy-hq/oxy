@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.96] - 2026-07-04
+
+### 🚀 Features
+
+- Add Oxy Functions — edge-style TypeScript handlers in customer apps (#2521)
+
 ## [0.5.95] - 2026-07-03
 
 ### 🚀 Features
@@ -16,6 +22,10 @@ All notable changes to this project will be documented in this file.
 
 - *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 28 updates (#2650)
 - *(deps)* Bump crate-ci/typos from 1.47.2 to 1.48.0 (#2649)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.95 (#2658)
 
 ## [0.5.94] - 2026-07-02
 
