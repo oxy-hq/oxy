@@ -1,6 +1,4 @@
-use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, FromQueryResult, Statement,
-};
+use sea_orm::{DatabaseBackend, DatabaseConnection, DbErr, FromQueryResult, Statement};
 use std::collections::HashMap;
 use uuid::Uuid;
 

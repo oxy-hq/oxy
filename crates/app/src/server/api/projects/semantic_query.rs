@@ -145,7 +145,11 @@ pub async fn run_semantic_query(
     // SQL, which DebugQuery deliberately withholds), or a debug caller could read a
     // plain body missing its `sql`. Namespace by the flag so the two never collide.
     let include_sql = matches!(debug.debug, Some(1));
-    let cache_ns = if include_sql { "semantic-debug" } else { "semantic" };
+    let cache_ns = if include_sql {
+        "semantic-debug"
+    } else {
+        "semantic"
+    };
     let refresh = uri
         .query()
         .map(|q| {
@@ -153,14 +157,13 @@ pub async fn run_semantic_query(
                 .any(|kv| kv == "refresh" || kv.starts_with("refresh="))
         })
         .unwrap_or(false);
-    if !refresh {
-        if let Some(cached) = super::result_cache::get(project_id, cache_ns, "", &cache_sql) {
-            return (
-                [(axum::http::header::CONTENT_TYPE, "application/json")],
-                (*cached).clone(),
-            )
-                .into_response();
-        }
+    if !refresh && let Some(cached) = super::result_cache::get(project_id, cache_ns, "", &cache_sql)
+    {
+        return (
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            (*cached).clone(),
+        )
+            .into_response();
     }
 
     // 4. Build workspace context — needed for the semantic scan path
