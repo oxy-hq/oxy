@@ -154,14 +154,13 @@ pub async fn run_query(
                 .any(|kv| kv == "refresh" || kv.starts_with("refresh="))
         })
         .unwrap_or(false);
-    if !refresh {
-        if let Some(body) = super::result_cache::get(project_id, "query", db_name, &req.sql) {
-            return (
-                [(axum::http::header::CONTENT_TYPE, "application/json")],
-                (*body).clone(),
-            )
-                .into_response();
-        }
+    if !refresh && let Some(body) = super::result_cache::get(project_id, "query", db_name, &req.sql)
+    {
+        return (
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            (*body).clone(),
+        )
+            .into_response();
     }
     let connector = match proj_ctx.build_connector_for(db_name).await {
         Ok(c) => c,

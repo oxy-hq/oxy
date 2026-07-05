@@ -159,12 +159,12 @@ impl FunctionHost for ProjectFunctionHost {
         let status = resp.status().as_u16();
 
         // §11.9 — reject oversized responses up front via Content-Length…
-        if let Some(len) = resp.content_length() {
-            if len > FETCH_MAX_BYTES {
-                return Err(format!(
-                    "response too large ({len} bytes > {FETCH_MAX_BYTES} cap)"
-                ));
-            }
+        if let Some(len) = resp.content_length()
+            && len > FETCH_MAX_BYTES
+        {
+            return Err(format!(
+                "response too large ({len} bytes > {FETCH_MAX_BYTES} cap)"
+            ));
         }
         // …and bound the actual read for chunked responses without a length.
         let bytes = resp

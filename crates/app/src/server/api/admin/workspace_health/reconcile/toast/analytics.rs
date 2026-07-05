@@ -173,10 +173,10 @@ async fn poll_report(
 
 /// The create response is a single GUID — a bare JSON string or plain text.
 fn parse_report_guid(text: &str) -> Result<String, ReconcileError> {
-    if let Ok(s) = serde_json::from_str::<String>(text.trim()) {
-        if !s.is_empty() {
-            return Ok(s);
-        }
+    if let Ok(s) = serde_json::from_str::<String>(text.trim())
+        && !s.is_empty()
+    {
+        return Ok(s);
     }
     let t = text.trim().trim_matches('"').trim();
     if t.is_empty() {

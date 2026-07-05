@@ -173,17 +173,16 @@ async fn upsert_state(
     // there (prev == None and a fresh status is still a change → harmless reset
     // to the same now()). The targeted update keeps the steady-state path from
     // clobbering the transition time.
-    if prev != Some(status) {
-        if let Err(e) = db
+    if prev != Some(status)
+        && let Err(e) = db
             .execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE workspace_health_state SET changed_at = $1 WHERE workspace_id = $2",
                 [now.into(), ws.into()],
             ))
             .await
-        {
-            tracing::warn!(target: "health_eval", error = %e, "changed_at update failed");
-        }
+    {
+        tracing::warn!(target: "health_eval", error = %e, "changed_at update failed");
     }
 }
 
