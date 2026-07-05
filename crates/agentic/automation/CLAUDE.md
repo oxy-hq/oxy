@@ -8,7 +8,8 @@ Sibling domain alongside `agentic-analytics` and `agentic-builder`. Owns two sur
    No long-lived in-memory channels survive a decision boundary, so crashes resume
    from the DB cleanly.
 
-2. The **subrun search adapter** (`OxyProcedureRunner`) — concrete impl of
+2. The **subrun search adapter** (`OxyAutomationRunner`; `OxyProcedureRunner`
+   is a back-compat `pub use` alias) — concrete impl of
    `agentic_core::subrun::SubrunRunner` used by the analytics domain to
    discover `.procedure.yml` / `.automation.yml` / `.sql` files that match a
    user question. Execution itself goes through the coordinator/worker
@@ -56,8 +57,8 @@ pub async fn commit_decision(db: &DatabaseConnection, commit: DecisionCommit)
 ### Subrun search adapter
 
 ```rust
-pub struct OxyProcedureRunner { /* … */ }
-impl agentic_core::subrun::SubrunRunner for OxyProcedureRunner {
+pub struct OxyAutomationRunner { /* … */ }
+impl agentic_core::subrun::SubrunRunner for OxyAutomationRunner {
     async fn search(&self, query: &str) -> Vec<SubrunRef>;
 }
 ```
@@ -96,4 +97,4 @@ pre-materialised prior-cache snapshot.
   evolves without coordinating with runtime/analytics migrations.
 - Used by `agentic-pipeline` directly (via `WorkflowDecider` +
   `commit_decision`) and indirectly by analytics (pipeline injects
-  `OxyProcedureRunner` into `AnalyticsSolver` via `with_subrun_runner`).
+  `OxyAutomationRunner` into `AnalyticsSolver` via `with_subrun_runner`).

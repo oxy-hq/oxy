@@ -29,7 +29,7 @@ domain imports another. The cross-domain "subrun" contract
 `parse_oxy_comment_block`) lives in `agentic-core::subrun` so any
 delegating domain can discover and invoke any executor without taking
 a dep on it. `agentic-pipeline` is the only place that wires a
-concrete `dyn SubrunRunner` (workflow's `OxyProcedureRunner`) into
+concrete `dyn SubrunRunner` (automation's `OxyAutomationRunner`) into
 the analytics solver.
 
 ## Crate Responsibilities
@@ -44,7 +44,7 @@ the analytics solver.
 | `connector` | Database backends | `DatabaseConnector`, `ConnectorConfig`, `SchemaInfo` |
 | `llm` | LLM provider abstraction | `LlmClient`, `LlmProvider`, `ThinkingConfig` |
 | `http` | Axum route handlers | `AgenticState`, `router()`, route handlers |
-| `workflow` | Sibling domain: stateless workflow runner + procedure execution + extension table. Implements `agentic_core::subrun::SubrunRunner` via `OxyProcedureRunner`. | `WorkflowDecider`, `WorkflowRunState`, `commit_decision`, `WorkflowMigrator`, `OxyProcedureRunner`, `WorkflowEventBridge` |
+| `automation` | Sibling domain: stateless workflow runner + procedure execution + extension table. Implements `agentic_core::subrun::SubrunRunner` via `OxyAutomationRunner` (alias `OxyProcedureRunner`). | `WorkflowDecider`, `WorkflowRunState`, `commit_decision`, `WorkflowMigrator`, `OxyAutomationRunner`, `WorkflowEventBridge` |
 
 ## Migration Strategy
 

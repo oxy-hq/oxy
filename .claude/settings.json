@@ -53,6 +53,11 @@
             "type": "command",
             "command": "code-review-graph status --json",
             "timeout": 3000
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\"",
+            "timeout": 120000
           }
         ]
       }
