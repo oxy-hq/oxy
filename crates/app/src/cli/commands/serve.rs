@@ -24,6 +24,7 @@ use std::net::SocketAddr;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use tower::{ServiceBuilder, service_fn};
+use tower_http::compression::CompressionLayer;
 use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
 use tracing::Level;
@@ -603,8 +604,14 @@ async fn create_web_application(
         // before the proxy sees them.
         .route(
             "/customer-apps/{*path}",
-            any(customer_apps_serve::serve_dispatch)
-                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024)),
+            // brotli/gzip for bundle bytes. DefaultPredicate skips
+            // text/event-stream (the /fn SSE stream) and already-encoded
+            // bodies (the V0 proxy), so streaming is unaffected.
+            any(customer_apps_serve::serve_dispatch).layer(
+                ServiceBuilder::new()
+                    .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
+                    .layer(CompressionLayer::new()),
+            ),
         )
         .merge(
             SwaggerUi::new("/apidoc")
@@ -953,4 +960,43 @@ async fn create_shutdown_signal() {
 
     // Cleanup Docker containers (stop and remove all oxy-managed containers)
     docker::cleanup_containers().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::Request;
+    use axum::{Router, body::Body, routing::get};
+    use tower::ServiceExt;
+    use tower_http::compression::CompressionLayer;
+
+    #[tokio::test]
+    async fn customer_app_route_compresses_assets() {
+        // A handler standing in for a JS asset response (>32 bytes so the
+        // size predicate allows compression).
+        async fn asset() -> ([(axum::http::HeaderName, &'static str); 1], String) {
+            (
+                [(axum::http::header::CONTENT_TYPE, "application/javascript")],
+                "console.log('hello world from a customer app bundle');".repeat(4),
+            )
+        }
+        let app = Router::new()
+            .route("/x.js", get(asset))
+            .layer(CompressionLayer::new());
+        let res = app
+            .oneshot(
+                Request::get("/x.js")
+                    .header("accept-encoding", "br")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.headers()
+                .get(axum::http::header::CONTENT_ENCODING)
+                .map(|v| v.to_str().unwrap()),
+            Some("br"),
+            "customer-app assets must be brotli-compressed"
+        );
+    }
 }

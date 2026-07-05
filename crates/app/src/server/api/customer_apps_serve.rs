@@ -342,7 +342,9 @@ async fn serve_pretty(
                 Channel::Published => app.published_build_id,
             };
             match build_pk {
-                Some(build_pk) => serve_from_s3_build(&db, id, build_pk, &rest, &runtime).await,
+                Some(build_pk) => {
+                    serve_from_s3_build(&db, id, build_pk, &rest, &runtime, &headers).await
+                }
                 None => {
                     // Post-retirement: the legacy state-dir serve is gone.
                     // An s3-source app with no build pointer hasn't been
@@ -455,6 +457,7 @@ async fn serve_from_s3_build(
     build_pk: Uuid,
     rest: &str,
     runtime: &AppRuntimeConfig,
+    headers: &HeaderMap,
 ) -> Response {
     let build = match entity::app_builds::Entity::find_by_id(build_pk)
         .one(db)
@@ -517,6 +520,28 @@ async fn serve_from_s3_build(
     } else {
         bytes.to_vec()
     };
+    if mime.starts_with("text/html") {
+        let etag = etag_for(&body_bytes);
+        if if_none_match(headers, &etag) {
+            return (
+                StatusCode::NOT_MODIFIED,
+                [
+                    (header::ETAG, etag),
+                    (header::CACHE_CONTROL, cache.to_string()),
+                ],
+            )
+                .into_response();
+        }
+        return (
+            [
+                (header::CONTENT_TYPE, mime.to_string()),
+                (header::CACHE_CONTROL, cache.to_string()),
+                (header::ETAG, etag),
+            ],
+            Body::from(body_bytes),
+        )
+            .into_response();
+    }
     (
         [(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, cache)],
         Body::from(body_bytes),
@@ -1120,20 +1145,38 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 /// Pick a `Cache-Control` policy for a bundle response.
 ///
-/// Next.js emits content-hashed assets under `_next/static/...` whose URLs
-/// only change when the file content changes — those are safe to cache
-/// long-term and `immutable`. HTML and everything else must revalidate so a
-/// new deployment is picked up immediately. Without this, every chunk on
-/// every page-load re-runs the full auth + membership flow in `serve_inner`.
+/// Content-hashed asset dirs are safe to cache forever and `immutable`: the
+/// URL only changes when the bytes change. Next.js emits hashed files under
+/// `_next/static/`; Vite, Astro, Rsbuild, and SvelteKit emit them under
+/// `assets/`. HTML and unfingerprinted root files must revalidate so a new
+/// deployment is picked up immediately.
 fn cache_control_for(request_path: &str, file_path: &StdPath) -> &'static str {
     let trimmed = request_path.trim_start_matches('/');
-    if trimmed.starts_with("_next/static/") {
+    if trimmed.starts_with("_next/static/") || trimmed.starts_with("assets/") {
         return "public, max-age=31536000, immutable";
     }
     match file_path.extension().and_then(|e| e.to_str()) {
         Some("html" | "htm") => "no-cache",
         _ => "public, max-age=300",
     }
+}
+
+/// Weak ETag over the final response bytes (post-injection for HTML). Weak
+/// (`W/`) because the bytes are produced by a transform, not a raw file.
+fn etag_for(bytes: &[u8]) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    format!("W/\"{:016x}\"", h.finish())
+}
+
+/// True when the request's `If-None-Match` already holds `etag`.
+fn if_none_match(headers: &HeaderMap, etag: &str) -> bool {
+    headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(',').any(|t| t.trim() == etag))
+        .unwrap_or(false)
 }
 
 /// Join `bundle_dir` with `rest`, rejecting paths that try to escape via
@@ -1313,5 +1356,45 @@ mod tests {
         let html = br#"<html><head><script src="/customer-apps/acme/x/assets/main-XYZ.js"></script></head></html>"#;
         let out = rewrite_bundle_base_path(html, "/customer-apps/acme/x/", Uuid::nil());
         assert_eq!(out, html);
+    }
+
+    #[test]
+    fn cache_control_marks_hashed_assets_immutable() {
+        assert_eq!(
+            cache_control_for(
+                "/assets/index-DA-MTpVz.js",
+                std::path::Path::new("index-DA-MTpVz.js")
+            ),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            cache_control_for(
+                "/_next/static/chunks/abc.js",
+                std::path::Path::new("abc.js")
+            ),
+            "public, max-age=31536000, immutable"
+        );
+    }
+
+    #[test]
+    fn cache_control_html_and_root_files_revalidate() {
+        assert_eq!(
+            cache_control_for("/index.html", std::path::Path::new("index.html")),
+            "no-cache"
+        );
+        assert_eq!(
+            cache_control_for("/favicon.ico", std::path::Path::new("favicon.ico")),
+            "public, max-age=300"
+        );
+    }
+
+    #[test]
+    fn etag_is_stable_and_weak() {
+        let a = etag_for(b"<html>hello</html>");
+        let b = etag_for(b"<html>hello</html>");
+        let c = etag_for(b"<html>world</html>");
+        assert!(a.starts_with("W/\""), "weak etag, got {a}");
+        assert_eq!(a, b, "deterministic");
+        assert_ne!(a, c, "content-sensitive");
     }
 }

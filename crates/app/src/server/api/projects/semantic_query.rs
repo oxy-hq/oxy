@@ -30,7 +30,7 @@ use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
 use agentic_semantic::config::SemanticQueryConfig;
 use axum::Json;
 use axum::extract::{Path, Query as AxumQuery};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
@@ -100,6 +100,7 @@ pub struct SemanticQueryResponse {
 pub async fn run_semantic_query(
     Path(project_id): Path<Uuid>,
     AxumQuery(debug): AxumQuery<DebugQuery>,
+    uri: Uri,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
@@ -130,6 +131,36 @@ pub async fn run_semantic_query(
             "at least one of dimensions, measures, or time_dimensions must be non-empty",
             "semantic_selection_empty",
         );
+    }
+
+    // 3b. Result cache read-through. Key on the raw request body so any
+    //     change in topic/dimensions/measures/filters is a cache miss.
+    //     Gates and body validation must run first (above), so malformed
+    //     bodies still 400 and unauthenticated callers still 401/403.
+    //     `?refresh` bypasses the cache to force a warehouse round-trip.
+    let cache_sql = String::from_utf8_lossy(&body).into_owned();
+    // `?debug=1` populates the compiled `sql` in the response body (see below), so a
+    // debug response must never share a cache entry with a plain one — otherwise a
+    // plain caller could read a cached debug body (leaking the compiled warehouse
+    // SQL, which DebugQuery deliberately withholds), or a debug caller could read a
+    // plain body missing its `sql`. Namespace by the flag so the two never collide.
+    let include_sql = matches!(debug.debug, Some(1));
+    let cache_ns = if include_sql { "semantic-debug" } else { "semantic" };
+    let refresh = uri
+        .query()
+        .map(|q| {
+            q.split('&')
+                .any(|kv| kv == "refresh" || kv.starts_with("refresh="))
+        })
+        .unwrap_or(false);
+    if !refresh {
+        if let Some(cached) = super::result_cache::get(project_id, cache_ns, "", &cache_sql) {
+            return (
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                (*cached).clone(),
+            )
+                .into_response();
+        }
     }
 
     // 4. Build workspace context — needed for the semantic scan path
@@ -293,7 +324,6 @@ pub async fn run_semantic_query(
     // ambiguous data.
     let (columns, rows) = strip_view_prefix(response.columns, response.rows);
 
-    let include_sql = matches!(debug.debug, Some(1));
     let semantic_response = SemanticQueryResponse {
         columns,
         rows,
@@ -301,7 +331,20 @@ pub async fn run_semantic_query(
         sql: if include_sql { Some(sql) } else { None },
     };
 
-    Json(semantic_response).into_response()
+    let bytes = match serde_json::to_vec(&semantic_response) {
+        Ok(b) => b,
+        Err(e) => {
+            error!("serialize semantic response: {e}");
+            return Json(semantic_response).into_response();
+        }
+    };
+    let arc = std::sync::Arc::new(bytes);
+    super::result_cache::put(project_id, cache_ns, "", &cache_sql, arc.clone());
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        (*arc).clone(),
+    )
+        .into_response()
 }
 
 /// Rewrite columns that look like `view__member` to bare `member`,

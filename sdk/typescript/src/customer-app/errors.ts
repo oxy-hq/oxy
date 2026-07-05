@@ -14,6 +14,68 @@
 // Add cases as we hit new failure modes in the wild — the catch-all
 // keeps the surface safe in the meantime.
 
+// ── API error types ─────────────────────────────────────────────────────────
+
+/**
+ * Error thrown by all customer-app hooks when an API call returns a
+ * non-2xx response. Carries the structured `code` + `hint` the server
+ * emits so bundle UIs can render an actionable message instead of
+ * "404: { ...json... }".
+ */
+export class OxyApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly hint: string | null;
+  constructor(opts: {
+    status: number;
+    message: string;
+    code?: string | null;
+    hint?: string | null;
+  }) {
+    const base = opts.message || `HTTP ${opts.status}`;
+    const code = opts.code ? ` [${opts.code}]` : "";
+    const hint = opts.hint ? `\n\n${opts.hint}` : "";
+    super(`${base}${code}${hint}`);
+    this.name = "OxyApiError";
+    this.status = opts.status;
+    this.code = opts.code ?? null;
+    this.hint = opts.hint ?? null;
+  }
+}
+
+/**
+ * Read a non-2xx response from oxy and return an `OxyApiError`.
+ * Parses the JSON envelope when present; falls back to raw text
+ * (truncated to 240 chars so a runaway HTML error page doesn't
+ * dominate the bundle UI).
+ */
+export async function apiErrorFromResponse(resp: Response): Promise<OxyApiError> {
+  let body: unknown;
+  let raw = "";
+  try {
+    raw = await resp.text();
+    body = raw ? JSON.parse(raw) : undefined;
+  } catch {
+    // Non-JSON body — keep `raw` for the fallback path.
+  }
+  if (body && typeof body === "object") {
+    const b = body as { message?: unknown; code?: unknown; hint?: unknown };
+    return new OxyApiError({
+      status: resp.status,
+      message: typeof b.message === "string" ? b.message : `HTTP ${resp.status}`,
+      code: typeof b.code === "string" ? b.code : null,
+      hint: typeof b.hint === "string" ? b.hint : null
+    });
+  }
+  const snippet = raw.length > 240 ? `${raw.slice(0, 237)}…` : raw;
+  return new OxyApiError({
+    status: resp.status,
+    message: snippet || `HTTP ${resp.status}`
+  });
+}
+
+// ── Bundle-startup error interpretation ─────────────────────────────────────
+
 export interface CustomerAppErrorReport {
   title: string;
   message: string;

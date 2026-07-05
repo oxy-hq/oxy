@@ -281,6 +281,23 @@ what requires the stateful instance and what is served HA.
 that pin a persisted-data read to the ide — should be challenged through this
 skill.
 
+### `oxy-customer-apps-perf` (`.claude/skills/oxy-customer-apps-perf/SKILL.md`)
+
+The serve-plane + data-plane performance baseline for customer apps (PR #2634):
+content-hashed assets are `immutable` Cache-Control and HTML gets a weak
+ETag + 304 (`cache_control_for` / `etag_for` in `customer_apps_serve.rs`);
+`/customer-apps/{*path}` compression is SSE-safe via `DefaultPredicate`; the
+`POST /query` + `semantic-query` result cache is keyed `project_id`-first
+(multi-tenant isolation), read **after** `check_customer_app_gates`, and honors
+`?refresh`. Complements `oxy-route-classification` (where a route runs) by
+governing how fast it answers.
+
+**Invoke when** adding/moving a route under `/customer-apps/**`, a new customer-app
+data endpoint, or any per-request read on the customer-app hot path. A new serving
+route with no Cache-Control/compression, or a cached endpoint whose key doesn't
+start with `project_id` / reads before auth / ignores `?refresh`, should be
+challenged through this skill.
+
 ## Design Docs & Specs
 
 - Save design documents and specs to `internal-docs/`, not `docs/superpowers/specs/`.

@@ -22,7 +22,7 @@ use std::sync::Arc;
 use agentic_connector::{ConnectorError, DatabaseConnector};
 use axum::Json;
 use axum::extract::Path;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use indexmap::IndexMap;
 use oxy_shared::errors::OxyError;
@@ -94,6 +94,7 @@ pub struct QueryResponse {
 #[instrument(skip_all, fields(project_id = %project_id))]
 pub async fn run_query(
     Path(project_id): Path<Uuid>,
+    uri: Uri,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
@@ -146,6 +147,22 @@ pub async fn run_query(
         }
     };
     let db_name = db_name.as_str();
+    let refresh = uri
+        .query()
+        .map(|q| {
+            q.split('&')
+                .any(|kv| kv == "refresh" || kv.starts_with("refresh="))
+        })
+        .unwrap_or(false);
+    if !refresh {
+        if let Some(body) = super::result_cache::get(project_id, "query", db_name, &req.sql) {
+            return (
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                (*body).clone(),
+            )
+                .into_response();
+        }
+    }
     let connector = match proj_ctx.build_connector_for(db_name).await {
         Ok(c) => c,
         Err(OxyError::ConfigurationError(msg)) => {
@@ -170,7 +187,22 @@ pub async fn run_query(
 
     // ── 5. Execute query ─────────────────────────────────────────────────
     match run_sql_query(connector, &req.sql).await {
-        Ok(response) => Json(response).into_response(),
+        Ok(response) => {
+            let bytes = match serde_json::to_vec(&response) {
+                Ok(b) => b,
+                Err(e) => {
+                    error!("serialize query response: {e}");
+                    return Json(response).into_response();
+                }
+            };
+            let arc = std::sync::Arc::new(bytes);
+            super::result_cache::put(project_id, "query", db_name, &req.sql, arc.clone());
+            (
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                (*arc).clone(),
+            )
+                .into_response()
+        }
         Err(resp) => resp,
     }
 }

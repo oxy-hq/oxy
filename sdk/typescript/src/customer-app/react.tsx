@@ -21,7 +21,12 @@
 // per-widget skeletons.
 
 import * as React from "react";
-import { type CustomerAppErrorReport, interpretCustomerAppError } from "./errors";
+import {
+  apiErrorFromResponse,
+  type CustomerAppErrorReport,
+  interpretCustomerAppError,
+  OxyApiError
+} from "./errors";
 import { functionInvokeKey, sharedFunctionInvoke } from "./function-invoke";
 import {
   type FunctionError,
@@ -36,6 +41,7 @@ import {
   type ResolvedCustomerAppManifest
 } from "./manifest";
 import { isSafeLinkHref } from "./markdown";
+import { getCached, sharedQuery } from "./query-cache";
 
 // ── Context ─────────────────────────────────────────────────────────────────
 
@@ -180,75 +186,6 @@ function warnBetaOnce(name: string): void {
   }
 }
 
-// ── Error helpers ───────────────────────────────────────────────────────────
-
-/**
- * Error thrown by all customer-app hooks when an API call returns a
- * non-2xx response. Carries the structured `code` + `hint` the server
- * emits so bundle UIs can render an actionable message instead of
- * "404: { ...json... }".
- *
- * The server contract is documented in
- * `crates/app/src/server/api/projects/agent_ask.rs` and
- * `procedure_run.rs` — both emit `{ message, code?, hint? }` as JSON.
- * Hooks that previously wrapped the raw text in `new Error()` now
- * throw this type instead.
- */
-export class OxyApiError extends Error {
-  readonly status: number;
-  readonly code: string | null;
-  readonly hint: string | null;
-  constructor(opts: {
-    status: number;
-    message: string;
-    code?: string | null;
-    hint?: string | null;
-  }) {
-    // Build a single multi-line `message` so consumers that just
-    // render `.message` still see the hint. Code is included so
-    // logs / dev tools can grep for it.
-    const base = opts.message || `HTTP ${opts.status}`;
-    const code = opts.code ? ` [${opts.code}]` : "";
-    const hint = opts.hint ? `\n\n${opts.hint}` : "";
-    super(`${base}${code}${hint}`);
-    this.name = "OxyApiError";
-    this.status = opts.status;
-    this.code = opts.code ?? null;
-    this.hint = opts.hint ?? null;
-  }
-}
-
-/**
- * Read a non-2xx response from oxy and return an `OxyApiError`.
- * Parses the JSON envelope when present; falls back to raw text
- * (truncated to 240 chars so a runaway HTML error page doesn't
- * dominate the bundle UI).
- */
-async function apiErrorFromResponse(resp: Response): Promise<OxyApiError> {
-  let body: unknown;
-  let raw = "";
-  try {
-    raw = await resp.text();
-    body = raw ? JSON.parse(raw) : undefined;
-  } catch {
-    // Non-JSON body — keep `raw` for the fallback path.
-  }
-  if (body && typeof body === "object") {
-    const b = body as { message?: unknown; code?: unknown; hint?: unknown };
-    return new OxyApiError({
-      status: resp.status,
-      message: typeof b.message === "string" ? b.message : `HTTP ${resp.status}`,
-      code: typeof b.code === "string" ? b.code : null,
-      hint: typeof b.hint === "string" ? b.hint : null
-    });
-  }
-  const snippet = raw.length > 240 ? `${raw.slice(0, 237)}…` : raw;
-  return new OxyApiError({
-    status: resp.status,
-    message: snippet || `HTTP ${resp.status}`
-  });
-}
-
 // ── Hooks ───────────────────────────────────────────────────────────────────
 
 /**
@@ -345,33 +282,24 @@ export function useQuery<Row = Record<string, unknown>>(
   });
   const [nonce, setNonce] = React.useState(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: nonce forces refetch
   React.useEffect(() => {
     if (!enabled || !projectId) {
       setState((s) => (s.loading ? { ...s, loading: false } : s));
       return;
     }
-    const ctrl = new AbortController();
     let cancelled = false;
+
+    // Serve from cache on initial mount; force-revalidate on refetch (nonce > 0).
+    const cached = getCached(projectId, sqlWithParams, input.database);
+    if (cached && nonce === 0) {
+      const { columns, rows } = cached;
+      const objects = rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])) as Row);
+      setState({ rows: objects, columns, loading: false, error: null });
+      return;
+    }
+
     setState((s) => ({ ...s, loading: true, error: null }));
-
-    const body = JSON.stringify({
-      sql: sqlWithParams,
-      ...(input.database ? { database: input.database } : {})
-    });
-
-    fetcher(`/api/projects/${projectId}/query`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body,
-      signal: ctrl.signal
-    })
-      .then(async (resp) => {
-        if (!resp.ok) {
-          throw await apiErrorFromResponse(resp);
-        }
-        return resp.json() as Promise<{ columns: string[]; rows: unknown[][] }>;
-      })
+    sharedQuery(fetcher, projectId, sqlWithParams, input.database, { force: nonce > 0 })
       .then(({ columns, rows }) => {
         if (cancelled) return;
         const objects = rows.map(
@@ -379,10 +307,8 @@ export function useQuery<Row = Record<string, unknown>>(
         );
         setState({ rows: objects, columns, loading: false, error: null });
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        // AbortError is not a real failure — the cleanup cancelled the request.
-        if (err instanceof DOMException && err.name === "AbortError") return;
         setState((s) => ({
           ...s,
           loading: false,
@@ -392,7 +318,6 @@ export function useQuery<Row = Record<string, unknown>>(
 
     return () => {
       cancelled = true;
-      ctrl.abort();
     };
   }, [enabled, projectId, sqlWithParams, input.database, nonce, fetcher]);
 

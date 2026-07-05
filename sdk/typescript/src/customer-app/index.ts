@@ -26,7 +26,7 @@
 export type { CustomerAppDebugSnapshot } from "./debug";
 export { getCustomerAppDebug } from "./debug";
 export type { CustomerAppErrorReport } from "./errors";
-export { interpretCustomerAppError } from "./errors";
+export { apiErrorFromResponse, interpretCustomerAppError, OxyApiError } from "./errors";
 export type { OxyInjectedAppConfig } from "./inject";
 export { readInjectedAppConfig } from "./inject";
 export type { OxyAppLogger, OxyAppLogLevel } from "./logger";
@@ -74,7 +74,6 @@ export type {
 // React provider + hooks
 export {
   OxyAnswer,
-  OxyApiError,
   OxyAppProvider,
   OxyChat,
   useAgentRun,
