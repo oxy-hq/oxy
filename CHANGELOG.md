@@ -2,11 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.97] - 2026-07-05
+
+### 🚀 Features
+
+- *(airway)* Reset-in-place retry + run-scoped resume state (P1-P2c) (#2662)
+
+### 📚 Documentation
+
+- Optimize CLAUDE.md setup for agents (#2667)
+
+### ⚡ Performance
+
+- Customer-apps serve + data-plane wins (lean, stacked on Functions) (#2634)
+
+### ⚙️ Miscellaneous Tasks
+
+- Weekly auto-fix 2026-07-05 (#2669)
+
 ## [0.5.96] - 2026-07-04
 
 ### 🚀 Features
 
 - Add Oxy Functions — edge-style TypeScript handlers in customer apps (#2521)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.96 (#2663)
 
 ## [0.5.95] - 2026-07-03
 
