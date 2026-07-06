@@ -115,6 +115,16 @@ type BoxConn = Pin<Box<dyn Future<Output = Result<(), tokio_postgres::Error>> + 
 /// storage from reconnect-churning on every failing query.
 const FORCED_RECONNECT_MIN_GAP: Duration = Duration::from_secs(30);
 
+/// Alias under which Airhouse attaches the tenant's DuckLake catalog in the
+/// pgwire session (verified against dev). The `ducklake_*` maintenance
+/// functions take it as their first argument.
+const DUCKLAKE_CATALOG: &str = "lake";
+
+/// How long to keep DuckLake snapshots before [`AirhouseObservabilityStorage::
+/// expire_old_snapshots`] prunes them. Bounds the catalog at roughly
+/// (commits within the window) rows regardless of Airhouse's own vacuum.
+const SNAPSHOT_RETENTION_HOURS: u32 = 24;
+
 pub struct AirhouseObservabilityStorage {
     /// Swapped on reconnect; read-locked during every query.
     client: Arc<RwLock<Arc<Client>>>,
@@ -328,8 +338,8 @@ impl AirhouseObservabilityStorage {
         self.query(sql).await.map(|_| ())
     }
 
-    /// Run all `CREATE TABLE IF NOT EXISTS` DDL (DuckLake rejects indexes; see
-    /// [`schema`]).
+    /// Run all `CREATE TABLE IF NOT EXISTS` DDL, then day-partition the event
+    /// tables (DuckLake rejects indexes; see [`schema`]).
     pub async fn ensure_schema(&self) -> Result<(), OxyError> {
         for ddl in schema::ALL_DDL {
             let stmt_hint = ddl.trim().lines().next().unwrap_or("(unknown)");
@@ -337,7 +347,47 @@ impl AirhouseObservabilityStorage {
                 OxyError::RuntimeError(format!("Airhouse schema DDL failed at [{stmt_hint}]: {e}"))
             })?;
         }
+        // Partitioning is idempotent and applies to future writes. Failure is
+        // logged but non-fatal: a partition-DDL rejection (e.g. an older
+        // DuckLake) should degrade to unpartitioned scans, not disable
+        // observability entirely.
+        for ddl in schema::PARTITION_DDL {
+            if let Err(e) = self.execute(ddl).await {
+                let hint = ddl.split(" SET ").next().unwrap_or(ddl);
+                tracing::warn!("Airhouse partition DDL failed at [{hint}]: {e}");
+            }
+        }
         Ok(())
+    }
+
+    /// Expire DuckLake snapshots older than [`SNAPSHOT_RETENTION_HOURS`].
+    ///
+    /// Every write commit creates a snapshot, and the catalog rows for old
+    /// snapshots accumulate independently of data-file vacuum. Airhouse's own
+    /// vacuum compacts data files but does not bound snapshot history
+    /// aggressively enough for observability's commit rate — dev 2026-07-06
+    /// reached millions of snapshot rows and every read timed out resolving
+    /// table state against them, though S3 held only 185 data files. So the
+    /// backend prunes its own catalog on the retention cadence.
+    ///
+    /// Best-effort: a failure (permissions, function drift across DuckLake
+    /// versions) is logged, never propagated — snapshot bloat degrades reads
+    /// slowly, so it must not fail the retention cycle or disable writes.
+    /// Observability never time-travels, so expiring old snapshots is safe;
+    /// the current table state is the latest snapshot, which is always kept.
+    async fn expire_old_snapshots(&self) {
+        let sql = format!(
+            "CALL ducklake_expire_snapshots('{DUCKLAKE_CATALOG}', \
+             older_than => current_timestamp::TIMESTAMP - INTERVAL '{SNAPSHOT_RETENTION_HOURS} HOUR')"
+        );
+        match self.execute(&sql).await {
+            Ok(()) => tracing::info!(
+                "Airhouse observability: expired DuckLake snapshots older than {SNAPSHOT_RETENTION_HOURS}h"
+            ),
+            Err(e) => {
+                tracing::warn!("Airhouse observability snapshot expiry failed (non-fatal): {e}")
+            }
+        }
     }
 }
 
@@ -717,6 +767,7 @@ impl ObservabilityStore for AirhouseObservabilityStorage {
                 }
             }
         }
+        self.expire_old_snapshots().await;
         Ok(total)
     }
 

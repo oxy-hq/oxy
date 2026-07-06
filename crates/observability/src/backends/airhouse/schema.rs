@@ -5,8 +5,8 @@
 //!
 //! NOTE: DuckLake rejects PRIMARY KEY, UNIQUE, and CREATE INDEX statements
 //! with "Not implemented Error". Keep DDL plain table definitions only;
-//! query optimization must rely on DuckLake's own predicate pushdown over
-//! partitioned parquet, not on catalog-level indexes.
+//! query optimization relies on DuckLake's predicate pushdown over
+//! day-partitioned parquet (see [`PARTITION_DDL`]), not catalog-level indexes.
 
 pub const CREATE_SPANS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS oxy_obs_spans (
@@ -71,4 +71,23 @@ pub const ALL_DDL: &[&str] = &[
     CREATE_INTENT_CLUSTERS_TABLE,
     CREATE_INTENT_CLASSIFICATIONS_TABLE,
     CREATE_METRIC_USAGE_TABLE,
+];
+
+/// Day-partition the time-series event tables by their timestamp column.
+///
+/// DuckLake rejects `PARTITIONED BY` in `CREATE TABLE` ("not supported for
+/// tables in a ducklake catalog") — it must be set via `ALTER TABLE ... SET
+/// PARTITIONED BY`, which is idempotent (re-running is a no-op) and applies to
+/// data written afterwards. Every observability read is time-windowed
+/// (`1h`..`90d`), so day partitions let DuckLake prune whole parquet files
+/// instead of scanning the table; without this the traces-panel scan was the
+/// query that poisoned the engine (incident 2026-07-06).
+///
+/// Only the three append-heavy event tables are partitioned. `oxy_obs_intent_
+/// clusters` is a small mutable label table with no time-series read pattern,
+/// so partitioning it would only add overhead.
+pub const PARTITION_DDL: &[&str] = &[
+    r#"ALTER TABLE oxy_obs_spans SET PARTITIONED BY (year("timestamp"), month("timestamp"), day("timestamp"))"#,
+    r#"ALTER TABLE oxy_obs_intent_classifications SET PARTITIONED BY (year(classified_at), month(classified_at), day(classified_at))"#,
+    r#"ALTER TABLE oxy_obs_metric_usage SET PARTITIONED BY (year(created_at), month(created_at), day(created_at))"#,
 ];
