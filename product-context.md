@@ -56,7 +56,6 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Developer Portal / IDE** (`/ide`) — Monaco editor; sidebar tabs **Files / Objects / Database (SQL IDE) / Modeling / Pipelines / Observability**. Git flow: protected `main` auto-redirects edits to a new branch; `oxy serve --readonly` makes all writes 405.
 - **Orchestrator Dashboard** — Overview / Jobs / Runs across workflows, ELT, and agents.
 - **Unified Settings Dialog** — one modal for org-level + workspace-level settings, incl. **Schedules** (cron builder targeting workflows / Airway pipelines / agents).
-- **Agent Testing** (`/tests`), **Context Graph** (`/context-graph`).
 - **World Model Graph** (Globe icon in the rail) — interactive map of the semantic layer (entities, their measures, and how measures promote across the entity hierarchy), driven by a `.world-model.yml` display config. Distinct from the **Context Graph** and the **Metric Tree** — three different graph surfaces.
 
 ---
@@ -79,7 +78,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 
 - **DuckDB concurrent init** — two handles opening the same file concurrently have caused SIGSEGV; the pool serializes init, so code opening DuckDB outside the pool must respect that.
 - **DuckLake has no indexes** — the Airhouse observability backend must not `CREATE INDEX`, or capture silently goes inert after the first table.
-- **Empty-result warehouse queries** can panic in the shared Arrow bridge (DuckDB / Snowflake / MotherDuck / connectorx); each path must short-circuit its empty shape.
+- **Empty-result warehouse queries** can panic in the shared Arrow bridge (DuckDB / Snowflake / MotherDuck / connectorx); each path must short-circuit its empty shape. Oversized results are capped by a cross-connector memory backstop, and unbounded semantic/SQL-IDE queries default to 10k rows — both flag the result **truncated**, so "missing rows" may be a silent cap, not a query bug.
 - **Semantic file discovery** must skip hidden/build dirs (`.worktrees`, `.git`, `.oxy_state`, `target`, `node_modules`, `dist`, `build`); stray copies there trigger spurious "duplicate view name" errors.
 - **Two distinct worker concepts, easy to conflate** — the *durable task fleet* (runs in-process by default; can run standalone via `oxy worker`, disabled with `oxy serve --no-workers` / `OXY_DISABLE_INPROCESS_WORKERS`) executes queued `TaskSpec` jobs; the *global singleton worker* (`OXY_INPROC_GLOBAL_WORKER`) drives schedules, monitor scans, and pre-aggregation. Toggling one does not affect the other.
 - **Scheduled/monitor firing is gated behind `OXY_INPROC_GLOBAL_WORKER`** — with it off, schedule CRUD works but nothing actually fires. Multi-replica safety relies on a CAS `next_run_at` claim (no double-fire; missed runs collapse to a single execution); cross-process cancel uses a polled `cancel_requested_at` flag.
@@ -89,7 +88,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Git subdirectory workspaces** — tooling walks up to the real `.git`; branch switching must re-resolve the in-repo subdirectory inside the worktree, or `config.yml` is reported "not found."
 - **Test these combinations after pipeline/LLM changes** — agentic analytics under `oxy serve --local` (history of server-side errors) and **Azure OpenAI** (routes through the OSS path; history of agentic incompatibilities).
 - **`oxy run` works with no database** (run history/checkpoints fall back to no-op storage) — code that assumes a real storage backend must check runtime mode.
-- **Input that must be sanitized/allowlisted** — DuckDB config SQL (S3 secrets, schema names, paths) escaped against single-quote injection; the Slack re-post handler allowlists block kinds (`section` / `context` / `divider` / `header` / `image`) and drops interactive types.
+- **Input that must be sanitized/allowlisted** — DuckDB config SQL (S3 secrets, schema names, paths) escaped against single-quote injection; the Slack re-post handler allowlists block kinds (`section` / `context` / `divider` / `header` / `image`) and drops interactive types; the `http_request` automation task is HTTPS-only and blocks localhost / cloud-metadata / private-IP egress unless a per-task `allow_hosts` allowlist opts in.
 - **Custom-app subdomains rely on a server-side session cookie, separate from main-site client login state** — logout must clear that cookie server-side (not just client-side), and every OAuth provider (not just magic-link) must preserve the return-to-app destination, or the subdomain and main site disagree on whether you're signed in.
 
 ---
