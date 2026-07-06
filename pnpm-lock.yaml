@@ -105,8 +105,8 @@ importers:
         specifier: ^0.9.0
         version: 0.9.0
       '@hpcc-js/wasm':
-        specifier: ^2.34.4
-        version: 2.34.4
+        specifier: ^2.34.5
+        version: 2.34.5
       '@lottiefiles/react-lottie-player':
         specifier: ^3.6.0
         version: 3.6.0(react@19.2.7)
@@ -273,8 +273,8 @@ importers:
         specifier: ^6.1.2
         version: 6.1.2(react@19.2.7)
       react-hook-form:
-        specifier: ^7.80.0
-        version: 7.80.0(react@19.2.7)
+        specifier: ^7.81.0
+        version: 7.81.0(react@19.2.7)
       react-hotkeys-hook:
         specifier: 5.3.3
         version: 5.3.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -282,8 +282,8 @@ importers:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.17)(react@19.2.7)
       react-resizable-panels:
-        specifier: ^4.12.0
-        version: 4.12.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: ^4.12.1
+        version: 4.12.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react-resize-detector:
         specifier: ^12.3.0
         version: 12.3.0(react@19.2.7)
@@ -931,8 +931,8 @@ packages:
   '@formkit/auto-animate@0.9.0':
     resolution: {integrity: sha512-VhP4zEAacXS3dfTpJpJ88QdLqMTcabMg0jwpOSxZ/VzfQVfl3GkZSCZThhGC5uhq/TxPHPzW0dzr4H9Bb1OgKA==}
 
-  '@hpcc-js/wasm@2.34.4':
-    resolution: {integrity: sha512-e9Dhx05ma4gWkX+tp2xH/ZD1LPLnHF4DKsHyaQfbz+MbmVuLrcejR87vrDHyVc/a/pjUHL5HvP04wKk7oioAfQ==}
+  '@hpcc-js/wasm@2.34.5':
+    resolution: {integrity: sha512-GK/uv5Wg723QsrqeXbexrFtLd1q4IDSyPUOo4EA+nNMdhA4c7yDeBoBttYRRozPj9semwm4XEbQisGkuJLKCgQ==}
     hasBin: true
 
   '@humanfs/core@0.19.2':
@@ -4449,8 +4449,8 @@ packages:
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  react-hook-form@7.80.0:
-    resolution: {integrity: sha512-4P+fk6oXsxY+6xSj7Euhc2sumQD8zQqCuVHoJwoyp9EchP+IUW9OESB7uHFJOKsIBQ4MQqYE84INJFqUCYNoOg==}
+  react-hook-form@7.81.0:
+    resolution: {integrity: sha512-ocbmr2p5KBMoAfj4WCUvped33lVi1Kd5DuDUvQDnB6VEAacOjPI/jMbtDdbhco4y9ct4xUuCmMY0b/C9L0QHjw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       react: ^16.8.0 || ^17 || ^18 || ^19
@@ -4490,8 +4490,8 @@ packages:
       '@types/react':
         optional: true
 
-  react-resizable-panels@4.12.0:
-    resolution: {integrity: sha512-t/Gp57qSCxGQ52ckhz+8lM7dnuymeU95TEzl2U203qEbGkSLHrtm7US2/ANzq/zOlja3CwPTAfCDuh1unv9mfw==}
+  react-resizable-panels@4.12.1:
+    resolution: {integrity: sha512-ElE/UpOvMLRWtAqbCgyizHXcbws8RPMyN3cBqmdY17Nxr5f01+DEwzOLqhgcy68GSnjtIUFgKWKl8aIgx5aypQ==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -5804,7 +5804,7 @@ snapshots:
 
   '@formkit/auto-animate@0.9.0': {}
 
-  '@hpcc-js/wasm@2.34.4':
+  '@hpcc-js/wasm@2.34.5':
     dependencies:
       yargs: 18.0.0
 
@@ -9619,7 +9619,7 @@ snapshots:
     dependencies:
       react: 19.2.7
 
-  react-hook-form@7.80.0(react@19.2.7):
+  react-hook-form@7.81.0(react@19.2.7):
     dependencies:
       react: 19.2.7
 
@@ -9667,7 +9667,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.17
 
-  react-resizable-panels@4.12.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  react-resizable-panels@4.12.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
