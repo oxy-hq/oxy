@@ -100,9 +100,7 @@ pub enum OperandKind<'a> {
 impl Operand {
     /// The label for UI, defaulting by side ("Actual" / "Expected").
     pub fn label_or(&self, default: &str) -> String {
-        self.label
-            .clone()
-            .unwrap_or_else(|| default.to_string())
+        self.label.clone().unwrap_or_else(|| default.to_string())
     }
 
     /// Validate exactly one kind is set (and, for semantic, exactly one
@@ -131,7 +129,8 @@ impl Operand {
         if let Some(semantic) = &self.semantic {
             if semantic.query.measures.len() != 1 {
                 return Err(
-                    "reconcile operand: semantic query must specify exactly one measure".to_string(),
+                    "reconcile operand: semantic query must specify exactly one measure"
+                        .to_string(),
                 );
             }
             return Ok(OperandKind::Semantic(semantic));
@@ -291,11 +290,7 @@ external:
     #[test]
     fn two_kinds_errors() {
         let op = operand("constant: 0\nexternal: { source: toast, metric: x }\n");
-        assert!(
-            op.resolve_kind()
-                .unwrap_err()
-                .contains("exactly one kind")
-        );
+        assert!(op.resolve_kind().unwrap_err().contains("exactly one kind"));
     }
 
     #[test]
@@ -385,7 +380,10 @@ checks:
         let cfg = parse_reconcile_config(&v).unwrap();
         let c = &cfg.checks[0];
         assert_eq!(c.description, None);
-        assert!(matches!(c.actual.resolve_kind().unwrap(), OperandKind::Sql(_)));
+        assert!(matches!(
+            c.actual.resolve_kind().unwrap(),
+            OperandKind::Sql(_)
+        ));
         assert!(matches!(
             c.expected.resolve_kind().unwrap(),
             OperandKind::Constant(n) if n == 0.0

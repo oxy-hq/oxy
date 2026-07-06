@@ -83,7 +83,10 @@ mod tests {
             &period(),
         )
         .unwrap();
-        assert_eq!(out, "select v where d between '2026-07-01' and '2026-07-01'");
+        assert_eq!(
+            out,
+            "select v where d between '2026-07-01' and '2026-07-01'"
+        );
     }
 
     #[test]
@@ -94,7 +97,10 @@ mod tests {
     #[test]
     fn cell_to_f64_handles_number_text_null() {
         assert_eq!(cell_to_f64(&CellValue::Number(12.5)).unwrap(), 12.5);
-        assert_eq!(cell_to_f64(&CellValue::Text(" 7 ".to_string())).unwrap(), 7.0);
+        assert_eq!(
+            cell_to_f64(&CellValue::Text(" 7 ".to_string())).unwrap(),
+            7.0
+        );
         assert!(cell_to_f64(&CellValue::Text("abc".to_string())).is_err());
         assert!(cell_to_f64(&CellValue::Null).is_err());
     }

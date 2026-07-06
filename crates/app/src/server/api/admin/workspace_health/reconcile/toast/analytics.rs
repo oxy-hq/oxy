@@ -348,7 +348,10 @@ mod tests {
             reduce_check(&map, &spec("guestCount", &[])).unwrap(),
             reduce_check(&map, &spec("guests", &[])).unwrap()
         );
-        assert_eq!(reduce_check(&map, &spec("discounts", &["a"])).unwrap(), 12.0);
+        assert_eq!(
+            reduce_check(&map, &spec("discounts", &["a"])).unwrap(),
+            12.0
+        );
         assert_eq!(reduce_check(&map, &spec("voids", &[])).unwrap(), 6.0);
         assert_eq!(reduce_check(&map, &spec("refundAmount", &[])).unwrap(), 6.0);
     }

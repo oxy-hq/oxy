@@ -86,7 +86,15 @@ pub fn compare(
     let pct_stored = if pct_diff.is_finite() { pct_diff } else { 0.0 };
 
     if !breached {
-        return verdict(meta, actual, expected, abs_diff, pct_stored, HealthStatus::Healthy, None);
+        return verdict(
+            meta,
+            actual,
+            expected,
+            abs_diff,
+            pct_stored,
+            HealthStatus::Healthy,
+            None,
+        );
     }
 
     let over_cutoff = (pct_diff.is_finite() && pct_diff > pct_unhealthy) || pct_diff.is_infinite();
@@ -201,14 +209,26 @@ mod tests {
     #[test]
     fn and_combinator_needs_both_breached() {
         // abs_diff = 3.0 (> 1.0) but pct_diff = 0.3% (< 0.5%): AND not satisfied → healthy.
-        let v = compare(&meta("m"), 1003.0, 1000.0, &tol(1.0, 0.5, Combinator::And), 5.0);
+        let v = compare(
+            &meta("m"),
+            1003.0,
+            1000.0,
+            &tol(1.0, 0.5, Combinator::And),
+            5.0,
+        );
         assert_eq!(v.status, HealthStatus::Healthy);
     }
 
     #[test]
     fn and_combinator_both_breached_is_degraded() {
         // abs_diff = 30 (> 1.0) and pct_diff = 3% (> 0.5%, < 5% cutoff) → degraded.
-        let v = compare(&meta("m"), 1030.0, 1000.0, &tol(1.0, 0.5, Combinator::And), 5.0);
+        let v = compare(
+            &meta("m"),
+            1030.0,
+            1000.0,
+            &tol(1.0, 0.5, Combinator::And),
+            5.0,
+        );
         assert_eq!(v.status, HealthStatus::Degraded);
         assert!(v.reason.as_ref().unwrap().contains("3.0%"));
     }
@@ -232,14 +252,26 @@ mod tests {
     #[test]
     fn or_combinator_one_breached_is_degraded() {
         // abs_diff = 3.0 (> 1.0), pct_diff = 0.3% (< 0.5%): OR satisfied by abs → degraded.
-        let v = compare(&meta("m"), 1003.0, 1000.0, &tol(1.0, 0.5, Combinator::Or), 5.0);
+        let v = compare(
+            &meta("m"),
+            1003.0,
+            1000.0,
+            &tol(1.0, 0.5, Combinator::Or),
+            5.0,
+        );
         assert_eq!(v.status, HealthStatus::Degraded);
     }
 
     #[test]
     fn breach_over_hard_cutoff_is_unhealthy() {
         // pct_diff = 10% > 5% cutoff → unhealthy regardless of combinator.
-        let v = compare(&meta("m"), 1100.0, 1000.0, &tol(1.0, 0.5, Combinator::And), 5.0);
+        let v = compare(
+            &meta("m"),
+            1100.0,
+            1000.0,
+            &tol(1.0, 0.5, Combinator::And),
+            5.0,
+        );
         assert_eq!(v.status, HealthStatus::Unhealthy);
     }
 

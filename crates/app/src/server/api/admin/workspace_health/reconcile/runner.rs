@@ -16,9 +16,7 @@ use agentic_pipeline::platform::ProjectContext;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 
-use super::config::{
-    ExternalSpec, Operand, OperandKind, ReconcileCheck, parse_reconcile_config,
-};
+use super::config::{ExternalSpec, Operand, OperandKind, ReconcileCheck, parse_reconcile_config};
 use super::oxy_query::{cell_to_f64, render_sql, semantic_request};
 use super::source::{ExternalRequest, ReconcileError, SourceCtx, source_for};
 use super::window::resolve_window;
@@ -323,7 +321,13 @@ impl LiveReconcileRunner {
             Ok(v) => v,
             Err(f) => return f.into_verdict(&meta),
         };
-        compare(&meta, actual, expected, &check.tolerance, self.pct_unhealthy)
+        compare(
+            &meta,
+            actual,
+            expected,
+            &check.tolerance,
+            self.pct_unhealthy,
+        )
     }
 
     /// Resolve one operand to a scalar per its kind. External operands read the
@@ -623,7 +627,8 @@ mod tests {
                 last: 1,
                 grain,
                 offset: 1,
-                week_start: crate::server::api::admin::workspace_health::reconcile::WeekStart::Sunday,
+                week_start:
+                    crate::server::api::admin::workspace_health::reconcile::WeekStart::Sunday,
             },
             tolerance: Tolerance {
                 abs: 1.0,
@@ -648,7 +653,14 @@ mod tests {
             check.expected = constant_operand(5.0);
             let window = resolve_window(&check.window, r.now);
             let v = r
-                .verdict_for_check(uuid::Uuid::nil(), 0, &check, &window, &None, &HashMap::new())
+                .verdict_for_check(
+                    uuid::Uuid::nil(),
+                    0,
+                    &check,
+                    &window,
+                    &None,
+                    &HashMap::new(),
+                )
                 .await;
             assert_eq!(v.status, HealthStatus::Healthy, "{grain:?} should compare");
         }
@@ -663,7 +675,14 @@ mod tests {
         check.expected = constant_operand(0.0);
         let window = resolve_window(&check.window, r.now);
         let v = r
-            .verdict_for_check(uuid::Uuid::nil(), 0, &check, &window, &None, &HashMap::new())
+            .verdict_for_check(
+                uuid::Uuid::nil(),
+                0,
+                &check,
+                &window,
+                &None,
+                &HashMap::new(),
+            )
             .await;
         assert_eq!(v.status, HealthStatus::Healthy);
         assert_eq!(v.actual, 0.0);

@@ -101,37 +101,41 @@ oxy-unifi = { path = "crates/integration/unifi" }
 oxy-workspace-fs = { path = "crates/workspace-fs" }
 
 # External dependencies
-async-openai = {version = "0.35.0"}
+async-openai = { version = "0.35.0" }
 duckdb = { version = "=1.10501.0", features = ["bundled"] }
-axum = {version = "0.8.9", features = ["macros", "http2"]}
-axum-server = {version = "0.8.0", features = ["tls-rustls"]}
+axum = { version = "0.8.9", features = ["macros", "http2"] }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 chrono = "*"
 chrono-tz = "0.8"
 croner = "3"
-indexmap = {version = "2.14.0", features = ["serde"]}
-log = {version = "0.4"}
-minijinja = {version = "2.19.0"}
-regex = {version = "1.12.3"}
-sea-orm = {version = "1.1.20", features = [
+indexmap = { version = "2.14.0", features = ["serde"] }
+log = { version = "0.4" }
+minijinja = { version = "2.19.0" }
+regex = { version = "1.12.3" }
+sea-orm = { version = "1.1.20", features = [
   "sqlx-postgres",
   "runtime-tokio-rustls",
   "macros",
   "with-chrono",
-]}
-sea-orm-migration = {version = "1.1.20", features = [
+] }
+sea-orm-migration = { version = "1.1.20", features = [
   "sqlx-postgres",
   "runtime-tokio-rustls",
   "with-uuid",
-]}
-sentry = {version = "0.47.0", features = ["tower-axum-matched-path", "rustls", "tracing"]}
-serde = {version = "1.0", features = ["derive"]}
-serde_json = {version = "1.0.149"}
-serde_yaml = {version = "0.9.34"}
-sqlparser = {version = "0.61"}
-tempfile = {version = "3.27.0"}
-thiserror = {version = "2.0.18"}
-tokio = {version = "1.52", features = ["full"]}
-tracing = {version = "0.1.44"}
+] }
+sentry = { version = "0.47.0", features = [
+  "tower-axum-matched-path",
+  "rustls",
+  "tracing",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0.149" }
+serde_yaml = { version = "0.9.34" }
+sqlparser = { version = "0.61" }
+tempfile = { version = "3.27.0" }
+thiserror = { version = "2.0.18" }
+tokio = { version = "1.52", features = ["full"] }
+tracing = { version = "0.1.44" }
 uuid = { version = "1.23", features = ["serde", "v4"] }
 aes-gcm = "0.10.3"
 aho-corasick = "1.1"
@@ -213,7 +217,7 @@ predicates = "3.1.4"
 pulldown-cmark = "0.13"
 rand = "0.10"
 rapidfuzz = "0.5.0"
-reqwest = { version = "0.12", features = ["rustls-tls", "multipart"]  }
+reqwest = { version = "0.12", features = ["rustls-tls", "multipart"] }
 # V8-isolate runtime for Oxy Functions (customer-app `functions/*.ts`).
 # See internal-docs/2026-06-12-customer-apps-functions-design.md.
 deno_core = "0.331"
@@ -286,7 +290,9 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # time). `default-features` stays on so `duckdb` is still available.
 # Pinned to release tag 0.1.20, which ships the resumable backfill this PR
 # depends on (P2c-2/3: mid-window resume + mid-run cursor persist).
-airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.20", features = ["postgres"] }
+airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.20", features = [
+  "postgres",
+] }
 airform-loader = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e8288692381a989444eef874900e6db4475b1" }
 airform-parser = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e8288692381a989444eef874900e6db4475b1" }
 airform-jinja = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e8288692381a989444eef874900e6db4475b1" }
@@ -303,22 +309,22 @@ documentation = "https://oxygen-hq.com/docs"
 edition = "2024"
 exclude = []
 publish = false
-rust-version = "1.95.0"
+rust-version = "1.96.1"
 
 [profile.dev.package]
 # Disable optimization for native build dependencies to speed up dev builds
 # These crates have build scripts that compile native code and always trigger rebuilds
-aws-lc-sys = {opt-level = 0}
-libduckdb-sys = {opt-level = 0}
-lz4-sys = {opt-level = 0}
-onig_sys = {opt-level = 0}
-openssl-sys = {opt-level = 0}
-ring = {opt-level = 0}
+aws-lc-sys = { opt-level = 0 }
+libduckdb-sys = { opt-level = 0 }
+lz4-sys = { opt-level = 0 }
+onig_sys = { opt-level = 0 }
+openssl-sys = { opt-level = 0 }
+ring = { opt-level = 0 }
 # Large/complex crates that benefit from reduced optimization in dev
-aws-sdk-sts = {opt-level = 0}
-datafusion-common = {opt-level = 0}
-parquet = {opt-level = 0}
-sqlx-postgres = {opt-level = 0}
+aws-sdk-sts = { opt-level = 0 }
+datafusion-common = { opt-level = 0 }
+parquet = { opt-level = 0 }
+sqlx-postgres = { opt-level = 0 }
 
 [profile.dev]
 split-debuginfo = "shallow"
