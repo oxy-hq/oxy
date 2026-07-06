@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.98] - 2026-07-06
+
+### 🚀 Features
+
+- Reconcile generalize to actual/expected operands + oxy/external split (#2661)
+
+### 📚 Documentation
+
+- Add CLI installation guide (#2673)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update docs domain
+- Cargo fmt and build
+
 ## [0.5.97] - 2026-07-05
 
 ### 🚀 Features
@@ -19,6 +34,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Weekly auto-fix 2026-07-05 (#2669)
+- Release 0.5.97 (#2665)
 
 ## [0.5.96] - 2026-07-04
 
