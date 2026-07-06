@@ -13,9 +13,7 @@ use async_trait::async_trait;
 
 use oxy::config::model::ToastAnalyticsIntegration;
 
-use super::config::ReconcileCheck;
-use super::source::{ReconcileError, ReconcileSource, SourceCtx};
-use super::window::resolve_window;
+use super::source::{ExternalRequest, ReconcileError, ReconcileSource, SourceCtx};
 use analytics::RestaurantMetrics;
 use std::collections::HashMap;
 
@@ -79,44 +77,45 @@ impl ReconcileSource for ToastSource {
         .collect()
     }
 
-    /// One report per distinct window, shared across checks; each check reduces
-    /// its window's report to a number. A single auth/report failure degrades
-    /// only the affected checks (one verdict each), never the whole sweep.
+    /// One report per distinct window, shared across requests; each request
+    /// reduces its window's report to a number. A single auth/report failure
+    /// degrades only the affected requests (one result each), never the whole
+    /// sweep.
     async fn fetch_externals(
         &self,
         ctx: &SourceCtx,
-        checks: &[&ReconcileCheck],
+        requests: &[ExternalRequest<'_>],
     ) -> Vec<Result<f64, ReconcileError>> {
         // Optional narrowing filter for the report: the union of the GUIDs the
-        // checks already name. Empty ⇒ omit it ⇒ Toast covers the whole
+        // requests already name. Empty ⇒ omit it ⇒ Toast covers the whole
         // management group. No separate restaurant config is ever required.
-        let restaurant_ids = restaurant_filter(checks);
+        let restaurant_ids = restaurant_filter(requests);
         let token = match auth::resolve_bearer(&self.http, &self.base_url, ctx).await {
             Ok(t) => t,
-            Err(e) => return err_for_all(checks, e),
+            Err(e) => return err_for_all(requests, e),
         };
 
         let mut reports: HashMap<
             [String; 2],
             Result<HashMap<String, RestaurantMetrics>, ReconcileError>,
         > = HashMap::new();
-        let mut out = Vec::with_capacity(checks.len());
-        for check in checks {
-            let window = resolve_window(&check.window, ctx.now);
-            if !reports.contains_key(&window) {
+        let mut out = Vec::with_capacity(requests.len());
+        for req in requests {
+            let window = req.window;
+            if !reports.contains_key(window) {
                 let report = analytics::fetch_report(
                     &self.http,
                     &self.base_url,
                     &token,
                     &restaurant_ids,
-                    &window,
+                    window,
                     ctx.report_timeout,
                 )
                 .await;
                 reports.insert(window.clone(), report);
             }
-            out.push(match reports.get(&window).expect("just inserted") {
-                Ok(map) => analytics::reduce_check(map, &check.external),
+            out.push(match reports.get(window).expect("just inserted") {
+                Ok(map) => analytics::reduce_check(map, req.spec),
                 Err(e) => Err(e.clone()),
             });
         }
@@ -125,13 +124,13 @@ impl ReconcileSource for ToastSource {
 }
 
 /// Optional `restaurantIds` filter for the report: the de-duplicated union of
-/// the GUIDs the checks name (`external.restaurants`). Empty when no check names
+/// the GUIDs the requests name (`spec.restaurants`). Empty when no request names
 /// any — the caller then omits the filter and Toast covers the whole management
 /// group.
-fn restaurant_filter(checks: &[&ReconcileCheck]) -> Vec<String> {
+fn restaurant_filter(requests: &[ExternalRequest<'_>]) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
-    for check in checks {
-        for guid in &check.external.restaurants {
+    for req in requests {
+        for guid in &req.spec.restaurants {
             if !ids.contains(guid) {
                 ids.push(guid.clone());
             }
@@ -140,13 +139,13 @@ fn restaurant_filter(checks: &[&ReconcileCheck]) -> Vec<String> {
     ids
 }
 
-/// Same error for every check in the batch (auth/config failure before any
-/// per-check work).
+/// Same error for every request in the batch (auth/config failure before any
+/// per-request work).
 fn err_for_all(
-    checks: &[&ReconcileCheck],
+    requests: &[ExternalRequest<'_>],
     err: ReconcileError,
 ) -> Vec<Result<f64, ReconcileError>> {
-    checks.iter().map(|_| Err(err.clone())).collect()
+    requests.iter().map(|_| Err(err.clone())).collect()
 }
 
 /// Trim a response body for inclusion in an error message — enough to identify
@@ -163,19 +162,25 @@ pub(super) fn truncate_body(body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::config::ExternalSpec;
     use super::*;
 
-    fn check_with_restaurants(restaurants: &[&str]) -> ReconcileCheck {
-        serde_json::from_value(serde_json::json!({
-            "name": "c",
-            "source": "toast",
-            "measure": "sales_daily.total_net_sales",
-            "time_dimension": "sales_daily.business_date",
-            "window": { "last": 1, "grain": "day", "offset": 1 },
-            "external": { "metric": "netSalesAmount", "restaurants": restaurants },
-            "tolerance": { "abs": 1.0, "pct": 0.5 },
-        }))
-        .unwrap()
+    fn spec_with_restaurants(restaurants: &[&str]) -> ExternalSpec {
+        ExternalSpec {
+            source: "toast".to_string(),
+            integration: None,
+            metric: "net_sales".to_string(),
+            restaurants: restaurants.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    static WINDOW: [String; 2] = [String::new(), String::new()];
+
+    fn req<'a>(spec: &'a ExternalSpec) -> ExternalRequest<'a> {
+        ExternalRequest {
+            spec,
+            window: &WINDOW,
+        }
     }
 
     fn toast_integration(
@@ -220,15 +225,15 @@ mod tests {
 
     #[test]
     fn filter_unions_config_restaurants() {
-        let a = check_with_restaurants(&["a", "b"]);
-        let b = check_with_restaurants(&["b", "c"]);
-        assert_eq!(restaurant_filter(&[&a, &b]), vec!["a", "b", "c"]);
+        let a = spec_with_restaurants(&["a", "b"]);
+        let b = spec_with_restaurants(&["b", "c"]);
+        assert_eq!(restaurant_filter(&[req(&a), req(&b)]), vec!["a", "b", "c"]);
     }
 
     #[test]
     fn filter_empty_for_all_aggregate_config() {
-        // No check names a restaurant ⇒ no filter ⇒ whole management group.
-        let agg = check_with_restaurants(&[]);
-        assert!(restaurant_filter(&[&agg]).is_empty());
+        // No request names a restaurant ⇒ no filter ⇒ whole management group.
+        let agg = spec_with_restaurants(&[]);
+        assert!(restaurant_filter(&[req(&agg)]).is_empty());
     }
 }

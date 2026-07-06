@@ -16,16 +16,23 @@ export interface WorkspaceHealthDimension {
 }
 
 /**
- * One reconciliation drift check: an Oxy measure compared to the external source.
+ * One reconciliation drift check: an `actual` operand compared against an
+ * `expected` reference (each a semantic query, SQL, external source, or constant).
  * Numeric fields are `null` when the source was unreachable or errored (the backend
  * stores NaN/Infinity there, which serialize to JSON null).
  */
 export interface WorkspaceHealthReconciliationCheck {
   check: string;
-  oxy: number | null;
-  ext: number | null;
+  /** Friendly check-level text; null when the check omitted `description`. */
+  description: string | null;
+  /** Backend-resolved label for the actual operand ("Actual" when unset). */
+  actual_label: string;
+  /** Backend-resolved label for the expected operand ("Expected" when unset). */
+  expected_label: string;
+  actual: number | null;
+  expected: number | null;
   abs_diff: number | null;
-  /** Percent drift relative to the external value, in percent units (3.0 == 3%). */
+  /** Percent drift relative to the expected (reference) value, in percent units (3.0 == 3%). */
   pct_diff: number | null;
   status: WorkspaceHealthStatus;
   reason: string | null;

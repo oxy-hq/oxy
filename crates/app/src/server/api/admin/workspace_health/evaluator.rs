@@ -405,8 +405,11 @@ mod tests {
         s.reconciliation = vec![
             DriftVerdict {
                 check: "a".into(),
-                oxy: 1.0,
-                ext: 1.0,
+                description: None,
+                actual_label: "Actual".into(),
+                expected_label: "Expected".into(),
+                actual: 1.0,
+                expected: 1.0,
                 abs_diff: 0.0,
                 pct_diff: 0.0,
                 status: HealthStatus::Healthy,
@@ -414,8 +417,11 @@ mod tests {
             },
             DriftVerdict {
                 check: "b".into(),
-                oxy: 110.0,
-                ext: 100.0,
+                description: None,
+                actual_label: "Actual".into(),
+                expected_label: "Expected".into(),
+                actual: 110.0,
+                expected: 100.0,
                 abs_diff: 10.0,
                 pct_diff: 10.0,
                 status: HealthStatus::Unhealthy,

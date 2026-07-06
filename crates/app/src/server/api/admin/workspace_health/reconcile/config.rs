@@ -1,6 +1,7 @@
 //! Strict-typed `reconcile.yml`. Stored as JSONB in `reconcile_configs`;
 //! the runtime round-trips it back with `serde_json::from_value`.
 
+use airlayer::engine::query::QueryRequest;
 use serde::{Deserialize, Serialize};
 
 use super::Tolerance;
@@ -13,53 +14,22 @@ pub struct ReconcileConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReconcileCheck {
+    /// Stable machine identifier.
     pub name: String,
-    /// Adapter registry key — the external system *kind*, e.g. "toast".
-    pub source: String,
-    /// Name of the `config.yml` integration that backs this check (e.g. a
-    /// specific `toast` account, when a workspace declares more than one).
-    /// Optional: when omitted, the first integration of the matching `source`
-    /// type is used. The integration supplies the source's secret var-names and
-    /// API base URL.
+    /// Friendly UI text (check-level). Optional, purely presentational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub integration: Option<String>,
-    /// Semantic measure to compute the Oxy-side number, e.g. "orders.net_sales".
-    pub measure: String,
-    /// The view/topic time dimension the window filters on, e.g. "orders.created_date".
-    pub time_dimension: String,
-    /// Dimension filters narrowing the Oxy measure, e.g. scope a check to one
-    /// restaurant so it lines up with a per-restaurant external figure. Applied
-    /// to the measure query by the runner.
-    #[serde(default)]
-    pub filters: Vec<MeasureFilterSpec>,
+    pub description: Option<String>,
+    /// Shared comparison window (applies to BOTH operands).
     pub window: Window,
-    pub external: ExternalSpec,
     pub tolerance: Tolerance,
-}
-
-/// One equality/comparison filter on a semantic dimension, e.g.
-/// `{ field: sales_daily.restaurant_id, op: eq, value: "<guid>" }`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MeasureFilterSpec {
-    /// Fully-qualified dimension, e.g. "sales_daily.restaurant_id".
-    pub field: String,
-    #[serde(default)]
-    pub op: FilterOp,
-    pub value: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FilterOp {
-    #[default]
-    Eq,
-    Neq,
-    Gt,
-    Gte,
-    Lt,
-    Lte,
-    In,
-    NotIn,
+    /// Optional per-segment fan-out dimension. Parsed today; fan-out execution
+    /// is a follow-up (currently unused by the runner).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_by: Option<String>,
+    /// The value being checked.
+    pub actual: Operand,
+    /// The reference value `actual` is compared against (`pct` denominator).
+    pub expected: Operand,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +40,11 @@ pub struct Window {
     /// excluded (offset: 1, grain: day == "yesterday").
     #[serde(default)]
     pub offset: u32,
+    /// Which weekday a `grain: week` window starts on. Ignored for day/month.
+    /// Defaults to Sunday to match the Command Center's weekly ribbon and
+    /// 12-week charts (ClickHouse `toStartOfWeek` default).
+    #[serde(default)]
+    pub week_start: WeekStart,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,15 +55,134 @@ pub enum Grain {
     Month,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeekStart {
+    #[default]
+    Sunday,
+    Monday,
+}
+
+/// One side of a check: an optional friendly `label` plus exactly one kind
+/// block (`semantic` / `sql` / `external` / `constant`).
+///
+/// A per-kind `Option` struct (not an externally-tagged enum) so `label` can
+/// sit as a sibling of the kind — the shipped "exactly one mode" pattern.
+/// [`Operand::resolve_kind`] validates and resolves the populated kind.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Operand {
+    /// Friendly label for UI rendering; defaults by side ("Actual"/"Expected").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// KIND: full airlayer semantic query bound to a `time_dimension`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic: Option<SemanticSpec>,
+    /// KIND: raw SQL run against a named `database`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sql: Option<SqlSpec>,
+    /// KIND: an authoritative external source (Toast first).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external: Option<ExternalSpec>,
+    /// KIND: a fixed number (e.g. assert a count equals 0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constant: Option<f64>,
+}
+
+/// The resolved kind, borrowed from the [`Operand`].
+#[derive(Debug, Clone)]
+pub enum OperandKind<'a> {
+    Semantic(&'a SemanticSpec),
+    Sql(&'a SqlSpec),
+    External(&'a ExternalSpec),
+    Constant(f64),
+}
+
+impl Operand {
+    /// The label for UI, defaulting by side ("Actual" / "Expected").
+    pub fn label_or(&self, default: &str) -> String {
+        self.label
+            .clone()
+            .unwrap_or_else(|| default.to_string())
+    }
+
+    /// Validate exactly one kind is set (and, for semantic, exactly one
+    /// measure); return the resolved kind. Returns a human-readable error the
+    /// runner surfaces as a degraded verdict.
+    pub fn resolve_kind(&self) -> Result<OperandKind<'_>, String> {
+        let set = [
+            self.semantic.is_some(),
+            self.sql.is_some(),
+            self.external.is_some(),
+            self.constant.is_some(),
+        ]
+        .into_iter()
+        .filter(|b| *b)
+        .count();
+        match set {
+            0 => {
+                return Err(
+                    "reconcile operand: specify one of semantic/sql/external/constant".to_string(),
+                );
+            }
+            1 => {}
+            _ => return Err("reconcile operand: specify exactly one kind".to_string()),
+        }
+
+        if let Some(semantic) = &self.semantic {
+            if semantic.query.measures.len() != 1 {
+                return Err(
+                    "reconcile operand: semantic query must specify exactly one measure".to_string(),
+                );
+            }
+            return Ok(OperandKind::Semantic(semantic));
+        }
+        if let Some(sql) = &self.sql {
+            return Ok(OperandKind::Sql(sql));
+        }
+        if let Some(external) = &self.external {
+            return Ok(OperandKind::External(external));
+        }
+        // Exactly one is set and it wasn't the three above ⇒ constant.
+        Ok(OperandKind::Constant(
+            self.constant.expect("constant is the remaining set kind"),
+        ))
+    }
+}
+
+/// A full airlayer semantic query bound to a time dimension (the window binds
+/// here). Exactly one measure (validated by [`Operand::resolve_kind`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticSpec {
+    /// Full airlayer query params (measures/dimensions/filters/segments/…).
+    #[serde(flatten)]
+    pub query: QueryRequest,
+    /// The dimension the shared window binds to (required).
+    pub time_dimension: String,
+}
+
+/// Raw SQL run against a named workspace connection. `{{ start_date }}` /
+/// `{{ end_date }}` are bound from the shared window.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SqlSpec {
+    /// The `config.yml` connection name the `sql` runs against.
+    pub database: String,
+    pub sql: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExternalSpec {
-    /// Toast Analytics metric field to read from each report row, one of
-    /// `netSalesAmount`, `grossSalesAmount`, `ordersCount`.
+    /// Adapter registry key — the external system *kind*, e.g. "toast".
+    pub source: String,
+    /// Named `config.yml` integration backing this operand; first of `source`
+    /// kind when omitted. Supplies the source's secret var-names and API base URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration: Option<String>,
+    /// External metric field to read from each report row (e.g. "net_sales").
     pub metric: String,
     /// Which restaurant GUIDs to sum on the external side. Absent/empty sums
     /// EVERY restaurant in the report (all-restaurants aggregate); present sums
-    /// only the listed GUIDs (per-restaurant). Mirror with `filters` on the Oxy
-    /// side so both sides scope to the same restaurants.
+    /// only the listed GUIDs (per-restaurant). Mirror with a semantic operand's
+    /// filters so both sides scope to the same restaurants.
     #[serde(default)]
     pub restaurants: Vec<String>,
 }
@@ -101,119 +195,222 @@ pub fn parse_reconcile_config(v: &serde_json::Value) -> Result<ReconcileConfig, 
 mod tests {
     use super::*;
 
+    fn operand(yaml: &str) -> Operand {
+        serde_yaml::from_str(yaml).unwrap()
+    }
+
     #[test]
-    fn parses_a_full_check() {
+    fn semantic_operand_resolves_single_measure() {
+        let op = operand(
+            r#"
+label: Oxy net sales
+semantic:
+  measures: [sales.net]
+  time_dimension: sales.business_date
+  segments: [sales.dine_in]
+  filters:
+    - member: sales.restaurant_id
+      operator: equals
+      values: ["a", "b"]
+"#,
+        );
+        assert_eq!(op.label_or("Actual"), "Oxy net sales");
+        match op.resolve_kind().unwrap() {
+            OperandKind::Semantic(s) => {
+                assert_eq!(s.query.measures, vec!["sales.net".to_string()]);
+                assert_eq!(s.query.segments, vec!["sales.dine_in".to_string()]);
+                assert_eq!(s.query.filters.len(), 1);
+                assert_eq!(s.time_dimension, "sales.business_date");
+            }
+            other => panic!("expected Semantic, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sql_operand_resolves() {
+        let op = operand(
+            r#"
+sql:
+  database: main
+  sql: "select sum(v) from t where d between '{{ start_date }}' and '{{ end_date }}'"
+"#,
+        );
+        match op.resolve_kind().unwrap() {
+            OperandKind::Sql(s) => {
+                assert_eq!(s.database, "main");
+                assert!(s.sql.contains("start_date"));
+            }
+            other => panic!("expected Sql, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn external_operand_resolves() {
+        let op = operand(
+            r#"
+label: Toast net sales
+external:
+  source: toast
+  integration: toast_main
+  metric: net_sales
+  restaurants: ["abc123"]
+"#,
+        );
+        match op.resolve_kind().unwrap() {
+            OperandKind::External(e) => {
+                assert_eq!(e.source, "toast");
+                assert_eq!(e.integration.as_deref(), Some("toast_main"));
+                assert_eq!(e.metric, "net_sales");
+                assert_eq!(e.restaurants, vec!["abc123".to_string()]);
+            }
+            other => panic!("expected External, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn constant_operand_resolves_including_zero() {
+        let op = operand("constant: 0\n");
+        assert!(matches!(
+            op.resolve_kind().unwrap(),
+            OperandKind::Constant(n) if n == 0.0
+        ));
+        // No label → defaults by side.
+        assert_eq!(op.label_or("Expected"), "Expected");
+    }
+
+    #[test]
+    fn zero_kinds_errors() {
+        let op = operand("label: Nothing\n");
+        assert!(
+            op.resolve_kind()
+                .unwrap_err()
+                .contains("one of semantic/sql/external/constant")
+        );
+    }
+
+    #[test]
+    fn two_kinds_errors() {
+        let op = operand("constant: 0\nexternal: { source: toast, metric: x }\n");
+        assert!(
+            op.resolve_kind()
+                .unwrap_err()
+                .contains("exactly one kind")
+        );
+    }
+
+    #[test]
+    fn semantic_more_than_one_measure_errors() {
+        let op = operand("semantic: { measures: [m.x, m.y], time_dimension: m.d }\n");
+        assert!(
+            op.resolve_kind()
+                .unwrap_err()
+                .contains("exactly one measure")
+        );
+    }
+
+    #[test]
+    fn label_or_defaults_and_overrides() {
+        let bare = operand("constant: 1\n");
+        assert_eq!(bare.label_or("Actual"), "Actual");
+        assert_eq!(bare.label_or("Expected"), "Expected");
+        let labeled = operand("label: Custom\nconstant: 1\n");
+        assert_eq!(labeled.label_or("Actual"), "Custom");
+    }
+
+    #[test]
+    fn parses_a_full_semantic_vs_external_check() {
         let yaml = r#"
 checks:
   - name: revenue_vs_toast
-    source: toast
-    measure: orders.net_sales
-    time_dimension: orders.created_date
+    description: Daily net sales reconciled against Toast POS totals.
     window: { last: 1, grain: day, offset: 1 }
-    external:
-      metric: netSalesAmount
-      restaurants: ["abc123"]
     tolerance: { abs: 1.0, pct: 0.5, combinator: and }
+    actual:
+      label: Oxy net sales
+      semantic:
+        measures: [orders.net_sales]
+        time_dimension: orders.created_date
+        filters:
+          - member: orders.restaurant_id
+            operator: equals
+            values: ["abc123"]
+    expected:
+      label: Toast net sales
+      external:
+        source: toast
+        integration: toast_main
+        metric: net_sales
+        restaurants: ["abc123"]
 "#;
         let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
         let cfg = parse_reconcile_config(&v).unwrap();
-        assert_eq!(cfg.checks.len(), 1);
         let c = &cfg.checks[0];
         assert_eq!(c.name, "revenue_vs_toast");
-        assert_eq!(c.source, "toast");
-        assert_eq!(c.measure, "orders.net_sales");
+        assert_eq!(
+            c.description.as_deref(),
+            Some("Daily net sales reconciled against Toast POS totals.")
+        );
         assert_eq!(c.window.offset, 1);
-        assert_eq!(c.external.metric, "netSalesAmount");
-        assert_eq!(c.external.restaurants, vec!["abc123".to_string()]);
-        assert_eq!(c.tolerance.abs, 1.0);
+        assert_eq!(c.actual.label_or("Actual"), "Oxy net sales");
+        assert_eq!(c.expected.label_or("Expected"), "Toast net sales");
+        assert!(matches!(
+            c.actual.resolve_kind().unwrap(),
+            OperandKind::Semantic(_)
+        ));
+        match c.expected.resolve_kind().unwrap() {
+            OperandKind::External(e) => {
+                assert_eq!(e.metric, "net_sales");
+                assert_eq!(e.restaurants, vec!["abc123".to_string()]);
+            }
+            other => panic!("expected External, got {other:?}"),
+        }
     }
 
     #[test]
-    fn parses_per_restaurant_filter() {
+    fn parses_a_constant_expected_check() {
         let yaml = r#"
 checks:
-  - name: net_sales_store_a
-    source: toast
-    measure: sales_daily.total_net_sales
-    time_dimension: sales_daily.business_date
-    filters:
-      - field: sales_daily.restaurant_id
-        value: "guid-a"
+  - name: no_orphan_rows
     window: { last: 1, grain: day, offset: 1 }
-    external:
-      metric: netSalesAmount
-      restaurants: ["guid-a"]
-    tolerance: { abs: 1.0, pct: 0.5 }
+    tolerance: { abs: 0, pct: 0, combinator: or }
+    actual:
+      label: Orphan rows
+      sql:
+        database: main
+        sql: "select count(*) from orphans where d = '{{ start_date }}'"
+    expected:
+      constant: 0
 "#;
         let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
         let cfg = parse_reconcile_config(&v).unwrap();
         let c = &cfg.checks[0];
-        assert_eq!(c.filters.len(), 1);
-        assert_eq!(c.filters[0].field, "sales_daily.restaurant_id");
-        assert_eq!(c.filters[0].op, FilterOp::Eq);
-        assert_eq!(c.filters[0].value, "guid-a");
-        assert_eq!(c.external.restaurants, vec!["guid-a".to_string()]);
-    }
-
-    #[test]
-    fn parses_named_integration_and_defaults_to_none() {
-        let yaml = r#"
-checks:
-  - name: with_name
-    source: toast
-    integration: toast_main
-    measure: m.x
-    time_dimension: m.d
-    window: { last: 1, grain: day, offset: 1 }
-    external: { metric: x }
-    tolerance: { abs: 1.0, pct: 0.5 }
-  - name: no_name
-    source: toast
-    measure: m.x
-    time_dimension: m.d
-    window: { last: 1, grain: day, offset: 1 }
-    external: { metric: x }
-    tolerance: { abs: 1.0, pct: 0.5 }
-"#;
-        let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
-        let cfg = parse_reconcile_config(&v).unwrap();
-        assert_eq!(cfg.checks[0].integration.as_deref(), Some("toast_main"));
-        assert_eq!(cfg.checks[1].integration, None);
-    }
-
-    #[test]
-    fn filters_default_to_empty() {
-        let yaml = r#"
-checks:
-  - name: c
-    source: toast
-    measure: m.x
-    time_dimension: m.d
-    window: { last: 1, grain: day, offset: 1 }
-    external: { metric: x }
-    tolerance: { abs: 1.0, pct: 0.5 }
-"#;
-        let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
-        let cfg = parse_reconcile_config(&v).unwrap();
-        assert!(cfg.checks[0].filters.is_empty());
-    }
-
-    #[test]
-    fn combinator_defaults_to_and() {
-        let yaml = r#"
-checks:
-  - name: c
-    source: toast
-    measure: m.x
-    time_dimension: m.d
-    window: { last: 1, grain: day, offset: 1 }
-    external: { metric: x }
-    tolerance: { abs: 1.0, pct: 0.5 }
-"#;
-        let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
-        let cfg = parse_reconcile_config(&v).unwrap();
+        assert_eq!(c.description, None);
+        assert!(matches!(c.actual.resolve_kind().unwrap(), OperandKind::Sql(_)));
         assert!(matches!(
-            cfg.checks[0].tolerance.combinator,
+            c.expected.resolve_kind().unwrap(),
+            OperandKind::Constant(n) if n == 0.0
+        ));
+        // No label on the constant → defaults to "Expected".
+        assert_eq!(c.expected.label_or("Expected"), "Expected");
+    }
+
+    #[test]
+    fn parses_group_by_and_defaults_combinator() {
+        let yaml = r#"
+checks:
+  - name: c
+    window: { last: 1, grain: day, offset: 1 }
+    tolerance: { abs: 1.0, pct: 0.5 }
+    group_by: sales.restaurant_id
+    actual: { semantic: { measures: [m.x], time_dimension: m.d } }
+    expected: { external: { source: toast, metric: x } }
+"#;
+        let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
+        let cfg = parse_reconcile_config(&v).unwrap();
+        let c = &cfg.checks[0];
+        assert_eq!(c.group_by.as_deref(), Some("sales.restaurant_id"));
+        assert!(matches!(
+            c.tolerance.combinator,
             super::super::compare::Combinator::And
         ));
     }

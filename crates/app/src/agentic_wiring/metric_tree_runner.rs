@@ -347,28 +347,15 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         .map_err(|e| MetricTreeRunnerError::Op(format!("time-series task panicked: {e}")))?
     }
 
-    async fn run_scalar(
+    async fn run_query_scalar(
         &self,
-        measure: String,
-        time_dimension: String,
-        period: (String, String),
-        filters: Vec<airlayer::engine::query::QueryFilter>,
+        request: airlayer::engine::query::QueryRequest,
     ) -> Result<f64, MetricTreeRunnerError> {
-        use airlayer::engine::query::{QueryRequest, TimeDimensionQuery};
+        let measure = request.measures.first().cloned().ok_or_else(|| {
+            MetricTreeRunnerError::Op("run_query_scalar: request has no measure".to_string())
+        })?;
         let inputs = self.snapshot_for_blocking().await?;
         let measure_alias = measure.replace('.', "__");
-        // No `granularity` ⇒ the time dimension only bounds the window; the
-        // warehouse returns a single aggregated row.
-        let request = QueryRequest {
-            measures: vec![measure.clone()],
-            filters,
-            time_dimensions: vec![TimeDimensionQuery {
-                dimension: time_dimension,
-                granularity: None,
-                date_range: Some(vec![period.0.clone(), period.1.clone()]),
-            }],
-            ..QueryRequest::new()
-        };
         tokio::task::spawn_blocking(move || {
             let RunInputs {
                 databases,

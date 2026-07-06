@@ -199,7 +199,9 @@ fn ops_slack_target() -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::api::admin::workspace_health::reconcile::unreachable_verdict;
+    use crate::server::api::admin::workspace_health::reconcile::{
+        VerdictMeta, unreachable_verdict,
+    };
     use migration::MigratorTrait;
     use sea_orm::{Database, EntityTrait};
 
@@ -248,7 +250,13 @@ mod tests {
     #[test]
     fn apply_reconciliation_sets_verdicts() {
         let mut s = empty_signals();
-        apply_reconciliation(&mut s, vec![unreachable_verdict("c", "toast")]);
+        let meta = VerdictMeta {
+            check: "c".to_string(),
+            description: None,
+            actual_label: "Actual".to_string(),
+            expected_label: "Expected".to_string(),
+        };
+        apply_reconciliation(&mut s, vec![unreachable_verdict(&meta, "toast")]);
         assert_eq!(s.reconciliation.len(), 1);
         assert_eq!(s.reconciliation[0].status, HealthStatus::Degraded);
     }

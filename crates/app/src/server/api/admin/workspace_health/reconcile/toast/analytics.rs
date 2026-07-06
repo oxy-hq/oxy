@@ -22,6 +22,10 @@ pub struct RestaurantMetrics {
     pub net_sales: f64,
     pub gross_sales: f64,
     pub orders: f64,
+    pub guests: f64,
+    pub discounts: f64,
+    pub voids: f64,
+    pub refunds: f64,
 }
 
 impl RestaurantMetrics {
@@ -34,9 +38,14 @@ impl RestaurantMetrics {
             "netSalesAmount" | "net_sales" => Ok(self.net_sales),
             "grossSalesAmount" | "gross_sales" => Ok(self.gross_sales),
             "ordersCount" | "order_count" | "orders" => Ok(self.orders),
+            "guestCount" | "guest_count" | "guests" => Ok(self.guests),
+            "discountAmount" | "discounts" | "discount" => Ok(self.discounts),
+            "voidAmount" | "voids" | "void" => Ok(self.voids),
+            "refundAmount" | "refunds" | "refund" => Ok(self.refunds),
             other => Err(ReconcileError::Fetch(format!(
-                "unknown toast metric '{other}' (expected net_sales|gross_sales|order_count, \
-                 or the raw netSalesAmount|grossSalesAmount|ordersCount)"
+                "unknown toast metric '{other}' (expected net_sales|gross_sales|order_count|\
+                 guest_count|discounts|voids|refunds, or the raw netSalesAmount|grossSalesAmount|\
+                 ordersCount|guestCount|discountAmount|voidAmount|refundAmount)"
             ))),
         }
     }
@@ -201,6 +210,10 @@ pub fn parse_metrics_array(body: &Value) -> HashMap<String, RestaurantMetrics> {
         entry.net_sales += field(row, "netSalesAmount");
         entry.gross_sales += field(row, "grossSalesAmount");
         entry.orders += field(row, "ordersCount");
+        entry.guests += field(row, "guestCount");
+        entry.discounts += field(row, "discountAmount");
+        entry.voids += field(row, "voidAmount");
+        entry.refunds += field(row, "refundAmount");
     }
     map
 }
@@ -220,6 +233,10 @@ fn log_report_summary(
     let net: f64 = map.values().map(|m| m.net_sales).sum();
     let gross: f64 = map.values().map(|m| m.gross_sales).sum();
     let orders: f64 = map.values().map(|m| m.orders).sum();
+    let guests: f64 = map.values().map(|m| m.guests).sum();
+    let discounts: f64 = map.values().map(|m| m.discounts).sum();
+    let voids: f64 = map.values().map(|m| m.voids).sum();
+    let refunds: f64 = map.values().map(|m| m.refunds).sum();
     let mut guids: Vec<&String> = map.keys().collect();
     guids.sort();
     tracing::info!(
@@ -233,6 +250,13 @@ fn log_report_summary(
         net_sales = net,
         gross_sales = gross,
         orders = orders,
+        // New fields: an all-zero sum here on a non-empty report means the raw
+        // Toast field name is wrong (guestCount/discountAmount/voidAmount/
+        // refundAmount) — the summed value confirms the name empirically.
+        guests = guests,
+        discounts = discounts,
+        voids = voids,
+        refunds = refunds,
         "toast metrics report"
     );
 }
@@ -278,6 +302,8 @@ mod tests {
 
     fn spec(metric: &str, restaurants: &[&str]) -> ExternalSpec {
         ExternalSpec {
+            source: "toast".to_string(),
+            integration: None,
             metric: metric.to_string(),
             restaurants: restaurants.iter().map(|s| s.to_string()).collect(),
         }
@@ -287,9 +313,9 @@ mod tests {
         // Two restaurants, restaurant "a" split across two rows (dates / revenue
         // centers) to exercise summing.
         serde_json::json!([
-            { "restaurantGuid": "a", "netSalesAmount": 100.0, "grossSalesAmount": 120.0, "ordersCount": 10 },
-            { "restaurantGuid": "a", "netSalesAmount": 50.0,  "grossSalesAmount": 60.0,  "ordersCount": 5 },
-            { "restaurantGuid": "b", "netSalesAmount": 200.0, "grossSalesAmount": 220.0, "ordersCount": 20 }
+            { "restaurantGuid": "a", "netSalesAmount": 100.0, "grossSalesAmount": 120.0, "ordersCount": 10, "guestCount": 12, "discountAmount": 8.0,  "voidAmount": 2.0, "refundAmount": 1.0 },
+            { "restaurantGuid": "a", "netSalesAmount": 50.0,  "grossSalesAmount": 60.0,  "ordersCount": 5,  "guestCount": 6,  "discountAmount": 4.0,  "voidAmount": 1.0, "refundAmount": 0.0 },
+            { "restaurantGuid": "b", "netSalesAmount": 200.0, "grossSalesAmount": 220.0, "ordersCount": 20, "guestCount": 25, "discountAmount": 15.0, "voidAmount": 3.0, "refundAmount": 5.0 }
         ])
     }
 
@@ -306,6 +332,25 @@ mod tests {
         assert_eq!(map["a"].net_sales, 150.0);
         assert_eq!(map["a"].orders, 15.0);
         assert_eq!(map["b"].gross_sales, 220.0);
+        // New metrics sum across a restaurant's rows too.
+        assert_eq!(map["a"].guests, 18.0);
+        assert_eq!(map["a"].discounts, 12.0);
+        assert_eq!(map["a"].voids, 3.0);
+        assert_eq!(map["b"].refunds, 5.0);
+    }
+
+    #[test]
+    fn new_metrics_resolve_by_alias_and_raw_name() {
+        let map = parse_metrics_array(&sample());
+        // guests: raw guestCount == snake_case guest_count == plural guests.
+        assert_eq!(reduce_check(&map, &spec("guest_count", &[])).unwrap(), 43.0);
+        assert_eq!(
+            reduce_check(&map, &spec("guestCount", &[])).unwrap(),
+            reduce_check(&map, &spec("guests", &[])).unwrap()
+        );
+        assert_eq!(reduce_check(&map, &spec("discounts", &["a"])).unwrap(), 12.0);
+        assert_eq!(reduce_check(&map, &spec("voids", &[])).unwrap(), 6.0);
+        assert_eq!(reduce_check(&map, &spec("refundAmount", &[])).unwrap(), 6.0);
     }
 
     #[test]

@@ -169,16 +169,24 @@ export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: str
 }
 
 /**
- * One reconciliation check: the Oxy measure against the external source, the
- * absolute and percent drift, an optional reason, and its drift status pill.
+ * One reconciliation check: the actual operand against the expected reference,
+ * the absolute and percent drift, an optional description + reason, and its
+ * drift status pill. The value chips use the backend-resolved operand labels.
  */
 const ReconciliationRow = ({ check }: { check: WorkspaceHealthReconciliationCheck }) => (
   <li className='flex items-center justify-between gap-3 rounded-md border border-border/50 px-3 py-2'>
     <div className='min-w-0 space-y-1'>
       <span className='font-medium text-sm'>{check.check}</span>
+      {check.description ? (
+        <span className='block truncate text-muted-foreground text-xs'>{check.description}</span>
+      ) : null}
       <div className='flex flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground text-xs tabular-nums'>
-        <span>Oxy {formatNumber(check.oxy)}</span>
-        <span>External {formatNumber(check.ext)}</span>
+        <span>
+          {check.actual_label} {formatNumber(check.actual)}
+        </span>
+        <span>
+          {check.expected_label} {formatNumber(check.expected)}
+        </span>
         <span>
           Δ {formatNumber(check.abs_diff)}
           {check.pct_diff !== null ? ` (${check.pct_diff.toFixed(1)}%)` : null}

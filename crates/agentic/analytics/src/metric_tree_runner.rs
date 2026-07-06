@@ -92,23 +92,18 @@ pub trait MetricTreeRunner: Send + Sync {
         filters: Vec<QueryFilter>,
     ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError>;
 
-    /// Aggregate a single measure over `period` into ONE scalar — the time
-    /// dimension is used only to bound the window (no `granularity` bucketing),
-    /// so the warehouse returns a single aggregated row. Correct for any measure
-    /// type (sum, average, count-distinct), unlike summing time-series buckets.
-    /// `filters` are `equals` dimension filters (e.g. one restaurant). Used by
-    /// external-source reconciliation. Defaults to unsupported so existing
-    /// runners need no change.
-    async fn run_scalar(
+    /// Execute a full airlayer query (window already injected by the caller as a
+    /// `time_dimensions` date range) and reduce it to ONE scalar — the value of
+    /// the request's single measure in the single aggregated row. Correct for
+    /// any measure type (sum, average, count-distinct). Used by external-source
+    /// reconciliation. Defaults to unsupported so existing runners need no change.
+    async fn run_query_scalar(
         &self,
-        measure: String,
-        time_dimension: String,
-        period: (String, String),
-        filters: Vec<QueryFilter>,
+        request: airlayer::engine::query::QueryRequest,
     ) -> Result<f64, MetricTreeRunnerError> {
-        let _ = (measure, time_dimension, period, filters);
+        let _ = request;
         Err(MetricTreeRunnerError::Op(
-            "run_scalar not supported by this runner".to_string(),
+            "run_query_scalar not supported by this runner".to_string(),
         ))
     }
 }

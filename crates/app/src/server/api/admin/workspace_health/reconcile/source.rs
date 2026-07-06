@@ -13,8 +13,17 @@ use async_trait::async_trait;
 
 use oxy::config::model::ToastAnalyticsIntegration;
 
-use super::config::ReconcileCheck;
+use super::config::ExternalSpec;
 use super::toast::ToastSource;
+
+/// One external value to fetch: an [`ExternalSpec`] (metric + restaurants) and
+/// the already-resolved window it applies to. Decouples the source from the
+/// check shape so a source batches purely by `(spec, window)` — either side of
+/// a check can carry an external operand.
+pub struct ExternalRequest<'a> {
+    pub spec: &'a ExternalSpec,
+    pub window: &'a [String; 2],
+}
 
 /// Per-batch context: the reference instant for window resolution, the
 /// adapter's decrypted secrets (keyed by name, only those present), and the
@@ -55,13 +64,13 @@ pub trait ReconcileSource: Send + Sync {
     /// *logical* slot, so the source reads `ctx.secret("client_id")` regardless
     /// of the configured var name.
     fn secret_vars(&self) -> Vec<(&'static str, String)>;
-    /// Resolve the external value for every check (returned in the same order).
-    /// Implementations batch network calls where possible — Toast issues one
-    /// report per distinct window and shares it across checks.
+    /// Resolve the external value for every request (returned in the same
+    /// order). Implementations batch network calls where possible — Toast
+    /// issues one report per distinct window and shares it across requests.
     async fn fetch_externals(
         &self,
         ctx: &SourceCtx,
-        checks: &[&ReconcileCheck],
+        requests: &[ExternalRequest<'_>],
     ) -> Vec<Result<f64, ReconcileError>>;
 }
 
