@@ -555,7 +555,7 @@ async fn create_web_application(
     openapi_doc.info.description = Some(APIDOC_DESCRIPTION.to_string());
     openapi_doc.info.contact = None;
     openapi_doc.info.license = None;
-    let mut external_docs = ExternalDocs::new("https://docs.oxygen-hq.com");
+    let mut external_docs = ExternalDocs::new("https://oxygen-hq.com/docs");
     external_docs.description = Some("Oxy documentation".to_string());
     openapi_doc.external_docs = Some(external_docs);
 
