@@ -110,9 +110,17 @@ pub fn credentials_from_env() -> Option<CredentialFn> {
 /// A boxed `Connection` future (erased TLS-stream type for reconnect reuse).
 type BoxConn = Pin<Box<dyn Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static>>;
 
+/// Minimum spacing between forced reconnects. If the data plane itself is
+/// still poisoned, a fresh session fails identically — pacing keeps the
+/// storage from reconnect-churning on every failing query.
+const FORCED_RECONNECT_MIN_GAP: Duration = Duration::from_secs(30);
+
 pub struct AirhouseObservabilityStorage {
     /// Swapped on reconnect; read-locked during every query.
     client: Arc<RwLock<Arc<Client>>>,
+    /// Signals the driver task to drop the current connection and re-dial.
+    force_reconnect: Arc<tokio::sync::Notify>,
+    pacer: std::sync::Mutex<ReconnectPacer>,
 }
 
 impl std::fmt::Debug for AirhouseObservabilityStorage {
@@ -171,8 +179,9 @@ fn make_pg_config(
 }
 
 /// Drives the pgwire connection future and reconnects with exponential backoff
-/// on drop. Runs inside a single spawned task; an inner loop handles all
-/// reconnect attempts so no additional tasks are spawned per reconnect.
+/// on drop or on a forced-reconnect signal (poisoned session). Runs inside a
+/// single spawned task; an inner loop handles all reconnect attempts so no
+/// additional tasks are spawned per reconnect.
 fn spawn_driver(
     initial_conn: BoxConn,
     client_ref: Arc<RwLock<Arc<Client>>>,
@@ -180,18 +189,28 @@ fn spawn_driver(
     port: u16,
     insecure: bool,
     get_credentials: CredentialFn,
+    force_reconnect: Arc<tokio::sync::Notify>,
 ) {
     tokio::spawn(async move {
         let mut conn = initial_conn;
         loop {
-            if let Err(e) = conn.await {
-                tracing::warn!(
-                    "Airhouse observability connection dropped: {}",
-                    pg_err_chain(&e)
-                );
-            } else {
-                // Clean server-initiated close — still try to reconnect.
-                tracing::info!("Airhouse observability connection closed cleanly; reconnecting");
+            tokio::select! {
+                res = &mut conn => match res {
+                    Err(e) => tracing::warn!(
+                        "Airhouse observability connection dropped: {}",
+                        pg_err_chain(&e)
+                    ),
+                    // Clean server-initiated close — still try to reconnect.
+                    Ok(()) => tracing::info!(
+                        "Airhouse observability connection closed cleanly; reconnecting"
+                    ),
+                },
+                // DuckDB's poisoned state survives on the server side of a
+                // live connection, so a query error can demand a re-dial.
+                // Replacing `conn` below drops the old socket.
+                _ = force_reconnect.notified() => tracing::warn!(
+                    "Airhouse observability session poisoned; dropping connection and re-dialing"
+                ),
             }
             let mut delay = Duration::from_millis(200);
             loop {
@@ -260,6 +279,7 @@ impl AirhouseObservabilityStorage {
         })?;
 
         let client_ref = Arc::new(RwLock::new(Arc::new(client)));
+        let force_reconnect = Arc::new(tokio::sync::Notify::new());
         spawn_driver(
             conn,
             Arc::clone(&client_ref),
@@ -267,9 +287,14 @@ impl AirhouseObservabilityStorage {
             port,
             insecure,
             get_credentials,
+            Arc::clone(&force_reconnect),
         );
 
-        Ok(Self { client: client_ref })
+        Ok(Self {
+            client: client_ref,
+            force_reconnect,
+            pacer: std::sync::Mutex::new(ReconnectPacer::new(FORCED_RECONNECT_MIN_GAP)),
+        })
     }
 
     /// Execute a SQL string and return all messages (caller filters rows).
@@ -280,7 +305,21 @@ impl AirhouseObservabilityStorage {
     pub(crate) async fn query(&self, sql: &str) -> Result<Vec<SimpleQueryMessage>, OxyError> {
         let client = Arc::clone(&*self.client.read().await);
         client.simple_query(sql).await.map_err(|e| {
-            OxyError::RuntimeError(format!("Airhouse query failed: {}", pg_err_chain(&e)))
+            let msg = pg_err_chain(&e);
+            if is_poisoned_session_error(&msg)
+                && self
+                    .pacer
+                    .lock()
+                    .expect("reconnect pacer lock")
+                    .should_fire(std::time::Instant::now())
+            {
+                tracing::warn!(
+                    "Airhouse observability session reports a poisoned database; \
+                     forcing a reconnect to obtain a fresh session"
+                );
+                self.force_reconnect.notify_one();
+            }
+            OxyError::RuntimeError(format!("Airhouse query failed: {msg}"))
         })
     }
 
@@ -289,7 +328,8 @@ impl AirhouseObservabilityStorage {
         self.query(sql).await.map(|_| ())
     }
 
-    /// Run all `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` DDL.
+    /// Run all `CREATE TABLE IF NOT EXISTS` DDL (DuckLake rejects indexes; see
+    /// [`schema`]).
     pub async fn ensure_schema(&self) -> Result<(), OxyError> {
         for ddl in schema::ALL_DDL {
             let stmt_hint = ddl.trim().lines().next().unwrap_or("(unknown)");
@@ -319,6 +359,44 @@ fn pg_err_chain(e: &tokio_postgres::Error) -> String {
         src = s.source();
     }
     msg
+}
+
+/// True when the server reports DuckDB's poisoned-until-restart state.
+///
+/// Airhouse keeps the pgwire connection alive after a DuckDB fatal error
+/// (unlike real Postgres, where FATAL terminates the connection), so without
+/// explicit detection the storage would hammer a dead session forever —
+/// incident 2026-07-06.
+pub(crate) fn is_poisoned_session_error(msg: &str) -> bool {
+    msg.contains("database has been invalidated")
+}
+
+/// Rate-limits forced reconnects so a still-poisoned server (the invalidation
+/// lives in the data plane, not the session) doesn't cause reconnect churn
+/// from every failing query.
+pub(crate) struct ReconnectPacer {
+    min_gap: Duration,
+    last_fired: Option<std::time::Instant>,
+}
+
+impl ReconnectPacer {
+    pub(crate) fn new(min_gap: Duration) -> Self {
+        Self {
+            min_gap,
+            last_fired: None,
+        }
+    }
+
+    /// Returns true (and arms the gap) when a forced reconnect may fire now.
+    pub(crate) fn should_fire(&mut self, now: std::time::Instant) -> bool {
+        match self.last_fired {
+            Some(last) if now.duration_since(last) < self.min_gap => false,
+            _ => {
+                self.last_fired = Some(now);
+                true
+            }
+        }
+    }
 }
 
 /// Escape a string for safe embedding in DuckDB SQL.
@@ -735,6 +813,44 @@ mod tests {
         let formatted = format_float_array(&original);
         let parsed = parse_float_array(&formatted.replace("::FLOAT[]", ""));
         assert_eq!(parsed, original);
+    }
+
+    // ── is_poisoned_session_error / ReconnectPacer ────────────────────────────
+
+    #[test]
+    fn poisoned_session_error_is_detected() {
+        // Verbatim error chain observed in prod on 2026-07-06.
+        let msg = "db error: ERROR: FATAL Error: Failed: database has been invalidated \
+                   because of a previous fatal error. The database must be restarted \
+                   prior to being used again.\nOriginal error: \"Attempted to access \
+                   index 0 within vector of size 0\"";
+        assert!(is_poisoned_session_error(msg));
+    }
+
+    #[test]
+    fn ordinary_errors_are_not_poisoned() {
+        assert!(!is_poisoned_session_error(
+            "db error: ERROR: Parser Error: syntax error at or near \"SELEC\""
+        ));
+        assert!(!is_poisoned_session_error("connection closed"));
+        assert!(!is_poisoned_session_error(
+            "db error: ERROR: FATAL: password authentication failed for user \"obs\""
+        ));
+    }
+
+    #[test]
+    fn pacer_fires_immediately_then_respects_gap() {
+        let now = std::time::Instant::now();
+        let mut pacer = ReconnectPacer::new(Duration::from_secs(30));
+        assert!(pacer.should_fire(now), "first request must fire");
+        assert!(
+            !pacer.should_fire(now + Duration::from_secs(29)),
+            "within the gap must be suppressed"
+        );
+        assert!(
+            pacer.should_fire(now + Duration::from_secs(30)),
+            "after the gap must fire again"
+        );
     }
 
     // ── credentials_from_env ──────────────────────────────────────────────────

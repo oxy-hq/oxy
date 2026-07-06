@@ -1,7 +1,9 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
+use crate::flush_queue::SpanFlushQueue;
 use crate::layer::SpanCollectorLayer;
 use crate::store::ObservabilityStore;
 use crate::types::SpanRecord;
@@ -69,17 +71,62 @@ pub fn build_layer_and_receiver() -> (
     (layer, span_rx)
 }
 
+/// Records queued when the store starts flowing again after an outage; beyond
+/// this, oldest records are dropped (with a warning) to bound memory.
+const MAX_BUFFERED_SPANS: usize = 5_000;
+
 /// Spawn the batching bridge task that drains `receiver` into `store`.
 ///
 /// Uses a short interval (1s) and small batch (100) to keep latency low while
 /// still amortizing write overhead for Postgres. These values match the DuckDB
 /// writer's internal buffer so the two don't stack latency.
+///
+/// Failed batches are requeued and retried with exponential backoff (see
+/// [`SpanFlushQueue`]) so a store outage causes bounded, logged loss instead
+/// of silently discarding every batch for its duration.
 pub fn spawn_bridge(
     mut receiver: tokio::sync::mpsc::UnboundedReceiver<SpanRecord>,
     store: Arc<dyn ObservabilityStore>,
 ) {
+    async fn flush(
+        queue: &mut SpanFlushQueue,
+        store: &Arc<dyn ObservabilityStore>,
+        min_len: usize,
+    ) {
+        let Some(batch) = queue.take_ready(Instant::now(), min_len) else {
+            return;
+        };
+        // Clone so the batch can be requeued on failure — `insert_spans`
+        // consumes its argument.
+        match store.insert_spans(batch.clone()).await {
+            Ok(()) => queue.on_success(),
+            Err(e) => {
+                let batch_len = batch.len();
+                let dropped = queue.on_failure(batch, Instant::now());
+                if dropped > 0 {
+                    tracing::error!(
+                        "Failed to insert spans; requeued {} but dropped {} oldest (buffer full): {}",
+                        batch_len - dropped.min(batch_len),
+                        dropped,
+                        e
+                    );
+                } else {
+                    tracing::error!(
+                        "Failed to insert spans; requeued {} for retry: {}",
+                        batch_len,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
     tokio::spawn(async move {
-        let mut buffer = Vec::with_capacity(100);
+        let mut queue = SpanFlushQueue::new(
+            MAX_BUFFERED_SPANS,
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(60),
+        );
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         interval.tick().await; // consume first immediate tick
 
@@ -88,18 +135,23 @@ pub fn spawn_bridge(
                 msg = receiver.recv() => {
                     match msg {
                         Some(record) => {
-                            buffer.push(record);
-                            if buffer.len() >= 100 {
-                                let batch = std::mem::take(&mut buffer);
-                                if let Err(e) = store.insert_spans(batch).await {
-                                    tracing::error!("Failed to insert spans: {}", e);
-                                }
+                            let dropped = queue.push(record);
+                            if dropped > 0 {
+                                tracing::warn!(
+                                    "Span buffer full during store outage; dropped {} oldest record(s)",
+                                    dropped
+                                );
+                            }
+                            if queue.len() >= 100 {
+                                flush(&mut queue, &store, 100).await;
                             }
                         }
                         None => {
-                            // Channel closed — flush remaining and exit.
-                            if !buffer.is_empty() {
-                                let batch = std::mem::take(&mut buffer);
+                            // Channel closed — final best-effort send, bypassing
+                            // the retry backoff (there is no later attempt for
+                            // the gate to defer to).
+                            let batch = queue.take_all();
+                            if !batch.is_empty() {
                                 let _ = store.insert_spans(batch).await;
                             }
                             break;
@@ -107,12 +159,7 @@ pub fn spawn_bridge(
                     }
                 }
                 _ = interval.tick() => {
-                    if !buffer.is_empty() {
-                        let batch = std::mem::take(&mut buffer);
-                        if let Err(e) = store.insert_spans(batch).await {
-                            tracing::error!("Failed to insert spans: {}", e);
-                        }
-                    }
+                    flush(&mut queue, &store, 1).await;
                 }
             }
         }

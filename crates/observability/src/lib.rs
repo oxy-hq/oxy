@@ -6,6 +6,7 @@
 
 pub mod backends;
 pub mod duration;
+pub(crate) mod flush_queue;
 pub mod global;
 pub mod intent_types;
 pub mod layer;

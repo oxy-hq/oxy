@@ -19,14 +19,15 @@ fn rows(messages: &[SimpleQueryMessage]) -> impl Iterator<Item = &tokio_postgres
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
-pub async fn list_traces(
-    storage: &AirhouseObservabilityStorage,
+/// Build the `(count_sql, data_sql)` pair for [`list_traces`]. Pure so the
+/// SQL shape is unit-testable.
+pub(crate) fn build_list_traces_sql(
     limit: i64,
     offset: i64,
     agent_ref: Option<&str>,
     status: Option<&str>,
     duration_filter: Option<&str>,
-) -> Result<(Vec<TraceRow>, i64), OxyError> {
+) -> (String, String) {
     let mut conditions = vec![
         "s.span_name IN ('workflow.run_workflow', 'agent.run_agent', 'analytics.run')".to_string(),
         "s.parent_span_id = ''".to_string(),
@@ -50,11 +51,19 @@ pub async fn list_traces(
     let where_clause = conditions.join(" AND ");
 
     let count_sql = format!("SELECT count(*) AS n FROM oxy_obs_spans s WHERE {where_clause}");
-    let count_msgs = storage.query(&count_sql).await?;
-    let total = rows(&count_msgs)
-        .next()
-        .and_then(|r| r.get("n").and_then(|s| s.parse::<i64>().ok()))
-        .unwrap_or(0);
+
+    // token_agg scans child spans, and trace_id alone gives DuckLake nothing
+    // to prune parquet on — unbounded, this was a full-table scan + json_each
+    // over every event payload (incident 2026-07-06). Child spans live inside
+    // their root's window; the extra day absorbs any trace shorter than a day
+    // regardless of whether timestamps record span start or close.
+    let token_agg_bound = crate::duration::duckdb_interval(duration_filter)
+        .map(|interval| {
+            format!(
+                "\n              AND s2.timestamp >= current_timestamp::TIMESTAMP - INTERVAL '{interval}' - INTERVAL '1 DAY'"
+            )
+        })
+        .unwrap_or_default();
 
     let data_sql = format!(
         "WITH root_traces AS (
@@ -73,7 +82,7 @@ pub async fn list_traces(
                 SUM(CAST(json_extract_string(ev.value, '$.attributes.total_tokens') AS BIGINT)) AS total_tokens
             FROM oxy_obs_spans s2, json_each(s2.event_data) ev
             WHERE s2.trace_id IN (SELECT trace_id FROM root_traces)
-              AND json_extract_string(ev.value, '$.name') = 'llm.usage'
+              AND json_extract_string(ev.value, '$.name') = 'llm.usage'{token_agg_bound}
             GROUP BY s2.trace_id
         )
         SELECT
@@ -88,6 +97,26 @@ pub async fn list_traces(
         LEFT JOIN token_agg t ON r.trace_id = t.trace_id
         ORDER BY r.timestamp DESC"
     );
+    (count_sql, data_sql)
+}
+
+pub async fn list_traces(
+    storage: &AirhouseObservabilityStorage,
+    limit: i64,
+    offset: i64,
+    agent_ref: Option<&str>,
+    status: Option<&str>,
+    duration_filter: Option<&str>,
+) -> Result<(Vec<TraceRow>, i64), OxyError> {
+    let (count_sql, data_sql) =
+        build_list_traces_sql(limit, offset, agent_ref, status, duration_filter);
+
+    let count_msgs = storage.query(&count_sql).await?;
+    let total = rows(&count_msgs)
+        .next()
+        .and_then(|r| r.get("n").and_then(|s| s.parse::<i64>().ok()))
+        .unwrap_or(0);
+
     let data_msgs = storage.query(&data_sql).await?;
     let traces = rows(&data_msgs)
         .map(|r| TraceRow {
@@ -233,4 +262,50 @@ pub async fn get_trace_enrichments(
         })
         .collect();
     Ok(rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Incident 2026-07-06: the token_agg CTE lateral-joined json_each over
+    // every span in the table (filtered only by trace_id, which DuckLake
+    // cannot prune on). On S3-backed DuckLake this produced 25s full scans
+    // that OOMed the data plane and tripped a DuckDB internal error that
+    // poisoned the tenant database. The list query MUST carry the duration
+    // window into token_agg.
+
+    #[test]
+    fn token_agg_is_time_bounded_when_window_given() {
+        let (_count, data) = build_list_traces_sql(10, 0, None, None, Some("30d"));
+        assert!(
+            data.contains(
+                "s2.timestamp >= current_timestamp::TIMESTAMP - INTERVAL '30 DAY' - INTERVAL '1 DAY'"
+            ),
+            "token_agg must carry the duration window (plus margin) so DuckLake can prune parquet, got:\n{data}"
+        );
+    }
+
+    #[test]
+    fn token_agg_unbounded_without_window() {
+        let (_count, data) = build_list_traces_sql(10, 0, None, None, None);
+        assert!(
+            !data.contains("s2.timestamp >="),
+            "no window requested ('all') must not bound token_agg:\n{data}"
+        );
+    }
+
+    #[test]
+    fn root_filter_carries_window_and_paging() {
+        let (count, data) = build_list_traces_sql(10, 20, None, None, Some("7d"));
+        assert!(count.contains("s.timestamp >= current_timestamp::TIMESTAMP - INTERVAL '7 DAY'"));
+        assert!(data.contains("LIMIT 10 OFFSET 20"));
+    }
+
+    #[test]
+    fn agent_and_status_filters_are_escaped() {
+        let (count, _data) = build_list_traces_sql(5, 0, Some("it's"), Some("ERROR' OR 1=1"), None);
+        assert!(count.contains("it''s"));
+        assert!(count.contains("ERROR'' OR 1=1"));
+    }
 }
