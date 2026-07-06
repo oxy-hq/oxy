@@ -1,0 +1,135 @@
+---
+title: Install the Oxy CLI
+sidebarTitle: Install the CLI
+description: Install the optional oxy command-line tool and run your first commands
+---
+
+Oxygen is delivered as a hosted product at
+**[app.oxygen-hq.com](https://app.oxygen-hq.com)** — sign up, connect your
+data, and start asking questions. There is nothing to install to use the
+product.
+
+The **`oxy` CLI** is an optional companion for developers who want to work
+with an Oxy project from the terminal — scaffolding a project, running
+automations, validating config, and previewing it locally. You do **not** need
+it to use Oxygen.
+
+<Note>
+The CLI is for local development workflows. If you just want to ask questions of
+your data, use the web app — skip this page.
+</Note>
+
+## Install
+
+Run the install script. It downloads the right binary for your OS and
+architecture (macOS and Linux, `x86_64` and `arm64`) and drops it on your
+`PATH`:
+
+```bash
+bash <(curl -sSfL https://get.oxy.tech)
+```
+
+To pin a specific version, set `OXY_VERSION`:
+
+```bash
+OXY_VERSION=<version> bash <(curl -sSfL https://get.oxy.tech)
+```
+
+The script installs to `/usr/local/bin` when run as root, otherwise to
+`~/.local/bin` (and adds it to your `PATH` for bash/zsh). If `~/.local/bin`
+isn't already on your `PATH`, open a new shell after installing.
+
+<Note>
+The install script supports macOS and Linux. Windows isn't supported directly —
+use [WSL](https://learn.microsoft.com/windows/wsl/install).
+</Note>
+
+### Verify
+
+```bash
+oxy --version
+```
+
+### Update
+
+Upgrade to the latest release in place:
+
+```bash
+oxy update
+```
+
+## Basic commands
+
+The CLI is self-documenting — run `oxy --help`, or `oxy <command> --help` for
+any subcommand. The commands you'll reach for most:
+
+| Command | What it does |
+| --- | --- |
+| `oxy init` | Scaffold a new Oxy project in the current directory |
+| `oxy validate` | Check `config.yml`, automations, and agents for errors |
+| `oxy run <file>` | Run an automation (`.automation.yml`) or a `.sql` file |
+| `oxy start` | Start Oxy locally with PostgreSQL in Docker (recommended) |
+| `oxy serve` | Start the Oxy web server (requires `OXY_DATABASE_URL`) |
+| `oxy build` | Build vector embeddings and sync integrations |
+| `oxy mcp stdio` | Start an MCP server so editors (Cursor, Claude Desktop) can use Oxy as a tool |
+| `oxy update` | Update the CLI to the latest release |
+
+### Create a project
+
+Scaffold a new Oxy project in the current directory:
+
+```bash
+oxy init
+```
+
+### Validate your config
+
+Check your `config.yml`, automation files, and agent definitions for syntax and
+schema errors before running anything:
+
+```bash
+oxy validate
+```
+
+### Run an automation
+
+Point `oxy run` at an automation or SQL file to execute it from the terminal:
+
+```bash
+oxy run my_report.automation.yml
+```
+
+### Preview locally
+
+`oxy start` brings up a local PostgreSQL container and the Oxy web server so you
+can preview your project in the browser. It needs a Docker-compatible container
+engine (Docker Engine, Docker Desktop, Rancher Desktop, Colima, Podman, …):
+
+```bash
+oxy start
+```
+
+Use `oxy serve` instead if you're supplying your own database via
+`OXY_DATABASE_URL`, and `oxy status` to check what's running.
+
+### Expose Oxy to your editor over MCP
+
+Start an MCP server so MCP-compatible tools can query your project. This is the
+usual way to wire Oxy into Cursor or Claude Desktop:
+
+```bash
+oxy mcp stdio --project /path/to/your/project
+```
+
+See [MCP →](/guide/build/embed-extend/mcp) for editor configuration.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/guide/start/quickstart">
+    Sign up and ask your first question in the web app
+  </Card>
+  <Card title="Connect to your editor with MCP" icon="plug" href="/guide/build/embed-extend/mcp">
+    Use Oxy as a tool in Cursor and Claude Desktop
+  </Card>
+</CardGroup>
