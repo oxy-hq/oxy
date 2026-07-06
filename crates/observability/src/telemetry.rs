@@ -75,11 +75,22 @@ pub fn build_layer_and_receiver() -> (
 /// this, oldest records are dropped (with a warning) to bound memory.
 const MAX_BUFFERED_SPANS: usize = 5_000;
 
+/// Time-based flush cadence. Every flush is one storage commit — on DuckLake
+/// one commit = one parquet file, and the previous 1s cadence at low span
+/// rates committed ~1-row files around the clock until reads drowned in file
+/// enumeration (2026-07-06 dev outage: every observability endpoint past the
+/// 30s server / 60s HTTP timeout). 30s bounds file creation at ≤2,880/day per
+/// writer while keeping the panel near-real-time; bursts still flush early on
+/// [`FLUSH_BATCH_SIZE`].
+const FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Size-based flush trigger — bounds memory and batch width under load.
+const FLUSH_BATCH_SIZE: usize = 100;
+
 /// Spawn the batching bridge task that drains `receiver` into `store`.
 ///
-/// Uses a short interval (1s) and small batch (100) to keep latency low while
-/// still amortizing write overhead for Postgres. These values match the DuckDB
-/// writer's internal buffer so the two don't stack latency.
+/// Batches are committed on whichever fires first: [`FLUSH_BATCH_SIZE`]
+/// records, or the [`FLUSH_INTERVAL`] tick.
 ///
 /// Failed batches are requeued and retried with exponential backoff (see
 /// [`SpanFlushQueue`]) so a store outage causes bounded, logged loss instead
@@ -127,7 +138,7 @@ pub fn spawn_bridge(
             std::time::Duration::from_secs(1),
             std::time::Duration::from_secs(60),
         );
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        let mut interval = tokio::time::interval(FLUSH_INTERVAL);
         interval.tick().await; // consume first immediate tick
 
         loop {
@@ -142,8 +153,8 @@ pub fn spawn_bridge(
                                     dropped
                                 );
                             }
-                            if queue.len() >= 100 {
-                                flush(&mut queue, &store, 100).await;
+                            if queue.len() >= FLUSH_BATCH_SIZE {
+                                flush(&mut queue, &store, FLUSH_BATCH_SIZE).await;
                             }
                         }
                         None => {
@@ -260,4 +271,236 @@ pub fn init_stdout() {
 /// called from the application entrypoint.
 pub fn shutdown() {
     tracing::debug!("Observability shutdown requested");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use oxy_shared::errors::OxyError;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    use crate::intent_types::IntentCluster;
+    use crate::types::*;
+
+    /// Records every `insert_spans` batch; all other methods are unreachable
+    /// in these tests.
+    #[derive(Debug, Default)]
+    struct RecordingStore {
+        batches: Mutex<Vec<Vec<SpanRecord>>>,
+    }
+
+    #[async_trait]
+    impl ObservabilityStore for RecordingStore {
+        async fn list_traces(
+            &self,
+            _: i64,
+            _: i64,
+            _: Option<&str>,
+            _: Option<&str>,
+            _: Option<&str>,
+        ) -> Result<(Vec<TraceRow>, i64), OxyError> {
+            unimplemented!()
+        }
+        async fn get_trace_detail(&self, _: &str) -> Result<Vec<TraceDetailRow>, OxyError> {
+            unimplemented!()
+        }
+        async fn get_cluster_map_data(
+            &self,
+            _: u32,
+            _: usize,
+            _: Option<&str>,
+        ) -> Result<Vec<ClusterMapDataRow>, OxyError> {
+            unimplemented!()
+        }
+        async fn get_cluster_infos(&self) -> Result<Vec<ClusterInfoRow>, OxyError> {
+            unimplemented!()
+        }
+        async fn get_trace_enrichments(
+            &self,
+            _: &[String],
+        ) -> Result<Vec<TraceEnrichmentRow>, OxyError> {
+            unimplemented!()
+        }
+        async fn fetch_unprocessed_questions(
+            &self,
+            _: usize,
+        ) -> Result<Vec<(String, String, String)>, OxyError> {
+            unimplemented!()
+        }
+        async fn load_embeddings(
+            &self,
+        ) -> Result<Vec<(String, String, Vec<f32>, String, String)>, OxyError> {
+            unimplemented!()
+        }
+        async fn store_clusters(&self, _: &[IntentCluster]) -> Result<(), OxyError> {
+            unimplemented!()
+        }
+        async fn load_clusters(&self) -> Result<Vec<IntentCluster>, OxyError> {
+            unimplemented!()
+        }
+        #[allow(clippy::too_many_arguments)]
+        async fn store_classification(
+            &self,
+            _: &str,
+            _: &str,
+            _: u32,
+            _: &str,
+            _: f32,
+            _: &[f32],
+            _: &str,
+            _: &str,
+        ) -> Result<(), OxyError> {
+            unimplemented!()
+        }
+        #[allow(clippy::too_many_arguments)]
+        async fn update_classification(
+            &self,
+            _: &str,
+            _: &str,
+            _: u32,
+            _: &str,
+            _: f32,
+            _: &[f32],
+            _: &str,
+            _: &str,
+        ) -> Result<(), OxyError> {
+            unimplemented!()
+        }
+        async fn get_intent_analytics(&self, _: u32) -> Result<Vec<IntentAnalyticsRow>, OxyError> {
+            unimplemented!()
+        }
+        async fn get_outliers(&self, _: usize) -> Result<Vec<(String, String)>, OxyError> {
+            unimplemented!()
+        }
+        async fn load_unknown_classifications(
+            &self,
+        ) -> Result<Vec<(String, String, Vec<f32>, String)>, OxyError> {
+            unimplemented!()
+        }
+        async fn get_unknown_count(&self) -> Result<usize, OxyError> {
+            unimplemented!()
+        }
+        async fn update_cluster_record(&self, _: &IntentCluster) -> Result<(), OxyError> {
+            unimplemented!()
+        }
+        async fn get_next_cluster_id(&self) -> Result<u32, OxyError> {
+            unimplemented!()
+        }
+        async fn store_metric_usages(&self, _: Vec<MetricUsageRecord>) -> Result<(), OxyError> {
+            unimplemented!()
+        }
+        async fn get_metrics_analytics(&self, _: u32) -> Result<MetricAnalyticsData, OxyError> {
+            unimplemented!()
+        }
+        async fn get_metrics_list(
+            &self,
+            _: u32,
+            _: usize,
+            _: usize,
+        ) -> Result<MetricsListData, OxyError> {
+            unimplemented!()
+        }
+        async fn get_metric_detail(&self, _: &str, _: u32) -> Result<MetricDetailData, OxyError> {
+            unimplemented!()
+        }
+        async fn get_execution_summary(&self, _: u32) -> Result<ExecutionSummaryData, OxyError> {
+            unimplemented!()
+        }
+        async fn get_execution_time_series(
+            &self,
+            _: u32,
+        ) -> Result<Vec<ExecutionTimeBucketData>, OxyError> {
+            unimplemented!()
+        }
+        async fn get_execution_agent_stats(
+            &self,
+            _: u32,
+            _: usize,
+        ) -> Result<Vec<AgentExecutionStatsData>, OxyError> {
+            unimplemented!()
+        }
+        #[allow(clippy::too_many_arguments)]
+        async fn get_execution_list(
+            &self,
+            _: u32,
+            _: usize,
+            _: usize,
+            _: Option<&str>,
+            _: Option<bool>,
+            _: Option<&str>,
+            _: Option<&str>,
+        ) -> Result<ExecutionListData, OxyError> {
+            unimplemented!()
+        }
+        async fn insert_spans(&self, spans: Vec<SpanRecord>) -> Result<(), OxyError> {
+            self.batches.lock().unwrap().push(spans);
+            Ok(())
+        }
+        async fn purge_older_than(&self, _: u32) -> Result<u64, OxyError> {
+            unimplemented!()
+        }
+        async fn shutdown(&self) {}
+    }
+
+    fn rec(n: usize) -> SpanRecord {
+        SpanRecord {
+            trace_id: format!("trace-{n}"),
+            span_id: format!("span-{n}"),
+            parent_span_id: String::new(),
+            span_name: "test".into(),
+            service_name: "oxy".into(),
+            span_attributes: "{}".into(),
+            duration_ns: 0,
+            status_code: "OK".into(),
+            status_message: String::new(),
+            event_data: "[]".into(),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+        }
+    }
+
+    // Incident 2026-07-06 (dev): flushing every second at low span rates
+    // committed one ~1-row parquet file per second into DuckLake, and the
+    // resulting small-file explosion pushed every observability read past
+    // the 30s server / 60s HTTP timeouts. Small batches must be HELD for the
+    // flush cadence (30s), not committed eagerly.
+
+    #[tokio::test(start_paused = true)]
+    async fn small_batches_are_held_for_the_flush_cadence() {
+        let store = Arc::new(RecordingStore::default());
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        spawn_bridge(rx, store.clone() as Arc<dyn ObservabilityStore>);
+
+        for n in 0..3 {
+            tx.send(rec(n)).unwrap();
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert!(
+            store.batches.lock().unwrap().is_empty(),
+            "a small batch must not commit within 5s — eager 1s commits caused \
+             the DuckLake small-file explosion"
+        );
+
+        tokio::time::sleep(Duration::from_secs(26)).await; // t = 31s > cadence
+        let batches = store.batches.lock().unwrap();
+        assert_eq!(batches.len(), 1, "one combined commit after the cadence");
+        assert_eq!(batches[0].len(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn full_batches_flush_without_waiting() {
+        let store = Arc::new(RecordingStore::default());
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        spawn_bridge(rx, store.clone() as Arc<dyn ObservabilityStore>);
+
+        for n in 0..100 {
+            tx.send(rec(n)).unwrap();
+        }
+        // Yield to the bridge task without advancing past the cadence.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let batches = store.batches.lock().unwrap();
+        assert_eq!(batches.len(), 1, "a full batch flushes on size, not time");
+        assert_eq!(batches[0].len(), 100);
+    }
 }
