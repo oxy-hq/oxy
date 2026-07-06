@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.99] - 2026-07-06
+
+### 🚀 Features
+
+- Harden airhouse observability — day partitioning + snapshot expiry (#2679)
+
+### 🐛 Bug Fixes
+
+- Observability airhouse poisoned-session recovery + bounded traces query (#2674)
+- Flush observability spans every 30s instead of every second (#2677)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2678)
+
 ## [0.5.98] - 2026-07-06
 
 ### 🚀 Features
@@ -16,6 +31,7 @@ All notable changes to this project will be documented in this file.
 
 - Update docs domain
 - Cargo fmt and build
+- Release 0.5.98 (#2670)
 
 ## [0.5.97] - 2026-07-05
 
