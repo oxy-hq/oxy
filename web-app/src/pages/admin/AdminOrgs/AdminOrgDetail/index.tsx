@@ -32,6 +32,8 @@ import {
 } from "@/hooks/api/adminTenants/useAdminOrgs";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import ROUTES from "@/libs/utils/routes";
+import { CopyableId } from "@/pages/admin/components/CopyableId";
+import { OrgLogoEditor } from "@/pages/admin/components/OrgLogoEditor";
 import { AdminDetailEyebrow, AdminDetailHeader } from "../../components/AdminDetailHeader";
 import { AdminDetailStats } from "../../components/AdminDetailStats";
 import { AdminDetailTabPanel, AdminDetailTabs } from "../../components/AdminDetailTabs";
@@ -163,6 +165,8 @@ export default function AdminOrgDetail() {
         subtitle={
           <>
             <span className='font-mono text-xs'>/{detail.slug}</span>
+            <span aria-hidden>·</span>
+            <CopyableId value={detail.id} />
             <span aria-hidden>·</span>
             <span>Owner {detail.owner_email ?? "—"}</span>
             <span aria-hidden>·</span>
@@ -331,6 +335,16 @@ export default function AdminOrgDetail() {
 
       {tab === "settings" ? (
         <AdminDetailTabPanel>
+          <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
+            <div className='space-y-1'>
+              <h3 className='font-semibold text-base'>Branding</h3>
+              <p className='text-muted-foreground text-xs'>
+                The org logo white-labels the workspace HQ chrome for every member.
+              </p>
+            </div>
+            <OrgLogoEditor orgId={detail.id} name={detail.name} />
+          </section>
+
           <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
             <div className='space-y-1'>
               <h3 className='font-semibold text-base'>Identity</h3>

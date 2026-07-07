@@ -57,6 +57,58 @@ export const useDeleteAdminOrg = () => {
   });
 };
 
+/** Read a Blob as a `data:` URL — cache-friendly (a string, unlike an object
+ *  URL that needs revoking) and small enough for the ≤1 MB logo cap. */
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** The org's uploaded logo as a `data:` URL, or `null` if none. */
+export const useAdminOrgLogo = (orgId: string | undefined) =>
+  useQuery({
+    queryKey: queryKeys.adminOrgs.logo(orgId ?? ""),
+    queryFn: async () => {
+      const blob = await AdminOrgsService.getLogo(orgId as string);
+      return blob ? await blobToDataUrl(blob) : null;
+    },
+    enabled: !!orgId,
+    staleTime: 5 * 60_000
+  });
+
+export const useUploadAdminOrgLogo = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orgId, file }: { orgId: string; file: File }) =>
+      AdminOrgsService.uploadLogo(orgId, file),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: queryKeys.adminOrgs.logo(vars.orgId) });
+      qc.invalidateQueries({ queryKey: queryKeys.adminOrgs.detail(vars.orgId) });
+      qc.invalidateQueries({ queryKey: queryKeys.adminOrgs.all });
+      toast.success("Logo updated");
+    },
+    onError: (err) => toast.error(errMessage(err, "Failed to update logo"))
+  });
+};
+
+export const useDeleteAdminOrgLogo = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orgId: string) => AdminOrgsService.deleteLogo(orgId),
+    onSuccess: (_data, orgId) => {
+      qc.invalidateQueries({ queryKey: queryKeys.adminOrgs.logo(orgId) });
+      qc.invalidateQueries({ queryKey: queryKeys.adminOrgs.detail(orgId) });
+      qc.invalidateQueries({ queryKey: queryKeys.adminOrgs.all });
+      toast.success("Logo removed");
+    },
+    onError: (err) => toast.error(errMessage(err, "Failed to remove logo"))
+  });
+};
+
 export const useTransferOrgOwnership = () => {
   const qc = useQueryClient();
   return useMutation({

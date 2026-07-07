@@ -14,10 +14,9 @@ import {
 } from "@/components/ui/shadcn/table";
 import { useWorkspaceRevisions } from "@/hooks/api/compiles";
 import { cn } from "@/libs/shadcn/utils";
+import { CopyableId } from "@/pages/admin/components/CopyableId";
 import type { WorkspaceCompileRow } from "@/services/api/compiles";
-
 import { formatRelative } from "../utils";
-import { CopyableId } from "./CopyableId";
 import { RevisionRow } from "./RevisionRow";
 import { StatusBadge } from "./StatusBadge";
 

@@ -92,6 +92,27 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 // Pointer moves only — bytes already live in S3.
                 .route("/{id}/builds", get(admin::apps::handlers::list_builds))
                 .route("/{id}/rollback", post(admin::apps::handlers::rollback_app))
+                // Batch mutations for the admin apps table: publish /
+                // unpublish / delete many apps in one request. POST even for
+                // delete, since the id set travels in the body. Each is
+                // best-effort per-id (see `BatchResponse`); `batch` is a
+                // static segment so it never collides with `/{id}`.
+                .route(
+                    "/batch/publish",
+                    post(admin::apps::handlers::batch_publish_apps),
+                )
+                .route(
+                    "/batch/promote-latest",
+                    post(admin::apps::handlers::batch_promote_latest_apps),
+                )
+                .route(
+                    "/batch/unpublish",
+                    post(admin::apps::handlers::batch_unpublish_apps),
+                )
+                .route(
+                    "/batch/delete",
+                    post(admin::apps::handlers::batch_delete_apps),
+                )
                 // Activity (usage tracking) — see `customer_apps_activity`.
                 // Reads the `custom_app_view_event` + `custom_app_event`
                 // tables to power the AppDetail "Activity" tab.

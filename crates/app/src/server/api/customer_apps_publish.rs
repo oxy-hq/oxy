@@ -45,8 +45,10 @@ pub struct PublishInput {
     /// (`"550e8400-e29b-41d4-a716-446655440000"`). UUIDs are useful
     /// when the slug has drifted between envs (e.g. an admin renamed
     /// the org in prod but not staging) and the publisher wants a
-    /// stable handle. `resolve_org` looks at both columns.
-    pub org_ref: OrgRef,
+    /// stable handle. `resolve_org` looks at both columns. `None` means the
+    /// publisher pinned only a workspace (`--project`) — the org is inferred
+    /// from it, since a workspace belongs to exactly one org.
+    pub org_ref: Option<OrgRef>,
     pub app_slug: String,
     pub project_id: Uuid,
     pub branch: Option<String>,
@@ -55,6 +57,10 @@ pub struct PublishInput {
     pub promote: bool,
     pub tarball: Vec<u8>,
     pub manifest: Option<serde_json::Value>,
+    /// Git remote URL of the app source at publish time (best-effort).
+    pub source_repo: Option<String>,
+    /// Commit sha the build was published from (best-effort).
+    pub commit_sha: Option<String>,
     /// Authenticated publisher (app-admin). Recorded on the build for the
     /// "who deployed" audit in the admin UI.
     pub published_by: Option<Uuid>,
@@ -216,6 +222,25 @@ async fn resolve_org(
     };
     row.map_err(|e| PublishError::Db(e.to_string()))?
         .ok_or_else(|| PublishError::UnknownOrg(org_ref.describe()))
+}
+
+/// Infer the org from the target workspace when the publisher didn't send one
+/// (`--project` without `--org`). A workspace belongs to exactly one org, so
+/// the project id alone determines it. Errors if the workspace is unknown or
+/// somehow orphaned (no `org_id`).
+async fn org_for_project(
+    db: &DatabaseConnection,
+    project_id: Uuid,
+) -> Result<organizations::Model, PublishError> {
+    let ws = workspaces::Entity::find_by_id(project_id)
+        .one(db)
+        .await
+        .map_err(|e| PublishError::Db(e.to_string()))?
+        .ok_or_else(|| PublishError::UnknownProject(project_id, "(inferred org)".to_string()))?;
+    let org_id = ws.org_id.ok_or_else(|| {
+        PublishError::UnknownProject(project_id, "(orphaned workspace)".to_string())
+    })?;
+    resolve_org(db, &OrgRef::Id(org_id)).await
 }
 
 /// Best-effort cross-org guard: if the project id resolves to a workspace,
@@ -382,6 +407,9 @@ async fn record_build(
         manifest_json: ActiveValue::Set(manifest_json),
         created_at: ActiveValue::Set(Utc::now().fixed_offset()),
         published_by: ActiveValue::Set(input.published_by),
+        source_repo: ActiveValue::Set(input.source_repo.clone()),
+        commit_sha: ActiveValue::Set(input.commit_sha.clone()),
+        source_branch: ActiveValue::Set(input.branch.clone()),
     };
     model
         .insert(db)
@@ -496,8 +524,18 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
         .await
         .map_err(|e| PublishError::Db(e.to_string()))?;
 
-    let org = resolve_org(&db, &input.org_ref).await?;
-    validate_project(&db, input.project_id, org.id, &org.slug).await?;
+    // Resolve the org. When the publisher pinned only a workspace
+    // (`--project` without `--org`), infer the org from it — a workspace
+    // belongs to exactly one org. When an org IS given, keep the cross-org
+    // guard: it must match the workspace's org.
+    let org = match &input.org_ref {
+        Some(org_ref) => {
+            let org = resolve_org(&db, org_ref).await?;
+            validate_project(&db, input.project_id, org.id, &org.slug).await?;
+            org
+        }
+        None => org_for_project(&db, input.project_id).await?,
+    };
     authorize_publish(&db, &org, &input).await?;
 
     let files = unpack_tar_gz(&input.tarball)?;
@@ -595,6 +633,8 @@ pub async fn publish_handler(
     let mut promote = false;
     let mut manifest = None;
     let mut tarball: Option<Vec<u8>> = None;
+    let mut source_repo = None;
+    let mut commit_sha = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -645,6 +685,8 @@ pub async fn publish_handler(
                     "branch" => branch = Some(val).filter(|s| !s.is_empty()),
                     "build_id" => build_id = Some(val).filter(|s| !s.is_empty()),
                     "name" => name = Some(val).filter(|s| !s.is_empty()),
+                    "source_repo" => source_repo = Some(val).filter(|s| !s.is_empty()),
+                    "commit_sha" => commit_sha = Some(val).filter(|s| !s.is_empty()),
                     "channel" => promote = val == "published",
                     "promote" => promote = val == "true" || val == "1",
                     _ => {}
@@ -667,15 +709,13 @@ pub async fn publish_handler(
             format!("org_id is not a valid UUID: {bad:?}"),
         ));
     }
+    // No org sent — infer it from the pinned workspace server-side (a
+    // workspace belongs to exactly one org). `project_id` is validated as
+    // present below, so `publish()` always has something to infer from.
     let org_ref = match (org_id, org) {
-        (Some(id), _) => OrgRef::Id(id),
-        (None, Some(s)) => OrgRef::from_str_auto(&s),
-        (None, None) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "missing org: provide `org` (slug or UUID) or `org_id` (UUID)".into(),
-            ));
-        }
+        (Some(id), _) => Some(OrgRef::Id(id)),
+        (None, Some(s)) => Some(OrgRef::from_str_auto(&s)),
+        (None, None) => None,
     };
 
     let input = PublishInput {
@@ -689,6 +729,8 @@ pub async fn publish_handler(
         promote,
         tarball: tarball.ok_or((StatusCode::BAD_REQUEST, "missing bundle".into()))?,
         manifest,
+        source_repo,
+        commit_sha,
         published_by: Some(user.id),
     };
 

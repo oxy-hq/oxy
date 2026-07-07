@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useBackfillUncompiled } from "@/hooks/api/compiles";
 import queryKeys from "@/hooks/api/queryKey";
-
+import { useRowSelection } from "@/hooks/useRowSelection";
 import { LiveIndicator } from "../AdminInternalJobs/components/LiveIndicator";
 import { BulkActionBar } from "./components/BulkActionBar";
 import { CompileFilters, type CompileView } from "./components/CompileFilters";
@@ -15,7 +15,6 @@ import { RevisionTable } from "./components/RevisionTable";
 import { RunCompileSheet } from "./components/RunCompileSheet";
 import { WorkspaceTable } from "./components/WorkspaceTable";
 import { useAdminCompiles } from "./useAdminCompiles";
-import { useRowSelection } from "./useRowSelection";
 
 // Stable empty list for the rollup-view revision selection (ids load lazily in
 // child rows). A fresh `[]` each render would needlessly churn the hook's memos.

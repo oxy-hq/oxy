@@ -1,3 +1,4 @@
+import { GitBranch } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -10,6 +11,60 @@ import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { useAppBuilds, useRollbackApp } from "@/hooks/api/customerApps/useAppBuilds";
 import type { AppBuild } from "@/types/apps";
+
+/** Normalize a git remote URL (`git@host:org/repo.git`, `https://…`, `ssh://…`)
+ *  to an https browse URL, or null when unrecognized. */
+function repoBrowseUrl(remote: string): string | null {
+  const s = remote.trim();
+  const ssh = s.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+  if (ssh) return `https://${ssh[1]}/${ssh[2]}`;
+  try {
+    const u = new URL(s.replace(/^ssh:\/\//, "https://"));
+    return `https://${u.host}${u.pathname.replace(/\.git$/, "")}`;
+  } catch {
+    return null;
+  }
+}
+
+/** A GitHub-style source link: branch + short commit, linking to the commit
+ *  (Vercel-style). Silent when the repo URL can't be normalized. */
+const SourceLink = ({
+  repo,
+  sha,
+  branch
+}: {
+  repo: string;
+  sha: string;
+  branch?: string | null;
+}) => {
+  const base = repoBrowseUrl(repo);
+  const label = `${branch ? `${branch} · ` : ""}${sha.slice(0, 7)}`;
+  const content = (
+    <>
+      <GitBranch className='size-3 shrink-0' />
+      <span className='truncate'>{label}</span>
+    </>
+  );
+  if (!base) {
+    return (
+      <span className='inline-flex items-center gap-1 text-muted-foreground/70 text-xs'>
+        {content}
+      </span>
+    );
+  }
+  return (
+    <a
+      href={`${base}/commit/${sha}`}
+      target='_blank'
+      rel='noopener noreferrer'
+      title={`${branch ? `${branch} @ ` : ""}${sha}`}
+      onClick={(e) => e.stopPropagation()}
+      className='inline-flex items-center gap-1 text-muted-foreground/80 text-xs hover:text-foreground hover:underline'
+    >
+      {content}
+    </a>
+  );
+};
 
 const RTF = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const TIME_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
@@ -123,6 +178,9 @@ export const BuildHistory = ({ appId }: { appId: string }) => {
                   {timeAgo(b.created_at)}
                   {b.published_by_email ? ` · ${b.published_by_email}` : ""}
                 </span>
+                {b.source_repo && b.commit_sha ? (
+                  <SourceLink repo={b.source_repo} sha={b.commit_sha} branch={b.source_branch} />
+                ) : null}
               </div>
               {!b.is_published && (
                 <Button

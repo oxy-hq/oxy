@@ -67,6 +67,18 @@ pub struct PublishArgs {
     /// Optional display name override for the app row.
     #[arg(long)]
     name: Option<String>,
+    /// Git remote URL to record for this build. Defaults to the working
+    /// tree's `origin` remote; override in CI.
+    #[arg(long)]
+    repo: Option<String>,
+    /// Commit sha to record. Defaults to the working tree's HEAD (or
+    /// `$GITHUB_SHA`).
+    #[arg(long)]
+    commit: Option<String>,
+    /// Branch to record. Defaults to the working tree's current branch (or
+    /// `$GITHUB_REF_NAME`).
+    #[arg(long)]
+    branch: Option<String>,
 }
 
 /// Infer `(org, app)` from a working dir shaped like `.../apps/<org>/<app>[/...]`.
@@ -87,6 +99,48 @@ fn infer_org_app_from_cwd() -> Option<(String, String)> {
 
 fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.trim().is_empty())
+}
+
+/// Best-effort git provenance for the working tree: `(remote_url, commit_sha,
+/// branch)`. Each entry is `None` when the command fails (not a repo, no
+/// `origin`, detached HEAD) — publish must never fail because git is
+/// unavailable (e.g. a `--dir` publish from CI with no working tree).
+fn capture_git_source(dir: &std::path::Path) -> (Option<String>, Option<String>, Option<String>) {
+    let git = |args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
+        (!s.is_empty()).then_some(s)
+    };
+    (
+        git(&["remote", "get-url", "origin"]),
+        git(&["rev-parse", "HEAD"]),
+        git(&["rev-parse", "--abbrev-ref", "HEAD"]),
+    )
+}
+
+/// Strip any `userinfo@` from a scheme URL (e.g. an embedded
+/// `https://x-access-token:<TOKEN>@github.com/org/repo`) before it is
+/// persisted — a credentialed remote must never reach Postgres or the admin
+/// builds API. The scp-like SSH form (`git@github.com:org/repo`) carries no
+/// secret (the `git` user is fixed) and is left untouched.
+fn sanitize_remote_url(url: &str) -> String {
+    let Some(after_scheme) = url.find("://").map(|i| i + 3) else {
+        return url.to_string();
+    };
+    let (scheme, rest) = url.split_at(after_scheme);
+    // Userinfo only counts if the `@` is in the authority (before the path).
+    let authority_end = rest.find('/').unwrap_or(rest.len());
+    match rest[..authority_end].find('@') {
+        Some(at) => format!("{scheme}{}", &rest[at + 1..]),
+        None => url.to_string(),
+    }
 }
 
 /// reqwest client with an overall timeout so a hung oxy doesn't wedge the
@@ -289,17 +343,17 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
     let inferred = infer_org_app_from_cwd();
 
     // Identity: flag → env → manifest → cwd path.
-    let org = args
+    // Org identity — flag → env → manifest → cwd path. Optional: when a
+    // workspace is pinned via `--project` and the bundle is pre-built
+    // (`--dir`), the server infers the org from the workspace, so a bare
+    // `oxy publish --project <ws>` works. Still required to build from source
+    // (the app's base path) or to look up the project id.
+    let org: Option<String> = args
         .org
         .clone()
         .or_else(|| env_var("OXY_ORG"))
         .or_else(|| manifest.as_ref().and_then(|m| m.org_slug.clone()))
-        .or_else(|| inferred.as_ref().map(|(o, _)| o.clone()))
-        .ok_or_else(|| {
-            OxyError::ConfigurationError(
-                "missing org: set oxy-app.json orgSlug, --org, or OXY_ORG".into(),
-            )
-        })?;
+        .or_else(|| inferred.as_ref().map(|(o, _)| o.clone()));
     let app = args
         .app
         .clone()
@@ -336,6 +390,13 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
         Some(d) => d.clone(),
         None => {
             let m = manifest.as_ref();
+            // Building from source bakes the app's public base path into the
+            // bundle, so the org must be known here (unlike a pre-built --dir).
+            let org = org.as_deref().ok_or_else(|| {
+                OxyError::ConfigurationError(
+                    "missing org: needed to build the app's base path — set oxy-app.json orgSlug, --org, or OXY_ORG (or publish a pre-built bundle with --dir)".into(),
+                )
+            })?;
             let base_path = format!("/customer-apps/{org}/{app}/");
             let install = m
                 .map(|m| m.build_install())
@@ -359,7 +420,16 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
     // Project: --project → OXY_PROJECT → build-config on the target.
     let project = match args.project.clone().or_else(|| env_var("OXY_PROJECT")) {
         Some(p) => p,
-        None => fetch_project(&target, &org, &app).await?,
+        // Looking up the project by (org, app) needs the org. Pass --project
+        // to skip this — then the org can be inferred server-side.
+        None => {
+            let org = org.as_deref().ok_or_else(|| {
+                OxyError::ConfigurationError(
+                    "missing org: needed to look up the project — set oxy-app.json orgSlug, --org, or OXY_ORG (or pass --project <uuid>)".into(),
+                )
+            })?;
+            fetch_project(&target, org, &app).await?
+        }
     };
 
     let build_id = args
@@ -368,19 +438,44 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
         .or_else(|| env_var("GITHUB_SHA"))
         .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
 
+    // Best-effort git provenance from the app's working tree, falling back to
+    // CI env vars. Recorded per-build so the admin UI can link each build back
+    // to its source commit — never fails the publish when git is absent.
+    let (git_repo, git_commit, git_branch) = capture_git_source(&cwd);
+    // Sanitize whatever we send (auto-captured or --repo): never persist a
+    // credentialed remote (`https://user:token@…`) into the DB / builds API.
+    let source_repo = args
+        .repo
+        .clone()
+        .or(git_repo)
+        .map(|u| sanitize_remote_url(&u));
+    let commit_sha = args
+        .commit
+        .clone()
+        .or(git_commit)
+        .or_else(|| env_var("GITHUB_SHA"));
+    let branch = args
+        .branch
+        .clone()
+        .or(git_branch)
+        .or_else(|| env_var("GITHUB_REF_NAME"));
+
     let tarball = tar_gz_dir(&bundle_dir)?;
     let channel = if args.promote { "published" } else { "draft" };
+    let who = match &org {
+        Some(o) => format!("{o}/{app}"),
+        None => format!("{app} → workspace {project}"),
+    };
     println!(
         "{}",
         format!(
-            "Publishing {org}/{app} ({} bytes) → {target} [{channel}]",
+            "Publishing {who} ({} bytes) → {target} [{channel}]",
             tarball.len()
         )
         .text()
     );
 
     let mut form = reqwest::multipart::Form::new()
-        .text("org", org.clone())
         .text("app", app.clone())
         .text("project", project)
         .text("build_id", build_id)
@@ -389,8 +484,22 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
             "bundle",
             reqwest::multipart::Part::bytes(tarball).file_name("bundle.tar.gz"),
         );
+    // Org is optional: when omitted (a pre-built `--dir` pinned to `--project`),
+    // the server infers it from the workspace.
+    if let Some(org) = &org {
+        form = form.text("org", org.clone());
+    }
     if let Some(name) = &args.name {
         form = form.text("name", name.clone());
+    }
+    if let Some(v) = &source_repo {
+        form = form.text("source_repo", v.clone());
+    }
+    if let Some(v) = &commit_sha {
+        form = form.text("commit_sha", v.clone());
+    }
+    if let Some(v) = &branch {
+        form = form.text("branch", v.clone());
     }
 
     let url = format!("{target}/api/customer-apps/publish");
@@ -425,7 +534,10 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
             // Prefer the server's canonical org slug so a UUID passed
             // via --org doesn't echo back into a jarring
             // "Registered new app 550e8400-…/store-pulse" headline.
-            let display_org = r.org_slug.as_deref().unwrap_or(org.as_str());
+            // The server always echoes the canonical org slug (it resolved or
+            // inferred the org); fall back to the CLI's org only if that's ever
+            // absent, then to empty when org was inferred and not sent.
+            let display_org = r.org_slug.as_deref().or(org.as_deref()).unwrap_or("");
             let headline = if r.is_new_app {
                 format!("Registered new app {display_org}/{app} (id {})", r.app_id).success()
             } else {
@@ -465,5 +577,35 @@ mod tests {
     fn tar_gz_dir_errors_on_missing_dir() {
         let res = tar_gz_dir(Path::new("/nonexistent/bundle/dir/xyz"));
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn sanitize_remote_url_strips_embedded_credentials() {
+        assert_eq!(
+            sanitize_remote_url("https://x-access-token:ghs_SECRET@github.com/oxy-hq/app.git"),
+            "https://github.com/oxy-hq/app.git"
+        );
+        assert_eq!(
+            sanitize_remote_url("https://user:pass@gitlab.com/o/r"),
+            "https://gitlab.com/o/r"
+        );
+    }
+
+    #[test]
+    fn sanitize_remote_url_leaves_clean_and_ssh_urls_untouched() {
+        assert_eq!(
+            sanitize_remote_url("https://github.com/oxy-hq/app.git"),
+            "https://github.com/oxy-hq/app.git"
+        );
+        // scp-like SSH form: the `git@` user is fixed, not a secret.
+        assert_eq!(
+            sanitize_remote_url("git@github.com:oxy-hq/app.git"),
+            "git@github.com:oxy-hq/app.git"
+        );
+        // A `@` in the path (no scheme userinfo) must not be stripped.
+        assert_eq!(
+            sanitize_remote_url("https://github.com/o/r@weird"),
+            "https://github.com/o/r@weird"
+        );
     }
 }

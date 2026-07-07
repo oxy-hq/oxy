@@ -1,5 +1,6 @@
 import type {
   AppBuildHistory,
+  BatchAppResult,
   CreateAppRequest,
   CustomerApp,
   CustomerAppDebug,
@@ -75,6 +76,33 @@ export const CustomerAppsService = {
 
   async unpublish(id: string): Promise<CustomerApp> {
     const response = await apiClient.delete(`/customer-apps/${id}/publish`);
+    return response.data;
+  },
+
+  /**
+   * Batch publish / unpublish / delete for the admin apps table. Each is
+   * best-effort per-id server-side: one app failing never aborts the rest,
+   * and the response carries a per-app outcome so the UI can report
+   * "published 4, 1 failed" from a single call. `delete` is a POST (not
+   * DELETE) because the id set travels in the request body.
+   */
+  async batchPublish(ids: string[]): Promise<BatchAppResult> {
+    const response = await apiClient.post("/customer-apps/batch/publish", { ids });
+    return response.data;
+  },
+
+  async batchPromoteLatest(ids: string[]): Promise<BatchAppResult> {
+    const response = await apiClient.post("/customer-apps/batch/promote-latest", { ids });
+    return response.data;
+  },
+
+  async batchUnpublish(ids: string[]): Promise<BatchAppResult> {
+    const response = await apiClient.post("/customer-apps/batch/unpublish", { ids });
+    return response.data;
+  },
+
+  async batchDelete(ids: string[]): Promise<BatchAppResult> {
+    const response = await apiClient.post("/customer-apps/batch/delete", { ids });
     return response.data;
   },
 

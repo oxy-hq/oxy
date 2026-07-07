@@ -37,7 +37,7 @@ export const AdminDetailTabs = <T extends string>({
             onClick={() => onChange(tab.id)}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "group relative flex items-center gap-2 px-3 py-2.5 font-medium text-[11px] uppercase tracking-[0.14em] transition-colors",
+              "group relative flex items-center gap-1.5 px-2.5 py-1.5 font-medium text-[11px] uppercase tracking-[0.14em] transition-colors",
               "border-transparent border-b",
               active
                 ? "border-foreground text-foreground"
@@ -55,9 +55,7 @@ export const AdminDetailTabs = <T extends string>({
                 {tab.count}
               </span>
             ) : null}
-            {tab.notify ? (
-              <span className='size-1.5 rounded-full bg-emerald-500' aria-hidden />
-            ) : null}
+            {tab.notify ? <span className='size-1.5 rounded-full bg-primary' aria-hidden /> : null}
           </button>
         );
       })}

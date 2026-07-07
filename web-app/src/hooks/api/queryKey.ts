@@ -555,7 +555,8 @@ const adminOrgsKeys = {
   all: ["admin", "orgs"] as const,
   list: (search?: string) => [...adminOrgsKeys.all, "list", search ?? ""] as const,
   detail: (orgId: string) => [...adminOrgsKeys.all, "detail", orgId] as const,
-  subdomain: (orgId: string) => [...adminOrgsKeys.all, "subdomain", orgId] as const
+  subdomain: (orgId: string) => [...adminOrgsKeys.all, "subdomain", orgId] as const,
+  logo: (orgId: string) => [...adminOrgsKeys.all, "logo", orgId] as const
 };
 
 const adminMetricsKeys = {

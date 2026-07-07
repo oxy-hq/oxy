@@ -2,7 +2,8 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 /**
  * Ordered-list selection with shift-click range support — the spreadsheet
- * gesture operators expect from a dense data-grid.
+ * gesture operators expect from a dense data-grid. Shared by every admin
+ * table with row selection + a bulk-action bar (compiles, customer apps).
  *
  * `ids` is the current row order; toggling with `shiftKey` selects every
  * row between the last anchor and the clicked row. The anchor resets to
@@ -73,14 +74,29 @@ export function useRowSelection(ids: string[], opts?: { filterStale?: boolean })
     anchorRef.current = null;
   }, []);
 
+  // Bulk add/remove a known subset in one update — used for group-level
+  // "select all in this group" toggles, where flipping each id individually
+  // would thrash state and fight the anchor.
+  const setMany = useCallback((subset: string[], selected: boolean) => {
+    setRaw((prev) => {
+      const next = new Set(prev);
+      for (const id of subset) {
+        if (selected) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
   return {
     selected,
     selectedIds: useMemo(() => [...selected], [selected]),
     isSelected: useCallback((id: string) => selected.has(id), [selected]),
     toggle,
     toggleAll,
+    setMany,
+    clear,
     allSelected,
-    someSelected,
-    clear
+    someSelected
   };
 }

@@ -32,6 +32,12 @@ pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/orgs-meta", get(list_orgs_meta))
         .route("/orgs/{org_id}/detail", get(get_org_detail))
+        .route(
+            "/orgs/{org_id}/logo",
+            get(crate::server::api::org_logo::admin_get_org_logo)
+                .put(crate::server::api::org_logo::admin_upload_org_logo)
+                .delete(crate::server::api::org_logo::admin_delete_org_logo),
+        )
         .route("/orgs/{org_id}", patch(rename_org).delete(delete_org))
         .route(
             "/orgs/{org_id}/transfer-ownership",

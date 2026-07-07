@@ -15,6 +15,8 @@ import {
 import { useAdminOrgsList } from "@/hooks/api/adminTenants/useAdminOrgs";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import { CopyableId } from "@/pages/admin/components/CopyableId";
+import { OrgLogo } from "@/pages/admin/components/OrgLogo";
 import { AdminEmptyState } from "../components/AdminEmptyState";
 import { AdminStatusPill } from "../components/AdminStatusPill";
 
@@ -137,14 +139,15 @@ export default function AdminOrgs() {
                 >
                   <TableCell>
                     <div className='flex items-center gap-3'>
-                      <div className='flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/40 text-muted-foreground'>
-                        <Building2 className='size-3.5' />
-                      </div>
+                      <OrgLogo orgId={org.id} name={org.name} />
                       <div className='flex min-w-0 flex-col'>
                         <span className='truncate font-medium'>{org.name}</span>
-                        <span className='truncate font-mono text-[10px] text-muted-foreground'>
-                          /{org.slug}
-                        </span>
+                        <div className='flex items-center gap-1'>
+                          <span className='truncate font-mono text-[10px] text-muted-foreground'>
+                            /{org.slug}
+                          </span>
+                          <CopyableId value={org.id} className='text-[10px]' />
+                        </div>
                       </div>
                     </div>
                   </TableCell>

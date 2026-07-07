@@ -215,6 +215,17 @@ pub struct AppResponse {
     /// per-row queries would be N+1 on the list page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_active_at: Option<String>,
+    /// Email of whoever last promoted a build for this app (published /
+    /// made-live / rolled back). Resolved by `list_apps` in one batched
+    /// query; `None` on the cheap single responses (the detail view reads
+    /// richer per-build attribution from `/builds`). Drives the list's
+    /// "promoted by" line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_promoted_by_email: Option<String>,
+    /// When that last promotion happened. Taken straight from the model
+    /// column on every response, so the UI can show "promoted 2d ago".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_promoted_at: Option<String>,
     /// Soft warnings the UI should surface to the operator. Populated
     /// by `create_app` + `update_app` after side-effect validation
     /// (e.g. "no index.html at the configured local path"). The row
@@ -274,6 +285,8 @@ impl AppResponse {
             created_at: m.created_at.to_rfc3339(),
             updated_at: m.updated_at.to_rfc3339(),
             last_active_at: None,
+            last_promoted_by_email: None,
+            last_promoted_at: m.last_promoted_at.map(|d| d.to_rfc3339()),
             warnings: Vec::new(),
         }
     }
@@ -726,6 +739,24 @@ pub struct ListAppsResponse {
     pub next_offset: Option<u64>,
 }
 
+/// Resolve a set of user ids to their emails in one query. Deduped by the
+/// `IN` clause; missing/legacy ids simply don't appear in the map.
+async fn emails_by_user_id(
+    db: &DatabaseConnection,
+    ids: Vec<Uuid>,
+) -> Result<std::collections::HashMap<Uuid, String>, sea_orm::DbErr> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    Ok(entity::prelude::Users::find()
+        .filter(entity::users::Column::Id.is_in(ids))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|u| (u.id, u.email))
+        .collect())
+}
+
 pub async fn list_apps(
     Query(q): Query<ListAppsQuery>,
 ) -> Result<Json<ListAppsResponse>, StatusCode> {
@@ -764,11 +795,27 @@ pub async fn list_apps(
                 tracing::warn!("last_active_at_by_app failed (filling Nones): {e}");
                 Default::default()
             });
+    // Map each app → its last promoter, then resolve those user ids to emails
+    // in one query (same N+1-avoidance as last_active). A failed lookup falls
+    // back to no attribution rather than 500ing the list.
+    let promoter_by_app: std::collections::HashMap<Uuid, Uuid> = rows
+        .iter()
+        .filter_map(|r| r.last_promoted_by.map(|p| (r.id, p)))
+        .collect();
+    let promoter_emails = emails_by_user_id(&db, promoter_by_app.values().copied().collect())
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("promoter email lookup failed (no attribution): {e}");
+            Default::default()
+        });
     let mut items = rows_to_responses(rows, &org_slugs);
     for item in items.iter_mut() {
         if let Some(ts) = last_active.get(&item.id) {
             item.last_active_at = Some(ts.to_rfc3339());
         }
+        item.last_promoted_by_email = promoter_by_app
+            .get(&item.id)
+            .and_then(|pid| promoter_emails.get(pid).cloned());
     }
     // `next_offset` only exists when the page came back full — short
     // pages are the tail of the dataset and signal "stop fetching" to
@@ -964,50 +1011,9 @@ pub async fn publish_app(
         tracing::error!("publish_app DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let row = Apps::find_by_id(id)
-        .one(&db)
-        .await
-        .map_err(|e| {
-            tracing::error!("publish_app load failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let org = Organizations::find_by_id(row.org_id)
-        .one(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Promotion is a pure pointer move: publish the current draft build
-    // by pointing the published channel at it. (The legacy draft→published
-    // S3 copy + state-dir sync was retired with the publish pipeline.) A
-    // row with no draft build (legacy, not yet re-published via
-    // `oxy publish`) just gets the timestamp; its serve path 404s until a
-    // build exists.
-    let draft_ptr = row.draft_build_id;
-    let now = Utc::now().fixed_offset();
-    let mut active: apps::ActiveModel = row.into();
-    active.published_at = ActiveValue::Set(Some(now));
-    active.last_promoted_by = ActiveValue::Set(Some(user.id));
-    active.last_promoted_at = ActiveValue::Set(Some(now));
-    if let Some(ptr) = draft_ptr {
-        active.published_build_id = ActiveValue::Set(Some(ptr));
-    }
-    active.updated_at = ActiveValue::Set(now);
-    let updated = active.update(&db).await.map_err(|e| {
-        tracing::error!("publish_app update failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
+    let updated = publish_one(&db, id, user.id).await.map_err(|e| e.status)?;
     crate::server::api::customer_apps_auth::invalidate_access_cache();
-    // Publishing changes which bundle channel `customer_apps_serve` is
-    // allowed to resolve for non-staff (published becomes reachable
-    // where it wasn't before). Without dropping cached canonical-dir
-    // entries for this app, the first staff request to populate the
-    // draft entry would keep serving from draft to everyone for up to
-    // CACHE_TTL — masking the fresh publish.
-    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    let org = load_org(&db, updated.org_id).await.map_err(|e| e.status)?;
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
 
@@ -1018,38 +1024,9 @@ pub async fn unpublish_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, St
         tracing::error!("unpublish_app DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let row = Apps::find_by_id(id)
-        .one(&db)
-        .await
-        .map_err(|e| {
-            tracing::error!("unpublish_app load failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let now = Utc::now().fixed_offset();
-    let mut active: apps::ActiveModel = row.into();
-    active.published_at = ActiveValue::Set(None);
-    // New pipeline: also clear the published channel pointer so the serve
-    // path stops resolving a live build. No-op for legacy rows (already None).
-    active.published_build_id = ActiveValue::Set(None);
-    active.updated_at = ActiveValue::Set(now);
-    let updated = active.update(&db).await.map_err(|e| {
-        tracing::error!("unpublish_app update failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
+    let updated = unpublish_one(&db, id).await.map_err(|e| e.status)?;
     crate::server::api::customer_apps_auth::invalidate_access_cache();
-    // Symmetric with publish_app — drop cached canonical-dir entries so
-    // a subsequent staff-or-customer request resolves the channel that
-    // applies after the unpublish, not whatever was cached before.
-    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
-
-    let org = Organizations::find_by_id(updated.org_id)
-        .one(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let org = load_org(&db, updated.org_id).await.map_err(|e| e.status)?;
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
 
@@ -1067,6 +1044,12 @@ pub struct BuildSummary {
     /// Email of the app-admin who ran the publish. `None` for builds
     /// created before the `published_by` column existed.
     pub published_by_email: Option<String>,
+    /// Git provenance captured by `oxy publish` (all `None` for legacy /
+    /// non-git builds). `source_repo` is the raw remote URL; the frontend
+    /// normalizes it to a GitHub link against `commit_sha`.
+    pub source_repo: Option<String>,
+    pub commit_sha: Option<String>,
+    pub source_branch: Option<String>,
 }
 
 /// `GET /{id}/builds` response: the build history plus who last promoted a
@@ -1131,6 +1114,9 @@ pub async fn list_builds(Path(id): Path<Uuid>) -> Result<Json<BuildHistoryRespon
             id: b.id,
             build_id: b.build_id,
             created_at: b.created_at.to_rfc3339(),
+            source_repo: b.source_repo,
+            commit_sha: b.commit_sha,
+            source_branch: b.source_branch,
         })
         .collect();
     Ok(Json(BuildHistoryResponse {
@@ -1201,34 +1187,353 @@ pub async fn delete_app(Path(id): Path<Uuid>) -> Result<StatusCode, StatusCode> 
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let row = Apps::find_by_id(id)
-        .one(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    delete_one(&db, id).await.map_err(|e| e.status)?;
+    Ok(StatusCode::NO_CONTENT)
+}
 
-    // Delete the bundle bytes BEFORE the row so a partial failure
-    // leaves an orphan row (recoverable: just re-delete) rather than
-    // an orphan S3 prefix with no DB pointer (silent storage leak).
-    //
-    // Build-store failure is logged but doesn't block the row delete —
-    // there's no recovery path from "DB row exists but operator wanted
-    // it gone" beyond surfacing the error in logs and reclaiming the
-    // bucket bytes via a one-off ops script if it happens. The far
-    // more common case (no S3 configured / FS backend / app has no
-    // builds) succeeds silently.
+// ===========================================================================
+// Shared single-app mutations + batch endpoints
+//
+// The publish/unpublish/delete handlers above and the batch endpoints below
+// share one core mutation each (`*_one`) so a bulk action can never drift from
+// its single-app counterpart. Batch endpoints are best-effort: every id is
+// attempted independently and its outcome recorded, so one failure never
+// aborts the rest.
+// ===========================================================================
+
+/// Shared failure type for the single-app and batch mutation paths. `status`
+/// drives the one-shot routes' HTTP code; `message` names the failure in a
+/// batch result row.
+struct AppOpError {
+    status: StatusCode,
+    message: String,
+}
+
+impl AppOpError {
+    fn not_found() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            message: "App not found.".into(),
+        }
+    }
+
+    fn internal() -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "Internal server error.".into(),
+        }
+    }
+}
+
+/// Load an app's org — needed to build [`AppResponse`]. A missing org is a
+/// broken FK, surfaced as an internal error.
+async fn load_org(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+) -> Result<organizations::Model, AppOpError> {
+    Organizations::find_by_id(org_id)
+        .one(db)
+        .await
+        .map_err(|_| AppOpError::internal())?
+        .ok_or_else(AppOpError::internal)
+}
+
+/// Core publish mutation shared by [`publish_app`] and [`batch_publish_apps`].
+/// Pure pointer move: stamp `published_at`/promoter, repoint the published
+/// channel at the current draft build, and drop the canonical-dir cache so the
+/// serve path resolves the freshly-published channel instead of a stale entry.
+async fn publish_one(
+    db: &DatabaseConnection,
+    id: Uuid,
+    actor: Uuid,
+) -> Result<apps::Model, AppOpError> {
+    let row = Apps::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(|e| {
+            tracing::error!("publish_one {id} load failed: {e}");
+            AppOpError::internal()
+        })?
+        .ok_or_else(AppOpError::not_found)?;
+
+    let draft_ptr = row.draft_build_id;
+    let now = Utc::now().fixed_offset();
+    let mut active: apps::ActiveModel = row.into();
+    active.published_at = ActiveValue::Set(Some(now));
+    active.last_promoted_by = ActiveValue::Set(Some(actor));
+    active.last_promoted_at = ActiveValue::Set(Some(now));
+    if let Some(ptr) = draft_ptr {
+        active.published_build_id = ActiveValue::Set(Some(ptr));
+    }
+    active.updated_at = ActiveValue::Set(now);
+    let updated = active.update(db).await.map_err(|e| {
+        tracing::error!("publish_one {id} update failed: {e}");
+        AppOpError::internal()
+    })?;
+
+    // Per-app cache only — the global access cache is invalidated ONCE by the
+    // caller (a batch would otherwise do N full global invalidations).
+    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    Ok(updated)
+}
+
+/// Core unpublish mutation shared by [`unpublish_app`] and
+/// [`batch_unpublish_apps`]. Nulls `published_at` + the published channel
+/// pointer; the bundle bytes stay untouched.
+async fn unpublish_one(db: &DatabaseConnection, id: Uuid) -> Result<apps::Model, AppOpError> {
+    let row = Apps::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(|e| {
+            tracing::error!("unpublish_one {id} load failed: {e}");
+            AppOpError::internal()
+        })?
+        .ok_or_else(AppOpError::not_found)?;
+
+    let now = Utc::now().fixed_offset();
+    let mut active: apps::ActiveModel = row.into();
+    active.published_at = ActiveValue::Set(None);
+    active.published_build_id = ActiveValue::Set(None);
+    active.updated_at = ActiveValue::Set(now);
+    let updated = active.update(db).await.map_err(|e| {
+        tracing::error!("unpublish_one {id} update failed: {e}");
+        AppOpError::internal()
+    })?;
+
+    // Per-app cache only — the global access cache is invalidated ONCE by the
+    // caller (a batch would otherwise do N full global invalidations).
+    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    Ok(updated)
+}
+
+/// Core delete shared by [`delete_app`] and [`batch_delete_apps`]. Removes the
+/// bundle bytes before the DB row so a partial failure leaves a recoverable
+/// orphan row rather than an orphan S3 prefix; build-store failure is logged,
+/// never fatal.
+async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), AppOpError> {
+    let row = Apps::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(|_| AppOpError::internal())?
+        .ok_or_else(AppOpError::not_found)?;
+
     if let Err(e) = crate::server::api::customer_apps_build_store::delete_app(id).await {
         tracing::warn!(
-            "delete_app {id}: bundle bytes could not be removed from build store: {e} \
+            "delete_one {id}: bundle bytes could not be removed from build store: {e} \
              — proceeding with DB row delete; reclaim manually if needed"
         );
     }
 
-    row.delete(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    row.delete(db).await.map_err(|_| AppOpError::internal())?;
+    Ok(())
+}
 
-    Ok(StatusCode::NO_CONTENT)
+/// Core "promote to latest" shared by [`batch_promote_latest_apps`]: point the
+/// published channel at the app's newest build and stamp `published_at`. This
+/// is the bulk "roll everyone forward to their latest version" primitive —
+/// distinct from `publish_one` (which promotes the *draft* pointer): it always
+/// targets the most recently created build regardless of channel. An app with
+/// no builds is a per-item failure, not a fatal one.
+async fn promote_latest_one(
+    db: &DatabaseConnection,
+    id: Uuid,
+    actor: Uuid,
+) -> Result<apps::Model, AppOpError> {
+    let row = Apps::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(|e| {
+            tracing::error!("promote_latest_one {id} load failed: {e}");
+            AppOpError::internal()
+        })?
+        .ok_or_else(AppOpError::not_found)?;
+
+    let latest = AppBuilds::find()
+        .filter(entity::app_builds::Column::AppId.eq(id))
+        .order_by_desc(entity::app_builds::Column::CreatedAt)
+        .one(db)
+        .await
+        .map_err(|e| {
+            tracing::error!("promote_latest_one {id} build lookup failed: {e}");
+            AppOpError::internal()
+        })?
+        .ok_or_else(|| AppOpError {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            message: "No builds to promote.".into(),
+        })?;
+
+    let now = Utc::now().fixed_offset();
+    let mut active: apps::ActiveModel = row.into();
+    active.published_build_id = ActiveValue::Set(Some(latest.id));
+    active.published_at = ActiveValue::Set(Some(now));
+    active.last_promoted_by = ActiveValue::Set(Some(actor));
+    active.last_promoted_at = ActiveValue::Set(Some(now));
+    active.updated_at = ActiveValue::Set(now);
+    let updated = active.update(db).await.map_err(|e| {
+        tracing::error!("promote_latest_one {id} update failed: {e}");
+        AppOpError::internal()
+    })?;
+
+    // Per-app cache only — the global access cache is invalidated ONCE by the
+    // caller (a batch would otherwise do N full global invalidations).
+    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    Ok(updated)
+}
+
+/// Upper bound on ids accepted by a batch endpoint. The admin surface is
+/// small-scale; this only rejects a pathological request, it is not a paging
+/// limit.
+const MAX_BATCH_IDS: usize = 500;
+
+/// Request body for every batch endpoint: the app ids to act on.
+#[derive(Debug, Deserialize)]
+pub struct BatchIdsRequest {
+    pub ids: Vec<Uuid>,
+}
+
+/// One app's outcome in a batch response. `ok = false` carries a short reason
+/// (e.g. "App not found.") so the UI can name which apps failed.
+#[derive(Debug, Serialize)]
+pub struct BatchItemResult {
+    pub id: Uuid,
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl BatchItemResult {
+    fn ok(id: Uuid) -> Self {
+        Self {
+            id,
+            ok: true,
+            error: None,
+        }
+    }
+
+    fn failed(id: Uuid, message: String) -> Self {
+        Self {
+            id,
+            ok: false,
+            error: Some(message),
+        }
+    }
+}
+
+/// Aggregate result of a batch mutation. The request is 200 whenever it is
+/// well-formed — individual failures live in `results`, not the status code —
+/// so the UI can report "published 4, 1 failed" from a single response.
+#[derive(Debug, Serialize)]
+pub struct BatchResponse {
+    pub succeeded: usize,
+    pub failed: usize,
+    pub results: Vec<BatchItemResult>,
+}
+
+impl BatchResponse {
+    fn from_results(results: Vec<BatchItemResult>) -> Self {
+        let succeeded = results.iter().filter(|r| r.ok).count();
+        Self {
+            failed: results.len() - succeeded,
+            succeeded,
+            results,
+        }
+    }
+}
+
+/// Reject empty or oversized batches before touching the DB.
+fn validate_batch(ids: &[Uuid]) -> Result<(), ApiErr> {
+    if ids.is_empty() {
+        return Err(api_err(StatusCode::BAD_REQUEST, "No apps selected."));
+    }
+    if ids.len() > MAX_BATCH_IDS {
+        return Err(api_err(
+            StatusCode::BAD_REQUEST,
+            format!("Too many apps in one request (max {MAX_BATCH_IDS})."),
+        ));
+    }
+    Ok(())
+}
+
+/// `POST /api/customer-apps/batch/publish` — publish many apps at once.
+pub async fn batch_publish_apps(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(req): Json<BatchIdsRequest>,
+) -> Result<Json<BatchResponse>, ApiErr> {
+    validate_batch(&req.ids)?;
+    let db = establish_connection().await.map_err(internal)?;
+    let mut results = Vec::with_capacity(req.ids.len());
+    for id in req.ids {
+        results.push(match publish_one(&db, id, user.id).await {
+            Ok(_) => BatchItemResult::ok(id),
+            Err(e) => BatchItemResult::failed(id, e.message),
+        });
+    }
+    // One global access-cache invalidation for the whole batch (per-app
+    // canonical-dir caches are dropped inside publish_one). Skip when nothing
+    // changed.
+    if results.iter().any(|r| r.ok) {
+        crate::server::api::customer_apps_auth::invalidate_access_cache();
+    }
+    Ok(Json(BatchResponse::from_results(results)))
+}
+
+/// `POST /api/customer-apps/batch/promote-latest` — roll many apps forward to
+/// their newest build in one call (the bulk "mass promote latest versions"
+/// action). Best-effort per id; an app with no builds is reported as a
+/// per-item failure.
+pub async fn batch_promote_latest_apps(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(req): Json<BatchIdsRequest>,
+) -> Result<Json<BatchResponse>, ApiErr> {
+    validate_batch(&req.ids)?;
+    let db = establish_connection().await.map_err(internal)?;
+    let mut results = Vec::with_capacity(req.ids.len());
+    for id in req.ids {
+        results.push(match promote_latest_one(&db, id, user.id).await {
+            Ok(_) => BatchItemResult::ok(id),
+            Err(e) => BatchItemResult::failed(id, e.message),
+        });
+    }
+    if results.iter().any(|r| r.ok) {
+        crate::server::api::customer_apps_auth::invalidate_access_cache();
+    }
+    Ok(Json(BatchResponse::from_results(results)))
+}
+
+/// `POST /api/customer-apps/batch/unpublish` — unpublish many apps at once.
+pub async fn batch_unpublish_apps(
+    Json(req): Json<BatchIdsRequest>,
+) -> Result<Json<BatchResponse>, ApiErr> {
+    validate_batch(&req.ids)?;
+    let db = establish_connection().await.map_err(internal)?;
+    let mut results = Vec::with_capacity(req.ids.len());
+    for id in req.ids {
+        results.push(match unpublish_one(&db, id).await {
+            Ok(_) => BatchItemResult::ok(id),
+            Err(e) => BatchItemResult::failed(id, e.message),
+        });
+    }
+    if results.iter().any(|r| r.ok) {
+        crate::server::api::customer_apps_auth::invalidate_access_cache();
+    }
+    Ok(Json(BatchResponse::from_results(results)))
+}
+
+/// `POST /api/customer-apps/batch/delete` — delete many app registrations at
+/// once. POST (not DELETE) because the id set travels in the request body.
+pub async fn batch_delete_apps(
+    Json(req): Json<BatchIdsRequest>,
+) -> Result<Json<BatchResponse>, ApiErr> {
+    validate_batch(&req.ids)?;
+    let db = establish_connection().await.map_err(internal)?;
+    let mut results = Vec::with_capacity(req.ids.len());
+    for id in req.ids {
+        results.push(match delete_one(&db, id).await {
+            Ok(()) => BatchItemResult::ok(id),
+            Err(e) => BatchItemResult::failed(id, e.message),
+        });
+    }
+    Ok(Json(BatchResponse::from_results(results)))
 }
 
 /// Resolve `<org_slug>/<app_slug>` → (org row, app row). Returns `Ok(None)`
@@ -1475,5 +1780,25 @@ mod tests {
             build_pretty_url("acme", "analytics"),
             "/customer-apps/acme/analytics/"
         );
+    }
+
+    #[test]
+    fn batch_response_counts_ok_and_failed() {
+        let resp = BatchResponse::from_results(vec![
+            BatchItemResult::ok(Uuid::nil()),
+            BatchItemResult::failed(Uuid::nil(), "App not found.".into()),
+            BatchItemResult::ok(Uuid::nil()),
+        ]);
+        assert_eq!(resp.succeeded, 2);
+        assert_eq!(resp.failed, 1);
+        assert_eq!(resp.results.len(), 3);
+    }
+
+    #[test]
+    fn validate_batch_rejects_empty_and_oversized() {
+        assert!(validate_batch(&[]).is_err());
+        let too_many = vec![Uuid::nil(); MAX_BATCH_IDS + 1];
+        assert!(validate_batch(&too_many).is_err());
+        assert!(validate_batch(&[Uuid::nil()]).is_ok());
     }
 }

@@ -1,10 +1,12 @@
-import { ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Factory, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { useOxyAccessGrants } from "@/hooks/api/customerApps/useOxyAccessGrants";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import { CommandSnippet } from "@/pages/admin/components/CommandSnippet";
+import { CopyableId } from "@/pages/admin/components/CopyableId";
 import type { OxyAccessGrant } from "@/types/apps";
 import {
   EmptyHint,
@@ -106,8 +108,10 @@ const OrgAccessDetail = ({ org, highlight }: { org: OrgGroup; highlight: string 
       </div>
       <div className='min-w-0'>
         <h2 className='truncate font-semibold text-lg leading-tight'>{org.orgName}</h2>
-        <p className='font-mono text-muted-foreground text-xs'>
-          {org.orgSlug} · {org.orgId}
+        <p className='flex items-center gap-1 font-mono text-muted-foreground text-xs'>
+          <span className='truncate'>{org.orgSlug}</span>
+          <span aria-hidden>·</span>
+          <CopyableId value={org.orgId} />
         </p>
       </div>
       <span className='ml-auto shrink-0 font-medium text-[11px] text-muted-foreground uppercase tracking-wide'>
@@ -130,10 +134,16 @@ const WorkspaceAccessRow = ({ grant, dim }: { grant: OxyAccessGrant; dim?: boole
   <li className={cn("flex items-start gap-4 px-5 py-3", dim && "opacity-50")}>
     <div className='min-w-0 flex-1 space-y-1.5'>
       <span className='block truncate font-medium text-sm'>{grant.workspace_name}</span>
-      <dl className='grid grid-cols-[6rem_1fr] gap-x-3 gap-y-0.5 text-xs'>
+      <dl className='grid grid-cols-[6rem_1fr] items-center gap-x-3 gap-y-1 text-xs'>
         <dt className='text-muted-foreground'>Workspace</dt>
-        <dd className='truncate font-mono text-[11px] text-muted-foreground'>
-          {grant.workspace_id}
+        <dd className='min-w-0'>
+          <CopyableId value={grant.workspace_id} />
+        </dd>
+        <dt className='text-muted-foreground'>Publish</dt>
+        <dd className='min-w-0'>
+          <CommandSnippet
+            command={`oxy publish --env production --project ${grant.workspace_id}`}
+          />
         </dd>
         <dt className='text-muted-foreground'>Granted</dt>
         <dd className='text-muted-foreground'>
@@ -143,6 +153,20 @@ const WorkspaceAccessRow = ({ grant, dim }: { grant: OxyAccessGrant; dim?: boole
       </dl>
     </div>
     <div className='flex shrink-0 items-center gap-1.5'>
+      {/* Jump straight into this workspace's Oxygen Factory (IDE). Opens in a
+          new tab so the admin keeps their place in the access list rather
+          than navigating the whole shell into another org's workspace. */}
+      <Button asChild size='sm' variant='ghost' className='h-8 gap-1.5 text-muted-foreground'>
+        <Link
+          to={ROUTES.ORG(grant.org_slug).WORKSPACE(grant.workspace_id).IDE.ROOT}
+          target='_blank'
+          rel='noopener'
+          title='Open in Oxy Factory (IDE)'
+        >
+          <Factory className='size-3.5' />
+          Factory
+        </Link>
+      </Button>
       <Button asChild size='sm' variant='ghost' className='h-8 gap-1.5 text-muted-foreground'>
         <Link to={ROUTES.ADMIN.WORKSPACE_DETAIL(grant.workspace_id)} title='Manage workspace'>
           <SlidersHorizontal className='size-3.5' />

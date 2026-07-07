@@ -25,6 +25,14 @@ pub struct Model {
     /// User (app-admin) who ran the publish. NULL for builds created before
     /// this column existed. Powers the "who deployed" audit in the admin UI.
     pub published_by: Option<Uuid>,
+    /// Git remote URL of the app's source at publish time (raw, e.g.
+    /// `git@github.com:org/repo.git` or `https://github.com/org/repo`).
+    /// Captured best-effort by `oxy publish`; NULL for non-git / legacy builds.
+    pub source_repo: Option<String>,
+    /// Commit sha the build was published from.
+    pub commit_sha: Option<String>,
+    /// Branch the build was published from.
+    pub source_branch: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

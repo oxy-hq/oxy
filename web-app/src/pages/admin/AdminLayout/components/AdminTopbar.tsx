@@ -1,3 +1,5 @@
+import { House } from "lucide-react";
+import { Link } from "react-router-dom";
 import { VersionBadge } from "@/components/settings/SettingsDialog/components/VersionBadge";
 import {
   Breadcrumb,
@@ -6,8 +8,11 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator
 } from "@/components/ui/shadcn/breadcrumb";
+import { Button } from "@/components/ui/shadcn/button";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
+import ROUTES from "@/libs/utils/routes";
 import { AdminEntitySearch } from "../../components/AdminEntitySearch";
 import { SystemStatus } from "./SystemStatus";
 
@@ -15,27 +20,38 @@ interface AdminTopbarProps {
   title: string;
 }
 
+/**
+ * Global admin header. Kept deliberately thin (h-9) and dense — the admin is a
+ * VSCode-like operations surface, so chrome earns its pixels. Left: sidebar
+ * toggle, a back-to-home button (the only "exit admin" affordance), and the
+ * breadcrumb. Right: live status, entity search, and the build badge (the
+ * one-glance "which oxy build am I on?" answer when triaging staging vs prod).
+ */
 export function AdminTopbar({ title }: AdminTopbarProps) {
-  // VersionBadge on the right gives operators a one-glance answer to
-  // "which oxy build am I looking at?" — critical when triaging a
-  // staging vs prod regression without having to scroll to /version
-  // or open a settings dialog. Reuses the existing VersionBadge
-  // popover (build hash, profile, commit link) so we don't duplicate
-  // the build-info surface.
   return (
-    <header className='flex h-12 shrink-0 items-center gap-2 border-b bg-background px-4'>
-      <SidebarTrigger className='-ml-1' />
-      <Separator orientation='vertical' className='mr-2 h-4' />
+    <header className='flex h-9 shrink-0 items-center gap-1 border-b bg-background px-2'>
+      <SidebarTrigger className='-ml-0.5 size-7' />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button asChild variant='ghost' size='icon' className='size-7 text-muted-foreground'>
+            <Link to={ROUTES.ROOT} aria-label='Back to home'>
+              <House className='size-4' />
+            </Link>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side='bottom'>Back to home</TooltipContent>
+      </Tooltip>
+      <Separator orientation='vertical' className='mx-1 h-4' />
       <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem className='text-muted-foreground'>Admin</BreadcrumbItem>
+        <BreadcrumbList className='gap-1 sm:gap-1'>
+          <BreadcrumbItem className='text-muted-foreground text-xs'>Admin</BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbPage>{title}</BreadcrumbPage>
+            <BreadcrumbPage className='font-medium text-xs'>{title}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      <div className='ml-auto flex items-center gap-3'>
+      <div className='ml-auto flex items-center gap-2'>
         <SystemStatus />
         <Separator orientation='vertical' className='hidden h-4 md:block' />
         <AdminEntitySearch />

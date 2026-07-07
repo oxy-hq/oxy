@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/shadcn/table";
 import { useAdminWorkspacesList } from "@/hooks/api/adminTenants/useAdminWorkspaces";
 import ROUTES from "@/libs/utils/routes";
+import { CopyableId } from "@/pages/admin/components/CopyableId";
 import type { WorkspaceStatusId } from "@/services/api/adminTenants";
 
 type StatusFilter = "all" | WorkspaceStatusId;
@@ -144,9 +145,12 @@ export default function AdminWorkspaces() {
                         </div>
                         <div className='flex flex-col'>
                           <span className='font-medium'>{w.name}</span>
-                          <span className='text-muted-foreground text-xs'>
-                            Created {new Date(w.created_at).toLocaleDateString()}
-                          </span>
+                          <div className='flex items-center gap-1.5'>
+                            <CopyableId value={w.id} className='text-[10px]' />
+                            <span className='text-muted-foreground text-xs'>
+                              Created {new Date(w.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </TableCell>

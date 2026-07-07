@@ -8,11 +8,14 @@
 //! no multipart — which keeps both the handler and the frontend trivial.
 
 use axum::body::Bytes;
+use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::Response;
 use chrono::Utc;
 use entity::organizations;
 use oxy::database::client::establish_connection;
-use sea_orm::{ActiveModelTrait, ActiveValue};
+use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
+use uuid::Uuid;
 
 use super::middlewares::role_guards::OrgAdmin;
 
@@ -89,6 +92,94 @@ pub async fn delete_org_logo(OrgAdmin(ctx): OrgAdmin) -> Result<StatusCode, Stat
     active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
     active.update(&db).await.map_err(|e| {
         tracing::error!("delete_org_logo update failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── Admin (Oxy-staff) tenant-logo surface ──────────────────────────────────
+//
+// The `OrgAdmin`-gated handlers above serve an org's own admins. A *global*
+// Oxy admin managing tenants is not a member of the target org, so `OrgAdmin`
+// would reject them — these variants are keyed by the `org_id` path and gated
+// by the admin router (`/api/admin/orgs/*`) instead. GET is fetched via the
+// authenticated API client (JWT rides along), so no public image endpoint is
+// needed.
+
+/// Load the target org or map to a `StatusCode`.
+async fn load_org_for_admin(org_id: Uuid) -> Result<organizations::Model, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("admin org logo DB connect failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    organizations::Entity::find_by_id(org_id)
+        .one(&db)
+        .await
+        .map_err(|e| {
+            tracing::error!("admin org logo load failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+/// `GET /api/admin/orgs/{org_id}/logo` — the org's uploaded logo bytes, or 404
+/// (the frontend then renders the name initial). Same XSS-hardening headers as
+/// every other logo serve path.
+pub async fn admin_get_org_logo(Path(org_id): Path<Uuid>) -> Result<Response, StatusCode> {
+    let org = load_org_for_admin(org_id).await?;
+    let bytes = org.logo.ok_or(StatusCode::NOT_FOUND)?;
+    let mime = org
+        .logo_content_type
+        .unwrap_or_else(|| "image/png".to_string());
+    Ok(crate::server::api::workspace_logo::logo_response(
+        mime, bytes,
+    ))
+}
+
+/// `PUT /api/admin/orgs/{org_id}/logo` — store raw image bytes for any tenant.
+pub async fn admin_upload_org_logo(
+    Path(org_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<StatusCode, StatusCode> {
+    let Some(content_type) = allowed_content_type(&headers) else {
+        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    };
+    if body.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if body.len() > MAX_LOGO_BYTES {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("admin_upload_org_logo DB connect failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let org = load_org_for_admin(org_id).await?;
+    let mut active: organizations::ActiveModel = org.into();
+    active.logo = ActiveValue::Set(Some(body.to_vec()));
+    active.logo_content_type = ActiveValue::Set(Some(content_type.to_string()));
+    active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
+    active.update(&db).await.map_err(|e| {
+        tracing::error!("admin_upload_org_logo update failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `DELETE /api/admin/orgs/{org_id}/logo` — clear any tenant's logo.
+pub async fn admin_delete_org_logo(Path(org_id): Path<Uuid>) -> Result<StatusCode, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("admin_delete_org_logo DB connect failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let org = load_org_for_admin(org_id).await?;
+    let mut active: organizations::ActiveModel = org.into();
+    active.logo = ActiveValue::Set(None);
+    active.logo_content_type = ActiveValue::Set(None);
+    active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
+    active.update(&db).await.map_err(|e| {
+        tracing::error!("admin_delete_org_logo update failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(StatusCode::NO_CONTENT)

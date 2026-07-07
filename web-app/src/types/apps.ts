@@ -70,11 +70,41 @@ export interface CustomerApp {
   created_at: string;
   updated_at: string;
   /**
+   * Email of whoever last promoted a build for this app (published /
+   * made-live / rolled back). Populated on list responses via a batched
+   * lookup; absent on cheap single responses. Drives the "promoted by" line.
+   */
+  last_promoted_by_email?: string | null;
+  /** When that last promotion happened. Set from the model on every response. */
+  last_promoted_at?: string | null;
+  /**
    * Soft warnings emitted by the server after a create / update
    * mutation. Empty / absent on list + get responses. Surfaced as
    * toasts so operators catch misconfiguration before they preview.
    */
   warnings?: string[];
+}
+
+/**
+ * Per-app outcome in a batch publish / unpublish / delete response.
+ * `ok = false` carries a short reason so the UI can name which apps failed.
+ */
+export interface BatchAppItemResult {
+  id: string;
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Aggregate result of a batch app mutation. Returned with HTTP 200 whenever
+ * the request is well-formed — per-app failures live in `results`, not the
+ * status code — so the caller can report "published 4, 1 failed" from one
+ * response.
+ */
+export interface BatchAppResult {
+  succeeded: number;
+  failed: number;
+  results: BatchAppItemResult[];
 }
 
 /**
@@ -118,6 +148,12 @@ export interface AppBuild {
   /** Email of the app-admin who published this build. Null for builds
    * created before publisher tracking, or via legacy paths. */
   published_by_email?: string | null;
+  /** Git provenance captured by `oxy publish`. All null for legacy /
+   * non-git builds. `source_repo` is the raw remote URL — the UI normalizes
+   * it to a GitHub link against `commit_sha`. */
+  source_repo?: string | null;
+  commit_sha?: string | null;
+  source_branch?: string | null;
 }
 
 /**

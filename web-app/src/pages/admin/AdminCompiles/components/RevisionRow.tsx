@@ -7,11 +7,10 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Checkbox } from "@/components/ui/shadcn/checkbox";
 import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 import { usePromoteCompile } from "@/hooks/api/compiles";
+import { CopyableId } from "@/pages/admin/components/CopyableId";
 import type { CompileRow } from "@/services/api/compiles";
-
 import { formatMs, formatRelative } from "../utils";
 import { CompileDetailSheet } from "./CompileDetailSheet";
-import { CopyableId } from "./CopyableId";
 import { StatusBadge } from "./StatusBadge";
 
 /**

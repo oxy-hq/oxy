@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { type MouseEvent, useState } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { cn } from "@/libs/shadcn/utils";
@@ -10,8 +10,9 @@ import { cn } from "@/libs/shadcn/utils";
  * via the native `title`, a Tooltip, and the clipboard write. A brief
  * check icon confirms the copy without a toast.
  *
- * Used for `workspace_id`, `revision_id`, and `git_sha` — the long
- * UUID/SHA values operators routinely need to paste into a query.
+ * Shared across admin surfaces for the long UUID/SHA values operators
+ * routinely need to paste — `org_id`, `workspace_id`, `revision_id`,
+ * `git_sha`.
  */
 export const CopyableId = ({
   value,
@@ -34,7 +35,10 @@ export const CopyableId = ({
 
   const display = full || value.length <= head ? value : `${value.slice(0, head)}…`;
 
-  const onCopy = async () => {
+  // Stop propagation so copying an id inside a click-navigable row/card
+  // never also triggers the parent's onClick (navigation).
+  const onCopy = async (e: MouseEvent) => {
+    e.stopPropagation();
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
@@ -61,7 +65,7 @@ export const CopyableId = ({
         >
           <span className='truncate tabular-nums'>{display}</span>
           {copied ? (
-            <Check className='size-3 shrink-0 text-emerald-600 dark:text-emerald-400' aria-hidden />
+            <Check className='size-3 shrink-0 text-primary' aria-hidden />
           ) : (
             <Copy
               className='size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground'

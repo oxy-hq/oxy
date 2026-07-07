@@ -1179,6 +1179,25 @@ mod tests {
             classify("GET", "/api/d9830be4-c6a4/world-model/cameras"),
             RouteRole::FleetOk
         );
+        // Customer-apps batch mutations touch only Postgres + the S3 build
+        // store (never the workspace FS), so — like their per-app siblings —
+        // they classify FleetOk by default and serve from any replica.
+        assert_eq!(
+            classify("POST", "/api/customer-apps/batch/publish"),
+            RouteRole::FleetOk
+        );
+        assert_eq!(
+            classify("POST", "/api/customer-apps/batch/promote-latest"),
+            RouteRole::FleetOk
+        );
+        assert_eq!(
+            classify("POST", "/api/customer-apps/batch/unpublish"),
+            RouteRole::FleetOk
+        );
+        assert_eq!(
+            classify("POST", "/api/customer-apps/batch/delete"),
+            RouteRole::FleetOk
+        );
     }
 
     #[test]

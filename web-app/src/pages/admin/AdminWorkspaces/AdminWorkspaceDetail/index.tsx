@@ -32,6 +32,7 @@ import {
   useRenameAdminWorkspace
 } from "@/hooks/api/adminTenants/useAdminWorkspaces";
 import ROUTES from "@/libs/utils/routes";
+import { CopyableId } from "@/pages/admin/components/CopyableId";
 import { AdminDetailEyebrow, AdminDetailHeader } from "../../components/AdminDetailHeader";
 import { AdminDetailStats } from "../../components/AdminDetailStats";
 import { AdminDetailTabPanel, AdminDetailTabs } from "../../components/AdminDetailTabs";
@@ -131,20 +132,34 @@ export default function AdminWorkspaceDetail() {
         icon={FolderOpen}
         title={detail.name}
         subtitle={
-          detail.org_id && detail.org_name ? (
-            <Link
-              to={ROUTES.ADMIN.ORG_DETAIL(detail.org_id)}
-              className='inline-flex items-center gap-1.5 text-foreground/80 hover:text-foreground'
-            >
-              <Building2 className='size-3.5' />
-              <span>{detail.org_name}</span>
-              {detail.org_slug ? (
-                <span className='font-mono text-muted-foreground text-xs'>/{detail.org_slug}</span>
-              ) : null}
-            </Link>
-          ) : (
-            <span className='text-muted-foreground'>No parent organization</span>
-          )
+          <span className='flex flex-wrap items-center gap-1.5'>
+            {detail.org_id && detail.org_name ? (
+              <Link
+                to={ROUTES.ADMIN.ORG_DETAIL(detail.org_id)}
+                className='inline-flex items-center gap-1.5 text-foreground/80 hover:text-foreground'
+              >
+                <Building2 className='size-3.5' />
+                <span>{detail.org_name}</span>
+                {detail.org_slug ? (
+                  <span className='font-mono text-muted-foreground text-xs'>
+                    /{detail.org_slug}
+                  </span>
+                ) : null}
+              </Link>
+            ) : (
+              <span className='text-muted-foreground'>No parent organization</span>
+            )}
+            <span aria-hidden>·</span>
+            <span className='text-muted-foreground text-xs'>ws</span>
+            <CopyableId value={detail.id} />
+            {detail.org_id ? (
+              <>
+                <span aria-hidden>·</span>
+                <span className='text-muted-foreground text-xs'>org</span>
+                <CopyableId value={detail.org_id} />
+              </>
+            ) : null}
+          </span>
         }
         status={<AdminStatusPill tone={status.tone} label={status.label} />}
         actions={

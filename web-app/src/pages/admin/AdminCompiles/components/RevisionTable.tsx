@@ -1,8 +1,7 @@
 import { Checkbox } from "@/components/ui/shadcn/checkbox";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/shadcn/table";
+import type { useRowSelection } from "@/hooks/useRowSelection";
 import type { CompileRow } from "@/services/api/compiles";
-
-import type { useRowSelection } from "../useRowSelection";
 import { RevisionRow } from "./RevisionRow";
 
 type Selection = ReturnType<typeof useRowSelection>;

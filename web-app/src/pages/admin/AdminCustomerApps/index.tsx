@@ -1,29 +1,22 @@
 import { isAxiosError } from "axios";
-import { AppWindow } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup
-} from "@/components/ui/shadcn/resizable";
-import { Spinner } from "@/components/ui/shadcn/spinner";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAdminApps } from "@/hooks/api/customerApps/useCustomerApps";
 import { cn } from "@/libs/shadcn/utils";
 import type { CustomerApp } from "@/types/apps";
-import { AppDetail } from "./components/AppDetail";
-import { AppList } from "./components/AppList";
+import { AppDetailPage } from "./components/AppDetailPage";
+import { AppsTable } from "./components/AppsTable";
 import { CreateCustomerAppDialog } from "./components/CreateCustomerAppDialog";
 import { AccessPane } from "./components/OxyAccessPanes/AccessPane";
 
 /**
  * Admin console for customer apps + the Oxy-access browser.
  *
- * Two tabs share the master-detail shell, selected via `?view=`:
- *   apps   (default) → customer-app registry; `/admin/apps/:org/:app` for detail
+ * Two tabs share the page shell, selected via `?view=`:
+ *   apps   (default) → customer-app registry as a full-width management table;
+ *                      `/admin/apps/:org/:app` opens the full-page detail.
  *   access           → orgs that granted Oxy access, with their workspaces +
- *                      grant metadata inline (replaces the old split
- *                      "Orgs with access" / "Projects with access" tabs)
+ *                      grant metadata inline.
  *
  * A selected app (the `/admin/apps/:orgSlug/:appSlug` route) always implies
  * the Apps tab, so deep links keep working regardless of `?view`. Legacy
@@ -65,7 +58,7 @@ const AdminTabs = ({ active }: { active: View }) => (
         key={t.view}
         to={t.to}
         className={cn(
-          "border-b-2 px-3 py-2 text-sm transition-colors",
+          "-mb-px border-b-2 px-2.5 py-1.5 text-xs transition-colors",
           active === t.view
             ? "border-primary font-medium text-foreground"
             : "border-transparent text-muted-foreground hover:text-foreground"
@@ -78,17 +71,28 @@ const AdminTabs = ({ active }: { active: View }) => (
 );
 
 /**
- * Customer-app registry master-detail. Resizable (admin can grow the
- * preview iframe) defaulting to 28/72 so the list pane fits org/slug pairs.
+ * Customer-app registry. A full-width table is the management surface; the
+ * rich per-app dossier opens as a full page (`AppDetailPage`) keyed by the
+ * selected-app URL segments (so deep links and the back button still work).
+ *
+ * All pages are loaded up front so filter / sort / group operate over the
+ * whole registry rather than just the first page — admin scale is dozens to
+ * low hundreds, so a handful of background fetches is cheap. Revisit with
+ * server-side querying only if the registry ever grows into the thousands.
  */
 const AppsPane = () => {
-  const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } = useAdminApps();
-  // Pages come newest-first and we walk back in time, so concat order is
-  // display order.
+  const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    useAdminApps(100);
   const apps = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams<{ orgSlug?: string; appSlug?: string }>();
   const [createOpen, setCreateOpen] = useState(false);
+
+  // Walk the remaining pages automatically so the table sees every app.
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const selectedKey = useMemo(() => {
     if (!params.orgSlug || !params.appSlug) return null;
@@ -100,71 +104,42 @@ const AppsPane = () => {
     [apps, selectedKey]
   );
 
-  // If the URL referenced an app that no longer exists, drop back to the
-  // empty state rather than leaving a phantom selection.
+  // If the URL referenced an app that no longer exists, drop the phantom
+  // selection once loading settles. Preserve the table's query state.
   useEffect(() => {
     if (selectedKey && !isLoading && apps.length > 0 && !selected) {
-      navigate("/admin/apps", { replace: true });
+      navigate({ pathname: "/admin/apps", search: location.search }, { replace: true });
     }
-  }, [selectedKey, selected, isLoading, apps.length, navigate]);
+  }, [selectedKey, selected, isLoading, apps.length, navigate, location.search]);
 
-  const handleSelect = (app: CustomerApp) => {
-    navigate(`/admin/apps/${app.org_slug}/${app.slug}?tab=preview`);
-  };
+  const openDetail = (app: CustomerApp) =>
+    navigate({
+      pathname: `/admin/apps/${app.org_slug}/${app.slug}`,
+      search: location.search
+    });
 
-  if (error && !isLoading) {
-    return <ErrorState error={error} />;
-  }
+  const closeDetail = () => navigate({ pathname: "/admin/apps", search: location.search });
+
+  if (error && !isLoading) return <ErrorState error={error} />;
+
+  // A selected app takes over the whole pane as its own page (Vercel-style),
+  // rather than sliding in over the list. Deep links resolve once loading
+  // settles; until then the list (with its own loading state) shows.
+  if (selected) return <AppDetailPage app={selected} onBack={closeDetail} />;
 
   return (
     <>
-      <ResizablePanelGroup direction='horizontal' className='min-h-0 flex-1'>
-        <ResizablePanel defaultSize={28} minSize={18} maxSize={45}>
-          <AppList
-            apps={apps}
-            isLoading={isLoading}
-            selectedKey={selectedKey}
-            onSelect={handleSelect}
-            onCreate={() => setCreateOpen(true)}
-            hasMore={hasNextPage ?? false}
-            isLoadingMore={isFetchingNextPage}
-            onLoadMore={() => fetchNextPage()}
-          />
-        </ResizablePanel>
-
-        <ResizableHandle withHandle />
-
-        <ResizablePanel defaultSize={72} minSize={40}>
-          {selected ? <AppDetail app={selected} /> : <EmptyDetail isLoading={isLoading} />}
-        </ResizablePanel>
-      </ResizablePanelGroup>
-
+      <AppsTable
+        apps={apps}
+        isLoading={isLoading}
+        isLoadingMore={isFetchingNextPage}
+        onSelect={openDetail}
+        onCreate={() => setCreateOpen(true)}
+      />
       <CreateCustomerAppDialog open={createOpen} onOpenChange={setCreateOpen} />
     </>
   );
 };
-
-const EmptyDetail = ({ isLoading }: { isLoading: boolean }) => (
-  <div className='flex h-full flex-col items-center justify-center gap-3 bg-muted/20 px-6 text-center'>
-    {isLoading ? (
-      <Spinner className='size-5' />
-    ) : (
-      <>
-        <div className='flex size-12 items-center justify-center rounded-full border bg-background shadow-sm'>
-          <AppWindow className='size-5 text-muted-foreground' />
-        </div>
-        <div>
-          <p className='font-medium text-foreground text-sm'>Pick an app to inspect</p>
-          <p className='mt-1 max-w-sm text-muted-foreground text-sm'>
-            Live preview, manifest snapshot, sync + delete — all here. Or hit{" "}
-            <kbd className='rounded border bg-muted px-1 py-0.5 font-mono text-xs'>+</kbd> to
-            bootstrap a new one.
-          </p>
-        </div>
-      </>
-    )}
-  </div>
-);
 
 const ErrorState = ({ error }: { error: unknown }) => (
   <div className='mx-auto max-w-2xl p-6'>

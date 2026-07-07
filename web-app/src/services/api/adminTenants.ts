@@ -1,3 +1,4 @@
+import { isAxiosError } from "axios";
 import { apiClient } from "./axios";
 
 // ---------------------------------------------------------------------------
@@ -112,6 +113,31 @@ export const AdminOrgsService = {
 
   async remove(orgId: string): Promise<void> {
     await apiClient.delete(`/admin/orgs/${orgId}`);
+  },
+
+  /**
+   * Fetch the org's uploaded logo bytes. Returns `null` when the org has no
+   * logo (404). Fetched via the API client so the admin JWT rides along — no
+   * public image endpoint — hence the blob-then-data-URL dance in the hook.
+   */
+  async getLogo(orgId: string): Promise<Blob | null> {
+    try {
+      const res = await apiClient.get(`/admin/orgs/${orgId}/logo`, { responseType: "blob" });
+      return res.data instanceof Blob && res.data.size > 0 ? res.data : null;
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.status === 404) return null;
+      throw err;
+    }
+  },
+
+  async uploadLogo(orgId: string, file: File): Promise<void> {
+    await apiClient.put(`/admin/orgs/${orgId}/logo`, file, {
+      headers: { "Content-Type": file.type }
+    });
+  },
+
+  async deleteLogo(orgId: string): Promise<void> {
+    await apiClient.delete(`/admin/orgs/${orgId}/logo`);
   },
 
   async transferOwnership(orgId: string, newOwnerUserId: string): Promise<void> {

@@ -123,6 +123,7 @@ mod m20260630_000001_create_backfill_checkpoints;
 mod m20260701_000001_add_workspace_id_to_backfill_checkpoints;
 mod m20260702_000001_create_app_publish_tokens;
 mod m20260702_000001_create_backfill_ranges;
+mod m20260707_000001_app_builds_add_git_source;
 
 pub struct Migrator;
 
@@ -247,6 +248,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260701_000001_add_workspace_id_to_backfill_checkpoints::Migration),
             Box::new(m20260702_000001_create_app_publish_tokens::Migration),
             Box::new(m20260702_000001_create_backfill_ranges::Migration),
+            Box::new(m20260707_000001_app_builds_add_git_source::Migration),
         ]
     }
 }
