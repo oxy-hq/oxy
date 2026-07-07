@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.100] - 2026-07-07
+
+### 🚀 Features
+
+- Revamp admin custom-apps into a manageable deployment-platform UI (#2682)
+
 ## [0.5.99] - 2026-07-06
 
 ### 🚀 Features
@@ -16,6 +22,10 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Update product-context.md from recent changelogs (#2678)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.99 (#2675)
 
 ## [0.5.98] - 2026-07-06
 
