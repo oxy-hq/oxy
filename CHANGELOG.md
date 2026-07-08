@@ -2,11 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.101] - 2026-07-08
+
+### 🚀 Features
+
+- *(airway)* Reset-schema (drop tables + clear stored schema) (#2666)
+- *(ide-db)* Group Database sidebar by schema + drop schema/table (#2660)
+- Admin custom-apps management revamp + unified app icon/art (#2689)
+- World-model graph drill-down, breakdowns, and filter counts (#2684)
+
 ## [0.5.100] - 2026-07-07
 
 ### 🚀 Features
 
 - Revamp admin custom-apps into a manageable deployment-platform UI (#2682)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.100 (#2683)
 
 ## [0.5.99] - 2026-07-06
 
