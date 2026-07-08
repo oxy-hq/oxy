@@ -1044,6 +1044,63 @@ mod tests {
             "a db-wired context (HTTP middleware or global driver) must resolve a compile dispatcher"
         );
     }
+
+    /// Regression guard for the reconcile raw-`sql:` bug: a `sql:` operand
+    /// against a non-airhouse warehouse (ClickHouse / Snowflake / BigQuery /
+    /// Postgres / DuckDB) failed with "database '<name>' not configured" because
+    /// `reconcile::runner::run_sql` resolved through the airhouse-ONLY
+    /// [`ProjectContext::resolve_pre_built_connector`], which returns `None` for
+    /// any non-airhouse type — even when the database IS declared in config.yml.
+    /// The fix switches `run_sql` to [`OxyProjectContext::build_connector_for`],
+    /// which dispatches every warehouse type. This locks the two halves of the
+    /// root cause: a configured non-airhouse database is genuinely resolvable
+    /// (`resolve_database` -> Ok) yet invisible to the airhouse-only pre-built
+    /// path (`resolve_pre_built_connector` -> None), so that path must not gate
+    /// raw SQL.
+    #[tokio::test]
+    async fn non_airhouse_db_is_configured_but_not_pre_built() {
+        use agentic_pipeline::platform::ProjectContext;
+        use oxy::adapters::workspace::builder::WorkspaceBuilder;
+        use oxy_test_utils::fixtures::TestFixture;
+
+        let fixture = TestFixture::new().expect("tempdir");
+        // A real non-airhouse database (all ClickHouse fields are optional, so a
+        // bare declaration is valid). We never build the connector here — only
+        // resolve it — so no network handshake happens.
+        fixture
+            .create_file(
+                "config.yml",
+                "models: []\ndatabases:\n  - name: clickhouse\n    type: clickhouse\n",
+            )
+            .expect("write config.yml");
+        let wm = WorkspaceBuilder::new(uuid::Uuid::new_v4())
+            .with_workspace_path(fixture.path())
+            .await
+            .expect("config builder")
+            .build()
+            .await
+            .expect("workspace manager");
+        let ctx = super::OxyProjectContext::new(wm);
+
+        // The database IS configured — resolving it from config.yml succeeds.
+        assert!(
+            ctx.workspace_manager()
+                .config_manager
+                .resolve_database("clickhouse")
+                .is_ok(),
+            "the non-airhouse database must be present in config.yml"
+        );
+
+        // ...yet the airhouse-only pre-built path misses it. `run_sql` used to
+        // map this `None` to the misleading "not configured" error; it now uses
+        // `build_connector_for`, which resolves every warehouse type.
+        assert!(
+            ctx.resolve_pre_built_connector("clickhouse")
+                .await
+                .is_none(),
+            "airhouse-only pre-built resolution must miss a non-airhouse database"
+        );
+    }
 }
 
 // ── Connector translation ───────────────────────────────────────────────────

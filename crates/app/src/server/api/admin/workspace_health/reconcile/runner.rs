@@ -394,10 +394,16 @@ impl LiveReconcileRunner {
         let ctx = build_workspace_ctx(workspace_id, db)
             .await
             .ok_or_else(|| "no workspace context".to_string())?;
+        // Use the general, all-warehouse connector builder (the same path the
+        // semantic operand takes via the metric-tree runner) rather than the
+        // airhouse-only `resolve_pre_built_connector`, which early-returns `None`
+        // for ClickHouse/Snowflake/BigQuery/Postgres and collapses to a flat
+        // "not configured" error. `build_connector_for` dispatches every
+        // warehouse type and surfaces the real error.
         let connector = ctx
-            .resolve_pre_built_connector(database)
+            .build_connector_for(database)
             .await
-            .ok_or_else(|| format!("reconcile sql: database '{database}' not configured"))?;
+            .map_err(|e| format!("reconcile sql: database '{database}': {e}"))?;
         let rendered = render_sql(sql, period)?;
         let res = connector
             .execute_query(&rendered, 1)
