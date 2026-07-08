@@ -150,3 +150,23 @@ pub enum TokenAuth<'a> {
     Admin,
     ServiceAccount(&'a str),
 }
+
+/// Current state of a tenant's DuckLake catalog hot-path indexes, from
+/// `GET /admin/v1/tenants/{id}/catalog-indexes`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogIndexesResponse {
+    /// Aggregate state derived server-side: `"ready"` (all present + valid),
+    /// `"building"` (present but a `CONCURRENTLY` build is still in flight), or
+    /// `"absent"` (indexes not created / toggled off).
+    pub state: String,
+    pub indexes: Vec<CatalogIndexState>,
+}
+
+/// Presence + validity of one catalog hot-path index. `valid` mirrors Postgres
+/// `indisvalid` — false while a `CONCURRENTLY` build is in flight.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogIndexState {
+    pub name: String,
+    pub present: bool,
+    pub valid: bool,
+}

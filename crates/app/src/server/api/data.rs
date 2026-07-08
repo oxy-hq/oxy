@@ -63,6 +63,15 @@ pub struct SQLParams {
 
     #[serde(default)]
     pub result_format: Option<ResultFormat>,
+
+    /// Skip airhouse's per-query `DESCRIBE` round-trip and return every column
+    /// as text (the connector's `execute_query_full_untyped` path). The
+    /// world-model dashboard sets this — its tiles already `::VARCHAR`-cast
+    /// every column, so the DESCRIBE is pure overhead. Defaults to false (typed
+    /// path). Mirrors the `untyped` flag on the public `/query` route
+    /// (`projects::query::run_sql_query`).
+    #[serde(default)]
+    pub untyped: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -269,10 +278,16 @@ pub(crate) async fn run_via_agentic_connector(
     let (sql_to_run, capped) = cap_ide_result_rows(&payload.sql);
 
     let query_start = std::time::Instant::now();
-    let stream = connector
-        .execute_query_full(&sql_to_run)
-        .await
-        .map_err(SqlExecuteError::Connector)?;
+    // The world-model dashboard opts into the untyped fast path: skip airhouse's
+    // per-query `DESCRIBE` round-trip (its tiles already `::VARCHAR`-cast every
+    // column) and stream text cells. Mirrors `run_sql_query` in projects::query.
+    // Every other caller leaves `untyped` false and keeps the typed path.
+    let stream = if payload.untyped {
+        connector.execute_query_full_untyped(&sql_to_run).await
+    } else {
+        connector.execute_query_full(&sql_to_run).await
+    }
+    .map_err(SqlExecuteError::Connector)?;
     let execution_time_ms = query_start.elapsed().as_millis() as u64;
 
     let result_format = payload

@@ -11,6 +11,6 @@ mod types;
 pub use client::AirhouseAdminClient;
 pub use error::AirhouseError;
 pub use types::{
-    CreatedServiceAccount, EphemeralCredential, ServiceAccountRecord, TenantRecord, TokenAuth,
-    UserRecord, UserRole,
+    CatalogIndexState, CatalogIndexesResponse, CreatedServiceAccount, EphemeralCredential,
+    ServiceAccountRecord, TenantRecord, TokenAuth, UserRecord, UserRole,
 };

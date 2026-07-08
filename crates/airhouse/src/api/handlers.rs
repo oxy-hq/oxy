@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
+use crate::admin::CatalogIndexesResponse;
 use crate::airhouse_role_for;
 use crate::broker::DEFAULT_EXTERNAL_TTL;
 use crate::config::{admin_client, provisioner_for, token_broker, wire_endpoint};
@@ -382,6 +383,96 @@ pub async fn provision(
         role: airhouse_role.as_str().to_string(),
         is_provisioned: true,
     }))
+}
+
+#[derive(Deserialize)]
+pub struct SetCatalogIndexesBody {
+    pub enabled: bool,
+}
+
+#[derive(Serialize)]
+pub struct SetCatalogIndexesResponse {
+    /// Whether airhouse accepted the async apply (its HTTP 202).
+    pub accepted: bool,
+}
+
+/// `GET /airhouse/me/catalog-indexes?workspace_id=…` — presence + validity of
+/// the workspace tenant's DuckLake catalog hot-path indexes. Owner/Admin only;
+/// read-through to the airhouse admin API. `404` when the workspace has no
+/// provisioned tenant.
+#[instrument(skip(user, query), fields(user_id = %user.id, workspace_id = %query.workspace_id))]
+pub async fn get_catalog_indexes(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Query(query): Query<WorkspaceQuery>,
+) -> Result<Json<CatalogIndexesResponse>, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        error!("DB connection error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let (_org_id, oxy_role) = resolve_caller_role(&db, query.workspace_id, user.id).await?;
+    require_workspace_admin(oxy_role, query.workspace_id, user.id)?;
+
+    let tenant_id = lookup_provisioned_tenant(&db, query.workspace_id)
+        .await?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let client = admin_client().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let status = client.catalog_index_status(&tenant_id).await.map_err(|e| {
+        warn!(workspace_id = %query.workspace_id, "catalog index status failed: {e}");
+        StatusCode::BAD_GATEWAY
+    })?;
+    Ok(Json(status))
+}
+
+/// `PUT /airhouse/me/catalog-indexes?workspace_id=…` — toggle the workspace
+/// tenant's DuckLake catalog hot-path indexes on/off. Owner/Admin only. The
+/// apply runs asynchronously on airhouse (`CREATE INDEX CONCURRENTLY`);
+/// `accepted: true` means it was accepted — poll `GET` until `state == "ready"`.
+#[instrument(skip(user, query, body), fields(user_id = %user.id, workspace_id = %query.workspace_id))]
+pub async fn set_catalog_indexes(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Query(query): Query<WorkspaceQuery>,
+    Json(body): Json<SetCatalogIndexesBody>,
+) -> Result<Json<SetCatalogIndexesResponse>, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        error!("DB connection error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let (_org_id, oxy_role) = resolve_caller_role(&db, query.workspace_id, user.id).await?;
+    require_workspace_admin(oxy_role, query.workspace_id, user.id)?;
+
+    let tenant_id = lookup_provisioned_tenant(&db, query.workspace_id)
+        .await?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let client = admin_client().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let accepted = client
+        .set_catalog_indexes(&tenant_id, body.enabled)
+        .await
+        .map_err(|e| {
+            warn!(workspace_id = %query.workspace_id, "catalog index toggle failed: {e}");
+            StatusCode::BAD_GATEWAY
+        })?;
+    Ok(Json(SetCatalogIndexesResponse { accepted }))
+}
+
+/// Reject non-owner/admin callers at the wire (the UI also gates the toggle,
+/// but the endpoint must enforce independently). Mirrors the inline check in
+/// [`provision`].
+fn require_workspace_admin(
+    oxy_role: org_members::OrgRole,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), StatusCode> {
+    if !matches!(
+        oxy_role,
+        org_members::OrgRole::Owner | org_members::OrgRole::Admin
+    ) {
+        warn!(
+            %workspace_id, %user_id, role = ?oxy_role,
+            "rejecting non-admin catalog-index request"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(())
 }
 
 /// `DELETE /airhouse/me/tokens/{username}` — revoke a single ephemeral the

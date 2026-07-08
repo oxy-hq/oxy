@@ -730,6 +730,7 @@ pub async fn execute_semantic_query(
                 filters: payload.session_filters,
                 connections: payload.connections,
                 result_format: payload.result_format,
+                untyped: false,
             };
             run_via_agentic_connector(&workspace_manager, user.id, role, &sql_payload)
                 .await

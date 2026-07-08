@@ -3,8 +3,8 @@ use serde::Serialize;
 
 use super::error::AirhouseError;
 use super::types::{
-    CreatedServiceAccount, EphemeralCredential, ServiceAccountRecord, TenantRecord,
-    TenantRecordRaw, TokenAuth, UserRecord, UserRole,
+    CatalogIndexesResponse, CreatedServiceAccount, EphemeralCredential, ServiceAccountRecord,
+    TenantRecord, TenantRecordRaw, TokenAuth, UserRecord, UserRole,
 };
 
 #[derive(Serialize)]
@@ -48,6 +48,18 @@ struct CreateServiceAccountResponse {
 #[derive(serde::Deserialize)]
 struct HealthResponse {
     version: String,
+}
+
+#[derive(Serialize)]
+struct SetCatalogIndexesRequest {
+    enabled: bool,
+}
+
+/// `202 { "accepted": true }` from the catalog-index PUT toggle — the async
+/// apply was accepted; poll [`AirhouseAdminClient::catalog_index_status`].
+#[derive(serde::Deserialize)]
+struct ToggleAcceptedResponse {
+    accepted: bool,
 }
 
 pub struct AirhouseAdminClient {
@@ -161,6 +173,65 @@ impl AirhouseAdminClient {
             .await?;
         match resp.status() {
             StatusCode::NO_CONTENT => Ok(()),
+            StatusCode::INTERNAL_SERVER_ERROR => {
+                Err(AirhouseError::Provisioning(resp.text().await?))
+            }
+            s => Err(AirhouseError::Provisioning(format!(
+                "unexpected status {s}"
+            ))),
+        }
+    }
+
+    /// Toggle the DuckLake catalog hot-path indexes for a tenant. The apply
+    /// runs asynchronously server-side (`CREATE INDEX CONCURRENTLY`); a `202`
+    /// means it was accepted. Poll [`Self::catalog_index_status`] until
+    /// `state == "ready"`.
+    pub async fn set_catalog_indexes(
+        &self,
+        tenant_id: &str,
+        enabled: bool,
+    ) -> Result<bool, AirhouseError> {
+        let resp = self
+            .client
+            .put(self.url(&format!("/tenants/{tenant_id}/catalog-indexes")))
+            .bearer_auth(&self.token)
+            .json(&SetCatalogIndexesRequest { enabled })
+            .send()
+            .await?;
+        match resp.status() {
+            // Contract is 202 (async apply accepted); accept 200 too in case
+            // airhouse ever returns a synchronous no-op when already in the
+            // desired state. Default accepted=true when the body is absent.
+            StatusCode::ACCEPTED | StatusCode::OK => Ok(resp
+                .json::<ToggleAcceptedResponse>()
+                .await
+                .map(|r| r.accepted)
+                .unwrap_or(true)),
+            StatusCode::NOT_FOUND => Err(AirhouseError::NotFound(resp.text().await?)),
+            StatusCode::INTERNAL_SERVER_ERROR => {
+                Err(AirhouseError::Provisioning(resp.text().await?))
+            }
+            s => Err(AirhouseError::Provisioning(format!(
+                "unexpected status {s}"
+            ))),
+        }
+    }
+
+    /// Fetch the current presence/validity of the tenant's catalog hot-path
+    /// indexes (aggregate `state`: `ready` | `building` | `absent`).
+    pub async fn catalog_index_status(
+        &self,
+        tenant_id: &str,
+    ) -> Result<CatalogIndexesResponse, AirhouseError> {
+        let resp = self
+            .client
+            .get(self.url(&format!("/tenants/{tenant_id}/catalog-indexes")))
+            .bearer_auth(&self.token)
+            .send()
+            .await?;
+        match resp.status() {
+            StatusCode::OK => Ok(resp.json::<CatalogIndexesResponse>().await?),
+            StatusCode::NOT_FOUND => Err(AirhouseError::NotFound(resp.text().await?)),
             StatusCode::INTERNAL_SERVER_ERROR => {
                 Err(AirhouseError::Provisioning(resp.text().await?))
             }

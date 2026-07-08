@@ -329,7 +329,9 @@ const coordinatorKeys = {
 const airhouseKeys = {
   all: ["airhouse"] as const,
   connection: (workspaceId: string) => [...airhouseKeys.all, "connection", workspaceId] as const,
-  version: () => [...airhouseKeys.all, "version"] as const
+  version: () => [...airhouseKeys.all, "version"] as const,
+  catalogIndexes: (workspaceId: string) =>
+    [...airhouseKeys.all, "catalog-indexes", workspaceId] as const
 };
 
 const cameraKeys = {

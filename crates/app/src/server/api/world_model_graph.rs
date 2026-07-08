@@ -1801,6 +1801,7 @@ pub async fn get_world_model_instances(
         filters: None,
         connections: None,
         result_format: None,
+        untyped: false,
     };
     let rows = match run_via_agentic_connector(&workspace_manager, user.id, role, &payload).await {
         Ok(SemanticQueryResponse::Json(r)) => r,
@@ -2457,6 +2458,7 @@ pub async fn get_world_model_filter_instances(
         filters: None,
         connections: None,
         result_format: None,
+        untyped: false,
     };
     let rows = match run_via_agentic_connector(&workspace_manager, user.id, role, &payload).await {
         Ok(SemanticQueryResponse::Json(r)) => r,

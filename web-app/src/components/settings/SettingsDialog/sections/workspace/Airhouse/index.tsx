@@ -10,6 +10,7 @@ import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import SectionHeader from "../../../components/SectionHeader";
 import { AirhouseVersionBadge } from "./components/AirhouseVersionBadge";
+import { CatalogIndexes } from "./components/CatalogIndexes";
 import { ConnectionDetails } from "./components/ConnectionDetails";
 import { ProvisionPrompt } from "./components/ProvisionPrompt";
 
@@ -97,11 +98,16 @@ const Airhouse: React.FC = () => {
       );
     }
     return (
-      <ConnectionDetails
-        connection={connection}
-        onAddToConfig={handleAddToConfig}
-        isAddingToConfig={addToConfig.isPending}
-      />
+      <>
+        <ConnectionDetails
+          connection={connection}
+          onAddToConfig={handleAddToConfig}
+          isAddingToConfig={addToConfig.isPending}
+        />
+        {workspaceId && (
+          <CatalogIndexes workspaceId={workspaceId} canManage={canProvision} />
+        )}
+      </>
     );
   };
 

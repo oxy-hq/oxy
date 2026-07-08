@@ -18,7 +18,7 @@
 pub mod handlers;
 
 use axum::Router;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 
 /// Build the airhouse `/airhouse/me/*` route subtree.
 ///
@@ -33,6 +33,10 @@ where
         .route("/airhouse/me/connection", get(handlers::get_connection))
         .route("/airhouse/me/credentials", post(handlers::get_credentials))
         .route("/airhouse/me/provision", post(handlers::provision))
+        .route(
+            "/airhouse/me/catalog-indexes",
+            get(handlers::get_catalog_indexes).put(handlers::set_catalog_indexes),
+        )
         .route(
             "/airhouse/me/tokens/{username}",
             delete(handlers::revoke_token),
