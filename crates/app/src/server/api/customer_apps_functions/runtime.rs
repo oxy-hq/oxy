@@ -124,6 +124,10 @@ pub trait FunctionHost: Send + Sync {
         op: String,
         payload: serde_json::Value,
     ) -> Result<serde_json::Value, String>;
+    /// `ctx.secrets.set(key, value)` — upsert an app-scoped secret
+    /// (`apps/<app_id>/<key>`) into the same namespace `ctx.env` reads. Gated
+    /// by the fail-closed `secrets.write` manifest capability.
+    async fn secrets_set(&self, key: String, value: String) -> Result<serde_json::Value, String>;
 }
 
 /// A request the isolate sends to the broker loop.
@@ -153,6 +157,11 @@ enum HostCall {
     WarehouseWrite {
         op: String,
         payload: serde_json::Value,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    SecretsSet {
+        key: String,
+        value: String,
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
 }
@@ -274,6 +283,28 @@ async fn op_ctx_warehouse(
     Ok(reply_json("ctx.warehouse", result))
 }
 
+/// `ctx.secrets.set(key, value)` — bridge to `FunctionHost::secrets_set`.
+#[op2(async)]
+#[string]
+async fn op_ctx_secrets_set(
+    state: Rc<RefCell<OpState>>,
+    #[string] key: String,
+    #[string] value: String,
+) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let (reply, rx) = oneshot::channel();
+    tx.send(HostCall::SecretsSet { key, value, reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.secrets.set", result))
+}
+
 #[op2(async)]
 #[string]
 async fn op_ctx_semantic_query(
@@ -360,6 +391,7 @@ deno_core::extension!(
         op_ctx_query_stream,
         op_ctx_fetch,
         op_ctx_warehouse,
+        op_ctx_secrets_set,
         op_ctx_semantic_query,
         op_ctx_airway_run,
     ],
@@ -463,6 +495,11 @@ globalThis.__buildCtx = (ctxData) => ({
       __wrapOp("op_ctx_warehouse")("exec", { database, sql }),
     upsert: (database, table, rows, conflictColumns) =>
       __wrapOp("op_ctx_warehouse")("upsert", { database, table, rows, conflictColumns }),
+  },
+  secrets: {
+    // set(key, value) — both stay bare strings so they arrive as the op's
+    // `#[string]` args (matching op_ctx_airway_run's bare-string pipelineRef).
+    set: (key, value) => __wrapOp("op_ctx_secrets_set")(String(key), String(value)),
   },
   semantic: { query: __wrapOp("op_ctx_semantic_query") }, // spec is JSON-stringified by __wrapOp
   airway: {
@@ -624,6 +661,9 @@ pub async fn run(
                                 }
                                 HostCall::WarehouseWrite { op, payload, reply } => {
                                     let _ = reply.send(host.warehouse_write(op, payload).await);
+                                }
+                                HostCall::SecretsSet { key, value, reply } => {
+                                    let _ = reply.send(host.secrets_set(key, value).await);
                                 }
                             }
                         });
@@ -794,6 +834,13 @@ mod tests {
                 &self,
                 _op: String,
                 _payload: serde_json::Value,
+            ) -> Result<serde_json::Value, String> {
+                Err("unused".into())
+            }
+            async fn secrets_set(
+                &self,
+                _key: String,
+                _value: String,
             ) -> Result<serde_json::Value, String> {
                 Err("unused".into())
             }

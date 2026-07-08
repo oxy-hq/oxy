@@ -94,10 +94,10 @@ fn validate_input(input: &ScheduleInput) -> Result<(), ScheduleError> {
     }
     if !matches!(
         input.target_kind.as_str(),
-        "workflow" | "airway" | "agent" | "monitor_scan" | "health_eval"
+        "workflow" | "airway" | "agent" | "monitor_scan" | "health_eval" | "function"
     ) {
         return Err(ScheduleError::Invalid(format!(
-            "target_kind must be 'workflow', 'airway', 'agent', 'monitor_scan', or 'health_eval', got {:?}",
+            "target_kind must be 'workflow', 'airway', 'agent', 'monitor_scan', 'health_eval', or 'function', got {:?}",
             input.target_kind
         )));
     }
@@ -1013,6 +1013,51 @@ async fn fire_schedule(
             )
             .await
             .map_err(|e| e.to_string())
+        }
+        "function" => {
+            // A scheduled customer-app Oxy Function. `target_ref` encodes
+            // "<app_id>/<function_name>"; the host-side `AppFunctionTaskExecutor`
+            // (Custom-task registry) runs it under the org-owner identity. This
+            // arm stays entity/oxy-free — it only seeds a run + a Custom task
+            // whose string payload the host resolves.
+            let (app_id, function_name) = s.target_ref.split_once('/').ok_or_else(|| {
+                format!(
+                    "function schedule target_ref must be '<app_id>/<function_name>', got {:?}",
+                    s.target_ref
+                )
+            })?;
+            let run_id = uuid::Uuid::new_v4().to_string();
+            insert_run_with_schedule(
+                db,
+                &run_id,
+                &s.name,
+                None,
+                "app_function",
+                None,
+                &s.id,
+                s.workspace_id,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            let spec = agentic_core::delegation::TaskSpec::Custom {
+                kind: "app_function".into(),
+                payload: serde_json::json!({
+                    "app_id": app_id,
+                    "function_name": function_name,
+                }),
+            };
+            agentic_runtime::crud::enqueue_task(
+                db,
+                &run_id,
+                &run_id,
+                None,
+                &spec,
+                None,
+                agentic_runtime::crud::TaskScope::Global,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            Ok(run_id)
         }
         other => Err(format!("unknown target_kind {other:?}")),
     }

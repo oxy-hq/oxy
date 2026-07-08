@@ -777,11 +777,16 @@ async fn tick_cloud(
 fn build_custom_task_registry(
     db: &sea_orm::DatabaseConnection,
 ) -> Arc<agentic_runtime::worker::CustomTaskRegistry> {
+    use crate::server::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
     use crate::server::health_eval_executor::{HEALTH_EVAL_KIND, HealthEvalTaskExecutor};
     let mut reg = agentic_runtime::worker::CustomTaskRegistry::new();
     reg.register(
         HEALTH_EVAL_KIND,
         Arc::new(HealthEvalTaskExecutor { db: db.clone() }),
+    );
+    reg.register(
+        APP_FUNCTION_KIND,
+        Arc::new(AppFunctionTaskExecutor { db: db.clone() }),
     );
     Arc::new(reg)
 }

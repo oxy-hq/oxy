@@ -15,6 +15,9 @@ use agentic_runtime::crud::TaskScope;
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
 use agentic_semantic::config::SemanticQueryConfig;
 use sea_orm::DatabaseConnection;
+use uuid::Uuid;
+
+use oxy::service::secret_manager::SecretManagerService;
 
 use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::projects::query::{
@@ -40,18 +43,37 @@ pub struct ProjectFunctionHost {
     /// §11.3 allowlist — database names `ctx.warehouse.*` may write to. Empty →
     /// the function may not write to any database (fail-closed).
     write_destinations: Vec<String>,
+    /// Project the app belongs to — scopes the SecretManager for `ctx.secrets.set`.
+    project_id: Uuid,
+    /// App id — `ctx.secrets.set` writes land under `apps/<app_id>/`.
+    app_id: Uuid,
+    /// Actor stamped as created_by/updated_by on secret writes (the invoking
+    /// user for a route call; the app owner for a scheduled call). Non-null FK.
+    actor: Uuid,
+    /// §11.x fail-closed: `ctx.secrets.set` is rejected unless the function
+    /// declares the `secrets.write` capability in its manifest.
+    secrets_write: bool,
 }
 
 impl ProjectFunctionHost {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         proj_ctx: OxyProjectContext,
         db: DatabaseConnection,
         write_destinations: Vec<String>,
+        project_id: Uuid,
+        app_id: Uuid,
+        actor: Uuid,
+        secrets_write: bool,
     ) -> Self {
         Self {
             proj_ctx,
             db,
             write_destinations,
+            project_id,
+            app_id,
+            actor,
+            secrets_write,
             // `ctx.fetch` is defended in two layers:
             //  1. `is_safe_outbound` rejects the request URL up front (scheme,
             //     literal private IPs, internal suffixes).
@@ -307,6 +329,28 @@ impl FunctionHost for ProjectFunctionHost {
                 .map_err(|e| format!("warehouse {op} failed: {e}"))
         })
         .await?;
+        Ok(serde_json::json!({ "ok": true }))
+    }
+
+    async fn secrets_set(
+        &self,
+        key: String,
+        value: String,
+    ) -> Result<serde_json::Value, String> {
+        // §11.x fail-closed: the function must declare the `secrets.write`
+        // capability. Scoped to the app's own `apps/<app_id>/` namespace, so it
+        // can never touch another app's or the project's secrets.
+        if !self.secrets_write {
+            return Err(
+                "ctx.secrets.set: this function has not declared the `secrets.write` \
+                 capability (add it to oxy-app.json to permit writes)"
+                    .to_string(),
+            );
+        }
+        SecretManagerService::new(self.project_id)
+            .set_app_secret(&self.db, self.app_id, &key, &value, self.actor)
+            .await
+            .map_err(|e| format!("ctx.secrets.set failed: {e}"))?;
         Ok(serde_json::json!({ "ok": true }))
     }
 }

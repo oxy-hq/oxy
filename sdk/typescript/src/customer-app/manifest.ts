@@ -55,6 +55,13 @@ export interface OxyAppFunctionManifest {
    * source warehouse.
    */
   destinations?: string[];
+  /**
+   * Capability to write app-scoped secrets via `ctx.secrets.set` (fail-closed:
+   * omit → writes rejected). Only the app's own `apps/<app-id>/` namespace is
+   * writable. Declare for a function that persists state — e.g. a scheduled
+   * token-refresher that writes the rotated token back to Oxy Secrets.
+   */
+  secrets?: { write?: boolean };
 }
 
 /** Wire shape of `oxy-app.json` (v2 only). */

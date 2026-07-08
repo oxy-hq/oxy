@@ -98,12 +98,24 @@ struct FunctionManifestEntry {
     /// arbitrary DDL/DML against the project's source warehouse.
     #[serde(default)]
     destinations: Option<Vec<String>>,
+    /// Opt-in capability to write app-scoped secrets via `ctx.secrets.set`
+    /// (fail-closed: absent → writes rejected). Only the app's own
+    /// `apps/<app_id>/` namespace is writable. Declare for functions that
+    /// persist state (e.g. a scheduled token-refresher).
+    #[serde(default)]
+    secrets: Option<SecretsSpec>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
 struct CacheSpec {
     #[serde(rename = "ttlSeconds")]
     ttl_seconds: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+struct SecretsSpec {
+    #[serde(default)]
+    write: Option<bool>,
 }
 
 impl FunctionManifestEntry {
@@ -122,6 +134,11 @@ impl FunctionManifestEntry {
     /// none; writes fail-closed). The §11.3 destination allowlist.
     fn write_destinations(&self) -> Vec<String> {
         self.destinations.clone().unwrap_or_default()
+    }
+
+    /// Whether `ctx.secrets.set` is permitted (fail-closed default: false).
+    fn secrets_write(&self) -> bool {
+        self.secrets.as_ref().and_then(|s| s.write).unwrap_or(false)
     }
 }
 
@@ -614,7 +631,11 @@ pub async fn handle_function_request(
         invocation_id,
         timeout,
         write_destinations: manifest.write_destinations(),
+        secrets_write: manifest.secrets_write(),
         logs: logs.clone(),
+        // Route path: cancellation is the `cancel_requested_at` DB flag (set on
+        // client-gone / dashboard cancel), so a never-fired token suffices here.
+        cancel: tokio_util::sync::CancellationToken::new(),
     })
     .await;
 
@@ -687,6 +708,134 @@ pub async fn handle_function_request(
 /// Outcome triple shared by both feature arms: `(status, error_msg, body)`.
 type RunOutcome = (&'static str, Option<String>, String);
 
+/// Run a customer-app function on the SYSTEM path (a schedule fire) — bypassing
+/// auth / rate-limit / idempotency / cache. Resolves the app's active build + the
+/// function's artifact + manifest, runs the isolate under the **org owner's**
+/// identity (apps have no owner field; the org owner is the natural actor — the
+/// same data + secret access), and records an `app_function_invocations` row with
+/// `mode="schedule"`, `user_id=None`. Returns the response body on success.
+#[cfg(feature = "customer-app-functions")]
+pub(crate) async fn run_scheduled_function(
+    db: &sea_orm::DatabaseConnection,
+    app_id: Uuid,
+    function_name: &str,
+    cancel: tokio_util::sync::CancellationToken,
+) -> Result<String, String> {
+    let app = entity::apps::Entity::find_by_id(app_id)
+        .one(db)
+        .await
+        .map_err(|e| format!("app lookup failed: {e}"))?
+        .ok_or_else(|| format!("app {app_id} not found"))?;
+
+    let build_id = app
+        .published_build_id
+        .or(app.draft_build_id)
+        .ok_or_else(|| "app has no build".to_string())?;
+
+    let func_row = AppFunctions::find()
+        .filter(app_functions::Column::BuildId.eq(build_id))
+        .filter(app_functions::Column::Name.eq(function_name))
+        .one(db)
+        .await
+        .map_err(|e| format!("app_functions lookup failed: {e}"))?
+        .ok_or_else(|| format!("function '{function_name}' not found in build"))?;
+
+    let manifest: FunctionManifestEntry = func_row
+        .manifest_json
+        .as_ref()
+        .and_then(|j| serde_json::from_value(j.clone()).ok())
+        .unwrap_or_default();
+
+    let build = AppBuilds::find_by_id(build_id)
+        .one(db)
+        .await
+        .map_err(|e| format!("app_builds lookup failed: {e}"))?
+        .ok_or_else(|| "build not found".to_string())?;
+
+    let artifact_rel = format!("functions/{function_name}.js");
+    let artifact = customer_apps_build_store::get_object(app.id, &build.build_id, &artifact_rel)
+        .await
+        .map_err(|e| format!("build store fetch failed: {e}"))?
+        .ok_or_else(|| format!("artifact '{artifact_rel}' not found"))?;
+    let artifact_js = String::from_utf8_lossy(&artifact).into_owned();
+
+    // Identity/actor: the org owner (apps have no owner; a scheduled run has no
+    // invoking user). Threads into build_project_context (Airhouse role),
+    // `ctx.user.id`, and the `set_app_secret` created_by (non-null FK).
+    let owner = entity::org_members::Entity::find()
+        .filter(entity::org_members::Column::OrgId.eq(app.org_id))
+        .filter(entity::org_members::Column::Role.eq(entity::org_members::OrgRole::Owner))
+        .one(db)
+        .await
+        .map_err(|e| format!("org owner lookup failed: {e}"))?
+        .ok_or_else(|| format!("no owner for org {}", app.org_id))?;
+
+    let invocation_id = Uuid::new_v4();
+    if let Err(e) = (app_function_invocations::ActiveModel {
+        id: Set(invocation_id),
+        app_id: Set(app.id),
+        build_id: Set(build_id),
+        function_name: Set(function_name.to_string()),
+        mode: Set("schedule".to_string()),
+        user_id: Set(None),
+        status: Set("running".to_string()),
+        duration_ms: Set(None),
+        error: Set(None),
+        cancel_requested_at: Set(None),
+        created_at: Set(chrono::Utc::now().into()),
+        idempotency_key: Set(None),
+        result_body: Set(None),
+        request_hash: Set(None),
+    })
+    .insert(db)
+    .await
+    {
+        error!("failed to insert scheduled invocation row: {e}");
+    }
+
+    let timeout = resolve_timeout(&manifest);
+    let started = Instant::now();
+    let logs: std::sync::Arc<Mutex<Vec<LogLine>>> = std::sync::Arc::new(Mutex::new(Vec::new()));
+
+    let (status_str, error_msg, body_text) = run_with_runtime(RunArgs {
+        db,
+        app: &app,
+        artifact_js,
+        body: Vec::new(),
+        user_id: owner.user_id,
+        user_email: format!("schedule+{function_name}@system.oxy"),
+        org_id: app.org_id,
+        invocation_id,
+        timeout,
+        write_destinations: manifest.write_destinations(),
+        secrets_write: manifest.secrets_write(),
+        logs: logs.clone(),
+        cancel,
+    })
+    .await;
+
+    let duration_ms = started.elapsed().as_millis() as i64;
+    let mut update = app_function_invocations::ActiveModel {
+        id: Set(invocation_id),
+        ..Default::default()
+    };
+    update.status = Set(status_str.to_string());
+    update.duration_ms = Set(Some(duration_ms));
+    update.error = Set(error_msg.clone());
+    if status_str == "success" {
+        update.result_body = Set(Some(body_text.clone()));
+    }
+    if let Err(e) = update.update(db).await {
+        error!("failed to update scheduled invocation row: {e}");
+    }
+
+    if status_str == "success" {
+        Ok(body_text)
+    } else {
+        Err(error_msg.unwrap_or_else(|| "function failed".to_string()))
+    }
+}
+
 /// A captured `ctx.log` / `console.*` line from a function run, surfaced back to
 /// the app (as SSE `log` frames) so a developer sees output without opening the
 /// oxy server logs. Defined here (un-gated) so the handler can hold the buffer
@@ -710,10 +859,17 @@ struct RunArgs<'a> {
     timeout: Duration,
     /// §11.3 allowlist — databases `ctx.warehouse.*` may write to (empty = none).
     write_destinations: Vec<String>,
+    /// §11.x fail-closed capability gate for `ctx.secrets.set`.
+    secrets_write: bool,
     /// Shared log buffer: the isolate appends `console.*`/`ctx.log`; the handler
     /// drains it after the run and sends it back as `log` frames (batched with
     /// the response, not live-tailed).
     logs: std::sync::Arc<Mutex<Vec<LogLine>>>,
+    /// In-process cancellation from the caller. Merged with the
+    /// `cancel_requested_at` poll by the watchdog. The scheduled path passes the
+    /// run task's token so a fleet/operator cancel stops the isolate; the route
+    /// path passes a never-fired token (its cancellation is the DB flag alone).
+    cancel: tokio_util::sync::CancellationToken,
 }
 
 /// Build the project context + host, spawn the cancel watchdog, and drive
@@ -754,6 +910,10 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         proj_ctx,
         args.db.clone(),
         args.write_destinations.clone(),
+        args.app.project_id,
+        args.app.id,
+        args.user_id,
+        args.secrets_write,
     ));
 
     let env = resolve_function_env(args.db, args.app.project_id, args.app.id).await;
@@ -774,6 +934,7 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         args.db.clone(),
         args.invocation_id,
         cancel_tx,
+        args.cancel,
     ));
 
     let result = runtime::run(
@@ -847,29 +1008,39 @@ async fn resolve_function_env(
     env
 }
 
-/// Poll `app_function_invocations.cancel_requested_at` once per second;
-/// resolve `cancel_tx` the first time it's non-null so the runtime can
-/// terminate the isolate.
+/// Resolve `cancel_tx` (which terminates the isolate) on the first of two
+/// signals: the in-process `token` firing (the runtime/worker cancelled this
+/// task — e.g. fleet shutdown or an operator cancel) or
+/// `app_function_invocations.cancel_requested_at` going non-null (cross-process:
+/// dashboard cancel / client gone), polled once per second.
 #[cfg(feature = "customer-app-functions")]
 async fn spawn_cancel_watchdog(
     db: sea_orm::DatabaseConnection,
     invocation_id: Uuid,
     cancel_tx: tokio::sync::oneshot::Sender<()>,
+    token: tokio_util::sync::CancellationToken,
 ) {
     loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        match AppFunctionInvocations::find_by_id(invocation_id)
-            .one(&db)
-            .await
-        {
-            Ok(Some(row)) if row.cancel_requested_at.is_some() => {
+        tokio::select! {
+            // In-process cancel — fire immediately rather than waiting up to a
+            // second for the next poll.
+            _ = token.cancelled() => {
                 let _ = cancel_tx.send(());
                 return;
             }
-            Ok(_) => {}
-            Err(e) => {
-                error!("cancel watchdog poll failed: {e}");
-                return;
+            // Cross-process cancel — poll the invocation's flag.
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                match AppFunctionInvocations::find_by_id(invocation_id).one(&db).await {
+                    Ok(Some(row)) if row.cancel_requested_at.is_some() => {
+                        let _ = cancel_tx.send(());
+                        return;
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("cancel watchdog poll failed: {e}");
+                        return;
+                    }
+                }
             }
         }
     }

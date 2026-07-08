@@ -464,6 +464,88 @@ async fn record_functions(
     Ok(())
 }
 
+/// Register/update `agentic_schedules` for functions that declare a `schedule`
+/// in their manifest, so a scheduled Oxy Function fires without a manual
+/// schedule (`target_kind="function"`, `target_ref="<app_id>/<name>"`). Idempotent
+/// per publish: upserts by `target_ref` so a re-publish updates cadence rather
+/// than duplicating, and **reconciles** — any of this app's function schedules
+/// whose function no longer declares a `schedule` (dropped, renamed, or deleted)
+/// is removed, so a stale row can't keep firing `run_scheduled_function` against
+/// a function that no longer exists. Best-effort — a schedule failure never
+/// fails the publish (the function stays route-invocable).
+async fn register_function_schedules(
+    db: &DatabaseConnection,
+    app_id: Uuid,
+    workspace_id: Uuid,
+    specs: &[(String, serde_json::Value)],
+) {
+    let existing = agentic_pipeline::scheduler::list_schedules(db, workspace_id)
+        .await
+        .unwrap_or_default();
+    // The `target_ref`s that SHOULD be scheduled after this publish — every
+    // function that currently declares a `schedule`. Drives both the upsert
+    // below and the reconcile at the end.
+    let mut live: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (name, spec) in specs {
+        let Some(cron) = spec.get("schedule").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let timezone = spec
+            .get("timezone")
+            .and_then(|v| v.as_str())
+            .unwrap_or("UTC")
+            .to_string();
+        let target_ref = format!("{app_id}/{name}");
+        live.insert(target_ref.clone());
+        let input = agentic_pipeline::scheduler::ScheduleInput {
+            name: format!("fn:{app_id}/{name}"),
+            target_kind: "function".to_string(),
+            target_ref: target_ref.clone(),
+            question: None,
+            variables: None,
+            cron_expr: cron.to_string(),
+            timezone,
+            enabled: true,
+        };
+        let found = existing
+            .iter()
+            .find(|s| s.target_kind == "function" && s.target_ref == target_ref);
+        let result = match found {
+            Some(s) => agentic_pipeline::scheduler::update_schedule(db, workspace_id, &s.id, input)
+                .await
+                .map(|_| ()),
+            None => agentic_pipeline::scheduler::create_schedule(db, workspace_id, input)
+                .await
+                .map(|_| ()),
+        };
+        if let Err(e) = result {
+            tracing::warn!("publish: failed to register schedule for {app_id}/{name}: {e}");
+        }
+    }
+    // Reconcile: retire this app's function schedules whose function no longer
+    // declares a cadence. `existing` predates the upserts above, so a
+    // just-updated schedule is also in `live` and survives; only genuinely
+    // orphaned rows (function dropped `schedule`, was renamed, or deleted) are
+    // removed — otherwise every tick would `run_scheduled_function` a missing
+    // function and log a failed run forever.
+    let prefix = format!("{app_id}/");
+    for s in &existing {
+        if s.target_kind == "function"
+            && s.target_ref.starts_with(&prefix)
+            && !live.contains(&s.target_ref)
+        {
+            if let Err(e) =
+                agentic_pipeline::scheduler::delete_schedule(db, workspace_id, &s.id).await
+            {
+                tracing::warn!(
+                    "publish: failed to retire stale schedule {}: {e}",
+                    s.target_ref
+                );
+            }
+        }
+    }
+}
+
 /// Point the channel(s) at the new build. Draft always; published +
 /// `published_at` when promoting.
 async fn set_pointers(
@@ -591,6 +673,14 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
             let _ = row.delete(&db).await;
         }
         return Err(e);
+    }
+    // Schedules track the LIVE build, so (re)register + reconcile function
+    // schedules only on a PROMOTING publish — a draft-only publish shouldn't
+    // start firing background runs — and after `set_pointers` so a fire resolves
+    // the just-set `published_build_id`. Best-effort: a schedule failure never
+    // fails the publish (functions stay route-invocable).
+    if input.promote {
+        register_function_schedules(&db, app_id, input.project_id, &fn_specs).await;
     }
     gc_builds(&db, app_id, &[build_pk]).await;
 

@@ -3,7 +3,10 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
 use base64::{Engine as _, engine::general_purpose};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter,
+    QueryOrder, Set, Statement, TransactionTrait,
+};
 use secrecy::{ExposeSecret, SecretString};
 use std::collections::HashMap;
 use std::fmt;
@@ -537,6 +540,112 @@ impl SecretManagerService {
             updated_by: updated_secret.updated_by,
             is_active: updated_secret.is_active,
         })
+    }
+
+    /// Upsert an **app-scoped** secret: `apps/<app_id>/<key>`.
+    ///
+    /// This is the write counterpart to the `resolve_function_env` reader in the
+    /// customer-app functions runtime — it lets an Oxy Function (e.g. a scheduled
+    /// token-refresher) persist state into the same `apps/<app_id>/` namespace
+    /// `ctx.env` reads. Only the caller-supplied `key` is validated against the
+    /// name charset; the `apps/<app_id>/` prefix is system-generated, so the full
+    /// name legitimately contains `/` (which `validate_secret_name` forbids) —
+    /// hence this dedicated path rather than `create_secret`/`update_secret`.
+    ///
+    /// `actor` is stamped as `created_by`/`updated_by` (the `secrets.created_by`
+    /// FK is non-null with `on_delete = Restrict`, so it must be a real user —
+    /// the invoking user for a route call, or the app owner for a scheduled call).
+    pub async fn set_app_secret(
+        &self,
+        db: &sea_orm::DatabaseConnection,
+        app_id: Uuid,
+        key: &str,
+        value: &str,
+        actor: Uuid,
+    ) -> Result<(), OxyError> {
+        // Validate only the caller's key; the prefix is trusted/system-built.
+        Self::validate_secret_name(key)?;
+        let sanitized = Self::sanitize_secret_value(value)?;
+        let name = format!("apps/{app_id}/{key}");
+        let encrypted = self.encrypt_value(&sanitized)?;
+        let now = chrono::Utc::now();
+
+        // Serialize concurrent writers for the SAME (project, name). The table
+        // has no unique constraint on active names, so a bare find-then-write
+        // would let two concurrent `ctx.secrets.set` both see `None` and both
+        // INSERT — two active rows, nondeterministic reads. A transaction-scoped
+        // advisory lock keyed on (project, name) makes the second writer queue
+        // behind the first (then take the UPDATE path); it releases on
+        // commit/rollback, and different secrets never contend.
+        let txn = db
+            .begin()
+            .await
+            .map_err(|e| OxyError::Database(e.to_string()))?;
+        txn.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT pg_advisory_xact_lock($1)",
+            [Self::advisory_lock_key(self.project_id, &name).into()],
+        ))
+        .await
+        .map_err(|e| OxyError::Database(e.to_string()))?;
+
+        let existing = Secret::find()
+            .filter(secrets::Column::ProjectId.eq(self.project_id))
+            .filter(secrets::Column::Name.eq(&name))
+            .filter(secrets::Column::IsActive.eq(true))
+            .one(&txn)
+            .await
+            .map_err(|e| OxyError::Database(e.to_string()))?;
+
+        match existing {
+            Some(row) => {
+                let mut model: SecretActiveModel = row.into();
+                model.encrypted_value = Set(encrypted);
+                model.updated_at = Set(now.into());
+                model.updated_by = Set(Some(actor));
+                model
+                    .update(&txn)
+                    .await
+                    .map_err(|e| OxyError::Database(e.to_string()))?;
+            }
+            None => {
+                let model = SecretActiveModel {
+                    id: Set(Uuid::new_v4()),
+                    name: Set(name.clone()),
+                    encrypted_value: Set(encrypted),
+                    description: Set(None),
+                    created_at: Set(now.into()),
+                    updated_at: Set(now.into()),
+                    created_by: Set(actor),
+                    updated_by: sea_orm::ActiveValue::NotSet,
+                    is_active: Set(true),
+                    project_id: Set(self.project_id),
+                };
+                model
+                    .insert(&txn)
+                    .await
+                    .map_err(|e| OxyError::Database(e.to_string()))?;
+            }
+        }
+
+        txn.commit()
+            .await
+            .map_err(|e| OxyError::Database(e.to_string()))?;
+        self.invalidate_cache(&name).await;
+        Ok(())
+    }
+
+    /// Stable 64-bit key for `pg_advisory_xact_lock`, derived from the
+    /// (project, secret-name) pair so concurrent writers to the SAME secret
+    /// serialize while different secrets stay lock-free. Deterministic across
+    /// processes (fixed-key SipHash), so it also serializes across replicas; a
+    /// rare hash collision only makes two unrelated names share a lock (safe).
+    fn advisory_lock_key(project_id: Uuid, name: &str) -> i64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        project_id.hash(&mut h);
+        name.hash(&mut h);
+        h.finish() as i64
     }
 
     /// Delete a secret (soft delete)
