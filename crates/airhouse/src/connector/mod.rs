@@ -546,6 +546,35 @@ impl DatabaseConnector for AirhouseConnector {
         })
     }
 
+    async fn execute_query_full_untyped(
+        &self,
+        sql: &str,
+    ) -> Result<TypedRowStream, ConnectorError> {
+        // World-model dashboard fast path. Its tiles already `::VARCHAR`-cast every
+        // column and render text, so the typed `execute_query_full` path's
+        // per-query `DESCRIBE` round-trip (column types, used only to re-cast to
+        // VARCHAR and parse back) is pure overhead here — and it DOUBLES the
+        // statements serialized over this connector's single client mutex, which
+        // is the dashboard's bottleneck. Skip it: run the subquery ONCE and
+        // surface all columns as `Text`, exactly like the `Statement` kind does.
+        // Only relational subqueries short-circuit; DDL / statement-form have no
+        // `DESCRIBE` to save, so delegate — and every non-opted-in caller keeps
+        // the typed path via the trait default.
+        let sql = normalize_sql(sql);
+        if classify(sql) != StatementKind::Subquery {
+            return self.execute_query_full(sql).await;
+        }
+        let wrapped = format!("SELECT * FROM ({sql}) AS _q");
+        let messages = self
+            .client
+            .lock()
+            .await
+            .simple_query(&wrapped)
+            .await
+            .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)))?;
+        Ok(typed_row_stream_from_messages(&messages))
+    }
+
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
         Ok(self.cached_schema.clone())
     }

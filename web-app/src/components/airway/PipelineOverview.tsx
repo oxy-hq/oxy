@@ -8,6 +8,7 @@
 
 import type React from "react";
 import LineageGraph from "@/components/airway/LineageGraph";
+import ResetSchemaButton from "@/components/airway/ResetSchemaButton";
 import { useAirwayRunStream, useAirwayRuns } from "@/hooks/api/airway/useAirway";
 import { cn } from "@/libs/shadcn/utils";
 import type { AirwayRunSummary } from "@/services/api/airway";
@@ -74,11 +75,14 @@ const PipelineOverview: React.FC<{
 
   return (
     <div className='flex flex-col gap-6 p-4'>
-      <div>
-        <h2 className='font-medium text-sm'>{pipelineRef}</h2>
-        <p className='mt-0.5 text-muted-foreground text-xs'>
-          ELT pipeline · {runs?.length ?? 0} run{runs?.length === 1 ? "" : "s"}
-        </p>
+      <div className='flex items-start justify-between gap-4'>
+        <div>
+          <h2 className='font-medium text-sm'>{pipelineRef}</h2>
+          <p className='mt-0.5 text-muted-foreground text-xs'>
+            ELT pipeline · {runs?.length ?? 0} run{runs?.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <ResetSchemaButton pipelineRef={pipelineRef} />
       </div>
 
       <section>

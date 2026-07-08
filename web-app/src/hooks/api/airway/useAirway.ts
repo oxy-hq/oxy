@@ -78,6 +78,32 @@ export const useBackfillAirway = (): UseMutationResult<
 };
 
 /**
+ * Reset a pipeline's schema: drop its destination tables + clear the stored
+ * schema/cursor so a later run re-infers from scratch. Destructive — the UI
+ * gates it behind a confirm and nudges a backfill afterward. On success we
+ * refresh run history + the ranges list so both reflect the cleared state.
+ */
+export const useResetSchema = (): UseMutationResult<
+  { dropped_tables: string[] },
+  Error,
+  { pipeline_ref: string }
+> => {
+  const { project } = useCurrentProjectBranch();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pipeline_ref }) => AirwayService.resetSchema(project.id, pipeline_ref),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: keys.runsForPipeline(project.id, variables.pipeline_ref)
+      });
+      queryClient.invalidateQueries({
+        queryKey: keys.ranges(project.id, variables.pipeline_ref)
+      });
+    }
+  });
+};
+
+/**
  * Start a resumable chunked backfill. The server drives the chunks detached;
  * on success we kick coverage polling + refresh run history so both reflect
  * the in-flight backfill. Re-invoking the same window resumes (skips `done`).

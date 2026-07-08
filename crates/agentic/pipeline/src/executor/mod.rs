@@ -42,6 +42,28 @@ pub struct PipelineTaskExecutor {
     pub custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
 }
 
+/// Error from [`PipelineTaskExecutor::reset_airway_schema`], split so the
+/// transport maps a caller mistake to `400` and a server-side failure to `500`
+/// (a failed destination drop / state delete is not a client error).
+#[derive(Debug)]
+pub enum ResetSchemaError {
+    /// Bad/unknown `pipeline_ref`, an unparseable spec, or a non-airhouse
+    /// destination — the caller's input. → `400`.
+    BadRequest(String),
+    /// State read/delete or the destination drop failed — server-side. → `500`.
+    Internal(String),
+}
+
+impl std::fmt::Display for ResetSchemaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BadRequest(m) | Self::Internal(m) => f.write_str(m),
+        }
+    }
+}
+
+impl std::error::Error for ResetSchemaError {}
+
 #[async_trait]
 impl TaskExecutor for PipelineTaskExecutor {
     async fn execute(&self, assignment: TaskAssignment) -> Result<ExecutingTask, String> {
@@ -255,6 +277,23 @@ fn is_builder_agent(agent_id: &str) -> bool {
 }
 
 impl PipelineTaskExecutor {
+    /// Minimal executor for host operations that need only workspace/secret
+    /// resolution + the db (no builder/automation knobs) — e.g. the
+    /// reset-schema endpoint. Single-sources the field list so adding a field
+    /// can't silently break a `None`-heavy struct literal in a transport handler.
+    pub fn bare(platform: Arc<dyn PlatformContext>, db: DatabaseConnection) -> Self {
+        Self {
+            platform,
+            builder_bridges: None,
+            schema_cache: None,
+            builder_test_runner: None,
+            builder_app_runner: None,
+            db,
+            state: None,
+            custom_executors: None,
+        }
+    }
+
     async fn execute_agent(
         &self,
         agent_id: &str,
@@ -542,6 +581,96 @@ impl PipelineTaskExecutor {
         // (cursor → resume_state); everything else uses the pipeline-global store.
         let resume_run_id = resumable_backfill.then(|| run_id.to_string());
         Ok(worker.execute(spec, resume_run_id))
+    }
+
+    /// Reset a pipeline's provisioned schema: drop its destination tables and
+    /// clear its stored `airway_pipeline_state` row so a later run re-infers a
+    /// fresh schema from scratch. Returns the dropped table names.
+    ///
+    /// Airhouse destinations only — the destination must resolve from a
+    /// `config.yml` database reference so the ephemeral credential can be
+    /// re-minted for the drop (same posture as `execute_airway`).
+    pub async fn reset_airway_schema(
+        &self,
+        pipeline_ref: &str,
+    ) -> Result<Vec<String>, ResetSchemaError> {
+        use ResetSchemaError::{BadRequest, Internal};
+
+        // Resolve `pipeline_ref` → path → yaml → spec, mirroring
+        // `execute_airway`'s first lines. No `variables` — a reset targets a
+        // pipeline's persisted state, keyed by its rendered `name`. A bad ref /
+        // unparseable spec is caller input → `BadRequest` (400).
+        let path =
+            crate::pipeline_ref::resolve_pipeline_ref(self.platform.workspace_path(), pipeline_ref)
+                .map_err(|e| BadRequest(format!("airway: {e}")))?;
+        let yaml = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| BadRequest(format!("airway: read pipeline_ref `{pipeline_ref}`: {e}")))?;
+        let mut spec = agentic_airway::AirwayPipelineSpec::from_yaml_with_vars(&yaml, None)
+            .map_err(|e| BadRequest(format!("airway: parse `{pipeline_ref}`: {e}")))?;
+
+        // The rendered spec `name` is the primary key of `airway_pipeline_state`.
+        let pipeline_name = spec.name.clone();
+
+        // Table names in the stored schema — the set to drop. A DB read failure
+        // here is server-side → `Internal` (500).
+        let tables = agentic_airway::reset::stored_schema_table_names(&self.db, &pipeline_name)
+            .await
+            .map_err(|e| Internal(e.to_string()))?;
+        if tables.is_empty() {
+            // Never provisioned (nothing to drop). Still clear any stale state
+            // row so the next run is guaranteed a clean slate — cheap and
+            // idempotent, and it skips destination resolution (which would
+            // otherwise demand an airhouse credential we don't need here).
+            agentic_airway::reset::clear_pipeline_state(&self.db, &pipeline_name)
+                .await
+                .map_err(|e| Internal(format!("reset clear-state: {e}")))?;
+            return Ok(vec![]);
+        }
+
+        // Resolve the destination into an inline connector. This returns
+        // `Some(db_name)` only for airhouse; anything else can't re-mint a
+        // credential for the drop, so reject it (caller config → `BadRequest`).
+        let airhouse_db = self
+            .resolve_airway_destination(&mut spec)
+            .await
+            .map_err(Internal)?;
+        let Some(database) = airhouse_db else {
+            return Err(BadRequest(
+                "reset schema is only supported for airhouse destinations".into(),
+            ));
+        };
+        let provider: Arc<dyn agentic_airway::CredentialProvider> =
+            Arc::new(PlatformAirhouseCredentialProvider {
+                platform: self.platform.clone(),
+                database,
+            });
+
+        let inline_config = spec
+            .destination
+            .as_inline()
+            .map_err(|e| Internal(format!("airway: {e}")))?;
+
+        agentic_airway::reset::drop_destination_tables(inline_config, Some(provider), &tables)
+            .await
+            .map_err(|e| Internal(format!("reset drop: {e}")))?;
+
+        // The drop succeeded; the airhouse tables are gone. If clearing the
+        // state row now fails, the stored schema/cursors persist while the
+        // tables don't — recoverable (drop is idempotent, a re-run re-infers),
+        // but log this specific window so a post-mortem isn't guesswork.
+        if let Err(e) = agentic_airway::reset::clear_pipeline_state(&self.db, &pipeline_name).await
+        {
+            tracing::warn!(
+                pipeline = %pipeline_name,
+                dropped_tables = tables.len(),
+                error = %e,
+                "reset: destination tables dropped but clearing airway_pipeline_state failed; \
+                 stored schema/cursors persist until a retry — a backfill re-infers",
+            );
+            return Err(Internal(format!("reset clear-state: {e}")));
+        }
+        Ok(tables)
     }
 
     /// Dispatch a `TaskSpec::Compile` through the host-supplied

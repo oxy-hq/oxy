@@ -50,6 +50,9 @@ ot = "ot"
 ANDed = "ANDed"
 anded = "anded"
 Ded = "Ded"
+# "Nd" is the "N days" time-window shorthand in ClickHouse query examples
+# (e.g. `WHERE ts >= now - Nd`); typos misreads the fragment as "And".
+Nd = "Nd"
 
 [type.md]
 extend-ignore-re = [

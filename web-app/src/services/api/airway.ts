@@ -402,6 +402,22 @@ export class AirwayService {
     await apiClient.post(`${AirwayService.base(projectId)}/runs/${runId}/cancel`);
   }
 
+  /**
+   * Reset a pipeline's schema: drop its destination tables and clear the stored
+   * schema + incremental cursor, so a later run re-infers a fresh schema. This is
+   * destructive (the tables' data is dropped) — confirm first, then backfill to
+   * repopulate. Returns the table names that were dropped.
+   */
+  static async resetSchema(
+    projectId: string,
+    pipelineRef: string
+  ): Promise<{ dropped_tables: string[] }> {
+    const { data } = await apiClient.post(`${AirwayService.base(projectId)}/reset-schema`, {
+      pipeline_ref: pipelineRef
+    });
+    return data;
+  }
+
   static async listRuns(
     projectId: string,
     pipelineRef: string,

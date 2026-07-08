@@ -288,9 +288,10 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # `postgres` feature is required for the real Airhouse / Postgres
 # destinations (without it airway compiles a stub that errors at run
 # time). `default-features` stays on so `duckdb` is still available.
-# Pinned to release tag 0.1.20, which ships the resumable backfill this PR
-# depends on (P2c-2/3: mid-window resume + mid-run cursor persist).
-airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.20", features = [
+# Pinned to release tag 0.1.21 (reset-schema `drop_tables`). 0.1.21 supersedes
+# 0.1.20, so it also carries the resumable backfill (mid-window resume + mid-run
+# cursor persist) that this PR's earlier commits depend on.
+airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.21", features = [
   "postgres",
 ] }
 airform-loader = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e8288692381a989444eef874900e6db4475b1" }

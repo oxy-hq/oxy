@@ -167,6 +167,9 @@ where
         .route("/files", get(routes::list_airway_files))
         // Live source introspection for the New Pipeline table picker.
         .route("/sources/discover", post(routes::discover_source_tables))
+        // Drop a pipeline's destination tables + clear its stored schema/cursor
+        // so a later run re-infers a fresh schema.
+        .route("/reset-schema", post(routes::reset_airway_schema))
         .layer(axum::Extension(state))
 }
 

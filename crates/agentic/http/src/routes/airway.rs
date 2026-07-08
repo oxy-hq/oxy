@@ -592,3 +592,54 @@ pub async fn discover_source_tables(
         }
     }
 }
+
+// ── POST /agentic-airway/reset-schema ──────────────────────────────────────
+//
+// Drop a pipeline's destination tables and clear its stored
+// `airway_pipeline_state` row (schema + incremental cursors) so a later run
+// re-infers a fresh schema. Airhouse destinations only. Returns the dropped
+// table names. Authed: this destroys ingested data, so it must not be open.
+
+#[derive(Deserialize)]
+pub struct ResetSchemaRequest {
+    /// Path to a `.airway.yml`, relative to the workspace root.
+    pub pipeline_ref: String,
+}
+
+#[derive(Serialize)]
+pub struct ResetSchemaResponse {
+    /// Tables dropped at the destination. Empty when the pipeline had never
+    /// provisioned a schema (state is still cleared).
+    pub dropped_tables: Vec<String>,
+}
+
+pub async fn reset_airway_schema(
+    Extension(state): Extension<Arc<AgenticState>>,
+    Extension(platform): Extension<Arc<dyn PlatformContext>>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Json(req): Json<ResetSchemaRequest>,
+) -> Response {
+    // Reset only needs the platform (workspace + secret resolution) and the db;
+    // `bare` single-sources the builder/automation knobs as `None`.
+    let executor =
+        agentic_pipeline::executor::PipelineTaskExecutor::bare(platform, state.db.clone());
+    match executor.reset_airway_schema(&req.pipeline_ref).await {
+        Ok(dropped_tables) => Json(ResetSchemaResponse { dropped_tables }).into_response(),
+        Err(e) => {
+            use agentic_pipeline::executor::ResetSchemaError;
+            // Caller mistakes (bad ref / non-airhouse dest) → 400; a failed
+            // destination drop or state delete is server-side → 500.
+            let status = match &e {
+                ResetSchemaError::BadRequest(_) => StatusCode::BAD_REQUEST,
+                ResetSchemaError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            tracing::warn!(
+                error = %e,
+                pipeline_ref = %req.pipeline_ref,
+                status = status.as_u16(),
+                "reset_airway_schema failed"
+            );
+            (status, e.to_string()).into_response()
+        }
+    }
+}

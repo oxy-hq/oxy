@@ -858,6 +858,25 @@ pub trait DatabaseConnector: Send + Sync {
         ))
     }
 
+    /// Like [`execute_query_full`], but for callers that do NOT need native
+    /// column types and will render/stringify every value as text anyway — e.g.
+    /// the world-model dashboard, whose tiles already `::VARCHAR`-cast every
+    /// column. A connector MAY skip type introspection on this path (airhouse's
+    /// per-query `DESCRIBE` round-trip) and surface all columns as `Text`,
+    /// halving the statements it serializes per query. The typed [`execute_query_full`]
+    /// stays the path for the SQL IDE / agentic callers that need real types.
+    ///
+    /// Default: delegate to [`execute_query_full`], so connectors without a fast
+    /// path keep full typing and nothing regresses.
+    ///
+    /// [`execute_query_full`]: DatabaseConnector::execute_query_full
+    async fn execute_query_full_untyped(
+        &self,
+        sql: &str,
+    ) -> Result<TypedRowStream, ConnectorError> {
+        self.execute_query_full(sql).await
+    }
+
     /// Opt-in Arrow zero-copy extension.
     ///
     /// Backends whose drivers natively produce Arrow (`DuckDbConnector`,

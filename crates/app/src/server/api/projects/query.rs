@@ -71,6 +71,13 @@ pub struct QueryRequest {
     /// Database name from config.yml. Falls back to the project's default
     /// database when absent or empty.
     pub database: Option<String>,
+    /// Skip native column-type introspection and return every value as text
+    /// (the connector's `execute_query_full_untyped` path). The world-model
+    /// dashboard sets this: its tiles already `::VARCHAR`-cast every column, so
+    /// airhouse's per-query `DESCRIBE` round-trip is pure overhead. Defaults to
+    /// false (typed path) for every other caller.
+    #[serde(default)]
+    pub untyped: bool,
 }
 
 /// Response body — columnar table shape.
@@ -185,7 +192,7 @@ pub async fn run_query(
     };
 
     // ── 5. Execute query ─────────────────────────────────────────────────
-    match run_sql_query(connector, &req.sql).await {
+    match run_sql_query(connector, &req.sql, req.untyped).await {
         Ok(response) => {
             let bytes = match serde_json::to_vec(&response) {
                 Ok(b) => b,
@@ -218,6 +225,7 @@ pub async fn run_query(
 async fn run_sql_query(
     connector: Arc<dyn DatabaseConnector>,
     sql: &str,
+    untyped: bool,
 ) -> Result<QueryResponse, Response> {
     // Gate: only SELECT / WITH are allowed through the proxy.
     if !is_read_only_sql(sql) {
@@ -232,7 +240,15 @@ async fn run_sql_query(
     // no-op ceiling — results are still correct.
     let limited_sql = wrap_with_limit(sql, MAX_ROWS);
 
-    let stream = match connector.execute_query_full(&limited_sql).await {
+    // `untyped` callers (the world-model dashboard, which already `::VARCHAR`-casts
+    // every column) take the connector's fast path: skips airhouse's per-query
+    // `DESCRIBE` round-trip and returns text cells. Everyone else stays typed.
+    let query_result = if untyped {
+        connector.execute_query_full_untyped(&limited_sql).await
+    } else {
+        connector.execute_query_full(&limited_sql).await
+    };
+    let stream = match query_result {
         Ok(s) => s,
         Err(ConnectorError::QueryFailed(detail)) => {
             warn!(detail = ?detail.message, "query proxy: query failed");
