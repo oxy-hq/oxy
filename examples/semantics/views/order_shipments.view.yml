@@ -15,6 +15,7 @@ pre_aggregations:
       - total_shipments
       - delivered_shipments
       - on_time_shipments
+      - total_shipment_cost
     refresh_key:
       every: 1h
 
@@ -73,6 +74,10 @@ dimensions:
       - "in_transit"
       - "delivered"
       - "delayed"
+  - name: shipping_cost
+    type: number
+    description: "Cost of this individual shipment"
+    expr: shipping_cost
 measures:
   - name: total_shipments
     type: count
@@ -85,3 +90,7 @@ measures:
     type: count
     description: "Shipments delivered on or before estimated date"
     expr: "CASE WHEN actual_delivery <= estimated_delivery THEN 1 END"
+  - name: total_shipment_cost
+    type: sum
+    description: "Total cost of shipments — rolls up to order/customer as an induced measure"
+    expr: shipping_cost

@@ -2,16 +2,24 @@ import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { X } from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
 import type { WmComputedMeasure, WorldModelEntity } from "@/types/worldModel";
-import { EXPANDED_NODE_WIDTH, measureSymbol, measureSymbolColor } from "../worldModelLayout";
-import { WorldModelDriverTreeLive } from "./WorldModelDriverTree";
+import {
+  composedHandleId,
+  composedSelfSourceHandleId,
+  composedSelfTargetHandleId,
+  EXPANDED_NODE_WIDTH,
+  measureSymbol,
+  measureSymbolColor
+} from "../worldModelLayout";
 
 interface WmExpandedEntityData {
   entity: WorldModelEntity;
-  seedComputedMeasures?: WmComputedMeasure[] | null;
-  /** When set, the node renders the driver-tree breakdown for this measure. */
+  /** The measure being broken down. */
   breakdownMeasure?: string | null;
   /** Instance key the breakdown is valued at (the active filter seed). */
   instanceKey?: string | null;
+  /** breakdownMeasure's own row plus any of its direct components that live
+   *  on this same entity — null while the breakdown hasn't loaded yet. */
+  breakdownMeasures?: WmComputedMeasure[] | null;
   onExpandEntity?: (id: string | null) => void;
 }
 
@@ -31,7 +39,7 @@ const NON_ADDITIVE_LABELS: Record<string, string> = {
 };
 
 export function WorldModelExpandedEntityNode({ data }: NodeProps) {
-  const { entity, seedComputedMeasures, breakdownMeasure, instanceKey, onExpandEntity } =
+  const { entity, breakdownMeasure, instanceKey, breakdownMeasures, onExpandEntity } =
     data as unknown as WmExpandedEntityData;
 
   return (
@@ -61,16 +69,25 @@ export function WorldModelExpandedEntityNode({ data }: NodeProps) {
           </button>
         </div>
 
-        {breakdownMeasure ? (
-          <div className='flex flex-col gap-2 px-3 py-2'>
-            <WorldModelDriverTreeLive
-              entityId={entity.id}
-              keyValue={instanceKey ?? null}
-              measure={breakdownMeasure}
-            />
+        {!breakdownMeasure ? (
+          <div className='px-3 py-3 font-mono text-[10px] text-muted-foreground'>
+            no measure selected
+          </div>
+        ) : !instanceKey ? (
+          <div className='px-3 py-3 font-mono text-[10px] text-muted-foreground'>
+            pick an instance to value this breakdown
+          </div>
+        ) : breakdownMeasures === null || breakdownMeasures === undefined ? (
+          <div className='px-3 py-3 font-mono text-[10px] text-muted-foreground'>
+            computing breakdown…
           </div>
         ) : (
-          <FlatMeasureList entity={entity} measures={seedComputedMeasures ?? []} />
+          <FlatMeasureList
+            entity={entity}
+            measures={breakdownMeasures}
+            activeMeasure={breakdownMeasure}
+            showFiberCount={false}
+          />
         )}
       </div>
       <Handle id='bottom-in' type='target' position={Position.Bottom} className='opacity-0' />
@@ -79,14 +96,16 @@ export function WorldModelExpandedEntityNode({ data }: NodeProps) {
   );
 }
 
-// ── Flat list (default, no active breakdown) ───────────────────────────────────
-
 function FlatMeasureList({
   entity,
-  measures
+  measures,
+  activeMeasure,
+  showFiberCount = true
 }: {
   entity: WorldModelEntity;
   measures: WmComputedMeasure[];
+  activeMeasure?: string | null;
+  showFiberCount?: boolean;
 }) {
   return (
     <div className='flex flex-col divide-y divide-border/60'>
@@ -103,7 +122,38 @@ function FlatMeasureList({
           const nonAddLabel = NON_ADDITIVE_LABELS[m.measure_type];
 
           return (
-            <div key={m.name} className='flex flex-col gap-0.5 px-3 py-2'>
+            <div
+              key={m.name}
+              className={cn(
+                "relative flex flex-col gap-0.5 px-3 py-2",
+                m.name === activeMeasure && "bg-info/5"
+              )}
+            >
+              {/* Left: target anchor for a cross-entity contributor edge. */}
+              <Handle
+                type='target'
+                id={composedHandleId(m.name)}
+                position={Position.Left}
+                className='!h-1.5 !w-1.5 !min-w-0 !border-0 !bg-[color:var(--vis-purple)] opacity-0'
+                style={{ left: -2 }}
+              />
+              {/* Right: source + target for same-card composition edges (this row
+                  feeds another composite on the same card, and receives from its
+                  own same-card components). */}
+              <Handle
+                type='source'
+                id={composedSelfSourceHandleId(m.name)}
+                position={Position.Right}
+                className='!h-1.5 !w-1.5 !min-w-0 !border-0 !bg-[color:var(--vis-purple)] opacity-0'
+                style={{ right: -2 }}
+              />
+              <Handle
+                type='target'
+                id={composedSelfTargetHandleId(m.name)}
+                position={Position.Right}
+                className='!h-1.5 !w-1.5 !min-w-0 !border-0 !bg-[color:var(--vis-purple)] opacity-0'
+                style={{ right: -2 }}
+              />
               <div className='flex min-w-0 items-center gap-2'>
                 <span
                   className={cn(
@@ -124,12 +174,14 @@ function FlatMeasureList({
                   </span>
                 )}
               </div>
-              <div className='flex items-center gap-2 pl-6 font-mono text-[9px] text-muted-foreground'>
-                <span>|fiber| = {m.fiber_count}</span>
-                {isNonAdditive && (
-                  <span className='text-status-warning'>⚠ {nonAddLabel ?? "non-additive"}</span>
-                )}
-              </div>
+              {(showFiberCount || isNonAdditive) && (
+                <div className='flex items-center gap-2 pl-6 font-mono text-[9px] text-muted-foreground'>
+                  {showFiberCount && <span>|fiber| = {m.fiber_count}</span>}
+                  {isNonAdditive && (
+                    <span className='text-status-warning'>⚠ {nonAddLabel ?? "non-additive"}</span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })

@@ -386,6 +386,31 @@ fn init_local_db(
                 let _ = conn.execute(&alias_sql, []);
             }
         }
+
+        // Also register a schema-qualified alias `"<stem>"."<ext>"`. The
+        // semantic-layer compiler renders `table: stores.parquet` as an
+        // UNQUOTED `FROM stores.parquet`, which DuckDB parses as schema.table.
+        // The single-identifier alias above ("stores.parquet") only matches the
+        // quoted form, so the unquoted reference falls back to DuckDB's file-
+        // replacement scan. That scan's resolution of a qualified name via
+        // `file_search_path` is environment-sensitive — it silently finds
+        // nothing in some setups (observed for Parquet under `oxy serve`),
+        // leaving callers with zero rows. Registering the qualified view makes
+        // `FROM stores.parquet` resolve to a real catalog object regardless of
+        // the replacement scan. Mirrors the S3-mirror path (`build_s3_mirror_sql`).
+        if let (Some(stem_str), Some(ext_str)) = (
+            path.file_stem().and_then(|s| s.to_str()),
+            path.extension().and_then(|e| e.to_str()),
+        ) {
+            let schema_quoted = quote_sql_identifier(stem_str);
+            let _ = conn.execute(&format!("CREATE SCHEMA IF NOT EXISTS {schema_quoted}"), []);
+            let qualified_alias_sql = format!(
+                "CREATE OR REPLACE VIEW {schema_quoted}.{ext_quoted} AS SELECT * FROM {table_quoted}",
+                ext_quoted = quote_sql_identifier(ext_str),
+                table_quoted = quote_sql_identifier(&table_name),
+            );
+            let _ = conn.execute(&qualified_alias_sql, []);
+        }
     }
 
     install_icu(&conn)?;
@@ -670,6 +695,58 @@ mod tests {
         let files = collect_supported_files(tmp.path()).unwrap();
         let stems: Vec<&str> = files.iter().map(|(s, _)| s.as_str()).collect();
         assert_eq!(stems, vec!["alpha", "mike", "zeta"]);
+    }
+
+    #[test]
+    fn init_local_db_registers_schema_qualified_alias_for_unquoted_reference() {
+        // The semantic-layer compiler renders `table: stores.parquet` /
+        // `table: orders.csv` as an UNQUOTED `FROM stores.parquet` — which
+        // DuckDB parses as schema.table. Without a matching catalog object this
+        // falls back to the file-replacement scan, whose resolution of the
+        // qualified form via `file_search_path` is environment-sensitive and
+        // silently returns nothing on some deployments. init_local_db must
+        // register a `"<stem>"."<ext>"` view so the reference always resolves.
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "orders.csv", "id,amount\n1,10\n2,20\n3,30\n");
+        // Materialize a small real parquet fixture via a throwaway connection.
+        {
+            let gen_conn = Connection::open_in_memory().unwrap();
+            let parquet_path = tmp.path().join("stores.parquet");
+            gen_conn
+                .execute(
+                    &format!(
+                        "COPY (SELECT 1 AS id UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL \
+                     SELECT 4) TO '{}' (FORMAT PARQUET)",
+                        parquet_path.display()
+                    ),
+                    [],
+                )
+                .unwrap();
+        }
+
+        let canonical = tmp.path().canonicalize().unwrap();
+        let files = collect_supported_files(&canonical).unwrap();
+        let conn = init_local_db(&canonical, &files).unwrap();
+
+        // A FULLY-QUOTED "<stem>"."<ext>" reference resolves ONLY through the
+        // registered catalog view (the file-replacement scan never fires for a
+        // quoted identifier), so these assertions prove the alias exists.
+        let csv_n: i64 = conn
+            .query_row(r#"SELECT count(*) FROM "orders"."csv""#, [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(csv_n, 3, "schema-qualified csv alias missing");
+        let parquet_n: i64 = conn
+            .query_row(r#"SELECT count(*) FROM "stores"."parquet""#, [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(parquet_n, 4, "schema-qualified parquet alias missing");
+
+        // And the exact unquoted form the compiler emits resolves too.
+        let unquoted: i64 = conn
+            .query_row("SELECT count(*) FROM stores.parquet", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(unquoted, 4, "unquoted schema.table parquet did not resolve");
     }
 
     use crate::config::model::{DuckDbS3Mirror, DuckDbS3Table};

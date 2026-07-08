@@ -1,5 +1,4 @@
 import { ArrowLeft, ChevronDown, ChevronRight, X } from "lucide-react";
-import { useState } from "react";
 import { useWmInstanceDetail } from "@/hooks/api/useWorldModel";
 import { cn } from "@/libs/shadcn/utils";
 import type {
@@ -804,14 +803,22 @@ function ComputedMeasureRow({
   measure: m,
   def,
   entityId,
-  keyValue
+  keyValue,
+  expandedEntityId,
+  breakdownMeasure,
+  onToggle
 }: {
   measure: WmComputedMeasure;
   def: WorldModelMeasure | WorldModelInducedMeasure | undefined;
   entityId: string;
   keyValue: string;
+  expandedEntityId?: string | null;
+  breakdownMeasure?: string | null;
+  onToggle?: (measure: string | null) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // Driven by the same expandedEntityId/breakdownMeasure state as the graph
+  // node, so expanding here expands the node and vice versa.
+  const expanded = entityId === expandedEntityId && m.name === breakdownMeasure;
   const isNonAdditive = def?.additivity === "non_additive";
   const hasBreakdown = def?.has_breakdown === true;
   const exprStr =
@@ -827,7 +834,7 @@ function ComputedMeasureRow({
               className='-ml-0.5 shrink-0 self-center text-info transition-colors hover:text-foreground'
               title={expanded ? "Hide breakdown" : "Break down at this instance"}
               data-testid={`wm-panel-measure-zoom-${entityId}-${m.name}`}
-              onClick={() => setExpanded((v) => !v)}
+              onClick={() => onToggle?.(expanded ? null : m.name)}
             >
               {expanded ? <ChevronDown className='size-3' /> : <ChevronRight className='size-3' />}
             </button>
@@ -885,13 +892,24 @@ function InstanceBody({
   keyValue,
   label,
   model,
-  onSelect
+  onSelect,
+  expandedEntityId,
+  breakdownMeasure,
+  onExpandMeasure
 }: {
   entityId: string;
   keyValue: string;
   label: string;
   model: WorldModel;
   onSelect: (s: WmSelection) => void;
+  expandedEntityId?: string | null;
+  breakdownMeasure?: string | null;
+  onExpandMeasure?: (
+    entityId: string,
+    keyValue: string,
+    label: string,
+    measure: string | null
+  ) => void;
 }) {
   const { data, isLoading } = useWmInstanceDetail(entityId, keyValue);
 
@@ -1052,6 +1070,9 @@ function InstanceBody({
                     def={def}
                     entityId={entityId}
                     keyValue={keyValue}
+                    expandedEntityId={expandedEntityId}
+                    breakdownMeasure={breakdownMeasure}
+                    onToggle={(measure) => onExpandMeasure?.(entityId, keyValue, label, measure)}
                   />
                 );
               })}
@@ -1072,6 +1093,16 @@ interface WorldModelDetailPanelProps {
   history: WmSelection[];
   onBack: () => void;
   seedInstanceDetail?: WmInstanceDetail | null;
+  /** Mirrors the graph's own expansion state so a measure expanded here
+   *  expands the matching node, and vice versa. */
+  expandedEntityId?: string | null;
+  breakdownMeasure?: string | null;
+  onExpandMeasure?: (
+    entityId: string,
+    keyValue: string,
+    label: string,
+    measure: string | null
+  ) => void;
 }
 
 export function WorldModelDetailPanel({
@@ -1080,7 +1111,10 @@ export function WorldModelDetailPanel({
   onSelect,
   history,
   onBack,
-  seedInstanceDetail = null
+  seedInstanceDetail = null,
+  expandedEntityId = null,
+  breakdownMeasure = null,
+  onExpandMeasure
 }: WorldModelDetailPanelProps) {
   if (!selection) {
     return (
@@ -1162,6 +1196,9 @@ export function WorldModelDetailPanel({
             label={selection.label}
             model={model}
             onSelect={onSelect}
+            expandedEntityId={expandedEntityId}
+            breakdownMeasure={breakdownMeasure}
+            onExpandMeasure={onExpandMeasure}
           />
         );
     }

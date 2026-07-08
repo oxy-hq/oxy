@@ -132,6 +132,8 @@ entities:
       # Induced from shipments / returns (shipment & return parent to order_item).
       - name: total_shipments
         label: Shipments
+      - name: total_shipment_cost
+        label: Shipment Cost
       - name: total_returns
         label: Returns
       - name: total_refund_amount
@@ -173,6 +175,8 @@ entities:
         label: Shipments
       - name: delivered_shipments
         label: Delivered
+      - name: total_shipment_cost
+        label: Shipment Cost
       - name: total_returns
         label: Returns
       - name: total_refund_amount
@@ -201,6 +205,8 @@ entities:
       # Induced from this line's shipments / returns.
       - name: total_shipments
         label: Shipments
+      - name: total_shipment_cost
+        label: Shipment Cost
       - name: total_returns
         label: Returns
       - name: total_refund_amount
@@ -223,8 +229,10 @@ entities:
         label: Est. Delivery
       - name: actual_delivery
         label: Delivered
-    # A shipment is a leaf row — its dimensions (status, dates, carrier) carry the
-    # detail, and own count measures would all be 1, so no measures are surfaced.
+      - name: shipping_cost
+        label: Shipping Cost
+    # A shipment is a leaf row — its dimensions (status, dates, carrier, cost) carry
+    # the detail, and own count measures would all be 1, so no measures are surfaced.
     measures: []
 
   - id: return
@@ -247,3 +255,223 @@ entities:
       # total_refund_amount over a single return = its own refund.
       - name: total_refund_amount
         label: Refund
+
+  - id: region
+    label: Region
+    description: Geographic region the business operates in — the top of the store location hierarchy. Store footprint, rent, and staffing promote up into their region.
+    display_field: region
+    dimensions:
+      - name: region
+        label: Region
+    measures:
+      # Own count (total_regions) is 1 per region instance, so it is omitted.
+      # These are the store measures induced up the region → city → store chain.
+      - name: total_stores
+        label: Stores
+      - name: total_square_feet
+        label: Floor Area
+      - name: total_monthly_rent
+        label: Monthly Rent
+      - name: total_staff
+        label: Staff
+      - name: avg_square_feet
+        label: Avg Floor Area
+      - name: avg_monthly_rent
+        label: Avg Rent
+      - name: rent_per_square_foot
+        label: Rent / sq ft
+
+  - id: city
+    label: City
+    description: City containing one or more stores — the middle of the store location hierarchy. Belongs to exactly one region; store measures promote up into their city.
+    display_field: city
+    dimensions:
+      - name: city
+        label: City
+      - name: region
+        label: Region
+    measures:
+      # Own count (total_cities) is 1 per city instance, so it is omitted.
+      # Induced up from this city's stores.
+      - name: total_stores
+        label: Stores
+      - name: total_square_feet
+        label: Floor Area
+      - name: total_monthly_rent
+        label: Monthly Rent
+      - name: total_staff
+        label: Staff
+      - name: avg_square_feet
+        label: Avg Floor Area
+      - name: avg_monthly_rent
+        label: Avg Rent
+      - name: rent_per_square_foot
+        label: Rent / sq ft
+
+  - id: retail_store
+    label: Store
+    description: Physical retail store — location, floor area, rent, and staffing, grouped by region.
+    display_field: store_name
+    dimensions:
+      - name: store_id
+        label: Store ID
+      - name: store_name
+        label: Name
+      - name: region
+        label: Region
+      - name: city
+        label: City
+      - name: opened_date
+        label: Opened
+      - name: square_feet
+        label: Floor Area (sq ft)
+      - name: monthly_rent
+        label: Monthly Rent
+      - name: staff_count
+        label: Staff
+    measures:
+      # A store is a leaf row; the sums/averages over a single store read as
+      # that store's own footprint, rent, and staffing.
+      - name: total_square_feet
+        label: Floor Area
+      - name: total_monthly_rent
+        label: Monthly Rent
+      - name: total_staff
+        label: Staff
+      - name: rent_per_square_foot
+        label: Rent / sq ft
+
+  # ── Finance & operations side ────────────────────────────────────────────
+  # These entities are monthly/daily rollups that live on the cost/revenue
+  # half of the metric tree. They don't join into the fruit → order fiber, so
+  # they surface as their own cluster in the graph — the P&L bottom line
+  # (financials) and the cost/marketing drivers that feed it.
+
+  - id: financials_month
+    label: Financials (Monthly)
+    description: Monthly P&L bottom line — gross/net revenue, payroll, operating cost, and operating profit computed at query time from orders, employees, and operating_costs.
+    display_field: month
+    dimensions:
+      - name: month
+        label: Month
+    measures:
+      # One row per accounting month; each measure is a real monthly sum
+      # (or composite), so per-instance they read as that month's P&L.
+      - name: gross_revenue
+        label: Gross Revenue
+      - name: net_revenue
+        label: Net Revenue
+      - name: operating_profit
+        label: Operating Profit
+      - name: operating_margin
+        label: Operating Margin
+      - name: payroll
+        label: Payroll
+      - name: total_op_cost
+        label: Operating Cost
+      - name: tax
+        label: Tax
+      - name: shipping
+        label: Shipping
+
+  - id: payroll_snapshot
+    label: Payroll Snapshot
+    description: Monthly headcount and payroll per department — the largest fixed cost feeding operating profit.
+    display_field: department
+    dimensions:
+      - name: month
+        label: Month
+      - name: department
+        label: Department
+    measures:
+      - name: total_headcount
+        label: Headcount
+      - name: salary_cost
+        label: Salary Cost
+      - name: benefits_cost
+        label: Benefits Cost
+      - name: fully_loaded_cost
+        label: Fully-Loaded Cost
+      - name: cost_per_head
+        label: Cost per Head
+      - name: avg_salary_per_head
+        label: Avg Salary / Head
+
+  - id: opex_event
+    label: Operating Cost
+    description: Daily operating expense by category and region (rent, logistics, packaging, fees, etc.) — a cost-side driver of net revenue.
+    display_field: category
+    dimensions:
+      - name: cost_date
+        label: Cost Date
+      - name: category
+        label: Category
+      - name: region
+        label: Region
+    measures:
+      - name: total_op_cost
+        label: Total Operating Cost
+      - name: logistics_cost
+        label: Logistics
+      - name: packaging_cost
+        label: Packaging
+      - name: fulfilment_cost
+        label: Fulfilment (Logistics + Packaging)
+      - name: payment_processing_fees
+        label: Payment Fees
+      - name: rent_cost
+        label: Rent
+      - name: software_licenses_cost
+        label: Software Licenses
+
+  - id: funnel_event
+    label: Marketing Funnel
+    description: Daily acquisition funnel by channel, region, and device — sessions → leads → signups → paid signups, the upstream drivers of revenue.
+    display_field: channel
+    dimensions:
+      - name: event_date
+        label: Event Date
+      - name: channel
+        label: Channel
+      - name: region
+        label: Region
+      - name: device
+        label: Device
+    measures:
+      - name: total_sessions
+        label: Sessions
+      - name: total_leads
+        label: Leads
+      - name: total_signups
+        label: Signups
+      - name: total_paid_signups
+        label: Paid Signups
+      - name: lead_rate
+        label: Lead Rate
+      - name: signup_rate
+        label: Signup Rate
+      - name: paid_conversion_rate
+        label: Paid Conversion Rate
+      - name: overall_conversion_rate
+        label: Overall Conversion
+
+  - id: spend_event
+    label: Marketing Spend
+    description: Daily marketing spend, clicks, and impressions per channel — the top of the predict_impact chain (spend → sessions → revenue).
+    display_field: channel
+    dimensions:
+      - name: event_date
+        label: Event Date
+      - name: channel
+        label: Channel
+    measures:
+      - name: total_spend
+        label: Spend
+      - name: total_clicks
+        label: Clicks
+      - name: total_impressions
+        label: Impressions
+      - name: cost_per_click
+        label: Cost per Click
+      - name: click_through_rate
+        label: Click-Through Rate

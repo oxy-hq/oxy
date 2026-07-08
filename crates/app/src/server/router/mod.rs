@@ -66,9 +66,6 @@ pub struct AppState {
     /// Compiled SemanticEngine cache (join graph + evaluator).
     /// Avoids rebuilding the engine on every compilation request.
     pub semantic_engine_cache: std::sync::Arc<workspace_cache::SemanticEngineCache>,
-    /// Cache for expensive warehouse query results (entity instance pickers).
-    /// Keyed by "{workspace_id}:{entity}:{search}:{limit}"; 5-minute TTL.
-    pub query_result_cache: std::sync::Arc<workspace_cache::QueryResultCache>,
 }
 
 #[derive(Clone)]
@@ -262,7 +259,6 @@ mod app_state_tests {
             agentic_state: None,
             semantic_layer_cache: super::workspace_cache::new_semantic_layer_cache(),
             semantic_engine_cache: super::workspace_cache::new_semantic_engine_cache(),
-            query_result_cache: super::workspace_cache::new_query_result_cache(),
         };
         let cloud = AppState {
             enterprise: false,
@@ -275,7 +271,6 @@ mod app_state_tests {
             agentic_state: None,
             semantic_layer_cache: super::workspace_cache::new_semantic_layer_cache(),
             semantic_engine_cache: super::workspace_cache::new_semantic_engine_cache(),
-            query_result_cache: super::workspace_cache::new_query_result_cache(),
         };
         assert!(local.mode.is_local());
         assert!(!cloud.mode.is_local());

@@ -7,12 +7,22 @@ import {
   type Node as RFNode
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useWmMeasureBreakdown } from "@/hooks/api/useWorldModel";
 import { cn } from "@/libs/shadcn/utils";
 import type { WmComputedMeasure, WmSelection, WorldModel } from "@/types/worldModel";
 import {
+  breakdownNodeToComputedMeasure,
+  buildBreakdownEdges,
+  buildLayoutSizeMap,
+  buildViewToEntityIds,
+  composedSelfHandles,
+  composedTargetHandles,
+  contributorSourceHandles,
   EXPANDED_NODE_WIDTH,
+  groupBreakdownContributorsByEntity,
   layoutWithElk,
+  NODE_HANDLES,
   NODE_HEIGHT_COLLAPSED,
   NODE_WIDTH,
   type WaypointMap,
@@ -28,10 +38,17 @@ const nodeTypes = {
 };
 const edgeTypes = { "wm-edge": WorldModelEdge };
 
+/** Debounce (ms) for size-driven reflows so streamed filter counts and the
+ *  async breakdown load coalesce into a single animated layout move. */
+const RELAYOUT_DEBOUNCE_MS = 160;
+
 interface WorldModelGraphProps {
   model: WorldModel;
   selection: WmSelection;
-  filterCounts?: Record<string, { matched: number; total: number }> | null;
+  filterCounts?: Record<
+    string,
+    { matched: number; total: number; sample?: string[]; sample_keys?: string[] }
+  > | null;
   isCountLoading?: boolean;
   filterSeedEntityId?: string | null;
   seedComputedMeasures?: WmComputedMeasure[] | null;
@@ -43,6 +60,8 @@ interface WorldModelGraphProps {
   onSelectPromotion: (from: string, to: string) => void;
   onOpenPicker: (entityId: string, pos: { x: number; y: number }) => void;
   onClearSelection: () => void;
+  onSelectChildInstance: (entityId: string, key: string, display: string) => void;
+  onBrowseSamples: (entityId: string, position: { x: number; y: number }) => void;
 }
 
 export function WorldModelGraph({
@@ -59,7 +78,9 @@ export function WorldModelGraph({
   onSelectEntity,
   onSelectPromotion,
   onOpenPicker,
-  onClearSelection
+  onClearSelection,
+  onSelectChildInstance,
+  onBrowseSamples
 }: WorldModelGraphProps) {
   // Unconnected entities are always hidden — the graph only shows entities
   // that participate in at least one relationship.
@@ -92,27 +113,122 @@ export function WorldModelGraph({
   const [positioned, setPositioned] = useState<RFNode[] | null>(null);
   const [waypointMap, setWaypointMap] = useState<WaypointMap>(new Map());
 
+  // When a measure breakdown is active, its non-root nodes are shown on
+  // whichever entity card actually owns each contributor measure — grouped
+  // by entity (resolved from the breakdown's view names) rather than spawned
+  // as synthetic floating nodes.
+  const { data: breakdown } = useWmMeasureBreakdown(
+    expandedEntityId,
+    instanceKey,
+    breakdownMeasure
+  );
+  const viewToEntityIds = useMemo(
+    () => buildViewToEntityIds(filteredModel.entities),
+    [filteredModel]
+  );
+  const contributorsByEntity = useMemo(
+    () => groupBreakdownContributorsByEntity(breakdown ?? null, viewToEntityIds),
+    [breakdown, viewToEntityIds]
+  );
+  const breakdownEdges = useMemo(
+    () =>
+      expandedEntityId
+        ? buildBreakdownEdges(expandedEntityId, breakdown ?? null, viewToEntityIds)
+        : [],
+    [expandedEntityId, breakdown, viewToEntityIds]
+  );
+
+  // Size-aware layout: each card is laid out at its real (possibly grown) box so
+  // neighbors reflow to make room for expanded / measure / sample cards instead
+  // of being overlapped. The expanded card's row count is the root measure plus
+  // any same-card contributors (null while the breakdown loads → placeholder).
+  const expandedRowCount = useMemo(() => {
+    if (!expandedEntityId || !breakdown) return null;
+    const hasRoot = breakdown.nodes.some((bn) => bn.id === breakdown.root);
+    if (!hasRoot) return null;
+    return 1 + (contributorsByEntity.get(expandedEntityId)?.length ?? 0);
+  }, [expandedEntityId, breakdown, contributorsByEntity]);
+
+  const sizeMap = useMemo(
+    () =>
+      buildLayoutSizeMap(
+        filteredModel.entities.map((e) => e.id),
+        {
+          expandedEntityId,
+          expandedRowCount,
+          filterSeedEntityId,
+          seedComputedMeasures,
+          contributorsByEntity,
+          filterCounts: filterCounts ?? null,
+          isCountLoading
+        }
+      ),
+    [
+      filteredModel,
+      expandedEntityId,
+      expandedRowCount,
+      filterSeedEntityId,
+      seedComputedMeasures,
+      contributorsByEntity,
+      filterCounts,
+      isCountLoading
+    ]
+  );
+
+  // A primitive key so the layout effect only reflows when a card's reserved box
+  // actually changes bucket — not on every streamed count update that leaves
+  // every size unchanged.
+  const sizeKey = useMemo(
+    () =>
+      [...sizeMap.entries()]
+        .map(([id, s]) => `${id}:${s.width}:${s.height}`)
+        .sort()
+        .join("|"),
+    [sizeMap]
+  );
+
+  // Read the latest sizeMap inside the (sizeKey-gated) effect without widening
+  // its deps to the map's identity.
+  const sizeMapRef = useRef(sizeMap);
+  sizeMapRef.current = sizeMap;
+
+  // Run ELK. Two triggers, different feel:
+  //  - Topology change (new node set): clear positions, show the placeholder,
+  //    lay out immediately.
+  //  - Size-only change (selection / expansion / settled counts): keep the
+  //    current positions on screen and reflow after a short debounce, so nodes
+  //    animate to their new slots (see the .react-flow__node transition) and
+  //    streamed counts coalesce into one move instead of thrashing.
+  const layoutSeqRef = useRef(0);
+  const prevNodeIdsRef = useRef<string>("");
+  // sizeKey is an intentional reflow gate: the effect reads the live sizes via
+  // sizeMapRef, so it must re-run when the bucketed size key changes without
+  // depending on the map's identity (which would thrash on every count update).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional sizeKey reflow gate, read via sizeMapRef
   useEffect(() => {
-    let cancelled = false;
-    setPositioned(null);
-    layoutWithElk(rawNodes, layoutEdges)
-      .then(({ nodes: laidOut, waypointMap: wm }) => {
-        if (!cancelled) {
+    const nodeIds = rawNodes.map((n) => n.id).join(",");
+    const topologyChanged = nodeIds !== prevNodeIdsRef.current;
+    prevNodeIdsRef.current = nodeIds;
+    if (topologyChanged) setPositioned(null);
+
+    const seq = ++layoutSeqRef.current;
+    const run = () => {
+      layoutWithElk(rawNodes, layoutEdges, (id) => sizeMapRef.current.get(id))
+        .then(({ nodes: laidOut, waypointMap: wm }) => {
+          if (seq !== layoutSeqRef.current) return;
           setPositioned(laidOut);
           setWaypointMap(wm);
-        }
-      })
-      .catch((err) => {
-        console.error("world model layout failed", err);
-        if (!cancelled) {
+        })
+        .catch((err) => {
+          console.error("world model layout failed", err);
+          if (seq !== layoutSeqRef.current) return;
           setPositioned(rawNodes);
           setWaypointMap(new Map());
-        }
-      });
-    return () => {
-      cancelled = true;
+        });
     };
-  }, [rawNodes, layoutEdges]);
+    const timer = setTimeout(run, topologyChanged ? 0 : RELAYOUT_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [rawNodes, layoutEdges, sizeKey]);
 
   // Derive the currently highlighted entity id from selection
   const selectedEntityId =
@@ -133,18 +249,32 @@ export function WorldModelGraph({
         const isSeed = n.id === filterSeedEntityId;
         const isExpanded = n.id === expandedEntityId;
 
-        // Expanded node: swap to the driver-tree card, widen, raise z, inject breakdown.
+        // Expanded node: shrink to just the measure being broken down, plus any
+        // of its direct components that happen to live on this same entity.
         if (isExpanded) {
+          const rootNode = breakdown?.nodes.find((bn) => bn.id === breakdown.root) ?? null;
+          const breakdownMeasures = rootNode
+            ? [breakdownNodeToComputedMeasure(rootNode), ...(contributorsByEntity.get(n.id) ?? [])]
+            : null;
           return {
             ...n,
             type: "wm-entity-expanded",
             width: EXPANDED_NODE_WIDTH,
             height: undefined,
             zIndex: 10,
+            // Seed the composite rows' handles (left targets for cross-entity
+            // contributors, right source+target for same-card composition edges)
+            // so both edge kinds render before the card is measured (see
+            // NODE_HANDLES).
+            handles: [
+              ...NODE_HANDLES,
+              ...composedTargetHandles(breakdownMeasures ?? []),
+              ...composedSelfHandles(breakdownMeasures ?? [])
+            ],
             data: {
               ...selData,
-              seedComputedMeasures,
               breakdownMeasure,
+              breakdownMeasures,
               instanceKey,
               onExpandEntity,
               dimmed: false
@@ -152,25 +282,47 @@ export function WorldModelGraph({
           };
         }
 
-        // Other nodes drop back when any expansion is active, focusing the card.
+        // A card showing an active breakdown contributor takes priority over the
+        // filter-seed's own measure chips — the user is mid-drilldown.
+        const contributorMeasures = contributorsByEntity.get(n.id) ?? null;
+
+        // Other nodes drop back when any expansion is active, focusing the card —
+        // except a card hosting a contributor, which stays lit to match its edge.
         const dimmed = expandedEntityId
-          ? true
+          ? contributorMeasures === null
           : isInstanceSelection
             ? n.id !== selectedEntityId && filterCounts?.[n.id] === undefined
             : (selData.dimmed as boolean);
+
+        // Cards showing descendant sample chips grow to fit; the rest stay compact
+        // so layout spacing is unaffected.
+        const hasSamples = (filterCounts?.[n.id]?.sample?.length ?? 0) > 0;
 
         return {
           ...n,
           type: "wm-entity",
           width: NODE_WIDTH,
-          height: NODE_HEIGHT_COLLAPSED,
+          height: hasSamples ? undefined : NODE_HEIGHT_COLLAPSED,
+          // A contributor card exposes a per-measure source handle on each row;
+          // seed their bounds so the breakdown edge renders on the first frame
+          // instead of racing the ResizeObserver (see NODE_HANDLES).
+          handles: contributorMeasures
+            ? [...NODE_HANDLES, ...contributorSourceHandles(contributorMeasures)]
+            : NODE_HANDLES,
           data: {
             ...selData,
             filterCount: filterCounts?.[n.id] ?? null,
             isCountLoading,
             dimmed,
-            seedComputedMeasures: isSeed ? seedComputedMeasures : null,
-            onExpandEntity
+            // While a breakdown is on screen, push every card that isn't part of
+            // it (the expanded card + its contributors) back with a soft blur so
+            // the decomposition reads as the foreground.
+            blurred: !!expandedEntityId && contributorMeasures === null,
+            seedComputedMeasures: contributorMeasures ?? (isSeed ? seedComputedMeasures : null),
+            isContributorCard: contributorMeasures !== null,
+            onExpandEntity,
+            onSelectChildInstance,
+            onBrowseSamples
           }
         };
       }) ?? null,
@@ -185,8 +337,12 @@ export function WorldModelGraph({
       seedComputedMeasures,
       expandedEntityId,
       breakdownMeasure,
+      breakdown,
+      contributorsByEntity,
       instanceKey,
-      onExpandEntity
+      onExpandEntity,
+      onSelectChildInstance,
+      onBrowseSamples
     ]
   );
 
@@ -194,11 +350,16 @@ export function WorldModelGraph({
   // Embed Graphviz-computed SVG paths so edges route around node bodies.
   const displayEdges = useMemo(() => {
     return edges.map((e) => {
-      const opacity = isInstanceSelection
-        ? filterCounts?.[e.source] !== undefined && filterCounts?.[e.target] !== undefined
-          ? 0.6
-          : 0.08
-        : (e.style?.opacity as number | undefined);
+      // A breakdown owns the foreground: fade the structural topology edges so
+      // only the dashed contributor edges stand out. Otherwise fall back to the
+      // instance-reveal opacity, then the edge's own.
+      const opacity = expandedEntityId
+        ? 0.12
+        : isInstanceSelection
+          ? filterCounts?.[e.source] !== undefined && filterCounts?.[e.target] !== undefined
+            ? 0.6
+            : 0.25
+          : (e.style?.opacity as number | undefined);
       return {
         ...e,
         type: "wm-edge",
@@ -206,7 +367,14 @@ export function WorldModelGraph({
         style: { ...e.style, ...(opacity !== undefined ? { opacity } : {}) }
       };
     });
-  }, [edges, filterCounts, isInstanceSelection, waypointMap]);
+  }, [edges, filterCounts, isInstanceSelection, expandedEntityId, waypointMap]);
+
+  // Breakdown edges connect existing, already-positioned entity nodes — no
+  // extra layout pass needed, just append them to what's rendered.
+  const finalEdges = useMemo(
+    () => [...displayEdges, ...breakdownEdges],
+    [displayEdges, breakdownEdges]
+  );
 
   const handleNodeClick = (event: React.MouseEvent, node: RFNode) => {
     // The expanded card owns its own interactions (close button, tree); ignore body clicks.
@@ -218,6 +386,7 @@ export function WorldModelGraph({
   };
 
   const handleEdgeClick = (_event: React.MouseEvent, edge: RFEdge) => {
+    if (edge.data?.isBreakdownEdge) return;
     onSelectPromotion(edge.source, edge.target);
   };
 
@@ -231,7 +400,11 @@ export function WorldModelGraph({
   }
 
   return (
-    <div className='relative h-full w-full'>
+    <div className='wm-graph relative h-full w-full'>
+      {/* Animate nodes sliding to their new slots when a size-aware reflow moves
+          them (instance select / measure expand), so the change reads as the
+          neighbors making room rather than a jump. Scoped to this graph. */}
+      <style>{`.wm-graph .react-flow__node { transition: transform 300ms cubic-bezier(0.22, 0.61, 0.36, 1); }`}</style>
       {filteredModel.entities.length === 0 ? (
         <div className='flex h-full flex-col items-center justify-center gap-1 text-muted-foreground text-sm'>
           <p>All entities are unconnected.</p>
@@ -245,12 +418,16 @@ export function WorldModelGraph({
         <ReactFlow
           key={`${filteredModel.entities.length}-${edges.length}`}
           nodes={displayNodes}
-          edges={displayEdges}
+          edges={finalEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onNodeClick={handleNodeClick}
           onEdgeClick={handleEdgeClick}
           onPaneClick={onClearSelection}
+          // Read-only map: nodes are ELK-positioned and reflow on selection —
+          // dragging would fight the layout and desync the ELK-routed edges.
+          nodesDraggable={false}
+          nodesConnectable={false}
           fitView
           fitViewOptions={{ padding: 0.16 }}
           minZoom={0.3}

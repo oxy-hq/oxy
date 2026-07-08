@@ -1831,6 +1831,7 @@ mod tests {
         // these are fleet-safe — no working-copy dependency a replica lacks.
         "/semantic/world-model",
         "/semantic/world-model/instances",
+        "/semantic/world-model/filter-instances",
         "/semantic/world-model/filter-counts",
         "/semantic/world-model/instance-detail",
         "/semantic/world-model/measure-breakdown",

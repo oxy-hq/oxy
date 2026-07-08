@@ -5,6 +5,7 @@
 SESSION_HANDOFF.md
 .claude/settings.local.json
 .superpowers/
+.pnpm-store/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -50,6 +50,10 @@ ot = "ot"
 ANDed = "ANDed"
 anded = "anded"
 Ded = "Ded"
+# "nd" — short local binding for the per-entity `BfsNeighbor`/neighbor-data value
+# in the world-model graph BFS (e.g. `let Some(nd) = neighbor_data.get(..)`).
+# typos reads the 2-letter identifier as a misspelling of "and".
+nd = "nd"
 # "Nd" is the "N days" time-window shorthand in ClickHouse query examples
 # (e.g. `WHERE ts >= now - Nd`); typos misreads the fragment as "And".
 Nd = "Nd"

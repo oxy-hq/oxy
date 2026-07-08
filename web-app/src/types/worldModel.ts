@@ -86,6 +86,10 @@ export interface WmInstancesResponse {
 export interface WmEntityCount {
   matched: number;
   total: number;
+  /** Sample of reachable descendant rows at this grain (display strings). */
+  sample?: string[];
+  /** Navigation keys aligned with `sample`. */
+  sample_keys?: string[];
 }
 
 export interface WmFilterCountsResponse {
@@ -96,6 +100,8 @@ export interface WmFilterCountEvent {
   entity_name: string;
   total?: number;
   matched?: number;
+  sample?: string[];
+  sample_keys?: string[];
   done: boolean;
 }
 

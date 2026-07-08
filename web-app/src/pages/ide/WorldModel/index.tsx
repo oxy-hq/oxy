@@ -4,6 +4,7 @@ import { useWmFilterCounts, useWmInstanceDetail, useWorldModel } from "@/hooks/a
 import type { WmFilterSeed, WmInstance, WmSelection } from "@/types/worldModel";
 import { FilterPill } from "./components/FilterPill";
 import { InstancePickerPopover } from "./components/InstancePickerPopover";
+import { SampleBrowserPopover } from "./components/SampleBrowserPopover";
 import { WorldModelDetailPanel } from "./components/WorldModelDetailPanel";
 import { WorldModelGraph } from "./components/WorldModelGraph";
 
@@ -23,6 +24,12 @@ export default function WorldModelView() {
     position: { x: number; y: number };
   } | null>(null);
 
+  // Sample-browser state: which descendant entity's reachable rows to browse.
+  const [browserState, setBrowserState] = useState<{
+    entityId: string;
+    position: { x: number; y: number };
+  } | null>(null);
+
   // Driver-tree expansion: which entity node is expanded + which measure it breaks down.
   const [expandedEntityId, setExpandedEntityId] = useState<string | null>(null);
   const [breakdownMeasure, setBreakdownMeasure] = useState<string | null>(null);
@@ -31,6 +38,24 @@ export default function WorldModelView() {
     setExpandedEntityId(entityId);
     setBreakdownMeasure(entityId ? (measure ?? null) : null);
   }, []);
+
+  // Expanding a measure from the sidebar drives the same state as the graph
+  // node's own expand button — and since the sidebar can be showing an
+  // instance that isn't the active filter seed, promote it to the seed too
+  // so the node's breakdown is valued at the instance actually being viewed.
+  const onExpandMeasureFromDetail = useCallback(
+    (entityId: string, keyValue: string, label: string, measure: string | null) => {
+      if (measure) {
+        setFilterSeed({ entityId, keyValue, label });
+        setExpandedEntityId(entityId);
+        setBreakdownMeasure(measure);
+      } else {
+        setExpandedEntityId(null);
+        setBreakdownMeasure(null);
+      }
+    },
+    []
+  );
 
   // Stream filter counts lazily when a seed is set — counts appear progressively.
   const { counts: filterCounts, isLoading: isCountLoading } = useWmFilterCounts(
@@ -88,10 +113,35 @@ export default function WorldModelView() {
     [pickerState, onSelect]
   );
 
+  const handleSelectChildInstance = useCallback(
+    (entityId: string, key: string, display: string) => {
+      setFilterSeed({ entityId, keyValue: key, label: display });
+      onSelect({ kind: "instance", entityId, keyValue: key, label: display });
+    },
+    [onSelect]
+  );
+
+  const handleBrowseSamples = useCallback(
+    (entityId: string, position: { x: number; y: number }) => {
+      setBrowserState({ entityId, position });
+    },
+    []
+  );
+
+  const handlePickBrowsedInstance = useCallback(
+    (inst: WmInstance) => {
+      if (!browserState) return;
+      handleSelectChildInstance(browserState.entityId, inst.key, inst.display);
+      setBrowserState(null);
+    },
+    [browserState, handleSelectChildInstance]
+  );
+
   const handleClearFilter = useCallback(() => {
     setFilterSeed(null);
     setExpandedEntityId(null);
     setBreakdownMeasure(null);
+    setBrowserState(null);
     setSelectionRaw((prev) => (prev?.kind === "instance" ? null : prev));
     setHistory((h) => h.filter((s) => s?.kind !== "instance"));
   }, []);
@@ -115,6 +165,9 @@ export default function WorldModelView() {
 
   const pickerEntity = pickerState
     ? model.entities.find((e) => e.id === pickerState.entityId)
+    : null;
+  const browserEntity = browserState
+    ? model.entities.find((e) => e.id === browserState.entityId)
     : null;
 
   return (
@@ -142,6 +195,8 @@ export default function WorldModelView() {
           onSelectPromotion={(from, to) => onSelect({ kind: "promotion", from, to })}
           onOpenPicker={handleOpenPicker}
           onClearSelection={() => onSelect(null)}
+          onSelectChildInstance={handleSelectChildInstance}
+          onBrowseSamples={handleBrowseSamples}
         />
         {pickerState && pickerEntity && (
           <InstancePickerPopover
@@ -150,6 +205,18 @@ export default function WorldModelView() {
             position={pickerState.position}
             onPick={handlePickInstance}
             onClose={() => setPickerState(null)}
+          />
+        )}
+        {browserState && browserEntity && filterSeed && (
+          <SampleBrowserPopover
+            seedEntityId={filterSeed.entityId}
+            seedKey={filterSeed.keyValue}
+            entityId={browserState.entityId}
+            entityLabel={browserEntity.label}
+            matched={filterCounts?.[browserState.entityId]?.matched ?? 0}
+            position={browserState.position}
+            onPick={handlePickBrowsedInstance}
+            onClose={() => setBrowserState(null)}
           />
         )}
       </div>
@@ -161,6 +228,9 @@ export default function WorldModelView() {
           history={history}
           onBack={onBack}
           seedInstanceDetail={seedDetail ?? null}
+          expandedEntityId={expandedEntityId}
+          breakdownMeasure={breakdownMeasure}
+          onExpandMeasure={onExpandMeasureFromDetail}
         />
       </div>
     </div>

@@ -548,6 +548,7 @@ async fn resolve_branch(query_branch: Option<String>, root: &std::path::Path) ->
 
 pub async fn pull_changes(
     _: WorkspaceEditor,
+    State(app_state): State<AppState>,
     Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<BranchQuery>,
@@ -568,6 +569,13 @@ pub async fn pull_changes(
                     state: PullState::Conflict,
                 }))
             } else {
+                // A pull rewrote the working copy in place. The semantic caches
+                // key solely on `workspace_id`, so without this the world-model
+                // graph + semantic panels serve the pre-pull revision until the
+                // TTL lapses (60s layer / 600s engine). Same invalidation the
+                // branch switch does.
+                app_state.semantic_layer_cache.remove(ws.id);
+                app_state.semantic_engine_cache.remove(ws.id);
                 Ok(ResponseJson(PullChangesResponse {
                     success: true,
                     message,
@@ -1233,15 +1241,11 @@ pub async fn switch_workspace_branch(
         })?;
 
     // A branch switch changes the working copy in place, but both semantic
-    // caches key solely on `workspace_id` (TTL 60s layer / 600s engine) and the
-    // query-result cache bakes in branch-specific display config. Without this
-    // the world-model + semantic detail panels serve the previous branch's
-    // layer until the TTL lapses. Same invalidation `save_file` does.
+    // caches key solely on `workspace_id` (TTL 60s layer / 600s engine).
+    // Without this the world-model + semantic detail panels serve the previous
+    // branch's layer until the TTL lapses. Same invalidation `save_file` does.
     app_state.semantic_layer_cache.remove(ws.id);
     app_state.semantic_engine_cache.remove(ws.id);
-    app_state
-        .query_result_cache
-        .remove_prefix(&format!("{}:", ws.id));
 
     Ok(ResponseJson(branch))
 }

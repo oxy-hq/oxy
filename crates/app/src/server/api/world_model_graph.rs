@@ -24,9 +24,13 @@ use utoipa::ToSchema;
 
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
 use agentic_semantic::config::{
-    ScalarFilter, SemanticFilter, SemanticFilterType, SemanticOrder, SemanticQueryConfig,
+    ArrayFilter, ScalarFilter, SemanticFilter, SemanticFilterType, SemanticOrder,
+    SemanticQueryConfig,
 };
+use entity::workspace_members::WorkspaceRole;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use uuid::Uuid;
 
 use super::semantic::{ErrorResponse, WorkspacePath};
 use crate::server::api::data::{
@@ -93,6 +97,13 @@ pub struct WmFilterCountEvent {
     pub total: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched: Option<u64>,
+    /// Sample of reachable descendant rows at this entity's grain (display strings).
+    /// Empty for ancestors, the seed, and total-only events.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sample: Vec<String>,
+    /// Navigation keys aligned with `sample` (see `sample_row_to_display_key`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sample_keys: Vec<String>,
     pub done: bool,
 }
 
@@ -337,6 +348,404 @@ fn child_fk_filters(
         .collect()
 }
 
+/// One navigable relationship an entity participates in, used by the instance
+/// drill-down traversal. Direction is implicit: the entity that owns this link
+/// is the *finer* (child / fan-out) side and references `target_entity`'s PK via
+/// `fk_dim_refs`, so `target_entity` is the coarser side.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EntityLink {
+    /// The entity on the other end of the relationship.
+    target_entity: String,
+    /// "{view}.{fk_col}" refs on the child (self) side pointing at `target`'s PK.
+    fk_dim_refs: Vec<String>,
+    /// Whether this is the solid `parent:` spine or a dashed foreign cross-link.
+    kind: LinkKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LinkKind {
+    /// The `parent:` declaration — the single solid hierarchy edge.
+    Parent,
+    /// A Foreign entity that resolves to a Primary elsewhere — a dashed edge.
+    CrossLink,
+}
+
+/// Build the navigable link set for the Primary entity of `view`.
+///
+/// This is the union of the two relationship sources that already feed the
+/// *drawn* edges (`world_model_graph` edge builder): the `parent:` spine and
+/// every Foreign entity whose name resolves to a Primary entity elsewhere in
+/// the layer. The parent is itself always declared as a Foreign entity (it must
+/// be, to carry the FK column), so iterating Foreign declarations captures both;
+/// the parent one is tagged `LinkKind::Parent`, the rest `CrossLink`.
+///
+/// The resulting navigable graph is exactly the drawn graph — no edge appears in
+/// the traversal that the user can't already see.
+fn build_entity_links(
+    views: &[airlayer::View],
+    view: &airlayer::View,
+    parent_entity: Option<&str>,
+) -> Vec<EntityLink> {
+    view.entities
+        .iter()
+        .filter(|e| e.entity_type == EntityType::Foreign)
+        .filter_map(|foreign| {
+            // Only navigable if the target is a Primary entity somewhere.
+            let target_exists = views.iter().any(|v| {
+                v.entities
+                    .iter()
+                    .any(|e| e.entity_type == EntityType::Primary && e.name == foreign.name)
+            });
+            if !target_exists {
+                return None;
+            }
+            let fk_dim_refs: Vec<String> = foreign
+                .get_keys()
+                .into_iter()
+                .map(|k| format!("{}.{}", view.name, k))
+                .collect();
+            if fk_dim_refs.is_empty() {
+                return None;
+            }
+            let kind = if parent_entity == Some(foreign.name.as_str()) {
+                LinkKind::Parent
+            } else {
+                LinkKind::CrossLink
+            };
+            Some(EntityLink {
+                target_entity: foreign.name.clone(),
+                fk_dim_refs,
+                kind,
+            })
+        })
+        .collect()
+}
+
+/// Per-entity metadata needed to build the instance drill-down semantic
+/// queries. Hoisted out of the filter-counts handler so the expansion-plan
+/// helpers below can be unit-tested against it.
+struct EntityMeta {
+    entity_name: String,
+    view_name: String,
+    datasource: String,
+    /// "{view}.{pk_dim}" refs — used in SemanticFilter fields and dimension selects.
+    pk_dim_refs: Vec<String>,
+    /// Navigable relationships this entity participates in (parent spine +
+    /// foreign cross-links). Drives the undirected instance-drill-down BFS.
+    links: Vec<EntityLink>,
+    /// Dims to SELECT for a sample row: PK dims first, then label dim if any.
+    sample_dims: Vec<String>,
+    pk_count: usize,
+    has_label_dim: bool,
+}
+
+/// Reverse adjacency over the navigable link graph: target entity → its
+/// *finer* neighbours, i.e. (child index, the child's FK refs pointing at
+/// this target). This is the inbound direction the `parent:` spine alone
+/// never provides for cross-links (e.g. `store ← order`). Built once and
+/// shared by every traversal (schema reachability, the direct-join fast
+/// path, and the cross-datasource legacy BFS fallback) instead of being
+/// recomputed inline at each call site.
+fn build_inbound_index(entity_metas: &[EntityMeta]) -> HashMap<&str, Vec<(usize, &[String])>> {
+    let mut inbound: HashMap<&str, Vec<(usize, &[String])>> = HashMap::new();
+    for (i, meta) in entity_metas.iter().enumerate() {
+        for link in &meta.links {
+            inbound
+                .entry(link.target_entity.as_str())
+                .or_default()
+                .push((i, link.fk_dim_refs.as_slice()));
+        }
+    }
+    inbound
+}
+
+/// Every entity index reachable from `seed_idx` via the undirected link graph
+/// (parent spine + FK cross-links, both directions) — the same edges drawn in
+/// the graph UI. This is a static property of the `.view.yml` relationships
+/// alone, so unlike matched-row reachability it needs no IO and can be
+/// computed once up front instead of discovered hop-by-hop at query time.
+fn schema_reachable_entities(
+    entity_metas: &[EntityMeta],
+    inbound: &HashMap<&str, Vec<(usize, &[String])>>,
+    meta_idx: &HashMap<&str, usize>,
+    seed_idx: usize,
+) -> Vec<usize> {
+    let mut visited: std::collections::HashSet<usize> = std::collections::HashSet::from([seed_idx]);
+    let mut stack = vec![seed_idx];
+    let mut result = Vec::new();
+    while let Some(idx) = stack.pop() {
+        for link in &entity_metas[idx].links {
+            if let Some(&t) = meta_idx.get(link.target_entity.as_str())
+                && visited.insert(t)
+            {
+                result.push(t);
+                stack.push(t);
+            }
+        }
+        if let Some(children) = inbound.get(entity_metas[idx].entity_name.as_str()) {
+            for &(child_idx, _) in children {
+                if visited.insert(child_idx) {
+                    result.push(child_idx);
+                    stack.push(child_idx);
+                }
+            }
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod schema_reachability_tests {
+    use super::*;
+
+    fn meta(name: &str, datasource: &str, links: Vec<EntityLink>) -> EntityMeta {
+        EntityMeta {
+            entity_name: name.to_string(),
+            view_name: name.to_string(),
+            datasource: datasource.to_string(),
+            pk_dim_refs: vec![format!("{name}.id")],
+            links,
+            sample_dims: vec![format!("{name}.id")],
+            pk_count: 1,
+            has_label_dim: false,
+        }
+    }
+
+    fn link(target: &str, kind: LinkKind) -> EntityLink {
+        EntityLink {
+            target_entity: target.to_string(),
+            fk_dim_refs: vec![format!("self.{target}_id")],
+            kind,
+        }
+    }
+
+    fn idx(metas: &[EntityMeta], name: &str) -> usize {
+        metas.iter().position(|m| m.entity_name == name).unwrap()
+    }
+
+    // seed -> parent (outbound), child -> seed (inbound cross-link): both
+    // neighbours must be reachable regardless of edge direction.
+    #[test]
+    fn reaches_both_outbound_and_inbound_neighbours() {
+        let metas = vec![
+            meta("seed", "db1", vec![link("parent", LinkKind::Parent)]),
+            meta("parent", "db1", vec![]),
+            meta("child", "db1", vec![link("seed", LinkKind::CrossLink)]),
+        ];
+        let meta_idx: HashMap<&str, usize> = metas
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.entity_name.as_str(), i))
+            .collect();
+        let inbound = build_inbound_index(&metas);
+        let seed_idx = idx(&metas, "seed");
+        let mut reachable = schema_reachable_entities(&metas, &inbound, &meta_idx, seed_idx);
+        reachable.sort();
+        let mut expected = vec![idx(&metas, "parent"), idx(&metas, "child")];
+        expected.sort();
+        assert_eq!(reachable, expected);
+    }
+
+    // A chain seed -> a -> b -> c must all be reachable, however deep —
+    // schema reachability doesn't stop at direct neighbours.
+    #[test]
+    fn reaches_transitively_through_a_chain() {
+        let metas = vec![
+            meta("seed", "db1", vec![link("a", LinkKind::Parent)]),
+            meta("a", "db1", vec![link("b", LinkKind::Parent)]),
+            meta("b", "db1", vec![link("c", LinkKind::Parent)]),
+            meta("c", "db1", vec![]),
+        ];
+        let meta_idx: HashMap<&str, usize> = metas
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.entity_name.as_str(), i))
+            .collect();
+        let inbound = build_inbound_index(&metas);
+        let seed_idx = idx(&metas, "seed");
+        let mut reachable = schema_reachable_entities(&metas, &inbound, &meta_idx, seed_idx);
+        reachable.sort();
+        let mut expected = vec![idx(&metas, "a"), idx(&metas, "b"), idx(&metas, "c")];
+        expected.sort();
+        assert_eq!(reachable, expected);
+    }
+
+    // An entity with no path to the seed at all is not reachable.
+    #[test]
+    fn excludes_disconnected_entities() {
+        let metas = vec![
+            meta("seed", "db1", vec![link("a", LinkKind::Parent)]),
+            meta("a", "db1", vec![]),
+            meta("island", "db1", vec![]),
+        ];
+        let meta_idx: HashMap<&str, usize> = metas
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.entity_name.as_str(), i))
+            .collect();
+        let inbound = build_inbound_index(&metas);
+        let seed_idx = idx(&metas, "seed");
+        let reachable = schema_reachable_entities(&metas, &inbound, &meta_idx, seed_idx);
+        assert_eq!(reachable, vec![idx(&metas, "a")]);
+    }
+
+    // The seed's own index is never included in its reachable set.
+    #[test]
+    fn excludes_seed_itself() {
+        let metas = vec![
+            meta("seed", "db1", vec![link("a", LinkKind::Parent)]),
+            meta("a", "db1", vec![]),
+        ];
+        let meta_idx: HashMap<&str, usize> = metas
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.entity_name.as_str(), i))
+            .collect();
+        let inbound = build_inbound_index(&metas);
+        let seed_idx = idx(&metas, "seed");
+        let reachable = schema_reachable_entities(&metas, &inbound, &meta_idx, seed_idx);
+        assert!(!reachable.contains(&seed_idx));
+    }
+}
+
+/// Column layout of an entity's single "expansion" query, which selects its PK
+/// columns, each outbound link's FK column, and its label column **in one shot**
+/// (all functionally determined by the PK, so grouping by them doesn't change
+/// row cardinality). One query then yields everything a BFS hop needs: the
+/// matched count, the PK rows for inbound children, the FK values for outbound
+/// targets, and the display sample — replacing the old separate count + pk +
+/// fk-select + sample queries.
+struct WmExpansionPlan {
+    /// Dimensions to SELECT, in column order.
+    dims: Vec<String>,
+    /// Column index of each PK dimension (in `pk_dim_refs` order).
+    pk_cols: Vec<usize>,
+    /// Column index of the label dimension, if the entity has one.
+    label_col: Option<usize>,
+    /// (target entity, column index of that link's first FK column).
+    link_cols: Vec<(String, usize)>,
+}
+
+/// Build the expansion column layout for `meta`. De-duplicates dimensions that
+/// coincide (e.g. a PK column reused as an FK) via a first-seen index map.
+fn wm_expansion_plan(meta: &EntityMeta) -> WmExpansionPlan {
+    let mut dims: Vec<String> = Vec::new();
+    let mut index: HashMap<String, usize> = HashMap::new();
+    fn col_of(r: &str, dims: &mut Vec<String>, index: &mut HashMap<String, usize>) -> usize {
+        if let Some(&i) = index.get(r) {
+            return i;
+        }
+        let i = dims.len();
+        dims.push(r.to_string());
+        index.insert(r.to_string(), i);
+        i
+    }
+    let pk_cols: Vec<usize> = meta
+        .pk_dim_refs
+        .iter()
+        .map(|r| col_of(r, &mut dims, &mut index))
+        .collect();
+    let link_cols: Vec<(String, usize)> = meta
+        .links
+        .iter()
+        .filter_map(|l| {
+            l.fk_dim_refs
+                .first()
+                .map(|r| (l.target_entity.clone(), col_of(r, &mut dims, &mut index)))
+        })
+        .collect();
+    // The label dim (if any) is the last entry of `sample_dims` (PK dims first).
+    let label_col = if meta.has_label_dim {
+        meta.sample_dims
+            .last()
+            .map(|r| col_of(r, &mut dims, &mut index))
+    } else {
+        None
+    };
+    WmExpansionPlan {
+        dims,
+        pk_cols,
+        label_col,
+        link_cols,
+    }
+}
+
+/// Result of executing one entity's expansion query.
+struct WmExpansionResult {
+    /// Distinct-PK count — the node's `matched` value.
+    matched: u64,
+    /// Distinct PK rows (all columns), for building inbound-child FK filters.
+    pk_rows: Vec<Vec<serde_json::Value>>,
+    /// Per outbound link: (target entity, that link's distinct FK values).
+    fk_values: Vec<(String, Vec<serde_json::Value>)>,
+    /// Up to 3 display strings and their nav keys.
+    sample: Vec<String>,
+    sample_keys: Vec<String>,
+}
+
+/// Parse the rows of an expansion query into a [`WmExpansionResult`] using the
+/// column layout from [`wm_expansion_plan`]. Pure — no IO — so it is unit-tested
+/// directly. `matched` counts **distinct** PK tuples (an FK fanning out to
+/// several rows per instance never inflates the count).
+fn parse_expansion_rows(rows: &[Vec<String>], plan: &WmExpansionPlan) -> WmExpansionResult {
+    let project = |row: &[String], cols: &[usize]| -> Vec<String> {
+        cols.iter()
+            .map(|&c| row.get(c).cloned().unwrap_or_default())
+            .collect()
+    };
+
+    let mut seen: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
+    let mut pk_rows: Vec<Vec<serde_json::Value>> = Vec::new();
+    for row in rows {
+        let key = project(row, &plan.pk_cols);
+        if seen.insert(key.clone()) {
+            pk_rows.push(key.into_iter().map(serde_json::Value::String).collect());
+        }
+    }
+    let matched = pk_rows.len() as u64;
+
+    let fk_values: Vec<(String, Vec<serde_json::Value>)> = plan
+        .link_cols
+        .iter()
+        .map(|(target, col)| {
+            let vals: Vec<serde_json::Value> = rows
+                .iter()
+                .filter_map(|r| r.get(*col).cloned())
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect();
+            (target.clone(), vals)
+        })
+        .collect();
+
+    let pk_count = plan.pk_cols.len();
+    let has_label = plan.label_col.is_some();
+    // Dedup by PK tuple before taking the first 3 so a single instance fanning
+    // out to several FK rows never wastes a preview slot (mirrors `seen`/`pk_rows`).
+    let mut sample_seen: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
+    let (sample, sample_keys): (Vec<String>, Vec<String>) = rows
+        .iter()
+        .filter(|&row| sample_seen.insert(project(row, &plan.pk_cols)))
+        .take(3)
+        .map(|row| {
+            let mut proj = project(row, &plan.pk_cols);
+            if let Some(lc) = plan.label_col {
+                proj.push(row.get(lc).cloned().unwrap_or_default());
+            }
+            sample_row_to_display_key(&proj, pk_count, has_label)
+        })
+        .unzip();
+
+    WmExpansionResult {
+        matched,
+        pk_rows,
+        fk_values,
+        sample,
+        sample_keys,
+    }
+}
+
 /// Centralises the "what to SELECT and how to render a display string" logic for an entity.
 ///
 /// Rule: if `label: <dim>` is declared, use that dimension; otherwise join all PK
@@ -434,15 +843,48 @@ impl EntityDisplaySpec {
     }
 }
 
-/// Find the entity in `seed`'s ancestry that has `ancestor` as its direct parent.
-fn child_of_toward(
-    promotions: &airlayer::engine::promotions::Promotions,
-    seed: &str,
-    ancestor: &str,
-) -> Option<String> {
-    let path = promotions.ancestry(seed);
-    path.into_iter()
-        .find(|a| promotions.parent_of(a) == Some(ancestor))
+/// Turn a sample SELECT row into `(display, nav_key)`.
+///
+/// Columns are ordered `[pk_0, .., pk_{pk_count-1}, (label?)]` per
+/// `EntityDisplaySpec::dims`. `nav_key` is the canonical key the instance
+/// endpoints accept: the plain first PK value for single-PK entities, or a
+/// JSON array string of the PK columns for composite PKs. `display` prefers the
+/// label column, falling back to PK columns joined with " · ".
+fn sample_row_to_display_key(
+    row: &[String],
+    pk_count: usize,
+    has_label_dim: bool,
+) -> (String, String) {
+    let pk_vals = &row[..pk_count.min(row.len())];
+    let nav_key = if pk_count <= 1 {
+        row.first().cloned().unwrap_or_default()
+    } else {
+        serde_json::to_string(&pk_vals.to_vec())
+            .unwrap_or_else(|_| row.first().cloned().unwrap_or_default())
+    };
+    let display = if has_label_dim {
+        row.get(pk_count)
+            .cloned()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| join_pk_parts(pk_vals, row))
+    } else {
+        join_pk_parts(pk_vals, row)
+    };
+    (display, nav_key)
+}
+
+/// Join non-empty PK column values with " · "; fall back to the first column.
+fn join_pk_parts(pk_vals: &[String], row: &[String]) -> String {
+    let parts: Vec<&str> = pk_vals
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if parts.is_empty() {
+        row.first().cloned().unwrap_or_default()
+    } else {
+        parts.join(" · ")
+    }
 }
 
 /// Quote a table name for SQL.
@@ -654,6 +1096,247 @@ mod wm_config_tests {
         let fk = vec!["v.fk".to_string()];
         let filters = child_fk_filters(&fk, &[]);
         assert!(filters.is_empty());
+    }
+
+    fn wm_view(name: &str, entities: serde_json::Value) -> airlayer::View {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "table": name,
+            "entities": entities,
+            "dimensions": [],
+        }))
+        .expect("valid view")
+    }
+
+    /// The `examples/` star-schema slice: `order` rolls up to `customer` (its
+    /// declared parent) and also foreign-references `retail_store` and
+    /// `shipping_address`. The link set must union the parent spine with the
+    /// foreign cross-links, tagging each correctly.
+    #[test]
+    fn build_entity_links_unions_parent_and_cross_links() {
+        let orders = wm_view(
+            "orders",
+            serde_json::json!([
+                {"name": "order", "type": "primary", "key": "order_id", "parent": "customer"},
+                {"name": "customer", "type": "foreign", "key": "customer_id"},
+                {"name": "shipping_address", "type": "foreign", "key": "shipping_address_id"},
+                {"name": "retail_store", "type": "foreign", "key": "store_id"},
+            ]),
+        );
+        let customers = wm_view(
+            "customers",
+            serde_json::json!([{"name": "customer", "type": "primary", "key": "customer_id"}]),
+        );
+        let stores = wm_view(
+            "stores",
+            serde_json::json!([{"name": "retail_store", "type": "primary", "key": "store_id"}]),
+        );
+        let shipping = wm_view(
+            "shipping_addresses",
+            serde_json::json!([
+                {"name": "shipping_address", "type": "primary", "key": "shipping_address_id"},
+            ]),
+        );
+        let views = vec![orders.clone(), customers, stores, shipping];
+
+        let links = build_entity_links(&views, &orders, Some("customer"));
+        assert_eq!(
+            links,
+            vec![
+                EntityLink {
+                    target_entity: "customer".into(),
+                    fk_dim_refs: vec!["orders.customer_id".into()],
+                    kind: LinkKind::Parent,
+                },
+                EntityLink {
+                    target_entity: "shipping_address".into(),
+                    fk_dim_refs: vec!["orders.shipping_address_id".into()],
+                    kind: LinkKind::CrossLink,
+                },
+                EntityLink {
+                    target_entity: "retail_store".into(),
+                    fk_dim_refs: vec!["orders.store_id".into()],
+                    kind: LinkKind::CrossLink,
+                },
+            ],
+        );
+    }
+
+    fn link(target: &str, fk: &str, kind: LinkKind) -> EntityLink {
+        EntityLink {
+            target_entity: target.into(),
+            fk_dim_refs: vec![fk.into()],
+            kind,
+        }
+    }
+
+    fn meta_for(
+        name: &str,
+        view: &str,
+        pk_dim_refs: Vec<String>,
+        links: Vec<EntityLink>,
+        sample_dims: Vec<String>,
+        has_label_dim: bool,
+    ) -> EntityMeta {
+        EntityMeta {
+            entity_name: name.into(),
+            view_name: view.into(),
+            datasource: "local".into(),
+            pk_count: pk_dim_refs.len(),
+            pk_dim_refs,
+            links,
+            sample_dims,
+            has_label_dim,
+        }
+    }
+
+    /// The expansion query selects PK + each outbound link's FK + the label in
+    /// one shot; the plan records where each lands so one scan yields matched,
+    /// PK rows, FK values, and the sample.
+    #[test]
+    fn wm_expansion_plan_lays_out_pk_fk_columns() {
+        let meta = meta_for(
+            "order",
+            "orders",
+            vec!["orders.order_id".into()],
+            vec![
+                link("customer", "orders.customer_id", LinkKind::Parent),
+                link("retail_store", "orders.store_id", LinkKind::CrossLink),
+            ],
+            vec!["orders.order_id".into()],
+            false,
+        );
+        let plan = wm_expansion_plan(&meta);
+        assert_eq!(
+            plan.dims,
+            vec!["orders.order_id", "orders.customer_id", "orders.store_id"]
+        );
+        assert_eq!(plan.pk_cols, vec![0]);
+        assert_eq!(plan.label_col, None);
+        assert_eq!(
+            plan.link_cols,
+            vec![("customer".to_string(), 1), ("retail_store".to_string(), 2)]
+        );
+    }
+
+    /// When the label dimension coincides with the PK column (cities: `city` is
+    /// both key and label), the layout de-duplicates to a single column.
+    #[test]
+    fn wm_expansion_plan_dedups_label_matching_pk() {
+        let meta = meta_for(
+            "city",
+            "cities",
+            vec!["cities.city".into()],
+            vec![link("region", "cities.region", LinkKind::Parent)],
+            vec!["cities.city".into(), "cities.city".into()],
+            true,
+        );
+        let plan = wm_expansion_plan(&meta);
+        assert_eq!(plan.dims, vec!["cities.city", "cities.region"]);
+        assert_eq!(plan.pk_cols, vec![0]);
+        assert_eq!(plan.label_col, Some(0));
+        assert_eq!(plan.link_cols, vec![("region".to_string(), 1)]);
+    }
+
+    /// `matched` counts DISTINCT PK tuples (an FK fanning out to duplicate rows
+    /// never inflates it); FK values are de-duplicated; the sample is the first
+    /// three rows projected to [PK.., label].
+    #[test]
+    fn parse_expansion_rows_distinct_pk_and_fk() {
+        let plan = WmExpansionPlan {
+            dims: vec!["v.pk".into(), "v.name".into(), "v.customer_id".into()],
+            pk_cols: vec![0],
+            label_col: Some(1),
+            link_cols: vec![("customer".into(), 2)],
+        };
+        let rows = vec![
+            vec!["1".into(), "Alice".into(), "100".into()],
+            vec!["1".into(), "Alice".into(), "100".into()],
+            vec!["2".into(), "Bob".into(), "100".into()],
+        ];
+        let res = parse_expansion_rows(&rows, &plan);
+        assert_eq!(res.matched, 2, "distinct PK count, not raw row count");
+        assert_eq!(res.pk_rows, vec![vec![s("1")], vec![s("2")]]);
+        let (target, mut vals) = res.fk_values.into_iter().next().unwrap();
+        assert_eq!(target, "customer");
+        vals.sort_by_key(|v| v.as_str().unwrap_or_default().to_string());
+        assert_eq!(vals, vec![s("100")]);
+        // Sample is deduped by PK tuple: the two identical Alice rows collapse
+        // to one preview so a fanned-out FK never wastes a preview slot.
+        assert_eq!(res.sample, vec!["Alice", "Bob"]);
+        assert_eq!(res.sample_keys, vec!["1", "2"]);
+    }
+
+    /// The PK dedup must happen *before* the `take(3)` window, so a leading run
+    /// of duplicate rows can't crowd distinct instances out of the 3 preview
+    /// slots (the bug: `[1,1,1]` previews instead of `[1,2,3]`).
+    #[test]
+    fn parse_expansion_rows_sample_dedups_before_take() {
+        let plan = WmExpansionPlan {
+            dims: vec!["v.pk".into(), "v.name".into()],
+            pk_cols: vec![0],
+            label_col: Some(1),
+            link_cols: vec![],
+        };
+        let rows = vec![
+            vec!["1".into(), "Alice".into()],
+            vec!["1".into(), "Alice".into()],
+            vec!["1".into(), "Alice".into()],
+            vec!["2".into(), "Bob".into()],
+            vec!["3".into(), "Carol".into()],
+            vec!["4".into(), "Dave".into()],
+        ];
+        let res = parse_expansion_rows(&rows, &plan);
+        assert_eq!(res.sample, vec!["Alice", "Bob", "Carol"]);
+        assert_eq!(res.sample_keys, vec!["1", "2", "3"]);
+    }
+
+    /// A Foreign entity whose name resolves to no Primary anywhere is not
+    /// navigable — it has no node to point at, so it is dropped (mirrors the
+    /// `target_exists` guard the drawn-edge builder uses).
+    #[test]
+    fn build_entity_links_skips_unresolvable_foreign() {
+        let orders = wm_view(
+            "orders",
+            serde_json::json!([
+                {"name": "order", "type": "primary", "key": "order_id"},
+                {"name": "ghost", "type": "foreign", "key": "ghost_id"},
+            ]),
+        );
+        let views = vec![orders.clone()];
+        assert!(build_entity_links(&views, &orders, None).is_empty());
+    }
+
+    #[test]
+    fn sample_row_single_pk_no_label() {
+        let row = vec!["42".to_string()];
+        let (display, key) = sample_row_to_display_key(&row, 1, false);
+        assert_eq!(display, "42");
+        assert_eq!(key, "42");
+    }
+
+    #[test]
+    fn sample_row_with_label_dim() {
+        let row = vec!["42".to_string(), "Acme Corp".to_string()];
+        let (display, key) = sample_row_to_display_key(&row, 1, true);
+        assert_eq!(display, "Acme Corp");
+        assert_eq!(key, "42");
+    }
+
+    #[test]
+    fn sample_row_composite_pk_json_key() {
+        let row = vec!["70978".to_string(), "177411".to_string()];
+        let (display, key) = sample_row_to_display_key(&row, 2, false);
+        assert_eq!(display, "70978 · 177411");
+        assert_eq!(key, r#"["70978","177411"]"#);
+    }
+
+    #[test]
+    fn sample_row_label_empty_falls_back_to_pks() {
+        let row = vec!["42".to_string(), "".to_string()];
+        let (display, key) = sample_row_to_display_key(&row, 1, true);
+        assert_eq!(display, "42");
+        assert_eq!(key, "42");
     }
 
     #[test]
@@ -956,25 +1639,16 @@ pub async fn get_world_model_instances(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
-    axum::extract::State(app_state): axum::extract::State<crate::server::router::AppState>,
+    axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     axum::extract::Query(q): axum::extract::Query<WmInstancesQuery>,
 ) -> Result<extract::Json<WmInstancesResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    // Cache the default (no-search) open: same entity, same workspace → same
-    // result within the TTL. Search terms are not cached — they are diverse
-    // across users and would fill the bounded cache with single-use entries.
+    // Not cached: this is a bounded `SELECT <pk,label> … LIMIT n` scan, cheap
+    // enough that caching it isn't worth the staleness risk. A cache keyed on
+    // `workspace_id` alone would not invalidate on an out-of-band working-copy
+    // change (e.g. `git pull`), serving a previous revision's instances until
+    // the TTL lapsed. `is_search` still gates the overflow probe below.
     let is_search = q.search.as_deref().is_some_and(|s| !s.is_empty());
-    let cache_key = if is_search {
-        None
-    } else {
-        Some(format!("{}:{}:{}", workspace_id, q.entity, q.limit))
-    };
-    if let Some(ref key) = cache_key
-        && let Some(bytes) = app_state.query_result_cache.get(key)
-        && let Ok(cached) = serde_json::from_slice::<WmInstancesResponse>(&bytes)
-    {
-        return Ok(extract::Json(cached));
-    }
 
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
     let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
@@ -1162,12 +1836,657 @@ pub async fn get_world_model_instances(
         has_more,
         items,
     };
-    if let Some(key) = cache_key
-        && let Ok(bytes) = serde_json::to_vec(&response)
-    {
-        app_state.query_result_cache.insert(key, bytes);
-    }
     Ok(extract::Json(response))
+}
+
+/// Build per-entity drill-down metadata for every Primary entity in the layer.
+/// Shared by the filter-counts BFS and the scoped sample-browser endpoint so
+/// both traverse the exact same navigable link graph.
+fn build_entity_metas(
+    layer: &airlayer::SemanticLayer,
+    promotions: &Promotions,
+    wm_cfg: Option<&super::world_model_config::WorldModelConfig>,
+) -> Vec<EntityMeta> {
+    let get_display_field = |entity_id: &str| -> Option<String> {
+        wm_cfg
+            .and_then(|cfg| cfg.entities.iter().find(|e| e.id == entity_id))
+            .and_then(|ec| ec.display_field.clone())
+    };
+    layer
+        .views
+        .iter()
+        .filter_map(|view| {
+            let primary = view
+                .entities
+                .iter()
+                .find(|e| e.entity_type == EntityType::Primary)?;
+            let pk_names = entity_keys_in_view(view, &primary.name, true);
+            if pk_names.is_empty() {
+                return None;
+            }
+            let pk_dim_refs = pk_names
+                .iter()
+                .map(|k| format!("{}.{}", view.name, k))
+                .collect();
+            let parent_entity = promotions.parent_of(&primary.name);
+            let links = build_entity_links(&layer.views, view, parent_entity);
+            let disp = EntityDisplaySpec::for_entity(
+                view,
+                &primary.name,
+                get_display_field(&primary.name).as_deref(),
+            );
+            Some(EntityMeta {
+                entity_name: primary.name.clone(),
+                view_name: view.name.clone(),
+                datasource: view.datasource.clone().unwrap_or_default(),
+                pk_dim_refs,
+                links,
+                sample_dims: disp.dims,
+                pk_count: disp.pk_count,
+                has_label_dim: disp.has_label_dim,
+            })
+        })
+        .collect()
+}
+
+/// Everything needed to compile + execute one drill-down query outside the
+/// streaming filter-counts handler. Compilation uses `resolve_and_compile` (no
+/// engine cache) — the sample-browser is an on-demand, low-QPS surface where the
+/// simpler path is fine.
+struct WmExecCtx {
+    workspace_manager: WorkspaceManager,
+    user_id: Uuid,
+    role: WorkspaceRole,
+    scan_path: std::path::PathBuf,
+    databases: Vec<airlayer::DatabaseConfig>,
+    layer: airlayer::SemanticLayer,
+}
+
+impl WmExecCtx {
+    /// Compile a config to `(sql, database_name)`; `None` on compile failure.
+    async fn compile_full(&self, cfg: SemanticQueryConfig) -> Option<(String, String)> {
+        let sp = self.scan_path.clone();
+        let dbs = self.databases.clone();
+        let layer = self.layer.clone();
+        tokio::task::spawn_blocking(move || {
+            resolve_and_compile(&sp, &dbs, &cfg, None, 0, Some(layer)).ok()
+        })
+        .await
+        .ok()
+        .flatten()
+        .map(|compiled| match compiled {
+            CompiledQuery::Warehouse { sql, database_name } => (sql, database_name),
+            CompiledQuery::Preaggregation { preagg_sql, .. } => (preagg_sql, String::new()),
+        })
+    }
+
+    /// Run one expansion query and parse it into matched PK rows + outbound FK
+    /// values (the fuel the BFS needs to reach the next hop). Empty on any
+    /// failure so an unreachable node just contributes nothing.
+    async fn run_expansion(
+        &self,
+        datasource: &str,
+        cfg: SemanticQueryConfig,
+        plan: &WmExpansionPlan,
+    ) -> WmExpansionResult {
+        let empty = || WmExpansionResult {
+            matched: 0,
+            pk_rows: vec![],
+            fk_values: vec![],
+            sample: vec![],
+            sample_keys: vec![],
+        };
+        let Some((sql, _db)) = self.compile_full(cfg).await else {
+            return empty();
+        };
+        let Ok(connector) = build_connector(
+            &self.workspace_manager,
+            self.user_id,
+            self.role.clone(),
+            datasource,
+        )
+        .await
+        else {
+            return empty();
+        };
+        let rows = run_with_connector(&connector, &sql, &self.workspace_manager).await;
+        parse_expansion_rows(&rows, plan)
+    }
+}
+
+/// Build the single-column `Eq` PK filter that selects one entity's own instance.
+/// Parse a request key into its PK component values. The picker encodes a
+/// composite-PK instance as a JSON array of strings (`["2","4"]`); a single-PK
+/// instance may arrive either as a bare scalar or a one-element array. Mirrors
+/// the instance-detail / measure-breakdown handlers so every consumer agrees on
+/// the same decoding.
+fn parse_key_values(key: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(key).unwrap_or_else(|_| vec![key.to_string()])
+}
+
+/// The seed's PK as a single composite row (`Vec<Value>`, one entry per PK
+/// column). Used to seed BFS `pk_rows` when the pre-fetch query returns nothing.
+fn seed_pk_row(key: &str) -> Vec<serde_json::Value> {
+    parse_key_values(key)
+        .into_iter()
+        .map(serde_json::Value::String)
+        .collect()
+}
+
+/// Equality filters selecting the seed instance by its PK. A single value maps
+/// to the first PK dim (the picker's single-PK flow, unchanged); multiple values
+/// are zipped positionally against the composite PK dims — so an `order_item`
+/// keyed by `["2","4"]` filters `order_id=2 AND line=4` rather than comparing the
+/// first PK column against the literal JSON string `["2","4"]` (which matches
+/// nothing and zeroed every reachable count). Empty only when the entity has no
+/// PK dims.
+fn seed_self_filters(meta: &EntityMeta, key: &str) -> Vec<SemanticFilter> {
+    let values = parse_key_values(key);
+    let mk = |field: String, value: String| SemanticFilter {
+        field,
+        filter_type: SemanticFilterType::Eq(ScalarFilter {
+            value: serde_json::Value::String(value),
+        }),
+    };
+    if values.len() == 1 {
+        return meta
+            .pk_dim_refs
+            .first()
+            .cloned()
+            .map(|field| vec![mk(field, values[0].clone())])
+            .unwrap_or_default();
+    }
+    meta.pk_dim_refs
+        .iter()
+        .zip(values.iter())
+        .map(|(field, val)| mk(field.clone(), val.clone()))
+        .collect()
+}
+
+#[cfg(test)]
+mod seed_key_tests {
+    use super::*;
+
+    fn meta(view: &str, pk_dims: &[&str]) -> EntityMeta {
+        EntityMeta {
+            entity_name: view.to_string(),
+            view_name: view.to_string(),
+            datasource: "db".to_string(),
+            pk_dim_refs: pk_dims.iter().map(|d| format!("{view}.{d}")).collect(),
+            links: vec![],
+            sample_dims: vec![],
+            pk_count: pk_dims.len(),
+            has_label_dim: false,
+        }
+    }
+
+    fn eq_value(f: &SemanticFilter) -> &str {
+        match &f.filter_type {
+            SemanticFilterType::Eq(ScalarFilter {
+                value: serde_json::Value::String(s),
+            }) => s,
+            _ => panic!("expected string Eq filter"),
+        }
+    }
+
+    #[test]
+    fn scalar_key_filters_first_pk_dim() {
+        let m = meta("order_item", &["id"]);
+        let filters = seed_self_filters(&m, "42");
+        assert_eq!(filters.len(), 1);
+        assert_eq!(filters[0].field, "order_item.id");
+        assert_eq!(eq_value(&filters[0]), "42");
+    }
+
+    // The regression: a composite-PK seed encoded as a JSON array must filter
+    // every PK column, not compare the first column to the literal `["2","4"]`.
+    #[test]
+    fn composite_json_key_filters_each_pk_dim() {
+        let m = meta("order_item", &["order_id", "line_number"]);
+        let filters = seed_self_filters(&m, "[\"2\",\"4\"]");
+        assert_eq!(filters.len(), 2);
+        assert_eq!(filters[0].field, "order_item.order_id");
+        assert_eq!(eq_value(&filters[0]), "2");
+        assert_eq!(filters[1].field, "order_item.line_number");
+        assert_eq!(eq_value(&filters[1]), "4");
+    }
+
+    // A single-element JSON array is still the single-PK flow (first dim only).
+    #[test]
+    fn single_element_array_maps_to_first_pk_dim() {
+        let m = meta("order_item", &["id"]);
+        let filters = seed_self_filters(&m, "[\"7\"]");
+        assert_eq!(filters.len(), 1);
+        assert_eq!(eq_value(&filters[0]), "7");
+    }
+
+    #[test]
+    fn no_pk_dims_yields_no_filters() {
+        let m = meta("order_item", &[]);
+        assert!(seed_self_filters(&m, "42").is_empty());
+    }
+
+    #[test]
+    fn seed_pk_row_expands_composite_key() {
+        assert_eq!(
+            seed_pk_row("[\"2\",\"4\"]"),
+            vec![
+                serde_json::Value::String("2".into()),
+                serde_json::Value::String("4".into()),
+            ]
+        );
+        assert_eq!(
+            seed_pk_row("42"),
+            vec![serde_json::Value::String("42".into())]
+        );
+    }
+}
+
+/// Local BFS state fuel — an entity's matched PK rows and its distinct outbound
+/// FK values per target (identical role to the filter-counts `NeighborData`).
+struct BfsNeighbor {
+    pk_rows: Vec<Vec<serde_json::Value>>,
+    fk_values: HashMap<String, Vec<serde_json::Value>>,
+}
+
+/// Reconstruct the single-view `SemanticFilter` set that selects the rows of
+/// `target` reachable from the seed instance, replaying the same undirected
+/// link-graph BFS `filter-counts` uses — but stopping the moment `target` is
+/// discovered and returning the filters that reach it. `None` when `target` is
+/// unreachable from the seed.
+///
+/// The returned filters constrain only `target`'s own view (its PK for an
+/// outbound/coarser target, its FK for an inbound/finer one), so the caller can
+/// drop them straight into a paginated `SELECT` over that entity.
+async fn resolve_target_filters(
+    exec: &WmExecCtx,
+    entity_metas: &[EntityMeta],
+    seed_entity: &str,
+    seed_key: &str,
+    target: &str,
+) -> Option<Vec<SemanticFilter>> {
+    let meta_idx: HashMap<&str, usize> = entity_metas
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.entity_name.as_str(), i))
+        .collect();
+    let seed_idx = *meta_idx.get(seed_entity)?;
+    let target_idx = *meta_idx.get(target)?;
+
+    // The seed itself: match its own PK (no traversal needed).
+    if seed_entity == target {
+        let filters = seed_self_filters(&entity_metas[seed_idx], seed_key);
+        return (!filters.is_empty()).then_some(filters);
+    }
+
+    // Reverse adjacency: coarser entity → its finer neighbours (child idx, the
+    // child's FK refs pointing at it) — the inbound direction cross-links need.
+    let inbound = build_inbound_index(entity_metas);
+
+    // Schema-level reachability (pure, no IO) — see the identical reasoning in
+    // `post_world_model_filter_counts`. `target` unreachable in the schema
+    // graph at all ⇒ nothing more to show, same as an empty BFS today.
+    let reachable = schema_reachable_entities(entity_metas, &inbound, &meta_idx, seed_idx);
+    if !reachable.contains(&target_idx) {
+        return None;
+    }
+
+    // Fast path: same datasource ⇒ a filter on the seed's own view is enough.
+    // airlayer auto-joins `target`'s view back to the seed's, however many
+    // hops apart, when the caller's query later references both — no BFS
+    // needed to compute the filter set at all.
+    if entity_metas[target_idx].datasource == entity_metas[seed_idx].datasource {
+        let filters = seed_self_filters(&entity_metas[seed_idx], seed_key);
+        return (!filters.is_empty()).then_some(filters);
+    }
+
+    // Legacy fallback: cross-datasource pair — airlayer can't join across
+    // datasources, so thread matched values through as literal filters,
+    // hop by hop, same as before.
+    //
+    // Seed pre-fetch — learn its PK rows + outbound FK values so hop 1 can expand.
+    let mut neighbor_data: HashMap<String, BfsNeighbor> = HashMap::new();
+    let seed_meta = &entity_metas[seed_idx];
+    if seed_meta.links.is_empty() {
+        neighbor_data.insert(
+            seed_entity.to_string(),
+            BfsNeighbor {
+                pk_rows: vec![seed_pk_row(seed_key)],
+                fk_values: HashMap::new(),
+            },
+        );
+    } else {
+        let plan = wm_expansion_plan(seed_meta);
+        let cfg = SemanticQueryConfig {
+            topic: None,
+            dimensions: plan.dims.clone(),
+            measures: vec![],
+            time_dimensions: vec![],
+            filters: seed_self_filters(seed_meta, seed_key),
+            orders: vec![],
+            limit: None,
+            offset: None,
+        };
+        let res = exec.run_expansion(&seed_meta.datasource, cfg, &plan).await;
+        let pk_rows = if res.pk_rows.is_empty() {
+            vec![seed_pk_row(seed_key)]
+        } else {
+            res.pk_rows
+        };
+        neighbor_data.insert(
+            seed_entity.to_string(),
+            BfsNeighbor {
+                pk_rows,
+                fk_values: res.fk_values.into_iter().collect(),
+            },
+        );
+    }
+
+    let mut visited: std::collections::HashSet<String> =
+        std::collections::HashSet::from([seed_entity.to_string()]);
+    let mut frontier: Vec<String> = vec![seed_entity.to_string()];
+
+    while !frontier.is_empty() {
+        // Assemble the filter set for every newly reachable entity (no IO here —
+        // each frontier entity already carries the fuel it needs).
+        let chosen = assemble_hop_filters(
+            entity_metas,
+            &meta_idx,
+            &inbound,
+            &neighbor_data,
+            &frontier,
+            &visited,
+        );
+        if chosen.is_empty() {
+            break;
+        }
+
+        // Target reached — its filter set is exactly what selects its reachable
+        // rows. Return before running target's own (possibly large) expansion.
+        if let Some(&t_idx) = meta_idx.get(target)
+            && let Some(filters) = chosen.get(&t_idx)
+        {
+            return Some(filters.clone());
+        }
+
+        // Expand every discovered node to fuel the next hop.
+        let mut next_frontier: Vec<String> = Vec::new();
+        for (idx, filters) in chosen {
+            let meta = &entity_metas[idx];
+            visited.insert(meta.entity_name.clone());
+            let plan = wm_expansion_plan(meta);
+            let cfg = SemanticQueryConfig {
+                topic: None,
+                dimensions: plan.dims.clone(),
+                measures: vec![],
+                time_dimensions: vec![],
+                filters,
+                orders: vec![],
+                limit: None,
+                offset: None,
+            };
+            let res = exec.run_expansion(&meta.datasource, cfg, &plan).await;
+            if res.matched > 0 {
+                neighbor_data.insert(
+                    meta.entity_name.clone(),
+                    BfsNeighbor {
+                        pk_rows: res.pk_rows,
+                        fk_values: res.fk_values.into_iter().collect(),
+                    },
+                );
+                next_frontier.push(meta.entity_name.clone());
+            }
+        }
+        frontier = next_frontier;
+    }
+    None
+}
+
+/// One BFS hop's filter assembly (pure): for every entity newly reachable from
+/// `frontier`, produce the `SemanticFilter` set that selects its reachable rows.
+/// First-writer-wins per entity so a diamond within a level yields one filter.
+fn assemble_hop_filters<'a>(
+    entity_metas: &'a [EntityMeta],
+    meta_idx: &HashMap<&'a str, usize>,
+    inbound: &HashMap<&'a str, Vec<(usize, &'a [String])>>,
+    neighbor_data: &HashMap<String, BfsNeighbor>,
+    frontier: &[String],
+    visited: &std::collections::HashSet<String>,
+) -> HashMap<usize, Vec<SemanticFilter>> {
+    let mut chosen: HashMap<usize, Vec<SemanticFilter>> = HashMap::new();
+    for e_name in frontier {
+        let Some(nd) = neighbor_data.get(e_name) else {
+            continue;
+        };
+        if nd.pk_rows.is_empty() {
+            continue;
+        }
+        // Inbound (finer): children whose FK points at this frontier entity.
+        if let Some(children) = inbound.get(e_name.as_str()) {
+            for &(child_idx, fk_refs) in children {
+                let child_name = &entity_metas[child_idx].entity_name;
+                if visited.contains(child_name) || chosen.contains_key(&child_idx) {
+                    continue;
+                }
+                let f = child_fk_filters(fk_refs, &nd.pk_rows);
+                if !f.is_empty() {
+                    chosen.insert(child_idx, f);
+                }
+            }
+        }
+        // Outbound (coarser): targets filtered by this entity's FK values.
+        let Some(&e_idx) = meta_idx.get(e_name.as_str()) else {
+            continue;
+        };
+        for link in &entity_metas[e_idx].links {
+            let Some(&t_idx) = meta_idx.get(link.target_entity.as_str()) else {
+                continue;
+            };
+            if visited.contains(&link.target_entity) || chosen.contains_key(&t_idx) {
+                continue;
+            }
+            let Some(values) = nd.fk_values.get(&link.target_entity) else {
+                continue;
+            };
+            if values.is_empty() {
+                continue;
+            }
+            let Some(pk_field) = entity_metas[t_idx].pk_dim_refs.first().cloned() else {
+                continue;
+            };
+            chosen.insert(
+                t_idx,
+                vec![SemanticFilter {
+                    field: pk_field,
+                    filter_type: SemanticFilterType::In(ArrayFilter {
+                        values: values.clone(),
+                    }),
+                }],
+            );
+        }
+    }
+    chosen
+}
+
+#[derive(Deserialize)]
+pub struct WmFilterInstancesQuery {
+    /// The active/selected instance's entity (the filter seed).
+    pub seed_entity: String,
+    /// The active instance's key.
+    pub seed_key: String,
+    /// Target entity whose reachable rows to list.
+    pub entity: String,
+    #[serde(default)]
+    pub search: Option<String>,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+/// `GET /{workspace_id}/semantic/world-model/filter-instances`
+///
+/// Paginated, searchable listing of the rows of `entity` reachable from the
+/// selected instance (`seed_entity` / `seed_key`) — the full set the node card
+/// only previews as a handful of sample chips. Backs the "+N more" sample
+/// browser popover.
+pub async fn get_world_model_filter_instances(
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    layer_cache: SemanticLayerCacheCtx,
+    axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
+    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
+    axum::extract::Query(q): axum::extract::Query<WmFilterInstancesQuery>,
+) -> Result<extract::Json<WmInstancesResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
+    let err = |code: StatusCode, message: String| (code, extract::Json(ErrorResponse { message }));
+
+    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
+    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
+        err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to load layer: {e}"),
+        )
+    })?;
+    let promotions = Promotions::build(&layer.views)
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let wm_cfg = super::world_model_config::WorldModelConfig::resolve(
+        workspace_id,
+        workspace_manager.config_manager.workspace_path(),
+    )
+    .await
+    .ok()
+    .flatten();
+
+    let entity_metas = build_entity_metas(&layer, &promotions, wm_cfg.as_ref());
+
+    let target_view = primary_view_of(&layer, &q.entity).ok_or_else(|| {
+        err(
+            StatusCode::NOT_FOUND,
+            format!("Entity '{}' not found", q.entity),
+        )
+    })?;
+    let display_field = wm_cfg
+        .as_ref()
+        .and_then(|cfg| cfg.entities.iter().find(|e| e.id == q.entity))
+        .and_then(|ec| ec.display_field.clone());
+    let disp = EntityDisplaySpec::for_entity(target_view, &q.entity, display_field.as_deref());
+    if disp.dims.is_empty() {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            format!("Entity '{}' has no key columns", q.entity),
+        ));
+    }
+
+    let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
+        .config_manager
+        .list_databases()
+        .iter()
+        .map(|db| airlayer::DatabaseConfig {
+            name: db.name.clone(),
+            db_type: db.database_type.to_string(),
+        })
+        .collect();
+    let exec = WmExecCtx {
+        workspace_manager: workspace_manager.clone(),
+        user_id: user.id,
+        role: role.clone(),
+        scan_path: workspace_manager.config_manager.semantics_scan_path(),
+        databases,
+        layer: (*layer).clone(),
+    };
+
+    // Resolve the reachability filter (seed instance → target entity). Unreachable
+    // ⇒ empty page rather than an error (the node card simply had nothing more).
+    let Some(mut filters) =
+        resolve_target_filters(&exec, &entity_metas, &q.seed_entity, &q.seed_key, &q.entity).await
+    else {
+        return Ok(extract::Json(WmInstancesResponse {
+            total: 0,
+            has_more: false,
+            items: vec![],
+        }));
+    };
+
+    // Optional search — Contains on the label dim, Eq on a bare PK (mirrors the
+    // instance-picker endpoint).
+    if let Some(term) = q.search.as_deref().filter(|s| !s.is_empty()) {
+        let (field, op) = if disp.has_label_dim {
+            (
+                disp.dims[disp.pk_count].clone(),
+                SemanticFilterType::Contains(ScalarFilter { value: term.into() }),
+            )
+        } else {
+            (
+                disp.dims.first().cloned().unwrap_or_default(),
+                SemanticFilterType::Eq(ScalarFilter { value: term.into() }),
+            )
+        };
+        filters.push(SemanticFilter {
+            field,
+            filter_type: op,
+        });
+    }
+
+    let order_by = disp.dims.first().cloned().unwrap_or_default();
+    // Overflow probe: fetch limit+1 (with offset) to detect a next page.
+    let cfg = SemanticQueryConfig {
+        topic: None,
+        dimensions: disp.dims.clone(),
+        measures: vec![],
+        time_dimensions: vec![],
+        filters,
+        orders: vec![SemanticOrder {
+            field: order_by,
+            direction: "asc".to_string(),
+        }],
+        limit: Some((q.limit as u64) + 1),
+        offset: Some(q.offset as u64),
+    };
+
+    let (sql, database_name) = exec.compile_full(cfg).await.ok_or_else(|| {
+        err(
+            StatusCode::BAD_REQUEST,
+            "failed to compile query".to_string(),
+        )
+    })?;
+
+    let payload = SQLParams {
+        sql,
+        database: database_name,
+        filters: None,
+        connections: None,
+        result_format: None,
+    };
+    let rows = match run_via_agentic_connector(&workspace_manager, user.id, role, &payload).await {
+        Ok(SemanticQueryResponse::Json(r)) => r,
+        _ => vec![],
+    };
+
+    let mut all_items: Vec<WmInstanceItem> = rows
+        .into_iter()
+        .skip(1) // header row
+        .map(|row| {
+            let key = row.first().cloned().unwrap_or_default();
+            let display = disp.display_from_row(&row);
+            let display = if display.is_empty() {
+                key.clone()
+            } else {
+                display
+            };
+            WmInstanceItem { key, display }
+        })
+        .collect();
+
+    let has_more = all_items.len() > q.limit;
+    all_items.truncate(q.limit);
+    let total = all_items.len();
+
+    Ok(extract::Json(WmInstancesResponse {
+        total,
+        has_more,
+        items: all_items,
+    }))
 }
 
 /// `POST /{workspace_id}/semantic/world-model/filter-counts`
@@ -1202,53 +2521,19 @@ pub async fn post_world_model_filter_counts(
         )
     })?;
 
-    // Collect per-entity metadata needed to build semantic queries.
-    struct EntityMeta {
-        entity_name: String,
-        view_name: String,
-        datasource: String,
-        // "{view}.{pk_dim}" refs — used in SemanticFilter fields and dimension selects.
-        pk_dim_refs: Vec<String>,
-        // Direct parent in the promotion hierarchy.
-        parent_entity: Option<String>,
-        // "{view}.{fk_dim}" refs pointing to the parent entity.
-        fk_dim_refs: Vec<String>,
-    }
-    let entity_metas: Vec<EntityMeta> = layer
-        .views
-        .iter()
-        .filter_map(|view| {
-            let primary = view
-                .entities
-                .iter()
-                .find(|e| e.entity_type == EntityType::Primary)?;
-            let pk_names = entity_keys_in_view(view, &primary.name, true);
-            if pk_names.is_empty() {
-                return None;
-            }
-            let pk_dim_refs = pk_names
-                .iter()
-                .map(|k| format!("{}.{}", view.name, k))
-                .collect();
-            let parent_entity = promotions.parent_of(&primary.name).map(|s| s.to_string());
-            let fk_dim_refs = if let Some(ref pe) = parent_entity {
-                entity_keys_in_view(view, pe, false)
-                    .into_iter()
-                    .map(|k| format!("{}.{}", view.name, k))
-                    .collect()
-            } else {
-                vec![]
-            };
-            Some(EntityMeta {
-                entity_name: primary.name.clone(),
-                view_name: view.name.clone(),
-                datasource: view.datasource.clone().unwrap_or_default(),
-                pk_dim_refs,
-                parent_entity,
-                fk_dim_refs,
-            })
-        })
-        .collect();
+    // World-model config supplies per-entity display fields used to render sample
+    // labels on descendant cards (mirrors the instance-detail handler).
+    let wm_cfg = super::world_model_config::WorldModelConfig::resolve(
+        layer_cache.workspace_id,
+        workspace_manager.config_manager.workspace_path(),
+    )
+    .await
+    .ok()
+    .flatten();
+
+    // Collect per-entity metadata needed to build semantic queries (struct
+    // hoisted to module scope so the expansion-plan helpers can share it).
+    let entity_metas: Vec<EntityMeta> = build_entity_metas(&layer, &promotions, wm_cfg.as_ref());
 
     let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
         .config_manager
@@ -1404,14 +2689,26 @@ pub async fn post_world_model_filter_counts(
                 let mut n = 0usize;
                 while let Some((name, total)) = futs.next().await {
                     n += 1;
-                    tx_a.send(WmFilterCountEvent {
-                        entity_name: name,
-                        total: Some(total),
-                        matched: None,
-                        done: false,
-                    })
-                    .await
-                    .ok();
+                    let sent = tx_a
+                        .send(WmFilterCountEvent {
+                            entity_name: name,
+                            total: Some(total),
+                            matched: None,
+                            sample: vec![],
+                            sample_keys: vec![],
+                            done: false,
+                        })
+                        .await;
+                    if sent.is_err() {
+                        // Receiver dropped — client disconnected (e.g. re-filtered
+                        // before this stream finished). Stop draining `futs`;
+                        // dropping it below cancels any still-in-flight queries
+                        // instead of letting them run to completion unread.
+                        tracing::debug!(
+                            "filter-counts: total-count receiver dropped, stopping early"
+                        );
+                        break;
+                    }
                 }
                 tracing::info!(
                     elapsed_ms = t_exec.elapsed().as_millis(),
@@ -1419,43 +2716,53 @@ pub async fn post_world_model_filter_counts(
                     "filter-counts: total counts streamed"
                 );
             },
-            // ── Task B: ancestor FK phase + BFS matched counts ────────────────
+            // ── Task B: undirected BFS over the entity link graph ─────────────
             //
-            // BFS processes entities level by level (sorted by ancestry depth,
-            // shallowest first) so that by the time we reach an entity we already
-            // know the matching PK values of its parent, which become the In-filter
-            // for this entity's FK.
+            // Instance drill-down follows the *navigable link graph* — the parent
+            // spine PLUS foreign cross-links, i.e. exactly the edges drawn in the
+            // graph — not just the parent tree. From the selected instance we
+            // expand in BOTH directions, hop by hop:
             //
-            // For ancestors of the seed (entities whose depth is LESS than the
-            // seed's) we go the other direction: collect the FK values that the
-            // bridge entity points to, and use those as an In-filter on this
-            // ancestor's PK.
-            // Task B: BFS matched counts — stream per depth level
+            //   • coarser (outbound): the current entity's own FK → the target's
+            //     PK (store → city, store → region);
+            //   • finer (inbound): entities whose FK points AT the current entity
+            //     (store ← order — the cross-link case the parent tree missed).
+            //
+            // Each hop carries the accumulated PK-filter set. A visited set keyed
+            // on entity (not path) makes every entity count exactly once and
+            // guards against cycles and diamonds. BFS hop distance from the seed
+            // defines the streaming order (still one SSE burst per level).
             async move {
                 // Reconstruct batch_compile inside this block so it's owned
                 // (no reference to outer function stack after tokio::spawn).
+                // Compile a whole batch under a SINGLE engine acquisition. The
+                // cached engine is `Send + !Sync` behind a `Mutex`; locking once
+                // per batch (instead of once per query) keeps compilation — which
+                // is on the BFS critical path — from paying repeated lock churn,
+                // and builds the fallback engine at most once per batch.
                 let batch_compile = |cfgs: Vec<SemanticQueryConfig>| {
                     let engine_arc = cached_engine.clone();
                     let layer_c = layer_inner.clone();
                     let dbs_c = databases.clone();
                     tokio::task::spawn_blocking(move || {
-                        let compile_one = |cfg: &SemanticQueryConfig| -> Option<String> {
-                            if let Some(ref arc) = engine_arc {
-                                arc.lock().ok().and_then(|e| {
-                                    agentic_semantic::compile_with_engine(&e, cfg).ok()
-                                })
-                            } else {
-                                let dialects =
-                                    airlayer::DatasourceDialectMap::from_config_databases(&dbs_c);
-                                airlayer::SemanticEngine::from_semantic_layer(
-                                    layer_c.clone(),
-                                    dialects,
-                                )
-                                .ok()
-                                .and_then(|e| agentic_semantic::compile_with_engine(&e, cfg).ok())
+                        let compile_all = |engine: &_| -> Vec<Option<String>> {
+                            cfgs.iter()
+                                .map(|cfg| agentic_semantic::compile_with_engine(engine, cfg).ok())
+                                .collect()
+                        };
+                        let sqls: Vec<Option<String>> = if let Some(ref arc) = engine_arc {
+                            match arc.lock() {
+                                Ok(engine) => compile_all(&engine),
+                                Err(_) => vec![None; cfgs.len()],
+                            }
+                        } else {
+                            let dialects =
+                                airlayer::DatasourceDialectMap::from_config_databases(&dbs_c);
+                            match airlayer::SemanticEngine::from_semantic_layer(layer_c, dialects) {
+                                Ok(engine) => compile_all(&engine),
+                                Err(_) => vec![None; cfgs.len()],
                             }
                         };
-                        let sqls: Vec<Option<String>> = cfgs.iter().map(compile_one).collect();
                         Ok::<_, agentic_semantic::SemanticError>(sqls)
                     })
                 };
@@ -1465,209 +2772,101 @@ pub async fn post_world_model_filter_counts(
                     entity_name: req.entity_id.clone(),
                     matched: Some(1),
                     total: None,
+                    sample: vec![],
+                    sample_keys: vec![],
                     done: false,
                 })
                 .await
                 .ok();
 
-                // `matching_pks` maps entity_name → matched PK rows (each row is a
-                // tuple of column values, one per pk_dim_ref column in order).
-                // For single-PK entities this is Vec<Vec<1 value>>; for composite
-                // keys (e.g. order_item with [order_id, line_item_id]) each inner
-                // Vec holds all column values so per-column IN filters stay correct.
-                let mut matching_pks: HashMap<String, Vec<Vec<serde_json::Value>>> = HashMap::new();
-                matching_pks.insert(
-                    req.entity_id.clone(),
-                    vec![vec![serde_json::Value::String(req.key_value.clone())]],
-                );
-
-                let seed_ancestors = promotions.ancestry(&req.entity_id);
-                let mut by_depth: std::collections::BTreeMap<usize, Vec<usize>> =
-                    std::collections::BTreeMap::new();
-                for (idx, meta) in entity_metas.iter().enumerate() {
-                    if meta.entity_name == req.entity_id {
-                        continue;
-                    }
-                    let depth = promotions.ancestry(&meta.entity_name).len();
-                    by_depth.entry(depth).or_default().push(idx);
+                // Everything a BFS hop needs to expand FROM an entity, produced by
+                // that entity's single expansion query: its matched PK rows (each a
+                // tuple of column values, one per `pk_dim_ref`; composite keys keep
+                // all columns so per-column IN filters stay correct) and, per
+                // outbound link, the distinct FK values pointing at the target.
+                struct NeighborData {
+                    pk_rows: Vec<Vec<serde_json::Value>>,
+                    /// target entity → distinct FK values on this entity's side.
+                    fk_values: HashMap<String, Vec<serde_json::Value>>,
                 }
+                let mut neighbor_data: HashMap<String, NeighborData> = HashMap::new();
 
-                // Phase 1 (ancestors only): resolve FK values from bridge entities
-                // before the main BFS loop so they don't block descendants.
-                let mut ancestor_filters: HashMap<
-                    String,
-                    agentic_semantic::config::SemanticFilter,
-                > = HashMap::new();
-
-                let mut ancestor_idxs: Vec<usize> = entity_metas
+                // entity_name → index into entity_metas, for O(1) neighbour lookup.
+                let meta_idx: HashMap<&str, usize> = entity_metas
                     .iter()
                     .enumerate()
-                    .filter(|(_, m)| {
-                        m.entity_name != req.entity_id && seed_ancestors.contains(&m.entity_name)
-                    })
-                    .map(|(i, _)| i)
+                    .map(|(i, m)| (m.entity_name.as_str(), i))
                     .collect();
-                ancestor_idxs.sort_by_key(|&i| {
-                    std::cmp::Reverse(promotions.ancestry(&entity_metas[i].entity_name).len())
-                });
 
-                struct AncestorWork {
-                    entity_name: String,
-                    pk_field: String,
-                    fk_select_cfg: SemanticQueryConfig,
-                    datasource: String,
-                }
-                let ancestor_works: Vec<AncestorWork> = ancestor_idxs
-                    .iter()
-                    .filter_map(|&idx| {
-                        let meta = &entity_metas[idx];
-                        let bridge =
-                            child_of_toward(&promotions, &req.entity_id, &meta.entity_name)?;
-                        let bridge_meta = entity_metas.iter().find(|m| m.entity_name == bridge)?;
-                        let fk_ref = bridge_meta.fk_dim_refs.first()?.clone();
-                        let pk_filter_field = bridge_meta.pk_dim_refs.first()?.clone();
-                        let bridge_pk_rows = matching_pks.get(&bridge)?;
-                        if bridge_pk_rows.is_empty() {
-                            return None;
-                        }
-                        // Ancestor traversal uses the first PK column of the bridge
-                        // entity (seeds and bridges are always single-column PKs here).
-                        let bridge_pk_values: Vec<serde_json::Value> = bridge_pk_rows
+                // Reverse adjacency: target entity → its *finer* neighbours (the
+                // inbound direction the parent tree never provided for
+                // cross-links, e.g. store ← order). Shared helper — also used
+                // by `resolve_target_filters`'s legacy fallback.
+                let inbound = build_inbound_index(&entity_metas);
+
+                // Schema-level reachability (pure, no IO) decides which path
+                // this request takes. Every entity pair the world model draws
+                // an edge for is automatically joinable by airlayer — its join
+                // graph is derived from the exact same FK/PK entity metadata
+                // this file already reads to build `EntityLink` — UNLESS the
+                // pair spans two different datasources, since airlayer rejects
+                // cross-dialect joins. So: when every reachable entity shares
+                // the seed's datasource, skip the BFS entirely and fire one
+                // direct-join count+sample query per entity — no per-hop
+                // materialization, no unbounded expansion query. Otherwise
+                // fall back to the legacy per-hop BFS below, which threads
+                // matched values through as literal `IN (...)` filters and
+                // stays correct across datasources.
+                let seed_idx_opt = meta_idx.get(req.entity_id.as_str()).copied();
+                let (reachable, any_cross_datasource) = match seed_idx_opt {
+                    Some(seed_idx) => {
+                        let reachable =
+                            schema_reachable_entities(&entity_metas, &inbound, &meta_idx, seed_idx);
+                        let seed_ds = entity_metas[seed_idx].datasource.clone();
+                        let cross = reachable
                             .iter()
-                            .filter_map(|r| r.first().cloned())
-                            .collect();
-                        if bridge_pk_values.is_empty() {
-                            return None;
-                        }
-                        let pk_field = meta.pk_dim_refs.first()?.clone();
-                        Some(AncestorWork {
-                            entity_name: meta.entity_name.clone(),
-                            pk_field,
-                            fk_select_cfg: SemanticQueryConfig {
-                                topic: None,
-                                dimensions: vec![fk_ref],
-                                measures: vec![],
-                                time_dimensions: vec![],
-                                filters: vec![agentic_semantic::config::SemanticFilter {
-                                    field: pk_filter_field,
-                                    filter_type: agentic_semantic::config::SemanticFilterType::In(
-                                        agentic_semantic::config::ArrayFilter {
-                                            values: bridge_pk_values,
-                                        },
-                                    ),
-                                }],
-                                orders: vec![],
-                                limit: None,
-                                offset: None,
-                            },
-                            datasource: bridge_meta.datasource.clone(),
-                        })
-                    })
-                    .collect();
-
-                if !ancestor_works.is_empty() {
-                    let fk_cfgs: Vec<_> = ancestor_works
-                        .iter()
-                        .map(|w| w.fk_select_cfg.clone())
-                        .collect();
-                    let fk_sqls: Vec<Option<String>> = batch_compile(fk_cfgs)
-                        .await
-                        .ok()
-                        .and_then(|r| r.ok())
-                        .unwrap_or_else(|| vec![None; ancestor_works.len()]);
-
-                    let fk_futures: Vec<_> = ancestor_works
-                        .into_iter()
-                        .zip(fk_sqls)
-                        .filter_map(|(work, sql_opt)| {
-                            let sql = sql_opt?;
-                            let wm = wm_b.clone();
-                            let role_c = role_b.clone();
-                            Some(async move {
-                                let Ok(connector) =
-                                    build_connector(&wm, user_id, role_c, &work.datasource).await
-                                else {
-                                    return (work.entity_name, work.pk_field, vec![]);
-                                };
-                                let vals = run_with_connector(&connector, &sql, &wm)
-                                    .await
-                                    .into_iter()
-                                    .filter_map(|mut r: Vec<String>| {
-                                        r.pop().map(serde_json::Value::String)
-                                    })
-                                    .collect::<Vec<_>>();
-                                (work.entity_name, work.pk_field, vals)
-                            })
-                        })
-                        .collect();
-
-                    let fk_results = futures::future::join_all(fk_futures).await;
-                    for (entity_name, pk_field, ancestor_pk_values) in fk_results {
-                        if !ancestor_pk_values.is_empty() {
-                            ancestor_filters.insert(
-                                entity_name,
-                                agentic_semantic::config::SemanticFilter {
-                                    field: pk_field,
-                                    filter_type: agentic_semantic::config::SemanticFilterType::In(
-                                        agentic_semantic::config::ArrayFilter {
-                                            values: ancestor_pk_values,
-                                        },
-                                    ),
-                                },
-                            );
-                        }
+                            .any(|&i| entity_metas[i].datasource != seed_ds);
+                        (reachable, cross)
                     }
-                }
+                    None => (vec![], false),
+                };
 
-                // Phase 2: BFS level by level.
-                let t_bfs = std::time::Instant::now();
-                for (depth, idxs) in &by_depth {
-                    struct LevelWork<'a> {
+                if let Some(seed_idx) = seed_idx_opt.filter(|_| !any_cross_datasource) {
+                    // ── Fast path: direct join back to the seed ───────────────
+                    //
+                    // A single query referencing the target entity's own view
+                    // (measures/dimensions) plus a filter on the seed's view
+                    // lets airlayer resolve the *entire* join chain back to
+                    // the seed automatically — however many hops apart.
+                    //
+                    // A real scalar `COUNT(*)` measure query — no row
+                    // fetching, no client-side dedup — now that
+                    // github.com/oxy-hq/airlayer@64163f5 fixed the bug where
+                    // its fan-out-protection CTE builder derived its join
+                    // scope only from `dimensions`, ignoring `filters`
+                    // entirely: a filter on a view other than the measure's
+                    // own (this seed filter, exactly) was silently never
+                    // joined into the CTE, so the aggregate could evaluate
+                    // over the wrong (or no) scope. Before that fix this had
+                    // to be worked around with a dimension-only projection +
+                    // client-side row fetch/dedup, which reintroduced the
+                    // unbounded-memory risk this whole design set out to
+                    // avoid. See [[airlayer-fanout-protection-zero-dim-bug]]
+                    // in project memory for the full history.
+                    let filters = seed_self_filters(&entity_metas[seed_idx], &req.key_value);
+                    if filters.is_empty() {
+                        return;
+                    }
+
+                    struct DirectWork<'a> {
                         meta: &'a EntityMeta,
                         count_cfg: SemanticQueryConfig,
-                        pk_cfg: Option<SemanticQueryConfig>,
+                        sample_cfg: Option<SemanticQueryConfig>,
                     }
-
-                    let level_works: Vec<LevelWork<'_>> = idxs
+                    let works: Vec<DirectWork> = reachable
                         .iter()
-                        .filter_map(|&idx| {
+                        .map(|&idx| {
                             let meta = &entity_metas[idx];
-
-                            let entity_ancestors = promotions.ancestry(&meta.entity_name);
-                            // Build one SemanticFilter per FK column so composite
-                            // keys (e.g. shipment → order_item via order_id +
-                            // line_item_id) are filtered on every column the parent
-                            // actually constrains.  See `child_fk_filters` for why
-                            // columns absent from the parent's PK rows are skipped
-                            // rather than turned into an empty `IN ()`.
-                            let filters: Vec<agentic_semantic::config::SemanticFilter> =
-                                if entity_ancestors
-                                    .iter()
-                                    .any(|a| *a == req.entity_id.as_str())
-                                {
-                                    let parent = meta.parent_entity.as_deref()?;
-                                    let parent_pk_rows = matching_pks.get(parent)?;
-                                    if parent_pk_rows.is_empty() {
-                                        return None;
-                                    }
-                                    let f = child_fk_filters(&meta.fk_dim_refs, parent_pk_rows);
-                                    // No usable column values → can't constrain this
-                                    // child; skip rather than count every row.
-                                    if f.is_empty() {
-                                        return None;
-                                    }
-                                    f
-                                } else if seed_ancestors
-                                    .iter()
-                                    .any(|a| *a == meta.entity_name.as_str())
-                                {
-                                    vec![ancestor_filters.get(&meta.entity_name)?.clone()]
-                                } else {
-                                    return None;
-                                };
-
-                            let has_children =
-                                !promotions.children_of(&meta.entity_name).is_empty();
                             let count_cfg = SemanticQueryConfig {
                                 topic: None,
                                 dimensions: vec![],
@@ -1678,34 +2877,435 @@ pub async fn post_world_model_filter_counts(
                                 limit: None,
                                 offset: None,
                             };
-                            let pk_cfg = has_children.then(|| SemanticQueryConfig {
-                                topic: None,
-                                dimensions: meta.pk_dim_refs.clone(),
-                                measures: vec![],
-                                time_dimensions: vec![],
-                                filters,
-                                orders: vec![],
-                                limit: None,
-                                offset: None,
-                            });
-                            Some(LevelWork {
+                            let sample_cfg =
+                                (!meta.sample_dims.is_empty()).then(|| SemanticQueryConfig {
+                                    topic: None,
+                                    dimensions: meta.sample_dims.clone(),
+                                    measures: vec![],
+                                    time_dimensions: vec![],
+                                    filters: filters.clone(),
+                                    // Order ascending on the first sample dim so preview
+                                    // chips are stable across reloads and align with the
+                                    // ascending Sample Browser (`get_world_model_filter_instances`).
+                                    orders: vec![SemanticOrder {
+                                        field: meta.sample_dims[0].clone(),
+                                        direction: "asc".to_string(),
+                                    }],
+                                    limit: Some(3),
+                                    offset: None,
+                                });
+                            DirectWork {
                                 meta,
                                 count_cfg,
-                                pk_cfg,
-                            })
+                                sample_cfg,
+                            }
                         })
                         .collect();
 
-                    if level_works.is_empty() {
-                        continue;
-                    }
-
-                    let all_cfgs: Vec<SemanticQueryConfig> = level_works
+                    let all_cfgs: Vec<SemanticQueryConfig> = works
                         .iter()
                         .flat_map(|w| {
                             let mut v = vec![w.count_cfg.clone()];
-                            if let Some(ref pk) = w.pk_cfg {
-                                v.push(pk.clone());
+                            if let Some(ref s) = w.sample_cfg {
+                                v.push(s.clone());
+                            }
+                            v
+                        })
+                        .collect();
+
+                    let t_compile = std::time::Instant::now();
+                    let all_sqls: Vec<Option<String>> = batch_compile(all_cfgs)
+                        .await
+                        .ok()
+                        .and_then(|r| r.ok())
+                        .unwrap_or_else(|| {
+                            vec![
+                                None;
+                                works
+                                    .iter()
+                                    .map(|w| 1 + w.sample_cfg.is_some() as usize)
+                                    .sum()
+                            ]
+                        });
+                    tracing::info!(
+                        elapsed_ms = t_compile.elapsed().as_millis(),
+                        n = works.len(),
+                        "filter-counts direct-join: compiled queries"
+                    );
+
+                    let mut sql_iter = all_sqls.into_iter();
+                    let exec_futures: Vec<_> = works
+                        .into_iter()
+                        .map(|w| {
+                            let count_sql = sql_iter.next().flatten();
+                            let sample_sql = w
+                                .sample_cfg
+                                .as_ref()
+                                .and_then(|_| sql_iter.next().flatten());
+                            let datasource = w.meta.datasource.clone();
+                            let entity_name = w.meta.entity_name.clone();
+                            let pk_count = w.meta.pk_count;
+                            let has_label_dim = w.meta.has_label_dim;
+                            let wm = wm_b.clone();
+                            let role_c = role_b.clone();
+                            async move {
+                                let connector = build_connector(&wm, user_id, role_c, &datasource)
+                                    .await
+                                    .ok();
+                                let (matched, (sample, sample_keys)) = match connector.as_ref() {
+                                    Some(c) => tokio::join!(
+                                        async {
+                                            match count_sql {
+                                                Some(sql) => run_with_connector(c, &sql, &wm)
+                                                    .await
+                                                    .into_iter()
+                                                    .next()
+                                                    .and_then(|r| r.into_iter().next())
+                                                    .and_then(|v: String| v.parse::<u64>().ok())
+                                                    .unwrap_or(0),
+                                                None => 0,
+                                            }
+                                        },
+                                        async {
+                                            match sample_sql {
+                                                Some(sql) => run_with_connector(c, &sql, &wm)
+                                                    .await
+                                                    .into_iter()
+                                                    .map(|r| {
+                                                        sample_row_to_display_key(
+                                                            &r,
+                                                            pk_count,
+                                                            has_label_dim,
+                                                        )
+                                                    })
+                                                    .unzip(),
+                                                None => (vec![], vec![]),
+                                            }
+                                        },
+                                    ),
+                                    None => (0, (vec![], vec![])),
+                                };
+                                (entity_name, matched, sample, sample_keys)
+                            }
+                        })
+                        .collect();
+
+                    let t_exec = std::time::Instant::now();
+                    let mut futs: FuturesUnordered<_> = exec_futures.into_iter().collect();
+                    let mut n = 0usize;
+                    while let Some((entity_name, matched, sample, sample_keys)) = futs.next().await
+                    {
+                        n += 1;
+                        let sent = tx_b
+                            .send(WmFilterCountEvent {
+                                entity_name,
+                                matched: Some(matched),
+                                total: None,
+                                sample,
+                                sample_keys,
+                                done: false,
+                            })
+                            .await;
+                        if sent.is_err() {
+                            tracing::debug!(
+                                "filter-counts direct-join: receiver dropped, stopping early"
+                            );
+                            break;
+                        }
+                    }
+                    tracing::info!(
+                        elapsed_ms = t_exec.elapsed().as_millis(),
+                        n,
+                        "filter-counts direct-join: all queries done"
+                    );
+                    return;
+                }
+
+                // ── Legacy fallback: per-hop BFS with IN(...) threading ───────
+                //
+                // Used when the seed entity is unknown to the model, or when
+                // the reachable set spans more than one datasource (airlayer
+                // cannot join across datasources, so the direct-join fast path
+                // above is unavailable and matched values must be threaded
+                // through as literal filters instead).
+                //
+                // Whether an entity has any onward neighbour to expand into — an
+                // outbound link or an inbound child. Only such entities run the
+                // full (all-rows) expansion query; terminal nodes get a cheap
+                // scalar count + limited sample instead.
+                let is_expandable = |name: &str| -> bool {
+                    meta_idx
+                        .get(name)
+                        .is_some_and(|&i| !entity_metas[i].links.is_empty())
+                        || inbound.contains_key(name)
+                };
+
+                // Run one entity's compiled expansion `sql` and parse it. Empty
+                // result on any failure so the BFS just treats the node as unmatched.
+                let run_expansion = |datasource: String,
+                                     sql: Option<String>,
+                                     plan: WmExpansionPlan| {
+                    let wm = wm_b.clone();
+                    let role = role_b.clone();
+                    async move {
+                        let empty = || WmExpansionResult {
+                            matched: 0,
+                            pk_rows: vec![],
+                            fk_values: vec![],
+                            sample: vec![],
+                            sample_keys: vec![],
+                        };
+                        let Some(sql) = sql else { return empty() };
+                        let Ok(connector) = build_connector(&wm, user_id, role, &datasource).await
+                        else {
+                            return empty();
+                        };
+                        let rows = run_with_connector(&connector, &sql, &wm).await;
+                        parse_expansion_rows(&rows, &plan)
+                    }
+                };
+
+                // ── Seed pre-fetch: learn the seed's outbound FK values (and PK
+                // rows) so the first hop can expand from it. A seed with no links
+                // only needs its PK, which we already have (the picked key).
+                if is_expandable(&req.entity_id)
+                    && let Some(&i) = meta_idx.get(req.entity_id.as_str())
+                    && !entity_metas[i].links.is_empty()
+                {
+                    let meta = &entity_metas[i];
+                    let plan = wm_expansion_plan(meta);
+                    let seed_cfg = SemanticQueryConfig {
+                        topic: None,
+                        dimensions: plan.dims.clone(),
+                        measures: vec![],
+                        time_dimensions: vec![],
+                        filters: seed_self_filters(meta, &req.key_value),
+                        orders: vec![],
+                        limit: None,
+                        offset: None,
+                    };
+                    let sql = batch_compile(vec![seed_cfg])
+                        .await
+                        .ok()
+                        .and_then(|r| r.ok())
+                        .and_then(|mut v| v.pop())
+                        .flatten();
+                    let res = run_expansion(meta.datasource.clone(), sql, plan).await;
+                    let pk_rows = if res.pk_rows.is_empty() {
+                        vec![seed_pk_row(&req.key_value)]
+                    } else {
+                        res.pk_rows
+                    };
+                    neighbor_data.insert(
+                        req.entity_id.clone(),
+                        NeighborData {
+                            pk_rows,
+                            fk_values: res.fk_values.into_iter().collect(),
+                        },
+                    );
+                } else {
+                    neighbor_data.insert(
+                        req.entity_id.clone(),
+                        NeighborData {
+                            pk_rows: vec![seed_pk_row(&req.key_value)],
+                            fk_values: HashMap::new(),
+                        },
+                    );
+                }
+
+                let mut visited: std::collections::HashSet<String> =
+                    std::collections::HashSet::from([req.entity_id.clone()]);
+                let mut frontier: Vec<String> = vec![req.entity_id.clone()];
+                let mut depth = 0usize;
+                let t_bfs = std::time::Instant::now();
+
+                // BFS: expand the frontier one hop at a time until nothing new is
+                // reachable. Each iteration discovers the next ring of entities and
+                // emits one SSE burst for them (keeps the progressive-reveal UX).
+                while !frontier.is_empty() {
+                    depth += 1;
+
+                    // ── Assemble filters for every newly discovered entity ────────
+                    // No queries here — each frontier entity already carries what it
+                    // needs to expand (its `NeighborData`, produced by its own
+                    // expansion query at the previous level / seed pre-fetch):
+                    //   • inbound (finer) children resolve via `child_fk_filters`
+                    //     over the frontier entity's PK rows;
+                    //   • outbound (coarser) targets use the frontier entity's
+                    //     pre-resolved FK values as an `IN` filter on the target PK.
+                    // First-writer wins per entity so a diamond within one level
+                    // still yields a single count.
+                    let mut chosen: HashMap<usize, Vec<agentic_semantic::config::SemanticFilter>> =
+                        HashMap::new();
+                    for e_name in &frontier {
+                        let Some(nd) = neighbor_data.get(e_name) else {
+                            continue;
+                        };
+                        if nd.pk_rows.is_empty() {
+                            continue;
+                        }
+                        // Inbound: children whose FK points at this frontier entity.
+                        if let Some(children) = inbound.get(e_name.as_str()) {
+                            for &(child_idx, fk_refs) in children {
+                                let child_name = &entity_metas[child_idx].entity_name;
+                                if visited.contains(child_name) || chosen.contains_key(&child_idx) {
+                                    continue;
+                                }
+                                let f = child_fk_filters(fk_refs, &nd.pk_rows);
+                                if f.is_empty() {
+                                    continue;
+                                }
+                                chosen.insert(child_idx, f);
+                            }
+                        }
+                        // Outbound: coarser targets, filtered by the pre-resolved FK
+                        // values (no per-level FK-select query anymore).
+                        let Some(&e_idx) = meta_idx.get(e_name.as_str()) else {
+                            continue;
+                        };
+                        for link in &entity_metas[e_idx].links {
+                            let Some(&t_idx) = meta_idx.get(link.target_entity.as_str()) else {
+                                continue;
+                            };
+                            if visited.contains(&link.target_entity) || chosen.contains_key(&t_idx)
+                            {
+                                continue;
+                            }
+                            let Some(values) = nd.fk_values.get(&link.target_entity) else {
+                                continue;
+                            };
+                            if values.is_empty() {
+                                continue;
+                            }
+                            let Some(pk_field) = entity_metas[t_idx].pk_dim_refs.first().cloned()
+                            else {
+                                continue;
+                            };
+                            chosen.insert(
+                                t_idx,
+                                vec![agentic_semantic::config::SemanticFilter {
+                                    field: pk_field,
+                                    filter_type: agentic_semantic::config::SemanticFilterType::In(
+                                        agentic_semantic::config::ArrayFilter {
+                                            values: values.clone(),
+                                        },
+                                    ),
+                                }],
+                            );
+                        }
+                    }
+
+                    if chosen.is_empty() {
+                        break;
+                    }
+
+                    // ── Build each node's query. Expandable nodes run ONE expansion
+                    // query (PK + outbound-FK + label columns → matched, PK rows, FK
+                    // values, and sample from a single scan). Terminal nodes run a
+                    // cheap scalar count + a limited sample instead.
+                    struct NodeWork<'a> {
+                        meta: &'a EntityMeta,
+                        expandable: bool,
+                        plan: WmExpansionPlan,
+                        /// Expansion query (expandable) or `__oxy_row_count` (leaf).
+                        primary_cfg: SemanticQueryConfig,
+                        /// Only for terminal nodes: a separate limited sample query.
+                        sample_cfg: Option<SemanticQueryConfig>,
+                    }
+                    // Entities discovered THIS level — like `visited`, they are
+                    // already accounted for, so a node whose only neighbours are in
+                    // this set (or visited) has nothing new to reach and takes the
+                    // cheap scalar-count path instead of the all-rows expansion.
+                    let chosen_names: std::collections::HashSet<&str> = chosen
+                        .keys()
+                        .map(|&i| entity_metas[i].entity_name.as_str())
+                        .collect();
+                    let has_new_neighbor = |meta: &EntityMeta| -> bool {
+                        let unseen = |n: &str| !visited.contains(n) && !chosen_names.contains(n);
+                        meta.links.iter().any(|l| unseen(&l.target_entity))
+                            || inbound.get(meta.entity_name.as_str()).is_some_and(|ch| {
+                                ch.iter()
+                                    .any(|&(ci, _)| unseen(&entity_metas[ci].entity_name))
+                            })
+                    };
+                    let node_works: Vec<NodeWork<'_>> = chosen
+                        .into_iter()
+                        .map(|(idx, filters)| {
+                            let meta = &entity_metas[idx];
+                            // Only run the full (all-rows) expansion when there is a
+                            // genuinely new neighbour to reach from this node; else a
+                            // scalar count + limited sample suffices.
+                            let expandable = has_new_neighbor(meta);
+                            let plan = wm_expansion_plan(meta);
+                            let (primary_cfg, sample_cfg) = if expandable {
+                                (
+                                    SemanticQueryConfig {
+                                        topic: None,
+                                        dimensions: plan.dims.clone(),
+                                        measures: vec![],
+                                        time_dimensions: vec![],
+                                        filters,
+                                        orders: vec![],
+                                        limit: None,
+                                        offset: None,
+                                    },
+                                    None,
+                                )
+                            } else {
+                                (
+                                    SemanticQueryConfig {
+                                        topic: None,
+                                        dimensions: vec![],
+                                        measures: vec![format!(
+                                            "{}.__oxy_row_count",
+                                            meta.view_name
+                                        )],
+                                        time_dimensions: vec![],
+                                        filters: filters.clone(),
+                                        orders: vec![],
+                                        limit: None,
+                                        offset: None,
+                                    },
+                                    (!meta.sample_dims.is_empty()).then(|| SemanticQueryConfig {
+                                        topic: None,
+                                        dimensions: meta.sample_dims.clone(),
+                                        measures: vec![],
+                                        time_dimensions: vec![],
+                                        filters,
+                                        // Order ascending on the first sample dim so preview
+                                        // chips are stable across reloads and align with the
+                                        // ascending Sample Browser (`get_world_model_filter_instances`).
+                                        orders: vec![SemanticOrder {
+                                            field: meta.sample_dims[0].clone(),
+                                            direction: "asc".to_string(),
+                                        }],
+                                        limit: Some(3),
+                                        offset: None,
+                                    }),
+                                )
+                            };
+                            NodeWork {
+                                meta,
+                                expandable,
+                                plan,
+                                primary_cfg,
+                                sample_cfg,
+                            }
+                        })
+                        .collect();
+
+                    if node_works.is_empty() {
+                        break;
+                    }
+
+                    // Compile the whole level in one batch (primary first, then the
+                    // optional leaf sample), under a single engine lock.
+                    let all_cfgs: Vec<SemanticQueryConfig> = node_works
+                        .iter()
+                        .flat_map(|w| {
+                            let mut v = vec![w.primary_cfg.clone()];
+                            if let Some(ref s) = w.sample_cfg {
+                                v.push(s.clone());
                             }
                             v
                         })
@@ -1719,9 +3319,9 @@ pub async fn post_world_model_filter_counts(
                         .unwrap_or_else(|| {
                             vec![
                                 None;
-                                level_works
+                                node_works
                                     .iter()
-                                    .map(|w| if w.pk_cfg.is_some() { 2 } else { 1 })
+                                    .map(|w| 1 + w.sample_cfg.is_some() as usize)
                                     .sum()
                             ]
                         });
@@ -1733,69 +3333,95 @@ pub async fn post_world_model_filter_counts(
 
                     let t_level_exec = std::time::Instant::now();
                     let mut sql_iter = all_sqls.into_iter();
-                    struct EntityResult {
+                    struct NodeResult {
                         entity_name: String,
                         matched: u64,
-                        pks: Option<Vec<Vec<serde_json::Value>>>,
+                        /// Present for expandable nodes that matched → next hop.
+                        neighbor: Option<NeighborData>,
+                        sample: Vec<String>,
+                        sample_keys: Vec<String>,
                     }
-                    let exec_futures: Vec<_> = level_works
-                        .iter()
+                    let exec_futures: Vec<_> = node_works
+                        .into_iter()
                         .map(|w| {
-                            let count_sql_opt = sql_iter.next().flatten();
-                            let pk_sql_opt =
-                                w.pk_cfg.as_ref().and_then(|_| sql_iter.next().flatten());
+                            // Pull SQL in push order: primary, then leaf sample (if any).
+                            let primary_sql = sql_iter.next().flatten();
+                            let sample_sql = w
+                                .sample_cfg
+                                .as_ref()
+                                .and_then(|_| sql_iter.next().flatten());
                             let datasource = w.meta.datasource.clone();
                             let entity_name = w.meta.entity_name.clone();
+                            let pk_count = w.meta.pk_count;
+                            let has_label_dim = w.meta.has_label_dim;
+                            let expandable = w.expandable;
+                            let plan = w.plan;
                             let wm = wm_b.clone();
                             let role_c = role_b.clone();
-                            let depth_val = *depth;
+                            let run_exp = &run_expansion;
                             async move {
-                                let t0 = std::time::Instant::now();
-                                let connector = build_connector(&wm, user_id, role_c, &datasource)
-                                    .await
-                                    .ok();
-                                let build_ms = t0.elapsed().as_millis();
-                                let q0 = std::time::Instant::now();
-                                let matched = match (count_sql_opt, connector.as_ref()) {
-                                    (Some(sql), Some(c)) => run_with_connector(c, &sql, &wm)
-                                        .await
-                                        .into_iter()
-                                        .next()
-                                        .and_then(|r| r.into_iter().next())
-                                        .and_then(|v: String| v.parse::<u64>().ok())
-                                        .unwrap_or(0),
-                                    _ => 0,
-                                };
-                                let count_ms = q0.elapsed().as_millis();
-                                let pk0 = std::time::Instant::now();
-                                let pks = match (pk_sql_opt, connector.as_ref()) {
-                                    (Some(sql), Some(c)) if matched > 0 => Some(
-                                        run_with_connector(c, &sql, &wm)
+                                if expandable {
+                                    // One query does count + PK rows + FK values + sample.
+                                    let res = run_exp(datasource, primary_sql, plan).await;
+                                    let neighbor = (res.matched > 0).then(|| NeighborData {
+                                        pk_rows: res.pk_rows,
+                                        fk_values: res.fk_values.into_iter().collect(),
+                                    });
+                                    NodeResult {
+                                        entity_name,
+                                        matched: res.matched,
+                                        neighbor,
+                                        sample: res.sample,
+                                        sample_keys: res.sample_keys,
+                                    }
+                                } else {
+                                    // Terminal node: scalar count + limited sample,
+                                    // fired concurrently on one connector.
+                                    let connector =
+                                        build_connector(&wm, user_id, role_c, &datasource)
                                             .await
-                                            .into_iter()
-                                            .map(|r: Vec<String>| {
-                                                r.into_iter()
-                                                    .map(serde_json::Value::String)
-                                                    .collect()
-                                            })
-                                            .collect::<Vec<_>>(),
-                                    ),
-                                    (Some(_), _) => Some(vec![]),
-                                    _ => None,
-                                };
-                                let pk_ms = pk0.elapsed().as_millis();
-                                tracing::debug!(
-                                    %entity_name,
-                                    depth = depth_val,
-                                    build_ms,
-                                    count_ms,
-                                    pk_ms,
-                                    "filter-counts BFS: entity timings"
-                                );
-                                EntityResult {
-                                    entity_name,
-                                    matched,
-                                    pks,
+                                            .ok();
+                                    let (matched, (sample, sample_keys)) = match connector.as_ref()
+                                    {
+                                        Some(c) => tokio::join!(
+                                            async {
+                                                match primary_sql {
+                                                    Some(sql) => run_with_connector(c, &sql, &wm)
+                                                        .await
+                                                        .into_iter()
+                                                        .next()
+                                                        .and_then(|r| r.into_iter().next())
+                                                        .and_then(|v: String| v.parse::<u64>().ok())
+                                                        .unwrap_or(0),
+                                                    None => 0,
+                                                }
+                                            },
+                                            async {
+                                                match sample_sql {
+                                                    Some(sql) => run_with_connector(c, &sql, &wm)
+                                                        .await
+                                                        .into_iter()
+                                                        .map(|r| {
+                                                            sample_row_to_display_key(
+                                                                &r,
+                                                                pk_count,
+                                                                has_label_dim,
+                                                            )
+                                                        })
+                                                        .unzip(),
+                                                    None => (vec![], vec![]),
+                                                }
+                                            },
+                                        ),
+                                        None => (0, (vec![], vec![])),
+                                    };
+                                    NodeResult {
+                                        entity_name,
+                                        matched,
+                                        neighbor: None,
+                                        sample,
+                                        sample_keys,
+                                    }
                                 }
                             }
                         })
@@ -1808,19 +3434,45 @@ pub async fn post_world_model_filter_counts(
                         n = results.len(),
                         "filter-counts BFS: executed level queries"
                     );
+                    // Mark every discovered entity visited (count-once, cycle guard)
+                    // and seed the next frontier from expandable nodes that matched.
+                    let mut next_frontier: Vec<String> = Vec::new();
+                    let mut client_gone = false;
                     for r in results {
-                        tx_b.send(WmFilterCountEvent {
-                            entity_name: r.entity_name.clone(),
-                            matched: Some(r.matched),
-                            total: None,
-                            done: false,
-                        })
-                        .await
-                        .ok();
-                        if let Some(pks) = r.pks {
-                            matching_pks.insert(r.entity_name, pks);
+                        visited.insert(r.entity_name.clone());
+                        let sent = tx_b
+                            .send(WmFilterCountEvent {
+                                entity_name: r.entity_name.clone(),
+                                matched: Some(r.matched),
+                                total: None,
+                                sample: r.sample,
+                                sample_keys: r.sample_keys,
+                                done: false,
+                            })
+                            .await;
+                        if sent.is_err() {
+                            client_gone = true;
+                            break;
+                        }
+                        if let Some(nd) = r.neighbor {
+                            next_frontier.push(r.entity_name.clone());
+                            neighbor_data.insert(r.entity_name, nd);
                         }
                     }
+                    if client_gone {
+                        // Receiver dropped — don't schedule further BFS levels. The
+                        // level that just finished already ran to completion (its
+                        // queries were in flight before we could detect this), but
+                        // this stops the compounding growth described in
+                        // `WmExpansionResult` from continuing hop after hop once
+                        // nobody is listening.
+                        tracing::debug!(
+                            depth,
+                            "filter-counts BFS: receiver dropped, stopping early"
+                        );
+                        break;
+                    }
+                    frontier = next_frontier;
                 }
                 tracing::info!(
                     elapsed_ms = t_bfs.elapsed().as_millis(),
@@ -1834,6 +3486,8 @@ pub async fn post_world_model_filter_counts(
             entity_name: String::new(),
             total: None,
             matched: None,
+            sample: vec![],
+            sample_keys: vec![],
             done: true,
         })
         .await
@@ -2025,24 +3679,40 @@ fn breakdown_value_plan(
             unvalued.extend(group_nodes.iter().map(|n| n.id.clone()));
             continue;
         };
-        let cfg = SemanticQueryConfig {
+        let make_cfg = |nodes: &[&WmBreakdownNode]| SemanticQueryConfig {
             topic: None,
             dimensions: vec![],
-            measures: group_nodes
+            measures: nodes
                 .iter()
                 .map(|n| format!("{}.{}", n.view, n.measure))
                 .collect(),
             time_dimensions: vec![],
-            filters,
+            filters: filters.clone(),
             orders: vec![],
             limit: Some(1),
             offset: None,
         };
-        groups.push((
-            view_name,
-            group_nodes.iter().map(|n| n.id.clone()).collect(),
-            cfg,
-        ));
+        // A composite node is a cross-view roll-up; bundling more than one into a
+        // single SELECT co-locates their independent one-to-many joins into a
+        // shared CTE and trips airlayer's fan-out guard, failing the *whole* group
+        // (and any additive sibling in it) — the same batching hazard the
+        // instance-detail own-measure queries avoid. Give each composite its own
+        // query; keep plain single-view nodes batched into one round-trip.
+        let simple: Vec<&WmBreakdownNode> = group_nodes
+            .iter()
+            .copied()
+            .filter(|n| !n.is_composite)
+            .collect();
+        if !simple.is_empty() {
+            groups.push((
+                view_name.clone(),
+                simple.iter().map(|n| n.id.clone()).collect(),
+                make_cfg(&simple),
+            ));
+        }
+        for n in group_nodes.iter().copied().filter(|n| n.is_composite) {
+            groups.push((view_name.clone(), vec![n.id.clone()], make_cfg(&[n])));
+        }
     }
     BreakdownValuePlan { groups, unvalued }
 }
@@ -2225,10 +3895,42 @@ pub async fn get_world_model_instance_detail(
         pk_count: usize,
         has_label_dim: bool,
     }
-    let child_cfgs: Vec<ChildCfg> = promotions
-        .children_of(&q.entity)
+    // Inbound neighbours of the selected instance — every entity that references
+    // it via a FK. This is the union of two link kinds, both queried identically
+    // (filter the child's FK-to-q.entity by the seed key):
+    //   • Parent-spine children (their `parent:` is q.entity) — measure promotions
+    //     like `order_item → order`; shown first.
+    //   • Cross-link children (they declare q.entity as a Foreign entity without
+    //     naming it parent) — e.g. `order → retail_store` ("orders at this store"),
+    //     the case the parent tree missed.
+    let mut inbound_children: Vec<(String, LinkKind)> = Vec::new();
+    for v in &layer.views {
+        let Some(primary) = v
+            .entities
+            .iter()
+            .find(|e| e.entity_type == EntityType::Primary)
+        else {
+            continue;
+        };
+        if primary.name == q.entity {
+            continue;
+        }
+        let parent = promotions.parent_of(&primary.name);
+        for link in build_entity_links(&layer.views, v, parent) {
+            if link.target_entity == q.entity {
+                inbound_children.push((primary.name.clone(), link.kind));
+            }
+        }
+    }
+    // Parent-spine promotions before cross-link references (stable within groups).
+    inbound_children.sort_by_key(|(_, kind)| match kind {
+        LinkKind::Parent => 0,
+        LinkKind::CrossLink => 1,
+    });
+
+    let child_cfgs: Vec<ChildCfg> = inbound_children
         .iter()
-        .filter_map(|child_entity| {
+        .filter_map(|(child_entity, _kind)| {
             let child_view = primary_view_of(&layer, child_entity)?;
             let child_pk = entity_keys_in_view(child_view, child_entity, true);
             let fk_in_child = entity_keys_in_view(child_view, &q.entity, false);
@@ -2279,7 +3981,10 @@ pub async fn get_world_model_instance_detail(
         })
         .collect();
 
-    // 4. Own measures — one batch query with ALL measures → 1 row, M columns.
+    // 4. Own measures. `measure_meta` (view order) seeds the frontend skeleton
+    //    rows via MeasureNames; the frontend fills them by name, so the value
+    //    queries below can group measures however is convenient.
+    #[derive(Clone)]
     struct MeasureMeta {
         name: String,
         measure_type: String,
@@ -2299,20 +4004,30 @@ pub async fn get_world_model_instance_detail(
                 .collect()
         })
         .unwrap_or_default();
-    let measure_meta: Vec<MeasureMeta> = own_measures
-        .iter()
-        .map(|m| MeasureMeta {
-            name: m.name.clone(),
-            measure_type: format!("{:?}", m.measure_type).to_lowercase(),
-            label: meas_allow
-                .as_ref()
-                .and_then(|a| a.get(m.name.as_str()).cloned().flatten()),
-        })
-        .collect();
-    let own_batch_cfg = SemanticQueryConfig {
+    let make_meta = |m: &airlayer::Measure| MeasureMeta {
+        name: m.name.clone(),
+        measure_type: format!("{:?}", m.measure_type).to_lowercase(),
+        label: meas_allow
+            .as_ref()
+            .and_then(|a| a.get(m.name.as_str()).cloned().flatten()),
+    };
+    let measure_meta: Vec<MeasureMeta> = own_measures.iter().map(|m| make_meta(m)).collect();
+
+    // Value queries. A `custom` measure is a cross-view composite (its expr rolls
+    // up measures from other views); bundling several into one SELECT drags each
+    // one's independent one-to-many join into a shared CTE, tripping airlayer's
+    // fan-out / additive-vs-non-additive guard and failing the *whole* batch. So
+    // each composite gets its own query (airlayer isolates a single composite's
+    // terms into per-view CTEs correctly), while plain single-view measures stay
+    // batched into one round-trip.
+    struct OwnGroup {
+        measures: Vec<MeasureMeta>,
+        cfg: SemanticQueryConfig,
+    }
+    let own_cfg = |measures: &[&airlayer::Measure]| SemanticQueryConfig {
         topic: None,
         dimensions: vec![],
-        measures: own_measures
+        measures: measures
             .iter()
             .map(|m| format!("{}.{}", view.name, m.name))
             .collect(),
@@ -2322,6 +4037,28 @@ pub async fn get_world_model_instance_detail(
         limit: Some(1),
         offset: None,
     };
+    let mut own_groups: Vec<OwnGroup> = Vec::new();
+    let simple: Vec<&airlayer::Measure> = own_measures
+        .iter()
+        .copied()
+        .filter(|m| m.measure_type != MeasureType::Custom)
+        .collect();
+    if !simple.is_empty() {
+        own_groups.push(OwnGroup {
+            measures: simple.iter().map(|m| make_meta(m)).collect(),
+            cfg: own_cfg(&simple),
+        });
+    }
+    for m in own_measures
+        .iter()
+        .copied()
+        .filter(|m| m.measure_type == MeasureType::Custom)
+    {
+        own_groups.push(OwnGroup {
+            measures: vec![make_meta(m)],
+            cfg: own_cfg(&[m]),
+        });
+    }
 
     // Induced measures — group by source_view so each source gets ONE value
     // query (all its measures as columns) + ONE count query.
@@ -2396,12 +4133,13 @@ pub async fn get_world_model_instance_detail(
         .unzip();
     let induced_cfgs: Vec<SemanticQueryConfig> =
         induced_groups.iter().map(|g| g.cfg.clone()).collect();
+    let own_cfgs: Vec<SemanticQueryConfig> = own_groups.iter().map(|g| g.cfg.clone()).collect();
 
     // --- Phase 1: compile ALL SQL configs (except parent which needs FK from attrs) ---
     let layer_clone = (*layer).clone();
     let dbs_clone = databases.clone();
     type SqlOpt = Option<String>;
-    let phase1: Option<(SqlOpt, Vec<SqlOpt>, Vec<SqlOpt>, SqlOpt, Vec<SqlOpt>)> =
+    let phase1: Option<(SqlOpt, Vec<SqlOpt>, Vec<SqlOpt>, Vec<SqlOpt>, Vec<SqlOpt>)> =
         tokio::task::spawn_blocking(move || {
             let dialects = airlayer::DatasourceDialectMap::from_config_databases(&dbs_clone);
             let engine = airlayer::SemanticEngine::from_semantic_layer(layer_clone, dialects)
@@ -2417,14 +4155,14 @@ pub async fn get_world_model_instance_detail(
                 c(&attrs_cfg),
                 child_sample_cfgs.iter().map(&c).collect(),
                 child_count_cfgs.iter().map(&c).collect(),
-                c(&own_batch_cfg),
+                own_cfgs.iter().map(&c).collect(),
                 induced_cfgs.iter().map(c).collect(),
             ))
         })
         .await
         .ok()
         .and_then(|r| r.ok());
-    let (attrs_sql, child_sample_sqls, child_count_sqls, own_batch_sql, induced_sqls) =
+    let (attrs_sql, child_sample_sqls, child_count_sqls, own_group_sqls, induced_sqls) =
         phase1.unwrap_or_default();
 
     // --- Stream results: three concurrent tasks via tokio::join! ---
@@ -2625,33 +4363,7 @@ pub async fn get_world_model_instance_detail(
                             let (sample, sample_keys): (Vec<String>, Vec<String>) = sample_rows
                                 .into_iter()
                                 .map(|r| {
-                                    let pk_vals = &r[..cc.pk_count.min(r.len())];
-                                    // navigation key: plain string for single PK,
-                                    // JSON array for composite so it round-trips cleanly.
-                                    let nav_key = if cc.pk_count <= 1 {
-                                        r.first().cloned().unwrap_or_default()
-                                    } else {
-                                        serde_json::to_string(&pk_vals.to_vec()).unwrap_or_else(
-                                            |_| r.first().cloned().unwrap_or_default(),
-                                        )
-                                    };
-                                    let display = if cc.has_label_dim {
-                                        r.get(cc.pk_count).cloned().unwrap_or_else(|| {
-                                            r.first().cloned().unwrap_or_default()
-                                        })
-                                    } else {
-                                        let parts: Vec<&str> = pk_vals
-                                            .iter()
-                                            .map(|s| s.as_str())
-                                            .filter(|s| !s.is_empty())
-                                            .collect();
-                                        if parts.is_empty() {
-                                            r.first().cloned().unwrap_or_default()
-                                        } else {
-                                            parts.join(" · ")
-                                        }
-                                    };
-                                    (display, nav_key)
+                                    sample_row_to_display_key(&r, cc.pk_count, cc.has_label_dim)
                                 })
                                 .unzip();
                             WmChildSample {
@@ -2695,23 +4407,26 @@ pub async fn get_world_model_instance_detail(
                     .ok();
 
                 // Phase C-1: run all query groups concurrently; emit each as it finishes.
-                // Tag: None = own batch, Some(idx) = induced_groups[idx].
+                // Tag distinguishes an own-measure group from an induced group so the
+                // right column→measure mapping is applied on completion.
+                enum GroupTag {
+                    Own(usize),
+                    Induced(usize),
+                }
                 type Rows = Vec<Vec<String>>;
                 let mut futs: FuturesUnordered<
-                    std::pin::Pin<
-                        Box<dyn std::future::Future<Output = (Option<usize>, Rows)> + Send>,
-                    >,
+                    std::pin::Pin<Box<dyn std::future::Future<Output = (GroupTag, Rows)> + Send>>,
                 > = FuturesUnordered::new();
 
-                {
+                for (idx, sql_opt) in own_group_sqls.into_iter().enumerate() {
                     let c = connector_c.clone();
                     let wm = wm_c.clone();
                     futs.push(Box::pin(async move {
-                        let rows = match own_batch_sql {
+                        let rows = match sql_opt {
                             Some(ref sql) => run_with_connector(&c, sql, &wm).await,
                             None => vec![],
                         };
-                        (None, rows)
+                        (GroupTag::Own(idx), rows)
                     }));
                 }
                 for (idx, sql_opt) in induced_sqls.into_iter().enumerate() {
@@ -2722,15 +4437,17 @@ pub async fn get_world_model_instance_detail(
                             Some(ref sql) => run_with_connector(&c, sql, &wm).await,
                             None => vec![],
                         };
-                        (Some(idx), rows)
+                        (GroupTag::Induced(idx), rows)
                     }));
                 }
 
                 while let Some((tag, rows)) = futs.next().await {
                     let computed_measures: Vec<WmComputedMeasure> = match tag {
-                        None => {
+                        GroupTag::Own(idx) => {
+                            let group = &own_groups[idx];
                             let own_row = rows.into_iter().next().unwrap_or_default();
-                            measure_meta
+                            group
+                                .measures
                                 .iter()
                                 .enumerate()
                                 .map(|(i, meta)| WmComputedMeasure {
@@ -2745,7 +4462,7 @@ pub async fn get_world_model_instance_detail(
                                 })
                                 .collect()
                         }
-                        Some(idx) => {
+                        GroupTag::Induced(idx) => {
                             let group = &induced_groups[idx];
                             let row = rows.into_iter().next().unwrap_or_default();
                             let fiber_count =
@@ -3020,5 +4737,68 @@ mod breakdown_tests {
         let f = build_pk_filters("store", &cols, &["s1".to_string()]);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].field, "store.store_id");
+    }
+
+    fn bnode(measure: &str, composite: bool) -> WmBreakdownNode {
+        WmBreakdownNode {
+            id: format!("orders.{measure}"),
+            view: "orders".into(),
+            measure: measure.into(),
+            label: measure.into(),
+            measure_type: "number".into(),
+            is_composite: composite,
+            is_root: false,
+            expr: None,
+        }
+    }
+
+    // Regression: several cross-view composites of the same view must NOT be
+    // bundled into one query (that trips airlayer's fan-out guard and fails the
+    // whole group). Each composite gets its own group; plain nodes stay batched.
+    #[test]
+    fn breakdown_isolates_each_composite_into_its_own_group() {
+        let orders: airlayer::View = serde_json::from_value(serde_json::json!({
+            "name": "orders",
+            "table": "orders",
+            "entities": [{"name": "order", "type": "primary", "key": "order_id"}],
+            "dimensions": [{"name": "order_id", "type": "number", "expr": "id"}],
+        }))
+        .expect("valid view");
+        let layer = airlayer::SemanticLayer::new(vec![orders], None);
+        let nodes = vec![
+            bnode("net_revenue", true),
+            bnode("total_order_value", true),
+            bnode("total_shipping_costs", true),
+            bnode("total_tax_collected", false),
+        ];
+
+        let plan = breakdown_value_plan(
+            &layer,
+            &nodes,
+            "order",
+            &["1".to_string()],
+            &["order_id".to_string()],
+            "orders",
+        );
+
+        assert!(plan.unvalued.is_empty());
+        // 3 single-composite groups + 1 batched group for the plain node.
+        assert_eq!(plan.groups.len(), 4);
+        // No group bundles more than one measure alongside a composite.
+        for (_, node_ids, cfg) in &plan.groups {
+            let has_composite = node_ids
+                .iter()
+                .any(|id| nodes.iter().any(|n| &n.id == id && n.is_composite));
+            if has_composite {
+                assert_eq!(cfg.measures.len(), 1, "composite group must be isolated");
+            }
+        }
+        // The single plain node is batched on its own here (only one exists).
+        let plain = plan
+            .groups
+            .iter()
+            .find(|(_, ids, _)| ids.iter().any(|id| id == "orders.total_tax_collected"))
+            .expect("plain node group present");
+        assert_eq!(plain.1, vec!["orders.total_tax_collected".to_string()]);
     }
 }

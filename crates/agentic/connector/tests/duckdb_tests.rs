@@ -410,6 +410,47 @@ mod duckdb {
         assert_eq!(by_expr.result.total_row_count, 1);
     }
 
+    /// The semantic-layer compiler renders `table: orders.parquet` as an
+    /// UNQUOTED `FROM orders.parquet`, which DuckDB parses as schema.table. The
+    /// single-identifier `"orders.parquet"` alias only matches the quoted form,
+    /// so the unquoted reference must resolve via a registered `"orders"."parquet"`
+    /// catalog view rather than the environment-sensitive file-replacement scan
+    /// (which silently returns nothing for Parquet under `oxy serve`).
+    #[tokio::test]
+    async fn parquet_accessible_by_unquoted_schema_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let parquet_path = dir.path().join("orders.parquet");
+        let wconn = DuckDbConnection::open_in_memory().unwrap();
+        wconn
+            .execute_batch(&format!(
+                "COPY (SELECT 1 AS order_id UNION ALL SELECT 2 UNION ALL SELECT 3) \
+                 TO '{}' (FORMAT PARQUET)",
+                parquet_path.display()
+            ))
+            .unwrap();
+
+        let c = DuckDbConnector::from_directory(dir.path(), LoadStrategy::View).unwrap();
+
+        // Unquoted schema.table form — exactly what airlayer emits for `table:`.
+        let unquoted = c
+            .execute_query("SELECT count(*) AS n FROM orders.parquet", 10)
+            .await
+            .unwrap();
+        assert_eq!(unquoted.result.total_row_count, 1);
+
+        // Fully-quoted "<stem>"."<ext>" resolves ONLY through the catalog view
+        // (the file-replacement scan never fires for a quoted identifier), so
+        // this proves the schema-qualified alias exists.
+        let qualified = c
+            .execute_query(
+                r#"SELECT order_id FROM "orders"."parquet" ORDER BY order_id"#,
+                10,
+            )
+            .await
+            .unwrap();
+        assert_eq!(qualified.result.total_row_count, 3);
+    }
+
     #[tokio::test]
     async fn view_vs_materialized() {
         let dir = tempfile::tempdir().unwrap();

@@ -7,18 +7,20 @@ refresh_key:
   every: "1h"
 
 pre_aggregations:
-  # covers: kpis_orders task — all 5 KPI measures with order_date filterable
-  # via the monthly time dimension. customer_id ends up in the rollup
-  # GROUP BY because of distinct_customers_with_orders, so the rollup is
-  # at (month, customer_id) grain — re-aggregation collapses it back to
-  # the requested grain.
+  # total_order_value / total_shipping_costs are cross-view composite
+  # measures (rolled up live from order_items / order_shipments), same as
+  # net_revenue below — none of these are pre-aggregatable at this grain,
+  # so they're excluded here the same way net_revenue always has been.
+  # covers: kpis_orders task's non-composite measures with order_date
+  # filterable via the monthly time dimension. customer_id ends up in the
+  # rollup GROUP BY because of distinct_customers_with_orders, so the
+  # rollup is at (month, customer_id) grain — re-aggregation collapses it
+  # back to the requested grain.
   - name: orders_kpis_by_month
     measures:
       - total_orders
-      - total_order_value
       - avg_order_value
       - distinct_customers_with_orders
-      - total_shipping_costs
     time_dimension: order_date
     granularity: month
     refresh_key:
@@ -29,8 +31,6 @@ pre_aggregations:
       - order_status
     measures:
       - total_orders
-      - total_order_value
-      - total_shipping_costs
     time_dimension: order_date
     granularity: month
     refresh_key:
@@ -42,17 +42,14 @@ pre_aggregations:
       - order_status
     measures:
       - total_orders
-      - total_order_value
     refresh_key:
       every: 1h
 
   - name: orders_summary
     measures:
       - total_orders
-      - total_order_value
       - avg_order_value
       - distinct_customers_with_orders
-      - total_shipping_costs
     refresh_key:
       every: 1h
 
@@ -61,7 +58,6 @@ pre_aggregations:
       - order_status
     measures:
       - total_orders
-      - total_order_value
     refresh_key:
       every: 1h
 entities:
@@ -78,6 +74,10 @@ entities:
   type: foreign
   description: Shipping address for the order
   key: shipping_address_id
+- name: retail_store
+  type: foreign
+  description: Store where the order was placed
+  key: store_id
 dimensions:
 - name: order_id
   type: number
@@ -91,6 +91,10 @@ dimensions:
   type: number
   description: Shipping address identifier
   expr: shipping_address_id
+- name: store_id
+  type: number
+  description: Store where the order was placed
+  expr: store_id
 - name: order_date
   type: date
   description: Date when order was placed
@@ -116,17 +120,22 @@ measures:
   type: count
   description: Number of orders
 - name: total_order_value
-  type: sum
-  description: Total value of all orders
-  expr: total_amount
+  type: custom
+  description: |
+    Total value of all orders. Computed live from line items via
+    order_items.total_revenue rather than a denormalized column, so this
+    decomposes down to line-item revenue in the World Model breakdown view.
+  expr: "{{order_items.total_revenue}}"
 - name: avg_order_value
   type: average
   description: Average order value
   expr: total_amount
 - name: total_shipping_costs
-  type: sum
-  description: Total shipping costs
-  expr: shipping_cost
+  type: custom
+  description: |
+    Total shipping cost. Computed live from real per-shipment costs via
+    order_shipments.total_shipment_cost rather than a denormalized column.
+  expr: "{{order_shipments.total_shipment_cost}}"
 - name: total_tax_collected
   type: sum
   description: Total tax collected

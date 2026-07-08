@@ -28,6 +28,36 @@ export class WorldModelService {
     return response.data;
   }
 
+  /**
+   * Paginated, searchable listing of the rows of `entityId` reachable from the
+   * selected instance (`seedEntityId` / `seedKey`) — the full set the node card
+   * only previews as a few sample chips.
+   */
+  static async getFilterInstances(
+    projectId: string,
+    seedEntityId: string,
+    seedKey: string,
+    entityId: string,
+    search?: string,
+    limit = 50,
+    offset = 0
+  ): Promise<WmInstancesResponse> {
+    const response = await apiClient.get<WmInstancesResponse>(
+      `/${projectId}/semantic/world-model/filter-instances`,
+      {
+        params: {
+          seed_entity: seedEntityId,
+          seed_key: seedKey,
+          entity: entityId,
+          search: search || undefined,
+          limit,
+          offset: offset || undefined
+        }
+      }
+    );
+    return response.data;
+  }
+
   static streamFilterCounts(
     projectId: string,
     entityId: string,

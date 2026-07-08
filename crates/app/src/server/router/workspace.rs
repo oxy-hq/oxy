@@ -189,6 +189,10 @@ pub(super) fn build_workspace_routes(
             get(world_model_graph::get_world_model_instances),
         )
         .route(
+            "/semantic/world-model/filter-instances",
+            get(world_model_graph::get_world_model_filter_instances),
+        )
+        .route(
             "/semantic/world-model/filter-counts",
             post(world_model_graph::post_world_model_filter_counts),
         )
@@ -628,7 +632,6 @@ mod tests {
             ),
             semantic_engine_cache:
                 crate::server::router::workspace_cache::new_semantic_engine_cache(),
-            query_result_cache: crate::server::router::workspace_cache::new_query_result_cache(),
         }
     }
 

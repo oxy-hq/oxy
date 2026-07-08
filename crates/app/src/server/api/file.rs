@@ -192,7 +192,7 @@ pub async fn save_file(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     layer_cache: SemanticLayerCacheCtx,
     engine_cache: SemanticEngineCacheCtx,
-    axum::extract::State(app_state): axum::extract::State<crate::server::router::AppState>,
+    axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<SaveFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -243,13 +243,10 @@ pub async fn save_file(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Semantic file: invalidate cached layer, compiled engine, and query results.
+    // Semantic file: invalidate cached layer and compiled engine.
     if is_semantic_file(&file_path) {
         layer_cache.invalidate();
         engine_cache.invalidate();
-        app_state
-            .query_result_cache
-            .remove_prefix(&format!("{}:", layer_cache.workspace_id));
     }
 
     Ok(extract::Json("success".to_string()))

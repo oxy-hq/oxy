@@ -161,7 +161,6 @@ mod tests {
             ),
             semantic_engine_cache:
                 crate::server::router::workspace_cache::new_semantic_engine_cache(),
-            query_result_cache: crate::server::router::workspace_cache::new_query_result_cache(),
         }
     }
 

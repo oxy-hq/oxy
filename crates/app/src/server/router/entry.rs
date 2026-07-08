@@ -246,7 +246,6 @@ pub async fn api_router(
         agentic_state: Some(agentic_state.clone()),
         semantic_layer_cache: super::workspace_cache::new_semantic_layer_cache(),
         semantic_engine_cache: super::workspace_cache::new_semantic_engine_cache(),
-        query_result_cache: super::workspace_cache::new_query_result_cache(),
     };
 
     let protected_routes = match mode {
@@ -337,7 +336,6 @@ pub async fn internal_api_router(
         agentic_state: None,
         semantic_layer_cache: super::workspace_cache::new_semantic_layer_cache(),
         semantic_engine_cache: super::workspace_cache::new_semantic_engine_cache(),
-        query_result_cache: super::workspace_cache::new_query_result_cache(),
     };
     // `api_router` owns startup cleanup + recovery for the whole process;
     // the internal router shares the same database state, so it skips both

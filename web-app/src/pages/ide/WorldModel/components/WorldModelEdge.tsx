@@ -1,15 +1,20 @@
-import { BaseEdge, type EdgeProps } from "@xyflow/react";
+import { BaseEdge, type EdgeProps, getSmoothStepPath } from "@xyflow/react";
 
 interface WmEdgeData extends Record<string, unknown> {
   waypoints?: { x: number; y: number }[];
 }
 
-/** Renders a smooth bezier curve through ELK-computed waypoints. */
+/** Renders an orthogonal path with rounded corners through ELK-computed
+ *  waypoints; edges added after layout (e.g. breakdown edges) carry no
+ *  waypoints and fall back to React Flow's smooth-step router so they route
+ *  with the same right-angle, rounded look instead of a raw diagonal. */
 export function WorldModelEdge({
   sourceX,
   sourceY,
+  sourcePosition,
   targetX,
   targetY,
+  targetPosition,
   data,
   style,
   label,
@@ -23,6 +28,8 @@ export function WorldModelEdge({
 }: EdgeProps) {
   const waypoints = (data as WmEdgeData)?.waypoints;
   let path: string;
+  let labelX = (sourceX + targetX) / 2;
+  let labelY = (sourceY + targetY) / 2;
 
   if (waypoints && waypoints.length >= 2) {
     // Orthogonal path with rounded corners at each bend.
@@ -42,13 +49,29 @@ export function WorldModelEdge({
     }
     d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
     path = d;
+    const mid = pts[Math.floor(pts.length / 2)];
+    labelX = mid.x;
+    labelY = mid.y;
   } else {
-    path = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
+    const [smoothPath, lx, ly] = getSmoothStepPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+      borderRadius: 10
+    });
+    path = smoothPath;
+    labelX = lx;
+    labelY = ly;
   }
 
   return (
     <BaseEdge
       path={path}
+      labelX={labelX}
+      labelY={labelY}
       style={style}
       label={label}
       labelStyle={labelStyle}

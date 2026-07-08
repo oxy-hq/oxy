@@ -106,67 +106,6 @@ impl<V: Send + Sync + 'static> TtlCache<V> {
     }
 }
 
-/// String-keyed result cache for expensive warehouse queries whose output is
-/// stable enough to serve from memory for a few minutes (e.g. entity instance
-/// pickers). Values are stored as raw JSON bytes to avoid importing domain types.
-///
-/// Bounded by MAX_ENTRIES to prevent unbounded growth under many concurrent
-/// users or diverse key spaces. When the cap is hit, the oldest entry (by
-/// insertion time) is evicted before inserting the new one.
-pub struct QueryResultCache {
-    ttl: Duration,
-    max_entries: usize,
-    inner: Mutex<std::collections::HashMap<String, (Instant, Vec<u8>)>>,
-}
-
-const DEFAULT_MAX_ENTRIES: usize = 500;
-
-impl QueryResultCache {
-    pub fn new(ttl: Duration, max_entries: usize) -> Arc<Self> {
-        Arc::new(Self {
-            ttl,
-            max_entries,
-            inner: Mutex::new(std::collections::HashMap::new()),
-        })
-    }
-
-    pub fn get(&self, key: &str) -> Option<Vec<u8>> {
-        let mut guard = self.inner.lock().expect("query result cache poisoned");
-        let entry = guard.get(key)?;
-        if entry.0.elapsed() >= self.ttl {
-            guard.remove(key);
-            return None;
-        }
-        Some(entry.1.clone())
-    }
-
-    pub fn insert(&self, key: String, value: Vec<u8>) {
-        let mut guard = self.inner.lock().expect("query result cache poisoned");
-        // Evict expired entries first; if still at cap, remove the oldest.
-        if guard.len() >= self.max_entries {
-            guard.retain(|_, v| v.0.elapsed() < self.ttl);
-            if guard.len() >= self.max_entries
-                && let Some(oldest_key) = guard
-                    .iter()
-                    .min_by_key(|(_, v)| v.0)
-                    .map(|(k, _)| k.clone())
-            {
-                guard.remove(&oldest_key);
-            }
-        }
-        guard.insert(key, (Instant::now(), value));
-    }
-
-    pub fn remove_prefix(&self, prefix: &str) {
-        let mut guard = self.inner.lock().expect("query result cache poisoned");
-        guard.retain(|k, _| !k.starts_with(prefix));
-    }
-}
-
-pub fn new_query_result_cache() -> Arc<QueryResultCache> {
-    QueryResultCache::new(Duration::from_secs(300), DEFAULT_MAX_ENTRIES)
-}
-
 pub type WorkspaceContextCache = TtlCache<OxyProjectContext>;
 
 pub fn new_workspace_context_cache() -> Arc<WorkspaceContextCache> {

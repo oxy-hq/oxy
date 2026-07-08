@@ -1,10 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { WorldModelService } from "@/services/api/worldModel";
 import type {
+  WmComputedMeasure,
   WmEntityCount,
   WmInstanceDetail,
+  WmInstanceDetailEvent,
   WmMeasureBreakdown,
   WmMeasureBreakdownEvent,
   WmMeasureName
@@ -36,8 +38,59 @@ export function useWmInstances(entityId: string | null, search: string) {
   const projectId = project.id;
   return useQuery({
     queryKey: queryKeys.worldModel.instances(projectId, entityId ?? "", search),
-    queryFn: () => WorldModelService.getInstances(projectId, entityId!, search, 50),
+    queryFn: () => {
+      if (!entityId) throw new Error("An entity is required");
+      return WorldModelService.getInstances(projectId, entityId, search, 50);
+    },
     enabled: !!entityId,
+    staleTime: 60 * 1000,
+    retry: false
+  });
+}
+
+/** Page size for the sample browser (mirrors the backend `default_limit`). */
+export const WM_FILTER_INSTANCES_PAGE_SIZE = 50;
+
+/**
+ * Paginated, searchable list of the rows of `entityId` reachable from the
+ * selected instance (`seedEntityId` / `seedKey`). Backs the node-card "+N more"
+ * sample browser. `page` (0-based) drives the backend `offset`; `has_more` in
+ * the response indicates a next page exists. Disabled until seed + target known.
+ */
+export function useWmFilterInstances(
+  seedEntityId: string | null,
+  seedKey: string | null,
+  entityId: string | null,
+  search: string,
+  page = 0
+) {
+  const { project } = useCurrentProjectBranch();
+  const projectId = project.id;
+  const offset = page * WM_FILTER_INSTANCES_PAGE_SIZE;
+  return useQuery({
+    queryKey: queryKeys.worldModel.filterInstances(
+      projectId,
+      seedEntityId ?? "",
+      seedKey ?? "",
+      entityId ?? "",
+      search,
+      offset
+    ),
+    queryFn: () => {
+      if (!seedEntityId || !seedKey || !entityId) {
+        throw new Error("A seed instance and target entity are required");
+      }
+      return WorldModelService.getFilterInstances(
+        projectId,
+        seedEntityId,
+        seedKey,
+        entityId,
+        search,
+        WM_FILTER_INSTANCES_PAGE_SIZE,
+        offset
+      );
+    },
+    enabled: !!seedEntityId && !!seedKey && !!entityId,
     staleTime: 60 * 1000,
     retry: false
   });
@@ -51,7 +104,9 @@ export function useWmFilterCounts(entityId: string | null, keyValue: string | nu
   const [isLoading, setIsLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   // Buffer totals until matched arrives so nodes never flash "0 / N".
-  const bufferRef = useRef<Record<string, { matched?: number; total?: number }>>({});
+  const bufferRef = useRef<
+    Record<string, { matched?: number; total?: number; sample?: string[]; sample_keys?: string[] }>
+  >({});
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -87,12 +142,21 @@ export function useWmFilterCounts(entityId: string | null, keyValue: string | nu
         const entry = buf[event.entity_name] ?? {};
         if (event.total !== undefined) entry.total = event.total;
         if (event.matched !== undefined) entry.matched = event.matched;
+        if (event.sample !== undefined) entry.sample = event.sample;
+        if (event.sample_keys !== undefined) entry.sample_keys = event.sample_keys;
         buf[event.entity_name] = entry;
         // Only surface the count once matched is known — avoids the "0 / N" flash.
-        if (entry.matched !== undefined && entry.total !== undefined) {
+        // Samples arrive on the same (matched) event, so this gate doesn't delay them.
+        const { matched, total } = entry;
+        if (matched !== undefined && total !== undefined) {
           setCounts((prev) => ({
             ...prev,
-            [event.entity_name]: { matched: entry.matched!, total: entry.total! }
+            [event.entity_name]: {
+              matched,
+              total,
+              sample: entry.sample,
+              sample_keys: entry.sample_keys
+            }
           }));
         }
       },
@@ -108,22 +172,121 @@ export function useWmFilterCounts(entityId: string | null, keyValue: string | nu
   return { counts, isLoading };
 }
 
+/**
+ * Accumulator for the instance-detail SSE stream. Besides the assembled `data`,
+ * it carries two buffers for events that arrive before `init`:
+ *  - `pendingMeasureNames` — the schema-only `measure_names` event (always pre-init).
+ *  - `pendingMeasures` — `measure` events that raced ahead of `init`. A measure
+ *    group whose SQL failed to compile is emitted instantly (no DB round-trip),
+ *    so it can beat the attrs-query-gated `init`. Applying a measure while `data`
+ *    is still null is a no-op, so without buffering those values are lost and
+ *    their rows pulse as skeletons forever.
+ */
+export interface WmInstanceDetailState {
+  data: WmInstanceDetail | null;
+  pendingMeasureNames: WmMeasureName[] | null;
+  pendingMeasures: WmComputedMeasure[];
+  initialized: boolean;
+}
+
+const EMPTY_INSTANCE_DETAIL_STATE: WmInstanceDetailState = {
+  data: null,
+  pendingMeasureNames: null,
+  pendingMeasures: [],
+  initialized: false
+};
+
+// Replace measures by name with the arrived values, preserving the original order.
+function mergeMeasures(
+  measures: WmComputedMeasure[],
+  arrived: WmComputedMeasure[]
+): WmComputedMeasure[] {
+  const byName = new Map(arrived.map((m) => [m.name, m]));
+  return measures.map((m) => byName.get(m.name) ?? m);
+}
+
+/**
+ * Pure reducer folding one instance-detail SSE event into the accumulator.
+ * `done` is handled by the caller (it only flips the loading flag). Events that
+ * arrive before `init` are buffered rather than dropped — see {@link WmInstanceDetailState}.
+ */
+export function applyInstanceDetailEvent(
+  state: WmInstanceDetailState,
+  event: WmInstanceDetailEvent
+): WmInstanceDetailState {
+  switch (event.kind) {
+    case "measure_names":
+      return { ...state, pendingMeasureNames: event.measure_names };
+    case "init": {
+      const buffered = new Map(state.pendingMeasures.map((m) => [m.name, m]));
+      const computed_measures = (state.pendingMeasureNames ?? []).map(
+        (n): WmComputedMeasure =>
+          buffered.get(n.name) ?? {
+            name: n.name,
+            measure_type: n.measure_type,
+            value: null,
+            fiber_count: 0,
+            label: n.label
+          }
+      );
+      return {
+        ...state,
+        initialized: true,
+        pendingMeasures: [],
+        data: {
+          entity_id: event.entity_id,
+          key_value: event.key_value,
+          display: event.display,
+          attributes: event.attributes,
+          promotes_to: [],
+          receives_from: [],
+          computed_measures
+        }
+      };
+    }
+    case "parent":
+      return state.data
+        ? { ...state, data: { ...state.data, promotes_to: event.promotes_to } }
+        : state;
+    case "child":
+      return state.data
+        ? {
+            ...state,
+            data: { ...state.data, receives_from: [...state.data.receives_from, event.child] }
+          }
+        : state;
+    case "measure":
+      // Raced ahead of init — buffer until init seeds the skeleton rows.
+      if (!state.initialized || !state.data) {
+        return {
+          ...state,
+          pendingMeasures: [...state.pendingMeasures, ...event.computed_measures]
+        };
+      }
+      return {
+        ...state,
+        data: {
+          ...state.data,
+          computed_measures: mergeMeasures(state.data.computed_measures, event.computed_measures)
+        }
+      };
+    default:
+      return state;
+  }
+}
+
 export function useWmInstanceDetail(entityId: string | null, keyValue: string | null) {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 
-  const [data, setData] = useState<WmInstanceDetail | null>(null);
+  const [state, setState] = useState<WmInstanceDetailState>(EMPTY_INSTANCE_DETAIL_STATE);
   const [isLoading, setIsLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
-  // measure_names arrives before init (no DB round-trip), so we buffer it here and
-  // apply it synchronously when init fires to seed the skeleton rows.
-  const pendingMeasureNamesRef = useRef<WmMeasureName[] | null>(null);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
-    setData(null);
+    setState(EMPTY_INSTANCE_DETAIL_STATE);
     setIsLoading(false);
-    pendingMeasureNamesRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -135,8 +298,7 @@ export function useWmInstanceDetail(entityId: string | null, keyValue: string | 
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    pendingMeasureNamesRef.current = null;
-    setData(null);
+    setState(EMPTY_INSTANCE_DETAIL_STATE);
     setIsLoading(true);
 
     WorldModelService.streamInstanceDetail(
@@ -148,44 +310,7 @@ export function useWmInstanceDetail(entityId: string | null, keyValue: string | 
           setIsLoading(false);
           return;
         }
-        if (event.kind === "measure_names") {
-          // Fires before init (schema-only, no DB). Buffer and apply when init arrives.
-          pendingMeasureNamesRef.current = event.measure_names;
-        } else if (event.kind === "init") {
-          // Seed computed_measures from buffered measure_names so skeletons show immediately.
-          const skeletons = (pendingMeasureNamesRef.current ?? []).map((n) => ({
-            name: n.name,
-            measure_type: n.measure_type,
-            value: null as null,
-            fiber_count: 0,
-            label: n.label
-          }));
-          setData({
-            entity_id: event.entity_id,
-            key_value: event.key_value,
-            display: event.display,
-            attributes: event.attributes,
-            promotes_to: [],
-            receives_from: [],
-            computed_measures: skeletons
-          });
-        } else if (event.kind === "parent") {
-          setData((prev) => prev && { ...prev, promotes_to: event.promotes_to });
-        } else if (event.kind === "child") {
-          setData(
-            (prev) => prev && { ...prev, receives_from: [...prev.receives_from, event.child] }
-          );
-        } else if (event.kind === "measure") {
-          // Replace skeleton entries by name with real values, preserving order.
-          const arrived = new Map(event.computed_measures.map((m) => [m.name, m]));
-          setData(
-            (prev) =>
-              prev && {
-                ...prev,
-                computed_measures: prev.computed_measures.map((m) => arrived.get(m.name) ?? m)
-              }
-          );
-        }
+        setState((prev) => applyInstanceDetailEvent(prev, event));
       },
       () => setIsLoading(false),
       controller.signal
@@ -196,7 +321,7 @@ export function useWmInstanceDetail(entityId: string | null, keyValue: string | 
     };
   }, [projectId, entityId, keyValue, reset]);
 
-  return { data, isLoading, error: null };
+  return { data: state.data, isLoading, error: null };
 }
 
 /**
@@ -227,6 +352,15 @@ export function applyBreakdownEvent(
   return state ?? { root: "", nodes: [], edges: [] };
 }
 
+/**
+ * Stream a measure's breakdown, valued at one instance, as a **keyed React Query
+ * subscription**. The graph node and the detail-panel driver tree both mount this
+ * hook with the same `(entityId, keyValue, measure)`; React Query dedups them onto
+ * a single in-flight query, so the (expensive) breakdown SSE stream runs once and
+ * both consumers share it. Progressive SSE events are folded into the cache via
+ * `setQueryData` so subscribers re-render as values arrive, and the query resolves
+ * with the fully assembled tree on `done`.
+ */
 export function useWmMeasureBreakdown(
   entityId: string | null,
   keyValue: string | null,
@@ -234,49 +368,53 @@ export function useWmMeasureBreakdown(
 ) {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const queryClient = useQueryClient();
 
-  const [data, setData] = useState<WmMeasureBreakdown | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const enabled = !!entityId && !!keyValue && !!measureName;
+  const queryKey = queryKeys.worldModel.measureBreakdown(
+    projectId,
+    entityId ?? "",
+    keyValue ?? "",
+    measureName ?? ""
+  );
 
-  const reset = useCallback(() => {
-    abortRef.current?.abort();
-    setData(null);
-    setIsLoading(false);
-  }, []);
+  const query = useQuery<WmMeasureBreakdown | null>({
+    queryKey,
+    enabled,
+    // The stream is instance-valued and non-trivially expensive; keep the
+    // assembled tree cached briefly so a re-mount (or the second consumer
+    // mounting late) reuses it instead of re-streaming.
+    staleTime: 60 * 1000,
+    retry: false,
+    queryFn: ({ signal }) =>
+      new Promise<WmMeasureBreakdown | null>((resolve) => {
+        // React Query cancels the query (aborts `signal`) when the last
+        // observer unmounts mid-flight or the key changes — forward that to
+        // the underlying SSE fetch so we don't leak a stream.
+        const controller = new AbortController();
+        if (signal.aborted) controller.abort();
+        else signal.addEventListener("abort", () => controller.abort());
 
-  useEffect(() => {
-    if (!entityId || !keyValue || !measureName) {
-      reset();
-      return;
-    }
+        let assembled: WmMeasureBreakdown | null = null;
+        WorldModelService.streamMeasureBreakdown(
+          projectId,
+          entityId as string,
+          keyValue as string,
+          measureName as string,
+          (event) => {
+            if (event.kind === "done") {
+              resolve(assembled);
+              return;
+            }
+            assembled = applyBreakdownEvent(assembled, event);
+            // Publish each partial tree to every subscriber of this key.
+            queryClient.setQueryData(queryKey, assembled);
+          },
+          () => resolve(assembled),
+          controller.signal
+        );
+      })
+  });
 
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setData(null);
-    setIsLoading(true);
-
-    WorldModelService.streamMeasureBreakdown(
-      projectId,
-      entityId,
-      keyValue,
-      measureName,
-      (event) => {
-        if (event.kind === "done") {
-          setIsLoading(false);
-          return;
-        }
-        setData((prev) => applyBreakdownEvent(prev, event));
-      },
-      () => setIsLoading(false),
-      controller.signal
-    );
-
-    return () => {
-      controller.abort();
-    };
-  }, [projectId, entityId, keyValue, measureName, reset]);
-
-  return { data, isLoading };
+  return { data: query.data ?? null, isLoading: query.isLoading };
 }

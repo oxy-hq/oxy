@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "code-review-graph update --skip-flows",
+            "command": "command -v code-review-graph >/dev/null 2>&1 && code-review-graph update --skip-flows || true",
             "timeout": 5000
           }
         ]
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "code-review-graph status --json",
+            "command": "command -v code-review-graph >/dev/null 2>&1 && code-review-graph status --json || true",
             "timeout": 3000
           },
           {

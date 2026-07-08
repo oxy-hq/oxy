@@ -1,7 +1,7 @@
 import { useWmMeasureBreakdown } from "@/hooks/api/useWorldModel";
 import { cn } from "@/libs/shadcn/utils";
 import type { WmBreakdownEdge, WmBreakdownNode, WmMeasureBreakdown } from "@/types/worldModel";
-import { measureSymbol, measureSymbolColor } from "../worldModelLayout";
+import { measureSymbol, measureSymbolColor, OP_GLYPH } from "../worldModelLayout";
 
 function formatMeasureValue(raw: string): string {
   const n = Number(raw);
@@ -10,13 +10,6 @@ function formatMeasureValue(raw: string): string {
   const formatted = n.toPrecision(7).replace(/\.?0+$/, "");
   return Number(formatted).toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
-
-const OP_GLYPH: Record<WmBreakdownEdge["operator"], string> = {
-  add: "+",
-  sub: "−",
-  mul: "×",
-  div: "÷"
-};
 
 /** Component edges point child(from) → parent(to); children of `nodeId`
  *  are the edges whose `to` equals it. */

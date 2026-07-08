@@ -677,6 +677,24 @@ const worldModelKeys = {
   graph: (projectId: string) => [...worldModelKeys.all, "graph", projectId] as const,
   instances: (projectId: string, entityId: string, search: string) =>
     [...worldModelKeys.all, "instances", projectId, entityId, search] as const,
+  filterInstances: (
+    projectId: string,
+    seedEntityId: string,
+    seedKey: string,
+    entityId: string,
+    search: string,
+    offset: number
+  ) =>
+    [
+      ...worldModelKeys.all,
+      "filter-instances",
+      projectId,
+      seedEntityId,
+      seedKey,
+      entityId,
+      search,
+      offset
+    ] as const,
   filterCounts: (projectId: string, entityId: string, keyValue: string) =>
     [...worldModelKeys.all, "filter-counts", projectId, entityId, keyValue] as const,
   instanceDetail: (projectId: string, entityId: string, keyValue: string) =>

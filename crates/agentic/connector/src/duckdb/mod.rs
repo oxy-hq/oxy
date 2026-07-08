@@ -244,6 +244,21 @@ impl DuckDbConnector {
                     .map_err(|e| ConnectorError::query_failed(alias_sql.clone(), e.to_string()))?;
             }
 
+            // Also register a schema-qualified alias `"<stem>"."<ext>"`. The
+            // semantic-layer compiler renders `table: stores.parquet` as an
+            // UNQUOTED `FROM stores.parquet`, which DuckDB parses as
+            // schema.table; the single-identifier alias above only matches the
+            // quoted form, so the unquoted reference otherwise depends on the
+            // file-replacement scan (environment-sensitive; silently empty for
+            // Parquet in some setups). The qualified view makes it resolve to a
+            // real catalog object. Mirrors the oxy-core local pool registration.
+            let stem_q = raw_stem.replace('"', "\"\"");
+            let ext_q = ext.replace('"', "\"\"");
+            let _ = conn.execute_batch(&format!(r#"CREATE SCHEMA IF NOT EXISTS "{stem_q}""#));
+            let qualified_sql =
+                format!(r#"CREATE OR REPLACE VIEW "{stem_q}"."{ext_q}" AS SELECT * FROM "{name}""#);
+            let _ = conn.execute_batch(&qualified_sql);
+
             let columns = describe_table(&conn, &name).map_err(|e| {
                 ConnectorError::query_failed(format!("DESCRIBE \"{name}\""), e.to_string())
             })?;
