@@ -41,6 +41,13 @@ export interface CustomerApp {
    * `null` otherwise — admin UI shows whichever URLs are present.
    */
   url_subdomain: string | null;
+  /** Manifest-derived app glyph URL (`<url><manifest.icon>`), or absent when the
+   *  app declares no `icon`. Same source the homepage launcher uses (there is no
+   *  favicon.ico probe) — render with a monogram fallback via <AppMark>. See the
+   *  oxy-app-visual-identity skill. */
+  icon_url?: string;
+  /** Manifest-derived preview-image URL (`<url><manifest.art>`), or absent. */
+  art_url?: string;
   source_type: "v0" | "local" | "s3";
   source_config: Record<string, unknown>;
   /** PR URL set by the scaffold flow when `scaffold_pr: true` was passed. */

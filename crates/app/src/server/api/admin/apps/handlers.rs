@@ -226,6 +226,17 @@ pub struct AppResponse {
     /// column on every response, so the UI can show "promoted 2d ago".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_promoted_at: Option<String>,
+    /// Manifest-derived app glyph URL (`<url><manifest.icon>`), or `None` when
+    /// the app declares no `icon`. Same source + shape the homepage launcher
+    /// uses (there is no favicon.ico probe); the frontend renders it with a
+    /// monogram fallback via `AppMark`. Populated by the list/get handlers via
+    /// the shared resolver. See the `oxy-app-visual-identity` skill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
+    /// Manifest-derived preview-image URL (`<url><manifest.art>`), or `None`.
+    /// Rendered with a letter-tile fallback via `AppArt`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub art_url: Option<String>,
     /// Soft warnings the UI should surface to the operator. Populated
     /// by `create_app` + `update_app` after side-effect validation
     /// (e.g. "no index.html at the configured local path"). The row
@@ -287,6 +298,11 @@ impl AppResponse {
             last_active_at: None,
             last_promoted_by_email: None,
             last_promoted_at: m.last_promoted_at.map(|d| d.to_rfc3339()),
+            // Manifest-derived; left None on the cheap constructor and filled by
+            // the list/get handlers (which have `db`) via the batched resolver
+            // (`icon_art_by_app` / `resolve_manifests_batch`).
+            icon_url: None,
+            art_url: None,
             warnings: Vec::new(),
         }
     }
@@ -757,6 +773,39 @@ async fn emails_by_user_id(
         .collect())
 }
 
+/// Ceiling on `list_apps` page size — bounds the per-page batched lookups
+/// (org slugs, promoter emails, last-active, manifests) so a caller-supplied
+/// `?limit=` can't turn one admin request into an unbounded scan.
+const MAX_LIST_LIMIT: u64 = 200;
+
+/// Build the per-app `(icon_url, art_url)` map for a page, resolving every
+/// manifest in ONE batched `app_builds` query (no N+1) and turning them into
+/// URLs with the same helper the homepage launcher uses — so admin + launcher
+/// agree on the picture. Published build preferred, draft as fallback (handled
+/// in the batch resolver). Metadata: unresolved apps get `(None, None)`. See
+/// the `oxy-app-visual-identity` skill.
+async fn icon_art_by_app(
+    db: &sea_orm::DatabaseConnection,
+    rows: &[apps::Model],
+    org_slugs: &std::collections::HashMap<Uuid, String>,
+) -> std::collections::HashMap<Uuid, (Option<String>, Option<String>)> {
+    let manifests =
+        crate::server::api::customer_apps_manifest::resolve_manifests_batch(db, rows).await;
+    rows.iter()
+        .filter_map(|app| {
+            let slug = org_slugs.get(&app.org_id)?;
+            Some((
+                app.id,
+                crate::server::api::workspace_custom_apps::icon_art_urls(
+                    manifests.get(&app.id),
+                    slug,
+                    &app.slug,
+                ),
+            ))
+        })
+        .collect()
+}
+
 pub async fn list_apps(
     Query(q): Query<ListAppsQuery>,
 ) -> Result<Json<ListAppsResponse>, StatusCode> {
@@ -764,13 +813,16 @@ pub async fn list_apps(
         tracing::error!("DB connection error: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    // Clamp the caller-supplied page size — the per-page batched lookups below
+    // scale with it, so an unbounded `?limit=` shouldn't be operator-tunable.
+    let limit = q.limit.clamp(1, MAX_LIST_LIMIT);
     // Sort by `updated_at` DESC so the most recently touched apps
     // (whether that's a sync, a config edit, or a publish) sit at the
     // top of the page. Pairs with the frontend's `useInfiniteQuery`
     // so "load more" walks back in time from the most recent.
     let rows = Apps::find()
         .order_by_desc(apps::Column::UpdatedAt)
-        .limit(Some(q.limit))
+        .limit(Some(limit))
         .offset(q.offset)
         .all(&db)
         .await
@@ -808,6 +860,9 @@ pub async fn list_apps(
             tracing::warn!("promoter email lookup failed (no attribution): {e}");
             Default::default()
         });
+    // Manifest-derived icon/art for the whole page in ONE batched query — same
+    // N+1-avoidance as the promoter/last-active lookups above.
+    let mut icon_art = icon_art_by_app(&db, &rows, &org_slugs).await;
     let mut items = rows_to_responses(rows, &org_slugs);
     for item in items.iter_mut() {
         if let Some(ts) = last_active.get(&item.id) {
@@ -816,11 +871,15 @@ pub async fn list_apps(
         item.last_promoted_by_email = promoter_by_app
             .get(&item.id)
             .and_then(|pid| promoter_emails.get(pid).cloned());
+        if let Some((icon, art)) = icon_art.remove(&item.id) {
+            item.icon_url = icon;
+            item.art_url = art;
+        }
     }
     // `next_offset` only exists when the page came back full — short
     // pages are the tail of the dataset and signal "stop fetching" to
     // the client without a separate `total` count query.
-    let next_offset = if returned >= q.limit {
+    let next_offset = if returned >= limit {
         Some(q.offset + returned)
     } else {
         None
@@ -865,7 +924,16 @@ pub async fn list_my_apps(
         tracing::error!("Failed to load org slugs for apps/mine: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(rows_to_responses(rows, &org_slugs)))
+    // Manifest-derived icon/art in ONE batched query (no N+1).
+    let mut icon_art = icon_art_by_app(&db, &rows, &org_slugs).await;
+    let mut items = rows_to_responses(rows, &org_slugs);
+    for item in items.iter_mut() {
+        if let Some((icon, art)) = icon_art.remove(&item.id) {
+            item.icon_url = icon;
+            item.art_url = art;
+        }
+    }
+    Ok(Json(items))
 }
 
 pub async fn get_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, StatusCode> {
@@ -882,7 +950,20 @@ pub async fn get_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, StatusCo
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(AppResponse::from_model_with_org(row, &org.slug)))
+    let manifests = crate::server::api::customer_apps_manifest::resolve_manifests_batch(
+        &db,
+        std::slice::from_ref(&row),
+    )
+    .await;
+    let (icon_url, art_url) = crate::server::api::workspace_custom_apps::icon_art_urls(
+        manifests.get(&row.id),
+        &org.slug,
+        &row.slug,
+    );
+    let mut resp = AppResponse::from_model_with_org(row, &org.slug);
+    resp.icon_url = icon_url;
+    resp.art_url = art_url;
+    Ok(Json(resp))
 }
 
 #[derive(Deserialize, Debug)]

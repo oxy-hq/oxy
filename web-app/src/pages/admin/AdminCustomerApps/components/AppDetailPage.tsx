@@ -1,9 +1,9 @@
 import { ArrowLeft } from "lucide-react";
+import { AppMark } from "@/components/apps/AppMark";
 import { Button } from "@/components/ui/shadcn/button";
 import type { CustomerApp } from "@/types/apps";
 import { resolveBundleUrl } from "../resolveBundleUrl";
 import { AppDetail } from "./AppDetail";
-import { AppFavicon } from "./AppFavicon";
 import { CopyButton, OpenAppButton } from "./AppsTable/components/UrlActions";
 import { formatRelativeTime } from "./AppsTable/useAppsTable";
 
@@ -20,7 +20,7 @@ export const AppDetailPage = ({ app, onBack }: { app: CustomerApp; onBack: () =>
         <ArrowLeft className='size-4' />
         Apps
       </Button>
-      <AppFavicon app={app} size='lg' />
+      <AppMark iconUrl={app.icon_url} name={app.name} size='lg' />
       <div className='min-w-0'>
         <h1 className='truncate font-semibold text-base leading-tight'>{app.name}</h1>
         <p className='truncate font-mono text-muted-foreground text-xs'>

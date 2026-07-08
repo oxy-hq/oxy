@@ -1,9 +1,9 @@
+import { AppMark } from "@/components/apps/AppMark";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Checkbox } from "@/components/ui/shadcn/checkbox";
 import { cn } from "@/libs/shadcn/utils";
 import type { CustomerApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../resolveBundleUrl";
-import { AppFavicon } from "../../AppFavicon";
 import { formatRelativeTime } from "../useAppsTable";
 import { AppActionsMenu, StatusPill } from "./AppActionsMenu";
 import { UrlLine } from "./UrlActions";
@@ -19,10 +19,11 @@ interface AppCardProps {
 }
 
 /**
- * Gallery card — the deployment-platform pattern: favicon + name up top, the
+ * Gallery card — the deployment-platform pattern: app mark + name up top, the
  * URL(s) as clickable/copyable lines, a quiet meta row, and last-promoter
- * attribution. The favicon doubles as the selection target: hovering (or
- * selecting) swaps it for a checkbox, so an unselected grid stays calm. The
+ * attribution. The mark (manifest icon → monogram, via AppMark) doubles as the
+ * selection target: hovering (or selecting) swaps it for a checkbox, so an
+ * unselected grid stays calm. The
  * card opens the detail; the checkbox, links and ⋯ menu stop propagation.
  */
 export const AppCard = ({
@@ -57,8 +58,10 @@ export const AppCard = ({
     >
       <div className='flex items-start gap-2.5'>
         <div className='relative flex size-5 shrink-0 items-center justify-center'>
-          <AppFavicon
-            app={app}
+          <AppMark
+            iconUrl={app.icon_url}
+            name={app.name}
+            size='sm'
             className={cn("transition-opacity group-hover:opacity-0", isSelected && "opacity-0")}
           />
           <Checkbox

@@ -1,9 +1,9 @@
+import { AppMark } from "@/components/apps/AppMark";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Checkbox } from "@/components/ui/shadcn/checkbox";
 import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 import type { CustomerApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../resolveBundleUrl";
-import { AppFavicon } from "../../AppFavicon";
 import { formatRelativeTime } from "../useAppsTable";
 import { AppActionsMenu, StatusPill } from "./AppActionsMenu";
 import { CopyButton, OpenAppButton } from "./UrlActions";
@@ -52,7 +52,7 @@ export const AppTableRow = ({
 
     <TableCell>
       <div className='flex items-center gap-2'>
-        <AppFavicon app={app} />
+        <AppMark iconUrl={app.icon_url} name={app.name} size='sm' />
         <button
           type='button'
           className='max-w-[26ch] truncate text-left font-medium text-foreground outline-none hover:underline focus-visible:underline'

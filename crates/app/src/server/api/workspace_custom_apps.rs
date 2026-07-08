@@ -22,8 +22,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::admin::apps::handlers::build_pretty_url;
-use crate::server::api::customer_apps_manifest::{ManifestError, OxyAppManifest, resolve_manifest};
-use crate::server::api::customer_apps_sync::Channel;
+use crate::server::api::customer_apps_manifest::OxyAppManifest;
 
 #[derive(Deserialize)]
 pub struct WorkspaceIdPath {
@@ -66,7 +65,7 @@ pub struct CustomAppSummary {
 
 /// Art must be a plain relative path inside the bundle — reject anything
 /// that could escape the bundle dir or point off-origin.
-fn safe_relative_art_path(p: &str) -> bool {
+pub(super) fn safe_relative_art_path(p: &str) -> bool {
     !p.is_empty()
         && !p.starts_with('/')
         && !p.contains("..")
@@ -88,6 +87,36 @@ struct CardFields {
     art: Option<String>,
     icon: Option<String>,
     status: Option<String>,
+}
+
+/// Resolve a manifest's `icon`/`art` relative paths to same-origin URLs under
+/// the app's canonical bundle URL, returning `(icon_url, art_url)`. Shared by
+/// the homepage launcher list and the admin apps list so every surface shows
+/// the same picture from the one manifest source. See the
+/// `oxy-app-visual-identity` skill.
+pub(super) fn icon_art_urls(
+    manifest: Option<&OxyAppManifest>,
+    org_slug: &str,
+    app_slug: &str,
+) -> (Option<String>, Option<String>) {
+    let Some(m) = manifest else {
+        return (None, None);
+    };
+    // Trailing slash matches `build_pretty_url`, so the relative path appends
+    // to a valid same-origin URL.
+    let base = format!("/customer-apps/{org_slug}/{app_slug}/");
+    let to_url = |p: &str| format!("{base}{p}");
+    let icon = m
+        .icon
+        .as_deref()
+        .filter(|p| safe_relative_art_path(p))
+        .map(to_url);
+    let art = m
+        .art
+        .as_deref()
+        .filter(|p| safe_relative_art_path(p))
+        .map(to_url);
+    (icon, art)
 }
 
 fn manifest_card_fields(manifest: Option<&OxyAppManifest>) -> CardFields {
@@ -184,10 +213,12 @@ pub async fn list_custom_apps(
         })?;
     let slugs: HashMap<Uuid, String> = orgs.into_iter().map(|o| (o.id, o.slug)).collect();
 
+    // Card metadata for the whole page in ONE batched `app_builds` query (no
+    // N+1) — the same resolver the admin list uses. See the
+    // `oxy-app-visual-identity` skill.
+    let manifests =
+        crate::server::api::customer_apps_manifest::resolve_manifests_batch(&db, &rows).await;
     let mut out = Vec::with_capacity(rows.len());
-    // PERF: resolves manifests sequentially (one app_builds PK lookup per S3
-    // app / one disk read per local app). Fine for N < ~10 apps per workspace;
-    // batch the app_builds lookup if workspaces grow larger shelves.
     for app in rows {
         let Some(slug) = slugs.get(&app.org_id).cloned() else {
             continue;
@@ -196,19 +227,9 @@ pub async fn list_custom_apps(
         let Some(published) = app.published_at.map(|d| d.to_rfc3339()) else {
             continue;
         };
-        let manifest = match resolve_manifest(&db, &app, Channel::Published).await {
-            Ok(m) => Some(m),
-            Err(ManifestError::NotFound) => None, // expected for v0/externally-hosted apps
-            Err(e) => {
-                tracing::debug!(app = %app.slug, "manifest card metadata unavailable: {e}");
-                None
-            }
-        };
+        let manifest = manifests.get(&app.id);
         out.push(CustomAppSummary::from_model_with_manifest(
-            app,
-            &slug,
-            published,
-            manifest.as_ref(),
+            app, &slug, published, manifest,
         ));
     }
     Ok(Json(out))

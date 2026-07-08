@@ -12,7 +12,7 @@
 use std::path::{Path as StdPath, PathBuf};
 
 use entity::{app_builds, apps};
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 
 use super::customer_apps_source::AppSource;
@@ -148,6 +148,75 @@ pub(super) async fn resolve_manifest(
             parse_manifest_value(build.manifest_json.ok_or(ManifestError::NotFound)?)
         }
         AppSource::V0 { .. } => Err(ManifestError::NotFound),
+    }
+}
+
+/// Resolve manifests for MANY apps with a **single** `app_builds` query — the
+/// batched counterpart to [`resolve_manifest`], for paginated list endpoints
+/// (avoids an N+1 per-page). Precedence per app mirrors `resolve_manifest`:
+/// `manifest_override` → the published build's `manifest_json` (falling back to
+/// the draft build) → local-folder disk → none. Returns a map keyed by app id;
+/// apps with no resolvable manifest are simply absent. Metadata — individual
+/// failures are skipped, never fatal. See the `oxy-app-visual-identity` skill.
+pub(super) async fn resolve_manifests_batch(
+    db: &DatabaseConnection,
+    apps: &[apps::Model],
+) -> std::collections::HashMap<uuid::Uuid, OxyAppManifest> {
+    use std::collections::{HashMap, HashSet};
+    // 1. Collect the S3 build ids we might read (published + draft fallback),
+    //    skipping apps that carry an inline override (no build lookup needed).
+    let mut build_ids: HashSet<uuid::Uuid> = HashSet::new();
+    for app in apps {
+        if app.manifest_override.is_some() {
+            continue;
+        }
+        if matches!(AppSource::from_model(app), Ok(AppSource::S3)) {
+            build_ids.extend(app.published_build_id);
+            build_ids.extend(app.draft_build_id);
+        }
+    }
+    // 2. One query for every build manifest on the page.
+    let builds: HashMap<uuid::Uuid, serde_json::Value> = if build_ids.is_empty() {
+        HashMap::new()
+    } else {
+        app_builds::Entity::find()
+            .filter(app_builds::Column::Id.is_in(build_ids))
+            .all(db)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|b| Some((b.id, b.manifest_json?)))
+            .collect()
+    };
+    // 3. Resolve each app from the pre-fetched map (or its override / disk).
+    let mut out = HashMap::with_capacity(apps.len());
+    for app in apps {
+        if let Some(m) = manifest_from_prefetched(app, &builds) {
+            out.insert(app.id, m);
+        }
+    }
+    out
+}
+
+/// Per-app resolution against a pre-fetched `build_id → manifest_json` map — the
+/// same precedence as [`resolve_manifest`], minus the DB round-trip.
+fn manifest_from_prefetched(
+    app: &apps::Model,
+    builds: &std::collections::HashMap<uuid::Uuid, serde_json::Value>,
+) -> Option<OxyAppManifest> {
+    if let Some(raw) = &app.manifest_override {
+        return parse_manifest_value(raw.clone()).ok();
+    }
+    match AppSource::from_model(app).ok()? {
+        AppSource::LocalFolder { path } => read_manifest(StdPath::new(&path)).ok(),
+        AppSource::S3 => {
+            let from_build = |id: Option<uuid::Uuid>| {
+                id.and_then(|i| builds.get(&i))
+                    .and_then(|v| parse_manifest_value(v.clone()).ok())
+            };
+            from_build(app.published_build_id).or_else(|| from_build(app.draft_build_id))
+        }
+        AppSource::V0 { .. } => None,
     }
 }
 
