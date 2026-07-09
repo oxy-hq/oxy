@@ -5,6 +5,28 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-09
+
+Publishes the customer-app **Oxy Functions** platform and the **metric-tree /
+anomalies** clients that accumulated on `main` since 2.1.0. All additive — no
+public export was removed or renamed.
+
+### Added
+
+- **Oxy Functions** (oxy-internal #2521) — `useFunction(name)` for invoking
+  server-side TypeScript handlers shipped in a bundle's `functions/` dir, and the
+  `functions` block on the app manifest (`route`, `timeoutSeconds`, `cache`,
+  `destinations`).
+- **Scheduled functions + secret writes** (#2685) — `schedule` (cron) +
+  `timezone`, `airwayStep`, and `secrets: { write }` on `OxyAppFunctionManifest`,
+  each with manifest validation. A function can now run on a cron schedule and
+  persist app-scoped secrets via `ctx.secrets.set`.
+- **Metric tree + anomalies** (#2407) — `MetricTreeClient` and `AnomaliesClient`
+  and their result types (metric nodes/edges, driver attribution, anomaly
+  list/scan).
+- **Result caching + function SSE** (#2634) — client-side query-result cache
+  (dedup + TTL) and the streaming transport for function invocations.
+
 ## [2.1.0] - 2026-06-08
 
 Adds engineer-tagged usage events to the SDK so a bundle can record
