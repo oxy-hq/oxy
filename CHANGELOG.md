@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.102] - 2026-07-09
+
+### 🚀 Features
+
+- *(airhouse)* Per-workspace catalog-index toggle + honor untyped on execute_sql_query (#2688)
+- Scheduled Oxy Functions (cron-triggered background functions + ctx.secrets.set) (#2685)
+
+### 🐛 Bug Fixes
+
+- Reconcile raw-sql checks resolve non-airhouse warehouses (#2690)
+
+### 💼 Other
+
+- *(deps)* Bump lewagon/wait-on-check-action from 1.8.0 to 1.8.1 (#2693)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 21 updates (#2694)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 10 updates (#2695)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(sdk)* Bump @oxy-hq/sdk to 2.2.0 (#2692)
+
 ## [0.5.101] - 2026-07-08
 
 ### 🚀 Features
@@ -10,6 +31,10 @@ All notable changes to this project will be documented in this file.
 - *(ide-db)* Group Database sidebar by schema + drop schema/table (#2660)
 - Admin custom-apps management revamp + unified app icon/art (#2689)
 - World-model graph drill-down, breakdowns, and filter counts (#2684)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.101 (#2686)
 
 ## [0.5.100] - 2026-07-07
 
