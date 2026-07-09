@@ -107,6 +107,32 @@ export function buildAppsTableModel(apps: CustomerApp[], state: AppsTableState):
   };
 }
 
+export interface FleetStats {
+  total: number;
+  live: number;
+  draft: number;
+  orgs: number;
+  bySource: Record<CustomerApp["source_type"], number>;
+}
+
+/**
+ * Roll the whole registry up into the counts the fleet strip shows. Pure and
+ * hook-free so it unit-tests directly and can feed both the landing strip and
+ * the registry-rail summary. `live` = has a `published_at`; `draft` is the
+ * complement; `orgs` is the distinct org count.
+ */
+export function fleetStats(apps: CustomerApp[]): FleetStats {
+  const orgs = new Set<string>();
+  const bySource: FleetStats["bySource"] = { v0: 0, local: 0, s3: 0 };
+  let live = 0;
+  for (const a of apps) {
+    orgs.add(a.org_slug);
+    bySource[a.source_type] += 1;
+    if (a.published_at) live += 1;
+  }
+  return { total: apps.length, live, draft: apps.length - live, orgs: orgs.size, bySource };
+}
+
 function compareBy(key: SortKey, a: CustomerApp, b: CustomerApp): number {
   switch (key) {
     case "name":

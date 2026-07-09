@@ -1,36 +1,42 @@
-import { AlertCircle, CheckCircle2, Copy, ExternalLink } from "lucide-react";
-import { toast } from "sonner";
+import { AlertCircle, ChevronRight, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from "@/components/ui/shadcn/collapsible";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useAppDebug } from "@/hooks/api/customerApps/useCustomerApps";
+import { cn } from "@/libs/shadcn/utils";
 import { resolveBundleUrl } from "@/pages/admin/AdminCustomerApps/resolveBundleUrl";
 import type { CustomerApp } from "@/types/apps";
+import { CopyButton } from "../../../AppsTable/components/UrlActions";
 
 /**
- * Inspect-only view of what oxy currently resolves for the selected
- * app: bundle dir, manifest source, raw manifest blob. Calls `/debug`
- * (the diagnostic endpoint we ship for the SDK too). Read-only by
- * design — Settings tab owns the mutation surface.
+ * Diagnostics dossier for the selected app: what oxy currently resolves (bundle
+ * dir, manifest source, raw manifest) as a scannable health readout rather than
+ * a wall of pills. Three LED health chips up top answer "is this app wired
+ * right?" at a glance; URLs + identity are compact rows; the raw manifest is a
+ * copyable, collapsed-by-default block so it stops dominating the panel.
  *
- * Project + branch come from the admin row (`app` prop) rather than
- * the debug snapshot: in v2 the debug surface is bundle-public and
- * deliberately excludes admin-grade fields.
+ * Read-only by design — Settings owns mutations. Project/branch come from the
+ * admin row (`app`), not the bundle-public debug snapshot.
  */
 export const AppInfo = ({ app }: { app: CustomerApp }) => {
   const { data, isLoading, error } = useAppDebug(app.org_slug, app.slug);
 
   if (isLoading) {
     return (
-      <div className='space-y-4 p-6'>
-        <Skeleton className='h-32 w-full' />
-        <Skeleton className='h-48 w-full' />
+      <div className='space-y-4 p-4'>
+        <Skeleton className='h-20 w-full' />
+        <Skeleton className='h-40 w-full' />
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className='flex items-center gap-2 p-6 text-destructive text-sm'>
+      <div className='flex items-center gap-2 p-4 text-destructive text-sm'>
         <AlertCircle className='size-4' />
         <span>Failed to load diagnostic snapshot.</span>
       </div>
@@ -44,16 +50,16 @@ export const AppInfo = ({ app }: { app: CustomerApp }) => {
   const dirOk = isRemote || data.bundle_dir_exists;
 
   return (
-    <div className='space-y-6 p-6'>
-      {/* Status row — three pills the operator scans first */}
-      <div className='grid grid-cols-3 gap-3'>
-        <StatusPill
-          label='Bundle dir'
+    <div className='space-y-5 p-4'>
+      {/* Health readout — three LED chips the operator scans first. */}
+      <div className='grid grid-cols-3 gap-2'>
+        <HealthChip
+          label='Bundle'
           ok={dirOk}
           value={isRemote ? "remote" : dirOk ? "exists" : "missing"}
           subtle={isRemote ? (data.upstream_url ?? "—") : (data.bundle_dir ?? "—")}
         />
-        <StatusPill
+        <HealthChip
           label='Manifest'
           ok={manifestOk}
           value={
@@ -61,45 +67,41 @@ export const AppInfo = ({ app }: { app: CustomerApp }) => {
               ? "external"
               : data.manifest_source === "db_override"
                 ? "DB override"
-                : "Bundled file"
+                : "bundled"
           }
           subtle={
             isRemote
               ? "owned by upstream"
               : manifestOk
                 ? "loaded"
-                : (data.manifest_error ?? "unknown")
+                : (data.manifest_error ?? "error")
           }
         />
-        <StatusPill
+        <HealthChip
           label='Source'
-          ok={true}
+          ok
           value={data.app.source_type}
           subtle={`${app.branch} branch`}
         />
       </div>
 
-      {/* URLs — what to share with the customer or use in iframes.
-          Subdomain URL is preferred for v0 sources when present
-          (root-relative URLs in the upstream resolve correctly with
-          zero per-app config); subpath URL always works and is the
-          only option for S3-source apps. */}
+      {/* URLs — what to share with the customer or use in iframes. */}
       <Section title='URLs'>
-        <UrlRow label='Subpath URL' url={app.url} />
+        <UrlRow label='Subpath' url={app.url} />
         {app.url_subdomain && (
-          <UrlRow label='Subdomain URL' url={app.url_subdomain} recommended absolute />
+          <UrlRow label='Subdomain' url={app.url_subdomain} recommended absolute />
         )}
       </Section>
 
-      {/* Identity card */}
+      {/* Identity */}
       <Section title='Identity'>
         <KV k='App ID' v={data.app.id} mono />
         <KV k='Project' v={app.project_id} mono />
+        <KV k='Branch' v={app.branch} mono />
         <KV k='Status' v={data.app.status} />
       </Section>
 
-      {/* Manifest error if any — never shown for remote bundles since
-          there's no oxy-side manifest to fail. */}
+      {/* Manifest error, if any — never for remote bundles (no oxy-side manifest). */}
       {!isRemote && data.manifest_error && (
         <Section title='Manifest error' tone='destructive'>
           <pre className='whitespace-pre-wrap rounded-md bg-destructive/10 p-3 text-destructive text-xs'>
@@ -108,21 +110,14 @@ export const AppInfo = ({ app }: { app: CustomerApp }) => {
         </Section>
       )}
 
-      {/* Raw manifest blob — loose by design (v2 server returns it as
-          opaque JSON; the bundle owns its structure). Skipped for remote
-          bundles. */}
-      {!isRemote && manifestOk && (
-        <Section title='Manifest'>
-          <pre className='max-h-64 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 font-mono text-xs'>
-            {JSON.stringify(data.manifest, null, 2)}
-          </pre>
-        </Section>
-      )}
+      {/* Raw manifest — collapsed by default so it stops dominating; copyable. */}
+      {!isRemote && manifestOk && <ManifestBlock manifest={data.manifest} />}
     </div>
   );
 };
 
-const StatusPill = ({
+/** A LED status chip: brand dot = healthy, destructive dot = broken. */
+const HealthChip = ({
   label,
   ok,
   value,
@@ -131,23 +126,51 @@ const StatusPill = ({
   label: string;
   ok: boolean;
   value: string;
-  subtle: string;
+  subtle?: string;
 }) => (
-  <div className='rounded-md border bg-card p-3'>
-    <div className='flex items-center justify-between'>
-      <span className='font-medium text-muted-foreground text-xs uppercase tracking-wider'>
+  <div className='min-w-0 rounded-md border bg-card px-2.5 py-2'>
+    <div className='flex items-center gap-1.5'>
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          ok ? "bg-primary ring-2 ring-primary/25" : "bg-destructive"
+        )}
+      />
+      <span className='font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
         {label}
       </span>
-      {ok ? (
-        <CheckCircle2 className='size-3.5 text-emerald-500' />
-      ) : (
-        <AlertCircle className='size-3.5 text-destructive' />
-      )}
     </div>
-    <div className='mt-1.5 truncate font-medium text-sm'>{value}</div>
-    <div className='mt-0.5 truncate font-mono text-muted-foreground text-xs'>{subtle}</div>
+    <div className='mt-1 truncate font-medium text-xs'>{value}</div>
+    {subtle && (
+      <div className='truncate font-mono text-[10px] text-muted-foreground/80' title={subtle}>
+        {subtle}
+      </div>
+    )}
   </div>
 );
+
+const ManifestBlock = ({ manifest }: { manifest: unknown }) => {
+  const json = JSON.stringify(manifest, null, 2);
+  return (
+    <Section title='Manifest'>
+      <Collapsible>
+        <div className='flex items-center justify-between'>
+          <CollapsibleTrigger className='group flex items-center gap-1 rounded text-muted-foreground text-xs hover:text-foreground'>
+            <ChevronRight className='size-3 transition-transform group-data-[state=open]:rotate-90' />
+            View raw manifest
+          </CollapsibleTrigger>
+          <CopyButton value={json} label='manifest' />
+        </div>
+        <CollapsibleContent>
+          <pre className='mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 font-mono text-[11px] text-foreground/90'>
+            {json}
+          </pre>
+        </CollapsibleContent>
+      </Collapsible>
+    </Section>
+  );
+};
 
 const Section = ({
   title,
@@ -160,20 +183,23 @@ const Section = ({
 }) => (
   <div>
     <h3
-      className={`mb-2 font-medium text-xs uppercase tracking-wider ${
+      className={cn(
+        "mb-2 font-medium text-[10px] uppercase tracking-wider",
         tone === "destructive" ? "text-destructive" : "text-muted-foreground"
-      }`}
+      )}
     >
       {title}
     </h3>
-    <div className='space-y-2'>{children}</div>
+    <div className='space-y-1.5'>{children}</div>
   </div>
 );
 
 const KV = ({ k, v, mono }: { k: string; v: string; mono?: boolean }) => (
   <div className='flex items-baseline justify-between gap-4 border-b py-1.5 text-sm last:border-0'>
-    <span className='text-muted-foreground'>{k}</span>
-    <span className={mono ? "font-mono text-xs" : ""}>{v}</span>
+    <span className='shrink-0 text-muted-foreground'>{k}</span>
+    <span className={cn("min-w-0 truncate text-right", mono && "font-mono text-xs")} title={v}>
+      {v}
+    </span>
   </div>
 );
 
@@ -185,52 +211,31 @@ const UrlRow = ({
 }: {
   label: string;
   url: string;
-  /** Show a small "Recommended" pill — used for the v0 subdomain URL. */
   recommended?: boolean;
-  /**
-   * When true, open the URL as-is (it's already absolute, e.g. the v0
-   * subdomain). Otherwise resolve against the current origin so a
-   * relative URL like `/customer-apps/o/s/` opens on the admin host.
-   */
   absolute?: boolean;
 }) => {
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(
-        absolute ? url : new URL(url, window.location.origin).toString()
-      );
-      toast.success(`Copied ${label}`);
-    } catch {
-      toast.error("Failed to copy to clipboard");
-    }
-  };
+  const copyValue = absolute ? url : new URL(url, window.location.origin).toString();
   const openHref = absolute ? url : resolveBundleUrl(url);
   return (
-    <div className='flex items-center gap-2'>
-      <div className='flex-1 space-y-0.5 overflow-hidden'>
+    <div className='flex items-center gap-1.5'>
+      <div className='min-w-0 flex-1 overflow-hidden'>
         <div className='flex items-center gap-1.5'>
           <span className='text-muted-foreground text-xs'>{label}</span>
           {recommended && (
-            <span className='rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary uppercase tracking-wide'>
+            <span className='rounded bg-primary/10 px-1 py-0.5 font-medium text-[9px] text-primary uppercase tracking-wide'>
               Recommended
             </span>
           )}
         </div>
-        <div className='truncate font-mono text-xs'>{url}</div>
+        <div className='truncate font-mono text-xs' title={url}>
+          {url}
+        </div>
       </div>
+      <CopyButton value={copyValue} label={label} />
       <Button
         variant='ghost'
         size='icon'
-        className='size-7 shrink-0'
-        onClick={copy}
-        aria-label={`Copy ${label}`}
-      >
-        <Copy className='size-3.5' />
-      </Button>
-      <Button
-        variant='ghost'
-        size='icon'
-        className='size-7 shrink-0'
+        className='size-6 shrink-0'
         onClick={() => window.open(openHref, "_blank", "noopener,noreferrer")}
         aria-label={`Open ${label} in a new tab`}
       >

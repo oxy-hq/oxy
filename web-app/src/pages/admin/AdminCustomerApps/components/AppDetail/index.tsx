@@ -5,6 +5,8 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/shadcn/sheet";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { CustomerAppsService } from "@/services/api/customerApps";
 import type { CustomerApp } from "@/types/apps";
 import { Activity } from "./components/Activity";
@@ -15,15 +17,18 @@ import { type ChannelView, DetailToolbar, type Device } from "./components/Detai
 import { LivePreview } from "./components/LivePreview";
 
 /**
- * Right pane — one empowered surface, no sub-tabs. The 2026-06 pass collapses
- * the old Preview / Info / Activity / Settings tab strip into a single view:
- * the live preview sits on the left and a scrolling "dossier" on the right
- * shows every section at once (status & manifest, build history, activity,
- * settings). Nothing useful is a tab-click away any more.
+ * The stage: a live app preview beside a scrolling "dossier" (status & manifest,
+ * builds, activity, settings) — everything about one app on one surface, no
+ * sub-tabs.
  *
- * Preview state (device + channel + reload nonce) lives here so the toolbar
- * can drive it and re-selecting a different app doesn't lose the staff
- * member's choices.
+ * The dossier is collapsible so the preview can go full-bleed, and it adapts to
+ * width: on a wide viewport it's a resizable side column; below `lg` it folds
+ * into an overlay `Sheet` so the toolbar controls never get squeezed off the
+ * row (the resized-Chrome bug this pass fixes). One toolbar button drives both
+ * modes.
+ *
+ * Preview state (device + channel + reload nonce) lives here so the toolbar can
+ * drive it and re-selecting a different app keeps the operator's choices.
  */
 export const AppDetail = ({ app }: { app: CustomerApp }) => {
   const [device, setDevice] = useState<Device>("desktop");
@@ -39,6 +44,15 @@ export const AppDetail = ({ app }: { app: CustomerApp }) => {
   }, [app.published_at]);
   const [channelBusy, setChannelBusy] = useState(false);
   const [nonce, setNonce] = useState(0);
+
+  // Wide = resizable side column; narrow = overlay Sheet. Two bits of state so
+  // the pinned side panel and the drawer keep independent defaults (side panel
+  // open by default; drawer closed until asked for).
+  const isWide = useMediaQuery("(min-width: 1024px)");
+  const [dossierPinned, setDossierPinned] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const dossierShown = isWide ? dossierPinned : sheetOpen;
+  const toggleDossier = () => (isWide ? setDossierPinned((o) => !o) : setSheetOpen((o) => !o));
 
   // Best-effort cookie cleanup. If staff toggle Draft and then close the
   // admin tab, don't let the preview-draft cookie follow them to a later
@@ -70,6 +84,12 @@ export const AppDetail = ({ app }: { app: CustomerApp }) => {
     }
   };
 
+  const preview = (
+    <div className='flex h-full min-h-0 flex-col'>
+      <LivePreview app={app} device={device} channel={channel} nonce={nonce} />
+    </div>
+  );
+
   return (
     <div className='flex h-full min-h-0 flex-col bg-background'>
       <DetailToolbar
@@ -79,43 +99,66 @@ export const AppDetail = ({ app }: { app: CustomerApp }) => {
         channel={channel}
         channelBusy={channelBusy}
         showTabs={false}
+        dossierOpen={dossierShown}
+        onToggleDossier={toggleDossier}
         onTabChange={() => undefined}
         onDeviceChange={setDevice}
         onChannelChange={(c) => void handleChannelChange(c)}
         onReload={() => setNonce((n) => n + 1)}
       />
 
-      <ResizablePanelGroup direction='horizontal' className='min-h-0 flex-1'>
-        <ResizablePanel defaultSize={58} minSize={32}>
-          <div className='flex h-full min-h-0 flex-col'>
-            <LivePreview app={app} device={device} channel={channel} nonce={nonce} />
-          </div>
-        </ResizablePanel>
-
-        <ResizableHandle withHandle />
-
-        <ResizablePanel defaultSize={42} minSize={26}>
-          <div className='h-full min-h-0 overflow-auto'>
-            <DossierSection title='Status & manifest'>
-              <AppInfo app={app} />
-            </DossierSection>
-            <DossierSection title='Build history'>
-              <div className='p-4'>
-                <BuildHistory appId={app.id} />
+      <div className='min-h-0 flex-1'>
+        {isWide && dossierPinned ? (
+          <ResizablePanelGroup direction='horizontal' className='h-full min-h-0'>
+            <ResizablePanel defaultSize={58} minSize={32}>
+              {preview}
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={42} minSize={26}>
+              <div className='h-full min-h-0 overflow-auto'>
+                <DossierColumn app={app} />
               </div>
-            </DossierSection>
-            <DossierSection title='Activity'>
-              <Activity appId={app.id} />
-            </DossierSection>
-            <DossierSection title='Settings'>
-              <AppSettings app={app} />
-            </DossierSection>
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          preview
+        )}
+      </div>
+
+      {!isWide && (
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <SheetContent side='right' className='w-full gap-0 overflow-y-auto p-0 sm:max-w-md'>
+            <SheetHeader className='sticky top-0 z-10 border-b bg-background px-4 py-3'>
+              <SheetTitle className='text-sm'>Status &amp; details</SheetTitle>
+            </SheetHeader>
+            <DossierColumn app={app} />
+          </SheetContent>
+        </Sheet>
+      )}
     </div>
   );
 };
+
+/** The stacked dossier sections, shared by the wide side column and the narrow
+ *  overlay sheet so the two can't drift. */
+const DossierColumn = ({ app }: { app: CustomerApp }) => (
+  <>
+    <DossierSection title='Status & manifest'>
+      <AppInfo app={app} />
+    </DossierSection>
+    <DossierSection title='Build history'>
+      <div className='p-4'>
+        <BuildHistory appId={app.id} />
+      </div>
+    </DossierSection>
+    <DossierSection title='Activity'>
+      <Activity appId={app.id} />
+    </DossierSection>
+    <DossierSection title='Settings'>
+      <AppSettings app={app} />
+    </DossierSection>
+  </>
+);
 
 /**
  * A titled block in the dossier column. A sticky, monospace-eyebrow header

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { toast } from "sonner";
 import {
@@ -7,6 +7,10 @@ import {
   type RenameOrgBody
 } from "@/services/api/adminTenants";
 import queryKeys from "../queryKey";
+
+/** Server hard-caps `page_size` at 200; request at the cap so a caller draining
+ *  every page issues the fewest requests. */
+const ORGS_PAGE_SIZE = 200;
 
 function errMessage(err: unknown, fallback: string): string {
   if (isAxiosError(err)) return err.response?.data?.message ?? err.message;
@@ -22,6 +26,23 @@ export const useAdminOrgsList = (
     queryKey: queryKeys.adminOrgs.list(query.search),
     queryFn: () => AdminOrgsService.list(query),
     enabled: options.enabled ?? true
+  });
+
+/**
+ * Every org on the deployment, across all pages. The list endpoint is
+ * offset-paginated and returns a bare array (no total), so `getNextPageParam`
+ * infers "there's more" from a full page. Callers drain it by auto-calling
+ * `fetchNextPage` while `hasNextPage` — the pattern the admin Apps list uses —
+ * so counts and the "no access" set are exhaustive, not capped at one page.
+ */
+export const useAllAdminOrgs = () =>
+  useInfiniteQuery({
+    queryKey: [...queryKeys.adminOrgs.all, "all-pages"] as const,
+    queryFn: ({ pageParam }) =>
+      AdminOrgsService.list({ page: pageParam, page_size: ORGS_PAGE_SIZE }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _all, lastPageParam) =>
+      lastPage.length === ORGS_PAGE_SIZE ? lastPageParam + 1 : undefined
   });
 
 export const useAdminOrgDetail = (orgId: string | undefined) =>

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CustomerApp } from "@/types/apps";
-import { type AppsTableState, buildAppsTableModel, DEFAULT_TABLE_STATE } from "./useAppsTable";
+import {
+  type AppsTableState,
+  buildAppsTableModel,
+  DEFAULT_TABLE_STATE,
+  fleetStats
+} from "./useAppsTable";
 
 /** Minimal CustomerApp with sensible defaults; override per test. */
 function app(over: Partial<CustomerApp>): CustomerApp {
@@ -103,5 +108,33 @@ describe("buildAppsTableModel", () => {
     const model = buildAppsTableModel(apps, state({ q: "keep" }));
     expect(model.filteredCount).toBe(1);
     expect(model.totalCount).toBe(2);
+  });
+});
+
+describe("fleetStats", () => {
+  it("rolls up totals, live/draft, distinct orgs, and source mix", () => {
+    const apps = [
+      app({ id: "1", org_slug: "acme", source_type: "s3", published_at: "2026-02-01T00:00:00Z" }),
+      app({ id: "2", org_slug: "acme", source_type: "s3", published_at: null }),
+      app({ id: "3", org_slug: "globex", source_type: "v0", published_at: "2026-02-01T00:00:00Z" }),
+      app({ id: "4", org_slug: "globex", source_type: "local", published_at: null })
+    ];
+    expect(fleetStats(apps)).toEqual({
+      total: 4,
+      live: 2,
+      draft: 2,
+      orgs: 2,
+      bySource: { s3: 2, v0: 1, local: 1 }
+    });
+  });
+
+  it("returns an all-zero shape for an empty registry", () => {
+    expect(fleetStats([])).toEqual({
+      total: 0,
+      live: 0,
+      draft: 0,
+      orgs: 0,
+      bySource: { v0: 0, local: 0, s3: 0 }
+    });
   });
 });

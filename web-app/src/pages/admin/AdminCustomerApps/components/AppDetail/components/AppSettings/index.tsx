@@ -49,7 +49,7 @@ export const AppSettings = ({ app }: { app: CustomerApp }) => {
   };
 
   return (
-    <div className='space-y-6 p-6'>
+    <div className='space-y-4 p-4'>
       <SettingRow
         title={isPublished ? "Published" : "Draft"}
         description={
@@ -61,7 +61,7 @@ export const AppSettings = ({ app }: { app: CustomerApp }) => {
         tone={isPublished ? "success" : undefined}
         action={
           isPublished ? (
-            <div className='flex items-center gap-2'>
+            <>
               <Button
                 variant='outline'
                 size='sm'
@@ -80,7 +80,7 @@ export const AppSettings = ({ app }: { app: CustomerApp }) => {
                 <EyeOff className='size-3.5' />
                 {isUnpublishing ? "Unpublishing…" : "Unpublish"}
               </Button>
-            </div>
+            </>
           ) : (
             <Button size='sm' disabled={isPublishing} onClick={() => publish(app.id)}>
               <CheckCircle2 className='size-3.5' />
@@ -151,8 +151,12 @@ const SettingRow = ({
   const titleToneClass =
     tone === "destructive" ? "text-destructive" : tone === "success" ? "text-emerald-600" : "";
   return (
-    <div className={`flex items-start justify-between gap-6 rounded-lg border p-4 ${toneClass}`}>
-      <div className='min-w-0 flex-1'>
+    // Stacked, not side-by-side: the dossier is a narrow resizable column (and
+    // an overlay Sheet on narrow viewports), so a title|action row can't hold a
+    // two-button action without overflowing. The action sits below the copy and
+    // wraps.
+    <div className={`rounded-lg border p-4 ${toneClass}`}>
+      <div className='min-w-0'>
         <div className={`font-medium text-sm ${titleToneClass}`}>{title}</div>
         <p className='mt-1 text-muted-foreground text-sm leading-relaxed'>{description}</p>
         {meta && (
@@ -162,7 +166,7 @@ const SettingRow = ({
           <p className='mt-2 font-mono text-muted-foreground text-xs'>{disabledNote}</p>
         )}
       </div>
-      <div className='shrink-0'>{action}</div>
+      <div className='mt-3 flex flex-wrap items-center gap-2'>{action}</div>
     </div>
   );
 };

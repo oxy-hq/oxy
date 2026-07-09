@@ -4,9 +4,10 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import { useAdminApps } from "@/hooks/api/customerApps/useCustomerApps";
 import { cn } from "@/libs/shadcn/utils";
 import type { CustomerApp } from "@/types/apps";
-import { AppDetailPage } from "./components/AppDetailPage";
+import { AppCockpit } from "./components/AppCockpit";
 import { AppsTable } from "./components/AppsTable";
 import { CreateCustomerAppDialog } from "./components/CreateCustomerAppDialog";
+import { FleetStrip } from "./components/FleetStrip";
 import { AccessPane } from "./components/OxyAccessPanes/AccessPane";
 
 /**
@@ -71,9 +72,10 @@ const AdminTabs = ({ active }: { active: View }) => (
 );
 
 /**
- * Customer-app registry. A full-width table is the management surface; the
- * rich per-app dossier opens as a full page (`AppDetailPage`) keyed by the
- * selected-app URL segments (so deep links and the back button still work).
+ * Customer-app registry. A full-width browser (fleet strip + table/gallery) is
+ * the landing; selecting an app enters the `AppCockpit` (registry rail + live
+ * detail), keyed by the selected-app URL segments so deep links and the back
+ * button still work.
  *
  * All pages are loaded up front so filter / sort / group operate over the
  * whole registry rather than just the first page — admin scale is dozens to
@@ -122,22 +124,29 @@ const AppsPane = () => {
 
   if (error && !isLoading) return <ErrorState error={error} />;
 
-  // A selected app takes over the whole pane as its own page (Vercel-style),
-  // rather than sliding in over the list. Deep links resolve once loading
-  // settles; until then the list (with its own loading state) shows.
-  if (selected) return <AppDetailPage app={selected} onBack={closeDetail} />;
+  // A selected app enters the cockpit: a persistent registry rail beside the
+  // live detail, so the operator walks the fleet without bouncing back to the
+  // landing. Deep links resolve once loading settles; until then the list (with
+  // its own loading state) shows.
+  if (selected)
+    return (
+      <AppCockpit apps={apps} selected={selected} onSelect={openDetail} onBack={closeDetail} />
+    );
 
   return (
-    <>
-      <AppsTable
-        apps={apps}
-        isLoading={isLoading}
-        isLoadingMore={isFetchingNextPage}
-        onSelect={openDetail}
-        onCreate={() => setCreateOpen(true)}
-      />
+    <div className='flex h-full min-h-0 flex-col'>
+      {apps.length > 0 && <FleetStrip apps={apps} />}
+      <div className='min-h-0 flex-1'>
+        <AppsTable
+          apps={apps}
+          isLoading={isLoading}
+          isLoadingMore={isFetchingNextPage}
+          onSelect={openDetail}
+          onCreate={() => setCreateOpen(true)}
+        />
+      </div>
       <CreateCustomerAppDialog open={createOpen} onOpenChange={setCreateOpen} />
-    </>
+    </div>
   );
 };
 

@@ -1,4 +1,13 @@
-import { ExternalLink, Eye, EyeOff, Monitor, RotateCw, Smartphone, Tablet } from "lucide-react";
+import {
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Monitor,
+  PanelRight,
+  RotateCw,
+  Smartphone,
+  Tablet
+} from "lucide-react";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -33,6 +42,11 @@ export interface DetailToolbarProps {
   onDeviceChange: (device: Device) => void;
   onChannelChange: (channel: ChannelView) => void;
   onReload: () => void;
+  /** Whether the dossier (status/manifest/builds/…) is currently shown — a side
+   *  column on wide viewports, an overlay drawer on narrow ones. */
+  dossierOpen?: boolean;
+  /** Toggle the dossier. AppDetail decides column-vs-drawer by width. */
+  onToggleDossier?: () => void;
   /**
    * Render the section tab strip. The single-surface AppDetail sets this
    * false — there are no sub-tabs any more, so the bar is just identity +
@@ -87,6 +101,8 @@ export const DetailToolbar = ({
   onDeviceChange,
   onChannelChange,
   onReload,
+  dossierOpen,
+  onToggleDossier,
   showTabs = true
 }: DetailToolbarProps) => {
   const isPreview = tab === "preview";
@@ -250,6 +266,24 @@ export const DetailToolbar = ({
               <span className='text-xs'>Draft</span>
             </ToggleGroupItem>
           </ToggleGroup>
+        )}
+
+        {onToggleDossier && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant='ghost'
+                size='icon'
+                className={cn("size-7", dossierOpen && "bg-muted text-foreground")}
+                onClick={onToggleDossier}
+                aria-label={dossierOpen ? "Hide details" : "Show details"}
+                aria-pressed={dossierOpen}
+              >
+                <PanelRight className='size-3.5' />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{dossierOpen ? "Hide details" : "Show details"}</TooltipContent>
+          </Tooltip>
         )}
 
         <Tooltip>

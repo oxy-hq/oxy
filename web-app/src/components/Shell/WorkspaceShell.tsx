@@ -1,10 +1,11 @@
-import { House, MessagesSquare } from "lucide-react";
+import { House, MessagesSquare, Shield } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AskDock } from "@/components/Ask/AskDock";
 import { OxygenFactoryMark } from "@/components/OxygenFactoryMark";
 import WorkspaceStatus from "@/components/WorkspaceStatus";
 import { useCustomApps } from "@/hooks/api/customApps/useCustomApps";
+import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
@@ -27,6 +28,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const wsId = workspace?.id ?? "";
   const ws = ROUTES.ORG(orgSlug).WORKSPACE(wsId);
   const { data: customApps = [] } = useCustomApps(wsId);
+  const { data: profile } = useCurrentUser();
+  // Global Owners (`OXY_OWNER`) and Global Admins (`app_admins` table) get a
+  // one-click hop into the admin console. Tenant-internal org roles never do —
+  // this mirrors the gate on the admin routes themselves.
+  const isOperator = !!(profile?.is_owner || profile?.is_app_admin);
 
   const path = location.pathname;
   const inIde = /\/ide(\/|$)/.test(path);
@@ -77,10 +83,24 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     active: path.startsWith(ws.IDE.ROOT),
     onSelect: () => navigate(ws.IDE.ROOT)
   };
+  // Admin console entry — pinned directly beneath Oxygen Factory in the system
+  // zone, visible only to operators. Full-page-ish SPA nav to the customer-apps
+  // console (the default admin landing).
+  const admin: RailItem = {
+    key: "admin",
+    label: "Admin",
+    tooltip: "Admin console — customer apps, tenants, feature flags, jobs",
+    testId: "rail-admin",
+    icon: <Shield className='h-4 w-4' />,
+    active: path.startsWith("/admin"),
+    onSelect: () => navigate("/admin/apps")
+  };
 
   // Home + Chat share one block (no divider — both are primary HQ nav); apps get
   // their own divided group when the workspace has any.
   const groups: RailItem[][] = appItems.length ? [[hq, chat], appItems] : [[hq, chat]];
+  // System zone: Oxygen Factory, then the operator-only Admin hop below it.
+  const footerItems: RailItem[] = isOperator ? [core, admin] : [core];
 
   return (
     <div className='flex h-full w-full'>
@@ -88,7 +108,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         <ShellRail
           top={<RailWorkspaceTile />}
           groups={groups}
-          footerItems={[core]}
+          footerItems={footerItems}
           bottom={
             <>
               <RailWorkspaceSwitch />

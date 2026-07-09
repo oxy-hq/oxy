@@ -1,6 +1,6 @@
 import { isAxiosError } from "axios";
-import { ExternalLink, ShieldCheck } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Check, type LucideIcon, ShieldCheck, Terminal } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import {
@@ -9,38 +9,105 @@ import {
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { cn } from "@/libs/shadcn/utils";
-import type { OxyAccessGrant } from "@/types/apps";
-import { openWorkspaceHome } from "../../openWorkspaceHome";
-
-/** One org with the workspaces it granted Oxy access to. */
-export interface OrgGroup {
-  orgId: string;
-  orgName: string;
-  orgSlug: string;
-  projects: OxyAccessGrant[];
-}
-
-/** Fold the flat grant list into per-org groups, each sorted by workspace. */
-export function groupByOrg(grants: OxyAccessGrant[]): OrgGroup[] {
-  const byId = new Map<string, OrgGroup>();
-  for (const g of grants) {
-    const group = byId.get(g.org_id) ?? {
-      orgId: g.org_id,
-      orgName: g.org_name,
-      orgSlug: g.org_slug,
-      projects: []
-    };
-    group.projects.push(g);
-    byId.set(g.org_id, group);
-  }
-  return [...byId.values()].sort((a, b) => a.orgName.localeCompare(b.orgName));
-}
 
 export function formatGrantedAt(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString();
 }
+
+/**
+ * Slim top readout for the Access tab — mirrors the Apps tab's FleetStrip so the
+ * two admin surfaces read as one cockpit. Total orgs, how many granted access,
+ * and the granted-workspace count at a glance.
+ */
+export const AccessStrip = ({
+  orgs,
+  withAccess,
+  workspaces
+}: {
+  orgs: number;
+  withAccess: number;
+  workspaces: number;
+}) => (
+  <div className='flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b bg-muted/20 px-4 py-2 text-xs'>
+    <AccessStat value={orgs} label={orgs === 1 ? "org" : "orgs"} />
+    <AccessStat value={withAccess} label='with access' />
+    <AccessStat value={workspaces} label='workspaces' />
+    <span className='ml-auto flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground'>
+      <ShieldCheck className='size-3.5' /> Oxy access
+    </span>
+  </div>
+);
+
+const AccessStat = ({ value, label }: { value: number; label: string }) => (
+  <span className='flex items-center gap-1.5'>
+    <span className='font-semibold text-foreground text-sm tabular-nums'>{value}</span>
+    <span className='text-muted-foreground'>{label}</span>
+  </span>
+);
+
+/** Icon-only row action with a tooltip — the dense cockpit affordance that
+ *  replaces the labeled buttons (which overflowed a narrow detail pane). */
+export const RowAction = ({
+  icon: Icon,
+  label,
+  onClick
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Button
+        variant='ghost'
+        size='icon'
+        className='size-7 text-muted-foreground hover:text-foreground'
+        onClick={onClick}
+        aria-label={label}
+      >
+        <Icon className='size-3.5' />
+      </Button>
+    </TooltipTrigger>
+    <TooltipContent side='bottom'>{label}</TooltipContent>
+  </Tooltip>
+);
+
+/** Copies the workspace's `oxy publish` command (shown in the tooltip) and
+ *  flips to a check — the publish snippet, collapsed to one dense icon. */
+export const CopyPublishAction = ({ workspaceId }: { workspaceId: string }) => {
+  const [copied, setCopied] = useState(false);
+  const cmd = `oxy publish --env production --project ${workspaceId}`;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch (err) {
+      console.error("Failed to copy publish command", err);
+    }
+  };
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant='ghost'
+          size='icon'
+          className='size-7 text-muted-foreground hover:text-foreground'
+          onClick={copy}
+          aria-label='Copy publish command'
+        >
+          {copied ? <Check className='size-3.5 text-primary' /> : <Terminal className='size-3.5' />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side='bottom' className='font-mono text-xs'>
+        {cmd}
+      </TooltipContent>
+    </Tooltip>
+  );
+};
 
 /** Resizable list/detail skeleton shared by both panes (matches the Apps tab). */
 export const MasterDetail = ({
@@ -75,56 +142,52 @@ export const PaneSearch = ({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className='h-8'
+      className='h-7 text-xs'
     />
   </div>
 );
 
-/** A selectable row in either list pane: bold title + muted subtitle. */
+/** A selectable row in the list pane: name + mono subtitle, with the cockpit's
+ *  left accent bar on the active row and a trailing slot for a count chip.
+ *  `muted` dims the identity for rows that represent an absence (no access). */
 export const ListRow = ({
   active,
   onClick,
   title,
   subtitle,
-  trailing
+  trailing,
+  muted
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
   subtitle: string;
   trailing?: React.ReactNode;
+  muted?: boolean;
 }) => (
   <button
     type='button'
     onClick={onClick}
+    aria-current={active}
     className={cn(
-      "flex w-full items-center gap-2 border-border/50 border-b px-3 py-2 text-left transition-colors",
+      "group relative flex w-full items-center gap-2 border-border/50 border-b py-1.5 pr-2 pl-3 text-left transition-colors",
       active ? "bg-primary/10" : "hover:bg-muted/50"
     )}
   >
-    <span className='min-w-0 flex-1'>
+    <span
+      aria-hidden
+      className={cn(
+        "absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary transition-opacity",
+        active ? "opacity-100" : "opacity-0"
+      )}
+    />
+    <span className={cn("min-w-0 flex-1", muted && "opacity-55")}>
       <span className='block truncate font-medium text-sm'>{title}</span>
-      <span className='block truncate text-muted-foreground text-xs'>{subtitle}</span>
+      <span className='block truncate font-mono text-[11px] text-muted-foreground'>{subtitle}</span>
     </span>
     {trailing}
   </button>
 );
-
-/** "Open /home" — switches into the workspace via the normal dispatcher. */
-export const OpenHomeButton = ({ grant }: { grant: OxyAccessGrant }) => {
-  const navigate = useNavigate();
-  return (
-    <Button
-      size='sm'
-      variant='outline'
-      className='gap-1.5'
-      onClick={() => openWorkspaceHome(grant, navigate)}
-    >
-      Open /home
-      <ExternalLink className='size-3.5' />
-    </Button>
-  );
-};
 
 export const GrantsLoading = () => (
   <div className='flex h-full items-center justify-center'>

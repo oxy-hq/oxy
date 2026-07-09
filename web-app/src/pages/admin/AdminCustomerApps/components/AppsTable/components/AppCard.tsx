@@ -5,7 +5,9 @@ import { cn } from "@/libs/shadcn/utils";
 import type { CustomerApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../resolveBundleUrl";
 import { formatRelativeTime } from "../useAppsTable";
-import { AppActionsMenu, StatusPill } from "./AppActionsMenu";
+import { AppActionsMenu } from "./AppActionsMenu";
+import { AppHoverCard } from "./AppHoverCard";
+import { StatusDot } from "./StatusDot";
 import { UrlLine } from "./UrlActions";
 
 interface AppCardProps {
@@ -19,12 +21,19 @@ interface AppCardProps {
 }
 
 /**
- * Gallery card — the deployment-platform pattern: app mark + name up top, the
- * URL(s) as clickable/copyable lines, a quiet meta row, and last-promoter
- * attribution. The mark (manifest icon → monogram, via AppMark) doubles as the
- * selection target: hovering (or selecting) swaps it for a checkbox, so an
- * unselected grid stays calm. The
- * card opens the detail; the checkbox, links and ⋯ menu stop propagation.
+ * Gallery card — pared to three text ranks so a grid of them stays scannable:
+ *
+ *   1. identity  — status LED + name (+ org when ungrouped)
+ *   2. address   — one primary URL line (subdomain preferred)
+ *   3. meta      — source badge · last-active, quiet
+ *
+ * The old card carried two URL lines, a status pill, and a promoter line on
+ * top of that; those secondary facts now live in the hover card (which wraps
+ * the whole tile), so the resting face is calm and hovering is the triage.
+ *
+ * The mark doubles as the selection target: hover/select swaps it for a
+ * checkbox. The card opens the detail; checkbox, link, and ⋯ menu stop
+ * propagation.
  */
 export const AppCard = ({
   app,
@@ -35,9 +44,9 @@ export const AppCard = ({
   onPublish,
   onUnpublish
 }: AppCardProps) => (
-  <>
+  <AppHoverCard app={app} showOrg={showOrg} onPublish={onPublish} onUnpublish={onUnpublish}>
     {/* biome-ignore lint/a11y/useSemanticElements: the card nests interactive
-        controls (checkbox, links, menu), so a real <button> would be invalid
+        controls (checkbox, link, menu), so a real <button> would be invalid
         button-in-button; a div with role/tabIndex reproduces the semantics. */}
     <div
       role='button'
@@ -78,9 +87,12 @@ export const AppCard = ({
           />
         </div>
         <div className='min-w-0 flex-1'>
-          <span className='block truncate font-medium text-foreground text-sm'>{app.name}</span>
+          <span className='flex items-center gap-1.5'>
+            <StatusDot isLive={!!app.published_at} />
+            <span className='truncate font-medium text-foreground text-sm'>{app.name}</span>
+          </span>
           {showOrg && (
-            <span className='block truncate font-mono text-muted-foreground text-xs'>
+            <span className='mt-0.5 block truncate font-mono text-muted-foreground text-xs'>
               {app.org_slug}
             </span>
           )}
@@ -94,16 +106,9 @@ export const AppCard = ({
         />
       </div>
 
-      <div className='space-y-1'>
-        <UrlLine href={resolveBundleUrl(app.url)} copyLabel='app URL' />
-        {app.url_subdomain && (
-          <UrlLine href={app.url_subdomain} label='sub' copyLabel='subdomain URL' />
-        )}
-      </div>
+      <UrlLine href={app.url_subdomain ?? resolveBundleUrl(app.url)} copyLabel='app URL' />
 
       <div className='flex items-center gap-2 text-muted-foreground text-xs'>
-        <StatusPill isLive={!!app.published_at} />
-        <span aria-hidden>·</span>
         <Badge variant='outline' className='px-1.5 py-0 font-mono text-[10px] tracking-wide'>
           {app.source_type.toUpperCase()}
         </Badge>
@@ -111,13 +116,6 @@ export const AppCard = ({
           {formatRelativeTime(app.last_active_at ?? app.last_synced_at)}
         </span>
       </div>
-
-      {app.last_promoted_by_email && (
-        <p className='truncate text-muted-foreground/70 text-xs'>
-          Promoted by {app.last_promoted_by_email}
-          {app.last_promoted_at ? ` · ${formatRelativeTime(app.last_promoted_at)}` : ""}
-        </p>
-      )}
     </div>
-  </>
+  </AppHoverCard>
 );
