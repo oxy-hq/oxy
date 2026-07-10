@@ -10,14 +10,57 @@ use super::iam;
 
 static DB_POOL: OnceCell<DatabaseConnection> = OnceCell::const_new();
 
-// Connection pool sizing — kept identical across auth modes so prod/dev
+// Connection pool sizing — applied identically across auth modes so prod/dev
 // behave the same under load.
-const MAX_CONNECTIONS: u32 = 80;
-const MIN_CONNECTIONS: u32 = 20;
+//
+// The MIN default is deliberately small. min_connections is a floor that
+// idle_timeout never reaps below, so a large min just pins idle backends and
+// consumes Postgres max_connections — multiplied across every pod. The
+// control-plane pool is almost always idle (a fleet is typically ~1 active
+// query at a time), yet a 6-pod oxy-dev fleet at min=20 held ~120 idle backends
+// and starved a deploy-time `oxy migrate` pre-upgrade hook of connections
+// (2026-07-09). Connections still grow toward max under real load and shrink
+// back to min via idle_timeout.
+//
+// Both bounds are env-overridable (OXY_DATABASE_{MAX,MIN}_CONNECTIONS) so infra
+// can size them per environment / per component without a rebuild.
+const DEFAULT_MAX_CONNECTIONS: u32 = 80;
+const DEFAULT_MIN_CONNECTIONS: u32 = 2;
+const MAX_CONNECTIONS_ENV: &str = "OXY_DATABASE_MAX_CONNECTIONS";
+const MIN_CONNECTIONS_ENV: &str = "OXY_DATABASE_MIN_CONNECTIONS";
 const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_LIFETIME: Duration = Duration::from_secs(1800);
+
+/// Parse a pool-size bound, falling back to `default` when the value is absent
+/// or unparseable. Split from the env lookup so it can be unit-tested without
+/// touching process-global environment.
+fn resolve_pool_bound(raw: Option<&str>, default: u32) -> u32 {
+    raw.and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(default)
+}
+
+/// Max connections per pool. Override with `OXY_DATABASE_MAX_CONNECTIONS`.
+/// Clamped to >= 1 (sqlx requires a positive ceiling).
+fn max_connections() -> u32 {
+    resolve_pool_bound(
+        std::env::var(MAX_CONNECTIONS_ENV).ok().as_deref(),
+        DEFAULT_MAX_CONNECTIONS,
+    )
+    .max(1)
+}
+
+/// Min (idle-floor) connections per pool. Override with
+/// `OXY_DATABASE_MIN_CONNECTIONS`. Clamped to <= max so an env misconfig can't
+/// make the floor exceed the ceiling.
+fn min_connections() -> u32 {
+    resolve_pool_bound(
+        std::env::var(MIN_CONNECTIONS_ENV).ok().as_deref(),
+        DEFAULT_MIN_CONNECTIONS,
+    )
+    .min(max_connections())
+}
 
 // Refresh IAM tokens every 10 min, leaving a 5-min headroom before the
 // 15-min RDS token TTL expires. New physical connections always use a
@@ -69,8 +112,8 @@ async fn connect_password() -> Result<DatabaseConnection, OxyError> {
     tracing::debug!("Connecting to PostgreSQL from OXY_DATABASE_URL");
 
     let mut opt = ConnectOptions::new(url);
-    opt.max_connections(MAX_CONNECTIONS)
-        .min_connections(MIN_CONNECTIONS)
+    opt.max_connections(max_connections())
+        .min_connections(min_connections())
         .connect_timeout(CONNECT_TIMEOUT)
         .acquire_timeout(ACQUIRE_TIMEOUT)
         .idle_timeout(IDLE_TIMEOUT)
@@ -178,12 +221,13 @@ async fn connect_sea_orm_with_retry(opt: ConnectOptions) -> Result<DatabaseConne
 }
 
 async fn connect_sqlx_with_retry(opt: PgConnectOptions) -> Result<sqlx::PgPool, OxyError> {
+    let (max_conns, min_conns) = (max_connections(), min_connections());
     let mut attempt: u32 = 0;
     loop {
         attempt += 1;
         let pool_result = PgPoolOptions::new()
-            .max_connections(MAX_CONNECTIONS)
-            .min_connections(MIN_CONNECTIONS)
+            .max_connections(max_conns)
+            .min_connections(min_conns)
             .acquire_timeout(ACQUIRE_TIMEOUT)
             .idle_timeout(Some(IDLE_TIMEOUT))
             .max_lifetime(Some(MAX_LIFETIME))
@@ -356,6 +400,44 @@ mod tests {
 
         let err = DbErr::Custom("Syntax error at position 1".to_string());
         assert!(!is_transient_sea_orm_error(&err));
+    }
+
+    #[test]
+    fn resolve_pool_bound_uses_default_when_absent_or_invalid() {
+        assert_eq!(resolve_pool_bound(None, 2), 2);
+        assert_eq!(resolve_pool_bound(Some(""), 2), 2);
+        assert_eq!(resolve_pool_bound(Some("garbage"), 2), 2);
+        assert_eq!(resolve_pool_bound(Some("-1"), 2), 2);
+    }
+
+    #[test]
+    fn resolve_pool_bound_parses_override() {
+        assert_eq!(resolve_pool_bound(Some("10"), 2), 10);
+        assert_eq!(resolve_pool_bound(Some("  40 "), 2), 40);
+        assert_eq!(resolve_pool_bound(Some("0"), 2), 0);
+    }
+
+    #[test]
+    fn min_is_clamped_to_max() {
+        // A misconfigured floor above the ceiling must not exceed it — this is
+        // the clamp `min_connections()` applies via `.min(max_connections())`.
+        assert_eq!(
+            resolve_pool_bound(Some("500"), DEFAULT_MIN_CONNECTIONS).min(40),
+            40
+        );
+        // Within range, the override passes through.
+        assert_eq!(
+            resolve_pool_bound(Some("5"), DEFAULT_MIN_CONNECTIONS).min(40),
+            5
+        );
+    }
+
+    #[test]
+    fn defaults_are_sane() {
+        // Floor must be small (the whole point of the fix) and never exceed the
+        // ceiling default.
+        assert!(DEFAULT_MIN_CONNECTIONS <= DEFAULT_MAX_CONNECTIONS);
+        assert!(DEFAULT_MIN_CONNECTIONS <= 5, "idle floor should stay small");
     }
 
     #[test]
