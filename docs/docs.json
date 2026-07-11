@@ -170,7 +170,8 @@
           {
             "group": "Observability",
             "pages": [
-              "manage/observability/index"
+              "manage/observability/index",
+              "manage/observability/traces"
             ]
           },
           {

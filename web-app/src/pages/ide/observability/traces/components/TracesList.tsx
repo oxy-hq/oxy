@@ -2,16 +2,30 @@ import { AlertCircle } from "lucide-react";
 import { Card } from "@/components/ui/shadcn/card";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { Trace } from "@/services/api/traces";
+import { MAX_COMPARE } from "../constants";
+import type { TraceView } from "../types";
 import { TraceCard } from "./TraceCard";
+import { TracesTable } from "./TracesTable";
 
 interface TracesListProps {
   isLoading: boolean;
   traces: Trace[] | undefined;
   searchQuery: string;
   onTraceClick: (traceId: string) => void;
+  view: TraceView;
+  selectedIds: string[];
+  onToggleSelect: (traceId: string) => void;
 }
 
-function TracesList({ isLoading, traces, searchQuery, onTraceClick }: TracesListProps) {
+function TracesList({
+  isLoading,
+  traces,
+  searchQuery,
+  onTraceClick,
+  view,
+  selectedIds,
+  onToggleSelect
+}: TracesListProps) {
   if (isLoading) {
     return (
       <div className='flex h-64 items-center justify-center'>
@@ -36,10 +50,31 @@ function TracesList({ isLoading, traces, searchQuery, onTraceClick }: TracesList
     );
   }
 
+  const selectionFull = selectedIds.length >= MAX_COMPARE;
+
+  if (view === "table") {
+    return (
+      <TracesTable
+        traces={traces}
+        onTraceClick={onTraceClick}
+        selectedIds={selectedIds}
+        onToggleSelect={onToggleSelect}
+        selectionFull={selectionFull}
+      />
+    );
+  }
+
   return (
     <div className='space-y-2'>
       {traces.map((trace) => (
-        <TraceCard key={trace.traceId} trace={trace} onClick={() => onTraceClick(trace.traceId)} />
+        <TraceCard
+          key={trace.traceId}
+          trace={trace}
+          onClick={() => onTraceClick(trace.traceId)}
+          selected={selectedIds.includes(trace.traceId)}
+          selectDisabled={selectionFull}
+          onToggleSelect={() => onToggleSelect(trace.traceId)}
+        />
       ))}
     </div>
   );

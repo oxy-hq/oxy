@@ -28,8 +28,22 @@ const threadKeys = {
 
 const traceKeys = {
   all: ["trace"] as const,
-  list: (projectId: string, limit?: number, offset?: number, status?: string, duration?: string) =>
-    [...traceKeys.all, "list", projectId, { limit, offset, status, duration }] as const,
+  list: (
+    projectId: string,
+    limit?: number,
+    offset?: number,
+    status?: string,
+    duration?: string,
+    search?: string,
+    from?: number,
+    to?: number
+  ) =>
+    [
+      ...traceKeys.all,
+      "list",
+      projectId,
+      { limit, offset, status, duration, search, from, to }
+    ] as const,
   item: (projectId: string, traceId: string) => [...traceKeys.all, projectId, { traceId }] as const,
   waterfall: (projectId: string, traceId: string) =>
     [...traceKeys.all, "waterfall", projectId, traceId] as const

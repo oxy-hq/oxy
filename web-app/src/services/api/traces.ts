@@ -205,13 +205,24 @@ export class TracesService {
     limit?: number,
     offset?: number,
     status?: string,
-    duration?: string
+    duration?: string,
+    search?: string,
+    from?: number,
+    to?: number
   ): Promise<PaginatedTraceResponse> {
     const params = new URLSearchParams();
     if (limit !== undefined) params.append("limit", limit.toString());
     if (offset !== undefined) params.append("offset", offset.toString());
     if (status && status !== "all") params.append("status", status);
-    if (duration && duration !== "all") params.append("duration", duration);
+    // Absolute range (Theme 3) overrides the preset duration when both endpoints set.
+    if (from !== undefined && to !== undefined) {
+      params.append("from", from.toString());
+      params.append("to", to.toString());
+    } else if (duration && duration !== "all") {
+      params.append("duration", duration);
+    }
+    const trimmed = search?.trim();
+    if (trimmed) params.append("search", trimmed);
 
     let url = `/${projectId}/traces`;
     const paramsStr = params.toString();

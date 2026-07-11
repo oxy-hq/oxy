@@ -90,6 +90,14 @@ dev:
 dev-backend:
     cargo run start
 
+# `oxy start` runs its OWN oxy-clickhouse container — don't also `just clickhouse-up` (both bind :8123).
+# Start the API server with ClickHouse observability + enterprise UI
+dev-backend-obs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source .env.clickhouse; set +a
+    cargo run -p oxy-app -- start --enterprise
+
 # Start the Vite dev server (http://localhost:5173)
 dev-frontend:
     pnpm run dev

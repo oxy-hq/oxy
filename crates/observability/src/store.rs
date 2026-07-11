@@ -36,6 +36,27 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         duration_filter: Option<&str>,
     ) -> Result<(Vec<TraceRow>, i64), OxyError>;
 
+    /// List traces with the above filters plus a free-text `search` and an
+    /// absolute `from_ts`/`to_ts` epoch-second range (Theme 3). Defaults to
+    /// [`Self::list_traces`] (ignoring the extra filters), so only the ClickHouse
+    /// backend implements the full query.
+    #[allow(clippy::too_many_arguments)]
+    async fn search_traces(
+        &self,
+        limit: i64,
+        offset: i64,
+        agent_ref: Option<&str>,
+        status: Option<&str>,
+        duration_filter: Option<&str>,
+        search: Option<&str>,
+        from_ts: Option<i64>,
+        to_ts: Option<i64>,
+    ) -> Result<(Vec<TraceRow>, i64), OxyError> {
+        let _ = (search, from_ts, to_ts);
+        self.list_traces(limit, offset, agent_ref, status, duration_filter)
+            .await
+    }
+
     /// Get all spans for a given trace ID.
     async fn get_trace_detail(&self, trace_id: &str) -> Result<Vec<TraceDetailRow>, OxyError>;
 

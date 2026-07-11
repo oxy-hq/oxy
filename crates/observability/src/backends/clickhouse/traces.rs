@@ -104,6 +104,25 @@ fn escape_sql_literal(s: &str) -> String {
     s.replace('\'', "''")
 }
 
+/// Escape LIKE/ILIKE wildcard metacharacters (`\`, `%`, `_`) so free-text
+/// search matches literally instead of as a pattern — a query like `50%` or
+/// `user_id` must not turn `%`/`_` into wildcards. `\` is ClickHouse's default
+/// LIKE escape character; the doubled `\\` survives the surrounding string
+/// literal because `allow_backslash_escaping_in_strings` is off (see
+/// [`escape_sql_literal`]). The result must still be passed through
+/// [`escape_sql_literal`] for the SQL string literal it's interpolated into.
+fn escape_like_pattern(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn list_traces(
     storage: &ClickHouseObservabilityStorage,
     limit: i64,
@@ -111,6 +130,9 @@ pub(super) async fn list_traces(
     agent_ref: Option<&str>,
     status: Option<&str>,
     duration_filter: Option<&str>,
+    search: Option<&str>,
+    from_ts: Option<i64>,
+    to_ts: Option<i64>,
 ) -> Result<(Vec<TraceRow>, i64), OxyError> {
     let mut conditions = vec![
         "s.span_name IN ('workflow.run_workflow', 'agent.run_agent', 'analytics.run')".to_string(),
@@ -128,8 +150,34 @@ pub(super) async fn list_traces(
         conditions.push(format!("s.status_code = '{}'", escape_sql_literal(st)));
     }
 
-    if let Some(interval) = duration_interval(duration_filter) {
+    // Absolute time range (Theme 3) overrides the preset duration window when set
+    // (epoch seconds).
+    if from_ts.is_some() || to_ts.is_some() {
+        if let Some(from) = from_ts {
+            conditions.push(format!("s.timestamp >= toDateTime({from})"));
+        }
+        if let Some(to) = to_ts {
+            conditions.push(format!("s.timestamp <= toDateTime({to})"));
+        }
+    } else if let Some(interval) = duration_interval(duration_filter) {
         conditions.push(format!("s.timestamp >= now() - {interval}"));
+    }
+
+    // Free-text search (Theme 3): trace id (exact) OR case-insensitive substring
+    // on span name / agent ref / prompt. Kept to specific keys — not a full
+    // span_attributes scan — to stay cheap on the big spans table.
+    if let Some(q) = search.map(str::trim).filter(|q| !q.is_empty()) {
+        // trace_id matches exactly; the ILIKE substring branches match the
+        // query literally (LIKE metacharacters escaped) so `%`/`_` typed into
+        // a prompt search aren't treated as wildcards.
+        let exact = escape_sql_literal(q);
+        let like = escape_sql_literal(&escape_like_pattern(q));
+        conditions.push(format!(
+            "(s.trace_id = '{exact}' \
+             OR s.span_name ILIKE '%{like}%' \
+             OR JSONExtractString(s.span_attributes, 'oxy.agent.ref') ILIKE '%{like}%' \
+             OR JSONExtractString(s.span_attributes, 'agent.prompt') ILIKE '%{like}%')"
+        ));
     }
 
     let where_clause = conditions.join(" AND ");
@@ -426,5 +474,34 @@ fn parse_timestamp_ns(ts: &str) -> i64 {
     match chrono::DateTime::parse_from_rfc3339(ts) {
         Ok(dt) => dt.timestamp_nanos_opt().unwrap_or(0),
         Err(_) => chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{escape_like_pattern, escape_sql_literal};
+
+    #[test]
+    fn sql_literal_doubles_single_quotes() {
+        assert_eq!(escape_sql_literal("O'Brien"), "O''Brien");
+        assert_eq!(escape_sql_literal("plain"), "plain");
+    }
+
+    #[test]
+    fn like_pattern_escapes_wildcards() {
+        assert_eq!(escape_like_pattern("50%"), "50\\%");
+        assert_eq!(escape_like_pattern("user_id"), "user\\_id");
+        assert_eq!(escape_like_pattern("a\\b"), "a\\\\b");
+        assert_eq!(escape_like_pattern("plain"), "plain");
+    }
+
+    #[test]
+    fn like_pattern_composes_with_sql_literal() {
+        // A prompt containing both a quote and a wildcard: metacharacters get a
+        // backslash, then the quote is doubled for the surrounding literal.
+        assert_eq!(
+            escape_sql_literal(&escape_like_pattern("it's 50%")),
+            "it''s 50\\%"
+        );
     }
 }

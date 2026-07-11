@@ -46,6 +46,12 @@ pub struct TraceListQuery {
     pub status: Option<String>,
     /// Duration filter: 1h, 24h, 7d, 30d, or all
     pub duration: Option<String>,
+    /// Free-text search: trace id, span name, agent ref, or prompt (Theme 3).
+    pub search: Option<String>,
+    /// Absolute range start (epoch seconds); with `to`, overrides `duration`.
+    pub from: Option<i64>,
+    /// Absolute range end (epoch seconds).
+    pub to: Option<i64>,
 }
 
 fn default_limit() -> i64 {
@@ -197,12 +203,15 @@ pub async fn list_traces(
         .ok_or_else(|| TracesError::QueryFailed("Observability not configured".into()))?;
 
     let (traces, total) = storage
-        .list_traces(
+        .search_traces(
             params.limit,
             params.offset,
             params.agent_ref.as_deref(),
             params.status.as_deref(),
             params.duration.as_deref(),
+            params.search.as_deref(),
+            params.from,
+            params.to,
         )
         .await
         .map_err(|e| TracesError::QueryFailed(e.to_string()))?;

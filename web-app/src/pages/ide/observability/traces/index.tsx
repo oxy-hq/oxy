@@ -1,16 +1,19 @@
 import { Activity, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import TablePagination from "@/components/ui/TablePagination";
 import { useAuth } from "@/contexts/AuthContext";
-import useTraces from "@/hooks/api/traces/useTraces";
 import ROUTES from "@/libs/utils/routes";
 import PageHeader from "@/pages/ide/components/PageHeader";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import TraceCharts from "./components/Charts";
+import { CompareSelectionBar } from "./components/CompareSelectionBar";
+import { CompareTracesDialog } from "./components/CompareTracesDialog";
+import { TimeRangeControl } from "./components/TimeRangeControl";
 import TracesList from "./components/TracesList";
+import { TracesToolbar } from "./components/TracesToolbar";
+import { useTracesController } from "./useTracesController";
 
 function ObservabilityNotConfiguredBanner() {
   return (
@@ -37,88 +40,60 @@ function ObservabilityNotConfiguredBanner() {
   );
 }
 
-const DURATION_OPTIONS = [
-  { value: "1h", label: "1h" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7d" },
-  { value: "30d", label: "30d" },
-  { value: "90d", label: "90d" }
-] as const;
-
-type DurationValue = (typeof DURATION_OPTIONS)[number]["value"];
-
-const PAGE_SIZE = 10;
-const CHART_LIMIT = 500;
-
 export default function TracesPage() {
   const navigate = useNavigate();
   const { workspace: project } = useCurrentWorkspace();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const { authConfig } = useAuth();
   const observabilityConfigured = authConfig.observability_enabled;
-  const [durationFilter, setDurationFilter] = useState<DurationValue>("30d");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [compareOpen, setCompareOpen] = useState(false);
 
-  const offset = (currentPage - 1) * PAGE_SIZE;
-  const { data: response, isLoading } = useTraces(
-    PAGE_SIZE,
-    offset,
-    "all",
-    observabilityConfigured,
-    durationFilter
-  );
+  const ctl = useTracesController({ enabled: observabilityConfigured });
+  const totalPages = Math.ceil(ctl.total / ctl.pageSize);
 
-  const { data: chartResponse, isLoading: isChartLoading } = useTraces(
-    CHART_LIMIT,
-    0,
-    "all",
-    observabilityConfigured,
-    durationFilter
-  );
-
-  const paginatedTraces = response?.items;
-  const total = response?.total ?? 0;
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
-  const handleTraceClick = (traceId: string) => {
+  const goToTrace = (traceId: string) =>
     navigate(
       ROUTES.ORG(orgSlug)
         .WORKSPACE(project?.id || "")
         .IDE.OBSERVABILITY.TRACE(traceId)
     );
-  };
 
-  const handleDurationChange = (value: DurationValue) => {
-    setDurationFilter(value);
-    setCurrentPage(1);
-  };
-
-  const durationActions = observabilityConfigured ? (
-    <Tabs value={durationFilter} onValueChange={(v) => handleDurationChange(v as DurationValue)}>
-      <TabsList>
-        {DURATION_OPTIONS.map((option) => (
-          <TabsTrigger key={option.value} value={option.value}>
-            {option.label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+  const timeRangeAction = observabilityConfigured ? (
+    <TimeRangeControl value={ctl.timeRange} onChange={ctl.setTimeRange} />
   ) : null;
 
   return (
     <div className='flex h-full flex-col'>
       <div className='flex min-h-0 flex-1 flex-col'>
-        <PageHeader icon={Activity} title='Traces' actions={durationActions} />
+        <PageHeader icon={Activity} title='Traces' actions={timeRangeAction} />
 
         <div className='scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
           {observabilityConfigured ? (
             <>
-              <TraceCharts traces={chartResponse?.items} isLoading={isChartLoading} />
+              <TraceCharts traces={ctl.chartTraces} isLoading={ctl.isChartLoading} />
+              <TracesToolbar
+                search={ctl.searchInput}
+                onSearchChange={ctl.setSearchInput}
+                status={ctl.status}
+                onStatusChange={ctl.setStatus}
+                live={ctl.live}
+                onLiveChange={ctl.setLive}
+                view={ctl.view}
+                onViewChange={ctl.setView}
+              />
+              <CompareSelectionBar
+                count={ctl.compareTraces.length}
+                onCompare={() => ctl.compareTraces.length === 2 && setCompareOpen(true)}
+                onClear={ctl.clearSelection}
+              />
               <TracesList
-                isLoading={isLoading}
-                traces={paginatedTraces}
-                searchQuery=''
-                onTraceClick={handleTraceClick}
+                isLoading={ctl.isLoading}
+                traces={ctl.traces}
+                searchQuery={ctl.filtersActive ? "filtered" : ""}
+                onTraceClick={goToTrace}
+                view={ctl.view}
+                selectedIds={ctl.selectedIds}
+                onToggleSelect={ctl.toggleSelect}
               />
             </>
           ) : (
@@ -126,19 +101,29 @@ export default function TracesPage() {
           )}
         </div>
 
-        {observabilityConfigured && !isLoading && (
+        {observabilityConfigured && !ctl.isLoading && (
           <div className='p-5'>
             <TablePagination
-              currentPage={currentPage}
+              currentPage={ctl.currentPage}
               totalPages={totalPages}
-              totalItems={total}
-              pageSize={PAGE_SIZE}
-              onPageChange={setCurrentPage}
+              totalItems={ctl.total}
+              pageSize={ctl.pageSize}
+              onPageChange={ctl.handlePageChange}
               itemLabel='traces'
             />
           </div>
         )}
       </div>
+
+      <CompareTracesDialog
+        traces={ctl.compareTraces}
+        open={compareOpen}
+        onOpenChange={setCompareOpen}
+        onOpenTrace={(id) => {
+          setCompareOpen(false);
+          goToTrace(id);
+        }}
+      />
     </div>
   );
 }

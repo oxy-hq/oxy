@@ -201,7 +201,43 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         status: Option<&str>,
         duration_filter: Option<&str>,
     ) -> Result<(Vec<TraceRow>, i64), OxyError> {
-        traces::list_traces(self, limit, offset, agent_ref, status, duration_filter).await
+        traces::list_traces(
+            self,
+            limit,
+            offset,
+            agent_ref,
+            status,
+            duration_filter,
+            None,
+            None,
+            None,
+        )
+        .await
+    }
+
+    async fn search_traces(
+        &self,
+        limit: i64,
+        offset: i64,
+        agent_ref: Option<&str>,
+        status: Option<&str>,
+        duration_filter: Option<&str>,
+        search: Option<&str>,
+        from_ts: Option<i64>,
+        to_ts: Option<i64>,
+    ) -> Result<(Vec<TraceRow>, i64), OxyError> {
+        traces::list_traces(
+            self,
+            limit,
+            offset,
+            agent_ref,
+            status,
+            duration_filter,
+            search,
+            from_ts,
+            to_ts,
+        )
+        .await
     }
 
     async fn get_trace_detail(&self, trace_id: &str) -> Result<Vec<TraceDetailRow>, OxyError> {

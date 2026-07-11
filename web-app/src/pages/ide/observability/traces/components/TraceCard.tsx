@@ -1,65 +1,50 @@
 import { AlertCircle, CheckCircle2, Clock, Coins, Timer } from "lucide-react";
 import { Badge } from "@/components/ui/shadcn/badge";
+import { Checkbox } from "@/components/ui/shadcn/checkbox";
+import { cn } from "@/libs/shadcn/utils";
 import type { Trace } from "@/services/api/traces";
-import {
-  getAgentRef,
-  getDurationMs,
-  getPrompt,
-  getSpanAttributesAsRecord,
-  getTokensTotal
-} from "@/services/api/traces";
-import { formatDuration, formatSpanLabel, formatTimeAgo, SpanIcon } from "../../utils";
+import { formatDuration, formatTimeAgo, SpanIcon } from "../../utils";
+import { deriveTraceRow } from "./traceRow";
 
 interface TraceCardProps {
   trace: Trace;
   onClick: () => void;
+  selected?: boolean;
+  /** Selection cap reached — an unselected card can no longer be checked. */
+  selectDisabled?: boolean;
+  onToggleSelect?: () => void;
 }
 
-// Helper to get automation reference from trace attributes
-function getAutomationRef(trace: Trace): string | undefined {
-  const attrs = getSpanAttributesAsRecord(trace);
-  return attrs["oxy.workflow.ref"];
-}
-
-// Helper to determine if trace is a automation
-function isAutomationTrace(trace: Trace): boolean {
-  return trace.spanName.startsWith("workflow.");
-}
-
-// Helper to determine if trace is an analytics run
-function isAnalyticsTrace(trace: Trace): boolean {
-  return trace.spanName === "analytics.run";
-}
-
-// Helper to get question from analytics trace span attributes
-function getAnalyticsQuestion(trace: Trace): string | undefined {
-  const attrs = getSpanAttributesAsRecord(trace);
-  return attrs.question;
-}
-
-export function TraceCard({ trace, onClick }: TraceCardProps) {
-  const isError = trace.statusCode === "Error";
-  const isAutomation = isAutomationTrace(trace);
-  const isAnalytics = isAnalyticsTrace(trace);
-  const agentRef = getAgentRef(trace);
-  const automationRef = getAutomationRef(trace);
-  const prompt = isAnalytics ? getAnalyticsQuestion(trace) : getPrompt(trace);
-  const durationMs = getDurationMs(trace);
-  const tokensTotal = getTokensTotal(trace);
-
-  // For automation traces, use workflow_ref; for agent/analytics traces, use prompt
-  const displayTitle = isAutomation
-    ? automationRef || formatSpanLabel(trace.spanName)
-    : prompt || formatSpanLabel(trace.spanName);
+export function TraceCard({
+  trace,
+  onClick,
+  selected = false,
+  selectDisabled = false,
+  onToggleSelect
+}: TraceCardProps) {
+  const row = deriveTraceRow(trace);
 
   return (
     <div
-      className='cursor-pointer rounded-lg border px-3 py-2 transition-colors hover:bg-accent'
+      className={cn(
+        "flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors hover:bg-accent",
+        selected && "border-primary bg-accent"
+      )}
       onClick={onClick}
     >
-      <div className='flex flex-col gap-1'>
+      {onToggleSelect && (
+        <Checkbox
+          checked={selected}
+          disabled={!selected && selectDisabled}
+          onClick={(e) => e.stopPropagation()}
+          onCheckedChange={() => onToggleSelect()}
+          aria-label='Select trace to compare'
+          className='mt-0.5'
+        />
+      )}
+      <div className='flex min-w-0 flex-1 flex-col gap-1'>
         <div className='flex items-center gap-2'>
-          {isError ? (
+          {row.isError ? (
             <AlertCircle className='h-4 w-4 flex-shrink-0 text-destructive' />
           ) : (
             <CheckCircle2 className='h-4 w-4 flex-shrink-0 text-success' />
@@ -68,37 +53,28 @@ export function TraceCard({ trace, onClick }: TraceCardProps) {
             spanName={trace.spanName}
             className='h-4 w-4 flex-shrink-0 text-muted-foreground'
           />
-          <span className='flex-1 truncate font-medium text-sm'>{displayTitle}</span>
+          <span className='flex-1 truncate font-medium text-sm'>{row.title}</span>
           <span className='flex flex-shrink-0 items-center gap-1 text-muted-foreground text-xs'>
             <Clock className='h-3 w-3' />
-            {formatTimeAgo(trace.timestamp)}
+            {formatTimeAgo(row.timestamp)}
           </span>
         </div>
         <div className='ml-6 flex items-center gap-2'>
-          {/* Show span type label */}
           <Badge variant='outline' className='text-xs'>
-            {formatSpanLabel(trace.spanName)}
+            {row.spanLabel}
           </Badge>
 
-          {/* Show agent ref for agent traces */}
-          {!isAutomation && agentRef && (
-            <span className='text-muted-foreground text-xs'>{agentRef}</span>
-          )}
-
-          {/* Show automation ref for automation traces */}
-          {isAutomation && automationRef && (
-            <span className='text-muted-foreground text-xs'>{automationRef}</span>
-          )}
+          {row.entityRef && <span className='text-muted-foreground text-xs'>{row.entityRef}</span>}
 
           <Badge variant='secondary' className='gap-1 text-xs'>
             <Timer className='h-3 w-3' />
-            {formatDuration(durationMs)}
+            {formatDuration(row.durationMs)}
           </Badge>
 
-          {!!tokensTotal && tokensTotal !== 0 && (
+          {!!row.tokensTotal && row.tokensTotal !== 0 && (
             <Badge variant='outline' className='gap-1 text-xs'>
               <Coins className='h-3 w-3' />
-              {tokensTotal.toLocaleString()}
+              {row.tokensTotal.toLocaleString()}
             </Badge>
           )}
         </div>
