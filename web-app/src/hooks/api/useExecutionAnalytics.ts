@@ -1,9 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import type {
   AgentExecutionStats,
+  CostResponse,
   ExecutionDetail,
   ExecutionSummary,
-  ExecutionTimeBucket
+  ExecutionTimeBucket,
+  HistogramResponse,
+  PercentilesResponse
 } from "@/pages/ide/observability/execution-analytics/types";
 import {
   type AgentStatsQuery,
@@ -12,6 +15,7 @@ import {
   type SummaryQuery,
   type TimeSeriesQuery
 } from "@/services/api/executionAnalytics";
+import queryKeys from "./queryKey";
 
 // Query keys for execution analytics
 const executionAnalyticsKeys = {
@@ -67,5 +71,35 @@ export const useExecutions = (
   useQuery<{ executions: ExecutionDetail[]; total: number }, Error>({
     queryKey: executionAnalyticsKeys.executions(projectId!, params),
     queryFn: () => ExecutionAnalyticsService.getExecutions(projectId!, params),
+    enabled: enabled && !!projectId
+  });
+
+// New "technical" analytics endpoints — keyed via the canonical queryKey.ts.
+export const useExecutionPercentiles = (
+  projectId: string | undefined,
+  days?: number,
+  enabled = true
+) =>
+  useQuery<PercentilesResponse, Error>({
+    queryKey: queryKeys.executionAnalytics.percentiles(projectId!, days),
+    queryFn: () => ExecutionAnalyticsService.getPercentiles(projectId!, { days }),
+    enabled: enabled && !!projectId
+  });
+
+export const useExecutionHistogram = (
+  projectId: string | undefined,
+  days?: number,
+  enabled = true
+) =>
+  useQuery<HistogramResponse, Error>({
+    queryKey: queryKeys.executionAnalytics.histogram(projectId!, days),
+    queryFn: () => ExecutionAnalyticsService.getHistogram(projectId!, { days }),
+    enabled: enabled && !!projectId
+  });
+
+export const useExecutionCost = (projectId: string | undefined, days?: number, enabled = true) =>
+  useQuery<CostResponse, Error>({
+    queryKey: queryKeys.executionAnalytics.cost(projectId!, days),
+    queryFn: () => ExecutionAnalyticsService.getCost(projectId!, { days }),
     enabled: enabled && !!projectId
   });

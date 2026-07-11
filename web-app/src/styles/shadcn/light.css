@@ -73,6 +73,18 @@
   --vis-orange: #f97316;
   --vis-violet: #8b5cf6;
 
+  /* Observability span categories — CVD/contrast-checked (identical light & dark) */
+  --span-agent: #0891b2;
+  --span-llm: #9333ea;
+  --span-tool: #ea580c;
+  --span-sql: #2563eb;
+  --span-retrieval: #db2777;
+
+  /* Latency percentile ramp — single cyan ramp, 3 steps (p50 light → p99 dark) */
+  --pct-p50: #7cc9dd;
+  --pct-p95: #1497b6;
+  --pct-p99: #0e6d84;
+
   /* Rank badges (gold / silver / bronze) */
   --rank-gold: #eab308;
   --rank-gold-foreground: #422006;

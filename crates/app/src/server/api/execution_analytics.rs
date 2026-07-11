@@ -12,8 +12,9 @@ use axum::{
     routing::get,
 };
 use oxy::execution_analytics::{
-    AgentExecutionStats, ExecutionDetail, ExecutionListResponse, ExecutionSummary,
-    ExecutionTimeBucket,
+    AgentExecutionStats, ExecutionCostResponse, ExecutionDetail, ExecutionListResponse,
+    ExecutionSummary, ExecutionTimeBucket, HistogramBucket, LatencyHistogramResponse,
+    LatencyPercentilePoint, LatencyPercentilesResponse, LatencyTriple, ModelCost, model_cost_usd,
 };
 use serde::Deserialize;
 use utoipa::IntoParams;
@@ -85,6 +86,14 @@ pub struct ExecutionsQuery {
     pub source_ref: Option<String>,
     /// Filter by status (success, error)
     pub status: Option<String>,
+}
+
+/// Shared look-back query for the latency/cost endpoints.
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct DaysQuery {
+    /// Number of days to look back (default: 7)
+    #[serde(default = "default_days")]
+    pub days: u32,
 }
 
 fn default_days() -> u32 {
@@ -350,10 +359,136 @@ fn non_empty(s: String) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
+/// Get latency percentiles (p50/p95/p99) — overall window plus a daily series.
+#[utoipa::path(
+    get,
+    path = "/api/{workspace_id}/execution-analytics/percentiles",
+    params(DaysQuery),
+    responses((status = 200, body = LatencyPercentilesResponse), (status = 500))
+)]
+pub async fn get_percentiles(
+    State(state): State<AppState>,
+    Path(_workspace_id): Path<Uuid>,
+    Query(params): Query<DaysQuery>,
+) -> Result<Json<LatencyPercentilesResponse>, ExecutionAnalyticsError> {
+    let storage = state.observability.as_ref().ok_or_else(|| {
+        ExecutionAnalyticsError::QueryFailed("Observability not configured".into())
+    })?;
+
+    let data = storage
+        .get_latency_percentiles(params.days)
+        .await
+        .map_err(|e| ExecutionAnalyticsError::QueryFailed(e.to_string()))?;
+
+    Ok(Json(LatencyPercentilesResponse {
+        overall: LatencyTriple {
+            p50_ms: data.overall.p50_ms,
+            p95_ms: data.overall.p95_ms,
+            p99_ms: data.overall.p99_ms,
+        },
+        series: data
+            .series
+            .into_iter()
+            .map(|p| LatencyPercentilePoint {
+                date: p.date,
+                p50_ms: p.p50_ms,
+                p95_ms: p.p95_ms,
+                p99_ms: p.p99_ms,
+            })
+            .collect(),
+    }))
+}
+
+/// Get the latency histogram (log buckets) with p50/p95/p99 markers.
+#[utoipa::path(
+    get,
+    path = "/api/{workspace_id}/execution-analytics/histogram",
+    params(DaysQuery),
+    responses((status = 200, body = LatencyHistogramResponse), (status = 500))
+)]
+pub async fn get_histogram(
+    State(state): State<AppState>,
+    Path(_workspace_id): Path<Uuid>,
+    Query(params): Query<DaysQuery>,
+) -> Result<Json<LatencyHistogramResponse>, ExecutionAnalyticsError> {
+    let storage = state.observability.as_ref().ok_or_else(|| {
+        ExecutionAnalyticsError::QueryFailed("Observability not configured".into())
+    })?;
+
+    let data = storage
+        .get_latency_histogram(params.days)
+        .await
+        .map_err(|e| ExecutionAnalyticsError::QueryFailed(e.to_string()))?;
+
+    Ok(Json(LatencyHistogramResponse {
+        buckets: data
+            .buckets
+            .into_iter()
+            .map(|b| HistogramBucket {
+                upper_ms: b.upper_ms,
+                count: b.count,
+            })
+            .collect(),
+        p50_ms: data.percentiles.p50_ms,
+        p95_ms: data.percentiles.p95_ms,
+        p99_ms: data.percentiles.p99_ms,
+    }))
+}
+
+/// Get per-model LLM token usage and estimated cost.
+#[utoipa::path(
+    get,
+    path = "/api/{workspace_id}/execution-analytics/cost",
+    params(DaysQuery),
+    responses((status = 200, body = ExecutionCostResponse), (status = 500))
+)]
+pub async fn get_cost(
+    State(state): State<AppState>,
+    Path(_workspace_id): Path<Uuid>,
+    Query(params): Query<DaysQuery>,
+) -> Result<Json<ExecutionCostResponse>, ExecutionAnalyticsError> {
+    let storage = state.observability.as_ref().ok_or_else(|| {
+        ExecutionAnalyticsError::QueryFailed("Observability not configured".into())
+    })?;
+
+    let data = storage
+        .get_model_usage(params.days)
+        .await
+        .map_err(|e| ExecutionAnalyticsError::QueryFailed(e.to_string()))?;
+
+    let mut total_cost_usd = 0.0;
+    let mut total_tokens = 0u64;
+    let by_model = data
+        .into_iter()
+        .map(|m| {
+            let tokens = m.input_tokens + m.output_tokens;
+            let cost_usd = model_cost_usd(&m.model, m.input_tokens, m.output_tokens);
+            total_cost_usd += cost_usd;
+            total_tokens += tokens;
+            ModelCost {
+                model: m.model,
+                calls: m.calls,
+                tokens,
+                cost_usd,
+                p95_ms: m.p95_ms,
+            }
+        })
+        .collect();
+
+    Ok(Json(ExecutionCostResponse {
+        total_cost_usd,
+        total_tokens,
+        by_model,
+    }))
+}
+
 pub fn execution_analytics_routes() -> Router<AppState> {
     Router::new()
         .route("/summary", get(get_summary))
         .route("/time-series", get(get_time_series))
         .route("/agents", get(get_agent_stats))
         .route("/executions", get(get_executions))
+        .route("/percentiles", get(get_percentiles))
+        .route("/histogram", get(get_histogram))
+        .route("/cost", get(get_cost))
 }

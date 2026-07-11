@@ -85,6 +85,16 @@
   --color-vis-orange: var(--vis-orange);
   --color-vis-violet: var(--vis-violet);
 
+  --color-span-agent: var(--span-agent);
+  --color-span-llm: var(--span-llm);
+  --color-span-tool: var(--span-tool);
+  --color-span-sql: var(--span-sql);
+  --color-span-retrieval: var(--span-retrieval);
+
+  --color-pct-p50: var(--pct-p50);
+  --color-pct-p95: var(--pct-p95);
+  --color-pct-p99: var(--pct-p99);
+
   --color-rank-gold: var(--rank-gold);
   --color-rank-gold-foreground: var(--rank-gold-foreground);
   --color-rank-silver: var(--rank-silver);

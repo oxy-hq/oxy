@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# Local ClickHouse for the oxy observability backend.
+#
+# Observability runs on ClickHouse (spans, the execution rollup, metrics,
+# intents). This boots one self-contained ClickHouse server so you can exercise
+# the obs backend locally — schema creation, the `observability_executions`
+# rollup materialized view, retention TTL, and the /traces + /execution-analytics
+# endpoints — before deploying to cloud.
+#
+# It's far simpler than docker-compose.airhouse.yml: at 90-day retention there
+# is no S3 cold tier, so it's a single server — no MinIO, no catalog Postgres,
+# no haproxy, no control/data-plane split.
+#
+# Usage:
+#   docker compose -f docker-compose.clickhouse.yml up -d      # or: just clickhouse-up
+#
+#   set -a; source .env.clickhouse; set +a
+#   cargo run -p oxy-app -- serve --enterprise    # boot runs ensure_schema (tables + rollup MV + backfill)
+#
+# Verify:
+#   just clickhouse-status        # service + tables + row counts
+#   just clickhouse-obs-verify    # synthetic-span smoke test of the rollup MV + percentile/histogram/cost SQL
+#   just clickhouse-client        # interactive SQL shell
+#
+# Override the image tag (defaults to the version oxy's own `oxy start` boots):
+#   CLICKHOUSE_IMAGE_TAG=25.3 docker compose -f docker-compose.clickhouse.yml up -d
+#
+# Tear down (drops the data volume):
+#   docker compose -f docker-compose.clickhouse.yml down -v    # or: just clickhouse-down
+#
+# HTTP 8123 is what oxy connects to (OXY_CLICKHOUSE_URL). Native TCP 9000 is
+# mapped to host 9010 so it doesn't clash with the Airhouse stack's MinIO (9000).
+# The container is named `oxy-clickhouse-local` to avoid colliding with the
+# `oxy-clickhouse` container that `oxy start` manages — run one or the other.
+# ---------------------------------------------------------------------------
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_IMAGE_TAG:-25.12.5.44}
+    container_name: oxy-clickhouse-local
+    environment:
+      # Auto-creates the database oxy's obs backend connects to
+      # (OXY_CLICKHOUSE_DATABASE=observability). oxy connects as the built-in
+      # `default` user with an empty password (OXY_CLICKHOUSE_USER=default,
+      # OXY_CLICKHOUSE_PASSWORD unset), which the image provides by default.
+      CLICKHOUSE_DB: observability
+    ports:
+      - "8123:8123" # HTTP — oxy's ClickHouse client connects here
+      - "9010:9000" # native TCP (host 9010 avoids the Airhouse MinIO 9000)
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    ulimits:
+      # ClickHouse wants a high open-file limit; the default is too low.
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  clickhouse-data:

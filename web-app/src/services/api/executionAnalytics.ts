@@ -1,8 +1,11 @@
 import type {
   AgentExecutionStats,
+  CostResponse,
   ExecutionDetail,
   ExecutionSummary,
-  ExecutionTimeBucket
+  ExecutionTimeBucket,
+  HistogramResponse,
+  PercentilesResponse
 } from "@/pages/ide/observability/execution-analytics/types";
 import { apiClient } from "./axios";
 
@@ -75,6 +78,51 @@ export class ExecutionAnalyticsService {
     if (params?.limit !== undefined) urlParams.append("limit", params.limit.toString());
 
     let url = `/${projectId}/execution-analytics/agents`;
+    const paramsStr = urlParams.toString();
+    if (paramsStr) {
+      url += `?${paramsStr}`;
+    }
+    const response = await apiClient.get(url);
+    return response.data;
+  }
+
+  static async getPercentiles(
+    projectId: string,
+    params?: TimeSeriesQuery
+  ): Promise<PercentilesResponse> {
+    const urlParams = new URLSearchParams();
+    if (params?.days !== undefined) urlParams.append("days", params.days.toString());
+
+    let url = `/${projectId}/execution-analytics/percentiles`;
+    const paramsStr = urlParams.toString();
+    if (paramsStr) {
+      url += `?${paramsStr}`;
+    }
+    const response = await apiClient.get(url);
+    return response.data;
+  }
+
+  static async getHistogram(
+    projectId: string,
+    params?: TimeSeriesQuery
+  ): Promise<HistogramResponse> {
+    const urlParams = new URLSearchParams();
+    if (params?.days !== undefined) urlParams.append("days", params.days.toString());
+
+    let url = `/${projectId}/execution-analytics/histogram`;
+    const paramsStr = urlParams.toString();
+    if (paramsStr) {
+      url += `?${paramsStr}`;
+    }
+    const response = await apiClient.get(url);
+    return response.data;
+  }
+
+  static async getCost(projectId: string, params?: TimeSeriesQuery): Promise<CostResponse> {
+    const urlParams = new URLSearchParams();
+    if (params?.days !== undefined) urlParams.append("days", params.days.toString());
+
+    let url = `/${projectId}/execution-analytics/cost`;
     const paramsStr = urlParams.toString();
     if (paramsStr) {
       url += `?${paramsStr}`;

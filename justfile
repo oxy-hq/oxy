@@ -344,6 +344,94 @@ airhouse-verify-blobs:
         AWS_PAGER='' aws --endpoint-url "$AWS_ENDPOINT_URL" \
         s3 ls "s3://${OXY_COMPILE_BLOB_S3_BUCKET}/workspaces/" --recursive
 
+# ── ClickHouse local observability stack ────────────────────────────────────────
+
+# Boot the local ClickHouse observability server.
+clickhouse-up:
+    docker compose -f docker-compose.clickhouse.yml up -d
+    @echo
+    @echo "ClickHouse booting on http://localhost:8123 (database: observability)."
+    @echo "Check readiness:  just clickhouse-status"
+    @echo
+    @echo "Point oxy at it (boot creates the obs schema — tables + rollup MV + backfill):"
+    @echo "  set -a; source .env.clickhouse; set +a"
+    @echo "  cargo run -p oxy-app -- serve --enterprise"
+    @echo
+    @echo "Then verify — no LLM/agent run needed:"
+    @echo "  just clickhouse-status        # tables + row counts"
+    @echo "  just clickhouse-obs-verify    # synthetic-span smoke test: rollup MV + percentile/histogram/cost SQL"
+    @echo "  just clickhouse-client        # interactive SQL shell"
+
+# Tear it down (drops the data volume; pass --keep-data to retain).
+clickhouse-down *FLAGS:
+    docker compose -f docker-compose.clickhouse.yml down {{ if FLAGS =~ "--keep-data" { "" } else { "-v" } }}
+
+# Tail ClickHouse logs.
+clickhouse-logs:
+    docker compose -f docker-compose.clickhouse.yml logs -f
+
+# Show status: service + observability tables + row counts.
+clickhouse-status:
+    @docker compose -f docker-compose.clickhouse.yml ps
+    @echo
+    @echo "==> Tables in observability:"
+    @docker compose -f docker-compose.clickhouse.yml exec -T clickhouse \
+        clickhouse-client --query "SHOW TABLES FROM observability" 2>/dev/null \
+        || echo "  (not ready, or oxy hasn't created the schema yet — run oxy serve with .env.clickhouse)"
+    @echo
+    @echo "==> Row counts:"
+    @docker compose -f docker-compose.clickhouse.yml exec -T clickhouse clickhouse-client --query \
+        "SELECT 'spans' t, count() rows FROM observability.observability_spans \
+         UNION ALL SELECT 'executions', count() FROM observability.observability_executions \
+         ORDER BY t FORMAT PrettyCompact" 2>/dev/null \
+        || echo "  (tables not created yet — run oxy serve with .env.clickhouse first)"
+
+# Interactive clickhouse-client shell on the observability database.
+clickhouse-client:
+    docker compose -f docker-compose.clickhouse.yml exec clickhouse clickhouse-client --database observability
+
+# Smoke-test the observability rollup + analytics SQL WITHOUT an LLM/agent run:
+# insert synthetic spans, confirm the observability_executions MV flattened them
+# (agent_ref denormalization, is_success, error extraction), then run the
+# p50/p95/p99 + histogram + cost queries. Requires the schema (tables + MV) to
+# exist — create it by booting oxy once against this ClickHouse (see
+# clickhouse-up). Does NOT duplicate the DDL; schema.rs stays canonical.
+clickhouse-obs-verify:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ch() { docker compose -f docker-compose.clickhouse.yml exec -T clickhouse clickhouse-client "$@"; }
+
+    if ! ch --query "EXISTS TABLE observability.observability_executions" | grep -q 1; then
+      echo "✗ observability.observability_executions not found — create the schema first:"
+      echo "    set -a; source .env.clickhouse; set +a; cargo run -p oxy-app -- serve --enterprise"
+      exit 1
+    fi
+    if ! ch --query "EXISTS TABLE observability.observability_executions_mv" | grep -q 1; then
+      echo "✗ rollup MV observability_executions_mv missing (oxy boot should create it)."; exit 1
+    fi
+
+    echo "→ inserting synthetic spans (2 tool_call + 1 llm)…"
+    ch --query "INSERT INTO observability.observability_spans (trace_id,span_id,span_name,span_attributes,event_data,duration_ns,status_code,timestamp) VALUES ('smoke-1','smoke-tool-ok','analytics.tool_call','{\"oxy.span_type\":\"tool_call\",\"oxy.execution_type\":\"semantic_query\",\"oxy.is_verified\":\"true\",\"oxy.agent.ref\":\"smoke_agent\",\"agent.prompt\":\"what is MRR\",\"oxy.database\":\"demo\"}','[{\"name\":\"tool_call.output\",\"attributes\":{\"status\":\"success\",\"output\":\"42\"}}]',1500000000,'OK',now64(9))"
+    ch --query "INSERT INTO observability.observability_spans (trace_id,span_id,span_name,span_attributes,event_data,duration_ns,status_code,timestamp) VALUES ('smoke-1','smoke-tool-err','analytics.tool_call','{\"oxy.span_type\":\"tool_call\",\"oxy.execution_type\":\"sql_generated\",\"oxy.is_verified\":\"false\",\"oxy.agent.ref\":\"smoke_agent\",\"agent.prompt\":\"bad query\"}','[{\"name\":\"tool_call.output\",\"attributes\":{\"status\":\"error\",\"error.message\":\"boom\"}}]',420000000,'ERROR',now64(9))"
+    ch --query "INSERT INTO observability.observability_spans (trace_id,span_id,span_name,span_attributes,event_data,duration_ns,status_code,timestamp) VALUES ('smoke-1','smoke-llm','llm.call','{\"oxy.span_type\":\"llm\",\"gen_ai.request.model\":\"claude-sonnet-5\"}','[{\"name\":\"llm.usage\",\"attributes\":{\"prompt_tokens\":\"1000\",\"completion_tokens\":\"500\"}}]',800000000,'OK',now64(9))"
+
+    echo; echo "→ [1/4] rollup MV flattened the tool_call spans (expect ok→is_success=1 err='', err→is_success=0 err='boom', agent_ref=smoke_agent on both):"
+    ch --query "SELECT span_id,agent_ref,execution_type,is_verified,is_success,error_message,user_question FROM observability.observability_executions WHERE trace_id='smoke-1' ORDER BY span_id FORMAT PrettyCompact"
+
+    echo; echo "→ [2/4] latency percentiles (quantile over duration_ns):"
+    ch --query "SELECT round(quantile(0.5)(duration_ns)/1e6,1) p50_ms, round(quantile(0.95)(duration_ns)/1e6,1) p95_ms, round(quantile(0.99)(duration_ns)/1e6,1) p99_ms FROM observability.observability_executions WHERE trace_id='smoke-1' FORMAT PrettyCompact"
+
+    echo; echo "→ [3/4] latency histogram buckets:"
+    ch --query "SELECT toUInt16(least(15,greatest(0,toInt32(floor(log2(greatest(duration_ns/1e6,1.0))))))) bucket, count() c FROM observability.observability_executions WHERE trace_id='smoke-1' GROUP BY bucket ORDER BY bucket FORMAT PrettyCompact"
+
+    echo; echo "→ [4/4] cost/model aggregation over llm spans (expect claude-sonnet-5, 1000 in / 500 out):"
+    ch --query "SELECT model, count() calls, sum(input_tokens) in_tok, sum(output_tokens) out_tok FROM (SELECT JSONExtractString(span_attributes,'gen_ai.request.model') model, toInt64OrZero(JSONExtractString(arrayFirst(x -> JSONExtractString(x,'name')='llm.usage', JSONExtractArrayRaw(event_data)),'attributes','prompt_tokens')) input_tokens, toInt64OrZero(JSONExtractString(arrayFirst(x -> JSONExtractString(x,'name')='llm.usage', JSONExtractArrayRaw(event_data)),'attributes','completion_tokens')) output_tokens FROM observability.observability_spans WHERE JSONExtractString(span_attributes,'oxy.span_type')='llm' AND trace_id='smoke-1') WHERE model!='' GROUP BY model FORMAT PrettyCompact"
+
+    echo; echo "→ cleanup synthetic rows"
+    ch --query "DELETE FROM observability.observability_spans WHERE trace_id='smoke-1'"
+    ch --query "DELETE FROM observability.observability_executions WHERE trace_id='smoke-1'"
+    echo "✓ smoke complete — if the four blocks above look right, the rollup + analytics SQL work on real ClickHouse."
+
 # ── Routing boundary check ─────────────────────────────────────────────────────
 
 # Probe a running node and show how each route ROLE is handled, by dumping the

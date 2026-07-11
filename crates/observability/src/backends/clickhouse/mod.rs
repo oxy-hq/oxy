@@ -5,26 +5,37 @@
 
 mod execution_analytics;
 mod intents;
+mod latency_cost;
 mod metrics;
 pub mod schema;
 mod traces;
 
 use async_trait::async_trait;
-use clickhouse::Client;
+use clickhouse::{Client, Row};
 use oxy_shared::errors::OxyError;
+use serde::Deserialize;
+
+/// Single-column `count()` result used by the rollup backfill guard.
+#[derive(Debug, Deserialize, Row)]
+struct RowCount {
+    c: u64,
+}
 
 use crate::intent_types::IntentCluster;
 use crate::store::ObservabilityStore;
 use crate::types::{
     AgentExecutionStatsData, ClusterInfoRow, ClusterMapDataRow, ExecutionListData,
-    ExecutionSummaryData, ExecutionTimeBucketData, IntentAnalyticsRow, MetricAnalyticsData,
-    MetricDetailData, MetricUsageRecord, MetricsListData, SpanRecord, TraceDetailRow,
-    TraceEnrichmentRow, TraceRow,
+    ExecutionSummaryData, ExecutionTimeBucketData, IntentAnalyticsRow, LatencyHistogramData,
+    LatencyPercentilesData, MetricAnalyticsData, MetricDetailData, MetricUsageRecord,
+    MetricsListData, ModelUsageData, SpanRecord, TraceDetailRow, TraceEnrichmentRow, TraceRow,
 };
 
 /// ClickHouse observability storage backend.
 pub struct ClickHouseObservabilityStorage {
     client: Client,
+    /// Target database (from `OXY_CLICKHOUSE_DATABASE`). Kept so `ensure_schema`
+    /// can `CREATE DATABASE` it before the unqualified table DDL runs.
+    database: String,
 }
 
 impl std::fmt::Debug for ClickHouseObservabilityStorage {
@@ -42,7 +53,10 @@ impl ClickHouseObservabilityStorage {
             .with_user(user)
             .with_password(password)
             .with_database(database);
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            database: database.to_string(),
+        })
     }
 
     /// Construct from standard `OXY_CLICKHOUSE_*` environment variables.
@@ -65,11 +79,86 @@ impl ClickHouseObservabilityStorage {
     ///
     /// Safe to call on every startup; uses `CREATE TABLE IF NOT EXISTS` DDL.
     pub async fn ensure_schema(&self) -> Result<(), OxyError> {
+        // The unqualified `CREATE TABLE` DDL below targets the connection's
+        // database, which must already exist. A CHI / managed ClickHouse (unlike
+        // the local docker image's `CLICKHOUSE_DB`) does not pre-create it, so
+        // create it here via a client scoped to the always-present `default` db.
+        // `database` is operator config (backtick-quoted defensively).
+        self.client
+            .clone()
+            .with_database("default")
+            .query(&format!(
+                "CREATE DATABASE IF NOT EXISTS `{}`",
+                self.database
+            ))
+            .execute()
+            .await
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("ClickHouse CREATE DATABASE failed: {e}"))
+            })?;
+
         for ddl in schema::ALL_DDL {
             self.client.query(ddl).execute().await.map_err(|e| {
                 OxyError::RuntimeError(format!("ClickHouse schema DDL failed: {e}"))
             })?;
         }
+
+        // The execution rollup MV shares its flatten logic with the backfill via
+        // `EXECUTIONS_SELECT`, so it's assembled here rather than sitting in
+        // `ALL_DDL` as a frozen string.
+        let mv = format!(
+            "{} {}",
+            schema::CREATE_EXECUTIONS_MV_PREFIX,
+            schema::EXECUTIONS_SELECT
+        );
+        self.client.query(&mv).execute().await.map_err(|e| {
+            OxyError::RuntimeError(format!("ClickHouse executions MV DDL failed: {e}"))
+        })?;
+
+        self.backfill_executions_history().await?;
+        Ok(())
+    }
+
+    /// Seed `observability_executions` from spans already on disk.
+    ///
+    /// The materialized view only captures spans inserted *after* it exists, so
+    /// on the first deploy the Execution Analytics panels would read an empty
+    /// rollup until 90 days of fresh traffic accrued. This one-shot backfill
+    /// flattens the existing retention window using the same `EXECUTIONS_SELECT`
+    /// the MV uses (so rows are identical).
+    ///
+    /// The guard is deliberately *not* `count() == 0`: the MV is already live by
+    /// the time we reach here, so a single span inserted between MV creation and
+    /// the check would flip an empty-table guard and silently skip the whole
+    /// historical seed — forever, since the guard would then stay non-zero. We
+    /// instead ask whether any rollup row is older than an hour: a fresh MV row
+    /// carries a ~now() timestamp so it can't trip this guard, but a prior
+    /// backfill (or an hour of live traffic) does. A concurrent insert during
+    /// the backfill window is deduped by `ReplacingMergeTree` on the `span_id`
+    /// key (and reads use `FINAL`).
+    async fn backfill_executions_history(&self) -> Result<(), OxyError> {
+        let seeded = self
+            .client
+            .query(
+                "SELECT count() AS c FROM observability_executions \
+                 WHERE timestamp < now() - INTERVAL 1 HOUR",
+            )
+            .fetch_one::<RowCount>()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("executions rollup count failed: {e}")))?;
+        if seeded.c > 0 {
+            return Ok(());
+        }
+
+        let backfill = format!(
+            "INSERT INTO observability_executions {} AND timestamp >= now() - INTERVAL {} DAY",
+            schema::EXECUTIONS_SELECT,
+            crate::RETENTION_DAYS
+        );
+        self.client.query(&backfill).execute().await.map_err(|e| {
+            OxyError::RuntimeError(format!("executions rollup backfill failed: {e}"))
+        })?;
+        tracing::info!("observability: backfilled execution rollup from existing spans");
         Ok(())
     }
 
@@ -81,6 +170,7 @@ impl ClickHouseObservabilityStorage {
     pub async fn apply_retention_ttl(&self, retention_days: u32) -> Result<(), OxyError> {
         let tables: &[(&str, &str)] = &[
             ("observability_spans", "timestamp"),
+            ("observability_executions", "timestamp"),
             ("observability_intent_classifications", "classified_at"),
             ("observability_metric_usage", "created_at"),
         ];
@@ -302,6 +392,18 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
             status,
         )
         .await
+    }
+
+    async fn get_latency_percentiles(&self, days: u32) -> Result<LatencyPercentilesData, OxyError> {
+        latency_cost::get_latency_percentiles(self, days).await
+    }
+
+    async fn get_latency_histogram(&self, days: u32) -> Result<LatencyHistogramData, OxyError> {
+        latency_cost::get_latency_histogram(self, days).await
+    }
+
+    async fn get_model_usage(&self, days: u32) -> Result<Vec<ModelUsageData>, OxyError> {
+        latency_cost::get_model_usage(self, days).await
     }
 
     async fn insert_spans(&self, spans: Vec<SpanRecord>) -> Result<(), OxyError> {

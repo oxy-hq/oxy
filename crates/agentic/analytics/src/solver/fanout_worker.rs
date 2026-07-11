@@ -495,6 +495,10 @@ impl AnalyticsFanoutWorker {
             "analytics.tool_call",
             oxy.name = "analytics.tool_call",
             oxy.span_type = "tool_call",
+            // Denormalized from the run span so the execution rollup MV is a
+            // single-source flatten (no read-time span-to-span join).
+            oxy.agent.ref = %self.agent_id,
+            agent.prompt = %self.question,
             oxy.execution_type = execution_type,
             oxy.is_verified = is_verified,
             connector = %solution.connector_name,

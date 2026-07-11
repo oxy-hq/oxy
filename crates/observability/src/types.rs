@@ -289,3 +289,53 @@ pub struct ExecutionListData {
     pub limit: usize,
     pub offset: usize,
 }
+
+/// A p50/p95/p99 latency triple, in milliseconds.
+#[derive(Debug, Clone, Default)]
+pub struct LatencyPercentiles {
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+}
+
+/// One daily latency-percentile point.
+#[derive(Debug, Clone)]
+pub struct LatencyPercentilePoint {
+    pub date: String,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+}
+
+/// Latency percentiles: overall window plus a daily series.
+#[derive(Debug, Clone, Default)]
+pub struct LatencyPercentilesData {
+    pub overall: LatencyPercentiles,
+    pub series: Vec<LatencyPercentilePoint>,
+}
+
+/// One latency-histogram bucket (`upper_ms` is the bucket's inclusive upper
+/// bound in milliseconds).
+#[derive(Debug, Clone)]
+pub struct HistogramBucketData {
+    pub upper_ms: f64,
+    pub count: u64,
+}
+
+/// Latency histogram plus the p50/p95/p99 markers to overlay on it.
+#[derive(Debug, Clone, Default)]
+pub struct LatencyHistogramData {
+    pub buckets: Vec<HistogramBucketData>,
+    pub percentiles: LatencyPercentiles,
+}
+
+/// Per-model LLM token usage. Cost is computed downstream from a price map
+/// (tokens are engine-neutral; prices are not the storage layer's concern).
+#[derive(Debug, Clone)]
+pub struct ModelUsageData {
+    pub model: String,
+    pub calls: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub p95_ms: f64,
+}

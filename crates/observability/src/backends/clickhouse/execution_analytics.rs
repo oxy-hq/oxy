@@ -1,4 +1,12 @@
-//! Execution analytics queries against ClickHouse.
+//! Execution analytics queries against the `observability_executions` rollup.
+//!
+//! Each row is one flattened `tool_call` span (produced by
+//! [`super::schema::EXECUTIONS_SELECT`]), so every panel here is a plain
+//! scan/aggregation over a pre-reduced table — no `spans ⋈ spans` self-join and
+//! no per-row `JSONExtract` over `span_attributes`/`event_data` (axiom S2). The
+//! rollup already encodes `is_verified`, `is_success`, `agent_ref`,
+//! `user_question`, and the error/input/output text, so the read path just reads
+//! columns.
 
 use clickhouse::Row;
 use oxy_shared::errors::OxyError;
@@ -10,45 +18,9 @@ use crate::types::{
     ExecutionTimeBucketData,
 };
 
-const CH_EXECUTION_BASE_FROM: &str = "\
-    FROM observability_spans AS tool \
-    INNER JOIN observability_spans AS agent \
-        ON tool.trace_id = agent.trace_id \
-        AND agent.span_name IN ('agent.run_agent', 'analytics.run')";
-
-const CH_EXECUTION_BASE_WHERE: &str = "\
-    JSONExtractString(tool.span_attributes, 'oxy.span_type') = 'tool_call' \
-    AND JSONExtractString(tool.span_attributes, 'oxy.execution_type') IN \
-        ('semantic_query', 'omni_query', 'sql_generated', 'workflow', 'agent_tool') \
-    AND JSONExtractString(agent.span_attributes, 'oxy.agent.ref') != ''";
-
-fn error_message_expr() -> String {
-    // Finds the error.message attribute of the first tool_call.output event
-    // whose status is 'error'. Expressed as a subquery so it can be dropped
-    // straight into larger SQL.
-    "(SELECT JSONExtractString(ev, 'attributes', 'error.message')
-      FROM (SELECT arrayJoin(JSONExtractArrayRaw(tool.event_data)) AS ev)
-      WHERE JSONExtractString(ev, 'name') = 'tool_call.output'
-        AND JSONExtractString(ev, 'attributes', 'status') = 'error'
-      LIMIT 1)"
-        .to_string()
-}
-
-fn input_expr() -> String {
-    "(SELECT JSONExtractString(ev, 'attributes', 'input')
-      FROM (SELECT arrayJoin(JSONExtractArrayRaw(tool.event_data)) AS ev)
-      WHERE JSONExtractString(ev, 'name') = 'tool_call.input'
-      LIMIT 1)"
-        .to_string()
-}
-
-fn output_expr() -> String {
-    "(SELECT JSONExtractString(ev, 'attributes', 'output')
-      FROM (SELECT arrayJoin(JSONExtractArrayRaw(tool.event_data)) AS ev)
-      WHERE JSONExtractString(ev, 'name') = 'tool_call.output'
-        AND JSONExtractString(ev, 'attributes', 'status') = 'success'
-      LIMIT 1)"
-        .to_string()
+/// Common time bound applied to every rollup read.
+fn since(days: u32) -> String {
+    format!("timestamp >= now() - INTERVAL {days} DAY")
 }
 
 fn escape_sql_literal(s: &str) -> String {
@@ -128,33 +100,29 @@ struct CountOnly {
     count: u64,
 }
 
+/// Per-execution-type count expressions shared by summary + time series.
+const TYPE_COUNTS: &str = "\
+    countIf(execution_type = 'semantic_query') AS semantic_query_count, \
+    countIf(execution_type = 'omni_query') AS omni_query_count, \
+    countIf(execution_type = 'sql_generated') AS sql_generated_count, \
+    countIf(execution_type = 'workflow') AS workflow_count, \
+    countIf(execution_type = 'agent_tool') AS agent_tool_count";
+
 pub(super) async fn get_execution_summary(
     storage: &ClickHouseObservabilityStorage,
     days: u32,
 ) -> Result<ExecutionSummaryData, OxyError> {
-    let error_expr = error_message_expr();
-
     let sql = format!(
         "SELECT
             count() AS total_executions,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.is_verified') = 'true') AS verified_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.is_verified') != 'true') AS generated_count,
-            countIf(
-                JSONExtractString(tool.span_attributes, 'oxy.is_verified') = 'true'
-                AND ({error_expr} IS NULL OR {error_expr} = '')
-            ) AS success_count_verified,
-            countIf(
-                JSONExtractString(tool.span_attributes, 'oxy.is_verified') != 'true'
-                AND ({error_expr} IS NULL OR {error_expr} = '')
-            ) AS success_count_generated,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'semantic_query') AS semantic_query_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'omni_query') AS omni_query_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'sql_generated') AS sql_generated_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'workflow') AS workflow_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'agent_tool') AS agent_tool_count
-        {CH_EXECUTION_BASE_FROM}
-        WHERE {CH_EXECUTION_BASE_WHERE}
-          AND tool.timestamp >= now() - INTERVAL {days} DAY"
+            countIf(is_verified = 1) AS verified_count,
+            countIf(is_verified = 0) AS generated_count,
+            countIf(is_verified = 1 AND is_success = 1) AS success_count_verified,
+            countIf(is_verified = 0 AND is_success = 1) AS success_count_generated,
+            {TYPE_COUNTS}
+        FROM observability_executions FINAL
+        WHERE {}",
+        since(days)
     );
 
     let row = storage
@@ -196,19 +164,15 @@ pub(super) async fn get_execution_time_series(
 ) -> Result<Vec<ExecutionTimeBucketData>, OxyError> {
     let sql = format!(
         "SELECT
-            formatDateTime(toDate(tool.timestamp), '%Y-%m-%d') AS date,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.is_verified') = 'true') AS verified_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.is_verified') != 'true') AS generated_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'semantic_query') AS semantic_query_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'omni_query') AS omni_query_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'sql_generated') AS sql_generated_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'workflow') AS workflow_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'agent_tool') AS agent_tool_count
-        {CH_EXECUTION_BASE_FROM}
-        WHERE {CH_EXECUTION_BASE_WHERE}
-          AND tool.timestamp >= now() - INTERVAL {days} DAY
+            formatDateTime(toDate(timestamp), '%Y-%m-%d') AS date,
+            countIf(is_verified = 1) AS verified_count,
+            countIf(is_verified = 0) AS generated_count,
+            {TYPE_COUNTS}
+        FROM observability_executions FINAL
+        WHERE {}
         GROUP BY date
-        ORDER BY date ASC"
+        ORDER BY date ASC",
+        since(days)
     );
 
     let rows: Vec<ExecutionTimeBucketDbRow> = storage
@@ -238,26 +202,20 @@ pub(super) async fn get_execution_agent_stats(
     days: u32,
     limit: usize,
 ) -> Result<Vec<AgentExecutionStatsData>, OxyError> {
-    let error_expr = error_message_expr();
-
     let sql = format!(
         "SELECT
-            JSONExtractString(agent.span_attributes, 'oxy.agent.ref') AS agent_ref,
+            agent_ref,
             count() AS total_executions,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.is_verified') = 'true') AS verified_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.is_verified') != 'true') AS generated_count,
-            countIf({error_expr} IS NULL OR {error_expr} = '') AS success_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'semantic_query') AS semantic_query_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'omni_query') AS omni_query_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'sql_generated') AS sql_generated_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'workflow') AS workflow_count,
-            countIf(JSONExtractString(tool.span_attributes, 'oxy.execution_type') = 'agent_tool') AS agent_tool_count
-        {CH_EXECUTION_BASE_FROM}
-        WHERE {CH_EXECUTION_BASE_WHERE}
-          AND tool.timestamp >= now() - INTERVAL {days} DAY
+            countIf(is_verified = 1) AS verified_count,
+            countIf(is_verified = 0) AS generated_count,
+            countIf(is_success = 1) AS success_count,
+            {TYPE_COUNTS}
+        FROM observability_executions FINAL
+        WHERE {}
         GROUP BY agent_ref
         ORDER BY total_executions DESC
-        LIMIT {limit}"
+        LIMIT {limit}",
+        since(days)
     );
 
     let rows: Vec<AgentStatsDbRow> = storage
@@ -295,45 +253,21 @@ pub(super) async fn get_execution_list(
     source_ref: Option<&str>,
     status: Option<&str>,
 ) -> Result<ExecutionListData, OxyError> {
-    let error_expr = error_message_expr();
-    let input_expr = input_expr();
-    let output_expr = output_expr();
-
     let mut extra_conditions: Vec<String> = Vec::new();
 
     if let Some(et) = execution_type {
-        extra_conditions.push(format!(
-            "JSONExtractString(tool.span_attributes, 'oxy.execution_type') = '{}'",
-            escape_sql_literal(et)
-        ));
+        extra_conditions.push(format!("execution_type = '{}'", escape_sql_literal(et)));
     }
-
     if let Some(verified) = is_verified {
-        if verified {
-            extra_conditions
-                .push("JSONExtractString(tool.span_attributes, 'oxy.is_verified') = 'true'".into());
-        } else {
-            extra_conditions.push(
-                "JSONExtractString(tool.span_attributes, 'oxy.is_verified') != 'true'".into(),
-            );
-        }
+        extra_conditions.push(format!("is_verified = {}", if verified { 1 } else { 0 }));
     }
-
     if let Some(sr) = source_ref {
-        extra_conditions.push(format!(
-            "JSONExtractString(agent.span_attributes, 'oxy.agent.ref') = '{}'",
-            escape_sql_literal(sr)
-        ));
+        extra_conditions.push(format!("source_ref = '{}'", escape_sql_literal(sr)));
     }
-
     if let Some(st) = status {
         match st {
-            "error" => {
-                extra_conditions.push(format!("{error_expr} IS NOT NULL AND {error_expr} != ''"));
-            }
-            "success" => {
-                extra_conditions.push(format!("({error_expr} IS NULL OR {error_expr} = '')"));
-            }
+            "error" => extra_conditions.push("is_success = 0".into()),
+            "success" => extra_conditions.push("is_success = 1".into()),
             _ => {}
         }
     }
@@ -345,11 +279,8 @@ pub(super) async fn get_execution_list(
     };
 
     let count_sql = format!(
-        "SELECT count() AS count
-        {CH_EXECUTION_BASE_FROM}
-        WHERE {CH_EXECUTION_BASE_WHERE}
-          AND tool.timestamp >= now() - INTERVAL {days} DAY
-          {extra_where}"
+        "SELECT count() AS count FROM observability_executions FINAL WHERE {}{extra_where}",
+        since(days)
     );
 
     let total = storage
@@ -362,36 +293,35 @@ pub(super) async fn get_execution_list(
 
     let data_sql = format!(
         "SELECT
-            tool.trace_id AS trace_id,
-            tool.span_id AS span_id,
-            formatDateTime(tool.timestamp, '%Y-%m-%d %H:%M:%S.%f') AS timestamp,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.execution_type'), '') AS execution_type,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.is_verified'), 'false') AS is_verified,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.source_type'), '') AS source_type,
-            coalesce(JSONExtractString(agent.span_attributes, 'oxy.agent.ref'), '') AS source_ref,
-            if({error_expr} = '' OR {error_expr} IS NULL, 'success', 'error') AS status,
-            tool.duration_ns AS duration_ns,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.database'), '') AS database,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.topic'), '') AS topic,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.semantic_query_params'), '') AS semantic_query_params,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.generated_sql'), '') AS generated_sql,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.integration'), '') AS integration,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.endpoint'), '') AS endpoint,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.sql'), '') AS sql,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.sql_ref'), '') AS sql_ref,
-            coalesce(JSONExtractString(agent.span_attributes, 'agent.prompt'), '') AS user_question,
-            coalesce(JSONExtractString(tool.span_attributes, 'oxy.workflow_ref'), '') AS workflow_ref,
-            coalesce(JSONExtractString(agent.span_attributes, 'oxy.agent.ref'), '') AS agent_ref,
-            coalesce({input_expr}, '') AS tool_input,
-            coalesce({input_expr}, '') AS input,
-            coalesce({output_expr}, '') AS output,
-            coalesce({error_expr}, '') AS error
-        {CH_EXECUTION_BASE_FROM}
-        WHERE {CH_EXECUTION_BASE_WHERE}
-          AND tool.timestamp >= now() - INTERVAL {days} DAY
-          {extra_where}
-        ORDER BY tool.timestamp DESC
-        LIMIT {limit} OFFSET {offset}"
+            trace_id,
+            span_id,
+            formatDateTime(timestamp, '%Y-%m-%d %H:%M:%S.%f') AS timestamp,
+            execution_type,
+            if(is_verified = 1, 'true', 'false') AS is_verified,
+            source_type,
+            source_ref,
+            if(is_success = 1, 'success', 'error') AS status,
+            duration_ns,
+            database,
+            topic,
+            semantic_query_params,
+            generated_sql,
+            integration,
+            endpoint,
+            sql,
+            sql_ref,
+            user_question,
+            workflow_ref,
+            agent_ref,
+            tool_input,
+            tool_input AS input,
+            tool_output AS output,
+            error_message AS error
+        FROM observability_executions FINAL
+        WHERE {}{extra_where}
+        ORDER BY timestamp DESC
+        LIMIT {limit} OFFSET {offset}",
+        since(days)
     );
 
     let rows: Vec<ExecutionDetailDbRow> = storage

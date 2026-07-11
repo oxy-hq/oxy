@@ -11,9 +11,9 @@ use oxy_shared::errors::OxyError;
 use crate::intent_types::IntentCluster;
 use crate::types::{
     AgentExecutionStatsData, ClusterInfoRow, ClusterMapDataRow, ExecutionListData,
-    ExecutionSummaryData, ExecutionTimeBucketData, IntentAnalyticsRow, MetricAnalyticsData,
-    MetricDetailData, MetricUsageRecord, MetricsListData, SpanRecord, TraceDetailRow,
-    TraceEnrichmentRow, TraceRow,
+    ExecutionSummaryData, ExecutionTimeBucketData, IntentAnalyticsRow, LatencyHistogramData,
+    LatencyPercentilesData, MetricAnalyticsData, MetricDetailData, MetricUsageRecord,
+    MetricsListData, ModelUsageData, SpanRecord, TraceDetailRow, TraceEnrichmentRow, TraceRow,
 };
 
 /// Abstraction over an observability storage backend.
@@ -178,6 +178,26 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         source_ref: Option<&str>,
         status: Option<&str>,
     ) -> Result<ExecutionListData, OxyError>;
+
+    /// Latency percentiles (p50/p95/p99, ms) over executions — overall window
+    /// plus a daily series. Defaults to empty for backends that don't implement
+    /// it (only ClickHouse does).
+    async fn get_latency_percentiles(
+        &self,
+        _days: u32,
+    ) -> Result<LatencyPercentilesData, OxyError> {
+        Ok(LatencyPercentilesData::default())
+    }
+
+    /// Latency histogram (log-spaced buckets) plus p50/p95/p99 markers.
+    async fn get_latency_histogram(&self, _days: u32) -> Result<LatencyHistogramData, OxyError> {
+        Ok(LatencyHistogramData::default())
+    }
+
+    /// Per-model LLM token usage (for cost estimation). Aggregates `llm` spans.
+    async fn get_model_usage(&self, _days: u32) -> Result<Vec<ModelUsageData>, OxyError> {
+        Ok(Vec::new())
+    }
 
     // ── Span Ingestion ─────────────────────────────────────────────────────
 

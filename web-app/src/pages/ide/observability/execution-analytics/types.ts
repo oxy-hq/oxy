@@ -117,6 +117,59 @@ export interface ExecutionTimeBucket {
   agentToolCount?: number;
 }
 
+// ── Latency percentiles ───────────────────────────────────────────────────
+// GET /{projectId}/execution-analytics/percentiles?days=N
+export interface LatencyPercentiles {
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  /**
+   * Blended error rate (% of executions failing). Optional: NOT part of the
+   * three agreed endpoint contracts — the UI falls back to the summary-derived
+   * error rate when the backend omits it. See report deviation note.
+   */
+  errorRate?: number;
+}
+
+export interface PercentileTimePoint extends LatencyPercentiles {
+  date: string;
+}
+
+export interface PercentilesResponse {
+  overall: LatencyPercentiles;
+  series: PercentileTimePoint[];
+}
+
+// ── Latency histogram ──────────────────────────────────────────────────────
+// GET /{projectId}/execution-analytics/histogram?days=N
+export interface HistogramBucket {
+  upperMs: number;
+  count: number;
+}
+
+export interface HistogramResponse {
+  buckets: HistogramBucket[];
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+}
+
+// ── Cost & tokens by model ─────────────────────────────────────────────────
+// GET /{projectId}/execution-analytics/cost?days=N
+export interface ModelCost {
+  model: string;
+  calls: number;
+  tokens: number;
+  costUsd: number;
+  p95Ms: number;
+}
+
+export interface CostResponse {
+  totalCostUsd: number;
+  totalTokens: number;
+  byModel: ModelCost[];
+}
+
 export interface AgentExecutionStats {
   agentRef: string;
   totalExecutions: number;

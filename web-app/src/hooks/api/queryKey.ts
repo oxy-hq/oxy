@@ -30,7 +30,19 @@ const traceKeys = {
   all: ["trace"] as const,
   list: (projectId: string, limit?: number, offset?: number, status?: string, duration?: string) =>
     [...traceKeys.all, "list", projectId, { limit, offset, status, duration }] as const,
-  item: (projectId: string, traceId: string) => [...traceKeys.all, projectId, { traceId }] as const
+  item: (projectId: string, traceId: string) => [...traceKeys.all, projectId, { traceId }] as const,
+  waterfall: (projectId: string, traceId: string) =>
+    [...traceKeys.all, "waterfall", projectId, traceId] as const
+};
+
+const executionAnalyticsKeys = {
+  all: ["executionAnalytics"] as const,
+  percentiles: (projectId: string, days?: number) =>
+    [...executionAnalyticsKeys.all, "percentiles", projectId, { days }] as const,
+  histogram: (projectId: string, days?: number) =>
+    [...executionAnalyticsKeys.all, "histogram", projectId, { days }] as const,
+  cost: (projectId: string, days?: number) =>
+    [...executionAnalyticsKeys.all, "cost", projectId, { days }] as const
 };
 
 const agenticAutomationKeys = {
@@ -775,6 +787,7 @@ const queryKeys = {
   integration: integrationKeys,
   slack: slackKeys,
   trace: traceKeys,
+  executionAnalytics: executionAnalyticsKeys,
   testFile: testFileKeys,
   testProjectRun: testProjectRunKeys,
   testRun: testRunKeys,

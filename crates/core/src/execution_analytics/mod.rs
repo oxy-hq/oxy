@@ -8,6 +8,8 @@ mod types;
 
 pub use storage::ExecutionAnalyticsStorage;
 pub use types::{
-    AgentExecutionStats, ExecutionDetail, ExecutionListResponse, ExecutionSummary,
-    ExecutionTimeBucket, ExecutionType, SourceType,
+    AgentExecutionStats, ExecutionCostResponse, ExecutionDetail, ExecutionListResponse,
+    ExecutionSummary, ExecutionTimeBucket, ExecutionType, HistogramBucket,
+    LatencyHistogramResponse, LatencyPercentilePoint, LatencyPercentilesResponse, LatencyTriple,
+    ModelCost, SourceType, model_cost_usd,
 };

@@ -120,6 +120,98 @@ pub struct AgentExecutionStats {
     pub success_rate: f64,
 }
 
+/// A p50/p95/p99 latency triple (milliseconds).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyTriple {
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+}
+
+/// One daily latency-percentile point.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyPercentilePoint {
+    pub date: String,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+}
+
+/// Latency percentiles: overall window plus a daily series.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyPercentilesResponse {
+    pub overall: LatencyTriple,
+    pub series: Vec<LatencyPercentilePoint>,
+}
+
+/// One latency-histogram bucket (`upper_ms` = inclusive upper bound, ms).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HistogramBucket {
+    pub upper_ms: f64,
+    pub count: u64,
+}
+
+/// Latency histogram plus the p50/p95/p99 markers to overlay.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyHistogramResponse {
+    pub buckets: Vec<HistogramBucket>,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+}
+
+/// Per-model token usage and estimated cost.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCost {
+    pub model: String,
+    pub calls: u64,
+    pub tokens: u64,
+    pub cost_usd: f64,
+    pub p95_ms: f64,
+}
+
+/// Aggregate LLM cost across models.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionCostResponse {
+    pub total_cost_usd: f64,
+    pub total_tokens: u64,
+    pub by_model: Vec<ModelCost>,
+}
+
+/// Approximate USD price per **million** tokens `(input, output)` for known
+/// model families. Unknown models price at `(0, 0)` — callers should surface a
+/// "price unknown" marker rather than a fabricated dollar figure.
+pub fn model_price_per_mtok(model: &str) -> (f64, f64) {
+    let m = model.to_ascii_lowercase();
+    if m.contains("opus") {
+        (15.0, 75.0)
+    } else if m.contains("sonnet") {
+        (3.0, 15.0)
+    } else if m.contains("haiku") {
+        (0.80, 4.0)
+    } else if m.contains("4o-mini") || m.contains("gpt-4.1-mini") || m.contains("mini") {
+        (0.15, 0.60)
+    } else if m.contains("4o") || m.contains("gpt-4") {
+        (2.50, 10.0)
+    } else {
+        (0.0, 0.0)
+    }
+}
+
+/// Estimated USD cost for a model's token counts, via [`model_price_per_mtok`].
+pub fn model_cost_usd(model: &str, input_tokens: u64, output_tokens: u64) -> f64 {
+    let (price_in, price_out) = model_price_per_mtok(model);
+    (input_tokens as f64 / 1_000_000.0) * price_in
+        + (output_tokens as f64 / 1_000_000.0) * price_out
+}
+
 /// Detailed execution record
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

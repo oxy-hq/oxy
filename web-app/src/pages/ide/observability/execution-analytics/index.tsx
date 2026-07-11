@@ -8,9 +8,13 @@ import PageHeader from "@/pages/ide/components/PageHeader";
 import { timeRangeToDays } from "@/services/api/executionAnalytics";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import AgentBreakdownTable from "./components/AgentBreakdownTable";
+import CostByModel from "./components/CostByModel";
 import DistributionChart from "./components/DistributionChart";
 import ExecutionList from "./components/ExecutionList";
 import InfoLegend from "./components/InfoLegend";
+import LatencyHistogram from "./components/LatencyHistogram";
+import PercentileTiles from "./components/PercentileTiles";
+import PercentileTrend from "./components/PercentileTrend";
 import SummaryCards from "./components/SummaryCards";
 import TrendChart from "./components/TrendChart";
 
@@ -93,6 +97,14 @@ export default function ExecutionAnalytics() {
 
             <SummaryCards summary={summary} isLoading={isLoading} />
 
+            <PercentileTiles projectId={projectId} days={days} summary={summary} />
+
+            <div className='grid gap-4 md:grid-cols-2'>
+              <LatencyHistogram projectId={projectId} days={days} />
+
+              <PercentileTrend projectId={projectId} days={days} />
+            </div>
+
             <div className='grid gap-4 md:grid-cols-2'>
               <DistributionChart summary={summary} isLoading={isLoading} />
 
@@ -100,6 +112,7 @@ export default function ExecutionAnalytics() {
             </div>
 
             <AgentBreakdownTable projectId={projectId} days={days} limit={10} />
+            <CostByModel projectId={projectId} days={days} />
             <ExecutionList projectId={projectId} days={days} />
           </div>
         )}
