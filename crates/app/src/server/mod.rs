@@ -2,11 +2,11 @@
 
 pub mod admission;
 pub mod api;
+pub mod app_function_executor;
 pub mod builder_test_runner;
 pub mod compile_config_gate;
 pub mod compile_maintenance;
 pub mod compile_worker;
-pub mod app_function_executor;
 pub mod default_branch;
 pub mod feature_flags;
 pub mod health_eval_executor;

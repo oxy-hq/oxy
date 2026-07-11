@@ -14,6 +14,7 @@ import { AppInfo } from "./components/AppInfo";
 import { AppSettings } from "./components/AppSettings";
 import { BuildHistory } from "./components/BuildHistory";
 import { type ChannelView, DetailToolbar, type Device } from "./components/DetailToolbar";
+import { Functions } from "./components/Functions";
 import { LivePreview } from "./components/LivePreview";
 
 /**
@@ -149,6 +150,11 @@ const DossierColumn = ({ app }: { app: CustomerApp }) => (
     <DossierSection title='Build history'>
       <div className='p-4'>
         <BuildHistory appId={app.id} />
+      </div>
+    </DossierSection>
+    <DossierSection title='Functions'>
+      <div className='p-4'>
+        <Functions appId={app.id} />
       </div>
     </DossierSection>
     <DossierSection title='Activity'>

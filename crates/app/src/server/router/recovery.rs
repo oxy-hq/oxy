@@ -72,10 +72,10 @@ fn inproc_global_worker_enabled() -> bool {
         return matches!(v.as_str(), "1" | "true" | "yes" | "on");
     }
     // Otherwise derive from the process role: only the stateless serve replica
-    // skips the periodic driver (it offloads to the worker fleet).
-    !matches!(
+    // skips the periodic driver (it offloads to the worker fleet). Single source
+    // of truth so a single `OXY_ROLE=all` instance always drains its own queue.
+    crate::server::role_manifest::role_runs_inprocess_workers(
         crate::server::role_manifest::current_process_role(),
-        crate::server::role_manifest::Role::Serve
     )
 }
 

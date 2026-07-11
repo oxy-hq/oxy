@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   CircleDashed,
   CircleDot,
+  Code2,
   Database,
   History,
   Loader2,
@@ -101,7 +102,7 @@ export const normalizeStatus = (raw: string | null | undefined): RunStatus => {
 
 // ── Job type ────────────────────────────────────────────────────────────────
 
-export type JobType = "agent" | "dag" | "elt" | "monitor";
+export type JobType = "agent" | "dag" | "elt" | "monitor" | "function";
 
 interface JobTypeMeta {
   label: string;
@@ -152,16 +153,26 @@ export const JOB_TYPE: Record<JobType, JobTypeMeta> = {
     tint: "bg-vis-amber/10 text-vis-amber",
     icon: Activity,
     unit: "anomaly scan"
+  },
+  function: {
+    label: "Function Job",
+    short: "Function",
+    fg: "text-vis-violet",
+    bg: "bg-vis-violet",
+    tint: "bg-vis-violet/10 text-vis-violet",
+    icon: Code2,
+    unit: "run log"
   }
 };
 
-export const JOB_TYPES: JobType[] = ["agent", "dag", "elt", "monitor"];
+export const JOB_TYPES: JobType[] = ["agent", "dag", "elt", "monitor", "function"];
 
 /** Map a schedule `target_kind` to a job type. */
 export const targetKindToJobType = (kind: string): JobType => {
   if (kind === "airway") return "elt";
   if (kind === "agent") return "agent";
   if (kind === "monitor_scan") return "monitor";
+  if (kind === "function") return "function";
   return "dag";
 };
 
@@ -174,6 +185,8 @@ export const sourceTypeToJobType = (source: string | null | undefined): JobType 
       return "elt";
     case "monitor_scan":
       return "monitor";
+    case "app_function":
+      return "function";
     default:
       return "agent";
   }

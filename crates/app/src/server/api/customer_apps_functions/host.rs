@@ -332,11 +332,7 @@ impl FunctionHost for ProjectFunctionHost {
         Ok(serde_json::json!({ "ok": true }))
     }
 
-    async fn secrets_set(
-        &self,
-        key: String,
-        value: String,
-    ) -> Result<serde_json::Value, String> {
+    async fn secrets_set(&self, key: String, value: String) -> Result<serde_json::Value, String> {
         // §11.x fail-closed: the function must declare the `secrets.write`
         // capability. Scoped to the app's own `apps/<app_id>/` namespace, so it
         // can never touch another app's or the project's secrets.

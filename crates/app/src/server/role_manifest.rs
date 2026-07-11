@@ -612,6 +612,23 @@ pub fn current_process_role() -> Role {
     *PROCESS_ROLE.get().unwrap_or(&Role::All)
 }
 
+/// Whether a node in this `role` drains the durable task queue in-process — runs
+/// the durable task fleet **and** the global driver — vs. offloading to a
+/// separate worker fleet. Only the stateless `serve` replica offloads; `all`
+/// (a single all-in-one instance), `ide`, and `worker` all drain in-process.
+///
+/// This is the invariant that makes a single `OXY_ROLE=all` instance
+/// self-sufficient: it runs its own worker, so scheduled + manual jobs (and
+/// compiles) execute without a second node. Both role-derived gates
+/// (`ServeArgs::workers_disabled`, `recovery::inproc_global_worker_enabled`)
+/// route their role branch through here so the invariant has one tested source
+/// of truth. Explicit env/flag overrides (`--no-workers`,
+/// `OXY_DISABLE_INPROCESS_WORKERS`, `OXY_INPROC_GLOBAL_WORKER`) still win at
+/// those call sites.
+pub fn role_runs_inprocess_workers(role: Role) -> bool {
+    !matches!(role, Role::Serve)
+}
+
 /// Whether this process owns a workspace filesystem — i.e. may write the working
 /// copy / `.git` / local state dir. True for every role EXCEPT the stateless
 /// `serve` replica, which owns no filesystem and serves reads from the compile
@@ -887,6 +904,27 @@ fn is_rest_wildcard(seg: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_serve_offloads_workers_single_all_in_one_drains_its_own_queue() {
+        // The single-instance invariant: a plain `OXY_ROLE=all` node (and ide /
+        // worker) runs the durable fleet + global driver in-process, so
+        // scheduled + manual jobs execute without a second node. Only the
+        // stateless `serve` replica offloads to the worker fleet. Pure over
+        // `Role`, so it can assert every role without touching the process-role
+        // OnceLock. Guards the DX regression where a lone node silently queues
+        // jobs forever with nothing draining them.
+        assert!(
+            role_runs_inprocess_workers(Role::All),
+            "a single OXY_ROLE=all instance must drain its own queue"
+        );
+        assert!(role_runs_inprocess_workers(Role::Ide));
+        assert!(role_runs_inprocess_workers(Role::Worker));
+        assert!(
+            !role_runs_inprocess_workers(Role::Serve),
+            "serve is a pure reader — it offloads to the worker fleet"
+        );
+    }
 
     #[test]
     fn pattern_matches_concrete_uri() {

@@ -463,6 +463,10 @@ const customerAppKeys = {
     ["customerApps", "listdir", path, showHidden] as const,
   probe: (path: string) => ["customerApps", "probe", path] as const,
   builds: (id: string) => ["customerApps", "builds", id] as const,
+  functions: (id: string) => ["customerApps", "functions", id] as const,
+  functionInvocations: (id: string, name: string) =>
+    ["customerApps", "functions", id, name, "invocations"] as const,
+  functionRun: (id: string, runId: string) => ["customerApps", "functionRun", id, runId] as const,
   activitySummary: (id: string) => ["customerApps", "activity", id, "summary"] as const,
   activityVisitors: (id: string, days: number) =>
     ["customerApps", "activity", id, "visitors", days] as const,

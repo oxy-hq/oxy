@@ -1111,6 +1111,48 @@ pub async fn unpublish_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, St
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
 
+/// Response for a manual function-job trigger: the seeded run to watch.
+#[derive(Debug, Serialize)]
+pub struct RunFunctionJobResponse {
+    pub run_id: String,
+}
+
+/// `POST /admin/apps/{id}/functions/{name}/runs` — trigger a one-off background
+/// run of a customer-app Oxy Function as a job (the manual "run now" that isn't
+/// tied to a cron schedule). An optional JSON request body is handed to the
+/// function as its `req` input params (same shape a route invocation receives);
+/// an empty body runs it with no params. Enqueues a durable task on the global
+/// fleet and returns its `run_id`; the caller watches it in the orchestrator
+/// dashboard. Thin transport: parse input → enqueue → serialize (the work is in
+/// `customer_apps_functions::trigger_function_job`).
+pub async fn run_function_job(
+    oxy_auth::extractor::AuthenticatedUserExtractor(_user): oxy_auth::extractor::AuthenticatedUserExtractor,
+    Path((id, name)): Path<(Uuid, String)>,
+    body: axum::body::Bytes,
+) -> Result<Json<RunFunctionJobResponse>, StatusCode> {
+    // Empty body → no params; a non-empty body must be valid JSON.
+    let input = if body.is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::from_slice::<serde_json::Value>(&body)
+                .map_err(|_| StatusCode::BAD_REQUEST)?,
+        )
+    };
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("run_function_job DB connect failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let run_id =
+        crate::server::api::customer_apps_functions::trigger_function_job(&db, id, &name, input)
+            .await
+            .map_err(|e| {
+                tracing::warn!("run_function_job failed for {id}/{name}: {e}");
+                StatusCode::BAD_REQUEST
+            })?;
+    Ok(Json(RunFunctionJobResponse { run_id }))
+}
+
 /// One row of an app's build history (newest first), with flags marking
 /// which build each channel currently points at.
 #[derive(Debug, Serialize)]

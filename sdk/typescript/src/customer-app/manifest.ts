@@ -62,6 +62,22 @@ export interface OxyAppFunctionManifest {
    * token-refresher that writes the rotated token back to Oxy Secrets.
    */
   secrets?: { write?: boolean };
+  /**
+   * Retry policy for **background** runs (a `schedule` fire or a manual job
+   * trigger). Omit → a job run is attempted once. Route (HTTP) invocations are
+   * request-scoped and never retried. `maxAttempts` counts the first try
+   * (`maxAttempts: 3` = up to 2 retries); backoff is exponential (doubling)
+   * between `minTimeoutMs` and `maxTimeoutMs`. Maps to the durable queue's
+   * retry policy — a transient failure re-runs the whole isolate.
+   */
+  retries?: { maxAttempts?: number; minTimeoutMs?: number; maxTimeoutMs?: number };
+  /**
+   * Example input params for the function — a sample JSON body the admin "Run
+   * now" surface prefills so an operator knows what to pass (the function reads
+   * it as its `req` body, same as a route invocation). Advisory only; not
+   * enforced at runtime.
+   */
+  inputExample?: unknown;
 }
 
 /** Wire shape of `oxy-app.json` (v2 only). */
@@ -361,6 +377,29 @@ function validateFunctions(raw: unknown): Record<string, OxyAppFunctionManifest>
         }
         fn.cache = { ttlSeconds: ttl };
       }
+    }
+    if (value.retries !== undefined) {
+      const r = value.retries;
+      if (!isRecord(r)) {
+        throw new Error(`oxy-app.json: function "${fnName}" \`retries\` must be an object`);
+      }
+      const retries: { maxAttempts?: number; minTimeoutMs?: number; maxTimeoutMs?: number } = {};
+      for (const key of ["maxAttempts", "minTimeoutMs", "maxTimeoutMs"] as const) {
+        const n = r[key];
+        if (n !== undefined) {
+          if (typeof n !== "number" || !Number.isInteger(n) || n < 1) {
+            throw new Error(
+              `oxy-app.json: function "${fnName}" \`retries.${key}\` must be a positive integer`
+            );
+          }
+          retries[key] = n;
+        }
+      }
+      fn.retries = retries;
+    }
+    if (value.inputExample !== undefined) {
+      // Arbitrary JSON sample — passed through verbatim for the "Run now" prefill.
+      fn.inputExample = value.inputExample;
     }
     // At least one invocation surface must be active. `route` defaults
     // to true only when no other surface is declared, matching the doc.

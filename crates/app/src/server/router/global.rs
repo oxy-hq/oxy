@@ -87,6 +87,28 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                     post(admin::apps::handlers::publish_app)
                         .delete(admin::apps::handlers::unpublish_app),
                 )
+                // Oxy Functions management/debug surface (read): list functions
+                // + config, one function's invocation history, and a job run's
+                // status + logs. Same handlers as the /admin/apps surface.
+                .route(
+                    "/{id}/functions",
+                    get(admin::apps::functions::list_functions),
+                )
+                .route(
+                    "/{id}/functions/{name}/invocations",
+                    get(admin::apps::functions::list_invocations),
+                )
+                .route(
+                    "/{id}/function-runs/{run_id}",
+                    get(admin::apps::functions::get_function_run),
+                )
+                // Manually trigger a one-off background run of an app function
+                // as a job (the "run now" not tied to a cron schedule). Same
+                // handler as the /admin/apps surface. See the Function Jobs doc.
+                .route(
+                    "/{id}/functions/{name}/runs",
+                    post(admin::apps::handlers::run_function_job),
+                )
                 // New-pipeline build lifecycle: list versioned builds and
                 // roll the published channel back to any retained one.
                 // Pointer moves only — bytes already live in S3.

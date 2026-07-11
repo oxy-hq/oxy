@@ -1,5 +1,8 @@
-/** Mirrors `agentic_schedules` (backend `schedule::Model`, serde snake_case). */
-export type ScheduleTargetKind = "workflow" | "airway" | "agent" | "monitor_scan";
+/** Mirrors `agentic_schedules` (backend `schedule::Model`, serde snake_case).
+ *  `"function"` schedules are declarative — auto-registered from a customer
+ *  app's manifest at publish and reconciled there, so they're read/run-now/
+ *  disable-able in the Jobs UI but not hand-created via the schedule dialog. */
+export type ScheduleTargetKind = "workflow" | "airway" | "agent" | "monitor_scan" | "function";
 
 export interface Schedule {
   id: string;

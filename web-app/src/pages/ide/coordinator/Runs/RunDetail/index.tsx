@@ -11,6 +11,7 @@ import { AgentEventLog } from "./components/AgentEventLog";
 import { AutomationBody } from "./components/Automation";
 import { Conversation } from "./components/Conversation";
 import { EltBody } from "./components/Elt";
+import { FunctionBody } from "./components/Function";
 import { LlmUsageCard } from "./components/LlmUsageCard";
 import { RunHeader } from "./components/RunHeader";
 import { TaskTree } from "./components/TaskTree";
@@ -21,7 +22,10 @@ const TYPE_FOLLOWUP: Record<string, string> = {
   agent:
     "Waterfall + conversation views are wired; sub-agent fan-out and inline thinking previews land next.",
   dag: "Graph + step inspector are live; sub-automation steps embed their nested trace. Real `depends_on` edges (vs. execution-order chain) land when the YAML graph is parsed server-side.",
-  elt: "Lineage header, tri-phase (extract/normalize/load) bars per table, and schema-evolution banner are live. Throughput (rows/sec, bytes) lands when the airway events carry byte counts."
+  elt: "Lineage header, tri-phase (extract/normalize/load) bars per table, and schema-evolution banner are live. Throughput (rows/sec, bytes) lands when the airway events carry byte counts.",
+  function:
+    "Return value + persisted logs are live for scheduled and manual function jobs. Per-attempt log grouping and inline input params land next.",
+  monitor: "Anomaly-scan runs surface their event log; per-segment breakdown lands next."
 };
 
 /**
@@ -57,6 +61,7 @@ const RunDetailPage: React.FC = () => {
   const isAgent = jobType === "agent";
   const isAutomation = root.source_type === "workflow";
   const isAirway = root.source_type === "airway";
+  const isFunction = root.source_type === "app_function";
 
   return (
     <div className='flex h-full flex-col'>
@@ -90,6 +95,13 @@ const RunDetailPage: React.FC = () => {
             destinationLabel={root.destination_label}
             runError={root.error_message}
             pipelineRef={root.source_ref}
+          />
+        ) : isFunction ? (
+          <FunctionBody
+            events={root.event_log ?? []}
+            answer={root.answer}
+            errorMessage={root.error_message}
+            runStatus={root.status}
           />
         ) : (
           <TaskTree nodes={data.nodes} rootId={data.root_id} />

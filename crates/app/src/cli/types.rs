@@ -110,10 +110,10 @@ impl ServeArgs {
             return matches!(v.as_str(), "1" | "true" | "yes" | "on");
         }
         // Otherwise derive from the process role: only the stateless serve
-        // replica offloads everything to the worker fleet.
-        matches!(
+        // replica offloads everything to the worker fleet. Shared invariant so a
+        // single `OXY_ROLE=all` instance always runs its own in-process workers.
+        !crate::server::role_manifest::role_runs_inprocess_workers(
             crate::server::role_manifest::current_process_role(),
-            crate::server::role_manifest::Role::Serve
         )
     }
 }

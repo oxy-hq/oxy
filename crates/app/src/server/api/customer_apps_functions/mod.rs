@@ -5,6 +5,16 @@
 //! handler covers the **route** invocation mode (§2); schedule and Airway
 //! triggers reuse [`crate::server::api::customer_apps_functions::runtime::run`]
 //! from their own call sites and are not wired here.
+//!
+//! **Three run concepts, easy to conflate** (see the "Run concepts" section of
+//! `internal-docs/2026-07-10-oxy-function-jobs-design.md`): the **V8 isolate
+//! run** (`runtime::run`) is the raw JS execution; an **invocation**
+//! (`app_function_invocations`, `mode`) is the audit row for *every* run —
+//! including a plain request-time **route** call; a **job** (`agentic_runs`,
+//! `source_type="app_function"`) is the *durable, orchestrated, monitored*
+//! background run (schedule/manual) that also produces an invocation. A route
+//! call is an invocation only — no durable run, not in the coordinator. A job
+//! runs the SAME isolate, wrapped in the queue/monitoring/trigger machinery.
 
 #[cfg(feature = "customer-app-functions")]
 pub mod host;
@@ -104,7 +114,31 @@ struct FunctionManifestEntry {
     /// persist state (e.g. a scheduled token-refresher).
     #[serde(default)]
     secrets: Option<SecretsSpec>,
+    /// Retry policy for **background** runs (scheduled or manual job triggers) —
+    /// absent → a job run is attempted once. Route invocations are request-scoped
+    /// and never retried. Maps to the durable queue's `RetryPolicy` so a transient
+    /// failure re-runs the whole isolate with exponential backoff. See the Oxy
+    /// Function Jobs design (2026-07-10).
+    #[serde(default)]
+    retries: Option<RetriesSpec>,
 }
+
+/// Manifest retry block for background function jobs. `maxAttempts` counts the
+/// first try, so `maxAttempts: 3` = up to 2 retries. Backoff is exponential
+/// (doubling) between `minTimeoutMs` and `maxTimeoutMs`.
+#[derive(Debug, Deserialize, Default, Clone)]
+struct RetriesSpec {
+    #[serde(rename = "maxAttempts")]
+    max_attempts: Option<u32>,
+    #[serde(rename = "minTimeoutMs")]
+    min_timeout_ms: Option<u64>,
+    #[serde(rename = "maxTimeoutMs")]
+    max_timeout_ms: Option<u64>,
+}
+
+/// Hard cap on retries a manifest can request, so a typo (`maxAttempts: 9999`)
+/// can't wedge the queue re-running a persistently-failing function forever.
+const MAX_JOB_RETRIES: u32 = 10;
 
 #[derive(Debug, Deserialize, Default, Clone)]
 struct CacheSpec {
@@ -140,6 +174,105 @@ impl FunctionManifestEntry {
     fn secrets_write(&self) -> bool {
         self.secrets.as_ref().and_then(|s| s.write).unwrap_or(false)
     }
+
+    /// Build a `RetryPolicy` for background runs from the manifest's `retries`
+    /// block. `None` when retries aren't requested (no block, or `maxAttempts`
+    /// ≤ 1) — the job then runs exactly once.
+    fn retry_policy(&self) -> Option<agentic_core::delegation::RetryPolicy> {
+        use agentic_core::delegation::{BackoffStrategy, RetryPolicy};
+        let spec = self.retries.as_ref()?;
+        let max_attempts = spec.max_attempts?;
+        if max_attempts <= 1 {
+            return None;
+        }
+        let max_retries = (max_attempts - 1).min(MAX_JOB_RETRIES);
+        // Exponential backoff (the queue doubles per attempt) clamped to a sane
+        // window; a bad manifest can't set a zero or inverted delay.
+        let initial = spec.min_timeout_ms.unwrap_or(1_000).max(1);
+        let max_delay = spec.max_timeout_ms.unwrap_or(30_000).max(initial);
+        Some(RetryPolicy {
+            max_retries,
+            backoff: BackoffStrategy::Exponential {
+                initial_delay_ms: initial,
+                max_delay_ms: max_delay,
+            },
+            retry_on: Vec::new(),
+        })
+    }
+}
+
+/// Resolve the durable-queue `TaskPolicy` for a background function job from its
+/// raw manifest JSON (the `app_functions.manifest_json` value). `None` when the
+/// function requests no retries. Single construction site for both the scheduled
+/// fire (serialized into the schedule's `variables` at publish) and the manual
+/// trigger (built in-host) — so the two paths can't drift.
+pub(crate) fn function_task_policy(
+    manifest: &serde_json::Value,
+) -> Option<agentic_core::delegation::TaskPolicy> {
+    let entry: FunctionManifestEntry = serde_json::from_value(manifest.clone()).ok()?;
+    let retry = entry.retry_policy()?;
+    Some(agentic_core::delegation::TaskPolicy {
+        retry: Some(retry),
+        fallback_targets: Vec::new(),
+    })
+}
+
+/// Trigger a **one-off background run** of a customer-app function as a job — the
+/// manual/API "run now" that isn't tied to a cron schedule. Validates the app +
+/// function exist in the active build, resolves the function's retry policy from
+/// its manifest, then seeds a run + enqueues a durable `app_function` task on the
+/// global fleet (`agentic_pipeline::scheduler::enqueue_app_function_job`).
+/// Returns the `run_id` to watch in the orchestrator dashboard. The isolate does
+/// NOT run inline — a worker picks the task up, exactly like a scheduled fire, so
+/// this survives instance death and inherits the queue's status/retry.
+///
+/// **Any function in the build can be triggered this way — including a
+/// route-only one.** It runs on the same **background/system path** a scheduled
+/// fire uses: an **empty request body** under the **org-owner identity**, not an
+/// HTTP request. This is intentional (the manual/API trigger is universal — a
+/// job need not declare a `schedule`), but a function written to require a
+/// request body or caller will observe an empty body. Author functions meant to
+/// run as jobs to tolerate a system invocation (read from `ctx`/secrets, not the
+/// request body).
+pub(crate) async fn trigger_function_job(
+    db: &sea_orm::DatabaseConnection,
+    app_id: Uuid,
+    function_name: &str,
+    input: Option<serde_json::Value>,
+) -> Result<String, String> {
+    let app = entity::apps::Entity::find_by_id(app_id)
+        .one(db)
+        .await
+        .map_err(|e| format!("app lookup failed: {e}"))?
+        .ok_or_else(|| format!("app {app_id} not found"))?;
+    let build_id = app
+        .published_build_id
+        .or(app.draft_build_id)
+        .ok_or_else(|| "app has no build".to_string())?;
+    // Validate the function exists in the active build before enqueuing, so a
+    // typo produces a 400 now rather than a failed run later.
+    let func_row = AppFunctions::find()
+        .filter(app_functions::Column::BuildId.eq(build_id))
+        .filter(app_functions::Column::Name.eq(function_name))
+        .one(db)
+        .await
+        .map_err(|e| format!("app_functions lookup failed: {e}"))?
+        .ok_or_else(|| format!("function '{function_name}' not found in the app's active build"))?;
+    let policy = func_row
+        .manifest_json
+        .as_ref()
+        .and_then(function_task_policy);
+    agentic_pipeline::scheduler::enqueue_app_function_job(
+        db,
+        &app_id.to_string(),
+        function_name,
+        app.project_id,
+        policy,
+        "manual",
+        input,
+    )
+    .await
+    .map_err(|e| format!("failed to enqueue function job: {e:?}"))
 }
 
 /// Per-mode default `timeoutSeconds` (design doc §11.11). Route invocations
@@ -708,18 +841,43 @@ pub async fn handle_function_request(
 /// Outcome triple shared by both feature arms: `(status, error_msg, body)`.
 type RunOutcome = (&'static str, Option<String>, String);
 
-/// Run a customer-app function on the SYSTEM path (a schedule fire) — bypassing
-/// auth / rate-limit / idempotency / cache. Resolves the app's active build + the
-/// function's artifact + manifest, runs the isolate under the **org owner's**
-/// identity (apps have no owner field; the org owner is the natural actor — the
-/// same data + secret access), and records an `app_function_invocations` row with
-/// `mode="schedule"`, `user_id=None`. Returns the response body on success.
+/// Max `function_log` events emitted per run. Bounds the run's event log (the
+/// n8n/Windmill/Hatchet DB-bloat lesson — treat the event store as a buffer, not
+/// an unbounded sink). Overflow is reported, never silently dropped.
+#[cfg(feature = "customer-app-functions")]
+const MAX_LOG_EVENTS: usize = 500;
+
+/// A sink for run-lifecycle events (`function_log`, `app_function_completed`)
+/// emitted at the END of a background function run (logs are drained in one batch
+/// once the isolate returns, not live-tailed). In the queued path this is
+/// `AppFunctionTaskExecutor`'s worker event channel — events are persisted to
+/// `agentic_run_events` via the coordinator, so a scheduled/manual run's logs
+/// survive the isolate and render in the orchestrator dashboard. `None` for
+/// callers that don't observe events.
+#[cfg(feature = "customer-app-functions")]
+pub(crate) type RunEventSink = tokio::sync::mpsc::Sender<(String, serde_json::Value)>;
+
+/// Run a customer-app function on the SYSTEM path (a schedule fire or a manual
+/// job trigger) — bypassing auth / rate-limit / idempotency / cache. Resolves the
+/// app's active build + the function's artifact + manifest, runs the isolate under
+/// the **org owner's** identity (apps have no owner field; the org owner is the
+/// natural actor — the same data + secret access), records an
+/// `app_function_invocations` row with the given `mode` (`"schedule"` for a cron
+/// fire, `"manual"` for a run-now / API trigger — so the invocation history
+/// agrees with the run's `metadata.trigger`), `user_id=None`, and — when `events`
+/// is set — drains the isolate's log buffer into `function_log` events so the
+/// run's output is persisted and observable. Returns the response body on success.
 #[cfg(feature = "customer-app-functions")]
 pub(crate) async fn run_scheduled_function(
     db: &sea_orm::DatabaseConnection,
     app_id: Uuid,
     function_name: &str,
+    mode: &str,
+    // Request body handed to the isolate as `req` — the function's input params
+    // (JSON), same shape a route invocation receives. Empty for a bare cron fire.
+    input: Vec<u8>,
     cancel: tokio_util::sync::CancellationToken,
+    events: Option<RunEventSink>,
 ) -> Result<String, String> {
     let app = entity::apps::Entity::find_by_id(app_id)
         .one(db)
@@ -776,7 +934,7 @@ pub(crate) async fn run_scheduled_function(
         app_id: Set(app.id),
         build_id: Set(build_id),
         function_name: Set(function_name.to_string()),
-        mode: Set("schedule".to_string()),
+        mode: Set(mode.to_string()),
         user_id: Set(None),
         status: Set("running".to_string()),
         duration_ms: Set(None),
@@ -801,7 +959,7 @@ pub(crate) async fn run_scheduled_function(
         db,
         app: &app,
         artifact_js,
-        body: Vec::new(),
+        body: input,
         user_id: owner.user_id,
         user_email: format!("schedule+{function_name}@system.oxy"),
         org_id: app.org_id,
@@ -827,6 +985,59 @@ pub(crate) async fn run_scheduled_function(
     }
     if let Err(e) = update.update(db).await {
         error!("failed to update scheduled invocation row: {e}");
+    }
+
+    // Persist the isolate's log output. The buffer was filled during the run but
+    // is otherwise dropped on the system path (route mode drains it to SSE; the
+    // schedule/manual path had no observer). Drain it — as one batch, AFTER the
+    // isolate returns (not live-tailed mid-run) — into `function_log` events the
+    // coordinator persists to `agentic_run_events`. The run's whole output then
+    // lands together and surfaces on the next dashboard poll / SSE catch-up.
+    if let Some(tx) = events.as_ref() {
+        // Take the lines out under the lock, then release it before awaiting the
+        // sends (never hold a std Mutex across `.await`).
+        let drained: Vec<LogLine> = {
+            let mut guard = logs.lock().unwrap_or_else(|poison| poison.into_inner());
+            std::mem::take(&mut *guard)
+        };
+        let total = drained.len();
+        for (idx, line) in drained.into_iter().take(MAX_LOG_EVENTS).enumerate() {
+            let _ = tx
+                .send((
+                    "function_log".to_string(),
+                    serde_json::json!({
+                        "level": line.level,
+                        "message": line.message,
+                        "idx": idx,
+                    }),
+                ))
+                .await;
+        }
+        if total > MAX_LOG_EVENTS {
+            let _ = tx
+                .send((
+                    "function_log".to_string(),
+                    serde_json::json!({
+                        "level": "warn",
+                        "message": format!(
+                            "… {} more log line(s) truncated (cap {MAX_LOG_EVENTS})",
+                            total - MAX_LOG_EVENTS
+                        ),
+                        "idx": MAX_LOG_EVENTS,
+                    }),
+                ))
+                .await;
+        }
+        let _ = tx
+            .send((
+                "app_function_completed".to_string(),
+                serde_json::json!({
+                    "status": status_str,
+                    "duration_ms": duration_ms,
+                    "log_lines": total,
+                }),
+            ))
+            .await;
     }
 
     if status_str == "success" {
@@ -1043,5 +1254,67 @@ async fn spawn_cancel_watchdog(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod job_policy_tests {
+    use super::function_task_policy;
+    use agentic_core::delegation::BackoffStrategy;
+    use serde_json::json;
+
+    #[test]
+    fn no_retries_block_is_none() {
+        assert!(function_task_policy(&json!({ "route": true })).is_none());
+    }
+
+    #[test]
+    fn single_attempt_is_none() {
+        // maxAttempts: 1 means "try once" — no retry policy.
+        assert!(function_task_policy(&json!({ "retries": { "maxAttempts": 1 } })).is_none());
+    }
+
+    #[test]
+    fn maps_attempts_to_retries_and_exponential_backoff() {
+        let policy = function_task_policy(&json!({
+            "retries": { "maxAttempts": 3, "minTimeoutMs": 2000, "maxTimeoutMs": 40000 }
+        }))
+        .expect("expected a policy");
+        let retry = policy.retry.expect("expected retry");
+        // 3 attempts total = 2 retries after the first.
+        assert_eq!(retry.max_retries, 2);
+        match retry.backoff {
+            BackoffStrategy::Exponential {
+                initial_delay_ms,
+                max_delay_ms,
+            } => {
+                assert_eq!(initial_delay_ms, 2000);
+                assert_eq!(max_delay_ms, 40000);
+            }
+            other => panic!("expected exponential backoff, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn defaults_backoff_window_when_omitted() {
+        let policy =
+            function_task_policy(&json!({ "retries": { "maxAttempts": 2 } })).expect("policy");
+        match policy.retry.unwrap().backoff {
+            BackoffStrategy::Exponential {
+                initial_delay_ms,
+                max_delay_ms,
+            } => {
+                assert_eq!(initial_delay_ms, 1000);
+                assert_eq!(max_delay_ms, 30000);
+            }
+            other => panic!("expected exponential backoff, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn caps_runaway_retry_count() {
+        let policy =
+            function_task_policy(&json!({ "retries": { "maxAttempts": 9999 } })).expect("policy");
+        assert_eq!(policy.retry.unwrap().max_retries, super::MAX_JOB_RETRIES);
     }
 }

@@ -949,3 +949,112 @@ async fn reconcile_creates_then_updates_idempotently() {
     assert_eq!(rows.len(), 1);
     assert!(!rows[0].enabled, "enabled flag reconciled to false");
 }
+
+// ── App-function job (manual/API trigger, no schedule) ───────────────────────
+
+/// `enqueue_app_function_job` is the ad-hoc "run this function as a job now"
+/// path (no schedule row). It seeds a Global `app_function` run stamped
+/// `trigger="manual"` with no `schedule_id`, and enqueues a queued Custom task
+/// carrying the app id / function name and the resolved retry policy — the
+/// contract `trigger_function_job` (host) and the coordinator monitoring rely on.
+#[tokio::test]
+async fn app_function_job_seeds_manual_run_with_policy() {
+    use agentic_pipeline::scheduler::enqueue_app_function_job;
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+    let app_id = uuid::Uuid::new_v4().to_string();
+    let policy = agentic_core::delegation::TaskPolicy {
+        retry: Some(agentic_core::delegation::RetryPolicy {
+            max_retries: 2,
+            backoff: agentic_core::delegation::BackoffStrategy::Exponential {
+                initial_delay_ms: 1000,
+                max_delay_ms: 30000,
+            },
+            retry_on: vec![],
+        }),
+        fallback_targets: vec![],
+    };
+
+    let run_id = enqueue_app_function_job(
+        &db,
+        &app_id,
+        "refresh-token",
+        ws,
+        Some(policy),
+        "manual",
+        Some(serde_json::json!({ "store": 7 })),
+    )
+    .await
+    .expect("enqueue succeeds");
+
+    // Run row: app_function source, manual trigger, no schedule_id (ad-hoc), and
+    // scoped to the caller's workspace.
+    #[derive(FromQueryResult)]
+    struct RunRow {
+        source_type: Option<String>,
+        schedule_id: Option<String>,
+        trigger: Option<String>,
+        workspace_id: String,
+    }
+    let row = RunRow::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT source_type, schedule_id, metadata->>'trigger' AS trigger, \
+                workspace_id::text AS workspace_id \
+         FROM agentic_runs WHERE id = $1",
+        [run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("run row exists for the seeded job");
+    assert_eq!(row.source_type.as_deref(), Some("app_function"));
+    assert_eq!(row.trigger.as_deref(), Some("manual"));
+    assert!(
+        row.schedule_id.is_none(),
+        "an ad-hoc job carries no schedule_id"
+    );
+    assert_eq!(row.workspace_id, ws.to_string());
+
+    // Queue row: Global (driverless), queued, Custom `app_function` spec with the
+    // app/function payload, and the retry policy attached to the task.
+    #[derive(FromQueryResult)]
+    struct QRow {
+        scope_owned: bool,
+        queue_status: String,
+        kind: Option<String>,
+        payload_app: Option<String>,
+        payload_fn: Option<String>,
+        payload_input_store: Option<i64>,
+        max_retries: Option<i64>,
+    }
+    let q = QRow::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT scope_owned, queue_status, \
+                spec->>'kind' AS kind, \
+                spec->'payload'->>'app_id' AS payload_app, \
+                spec->'payload'->>'function_name' AS payload_fn, \
+                (spec->'payload'->'input'->>'store')::int8 AS payload_input_store, \
+                (policy->'retry'->>'max_retries')::int8 AS max_retries \
+         FROM agentic_task_queue WHERE task_id = $1",
+        [run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("queue row exists for the seeded job");
+    assert!(!q.scope_owned, "manual job seeds a Global task");
+    assert_eq!(q.queue_status, "queued");
+    assert_eq!(q.kind.as_deref(), Some("app_function"));
+    assert_eq!(q.payload_app.as_deref(), Some(app_id.as_str()));
+    assert_eq!(q.payload_fn.as_deref(), Some("refresh-token"));
+    assert_eq!(
+        q.payload_input_store,
+        Some(7),
+        "the input params ride on the enqueued task for the worker to replay"
+    );
+    assert_eq!(
+        q.max_retries,
+        Some(2),
+        "the resolved retry policy rides on the enqueued task"
+    );
+}

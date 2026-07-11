@@ -213,6 +213,12 @@ fn is_waterfall_event(event_type: &str) -> bool {
             | "schema_evolved"
             | "resource_failed"
             | "pipeline_error"
+            // Customer-app function jobs — the run's start marker, its persisted
+            // `console.*`/`ctx.log` output, and the terminal status/duration.
+            // See internal-docs/2026-07-10-oxy-function-jobs-design.md.
+            | "app_function_started"
+            | "function_log"
+            | "app_function_completed"
             | "cancelled"
     )
 }

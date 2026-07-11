@@ -337,6 +337,65 @@ pub async fn run_schedule_now(
     }
 }
 
+/// Seed + enqueue a one-off background run of a customer-app Oxy Function,
+/// outside any schedule — the "run this function as a job now" path (manual or
+/// API trigger). Mirrors the scheduled `"function"` fire arm but carries no
+/// `schedule_id`. Entity/oxy-free: the host resolves the app + its retry policy
+/// (from the manifest) and passes plain values here. Returns the seeded
+/// `run_id`, which the caller watches over the coordinator SSE like any run.
+#[allow(clippy::too_many_arguments)]
+pub async fn enqueue_app_function_job(
+    db: &DatabaseConnection,
+    app_id: &str,
+    function_name: &str,
+    workspace_id: uuid::Uuid,
+    policy: Option<agentic_core::delegation::TaskPolicy>,
+    trigger: &str,
+    // Optional input params (JSON) handed to the isolate as its request body.
+    // `None` → empty body. Carried on the task so the worker replays it.
+    input: Option<serde_json::Value>,
+) -> Result<String, ScheduleError> {
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let mut metadata = serde_json::json!({});
+    stamp_trigger_metadata(&mut metadata, &Some(trigger.to_string()), &None, &None);
+    agentic_runtime::crud::insert_run(
+        db,
+        &run_id,
+        &format!("fn:{app_id}/{function_name}"),
+        None,
+        "app_function",
+        Some(metadata),
+        workspace_id,
+    )
+    .await
+    .map_err(ScheduleError::Db)?;
+    let spec = agentic_core::delegation::TaskSpec::Custom {
+        kind: "app_function".into(),
+        // Carry the trigger so the executor records the invocation `mode` to
+        // match (`manual` here) — the invocation history then agrees with the
+        // run's stamped `metadata.trigger` — and the input params (if any) so the
+        // worker replays them as the function's request body.
+        payload: serde_json::json!({
+            "app_id": app_id,
+            "function_name": function_name,
+            "trigger": trigger,
+            "input": input,
+        }),
+    };
+    agentic_runtime::crud::enqueue_task(
+        db,
+        &run_id,
+        &run_id,
+        None,
+        &spec,
+        policy.as_ref(),
+        agentic_runtime::crud::TaskScope::Global,
+    )
+    .await
+    .map_err(ScheduleError::Db)?;
+    Ok(run_id)
+}
+
 // ── Tick ────────────────────────────────────────────────────────────────────
 
 /// Run one scheduler pass for a single workspace. Returns the number of
@@ -1027,13 +1086,18 @@ async fn fire_schedule(
                 )
             })?;
             let run_id = uuid::Uuid::new_v4().to_string();
+            // Stamp the trigger (`scheduled` vs `manual` run-now) into the run's
+            // metadata so the dashboard can label it, mirroring what the
+            // workflow/airway/agent arms get from their `start_*` helpers.
+            let mut metadata = serde_json::json!({});
+            stamp_trigger_metadata(&mut metadata, &Some(trigger.to_string()), &None, &None);
             insert_run_with_schedule(
                 db,
                 &run_id,
                 &s.name,
                 None,
                 "app_function",
-                None,
+                Some(metadata),
                 &s.id,
                 s.workspace_id,
             )
@@ -1041,18 +1105,32 @@ async fn fire_schedule(
             .map_err(|e| e.to_string())?;
             let spec = agentic_core::delegation::TaskSpec::Custom {
                 kind: "app_function".into(),
+                // Carry the trigger (`scheduled` for a cron fire, `manual` for a
+                // run-now) so the executor records the invocation `mode` to match.
                 payload: serde_json::json!({
                     "app_id": app_id,
                     "function_name": function_name,
+                    "trigger": trigger,
                 }),
             };
+            // The job's retry policy, if any, is stamped onto the schedule's
+            // `variables` at publish (`{"task_policy": …}`). Deserialize it here
+            // so a scheduled run inherits the durable queue's retry/backoff — this
+            // arm stays entity/oxy-free (it only reads a TaskPolicy JSON blob).
+            let policy = s
+                .variables
+                .as_ref()
+                .and_then(|v| v.get("task_policy"))
+                .and_then(|p| {
+                    serde_json::from_value::<agentic_core::delegation::TaskPolicy>(p.clone()).ok()
+                });
             agentic_runtime::crud::enqueue_task(
                 db,
                 &run_id,
                 &run_id,
                 None,
                 &spec,
-                None,
+                policy.as_ref(),
                 agentic_runtime::crud::TaskScope::Global,
             )
             .await

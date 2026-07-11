@@ -1,9 +1,12 @@
 import type {
   AppBuildHistory,
+  AppFunctionSummary,
   BatchAppResult,
   CreateAppRequest,
   CustomerApp,
   CustomerAppDebug,
+  FunctionInvocation,
+  FunctionRunDetail,
   ListdirResponse,
   OxyAccessGrant,
   ProbeResponse,
@@ -123,6 +126,40 @@ export const CustomerAppsService = {
     const response = await apiClient.post(`/customer-apps/${id}/rollback`, {
       build_id: buildId
     });
+    return response.data;
+  },
+
+  // ── Oxy Functions (manage / debug) ─────────────────────────────────────────
+
+  /** The app's Oxy Functions in its active build, with their manifest config. */
+  async listFunctions(id: string): Promise<AppFunctionSummary[]> {
+    const response = await apiClient.get(`/customer-apps/${id}/functions`);
+    return response.data;
+  },
+
+  /** Recent invocations of one function (newest first), for the debug history. */
+  async listFunctionInvocations(id: string, name: string): Promise<FunctionInvocation[]> {
+    const response = await apiClient.get(
+      `/customer-apps/${id}/functions/${encodeURIComponent(name)}/invocations`
+    );
+    return response.data;
+  },
+
+  /** A single function-job run's status + persisted logs (trigger-and-watch). */
+  async getFunctionRun(id: string, runId: string): Promise<FunctionRunDetail> {
+    const response = await apiClient.get(`/customer-apps/${id}/function-runs/${runId}`);
+    return response.data;
+  },
+
+  /** Trigger a one-off background run of a function as a job, optionally with
+   *  JSON input params handed to the function as its request body. Returns the
+   *  run id to watch via `getFunctionRun`. */
+  async runFunction(id: string, name: string, input?: unknown): Promise<{ run_id: string }> {
+    const response = await apiClient.post(
+      `/customer-apps/${id}/functions/${encodeURIComponent(name)}/runs`,
+      // `undefined` → axios sends no body → the function runs with no params.
+      input ?? undefined
+    );
     return response.data;
   },
 

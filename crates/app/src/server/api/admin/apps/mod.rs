@@ -10,6 +10,7 @@
 //! per-app repo variables.
 
 pub mod fs;
+pub mod functions;
 pub mod handlers;
 pub mod templates;
 
@@ -28,6 +29,26 @@ pub(crate) fn router() -> Router<AppState> {
         .route(
             "/apps/{id}/publish",
             post(handlers::publish_app).delete(handlers::unpublish_app),
+        )
+        // Oxy Functions management/debug surface for the AppDetail Functions
+        // section: list the app's functions + config, one function's recent
+        // invocation history, and a job run's status + logs. The write —
+        // triggering a run — is the `runs` route below.
+        // See internal-docs/2026-07-10-oxy-function-jobs-design.md.
+        .route("/apps/{id}/functions", get(functions::list_functions))
+        .route(
+            "/apps/{id}/functions/{name}/invocations",
+            get(functions::list_invocations),
+        )
+        .route(
+            "/apps/{id}/function-runs/{run_id}",
+            get(functions::get_function_run),
+        )
+        // Manually trigger a one-off background run of one of the app's Oxy
+        // Functions as a job (the "run now" that isn't tied to a cron schedule).
+        .route(
+            "/apps/{id}/functions/{name}/runs",
+            post(handlers::run_function_job),
         )
         .route("/apps/fs/listdir", get(fs::listdir))
         .route("/apps/fs/probe", get(fs::probe))

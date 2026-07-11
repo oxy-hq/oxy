@@ -43,6 +43,23 @@ impl TaskExecutor for AppFunctionTaskExecutor {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "app_function payload missing string function_name".to_string())?
             .to_string();
+        // The trigger stamped on the task by the seeding path drives the
+        // invocation `mode`, so the invocation history agrees with the run's
+        // `metadata.trigger`: a run-now / API trigger records `mode="manual"`, a
+        // cron fire records `mode="schedule"`. A legacy payload without the field
+        // (pre-this-change queued tasks) defaults to `schedule`.
+        let mode = match payload.get("trigger").and_then(|v| v.as_str()) {
+            Some("manual") => "manual".to_string(),
+            _ => "schedule".to_string(),
+        };
+        // Optional input params (JSON) supplied at trigger time — serialized back
+        // to the request-body bytes the isolate receives as `req`. Absent (cron
+        // fire) → empty body.
+        let input: Vec<u8> = payload
+            .get("input")
+            .filter(|v| !v.is_null())
+            .map(|v| serde_json::to_vec(v).unwrap_or_default())
+            .unwrap_or_default();
 
         let (event_tx, event_rx) = mpsc::channel(16);
         let (outcome_tx, outcome_rx) = mpsc::channel(4);
@@ -66,7 +83,12 @@ impl TaskExecutor for AppFunctionTaskExecutor {
                 &db,
                 app_id,
                 &function_name,
+                &mode,
+                input,
                 cancel_child,
+                // Stream the run's log lines onto the run's event log so a
+                // scheduled/manual function's output is persisted + observable.
+                Some(event_tx.clone()),
             )
             .await
             {
@@ -80,7 +102,7 @@ impl TaskExecutor for AppFunctionTaskExecutor {
             };
             #[cfg(not(feature = "customer-app-functions"))]
             let outcome = {
-                let _ = (&db, app_id, &function_name, cancel_child);
+                let _ = (&db, app_id, &function_name, &mode, input, cancel_child);
                 TaskOutcome::Failed("customer-app-functions feature not enabled".to_string())
             };
 

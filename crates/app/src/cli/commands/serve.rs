@@ -287,6 +287,21 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
          in-process for every role except `serve`; override with --no-workers / \
          OXY_DISABLE_INPROCESS_WORKERS / OXY_INPROC_GLOBAL_WORKER)"
     );
+    // Loud, impossible-to-miss signal for the single-instance footgun: a node that
+    // doesn't drain the queue leaves scheduled + manual jobs (and compiles)
+    // queued forever unless another node drains them. Correct for a stateless
+    // `serve` replica in a fleet; a mistake for a lone instance.
+    if disable_inprocess_workers {
+        tracing::warn!(
+            role = crate::server::role_manifest::current_process_role().as_str(),
+            "serve: this node will NOT drain the agentic_task_queue — scheduled \
+             and manual jobs, ELT, and compiles will NOT execute here. Correct \
+             for a stateless `serve` replica when another OXY_ROLE=all/ide/worker \
+             node drains the queue. For a SINGLE-instance deployment, run \
+             OXY_ROLE=all (the default) or set OXY_INPROC_GLOBAL_WORKER=1 — \
+             otherwise jobs sit queued forever."
+        );
+    }
 
     let app = create_web_application(
         mode,

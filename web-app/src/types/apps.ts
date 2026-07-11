@@ -174,6 +174,59 @@ export interface AppBuildHistory {
   promoted_at?: string | null;
 }
 
+/** One Oxy Function in an app's active build, projected from its manifest.
+ *  See `GET /customer-apps/{id}/functions`. */
+export interface AppFunctionSummary {
+  name: string;
+  /** Effective HTTP-invocable surface. */
+  route: boolean;
+  /** Cron expression when the function declares a schedule. */
+  schedule: string | null;
+  timezone: string | null;
+  /** Wired as an Airway pipeline transform step. */
+  airway: boolean;
+  timeout_seconds: number | null;
+  /** Background-run retry policy, when declared. */
+  retries: {
+    max_attempts: number;
+    min_timeout_ms: number | null;
+    max_timeout_ms: number | null;
+  } | null;
+  /** May write app-scoped secrets via `ctx.secrets.set`. */
+  secrets_write: boolean;
+  /** Databases the function may write to via `ctx.warehouse`. */
+  destinations: string[];
+  /** Author-declared example input (manifest `inputExample`) — prefilled into
+   *  the "Run now" params box so operators know what to pass. */
+  input_example?: unknown;
+}
+
+/** One recorded invocation of a function (route / schedule / manual job). */
+export interface FunctionInvocation {
+  id: string;
+  /** `route` | `schedule` | `airway`. */
+  mode: string;
+  /** `running` | `success` | `error` | `cancelled` | `timeout`. */
+  status: string;
+  duration_ms: number | null;
+  error: string | null;
+  created_at: string;
+  has_result: boolean;
+}
+
+/** A function-job run's status + persisted logs, for the trigger-and-watch loop.
+ *  See `GET /customer-apps/{id}/function-runs/{run_id}`. */
+export interface FunctionRunDetail {
+  run_id: string;
+  /** `running` | `done` | `failed` | `cancelled` | … */
+  status: string | null;
+  /** `scheduled` | `manual`. */
+  trigger: string | null;
+  answer: string | null;
+  error: string | null;
+  logs: { seq: number; level: string; message: string }[];
+}
+
 export interface CreateAppRequest {
   name: string;
   org_id: string;

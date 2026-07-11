@@ -497,12 +497,19 @@ async fn register_function_schedules(
             .to_string();
         let target_ref = format!("{app_id}/{name}");
         live.insert(target_ref.clone());
+        // Carry the function's retry policy on the schedule so the entity-free
+        // fire arm can attach it to the queued task without reaching into the
+        // manifest. Built here (host) from the same helper the manual trigger
+        // uses, so the two paths can't drift.
+        let variables = crate::server::api::customer_apps_functions::function_task_policy(spec)
+            .and_then(|p| serde_json::to_value(&p).ok())
+            .map(|p| serde_json::json!({ "task_policy": p }));
         let input = agentic_pipeline::scheduler::ScheduleInput {
             name: format!("fn:{app_id}/{name}"),
             target_kind: "function".to_string(),
             target_ref: target_ref.clone(),
             question: None,
-            variables: None,
+            variables,
             cron_expr: cron.to_string(),
             timezone,
             enabled: true,
