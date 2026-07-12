@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.103] - 2026-07-12
+
+### 🚀 Features
+
+- Admin apps cockpit + Access-tab revamp (#2700)
+- Oxy Function Jobs — a Kestra subset on the orchestrator (extends #2685) (#2702)
+- *(observability)* ClickHouse execution rollup + technical UI + local stack (#2698)
+- *(observability)* Theme 3 traces console — search, ranges, live-tail, table, compare (#2706)
+
+### 🐛 Bug Fixes
+
+- *(db)* Drop oxydb pool min_connections 20→2, make bounds env-configurable (#2703)
+- *(onboarding)* Resolve readiness LLM-key presence from the secret store (#2705)
+- *(observability)* Harden trace serving + guard invalid-date crash (#2709)
+
+### 💼 Other
+
+- *(deps-dev)* Bump the dev-npm-major-dependencies group across 2 directories with 1 update (#2696)
+
+### ⚙️ Miscellaneous Tasks
+
+- Implement weekly architecture & health review fixes (P0–P4) (#2707)
+- Unified Weekly Health Review workflow (+ restore dev .env.airhouse/.clickhouse) (#2708)
+
 ## [0.5.102] - 2026-07-09
 
 ### 🚀 Features
@@ -22,6 +46,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - *(sdk)* Bump @oxy-hq/sdk to 2.2.0 (#2692)
+- Release 0.5.102 (#2691)
 
 ## [0.5.101] - 2026-07-08
 
