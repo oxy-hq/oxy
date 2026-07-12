@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
 };
 use oxy::adapters::secrets::SecretsManager;
-use oxy::adapters::workspace::{resolve_workspace_path, workspace_root_path};
+use oxy::adapters::workspace::workspace_root_path;
 use oxy::config::ConfigBuilder;
 use oxy::github::{GitHubClient, default_git_client, github_token_for_namespace};
 use oxy::service::retrieval::{ReindexInput, reindex};
@@ -670,22 +670,45 @@ pub struct ReadinessResponse {
 /// the workspace's config.yml. Runs behind workspace_middleware so access to the
 /// workspace is already verified.
 pub async fn onboarding_readiness(
-    axum::extract::Path(crate::server::api::middlewares::workspace_context::WorkspacePath {
-        workspace_id,
-    }): axum::extract::Path<crate::server::api::middlewares::workspace_context::WorkspacePath>,
+    State(app_state): State<AppState>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
 ) -> Json<ReadinessResponse> {
     // Route is under /{workspace_id}/ behind workspace_middleware, which has
     // already enforced org membership. No separate access check needed.
-    let key_vars = load_key_vars_from_workspace(workspace_id).await;
+    //
+    // Presence is resolved exactly as the runtime resolves the key — DB-only in
+    // cloud (an env var on the server must not mask a genuinely-missing
+    // workspace secret), DB + env fallback in local. Checking `std::env` alone
+    // reported every cloud-stored key as missing; see `secret_is_set`, which
+    // `github_setup` shares so the two checks can't drift.
+    let config_manager = &workspace_manager.config_manager;
+    let db_secret_manager = SecretManagerService::new(workspace_id);
+    let is_local = app_state.mode.is_local();
 
+    // Deduplicate by var name — two models sharing a key_var only surface once.
+    let mut seen = std::collections::HashSet::new();
     let mut llm_keys_present = Vec::new();
     let mut llm_keys_missing = Vec::new();
 
-    for key in &key_vars {
-        if std::env::var(key).map(|v| !v.is_empty()).unwrap_or(false) {
-            llm_keys_present.push(key.clone());
+    for model in config_manager.models() {
+        let Some(key) = model.key_var() else {
+            continue;
+        };
+        if !seen.insert(key.to_string()) {
+            continue;
+        }
+        if secret_is_set(
+            &workspace_manager.secrets_manager,
+            &db_secret_manager,
+            is_local,
+            key,
+        )
+        .await
+        {
+            llm_keys_present.push(key.to_string());
         } else {
-            llm_keys_missing.push(key.clone());
+            llm_keys_missing.push(key.to_string());
         }
     }
 
@@ -698,33 +721,27 @@ pub async fn onboarding_readiness(
     })
 }
 
-/// Resolve the unique `key_var` names from the models configured in a workspace's `config.yml`.
-async fn load_key_vars_from_workspace(workspace_id: uuid::Uuid) -> Vec<String> {
-    let workspace_path = match resolve_workspace_path(workspace_id).await {
-        Ok(p) => p,
-        Err(_) => return vec![],
-    };
-
-    let builder = match ConfigBuilder::new().with_workspace_path(&workspace_path) {
-        Ok(b) => b,
-        Err(_) => return vec![],
-    };
-    let config = match builder.build_with_fallback_config().await {
-        Ok(c) => c,
-        Err(_) => return vec![],
-    };
-
-    // Collect unique non-None key_var values from all configured models.
-    let mut seen = std::collections::HashSet::new();
-    let mut result = Vec::new();
-    for m in config.models() {
-        if let Some(key) = m.key_var()
-            && seen.insert(key.to_string())
-        {
-            result.push(key.to_string());
-        }
+/// True if `var_name` has a secret set for this workspace, resolved the same way
+/// the runtime resolves it: DB-only in cloud (so an env var set on the server
+/// can't mask a genuinely-missing workspace secret) and DB + env fallback in
+/// local. Shared by `onboarding_readiness` and `github_setup` so the two
+/// presence checks can't drift out of sync again.
+async fn secret_is_set(
+    secrets_manager: &SecretsManager,
+    db_secret_manager: &SecretManagerService,
+    is_local: bool,
+    var_name: &str,
+) -> bool {
+    if is_local {
+        secrets_manager
+            .resolve_secret(var_name)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+    } else {
+        db_secret_manager.get_secret(var_name).await.is_some()
     }
-    result
 }
 
 /// Request for `POST /{workspace_id}/onboarding/test-llm-key`.
@@ -877,17 +894,13 @@ pub async fn github_setup(
         if !seen_llm_keys.insert(key_var.to_string()) {
             continue;
         }
-        let is_set = if is_local {
-            workspace_manager
-                .secrets_manager
-                .resolve_secret(key_var)
-                .await
-                .ok()
-                .flatten()
-                .is_some()
-        } else {
-            db_secret_manager.get_secret(key_var).await.is_some()
-        };
+        let is_set = secret_is_set(
+            &workspace_manager.secrets_manager,
+            &db_secret_manager,
+            is_local,
+            key_var,
+        )
+        .await;
         if is_set {
             continue;
         }
@@ -904,17 +917,13 @@ pub async fn github_setup(
         let vars = collect_warehouse_vars(&database);
         let mut missing_vars: Vec<GithubSetupMissingVar> = Vec::new();
         for var in vars {
-            let is_set = if is_local {
-                workspace_manager
-                    .secrets_manager
-                    .resolve_secret(&var.var_name)
-                    .await
-                    .ok()
-                    .flatten()
-                    .is_some()
-            } else {
-                db_secret_manager.get_secret(&var.var_name).await.is_some()
-            };
+            let is_set = secret_is_set(
+                &workspace_manager.secrets_manager,
+                &db_secret_manager,
+                is_local,
+                &var.var_name,
+            )
+            .await;
             if is_set {
                 continue;
             }
