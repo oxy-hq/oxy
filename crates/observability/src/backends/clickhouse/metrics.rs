@@ -137,7 +137,7 @@ pub(super) async fn get_metrics_analytics(
     );
 
     let agg: AggregateRow = storage
-        .client()
+        .read_client()
         .query(&agg_sql)
         .fetch_one()
         .await
@@ -153,7 +153,7 @@ pub(super) async fn get_metrics_analytics(
     );
 
     let popular = storage
-        .client()
+        .read_client()
         .query(&popular_sql)
         .fetch_optional::<PopularRow>()
         .await
@@ -174,7 +174,7 @@ pub(super) async fn get_metrics_analytics(
     );
 
     let prev_count = storage
-        .client()
+        .read_client()
         .query(&prev_sql)
         .fetch_optional::<CountOnly>()
         .await
@@ -205,7 +205,7 @@ pub(super) async fn get_metrics_analytics(
     );
 
     let source_rows: Vec<SourceTypeRow> = storage
-        .client()
+        .read_client()
         .query(&source_sql)
         .fetch_all()
         .await
@@ -234,7 +234,7 @@ pub(super) async fn get_metrics_analytics(
     );
 
     let ctx_rows: Vec<ContextTypeRow> = storage
-        .client()
+        .read_client()
         .query(&ctx_sql)
         .fetch_all()
         .await
@@ -290,7 +290,7 @@ pub(super) async fn get_metrics_list(
     );
 
     let total = storage
-        .client()
+        .read_client()
         .query(&count_sql)
         .fetch_one::<CountOnly>()
         .await
@@ -310,7 +310,7 @@ pub(super) async fn get_metrics_list(
     );
 
     let rows: Vec<MetricListQueryRow> = storage
-        .client()
+        .read_client()
         .query(&list_sql)
         .fetch_all()
         .await
@@ -347,7 +347,7 @@ pub(super) async fn get_metric_detail(
           AND created_at >= now() - INTERVAL {days} DAY"
     );
     let total_queries = storage
-        .client()
+        .read_client()
         .query(&total_sql)
         .fetch_one::<CountOnly>()
         .await
@@ -363,7 +363,7 @@ pub(super) async fn get_metric_detail(
         days * 2
     );
     let prev_count = storage
-        .client()
+        .read_client()
         .query(&prev_sql)
         .fetch_optional::<CountOnly>()
         .await
@@ -393,7 +393,7 @@ pub(super) async fn get_metric_detail(
           AND created_at >= now() - INTERVAL {days} DAY"
     );
     let via_agent = storage
-        .client()
+        .read_client()
         .query(&via_agent_sql)
         .fetch_optional::<CountOnly>()
         .await
@@ -409,7 +409,7 @@ pub(super) async fn get_metric_detail(
           AND created_at >= now() - INTERVAL {days} DAY"
     );
     let via_workflow = storage
-        .client()
+        .read_client()
         .query(&via_workflow_sql)
         .fetch_optional::<CountOnly>()
         .await
@@ -429,7 +429,7 @@ pub(super) async fn get_metric_detail(
         ORDER BY date ASC"
     );
     let usage_trend = storage
-        .client()
+        .read_client()
         .query(&trend_sql)
         .fetch_all::<TrendPointRow>()
         .await
@@ -453,7 +453,7 @@ pub(super) async fn get_metric_detail(
         LIMIT 10"
     );
     let related_metrics = storage
-        .client()
+        .read_client()
         .query(&related_sql)
         .fetch_all::<RelatedMetricRow>()
         .await
@@ -465,13 +465,14 @@ pub(super) async fn get_metric_detail(
         })
         .collect();
 
+    let ca = super::iso_utc("created_at");
     let recent_sql = format!(
         "SELECT
             source_type,
             source_ref,
             context_types,
             trace_id,
-            formatDateTime(created_at, '%Y-%m-%d %H:%M:%S') AS created_at,
+            {ca} AS created_at,
             context
         FROM observability_metric_usage
         WHERE metric_name = '{escaped}'
@@ -480,7 +481,7 @@ pub(super) async fn get_metric_detail(
         LIMIT 20"
     );
     let recent_usage = storage
-        .client()
+        .read_client()
         .query(&recent_sql)
         .fetch_all::<RecentUsageRow>()
         .await

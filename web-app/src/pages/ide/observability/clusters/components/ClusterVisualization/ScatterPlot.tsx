@@ -1,10 +1,10 @@
-import { formatDistanceToNow } from "date-fns";
 import { type ECharts, type EChartsOption, init as initEcharts } from "echarts";
 import { useEffect, useMemo, useRef } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import { resolveColor } from "@/components/Echarts/resolveColor";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
+import { formatTimeAgo } from "../../../utils";
 
 interface ScatterPlotProps {
   points: ClusterMapPoint[];
@@ -247,9 +247,7 @@ function formatTooltip(params: unknown, getPointColor: (point: ClusterMapPoint) 
   if (!point) return "";
 
   const confidence = (point.confidence * 100).toFixed(1);
-  const timeAgo = point.timestamp
-    ? formatDistanceToNow(new Date(point.timestamp), { addSuffix: true })
-    : "";
+  const timeAgo = point.timestamp ? formatTimeAgo(point.timestamp) : "";
 
   return `
     <div style="max-width: 300px;">

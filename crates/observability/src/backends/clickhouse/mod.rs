@@ -21,6 +21,59 @@ struct RowCount {
     c: u64,
 }
 
+/// Render a stored instant column as an unambiguous ISO-8601 / RFC3339 **UTC**
+/// string, e.g. `2026-07-12T14:30:00.123456789Z`.
+///
+/// The trailing `Z` is a literal (ClickHouse copies non-`%` chars verbatim) and
+/// the `'UTC'` timezone arg forces UTC output. Without both, `formatDateTime`
+/// emits a zoneless `2026-07-12 14:30:00…` form that the frontend `new Date(…)`
+/// parses as *browser-local* time — silently shifting every timestamp, and
+/// throwing `RangeError: Invalid time value` on an unparseable one. Kept in one
+/// place so every serving query renders timestamps identically.
+pub(super) fn iso_utc(col: &str) -> String {
+    format!("formatDateTime({col}, '%Y-%m-%dT%H:%M:%S.%fZ', 'UTC')")
+}
+
+/// Hard client-side ceiling for a single serving query. Set slightly above the
+/// server-side `max_execution_time` (see [`ClickHouseObservabilityStorage::read_client`])
+/// so a *reachable* ClickHouse aborts the query itself first; this only fires as
+/// a backstop when ClickHouse is unreachable and the HTTP call would otherwise
+/// hang forever — the default `clickhouse` client sets no timeout, so an
+/// unbounded await would pin the request task and eventually 503 the instance.
+const SERVING_QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(35);
+
+/// Run a serving query future under [`SERVING_QUERY_TIMEOUT`], mapping an
+/// elapsed timeout to a clean error instead of a hung task. `what` names the
+/// query for the error message (e.g. `"trace detail"`).
+pub(super) async fn with_query_timeout<T, F>(what: &str, fut: F) -> Result<T, OxyError>
+where
+    F: std::future::Future<Output = Result<T, OxyError>>,
+{
+    match tokio::time::timeout(SERVING_QUERY_TIMEOUT, fut).await {
+        Ok(res) => res,
+        Err(_) => Err(OxyError::RuntimeError(format!(
+            "ClickHouse {what} query exceeded {}s",
+            SERVING_QUERY_TIMEOUT.as_secs()
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod iso_utc_tests {
+    use super::iso_utc;
+
+    /// Regression guard for the "Invalid time value" trace crash: serving
+    /// timestamps must render as ISO-8601 **UTC** (`…Z`, forced `'UTC'` tz) so
+    /// the frontend `new Date(…)` parses them as UTC rather than browser-local.
+    #[test]
+    fn renders_iso_8601_utc_with_zulu_suffix() {
+        assert_eq!(
+            iso_utc("timestamp"),
+            "formatDateTime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ', 'UTC')"
+        );
+    }
+}
+
 use crate::intent_types::IntentCluster;
 use crate::store::ObservabilityStore;
 use crate::types::{
@@ -73,6 +126,22 @@ impl ClickHouseObservabilityStorage {
     /// Accessor for the underlying ClickHouse client.
     pub(crate) fn client(&self) -> &Client {
         &self.client
+    }
+
+    /// A client clone carrying server-side guards for user-facing **read**
+    /// queries: it caps wall-clock (`max_execution_time`) and result size, and
+    /// makes an oversized result an error rather than an unbounded stream. A
+    /// slow or pathological query then fails fast as a clean error instead of
+    /// pinning a request task and starving the instance until the load balancer
+    /// 503s it. Intentionally not used for DDL/backfill, which legitimately run
+    /// longer than a serving request should.
+    pub(super) fn read_client(&self) -> Client {
+        self.client
+            .clone()
+            .with_option("max_execution_time", "30")
+            .with_option("max_result_rows", "1000000")
+            .with_option("max_result_bytes", "268435456") // 256 MiB
+            .with_option("result_overflow_mode", "throw")
     }
 
     /// Ensure all observability tables exist.
@@ -250,18 +319,26 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         limit: usize,
         source: Option<&str>,
     ) -> Result<Vec<ClusterMapDataRow>, OxyError> {
-        traces::get_cluster_map_data(self, days, limit, source).await
+        with_query_timeout(
+            "get_cluster_map_data",
+            traces::get_cluster_map_data(self, days, limit, source),
+        )
+        .await
     }
 
     async fn get_cluster_infos(&self) -> Result<Vec<ClusterInfoRow>, OxyError> {
-        traces::get_cluster_infos(self).await
+        with_query_timeout("get_cluster_infos", traces::get_cluster_infos(self)).await
     }
 
     async fn get_trace_enrichments(
         &self,
         trace_ids: &[String],
     ) -> Result<Vec<TraceEnrichmentRow>, OxyError> {
-        traces::get_trace_enrichments(self, trace_ids).await
+        with_query_timeout(
+            "get_trace_enrichments",
+            traces::get_trace_enrichments(self, trace_ids),
+        )
+        .await
     }
 
     async fn fetch_unprocessed_questions(
@@ -338,11 +415,15 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
     }
 
     async fn get_intent_analytics(&self, days: u32) -> Result<Vec<IntentAnalyticsRow>, OxyError> {
-        intents::get_intent_analytics(self, days).await
+        with_query_timeout(
+            "get_intent_analytics",
+            intents::get_intent_analytics(self, days),
+        )
+        .await
     }
 
     async fn get_outliers(&self, limit: usize) -> Result<Vec<(String, String)>, OxyError> {
-        intents::get_outliers(self, limit).await
+        with_query_timeout("get_outliers", intents::get_outliers(self, limit)).await
     }
 
     async fn load_unknown_classifications(
@@ -368,7 +449,11 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
     }
 
     async fn get_metrics_analytics(&self, days: u32) -> Result<MetricAnalyticsData, OxyError> {
-        metrics::get_metrics_analytics(self, days).await
+        with_query_timeout(
+            "get_metrics_analytics",
+            metrics::get_metrics_analytics(self, days),
+        )
+        .await
     }
 
     async fn get_metrics_list(
@@ -377,7 +462,11 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         limit: usize,
         offset: usize,
     ) -> Result<MetricsListData, OxyError> {
-        metrics::get_metrics_list(self, days, limit, offset).await
+        with_query_timeout(
+            "get_metrics_list",
+            metrics::get_metrics_list(self, days, limit, offset),
+        )
+        .await
     }
 
     async fn get_metric_detail(
@@ -385,18 +474,30 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         metric_name: &str,
         days: u32,
     ) -> Result<MetricDetailData, OxyError> {
-        metrics::get_metric_detail(self, metric_name, days).await
+        with_query_timeout(
+            "get_metric_detail",
+            metrics::get_metric_detail(self, metric_name, days),
+        )
+        .await
     }
 
     async fn get_execution_summary(&self, days: u32) -> Result<ExecutionSummaryData, OxyError> {
-        execution_analytics::get_execution_summary(self, days).await
+        with_query_timeout(
+            "get_execution_summary",
+            execution_analytics::get_execution_summary(self, days),
+        )
+        .await
     }
 
     async fn get_execution_time_series(
         &self,
         days: u32,
     ) -> Result<Vec<ExecutionTimeBucketData>, OxyError> {
-        execution_analytics::get_execution_time_series(self, days).await
+        with_query_timeout(
+            "get_execution_time_series",
+            execution_analytics::get_execution_time_series(self, days),
+        )
+        .await
     }
 
     async fn get_execution_agent_stats(
@@ -404,7 +505,11 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         days: u32,
         limit: usize,
     ) -> Result<Vec<AgentExecutionStatsData>, OxyError> {
-        execution_analytics::get_execution_agent_stats(self, days, limit).await
+        with_query_timeout(
+            "get_execution_agent_stats",
+            execution_analytics::get_execution_agent_stats(self, days, limit),
+        )
+        .await
     }
 
     async fn get_execution_list(
@@ -417,29 +522,40 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         source_ref: Option<&str>,
         status: Option<&str>,
     ) -> Result<ExecutionListData, OxyError> {
-        execution_analytics::get_execution_list(
-            self,
-            days,
-            limit,
-            offset,
-            execution_type,
-            is_verified,
-            source_ref,
-            status,
+        with_query_timeout(
+            "get_execution_list",
+            execution_analytics::get_execution_list(
+                self,
+                days,
+                limit,
+                offset,
+                execution_type,
+                is_verified,
+                source_ref,
+                status,
+            ),
         )
         .await
     }
 
     async fn get_latency_percentiles(&self, days: u32) -> Result<LatencyPercentilesData, OxyError> {
-        latency_cost::get_latency_percentiles(self, days).await
+        with_query_timeout(
+            "get_latency_percentiles",
+            latency_cost::get_latency_percentiles(self, days),
+        )
+        .await
     }
 
     async fn get_latency_histogram(&self, days: u32) -> Result<LatencyHistogramData, OxyError> {
-        latency_cost::get_latency_histogram(self, days).await
+        with_query_timeout(
+            "get_latency_histogram",
+            latency_cost::get_latency_histogram(self, days),
+        )
+        .await
     }
 
     async fn get_model_usage(&self, days: u32) -> Result<Vec<ModelUsageData>, OxyError> {
-        latency_cost::get_model_usage(self, days).await
+        with_query_timeout("get_model_usage", latency_cost::get_model_usage(self, days)).await
     }
 
     async fn insert_spans(&self, spans: Vec<SpanRecord>) -> Result<(), OxyError> {

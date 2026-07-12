@@ -126,7 +126,7 @@ pub(super) async fn get_execution_summary(
     );
 
     let row = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_optional::<ExecutionSummaryDbRow>()
         .await
@@ -175,12 +175,13 @@ pub(super) async fn get_execution_time_series(
         since(days)
     );
 
-    let rows: Vec<ExecutionTimeBucketDbRow> = storage
-        .client()
-        .query(&sql)
-        .fetch_all()
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("Time series query failed: {e}")))?;
+    let rows: Vec<ExecutionTimeBucketDbRow> =
+        storage
+            .read_client()
+            .query(&sql)
+            .fetch_all()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Time series query failed: {e}")))?;
 
     Ok(rows
         .into_iter()
@@ -219,7 +220,7 @@ pub(super) async fn get_execution_agent_stats(
     );
 
     let rows: Vec<AgentStatsDbRow> = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_all()
         .await
@@ -284,18 +285,19 @@ pub(super) async fn get_execution_list(
     );
 
     let total = storage
-        .client()
+        .read_client()
         .query(&count_sql)
         .fetch_one::<CountOnly>()
         .await
         .map(|r| r.count)
         .map_err(|e| OxyError::RuntimeError(format!("Count query failed: {e}")))?;
 
+    let ts = super::iso_utc("timestamp");
     let data_sql = format!(
         "SELECT
             trace_id,
             span_id,
-            formatDateTime(timestamp, '%Y-%m-%d %H:%M:%S.%f') AS timestamp,
+            {ts} AS timestamp,
             execution_type,
             if(is_verified = 1, 'true', 'false') AS is_verified,
             source_type,
@@ -325,7 +327,7 @@ pub(super) async fn get_execution_list(
     );
 
     let rows: Vec<ExecutionDetailDbRow> = storage
-        .client()
+        .read_client()
         .query(&data_sql)
         .fetch_all()
         .await

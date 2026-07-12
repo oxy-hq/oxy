@@ -23,6 +23,7 @@ import "@xyflow/react/dist/style.css";
 import React, { Suspense, useEffect, useRef } from "react";
 import { HotkeysProvider, useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import ROUTES from "@/libs/utils/routes";
 import ContextGraphPage from "@/pages/context-graph";
@@ -408,7 +409,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
 const getLocalRouter = () =>
   createBrowserRouter(
     createRoutesFromElements(
-      <Route>
+      <Route errorElement={<RouteErrorBoundary />}>
         {/* QuickBooks OAuth success landing — must resolve before the `/*`
             catch-all so the popup/redirect return renders this page. */}
         <Route path='/quickbooks/connected' element={<QuickBooksConnected />} />
@@ -429,7 +430,7 @@ const getLocalRouter = () =>
 const getCloudRouter = (authConfig: AuthConfigResponse) =>
   createBrowserRouter(
     createRoutesFromElements(
-      <Route>
+      <Route errorElement={<RouteErrorBoundary />}>
         {/* Auth routes when auth is enabled */}
         {authConfig.auth_enabled && (
           <>

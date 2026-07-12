@@ -64,7 +64,7 @@ async fn overall_percentiles(
          WHERE timestamp >= now() - INTERVAL {days} DAY"
     );
     let row = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_optional::<TripleRow>()
         .await
@@ -91,7 +91,7 @@ pub(super) async fn get_latency_percentiles(
          GROUP BY date ORDER BY date ASC"
     );
     let rows: Vec<SeriesRow> = storage
-        .client()
+        .read_client()
         .query(&series_sql)
         .fetch_all()
         .await
@@ -125,7 +125,7 @@ pub(super) async fn get_latency_histogram(
         GROUP BY bucket ORDER BY bucket ASC"
     );
     let rows: Vec<BucketRow> = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_all()
         .await
@@ -178,7 +178,7 @@ pub(super) async fn get_model_usage(
         ORDER BY calls DESC"
     );
     let rows: Vec<ModelUsageRow> = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_all()
         .await

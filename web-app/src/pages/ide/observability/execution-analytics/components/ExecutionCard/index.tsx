@@ -1,4 +1,3 @@
-import { formatDistanceToNow } from "date-fns";
 import { ChevronDown, ChevronRight, Clock, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -8,6 +7,7 @@ import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
+import { formatTimeAgo } from "../../../utils";
 import type { ExecutionDetail } from "../../types";
 import DataDisplay from "./DataDisplay";
 import ExecutionTypeBadge from "./ExecutionTypeBadge";
@@ -63,11 +63,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
           </div>
           <div className='flex items-center gap-2 text-muted-foreground text-xs'>
             <Clock className='h-3 w-3' />
-            <span>
-              {formatDistanceToNow(new Date(execution.timestamp), {
-                addSuffix: true
-              })}
-            </span>
+            <span>{formatTimeAgo(execution.timestamp)}</span>
           </div>
         </div>
 

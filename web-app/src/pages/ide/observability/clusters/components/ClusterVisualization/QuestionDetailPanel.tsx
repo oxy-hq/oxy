@@ -1,8 +1,8 @@
-import { formatDistanceToNow } from "date-fns";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
+import { formatTimeAgo } from "../../../utils";
 
 interface QuestionDetailPanelProps {
   point: ClusterMapPoint;
@@ -65,11 +65,7 @@ export default function QuestionDetailPanel({ point, cluster, onClose }: Questio
           <Badge variant='secondary' className={getStatusBadgeClass(status)}>
             {getStatusLabel(status)}
           </Badge>
-          <span className='text-muted-foreground text-xs'>
-            {formatDistanceToNow(new Date(point.timestamp), {
-              addSuffix: true
-            })}
-          </span>
+          <span className='text-muted-foreground text-xs'>{formatTimeAgo(point.timestamp)}</span>
           {point.durationMs && (
             <span className='text-muted-foreground text-xs'>
               • {(point.durationMs / 1000).toFixed(2)}s

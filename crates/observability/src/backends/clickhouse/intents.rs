@@ -273,7 +273,7 @@ pub(super) async fn get_intent_analytics(
     );
 
     let rows: Vec<IntentAnalyticsQueryRow> = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_all()
         .await
@@ -301,7 +301,7 @@ pub(super) async fn get_outliers(
     );
 
     let rows: Vec<OutlierRow> = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_all()
         .await

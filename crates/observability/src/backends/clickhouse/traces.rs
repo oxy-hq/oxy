@@ -184,14 +184,18 @@ pub(super) async fn list_traces(
 
     let count_sql =
         format!("SELECT count() AS count FROM observability_spans s WHERE {where_clause}");
-    let total: u64 = storage
-        .client()
-        .query(&count_sql)
-        .fetch_one::<CountOnly>()
-        .await
-        .map(|r| r.count)
-        .map_err(|e| OxyError::RuntimeError(format!("Count query failed: {e}")))?;
+    let total: u64 = super::with_query_timeout("traces count", async {
+        storage
+            .read_client()
+            .query(&count_sql)
+            .fetch_one::<CountOnly>()
+            .await
+            .map(|r| r.count)
+            .map_err(|e| OxyError::RuntimeError(format!("Count query failed: {e}")))
+    })
+    .await?;
 
+    let ts = super::iso_utc("r.timestamp");
     let data_sql = format!(
         "WITH root_traces AS (
             SELECT trace_id, span_id, timestamp, span_name, service_name,
@@ -217,7 +221,7 @@ pub(super) async fn list_traces(
         SELECT
             r.trace_id AS trace_id,
             r.span_id AS span_id,
-            formatDateTime(r.timestamp, '%Y-%m-%d %H:%M:%S.%f') AS timestamp,
+            {ts} AS timestamp,
             r.span_name AS span_name,
             r.service_name AS service_name,
             r.duration_ns AS duration_ns,
@@ -233,12 +237,15 @@ pub(super) async fn list_traces(
         ORDER BY r.timestamp DESC"
     );
 
-    let rows: Vec<TraceQueryRow> = storage
-        .client()
-        .query(&data_sql)
-        .fetch_all()
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("Traces query failed: {e}")))?;
+    let rows: Vec<TraceQueryRow> = super::with_query_timeout("traces list", async {
+        storage
+            .read_client()
+            .query(&data_sql)
+            .fetch_all()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Traces query failed: {e}")))
+    })
+    .await?;
 
     let traces = rows
         .into_iter()
@@ -266,9 +273,15 @@ pub(super) async fn get_trace_detail(
     storage: &ClickHouseObservabilityStorage,
     trace_id: &str,
 ) -> Result<Vec<TraceDetailRow>, OxyError> {
+    // A single trace should never approach this many spans; the cap guards the
+    // request path (and the instance's memory) against a pathological or
+    // colliding trace_id returning an unbounded result set.
+    const MAX_SPANS: usize = 100_000;
+    let ts = super::iso_utc("timestamp");
+    let trace = escape_sql_literal(trace_id);
     let sql = format!(
         "SELECT
-            formatDateTime(timestamp, '%Y-%m-%d %H:%M:%S.%f') AS timestamp,
+            {ts} AS timestamp,
             trace_id,
             span_id,
             parent_span_id,
@@ -280,17 +293,20 @@ pub(super) async fn get_trace_detail(
             status_message,
             event_data
         FROM observability_spans
-        WHERE trace_id = '{}'
-        ORDER BY timestamp ASC",
-        escape_sql_literal(trace_id)
+        WHERE trace_id = '{trace}'
+        ORDER BY timestamp ASC
+        LIMIT {MAX_SPANS}"
     );
 
-    let rows: Vec<TraceDetailQueryRow> = storage
-        .client()
-        .query(&sql)
-        .fetch_all()
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("Trace detail query failed: {e}")))?;
+    let rows: Vec<TraceDetailQueryRow> = super::with_query_timeout("trace detail", async {
+        storage
+            .read_client()
+            .query(&sql)
+            .fetch_all()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Trace detail query failed: {e}")))
+    })
+    .await?;
 
     Ok(rows
         .into_iter()
@@ -323,6 +339,7 @@ pub(super) async fn get_cluster_map_data(
 
     let where_clause = conditions.join(" AND ");
 
+    let ca = super::iso_utc("classified_at");
     let sql = format!(
         "SELECT
             trace_id,
@@ -331,7 +348,7 @@ pub(super) async fn get_cluster_map_data(
             cluster_id,
             intent_name,
             confidence,
-            formatDateTime(classified_at, '%Y-%m-%d %H:%M:%S.%f') AS classified_at,
+            {ca} AS classified_at,
             source
         FROM observability_intent_classifications FINAL
         WHERE {where_clause}
@@ -340,7 +357,7 @@ pub(super) async fn get_cluster_map_data(
     );
 
     let rows: Vec<ClusterMapQueryRow> = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_all()
         .await
@@ -369,7 +386,7 @@ pub(super) async fn get_cluster_infos(
         ORDER BY cluster_id";
 
     let rows: Vec<ClusterInfoQueryRow> = storage
-        .client()
+        .read_client()
         .query(sql)
         .fetch_all()
         .await
@@ -408,7 +425,7 @@ pub(super) async fn get_trace_enrichments(
     );
 
     let rows: Vec<TraceEnrichmentQueryRow> = storage
-        .client()
+        .read_client()
         .query(&sql)
         .fetch_all()
         .await
