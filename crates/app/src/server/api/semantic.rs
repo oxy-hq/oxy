@@ -449,7 +449,16 @@ pub async fn get_preagg_status(
         .workspace_path()
         .to_path_buf();
     let cache_dir = oxy::state_dir::get_airlayer_cache_dir(&workspace_path);
-    extract::Json(build_preagg_status(&cache_dir))
+    // `build_preagg_status` does blocking fs (read_to_string + is_file per
+    // rollup); run it off the Tokio worker. A join failure falls back to an
+    // empty list, matching this endpoint's "missing/unparsable → no error"
+    // contract.
+    let status = tokio::task::spawn_blocking(move || build_preagg_status(&cache_dir))
+        .await
+        .unwrap_or(PreaggStatusResponse {
+            rollups: Vec::new(),
+        });
+    extract::Json(status)
 }
 
 #[cfg(test)]

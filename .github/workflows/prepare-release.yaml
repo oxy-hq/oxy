@@ -24,23 +24,23 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         name: Create GitHub App Token
         id: app-token
         with:
           client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
       - name: Install git-cliff
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2
         with:
           tool: git-cliff
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - name: Bump version in Cargo.toml
         id: bump
         run: |
@@ -52,7 +52,7 @@ jobs:
         run: git cliff --tag ${{ steps.bump.outputs.version }} --unreleased -o
           /tmp/release-notes.md
       - name: Create or update release PR
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ steps.app-token.outputs.token }}
           commit-message: "chore: release ${{ steps.bump.outputs.version }}"
@@ -79,14 +79,14 @@ jobs:
       releases_created: "true"
       release_version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         name: Create GitHub App Token
         id: app-token
         with:
           client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
@@ -104,13 +104,13 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
       - name: Install git-cliff
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2
         with:
           tool: git-cliff
       - name: Generate release notes
         run: git cliff --current -o /tmp/release-notes.md
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ steps.version.outputs.version }}
@@ -128,7 +128,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         name: Create GitHub App Token
         id: app-token
         with:
@@ -144,14 +144,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
       - name: Wait for publishing oss code to succeed
-        uses: lewagon/wait-on-check-action@v1.8.1
+        uses: lewagon/wait-on-check-action@1d57e2c51a58d812d2765e036a028b6bdb5a6154 # v1.8.1
         with:
           ref: ${{ github.ref }}
           check-name: "move-code"
           repo-token: ${{ steps.app-token.outputs.token }}
           wait-interval: 20
       - name: Checkout oss repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           repository: oxy-hq/oxygen

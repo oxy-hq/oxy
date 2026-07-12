@@ -1,0 +1,26 @@
+# .mailmap — canonicalize contributor identities for git shortlog/log/blame.
+#
+# Format (see `man gitmailmap`):
+#   Canonical Name <canonical@email> <commit@email>
+#   Canonical Name <canonical@email>                     # normalize name for this email
+#
+# Only same-person duplicates we are confident about are merged here. Distinct
+# contributors who happen to share a first name (e.g. "Nhat Vu") are left alone.
+# Bot accounts (oxyhelper[bot]/onyxhelper[bot]/argocd/dependabot/claude) are left
+# as-is on purpose.
+
+# Luong Vo — top contributor, committed under gmail, hyperquery.ai (legacy),
+# onyxint.ai (former company name), and two names on the oxy.tech email.
+Luong Vo <luong@oxy.tech>
+Luong Vo <luong@oxy.tech> <vo.tran.thanh.luong@gmail.com>
+Luong Vo <luong@oxy.tech> <luong@hyperquery.ai>
+Luong Vo <luong@oxy.tech> <luong@onyxint.ai>
+
+# Hai Tran — accented vs unaccented spelling of the same name on one email.
+Hải Trần <h@hai.fyi>
+
+# Le Nhat Tanh — same email, two handles.
+Nhhhh <lenhattanh95@gmail.com>
+
+# Jinjae Kim — personal email vs GitHub noreply.
+Jinjae Kim <jinjae.jenny.kim@gmail.com> <54109171+jinjakim@users.noreply.github.com>

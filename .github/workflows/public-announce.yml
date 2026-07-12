@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha }}
@@ -128,7 +128,7 @@ jobs:
 
       - name: Install git-cliff (stable only)
         if: steps.build_info.outputs.type == 'stable'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2
         with:
           tool: git-cliff
 
@@ -303,7 +303,7 @@ jobs:
           steps.build_info.outputs.type != 'skip' &&
           (steps.build_info.outputs.type == 'stable'
               || steps.edge_check.outputs.published == 'true')
-        uses: rtCamp/action-slack-notify@v2
+        uses: rtCamp/action-slack-notify@33ca3be66c6f378fe1610fd1d5258632dbed5e58 # v2
         env:
           SLACK_USERNAME: "Release Notifier"
           MSG_MINIMAL: ref,commit

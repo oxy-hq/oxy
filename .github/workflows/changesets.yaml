@@ -33,8 +33,8 @@ jobs:
       web-app: ${{ steps.changes.outputs.web-app }}
       docker: ${{ steps.changes.outputs.docker }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: changes
         with:
           filters: |

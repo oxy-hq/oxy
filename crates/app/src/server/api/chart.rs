@@ -33,7 +33,7 @@ pub async fn get_chart(
     // step, or a single all-in-one process). A serve replica serving the
     // ide-down degrade has no charts dir / file, so this is skipped.
     if let Ok(charts_dir) = workspace_manager.config_manager.get_charts_dir().await
-        && let Ok(content) = std::fs::read_to_string(charts_dir.join(&file_path))
+        && let Ok(content) = tokio::fs::read_to_string(charts_dir.join(&file_path)).await
     {
         // Best-effort mirror so a replica can serve this chart when the ide is
         // down. Fire-and-forget — a small JSON spec, off the response hot path,

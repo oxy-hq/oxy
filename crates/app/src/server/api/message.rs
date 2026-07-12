@@ -115,7 +115,6 @@ pub async fn get_messages_by_thread(
             tracing::error!("Database error when fetching messages: {}", err);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    tracing::info!("Debug messages: {:?}", message_items);
 
     let topics = BROADCASTER.list_topics::<HashSet<String>>().await;
     for message in message_items.iter_mut() {

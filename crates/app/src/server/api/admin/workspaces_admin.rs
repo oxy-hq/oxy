@@ -379,13 +379,24 @@ async fn load_members(
         .order_by_asc(workspace_members::Column::CreatedAt)
         .all(db)
         .await?;
+
+    // Batch the user lookups into a single query instead of one per row.
+    let user_ids: Vec<Uuid> = rows.iter().map(|m| m.user_id).collect();
+    let users_by_id: HashMap<Uuid, users::Model> = users::Entity::find()
+        .filter(users::Column::Id.is_in(user_ids))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|u| (u.id, u))
+        .collect();
+
     let mut out = Vec::with_capacity(rows.len());
     for m in rows {
-        if let Some(u) = users::Entity::find_by_id(m.user_id).one(db).await? {
+        if let Some(u) = users_by_id.get(&m.user_id) {
             out.push(WorkspaceMember {
                 user_id: u.id,
-                email: u.email,
-                name: u.name,
+                email: u.email.clone(),
+                name: u.name.clone(),
                 role: m.role.as_str().to_string(),
                 joined_at: m.created_at.to_rfc3339(),
             });

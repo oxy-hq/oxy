@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use agentic_core::tools::ToolDef;
 
-use super::constants::OPENAI_BASE_URL;
+use super::constants::{OPENAI_BASE_URL, build_llm_http_client, send_error_to_llm};
 use super::sse::{ApiError, pop_sse_event, sse_data, sse_event_type};
 use super::{
     Chunk, ContentBlock, LlmError, LlmProvider, ReasoningEffort, ResponseSchema, StopReason,
@@ -105,7 +105,7 @@ impl OpenAiProvider {
             api_key: api_key.into(),
             model: model.into(),
             base_url: OPENAI_BASE_URL.to_string(),
-            client: reqwest::Client::new(),
+            client: build_llm_http_client(),
         }
     }
 
@@ -128,7 +128,7 @@ impl OpenAiProvider {
             api_key: api_key.into(),
             model: model.into(),
             base_url: base,
-            client: reqwest::Client::new(),
+            client: build_llm_http_client(),
         }
     }
 
@@ -265,7 +265,7 @@ impl LlmProvider for OpenAiProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| LlmError::Http(e.to_string()))?;
+            .map_err(send_error_to_llm)?;
 
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
@@ -275,6 +275,11 @@ impl LlmProvider for OpenAiProvider {
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             let text = response.text().await.unwrap_or_default();
             return Err(LlmError::RateLimit(text));
+        }
+        // 5xx are server-side and usually transient — retry on the backoff path.
+        if status.is_server_error() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(LlmError::Transient(format!("HTTP {status}: {text}")));
         }
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
@@ -299,7 +304,9 @@ impl LlmProvider for OpenAiProvider {
                 let bytes = match bytes_result {
                     Ok(b) => b,
                     Err(e) => {
-                        yield Err(LlmError::Http(e.to_string()));
+                        // A network error mid-stream is transient — surface it
+                        // as such so the solver can retry on the backoff path.
+                        yield Err(LlmError::Transient(e.to_string()));
                         return;
                     }
                 };

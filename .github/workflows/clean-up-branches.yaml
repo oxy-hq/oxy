@@ -15,12 +15,69 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      # This pruner already covers stale `claude/*` and hex-named auto-branches:
+      # it deletes ANY branch with no activity for 90d (+14d grace), and the
+      # action inherently SKIPS branches that have an open PR. `exempt-branches-
+      # regex` additionally protects `main` and release branches (`X.Y.x`). So the
+      # guards the task calls for (never touch protected / release / open-PR
+      # branches) are all in force; auto-branches are collected once they age out.
       - name: GitHub Branch Cleaner
-        uses: fpicalausa/remove-stale-branches@v2.6.1
+        uses: fpicalausa/remove-stale-branches@9b829bc2975ade0c61e64e9613def53ec0732440 # v2.6.1
         with:
           exempt-branches-regex: ^(main|[0-9]+.[0-9]+.x)$
           days-before-branch-stale: 90
           days-before-branch-delete: 14
           ignore-unknown-authors: true
           default-recipient: luong-komorebi
+
+      # ── Dry-run audit (NON-DESTRUCTIVE — lists only, deletes nothing) ─────────
+      # The 90d+14d window above is intentionally conservative. This step surfaces
+      # fully-merged `claude/*` and hex-named auto-branches that are already >30d
+      # stale, so a maintainer can eyeball whether a shorter-horizon cleanup is
+      # warranted BEFORE we ever shorten the destructive window. It replicates the
+      # pruner's guards: skips `main`, release branches (`X.Y.x`), and any branch
+      # with an open PR, and only reports branches merged into `main`.
+      - name: Audit stale auto-branches (dry-run, list only)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STALE_DAYS: "30"
+        run: |
+          set -euo pipefail
+          # Fetch every remote branch + full history so ancestry checks are exact.
+          git fetch --prune --unshallow origin '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null \
+            || git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+          # Branches backing an OPEN PR are off-limits.
+          mapfile -t OPEN_PR_HEADS < <(gh pr list --state open --limit 500 --json headRefName --jq '.[].headRefName' || true)
+          is_open_pr() { local b="$1" h; for h in "${OPEN_PR_HEADS[@]:-}"; do [[ "$h" == "$b" ]] && return 0; done; return 1; }
+
+          now=$(date -u +%s); cutoff=$(( ${STALE_DAYS} * 86400 )); found=0
+          {
+            echo "### Stale auto-branch audit (dry-run — nothing deleted)"
+            echo ""
+            echo "Fully-merged \`claude/*\` / hex-named branches with no commit in the last ${STALE_DAYS} days:"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
+            b="${ref#origin/}"
+            # Protected / release / symbolic HEAD — never list.
+            [[ "$b" == "main" || "$b" == "HEAD" ]] && continue
+            [[ "$b" =~ ^[0-9]+\.[0-9]+\.x$ ]] && continue
+            # Scope: claude/* and hex-named / worktree / agent auto-branches only.
+            [[ "$b" == claude/* || "$b" =~ ^[0-9a-f]{7,}$ || "$b" =~ ^(worktree-|agent-) ]] || continue
+            is_open_pr "$b" && continue
+            # Must be merged into main.
+            git merge-base --is-ancestor "origin/$b" origin/main 2>/dev/null || continue
+            ts=$(git log -1 --format=%ct "origin/$b" 2>/dev/null || echo "$now")
+            age=$(( now - ts ))
+            if (( age > cutoff )); then
+              echo "- \`$b\` — merged, $(( age / 86400 ))d stale" >> "$GITHUB_STEP_SUMMARY"
+              found=$(( found + 1 ))
+            fi
+          done
+
+          [[ "$found" -eq 0 ]] && echo "_None found._" >> "$GITHUB_STEP_SUMMARY"
+          echo "Dry-run audit candidates: $found (nothing was deleted)"

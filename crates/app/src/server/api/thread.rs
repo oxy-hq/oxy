@@ -522,7 +522,10 @@ pub async fn delete_all_threads(
     // For now, we'll keep the current behavior but you may want to change this
     {
         let charts_dir = workspace_manager.config_manager.get_charts_dir().await?;
-        remove_all_files_in_dir(charts_dir);
+        // The dir-walk + per-file removals are blocking fs calls; run them on a
+        // blocking thread so they don't stall a Tokio worker. Best-effort — the
+        // helper already ignores individual fs errors.
+        let _ = tokio::task::spawn_blocking(move || remove_all_files_in_dir(charts_dir)).await;
     }
 
     Ok(StatusCode::OK)

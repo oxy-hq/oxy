@@ -1,6 +1,11 @@
 //! [`ContextBudget`] — token-budget utility for prompt construction.
 //!
-//! Currently unused — kept as a utility for future prompt-assembly code.
+//! [`estimate_tokens`] is wired into the analytics solve stage as a **log-only**
+//! context-budget canary (see `solver::solving`): it warns when an assembled
+//! prompt is pathologically large, without ever truncating output.  The
+//! reservation/trimming helpers ([`ContextBudget`], [`trim_to_tokens`]) are not
+//! yet wired into any prompt-assembly path — the crate-wide `#![allow(dead_code)]`
+//! below keeps them from warning until a caller adopts them.
 //!
 //! LLM context windows are finite.  When assembling prompts from multiple
 //! sources (schema, metric definitions, examples, retry context) the total

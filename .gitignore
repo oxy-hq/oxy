@@ -88,7 +88,11 @@ oxy/**/poetry.lock
 # Oxy
 .db-*/
 .fastembed_cache/
+# Dev env files may carry OXY_OWNER / OXY_GLOBAL_ADMINS employee allow-lists — never commit
 .env
+.env.*
+!.env.example
+!*.example
 
 **/node_modules
 .turbo/*

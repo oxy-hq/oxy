@@ -12,6 +12,14 @@ use crate::state::ProblemState;
 
 use super::{RunContext, SessionMemory, TransitionResult, child_trace_id, emit, next_trace_id};
 
+/// Maximum number of sub-spec tasks executed concurrently during fan-out.
+///
+/// Each sub-spec drives a full solve+execute (LLM calls + warehouse queries),
+/// so an unbounded fan-out over a large spec list could open dozens of
+/// simultaneous LLM/warehouse connections and blow past provider rate limits
+/// and token budgets.  A semaphore caps in-flight work at this many tasks.
+const MAX_FANOUT_CONCURRENCY: usize = 8;
+
 /// Execute solve+execute for each spec in `specs`, merge the results, and
 /// return a [`TransitionResult`] pointing at the Interpreting state.
 ///
@@ -213,6 +221,11 @@ where
     D: Domain,
     Ev: DomainEvents,
 {
+    // Cap concurrent sub-spec execution so a large fan-out doesn't open an
+    // unbounded number of simultaneous LLM/warehouse calls.  An owned permit is
+    // acquired before each spawn (blocking the loop once the cap is reached) and
+    // moved into the task, releasing when the task finishes.
+    let sem = Arc::new(tokio::sync::Semaphore::new(MAX_FANOUT_CONCURRENCY));
     let mut set: tokio::task::JoinSet<(usize, Result<D::Result, (D::Error, BackTarget<D>)>)> =
         tokio::task::JoinSet::new();
     for (index, spec) in specs.into_iter().enumerate() {
@@ -228,8 +241,15 @@ where
             sub_spec_index = index,
             total,
         );
+        let permit = Arc::clone(&sem)
+            .acquire_owned()
+            .await
+            .expect("fanout semaphore is never closed");
         set.spawn(
             async move {
+                // Held for the task's lifetime; released on completion so the
+                // next queued sub-spec can start.
+                let _permit = permit;
                 emit(
                     &ev,
                     CoreEvent::SubSpecStart {

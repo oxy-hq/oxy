@@ -168,5 +168,17 @@ pub(super) async fn diagnose_impl(
                 unreachable!("BackTarget::Suspend reached diagnose")
             }
         },
+
+        // ── TransientRetry → back to whichever state hit the transient error ──
+        AnalyticsError::TransientRetry(_) => match back {
+            BackTarget::Clarify(intent, _) => Ok(ProblemState::Clarifying(intent)),
+            BackTarget::Specify(intent, _) => Ok(ProblemState::Specifying(intent)),
+            BackTarget::Solve(spec, _) => Ok(ProblemState::Solving(spec)),
+            BackTarget::Execute(solution, _) => Ok(ProblemState::Executing(solution)),
+            BackTarget::Interpret(result, _) => Ok(ProblemState::Interpreting(result)),
+            BackTarget::Suspend { .. } => {
+                unreachable!("BackTarget::Suspend reached diagnose")
+            }
+        },
     }
 }

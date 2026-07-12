@@ -8,6 +8,9 @@ overrides:
   # TypeScript 7's native compiler API (reads useCaseSensitiveFileNames off
   # an undefined host). 0.27.2+ adds TS 7 to its peer range; pin to the fix.
   rolldown-plugin-dts: ^0.27.4
+  # monaco-editor drags in dompurify <3.4.11, which has 13 moderate XSS
+  # advisories (GHSA-v2wj-7wpq-c8vv et al). Pin the transitive dep past them.
+  dompurify: '>=3.4.11'
 peerDependencyRules:
   allowedVersions:
     '@typescript-eslint/parser>typescript': '6'

@@ -481,13 +481,24 @@ async fn load_owners(
         .order_by_asc(org_members::Column::CreatedAt)
         .all(db)
         .await?;
+
+    // Batch the user lookups into a single query instead of one per row.
+    let user_ids: Vec<Uuid> = memberships.iter().map(|m| m.user_id).collect();
+    let users_by_id: HashMap<Uuid, users::Model> = users::Entity::find()
+        .filter(users::Column::Id.is_in(user_ids))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|u| (u.id, u))
+        .collect();
+
     let mut out = Vec::with_capacity(memberships.len());
     for m in memberships {
-        if let Some(u) = users::Entity::find_by_id(m.user_id).one(db).await? {
+        if let Some(u) = users_by_id.get(&m.user_id) {
             out.push(OrgUserSummary {
                 user_id: u.id,
-                email: u.email,
-                name: u.name,
+                email: u.email.clone(),
+                name: u.name.clone(),
                 role: m.role.as_str().to_string(),
             });
         }

@@ -344,11 +344,24 @@ impl AnalyticsFanoutWorker {
         let system_prompt = self.build_system_prompt("solving", &solve_prompt, solve_dialect);
         let thinking = self.thinking_for_state("solving", ThinkingConfig::Adaptive);
         let max_rounds = self.max_tool_rounds_for_state("solving", 3);
-        let connector = self
-            .connectors
-            .get(&spec.connector_name)
-            .cloned()
-            .expect("connector for spec must be registered");
+        // `spec.connector_name` is LLM/spec-derived (a prior-turn hint), so the
+        // named connector may have been renamed or removed. Fail the sub-spec
+        // gracefully instead of panicking the driver task (which would drop the
+        // outcome channel and hang the SSE stream).
+        let connector = match self.connectors.get(&spec.connector_name).cloned() {
+            Some(connector) => connector,
+            None => {
+                let msg = format!(
+                    "connector '{}' is not registered (it may have been renamed or removed since the query was planned)",
+                    spec.connector_name
+                );
+                tracing::error!("analytics fanout solve: {msg}");
+                return Err((
+                    AnalyticsError::NeedsUserInput { prompt: msg },
+                    BackTarget::Solve(spec.clone(), Default::default()),
+                ));
+            }
+        };
 
         let output = match self
             .client_for_state("solving")

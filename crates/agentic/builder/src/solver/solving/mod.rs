@@ -231,6 +231,29 @@ const MAX_RATE_LIMIT_RETRIES: u32 = 5;
 /// Base delay in seconds for rate-limit exponential backoff: `BASE * 2^attempt`.
 const RATE_LIMIT_BACKOFF_BASE_SECS: u64 = 5;
 
+/// Maximum number of retries for transient LLM failures (connection errors,
+/// timeouts, HTTP 5xx) before surfacing the failure to the user.
+const MAX_TRANSIENT_RETRIES: u32 = 3;
+
+/// Base delay in seconds for transient-error exponential backoff.  Smaller than
+/// the rate-limit base because a transient network blip usually clears fast.
+const TRANSIENT_BACKOFF_BASE_SECS: f64 = 1.0;
+
+/// Exponential backoff with full jitter for a transient retry `attempt`.
+///
+/// Returns `BASE * 2^attempt` scaled by a random factor in `[0.5, 1.5)` so
+/// concurrent clients don't retry in lock-step.  The jitter is derived from the
+/// wall-clock nanosecond fraction to avoid pulling in a `rand` dependency.
+fn transient_backoff_secs(attempt: u32) -> f64 {
+    let base = TRANSIENT_BACKOFF_BASE_SECS * 2f64.powi(attempt.min(6) as i32);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let jitter = 0.5 + (nanos % 1_000_000_000) as f64 / 1_000_000_000.0;
+    base * jitter
+}
+
 impl BuilderSolver {
     pub(crate) async fn solve_impl(
         &mut self,
@@ -541,6 +564,56 @@ impl BuilderSolver {
                         .clone()
                         .unwrap_or_default()
                         .advance_rate_limit(msg.clone());
+                    Err((BuilderError::Llm(msg), BackTarget::Solve(spec, retry_ctx)))
+                }
+            }
+            Err(LlmError::Transient(msg)) => {
+                // Transient transport failure (connection error, timeout, or
+                // HTTP 5xx).  Retry with jittered exponential backoff on the
+                // same path as rate limits, using the independent transient
+                // `attempt` counter so it doesn't share the 429 budget.
+                let current_attempt = run_ctx.retry_ctx.as_ref().map_or(0, |ctx| ctx.attempt);
+                if current_attempt >= MAX_TRANSIENT_RETRIES {
+                    let summary = format!(
+                        "The model provider had a transient failure that persisted after {} retries — try again shortly. ({msg})",
+                        current_attempt
+                    );
+                    tracing::error!("builder solving transient error exhausted: {msg}");
+                    <BuilderSolver as DomainSolver<BuilderDomain>>::store_suspension_data(
+                        self,
+                        SuspendedRunData {
+                            from_state: "solving".to_string(),
+                            original_input: spec.question.clone(),
+                            trace_id: String::new(),
+                            stage_data: Default::default(),
+                            question: summary.clone(),
+                            suggestions: vec![],
+                        },
+                    );
+                    Err((
+                        BuilderError::Llm(summary.clone()),
+                        BackTarget::Suspend {
+                            reason: SuspendReason::HumanInput {
+                                questions: vec![HumanInputQuestion {
+                                    prompt: summary,
+                                    suggestions: vec![],
+                                }],
+                            },
+                        },
+                    ))
+                } else {
+                    let delay_secs = transient_backoff_secs(current_attempt);
+                    tracing::warn!(
+                        attempt = current_attempt + 1,
+                        delay_secs,
+                        "builder transient LLM error — backing off before retry"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                    let retry_ctx = run_ctx
+                        .retry_ctx
+                        .clone()
+                        .unwrap_or_default()
+                        .advance(msg.clone());
                     Err((BuilderError::Llm(msg), BackTarget::Solve(spec, retry_ctx)))
                 }
             }

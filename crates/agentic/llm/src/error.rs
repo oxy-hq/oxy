@@ -3,6 +3,11 @@
 pub enum LlmError {
     /// HTTP transport or server error.
     Http(String),
+    /// Transient transport failure (connection error, timeout, or HTTP 5xx).
+    /// Distinct from [`LlmError::Http`] because retrying after a backoff delay
+    /// may succeed; solvers retry this on the same bounded-backoff path as
+    /// [`LlmError::RateLimit`].
+    Transient(String),
     /// Authentication failure (bad or missing API key).
     Auth(String),
     /// Rate limit exceeded (HTTP 429). Retrying after a backoff delay may succeed.
@@ -59,6 +64,7 @@ impl std::fmt::Display for LlmError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LlmError::Http(msg) => write!(f, "HTTP error: {msg}"),
+            LlmError::Transient(msg) => write!(f, "transient error: {msg}"),
             LlmError::Auth(msg) => write!(f, "auth error: {msg}"),
             LlmError::RateLimit(msg) => write!(f, "rate limit exceeded: {msg}"),
             LlmError::Parse(msg) => write!(f, "parse error: {msg}"),

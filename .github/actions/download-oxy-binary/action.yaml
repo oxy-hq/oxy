@@ -28,14 +28,14 @@ runs:
   steps:
     - name: Download oxy binary (current run)
       if: inputs.run-id == ''
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
         name: ${{ inputs.artifact-name }}
         path: ./${{ inputs.destination }}
 
     - name: Download oxy binary (cross-run)
       if: inputs.run-id != ''
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
         name: ${{ inputs.artifact-name }}
         path: ./${{ inputs.destination }}

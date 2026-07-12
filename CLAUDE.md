@@ -16,18 +16,31 @@ crates/
   entity/  migration/       # Sea-ORM entities / migrations
   semantic/                 # (oxy-semantic) Semantic query layer (airlayer)
   shared/                   # (oxy-shared) Shared types, errors, infra
-  workflow/ thread/ project/ globals/ omni/ a2a/
+  project/                  # (oxy-project) Project/model config domain
+  thread/                   # (oxy-thread) Thread/conversation domain (thin)
+  oxy-compile/              # (oxy-compile) Compile boundary: workspace FS → Postgres rows
+  workspace-fs/             # (oxy-workspace-fs) Workspace filesystem helpers (thin)
+  git/                      # (oxy-git) Git client / worktree ops
+  platform/                 # (oxy-platform) Platform services
+  billing/                  # (oxy-billing) Stripe billing
+  metric-monitoring/        # (oxy-metric-monitoring) Anomaly monitors / metric tree
+  observability/            # (oxy-observability) Customer-facing observability backend
+  airform/                  # (oxy-airform) dbt-style modeling
+  airhouse/                 # (airhouse) Warehouse + connector
   cameras/                  # (oxy-cameras) Camera fleet domain
   test-utils/               # (oxy-test-utils) Fixtures & mocks
   agentic/
     core/ runtime/ pipeline/ analytics/ builder/ automation/ airway/
-    connector/ db/ http/ llm/          # see crates/agentic/CLAUDE.md for layering
+    connector/ http/ llm/ semantic/    # see crates/agentic/CLAUDE.md for layering
   infrastructure/llm/{anthropic,gemini,ollama,openai,oxy-llm}
-  integration/{looker,unifi}
+  infrastructure/semantic/  # (oxy-airlayer-compat) airlayer compatibility shim
+  integration/{looker,unifi,omni}
 web-app/                    # Frontend (see web-app/CLAUDE.md)
 ```
 
-Most crates carry their own `CLAUDE.md` — read the local one before editing a crate.
+Many crates carry their own `CLAUDE.md` (all `agentic/*`, `cameras`, `integration/unifi`) —
+read the local one before editing a crate. The two largest crates, `core` (`oxy`) and
+`app` (`oxy-app`), have crate-root `CLAUDE.md` guides too; start there before diving in.
 
 ## Build
 

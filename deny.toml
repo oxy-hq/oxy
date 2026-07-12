@@ -1,0 +1,101 @@
+# cargo-deny configuration — supply-chain gates for the Rust workspace.
+# Run locally with `cargo deny check` (install: `cargo install cargo-deny`).
+# CI runs `cargo deny check advisories bans sources` (see security-scan.yaml).
+#
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+# ── Advisories (RUSTSEC) ──────────────────────────────────────────────────────
+[advisories]
+# v2 semantics: every vulnerability / unmaintained / yanked advisory is DENIED by
+# default (no per-class opt-out knobs — an advisory must be explicitly ignored).
+version = 2
+# Each ignore MUST carry a reason. Add new entries here only with justification;
+# the first `cargo deny check advisories` run may surface additional transitive
+# advisories that need triage (fix, upgrade, or a justified ignore) — that is the
+# point of the gate.
+ignore = [
+  # rsa "Marvin" timing side-channel (variable-time modpow). Pulled in transitively
+  # (e.g. via sqlx-mysql / snowflake-api's TLS+auth path), NOT a direct dependency.
+  # There is NO fixed `rsa` release yet — the upstream fix is unpublished — so this
+  # cannot be resolved by upgrading. Tracked; revisit when a patched rsa ships.
+  { id = "RUSTSEC-2023-0071", reason = "rsa Marvin timing side-channel; transitive, no fixed version exists yet. Tracked." },
+]
+
+# ── Licenses ──────────────────────────────────────────────────────────────────
+[licenses]
+version = 2
+confidence-threshold = 0.8
+# Allow-list of permissive licenses actually used across the dependency tree.
+# v2 denies anything not listed. If a legitimate dependency introduces a license
+# not here, the first CI run will name it — ADD it (if permissive) rather than
+# widening blindly. Kept intentionally permissive for now; tighten as the tree is
+# audited.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception", # very common in Rust std-adjacent crates (wasi, etc.)
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "MPL-2.0",
+  "Zlib",
+  "CC0-1.0",
+]
+
+# Workspace-internal crates are unpublished (or publish their own name) and often
+# carry no explicit `license` field; don't flag them as "unlicensed".
+[licenses.private]
+ignore = true
+
+# ── Bans / duplicates hygiene ─────────────────────────────────────────────────
+[bans]
+# Warn (don't fail) on duplicate versions of the same crate — the tree has some
+# unavoidable multi-versioning; surface it without blocking.
+multiple-versions = "warn"
+# A wildcard ("*") version requirement is a supply-chain hazard — deny it.
+wildcards = "deny"
+
+# NOTE ON ARCHITECTURE LAYERING — cargo-deny CANNOT express it here.
+# ------------------------------------------------------------------------------
+# The agentic subsystem has a strict DIRECTED layering (see
+# internal-docs/backend-architecture.md):
+#
+#     Transport (agentic-http)
+#         ↓ Facade (agentic-pipeline)
+#             ↓ Domain (agentic-analytics, agentic-builder)
+#                 ↓ Infra (agentic-connector, agentic-llm, agentic-runtime)
+#                     ↓ Core (agentic-core)
+#
+#   Hard rules: Platform (oxy/oxy-shared) never imports agentic-*; agentic-core
+#   imports nothing agentic; the two domain crates never import each other;
+#   agentic-http never imports a domain crate directly.
+#
+# cargo-deny's [bans] operates on crates GLOBALLY (a crate is allowed or banned
+# for the whole graph) — it has NO notion of "crate A may not depend on crate B".
+# Therefore per-EDGE layering is enforced OUTSIDE this file by the supplementary
+# `just check-deps` recipe (a cargo-tree assertion run in CI), NOT here.
+deny = []
+
+# ── Sources ───────────────────────────────────────────────────────────────────
+[sources]
+# Only crates.io (the known registry) and the explicitly allow-listed git remotes
+# below may be sources. Anything else fails the gate.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = [
+  # First-party oxy-hq/* git dependencies (trusted, org-owned).
+  "https://github.com/oxy-hq/airform",
+  "https://github.com/oxy-hq/airlayer",
+  "https://github.com/oxy-hq/airway-internal",
+  "https://github.com/oxy-hq/snowflake-rs",
+  # ── FLAGGED: third-party git sources that need provenance review ──
+  # utoipa/utoipa-axum/utoipa-swagger-ui are pinned to a PERSONAL FORK (haitrr) at
+  # rev 776f86e — allowed so the build resolves, but this is a supply-chain risk:
+  # confirm the fork's diff vs upstream utoipa and migrate back to upstream (or a
+  # vendored/audited copy) as soon as the needed change lands upstream.
+  "https://github.com/haitrr/utoipa",
+  # sqlformat-rs is pinned to the upstream author's repo at an UNRELEASED rev
+  # (80255c7). Prefer a published crates.io release; verify the pinned commit.
+  "https://github.com/shssoichiro/sqlformat-rs",
+]

@@ -490,13 +490,24 @@ async fn load_user_org_memberships(
         .order_by_asc(org_members::Column::CreatedAt)
         .all(db)
         .await?;
+
+    // Batch the org lookups into a single query instead of one per row.
+    let org_ids: Vec<Uuid> = rows.iter().map(|m| m.org_id).collect();
+    let orgs_by_id: HashMap<Uuid, organizations::Model> = organizations::Entity::find()
+        .filter(organizations::Column::Id.is_in(org_ids))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|o| (o.id, o))
+        .collect();
+
     let mut out = Vec::with_capacity(rows.len());
     for m in rows {
-        if let Some(org) = organizations::Entity::find_by_id(m.org_id).one(db).await? {
+        if let Some(org) = orgs_by_id.get(&m.org_id) {
             out.push(UserOrgMembership {
                 org_id: org.id,
-                org_slug: org.slug,
-                org_name: org.name,
+                org_slug: org.slug.clone(),
+                org_name: org.name.clone(),
                 role: m.role.as_str().to_string(),
                 joined_at: m.created_at.to_rfc3339(),
             });
@@ -514,15 +525,24 @@ async fn load_user_workspace_memberships(
         .order_by_asc(workspace_members::Column::CreatedAt)
         .all(db)
         .await?;
+
+    // Batch the workspace lookups into a single query instead of one per row.
+    let workspace_ids: Vec<Uuid> = rows.iter().map(|m| m.workspace_id).collect();
+    let workspaces_by_id: HashMap<Uuid, entity::workspaces::Model> =
+        entity::workspaces::Entity::find()
+            .filter(entity::workspaces::Column::Id.is_in(workspace_ids))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|ws| (ws.id, ws))
+            .collect();
+
     let mut out = Vec::with_capacity(rows.len());
     for m in rows {
-        if let Some(ws) = entity::workspaces::Entity::find_by_id(m.workspace_id)
-            .one(db)
-            .await?
-        {
+        if let Some(ws) = workspaces_by_id.get(&m.workspace_id) {
             out.push(UserWorkspaceMembership {
                 workspace_id: ws.id,
-                workspace_name: ws.name,
+                workspace_name: ws.name.clone(),
                 role: m.role.as_str().to_string(),
                 joined_at: m.created_at.to_rfc3339(),
             });

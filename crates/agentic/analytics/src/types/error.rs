@@ -51,6 +51,11 @@ pub enum AnalyticsError {
     /// exponential backoff.  This variant routes back to `Solving` so the retry
     /// attempt counter is independent of the general transient-error budget.
     RateLimitRetry(String),
+    /// The LLM call failed with a transient transport error (connection error,
+    /// timeout, or HTTP 5xx); the solver will retry with jittered exponential
+    /// backoff.  Routes back to the interrupted state, mirroring
+    /// [`AnalyticsError::RateLimitRetry`].
+    TransientRetry(String),
     /// A pre-written SQL file selected as the verified-query path could not be
     /// read from disk (missing file, permission denied, etc.). Distinct from
     /// `SyntaxError` because the file content was never even parsed.
@@ -132,6 +137,9 @@ impl std::fmt::Display for AnalyticsError {
             }
             AnalyticsError::RateLimitRetry(msg) => {
                 write!(f, "rate limit exceeded (retrying): {msg}")
+            }
+            AnalyticsError::TransientRetry(msg) => {
+                write!(f, "transient LLM error (retrying): {msg}")
             }
             AnalyticsError::FileReadError { file_path, message } => {
                 write!(f, "failed to read SQL file '{file_path}': {message}")

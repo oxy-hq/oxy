@@ -89,6 +89,11 @@ fn classify_porcelain(x: char, y: char) -> DirtyKind {
 /// If an in-progress rebase or merge is active it is aborted first.
 ///
 /// Behavior:
+/// - If `force` is false and restoring would discard commits made after
+///   `commit` (on a GitHub-connected workspace these include merged pull
+///   requests — see #2512), returns an [`OxyError::ArgumentError`] naming how
+///   many commits would be lost and that `force` is required; nothing is
+///   modified.
 /// - If `force` is false and the tree has uncommitted changes, returns
 ///   [`ResetOutcome::Dirty`] without modifying anything.
 /// - If `force` is true, performs a hard reset to `commit` followed by
@@ -114,6 +119,23 @@ pub async fn reset_to_commit(
     }
 
     if !force {
+        // #2512: a hard reset to an older commit throws away every commit made
+        // after it. On a GitHub-connected workspace those intervening commits
+        // include merged pull requests, so an unguarded restore silently
+        // reverts them. Refuse unless the caller explicitly forces it.
+        let discarded = commits_after(root, commit).await?;
+        if discarded > 0 {
+            let short = if commit.len() > 7 {
+                &commit[..7]
+            } else {
+                commit
+            };
+            return Err(OxyError::ArgumentError(format!(
+                "Restoring to {short} would discard {discarded} commit(s) made after it, \
+                 including any merged pull requests. Re-run with force to proceed."
+            )));
+        }
+
         let dirty = working_tree_status(root).await?;
         if !dirty.is_empty() {
             return Ok(ResetOutcome::Dirty(dirty));
@@ -164,6 +186,19 @@ pub async fn reset_to_commit(
     run::run(root, &["commit", "-m", &msg]).await?;
 
     Ok(ResetOutcome::Done)
+}
+
+/// Number of commits reachable from `HEAD` but not from `commit`, via
+/// `git rev-list <commit>..HEAD --count`.
+///
+/// When `commit` is an ancestor of HEAD — the restore-to-an-older-commit case
+/// — this is exactly how many commits a hard reset back to `commit` would
+/// discard. Returns 0 when the two are equal or the count can't be parsed.
+/// `commit` is already validated against shell metacharacters by the caller.
+async fn commits_after(root: &Path, commit: &str) -> Result<usize, OxyError> {
+    let range = format!("{commit}..HEAD");
+    let out = run::run(root, &["rev-list", "--count", &range]).await?;
+    Ok(out.trim().parse::<usize>().unwrap_or(0))
 }
 
 /// Aborts an in-progress rebase or merge.
@@ -328,6 +363,83 @@ mod tests {
         // And the untracked files should still exist on disk, just not in the commit.
         assert!(root.join("random.txt").exists());
         assert!(root.join("build/artifact.bin").exists());
+    }
+
+    /// Build a repo with a linear three-commit history on `main`, returning the
+    /// worktree and the SHA of the first (oldest) commit.
+    async fn setup_linear_history() -> (TempDir, String) {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+
+        git(root, &["init", "-b", "main"]).await;
+        git(root, &["config", "user.email", "a@a"]).await;
+        git(root, &["config", "user.name", "A"]).await;
+
+        tokio::fs::write(root.join("f.txt"), "one\n").await.unwrap();
+        git(root, &["add", "."]).await;
+        git(root, &["commit", "-m", "c1"]).await;
+        let base = git(root, &["rev-parse", "HEAD"]).await.trim().to_string();
+
+        tokio::fs::write(root.join("f.txt"), "two\n").await.unwrap();
+        git(root, &["commit", "-am", "c2"]).await;
+
+        tokio::fs::write(root.join("f.txt"), "three\n")
+            .await
+            .unwrap();
+        git(root, &["commit", "-am", "c3"]).await;
+
+        (dir, base)
+    }
+
+    #[tokio::test]
+    async fn reset_to_ancestor_with_intervening_commits_requires_force() {
+        let (dir, base) = setup_linear_history().await;
+        let root = dir.path();
+
+        // Two commits (c2, c3) sit between `base` and HEAD — restoring without
+        // force must refuse and leave history untouched (#2512).
+        let result = reset_to_commit(root, &base, false).await;
+        assert!(
+            matches!(result, Err(OxyError::ArgumentError(_))),
+            "expected an ArgumentError guarding intervening commits, got: {result:?}"
+        );
+
+        // HEAD is unchanged — still on c3.
+        let head_subject = git(root, &["log", "--format=%s", "-n", "1", "HEAD"]).await;
+        assert_eq!(head_subject.trim(), "c3");
+    }
+
+    #[tokio::test]
+    async fn reset_to_ancestor_with_force_succeeds() {
+        let (dir, base) = setup_linear_history().await;
+        let root = dir.path();
+
+        let outcome = reset_to_commit(root, &base, true).await.unwrap();
+        assert!(matches!(outcome, ResetOutcome::Done));
+
+        // Working tree now matches the base commit's content.
+        let content = tokio::fs::read_to_string(root.join("f.txt")).await.unwrap();
+        assert_eq!(content, "one\n");
+
+        // History is preserved: a new "Restore to …" commit sits on top of c3.
+        let subject = git(root, &["log", "--format=%s", "-n", "1", "HEAD"]).await;
+        assert!(
+            subject.trim().starts_with("Restore to"),
+            "expected a restore commit on top, got: {subject:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_without_intervening_commits_succeeds() {
+        let (dir, _base) = setup_linear_history().await;
+        let root = dir.path();
+
+        // Restoring to HEAD itself has zero intervening commits, so the guard
+        // never fires even with force=false — the target tree already matches
+        // HEAD and the call short-circuits to Done.
+        let head = git(root, &["rev-parse", "HEAD"]).await.trim().to_string();
+        let outcome = reset_to_commit(root, &head, false).await.unwrap();
+        assert!(matches!(outcome, ResetOutcome::Done));
     }
 
     #[tokio::test]

@@ -293,7 +293,15 @@ impl Worker {
 
         // Forward all outcomes (pipeline may produce Suspended then Done).
         let mut outcomes = executing.outcomes;
+        // Track whether the driver produced any resolving outcome (a terminal
+        // Done/Failed/Cancelled, or a Suspended). A `Suspended` is a legitimate
+        // non-hang stopping point after which the driver normally drops the
+        // sender, so we must NOT treat that close as a failure. Only a channel
+        // close with *no* outcome at all means the driver task died (panic or
+        // early drop) before reporting anything.
+        let mut saw_any_outcome = false;
         while let Some(outcome) = outcomes.recv().await {
+            saw_any_outcome = true;
             let is_terminal = matches!(
                 outcome,
                 TaskOutcome::Done { .. } | TaskOutcome::Failed(_) | TaskOutcome::Cancelled
@@ -320,6 +328,26 @@ impl Worker {
             if is_terminal {
                 break;
             }
+        }
+
+        // The outcome channel closed without the driver ever reporting an
+        // outcome — it died (panic or early drop). Synthesize a Failed so the
+        // run row leaves "running" and the SSE emits a terminal event instead of
+        // hanging forever.
+        if !saw_any_outcome {
+            tracing::error!(
+                target: "worker",
+                task_id = %task_id,
+                "driver terminated without an outcome; synthesizing Failed"
+            );
+            let _ = transport
+                .send(WorkerMessage::Outcome {
+                    task_id: task_id.clone(),
+                    outcome: TaskOutcome::Failed(
+                        "driver terminated without an outcome (panic or early drop)".to_string(),
+                    ),
+                })
+                .await;
         }
 
         // Clean up.

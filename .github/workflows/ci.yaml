@@ -79,9 +79,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: Check typos
-        uses: crate-ci/typos@v1.48.0
+        uses: crate-ci/typos@bee27e3a4fd1ea2111cf90ab89cd076c870fce14 # v1.48.0
 
   fmt-web:
     name: Format web
@@ -97,14 +97,14 @@ jobs:
     # pnpm store with generous headroom.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         id: setup-node
         with:
           node-version: 24.x
@@ -133,14 +133,14 @@ jobs:
     # full TS rebuild while still bounding a hung Vite/tsc process.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         id: setup-node
         with:
           node-version: 24.x
@@ -149,7 +149,7 @@ jobs:
       # Cache TypeScript build info for incremental compilation
       # Key on tsconfig only — tsbuildinfo handles incremental source changes internally
       - name: Cache TypeScript build info
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             web-app/tsconfig.app.tsbuildinfo
@@ -160,7 +160,7 @@ jobs:
 
       # Cache Vite pre-bundled deps (only invalidates when dependencies change, not source)
       - name: Cache Vite
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             web-app/node_modules/.vite
@@ -172,7 +172,7 @@ jobs:
 
       # Cache Turbo for monorepo builds
       - name: Cache Turbo
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
@@ -190,6 +190,73 @@ jobs:
           pnpm install --frozen-lockfile --prefer-offline
           # Build using Turbo for better caching
           pnpm build
+
+  vitest:
+    name: Web unit tests (Vitest)
+    needs: [changesets, typos]
+    concurrency:
+      group: vitest-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    # Own job, off the critical path (nothing `needs:` it). Gated on the web-app
+    # changeset like fmt-web/build-web.
+    if: inputs.agentic_only != true && needs.changesets.outputs.web-app == 'true'
+    runs-on:
+      ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
+      'ubuntu-latest' }}
+    # The Vitest unit suite runs in ~1-2m warm; 15m covers a cold pnpm store.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+      - name: Run pnpm install
+        run: pnpm install --frozen-lockfile --prefer-offline
+      # `test:unit` is `vitest run` (non-watch). Invoked directly via the pnpm
+      # workspace filter — NOT wired as a turbo task (turbo.json is owned outside
+      # this change-scope), so it runs standalone.
+      # NON-BLOCKING: this suite was never gated before and carries pre-existing
+      # failures across areas untouched by this change (billing / database /
+      # context-graph / metric-tree). It runs for visibility; drop
+      # `continue-on-error` to enforce once a dedicated pass greens the suite.
+      - name: Run Vitest unit suite
+        continue-on-error: true
+        run: pnpm --filter oxy-web run test:unit
+
+  cargo-fmt:
+    name: Format cargo (rustfmt --check)
+    needs: [changesets]
+    concurrency:
+      group: cargo-fmt-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    # Own quick job (not folded into the heavy check/test matrix) so a formatting
+    # failure gives a fast, isolated signal and never masks the clippy/nextest run.
+    if: |
+      inputs.agentic_only != true &&
+      needs.changesets.outputs.oxy == 'true' &&
+      !(github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        startsWith(github.event.head_commit.message, 'chore: release')) &&
+      github.event.pull_request.draft != true &&
+      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/'))
+    runs-on:
+      ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
+      'ubuntu-latest' }}
+    # rustfmt --check on the whole workspace is seconds; 10m is pure hang insurance.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Prep Rust (rustfmt)
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --all --check
+        run: cargo fmt --all --check
 
   cargo-check-and-test:
     concurrency:
@@ -248,7 +315,7 @@ jobs:
     steps:
       - name: Free disk space
         if: matrix.task == 'test' && runner.environment == 'github-hosted'
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # main
         with:
           tool-cache: false
           android: true
@@ -257,7 +324,7 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         name: Create GitHub App Token
         id: app-token
         with:
@@ -273,26 +340,26 @@ jobs:
             airway-internal
             snowflake-rs
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       - name: Collect Workflow Telemetry
-        uses: catchpoint/workflow-telemetry-action@v2
+        uses: catchpoint/workflow-telemetry-action@94c3c3d9567a0205de6da68a76c428ce4e769af1 # v2
         with:
           theme: dark
           metric_frequency: 3
           comment_on_pr: false
-      - uses: rui314/setup-mold@v1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
         if: runner.os == 'Linux'
         with:
           make-default: true
 
       - name: Prep Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           components: clippy, rustfmt
       - name: Install cargo tools
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2
         with:
           tool: nextest
       # Private cargo git deps live under github.com/oxy-hq/* (airway,
@@ -313,7 +380,7 @@ jobs:
           echo "$GH_APP_TOKEN" | gh auth login --with-token
           gh auth setup-git
       - name: Prep cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: ${{ matrix.task }}
       # protobuf is required by lance https://github.com/lancedb/lance/issues/3073
@@ -335,12 +402,12 @@ jobs:
       # is clippy and doesn't read dist content.
       - name: Setup pnpm
         if: matrix.task == 'test'
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           run_install: false
       - name: Setup Node.js
         if: matrix.task == 'test'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24.x
           cache: "pnpm"
@@ -370,9 +437,11 @@ jobs:
             fi
             # Dropped `--fix`: in CI the rewrites are never committed, so it was
             # pure wasted analysis+rewrite work. Matches the documented command
-            # in CLAUDE.md. To start failing the job on lint warnings, append
-            # `-- -D warnings` (deliberate follow-up — verify the tree is clean
-            # first, since `check` runs fail-fast and would block the PR).
+            # in CLAUDE.md. Kept advisory (no `-- -D warnings`): the workspace
+            # tree is not yet warning-clean (pre-existing large_enum_variant /
+            # type_complexity / should_implement_trait lints), and `check` runs
+            # fail-fast, so enforcing now would block every PR. Flip to
+            # `-- -D warnings` in a dedicated PR after a warning-cleanup pass.
             cargo clippy --workspace
           elif [[ "${{ matrix.task }}" == "test" ]]; then
             touch examples/bigquery-sample.key
@@ -395,7 +464,7 @@ jobs:
 
       - name: Upload oxy binary artifact
         if: matrix.task == 'test'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: oxy-binary-ci
           path: target/debug/oxy
@@ -420,8 +489,8 @@ jobs:
       DOMO_DEVELOPER_TOKEN: "empty"
       OXY_LOG_LEVEL: debug
     steps:
-      - uses: actions/checkout@v7
-      - uses: gacts/install-hurl@v1
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: gacts/install-hurl@ab6d0234456944b022ef7d1f594845af9561357d # v1
 
       - name: Download oxy binary
         uses: ./.github/actions/download-oxy-binary
@@ -524,12 +593,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
       - name: Collect Workflow Telemetry
-        uses: catchpoint/workflow-telemetry-action@v2
+        uses: catchpoint/workflow-telemetry-action@94c3c3d9567a0205de6da68a76c428ce4e769af1 # v2
         with:
           theme: dark
           metric_frequency: 3
@@ -543,7 +612,7 @@ jobs:
 
       # Cache Turbo for monorepo builds
       - name: Cache Turbo
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
@@ -573,7 +642,7 @@ jobs:
           echo "Consistency tests completed successfully!"
 
       - name: Upload consistency test results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: consistency-test-results
@@ -639,7 +708,7 @@ jobs:
 
       # Upload test results and traces
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: playwright-report
@@ -647,7 +716,7 @@ jobs:
           retention-days: 1
 
       - name: Upload test results with traces
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
           name: playwright-results
@@ -706,7 +775,7 @@ jobs:
           failure() && steps.run-playwright.outcome == 'failure' && github.event_name
           == 'push' && github.repository == 'oxy-hq/oxygen'
         id: find-slack-user
-        uses: scribd/find-slack-user-action@v1
+        uses: scribd/find-slack-user-action@74b39f55855f7ccb59a0901b495e589c9b0f5031 # v1
         continue-on-error: true
         with:
           slack-token: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -748,7 +817,7 @@ jobs:
         if:
           failure() && steps.run-playwright.outcome == 'failure' && github.event_name
           == 'push' && github.repository == 'oxy-hq/oxygen'
-        uses: slackapi/slack-github-action@v3.0.3
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}

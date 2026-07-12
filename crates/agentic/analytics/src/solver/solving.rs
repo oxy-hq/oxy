@@ -38,6 +38,35 @@ const MAX_RATE_LIMIT_RETRIES: u32 = 5;
 /// Base delay in seconds for rate-limit exponential backoff: `BASE * 2^attempt`.
 const RATE_LIMIT_BACKOFF_BASE_SECS: u64 = 5;
 
+/// Maximum number of retries for transient LLM failures (connection errors,
+/// timeouts, HTTP 5xx) before surfacing the failure to the user.
+const MAX_TRANSIENT_RETRIES: u32 = 3;
+
+/// Base delay in seconds for transient-error exponential backoff.  Smaller than
+/// the rate-limit base because a transient network blip usually clears fast.
+const TRANSIENT_BACKOFF_BASE_SECS: f64 = 1.0;
+
+/// Exponential backoff with full jitter for a transient retry `attempt`.
+///
+/// Returns `BASE * 2^attempt` scaled by a random factor in `[0.5, 1.5)` so
+/// concurrent clients don't retry in lock-step.  The jitter is derived from the
+/// wall-clock nanosecond fraction to avoid pulling in a `rand` dependency.
+fn transient_backoff_secs(attempt: u32) -> f64 {
+    let base = TRANSIENT_BACKOFF_BASE_SECS * 2f64.powi(attempt.min(6) as i32);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let jitter = 0.5 + (nanos % 1_000_000_000) as f64 / 1_000_000_000.0;
+    base * jitter
+}
+
+/// Estimated-token threshold above which an assembled solve prompt is flagged
+/// as unusually large.  Deliberately high — normal solve prompts are a few
+/// thousand tokens, so this only fires for pathological context growth.  Purely
+/// a log-only canary; the prompt is never truncated.
+const SOLVE_PROMPT_TOKEN_WARN_THRESHOLD: usize = 100_000;
+
 // ---------------------------------------------------------------------------
 // Prompt builder
 // ---------------------------------------------------------------------------
@@ -186,6 +215,18 @@ impl AnalyticsSolver {
         tracing::Span::current().record("connector", &spec.connector_name);
         let user_prompt = build_solve_user_prompt(&spec, retry_ctx);
 
+        // P1·5: log-only context-budget canary.  Flags a pathologically large
+        // solve prompt (e.g. runaway schema/retry context) so oversized-context
+        // regressions surface in traces — without altering the prompt.
+        let estimated_prompt_tokens = crate::context_budget::estimate_tokens(&user_prompt);
+        if estimated_prompt_tokens > SOLVE_PROMPT_TOKEN_WARN_THRESHOLD {
+            tracing::warn!(
+                estimated_tokens = estimated_prompt_tokens,
+                threshold = SOLVE_PROMPT_TOKEN_WARN_THRESHOLD,
+                "analytics solve prompt is unusually large; context budget may be at risk"
+            );
+        }
+
         // On resume from a budget suspension, rebuild the message history and
         // apply the stored budget overrides.
         let mut resume_max_tokens_override: Option<u32> = None;
@@ -227,11 +268,24 @@ impl AnalyticsSolver {
         let system_prompt = self.build_system_prompt("solving", &solve_prompt, solve_dialect);
         let thinking = self.thinking_for_state("solving", ThinkingConfig::Adaptive);
         let max_rounds = self.max_tool_rounds_for_state("solving", 3) + resume_extra_rounds;
-        let connector = self
-            .connectors
-            .get(&spec.connector_name)
-            .cloned()
-            .expect("connector for spec must be registered");
+        // `spec.connector_name` is LLM/spec-derived (a prior-turn hint), so the
+        // named connector may have been renamed or removed. Fail the run
+        // gracefully instead of panicking the driver task (which would drop the
+        // outcome channel and hang the SSE stream).
+        let connector = match self.connectors.get(&spec.connector_name).cloned() {
+            Some(connector) => connector,
+            None => {
+                let msg = format!(
+                    "connector '{}' is not registered (it may have been renamed or removed since the query was planned)",
+                    spec.connector_name
+                );
+                tracing::error!("analytics solving: {msg}");
+                return Err((
+                    AnalyticsError::NeedsUserInput { prompt: msg },
+                    BackTarget::Solve(spec, Default::default()),
+                ));
+            }
+        };
         let spec_for_stage = spec.clone();
         let output = match self
             .client_for_state("solving")
@@ -378,6 +432,53 @@ impl AnalyticsSolver {
                     .advance_rate_limit(msg.clone());
                 return Err((
                     AnalyticsError::RateLimitRetry(msg),
+                    BackTarget::Solve(spec, new_ctx),
+                ));
+            }
+            Err(crate::llm::LlmError::Transient(msg)) => {
+                // Transient transport failure (connection error, timeout, or
+                // HTTP 5xx).  Retry with jittered exponential backoff on the
+                // same path as rate limits, using the independent transient
+                // `attempt` counter so it doesn't share the 429 budget.
+                let current_attempt = retry_ctx.map_or(0, |ctx| ctx.attempt);
+                if current_attempt >= MAX_TRANSIENT_RETRIES {
+                    let summary = format!(
+                        "The model provider had a transient failure that persisted after {} retries — try again shortly. ({msg})",
+                        current_attempt
+                    );
+                    tracing::error!("analytics solving transient error exhausted: {msg}");
+                    self.store_suspension_data(SuspendedRunData {
+                        from_state: "solving".to_string(),
+                        original_input: spec.intent.raw_question.clone(),
+                        trace_id: String::new(),
+                        stage_data: Default::default(),
+                        question: summary.clone(),
+                        suggestions: vec![],
+                    });
+                    return Err((
+                        AnalyticsError::NeedsUserInput {
+                            prompt: summary.clone(),
+                        },
+                        BackTarget::Suspend {
+                            reason: SuspendReason::HumanInput {
+                                questions: vec![HumanInputQuestion {
+                                    prompt: summary,
+                                    suggestions: vec![],
+                                }],
+                            },
+                        },
+                    ));
+                }
+                let delay_secs = transient_backoff_secs(current_attempt);
+                tracing::warn!(
+                    attempt = current_attempt + 1,
+                    delay_secs,
+                    "analytics transient LLM error — backing off before retry"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                let new_ctx = retry_ctx.cloned().unwrap_or_default().advance(msg.clone());
+                return Err((
+                    AnalyticsError::TransientRetry(msg),
                     BackTarget::Solve(spec, new_ctx),
                 ));
             }

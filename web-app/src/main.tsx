@@ -7,6 +7,23 @@ import { isIdeUnavailableError } from "./libs/utils/ideHealth.ts";
 import { initSentry } from "./sentry";
 import useTheme from "./stores/useTheme.ts";
 
+// After a deploy, chunk hashes rotate; a still-open client that lazily imports
+// a route whose chunk no longer exists white-screens (issues #2697 / #2699).
+// Vite fires `vite:preloadError` in that case — reload once to pull the fresh
+// index + chunk graph, guarded by a session flag so a genuinely broken import
+// can't reload-loop.
+const PRELOAD_RELOAD_KEY = "vite-preload-reloaded";
+window.addEventListener("vite:preloadError", () => {
+  if (sessionStorage.getItem(PRELOAD_RELOAD_KEY)) return;
+  sessionStorage.setItem(PRELOAD_RELOAD_KEY, "1");
+  window.location.reload();
+});
+// Once a load completes cleanly, drop the one-shot guard so a later deploy can
+// self-heal again.
+window.addEventListener("load", () => {
+  sessionStorage.removeItem(PRELOAD_RELOAD_KEY);
+});
+
 initSentry();
 
 const queryClient = new QueryClient({

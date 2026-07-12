@@ -87,9 +87,9 @@ pub(super) enum ManifestError {
     UnsupportedSchema(u32),
 }
 
-fn read_manifest(bundle_dir: &StdPath) -> Result<OxyAppManifest, ManifestError> {
+async fn read_manifest(bundle_dir: &StdPath) -> Result<OxyAppManifest, ManifestError> {
     let path = bundle_dir.join("oxy-app.json");
-    let bytes = std::fs::read(&path).map_err(|e| {
+    let bytes = tokio::fs::read(&path).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             ManifestError::NotFound
         } else {
@@ -133,7 +133,7 @@ pub(super) async fn resolve_manifest(
         return parse_manifest_value(raw.clone());
     }
     match AppSource::from_model(app).map_err(|_| ManifestError::NotFound)? {
-        AppSource::LocalFolder { path } => read_manifest(StdPath::new(&path)),
+        AppSource::LocalFolder { path } => read_manifest(StdPath::new(&path)).await,
         AppSource::S3 => {
             let build_pk = match channel {
                 Channel::Draft => app.draft_build_id,
@@ -191,7 +191,7 @@ pub(super) async fn resolve_manifests_batch(
     // 3. Resolve each app from the pre-fetched map (or its override / disk).
     let mut out = HashMap::with_capacity(apps.len());
     for app in apps {
-        if let Some(m) = manifest_from_prefetched(app, &builds) {
+        if let Some(m) = manifest_from_prefetched(app, &builds).await {
             out.insert(app.id, m);
         }
     }
@@ -200,7 +200,7 @@ pub(super) async fn resolve_manifests_batch(
 
 /// Per-app resolution against a pre-fetched `build_id → manifest_json` map — the
 /// same precedence as [`resolve_manifest`], minus the DB round-trip.
-fn manifest_from_prefetched(
+async fn manifest_from_prefetched(
     app: &apps::Model,
     builds: &std::collections::HashMap<uuid::Uuid, serde_json::Value>,
 ) -> Option<OxyAppManifest> {
@@ -208,7 +208,7 @@ fn manifest_from_prefetched(
         return parse_manifest_value(raw.clone()).ok();
     }
     match AppSource::from_model(app).ok()? {
-        AppSource::LocalFolder { path } => read_manifest(StdPath::new(&path)).ok(),
+        AppSource::LocalFolder { path } => read_manifest(StdPath::new(&path)).await.ok(),
         AppSource::S3 => {
             let from_build = |id: Option<uuid::Uuid>| {
                 id.and_then(|i| builds.get(&i))

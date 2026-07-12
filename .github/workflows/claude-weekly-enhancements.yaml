@@ -40,11 +40,11 @@ jobs:
               missing error handling, inconsistent patterns vs established
               conventions, TODO/FIXME/HACK comments in recently changed files
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@e90deca47693f9457b72f2b53c17d7c445a87342 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -92,18 +92,23 @@ jobs:
             Where ENCODED_TASK is a URL-encoded string like:
             "In path/to/file on branch main, line N has <problem>. <what to fix and how>."
 
-            To URL-encode it, run:
-            python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read().strip()))' <<< "your task description"
+            To URL-encode it, run (jq's @uri is a safe encoder — do NOT shell out to python):
+            jq -rn --arg s "your task description" '$s | @uri'
 
             Include at most 3 findings, ranked by impact. If nothing noteworthy, write:
             _No ${{ matrix.category }} issues found this week._
 
             Do NOT create GitHub issues, PRs, or comments — only write the findings file.
 
+          # Scoped Bash allowlist. `Bash(python3:*)` was arbitrary code execution — this
+          # job runs against the PUBLIC repo and reads attacker-influenced commit
+          # history/file contents, so a prompt injection could exfiltrate the API key.
+          # python3 was only ever used to URL-encode the deep-link; jq's @uri does that
+          # safely. Only read-only git subcommands + jq are allowed (no push/commit here).
           claude_args: |
-            --allowedTools "Read,Glob,Grep,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(python3:*)"
+            --allowedTools "Read,Glob,Grep,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(jq:*)"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: findings-${{ matrix.category }}
@@ -116,7 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         name: Create GitHub App Token
         id: app-token
         with:
@@ -127,7 +132,7 @@ jobs:
             oxygen-internal
             oxygen
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: findings/
           merge-multiple: false

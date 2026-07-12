@@ -170,18 +170,18 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 1
           ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
             needs.determine-build-type.outputs.version || github.sha }}
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           run_install: false
 
       - name: Install Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24.x
           cache: "pnpm"
@@ -190,7 +190,7 @@ jobs:
         run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm store cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.STORE_PATH }}
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -198,7 +198,7 @@ jobs:
             pnpm-store-${{ runner.os }}-
 
       - name: Cache TypeScript build info
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             web-app/tsconfig.app.tsbuildinfo
@@ -210,7 +210,7 @@ jobs:
             typescript-${{ runner.os }}-
 
       - name: Cache Vite
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: web-app/node_modules/.vite
           key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml',
@@ -219,7 +219,7 @@ jobs:
             vite-${{ runner.os }}-
 
       - name: Cache Turbo
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ hashFiles('web-app/**',
@@ -235,7 +235,7 @@ jobs:
           pnpm build
 
       - name: Upload web-app dist
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: web-app-dist
           path: web-app/dist/
@@ -274,7 +274,7 @@ jobs:
     steps:
       # Checkout must run before the local composite action can be resolved.
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 1
           ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
@@ -310,7 +310,7 @@ jobs:
     steps:
       # Checkout must run before the local composite action can be resolved.
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 1
           ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
@@ -347,7 +347,7 @@ jobs:
       needs.build-cli-linux.result == 'success' &&
       needs.build-cli-macos.result == 'success'
     steps:
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         name: Create GitHub App Token
         id: app-token
         with:
@@ -360,7 +360,7 @@ jobs:
             oxygen-nightly
 
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           # Stable releases need full history for git-cliff release notes.
           # Edge releases only need HEAD.
@@ -368,7 +368,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Download release assets from artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
           pattern: cli-*
@@ -391,7 +391,7 @@ jobs:
 
       - name: Install git-cliff (stable only)
         if: needs.determine-build-type.outputs.is_stable == 'true'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2
         with:
           tool: git-cliff
 
@@ -401,7 +401,7 @@ jobs:
 
       - name: Create stable release
         if: needs.determine-build-type.outputs.is_stable == 'true'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           draft: false
           prerelease: true
@@ -417,7 +417,7 @@ jobs:
 
       - name: Create edge release
         if: needs.determine-build-type.outputs.is_stable == 'false'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           token: ${{ steps.app-token.outputs.token }}
           draft: false
@@ -476,7 +476,7 @@ jobs:
             arch_tag: arm64
     steps:
       - name: Checkout Dockerfile
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 1
           ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
@@ -487,7 +487,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Download pre-built binary
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: cli-${{ matrix.rust_target }}
           path: artifacts
@@ -498,10 +498,10 @@ jobs:
           chmod +x oxy
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -526,7 +526,7 @@ jobs:
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
       - name: Build and push image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           file: Dockerfile.prebuilt
@@ -550,7 +550,7 @@ jobs:
     continue-on-error: true
     steps:
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -571,7 +571,7 @@ jobs:
           fi
 
       - name: Run Trivy vulnerability scanner (image)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: ${{ steps.image.outputs.ref }}
@@ -614,7 +614,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

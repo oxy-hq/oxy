@@ -55,7 +55,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         name: Create GitHub App Token
         id: app-token
         with:
@@ -66,13 +66,13 @@ jobs:
             oxygen-content
 
       - name: Checkout oxygen-internal
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Checkout oxygen-content
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: oxy-hq/oxygen-content
           token: ${{ steps.app-token.outputs.token }}
@@ -88,7 +88,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Generate and publish changelog draft
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@e90deca47693f9457b72f2b53c17d7c445a87342 # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Pass the ARGO app token via the action's `github_token` input (wired to
@@ -99,10 +99,15 @@ jobs:
           # silently 404'ing while git push (remote extraheader) still succeeded.
           github_token: ${{ steps.app-token.outputs.token }}
           show_full_output: "true"
-          # Bare `Bash` (no prefix) allows any shell command. The previous per-prefix
-          # list broke on compound forms (`... 2>/dev/null || true`, `$(date +%Y-%m-%d)`
-          # inside quoted bodies). `Edit` is needed for modifying docs.json in place.
-          claude_args: --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
+          # Scoped Bash allowlist (was bare `Bash`, which permits ANY shell command —
+          # unsafe because this job feeds attacker-authored PR/issue text to the model
+          # and could be prompt-injected into exfiltrating the app token / API key via
+          # curl, python3, etc.). Only the binaries this job actually invokes are allowed:
+          # gh (pr/issue/label/api), git (branch/commit/push against oxygen-content),
+          # date (filenames), grep/head (parsing), and the `|| true` idiom. `Edit` is
+          # needed for modifying docs.json in place. If a future step needs another
+          # binary, WIDEN this list rather than reverting to bare `Bash`.
+          claude_args: --allowedTools "Bash(gh:*),Bash(git:*),Bash(date:*),Bash(grep:*),Bash(head:*),Bash(true),Read,Write,Edit,Glob,Grep"
           prompt: |
             Create a user-facing changelog draft in oxy-hq/oxygen-content for Oxy release ${{ steps.version.outputs.version }}.
 
