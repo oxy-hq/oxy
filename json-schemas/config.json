@@ -1036,7 +1036,7 @@
           "type": "boolean"
         },
         "interval": {
-          "description": "Evaluation cadence as a humantime duration (e.g. `\"30m\"`, `\"2h\"`). Absent → 10m. Out-of-range or unparseable values clamp/fall back to the safe default rather than erroring — a malformed cadence must never wedge the scheduler.",
+          "description": "Evaluation cadence as a humantime duration (e.g. `\"30m\"`, `\"2h\"`). Absent → 1h. Out-of-range or unparseable values clamp/fall back to the safe default rather than erroring — a malformed cadence must never wedge the scheduler.",
           "type": [
             "string",
             "null"

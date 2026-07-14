@@ -14,9 +14,10 @@
 use std::sync::Arc;
 
 use agentic_pipeline::scheduler::{
-    ScheduleError, ScheduleInput, create_schedule, delete_schedule, enqueue_health_eval,
-    get_schedule, health_interval_cron, list_schedules, reconcile_health_schedule,
-    run_schedule_now, tick_health_schedules, tick_schedules, update_schedule,
+    ScheduleError, ScheduleInput, create_schedule, delete_schedule, delete_workspace_schedules,
+    enqueue_health_eval, get_schedule, health_interval_cron, list_schedules,
+    reconcile_health_schedule, run_schedule_now, tick_health_schedules, tick_schedules,
+    update_schedule,
 };
 use agentic_runtime::migration::RuntimeMigrator;
 use async_trait::async_trait;
@@ -891,6 +892,45 @@ async fn health_tick_caps_fires_per_pass() {
         total,
         "every seeded workspace fired exactly once across the ticks"
     );
+}
+
+/// `delete_workspace_schedules` removes every schedule row for a workspace
+/// (regardless of `target_kind`) and returns the count, while leaving other
+/// workspaces' rows untouched. This is the cleanup `delete_workspace` runs so a
+/// deleted workspace's `health_eval` row doesn't keep firing into the dead-letter
+/// queue (schedules carry a plain `workspace_id`, no FK, so nothing cascades).
+#[tokio::test]
+async fn delete_workspace_schedules_removes_all_for_ws_only() {
+    let Some(db) = test_db().await else { return };
+    let ws_a = uuid::Uuid::new_v4();
+    let ws_b = uuid::Uuid::new_v4();
+
+    // ws_a: a workflow schedule + its health_eval row (the orphan-prone one).
+    create_schedule(&db, ws_a, input("wf-a", &uniq_ref(), "0 9 * * *"))
+        .await
+        .unwrap();
+    reconcile_health_schedule(&db, ws_a, std::time::Duration::from_secs(600), true)
+        .await
+        .unwrap();
+    // ws_b: its own health row — must survive ws_a's deletion.
+    reconcile_health_schedule(&db, ws_b, std::time::Duration::from_secs(600), true)
+        .await
+        .unwrap();
+
+    let removed = delete_workspace_schedules(&db, ws_a).await.unwrap();
+    assert_eq!(removed, 2, "both of ws_a's rows removed");
+    assert!(
+        list_schedules(&db, ws_a).await.unwrap().is_empty(),
+        "ws_a has no schedules left — including its health_eval row"
+    );
+    assert_eq!(
+        health_rows_for(&db, ws_b).await.len(),
+        1,
+        "ws_b's health row is untouched"
+    );
+
+    // Idempotent: a second delete removes nothing (no error).
+    assert_eq!(delete_workspace_schedules(&db, ws_a).await.unwrap(), 0);
 }
 
 async fn health_rows_for(

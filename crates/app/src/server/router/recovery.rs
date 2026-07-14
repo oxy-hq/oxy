@@ -373,7 +373,9 @@ async fn recover_local(
         // compiled config. Steady-state sync is event-driven at compile time
         // (compile_worker::reconcile_health_from_compiled) — never per tick, so
         // the periodic driver never re-resolves config for every workspace.
-        reconcile_all_health_schedules(db).await;
+        // Local mode: the single workspace has no `workspaces` row, so skip the
+        // orphan prune (an empty table there is not evidence of orphans).
+        reconcile_all_health_schedules(db, false).await;
         recover_active_runs(
             db.clone(),
             runtime,
@@ -527,7 +529,7 @@ async fn recover_all_workspaces(
         // compiled config. Steady-state sync is event-driven at compile time
         // (compile_worker::reconcile_health_from_compiled) — never per tick, so
         // the periodic driver never re-resolves config for every workspace.
-        reconcile_all_health_schedules(db).await;
+        reconcile_all_health_schedules(db, true).await;
     }
     // Per-workspace health tick: fire due eval rows once per pass, but only
     // after at least one workspace context was built this pass (proxy for "this
@@ -972,10 +974,16 @@ async fn build_cloud_project_ctx(
 /// Reconcile per-workspace `health_eval` schedule rows on startup. Removes the
 /// legacy cross-tenant singleton row (`target_ref = 'global'`, the old 10-minute
 /// sweep) if present, then ensures every workspace has its own row with a cadence
-/// derived from its compiled `config.yml` `health_check` (default 10m when
+/// derived from its compiled `config.yml` `health_check` (default 1h when
 /// unconfigured). Idempotent and best-effort — a per-workspace failure is logged
 /// and skipped. Replaces the old `bootstrap_health_schedule`.
-async fn reconcile_all_health_schedules(db: &DatabaseConnection) {
+///
+/// `prune_orphans` gates the destructive orphan sweep to Cloud mode: there the
+/// `workspaces` table is the authoritative set, so a row pointing outside it is
+/// genuinely orphaned (and an empty table genuinely means zero workspaces). In
+/// Local mode the single workspace has no `workspaces` row, so the table is empty
+/// and pruning would wrongly delete the local schedules — hence `false` there.
+async fn reconcile_all_health_schedules(db: &DatabaseConnection, prune_orphans: bool) {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
     // Drop the legacy global singleton row — superseded by per-workspace rows.
@@ -1005,11 +1013,53 @@ async fn reconcile_all_health_schedules(db: &DatabaseConnection) {
             return;
         }
     };
+
+    // Prune orphaned schedules: workspaces carry no FK to `agentic_schedules`,
+    // so a deleted workspace leaves its rows behind — a `health_eval` (or
+    // `monitor_scan`) row keeps enqueuing tasks for a workspace that no longer
+    // exists, which the worker fails and eventually dead-letters, piling up.
+    // Delete every schedule whose workspace is gone. (New deletes clean up inline
+    // via `cleanup_workspace_schedules`; this drains rows orphaned before that.)
+    if prune_orphans {
+        let live_ids: Vec<uuid::Uuid> = workspaces.iter().map(|w| w.id).collect();
+        prune_orphaned_schedules(db, &live_ids).await;
+    }
+
     for ws in workspaces {
         // Reads the workspace's compiled config (FS fallback on miss) and
         // reconciles its row to the configured cadence — never clobbers a
         // config-set cadence with a default.
         crate::server::compile_worker::reconcile_health_from_compiled(db, ws.id).await;
+    }
+}
+
+/// Delete every schedule row (any `target_kind`) whose workspace no longer
+/// exists. Given the full set of live workspace ids, removes each row pointing
+/// outside it — the orphans left behind by workspace deletion (schedules have no
+/// FK, so the DB won't cascade). An empty `live_ids` means no workspaces exist,
+/// so every row is an orphan. **Cloud-only** (see `prune_orphans` on the caller):
+/// in Local mode the single workspace has no `workspaces` row, so an empty table
+/// there is not evidence of orphans. Best-effort; a failure is logged and skipped.
+async fn prune_orphaned_schedules(db: &DatabaseConnection, live_ids: &[uuid::Uuid]) {
+    use agentic_runtime::entity::schedule;
+    use sea_orm::{ColumnTrait, QueryFilter};
+
+    let mut q = schedule::Entity::delete_many();
+    if !live_ids.is_empty() {
+        q = q.filter(schedule::Column::WorkspaceId.is_not_in(live_ids.iter().copied()));
+    }
+    match q.exec(db).await {
+        Ok(res) if res.rows_affected > 0 => tracing::info!(
+            target: "health_eval",
+            removed = res.rows_affected,
+            "startup reconcile: pruned orphaned schedules for deleted workspaces"
+        ),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(
+            target: "health_eval",
+            error = %e,
+            "startup reconcile: failed to prune orphaned schedules"
+        ),
     }
 }
 

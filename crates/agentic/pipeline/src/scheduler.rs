@@ -314,6 +314,23 @@ pub async fn delete_schedule(
     Ok(())
 }
 
+/// Delete every schedule row belonging to a workspace. Called when a workspace
+/// is deleted: schedules carry a plain `workspace_id` column with no FK, so the
+/// database will not clean them up. An orphaned `health_eval` row in particular
+/// keeps being selected by [`tick_health_schedules`] and enqueues health-eval
+/// tasks for a workspace that no longer exists, piling up in the dead-letter
+/// queue. Returns the number of rows removed.
+pub async fn delete_workspace_schedules(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+) -> Result<u64, ScheduleError> {
+    let res = schedule::Entity::delete_many()
+        .filter(schedule::Column::WorkspaceId.eq(workspace_id))
+        .exec(db)
+        .await?;
+    Ok(res.rows_affected)
+}
+
 /// Fire a schedule out-of-band, now, without touching `next_run_at` (the
 /// recurring cadence is unaffected). Returns the seeded run id.
 pub async fn run_schedule_now(

@@ -459,6 +459,28 @@ pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCod
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // The org delete below cascades its workspaces away (FK ON DELETE CASCADE),
+    // so capture their ids up front — we need them both to deprovision airhouse
+    // tenants (below) and to clean up their orphaned schedule rows (after the
+    // delete), neither of which the cascade handles.
+    let workspace_ids: Vec<Uuid> = match workspaces::Entity::find()
+        .filter(workspaces::Column::OrgId.eq(ctx.org.id))
+        .select_only()
+        .column(workspaces::Column::Id)
+        .into_tuple()
+        .all(&db)
+        .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(
+                org_id = %ctx.org.id,
+                "failed to list org workspaces for cleanup: {e}"
+            );
+            Vec::new()
+        }
+    };
+
     // Deprovision each of the org's workspaces before deleting the org.
     // The airhouse_tenants table is keyed by workspace_id (since the
     // m20260430 rebind), so passing org.id to deprovision was a no-op
@@ -468,25 +490,8 @@ pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCod
     // loop hits airhouse with each workspace's SA before we drop the
     // local data.
     if let Some(provisioner) = airhouse::provisioner_for(db.clone()) {
-        let workspace_ids: Vec<Uuid> = match workspaces::Entity::find()
-            .filter(workspaces::Column::OrgId.eq(ctx.org.id))
-            .select_only()
-            .column(workspaces::Column::Id)
-            .into_tuple()
-            .all(&db)
-            .await
-        {
-            Ok(ids) => ids,
-            Err(e) => {
-                tracing::warn!(
-                    org_id = %ctx.org.id,
-                    "failed to list workspaces for airhouse deprovision: {e}"
-                );
-                Vec::new()
-            }
-        };
-        for workspace_id in workspace_ids {
-            if let Err(e) = provisioner.deprovision(workspace_id).await {
+        for workspace_id in &workspace_ids {
+            if let Err(e) = provisioner.deprovision(*workspace_id).await {
                 tracing::warn!(
                     org_id = %ctx.org.id,
                     workspace_id = %workspace_id,
@@ -503,6 +508,14 @@ pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCod
             tracing::error!("Failed to delete organization: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // Schedules carry a plain `workspace_id` with no FK, so the org-delete
+    // cascade above leaves them behind — remove each cascaded workspace's rows
+    // or their health_eval/monitor schedules keep firing into the dead-letter
+    // queue.
+    for workspace_id in &workspace_ids {
+        crate::server::api::workspaces::cleanup_workspace_schedules(&db, *workspace_id).await;
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -310,6 +310,9 @@ pub async fn delete_workspace(
     if res.rows_affected == 0 {
         return Err(StatusCode::NOT_FOUND);
     }
+    // Remove the deleted workspace's orphaned schedule rows (no FK cascade),
+    // else its health_eval row keeps firing tasks into the dead-letter queue.
+    crate::server::api::workspaces::cleanup_workspace_schedules(&db, workspace_id).await;
     tracing::info!(
         admin_email = %actor.email,
         target_id = %workspace_id,

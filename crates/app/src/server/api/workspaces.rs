@@ -1597,6 +1597,28 @@ pub struct DeleteProjectQuery {
     pub delete_files: bool,
 }
 
+/// Best-effort removal of a workspace's schedule rows, to be called *after* the
+/// workspace has been deleted. Schedules carry a plain `workspace_id` with no FK,
+/// so nothing cascades — an orphaned `health_eval` row keeps firing health-eval
+/// tasks for the deleted workspace and piles them up in the dead-letter queue
+/// (`monitor_scan` rows do the same). Shared by every workspace-removal path
+/// (this handler, the admin delete, and org deletion) so they stay in sync.
+/// Logged, never fatal.
+pub(crate) async fn cleanup_workspace_schedules(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+) {
+    match agentic_pipeline::scheduler::delete_workspace_schedules(db, workspace_id).await {
+        Ok(n) if n > 0 => info!("Removed {} schedule(s) for workspace {}", n, workspace_id),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(
+            "Failed to delete schedules for workspace {}: {}",
+            workspace_id,
+            e
+        ),
+    }
+}
+
 pub async fn delete_workspace(
     _: OrgAdmin,
     State(_app_state): State<AppState>,
@@ -1635,6 +1657,12 @@ pub async fn delete_workspace(
     })?;
 
     info!("Deleted workspace {}", workspace_id);
+
+    // Clean up the now-orphaned schedule rows *after* the workspace is gone: if
+    // the delete above had failed we'd have stripped a still-live workspace of
+    // its workflow/monitor schedules (which, unlike `health_eval`, startup
+    // reconcile never recreates).
+    cleanup_workspace_schedules(&db, workspace_id).await;
 
     // Only remove files from disk when the caller explicitly opts in.
     // Without `?delete_files=true` we only remove the DB record, leaving

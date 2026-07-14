@@ -286,7 +286,7 @@ mod health_settings_tests {
     #[test]
     fn absent_config_is_default_cadence_enabled() {
         let (interval, enabled) = health_settings_from_config(None);
-        assert_eq!(interval, std::time::Duration::from_secs(600));
+        assert_eq!(interval, std::time::Duration::from_secs(3600));
         assert!(enabled);
     }
 
@@ -294,7 +294,7 @@ mod health_settings_tests {
     fn absent_health_check_section_is_default() {
         let cfg = json!({ "databases": [] });
         let (interval, enabled) = health_settings_from_config(Some(&cfg));
-        assert_eq!(interval, std::time::Duration::from_secs(600));
+        assert_eq!(interval, std::time::Duration::from_secs(3600));
         assert!(enabled);
     }
 
@@ -310,7 +310,7 @@ mod health_settings_tests {
     fn disabled_is_respected() {
         let cfg = json!({ "health_check": { "enabled": false } });
         let (interval, enabled) = health_settings_from_config(Some(&cfg));
-        assert_eq!(interval, std::time::Duration::from_secs(600));
+        assert_eq!(interval, std::time::Duration::from_secs(3600));
         assert!(!enabled);
     }
 }

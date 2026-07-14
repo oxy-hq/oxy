@@ -16,13 +16,13 @@ const MIN_INTERVAL_SECS: u64 = 600;
 /// Upper bound (24h).
 const MAX_INTERVAL_SECS: u64 = 86_400;
 /// Default cadence when `health_check` (or its `interval`) is absent.
-const DEFAULT_INTERVAL_SECS: u64 = 600;
+const DEFAULT_INTERVAL_SECS: u64 = 3600;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HealthCheckConfig {
     /// Evaluation cadence as a humantime duration (e.g. `"30m"`, `"2h"`).
-    /// Absent → 10m. Out-of-range or unparseable values clamp/fall back to the
+    /// Absent → 1h. Out-of-range or unparseable values clamp/fall back to the
     /// safe default rather than erroring — a malformed cadence must never wedge
     /// the scheduler.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -48,7 +48,7 @@ impl Default for HealthCheckConfig {
 
 /// Resolve the configured cadence to a clamped `Duration` in `[10m, 24h]`.
 /// `None`, an absent `interval`, an unparseable value, or an out-of-range value
-/// all resolve to a safe in-range duration (default 10m, or the nearest bound).
+/// all resolve to a safe in-range duration (default 1h, or the nearest bound).
 pub fn resolve_interval(cfg: Option<&HealthCheckConfig>) -> Duration {
     let secs = cfg
         .and_then(|c| c.interval.as_deref())
@@ -71,13 +71,16 @@ mod tests {
     }
 
     #[test]
-    fn absent_config_defaults_to_10m() {
-        assert_eq!(resolve_interval(None), Duration::from_secs(600));
+    fn absent_config_defaults_to_1h() {
+        assert_eq!(resolve_interval(None), Duration::from_secs(3600));
     }
 
     #[test]
-    fn absent_interval_defaults_to_10m() {
-        assert_eq!(resolve_interval(Some(&cfg(None))), Duration::from_secs(600));
+    fn absent_interval_defaults_to_1h() {
+        assert_eq!(
+            resolve_interval(Some(&cfg(None))),
+            Duration::from_secs(3600)
+        );
     }
 
     #[test]
@@ -109,10 +112,10 @@ mod tests {
     }
 
     #[test]
-    fn unparseable_falls_back_to_10m() {
+    fn unparseable_falls_back_to_1h() {
         assert_eq!(
             resolve_interval(Some(&cfg(Some("banana")))),
-            Duration::from_secs(600)
+            Duration::from_secs(3600)
         );
     }
 }
