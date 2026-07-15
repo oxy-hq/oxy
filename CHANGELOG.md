@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.105] - 2026-07-15
+
+### 🐛 Bug Fixes
+
+- *(observability)* Render ClickHouse trace timestamps with %i, not %M (#2718)
+
 ## [0.5.104] - 2026-07-15
 
 ### 🚀 Features
@@ -19,6 +25,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Weekly health review — 2026-07-13 (#2711)
+- Release 0.5.104 (#2713)
 
 ## [0.5.103] - 2026-07-12
 
