@@ -14,6 +14,10 @@ We are always looking to improve Oxy. If you have a feature request, please open
 
 ### Code Contributions
 
+> **Internal (oxy-hq) developers:** skip the fork/clone flow below — work directly in
+> `oxy-hq/oxygen-internal`. See [`DEVELOPMENT.md`](DEVELOPMENT.md) for the real onboarding
+> (Rust 1.92 MSRV, pnpm, nextest) and run `just install` first, then `just` to list recipes.
+
 1. **Fork the Repository**: Fork the [Oxy repository](https://github.com/oxy-hq/oxygen) to your GitHub account.
 
 2. **Clone the Repository**: Clone your forked repository to your local machine.

@@ -173,7 +173,11 @@ async fn periodic_checkpoint(conn: &Arc<Mutex<Connection>>) {
     let conn = Arc::clone(conn);
     let result = tokio::task::spawn_blocking(move || {
         conn.lock()
-            .expect("DuckDB connection lock poisoned")
+            // Recover a poisoned guard instead of re-panicking: if a prior
+            // blocking closure panicked while holding this lock, re-panicking
+            // here would wedge *all* subsequent capture (spans go silently
+            // inert). The Connection is still usable, so take it back.
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .execute_batch("CHECKPOINT")
     })
     .await;
@@ -196,7 +200,7 @@ async fn flush_spans(conn: &Arc<Mutex<Connection>>, buffer: &mut Vec<SpanRecord>
     let conn = Arc::clone(conn);
 
     let result = tokio::task::spawn_blocking(move || {
-        let mut conn = conn.lock().expect("DuckDB connection lock poisoned");
+        let mut conn = conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         flush_spans_blocking(&mut conn, &spans)
     })
     .await;
@@ -257,7 +261,7 @@ async fn insert_metrics(conn: &Arc<Mutex<Connection>>, metrics: Vec<MetricUsageR
     let conn = Arc::clone(conn);
 
     let result = tokio::task::spawn_blocking(move || {
-        let mut conn = conn.lock().expect("DuckDB connection lock poisoned");
+        let mut conn = conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         insert_metrics_blocking(&mut conn, &metrics)
     })
     .await;
@@ -307,7 +311,7 @@ async fn insert_classification(conn: &Arc<Mutex<Connection>>, record: Classifica
     let conn = Arc::clone(conn);
 
     let result = tokio::task::spawn_blocking(move || {
-        let conn = conn.lock().expect("DuckDB connection lock poisoned");
+        let conn = conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         insert_classification_blocking(&conn, &record)
     })
     .await;
@@ -370,7 +374,7 @@ async fn upsert_cluster(conn: &Arc<Mutex<Connection>>, record: ClusterRecord) {
     let conn = Arc::clone(conn);
 
     let result = tokio::task::spawn_blocking(move || {
-        let conn = conn.lock().expect("DuckDB connection lock poisoned");
+        let conn = conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         upsert_cluster_blocking(&conn, &record)
     })
     .await;

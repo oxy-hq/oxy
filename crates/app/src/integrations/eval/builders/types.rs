@@ -281,7 +281,7 @@ impl std::fmt::Display for Record {
         if self.score < 1.0 {
             writeln!(f, "{}", "Inconsistent result detected.".warning())?;
         }
-        writeln!(f, "{}", &reason)
+        writeln!(f, "{}", reason)
     }
 }
 

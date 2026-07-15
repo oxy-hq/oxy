@@ -55,7 +55,7 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
         "{} seeding demo (workspace_id={}, path={})",
         "🌱".info(),
         workspace_id,
-        &resolved_str
+        resolved_str
     );
 
     let conn = establish_connection().await?;

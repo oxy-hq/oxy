@@ -8,10 +8,9 @@ use serde::Deserialize;
 pub(super) fn pop_sse_event(buf: &mut String) -> Option<String> {
     let (end, consume) = if let Some(p) = buf.find("\n\n") {
         (p, p + 2)
-    } else if let Some(p) = buf.find("\r\n\r\n") {
-        (p, p + 4)
     } else {
-        return None;
+        let p = buf.find("\r\n\r\n")?;
+        (p, p + 4)
     };
     let event = buf[..end].to_string();
     *buf = buf[consume..].to_string();

@@ -138,12 +138,12 @@ impl Table {
                 Ok(markdown) => markdown.to_string(),
                 Err(e) => {
                     tracing::error!("Failed to convert table to markdown: {}", e);
-                    format!("Table({}): {}", &self.file_path, e)
+                    format!("Table({}): {}", self.file_path, e)
                 }
             },
             Err(e) => {
                 tracing::error!("Failed to get inner table: {}", e);
-                format!("Table({}): {}", &self.file_path, e)
+                format!("Table({}): {}", self.file_path, e)
             }
         }
     }
@@ -623,7 +623,7 @@ impl Table {
 
 impl Debug for Table {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Table({:?})", &self.file_path)
+        write!(f, "Table({:?})", self.file_path)
     }
 }
 

@@ -104,9 +104,7 @@ const Airhouse: React.FC = () => {
           onAddToConfig={handleAddToConfig}
           isAddingToConfig={addToConfig.isPending}
         />
-        {workspaceId && (
-          <CatalogIndexes workspaceId={workspaceId} canManage={canProvision} />
-        )}
+        {workspaceId && <CatalogIndexes workspaceId={workspaceId} canManage={canProvision} />}
       </>
     );
   };

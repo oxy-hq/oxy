@@ -55,11 +55,14 @@ impl TaskExecutor for AppFunctionTaskExecutor {
         // Optional input params (JSON) supplied at trigger time — serialized back
         // to the request-body bytes the isolate receives as `req`. Absent (cron
         // fire) → empty body.
-        let input: Vec<u8> = payload
-            .get("input")
-            .filter(|v| !v.is_null())
-            .map(|v| serde_json::to_vec(v).unwrap_or_default())
-            .unwrap_or_default();
+        let input: Vec<u8> = match payload.get("input").filter(|v| !v.is_null()) {
+            // Propagate a serialize failure instead of silently defaulting to an
+            // empty body: running the isolate with `req.body = ""` would execute
+            // the function against no input and mask the malformed trigger.
+            Some(v) => serde_json::to_vec(v)
+                .map_err(|e| format!("failed to serialize app_function input: {e}"))?,
+            None => Vec::new(),
+        };
 
         let (event_tx, event_rx) = mpsc::channel(16);
         let (outcome_tx, outcome_rx) = mpsc::channel(4);

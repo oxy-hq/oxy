@@ -60,11 +60,7 @@ impl BlockHandler {
     }
 
     pub fn upsert_block(&mut self, block_id: String, block_kind: BlockKind) {
-        let parent_id = self
-            .block_stack
-            .last()
-            .cloned()
-            .and_then(|p| if p == block_id { None } else { Some(p) });
+        let parent_id = self.block_stack.last().cloned().filter(|p| *p != block_id);
 
         match self.blocks.get_mut(&block_id) {
             Some(block) => {

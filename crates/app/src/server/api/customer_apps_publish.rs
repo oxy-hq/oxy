@@ -540,15 +540,13 @@ async fn register_function_schedules(
         if s.target_kind == "function"
             && s.target_ref.starts_with(&prefix)
             && !live.contains(&s.target_ref)
-        {
-            if let Err(e) =
+            && let Err(e) =
                 agentic_pipeline::scheduler::delete_schedule(db, workspace_id, &s.id).await
-            {
-                tracing::warn!(
-                    "publish: failed to retire stale schedule {}: {e}",
-                    s.target_ref
-                );
-            }
+        {
+            tracing::warn!(
+                "publish: failed to retire stale schedule {}: {e}",
+                s.target_ref
+            );
         }
     }
 }

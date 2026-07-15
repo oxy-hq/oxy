@@ -288,7 +288,7 @@ Rules:
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
             .messages(messages)
-            .temperature(0.0) // Deterministic for extraction
+            .temperature(0.0_f32) // Deterministic for extraction
             .response_format(ResponseFormat::JsonSchema {
                 json_schema: ResponseFormatJsonSchema {
                     name: "metric_extraction".to_string(),

@@ -55,11 +55,7 @@ impl<D: DomainEvents> UiTransformState<D> {
             }
 
             // ── LLM streaming ──────────────────────────────────────────────
-            CoreEvent::LlmStart {
-                prompt_tokens,
-                sub_spec_index: _,
-                ..
-            } => {
+            CoreEvent::LlmStart { prompt_tokens, .. } => {
                 self.pending_prompt_tokens = prompt_tokens;
                 vec![]
             }

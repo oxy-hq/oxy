@@ -11,7 +11,7 @@ pub(super) const ANTHROPIC_THINKING_BETA: &str = "interleaved-thinking-2025-05-1
 pub(super) const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 
 /// The default model used when constructing an [`LlmClient`] via [`LlmClient::new`].
-pub const DEFAULT_MODEL: &str = "claude-opus-4-6";
+pub const DEFAULT_MODEL: &str = "claude-opus-4-8";
 
 pub(super) const DEFAULT_MAX_TOKENS: u32 = 4096;
 /// Higher token cap used when extended thinking is enabled.  Thinking

@@ -115,7 +115,7 @@ impl Coordinator {
 
                 self.emit_waiting_on_children(
                     &task_id_owned,
-                    &[child_id.clone()],
+                    std::slice::from_ref(&child_id),
                     &FanoutFailurePolicy::FailFast,
                 )
                 .await;

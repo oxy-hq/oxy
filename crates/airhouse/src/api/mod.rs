@@ -18,7 +18,7 @@
 pub mod handlers;
 
 use axum::Router;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, post};
 
 /// Build the airhouse `/airhouse/me/*` route subtree.
 ///

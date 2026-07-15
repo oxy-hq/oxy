@@ -275,7 +275,7 @@ impl CheckpointContext {
         if checkpoint_data.checkpoint_hash != checkpoint_hash {
             return Err(OxyError::ArgumentError(format!(
                 "Checkpoint hash mismatch: expected {}, got {}",
-                checkpoint_hash, &checkpoint_data.checkpoint_hash
+                checkpoint_hash, checkpoint_data.checkpoint_hash
             )));
         }
         Ok(checkpoint_data)

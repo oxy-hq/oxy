@@ -80,7 +80,7 @@ impl MetricStorage {
 
     /// Store a single metric usage record
     pub async fn store_metric(&self, metric: &MetricUsage) -> Result<(), OxyError> {
-        self.store_metrics(&[metric.clone()]).await
+        self.store_metrics(std::slice::from_ref(metric)).await
     }
 
     /// Get analytics summary for a time period

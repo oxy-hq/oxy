@@ -712,7 +712,7 @@ async fn print_status_table(db: &DatabaseConnection, runs: &[agentic_runtime::en
 
         println!(
             "{:<38} {:<12} {:<16} {:<12} {:<8} {:<20} {}",
-            &run.id,
+            run.id,
             status_display,
             task_status_display,
             run.source_type.as_deref().unwrap_or("?"),

@@ -203,7 +203,7 @@ pub async fn cancel_automation_run(
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let source_id = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let task_id = format!("{}::{}", source_id, &payload.run_index);
+    let task_id = format!("{}::{}", source_id, payload.run_index);
     TASK_MANAGER
         .cancel_task(task_id.clone())
         .await

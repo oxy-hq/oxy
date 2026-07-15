@@ -220,7 +220,7 @@ impl Renderer {
         let value = expression.eval(&context).map_err(|err| {
             OxyError::RuntimeError(format!(
                 "Error evaluating expression: {} with context: {:?}",
-                err, &context
+                err, context
             ))
         })?;
         tracing::debug!(
