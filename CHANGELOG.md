@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.104] - 2026-07-15
+
+### 🚀 Features
+
+- Detect new deploys and recover stale-chunk route errors (#2716)
+
+### 🐛 Bug Fixes
+
+- Deleted-workspace health-check DLQ pile-up + default cadence to 1h (#2714)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2712)
+
+### ⚙️ Miscellaneous Tasks
+
+- Weekly health review — 2026-07-13 (#2711)
+
 ## [0.5.103] - 2026-07-12
 
 ### 🚀 Features
@@ -25,6 +43,7 @@ All notable changes to this project will be documented in this file.
 
 - Implement weekly architecture & health review fixes (P0–P4) (#2707)
 - Unified Weekly Health Review workflow (+ restore dev .env.airhouse/.clickhouse) (#2708)
+- Release 0.5.103 (#2701)
 
 ## [0.5.102] - 2026-07-09
 
