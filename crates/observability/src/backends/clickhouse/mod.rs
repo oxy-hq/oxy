@@ -22,16 +22,29 @@ struct RowCount {
 }
 
 /// Render a stored instant column as an unambiguous ISO-8601 / RFC3339 **UTC**
-/// string, e.g. `2026-07-12T14:30:00.123456789Z`.
+/// string, e.g. `2026-07-12T14:30:00.123456Z`.
 ///
 /// The trailing `Z` is a literal (ClickHouse copies non-`%` chars verbatim) and
 /// the `'UTC'` timezone arg forces UTC output. Without both, `formatDateTime`
 /// emits a zoneless `2026-07-12 14:30:00…` form that the frontend `new Date(…)`
 /// parses as *browser-local* time — silently shifting every timestamp, and
-/// throwing `RangeError: Invalid time value` on an unparseable one. Kept in one
-/// place so every serving query renders timestamps identically.
+/// throwing `RangeError: Invalid time value` on an unparseable one.
+///
+/// **Minutes MUST use `%i`, not `%M`.** ClickHouse's `formatDateTime` follows
+/// MySQL syntax: `%M` is the *full month name* and `%i` is the minute. With
+/// `%M` the helper renders `2026-07-12T14:July:00.123456Z`, which `new Date(…)`
+/// parses as `NaN`. Every span's `offsetMs` then becomes `NaN`, the frontend's
+/// `max(offsetMs + durationMs)` trace-total falls back to `0`, and every
+/// waterfall bar collapses to its 3px `minWidth` pinned at `left:0` instead of
+/// filling the timeline — this was the ClickHouse-vs-Airhouse "spans don't fit
+/// the trace" bug (Airhouse casts the timestamp to text directly, so it was
+/// never affected). `%f` renders the sub-second part as 6 digits (microseconds)
+/// regardless of the column's DateTime64 scale; that's fine — `new Date(…)`
+/// truncates it to milliseconds.
+///
+/// Kept in one place so every serving query renders timestamps identically.
 pub(super) fn iso_utc(col: &str) -> String {
-    format!("formatDateTime({col}, '%Y-%m-%dT%H:%M:%S.%fZ', 'UTC')")
+    format!("formatDateTime({col}, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')")
 }
 
 /// Hard client-side ceiling for a single serving query. Set slightly above the
@@ -69,7 +82,22 @@ mod iso_utc_tests {
     fn renders_iso_8601_utc_with_zulu_suffix() {
         assert_eq!(
             iso_utc("timestamp"),
-            "formatDateTime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ', 'UTC')"
+            "formatDateTime(timestamp, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')"
+        );
+    }
+
+    /// Regression guard for the "spans don't fit the waterfall" bug: minutes
+    /// MUST use `%i`. ClickHouse's `%M` is the full month name (e.g. `July`),
+    /// which yields an unparseable `…T14:July:00…Z` timestamp → `NaN` offsets →
+    /// a zero trace-total → collapsed waterfall bars. Verified against
+    /// ClickHouse 25.12: `%M` emits the month name, `%i` emits the minute.
+    #[test]
+    fn uses_minute_specifier_not_month_name() {
+        let sql = iso_utc("timestamp");
+        assert!(sql.contains("%H:%i:%S"), "minutes must use %i, got: {sql}");
+        assert!(
+            !sql.contains("%M"),
+            "%M is the month name in ClickHouse's formatDateTime, not minutes: {sql}"
         );
     }
 }
