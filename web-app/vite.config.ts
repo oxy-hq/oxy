@@ -1,10 +1,34 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
 import { visualizer } from "rollup-plugin-visualizer";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+
+// One identifier per build: baked into the bundle as `__APP_VERSION__` and
+// emitted to /version.json so a long-lived tab can detect that a newer build
+// has been deployed (src/hooks/useVersionCheck.ts) before it trips over a
+// missing chunk. CI can pin it via VITE_APP_VERSION; otherwise it combines the
+// package version (human-readable) with the build timestamp — the timestamp is
+// what keeps two deploys of the same package version distinguishable.
+const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf-8")) as {
+  version: string;
+};
+const BUILD_ID = process.env.VITE_APP_VERSION || `${pkg.version}+${new Date().toISOString()}`;
+
+const emitVersionJson = (): Plugin => ({
+  name: "oxy-emit-version-json",
+  apply: "build",
+  generateBundle() {
+    this.emitFile({
+      type: "asset",
+      fileName: "version.json",
+      source: JSON.stringify({ version: BUILD_ID })
+    });
+  }
+});
 
 // Shared dependency configuration for both dev optimization and production chunking
 const dependencies = {
@@ -176,7 +200,8 @@ export default defineConfig(({ mode }) => {
   return {
     base: "/",
     define: {
-      __OXY_OAUTH_PROXY_ORIGIN__: JSON.stringify(OAUTH_PROXY_ORIGIN)
+      __OXY_OAUTH_PROXY_ORIGIN__: JSON.stringify(OAUTH_PROXY_ORIGIN),
+      __APP_VERSION__: JSON.stringify(BUILD_ID)
     },
     optimizeDeps: {
       include: allDependencies,
@@ -203,6 +228,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      emitVersionJson(),
       nodePolyfills({
         overrides: {
           // Since `fs` is not supported in browsers, we can use the `memfs` package to polyfill it.

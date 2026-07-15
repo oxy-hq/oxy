@@ -43,6 +43,7 @@ import { ManageWorkspacesDialog } from "./components/workspaces/components/Manag
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
+import useVersionCheck from "./hooks/useVersionCheck";
 import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
 import { setLastWorkspaceId } from "./libs/utils/lastWorkspace";
 import AppPage from "./pages/app";
@@ -563,6 +564,7 @@ const getRouter = (authConfig: AuthConfigResponse) =>
 
 function App() {
   const { data: authConfig, isPending } = useAuthConfig();
+  useVersionCheck();
 
   // Only recreate the router when routing-relevant fields change — prevents the
   // router from being torn down on every authConfig refetch (e.g. when a GitHub
