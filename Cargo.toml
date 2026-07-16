@@ -110,8 +110,8 @@ chrono-tz = "0.8"
 croner = "3"
 indexmap = { version = "2.14.0", features = ["serde"] }
 log = { version = "0.4" }
-minijinja = { version = "2.19.0" }
-regex = { version = "1.12.3" }
+minijinja = { version = "2.21.0" }
+regex = { version = "1.13.1" }
 sea-orm = { version = "1.1.20", features = [
   "sqlx-postgres",
   "runtime-tokio-rustls",
@@ -129,14 +129,14 @@ sentry = { version = "0.47.0", features = [
   "tracing",
 ] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0.149" }
+serde_json = { version = "1.0.150" }
 serde_yaml = { version = "0.9.34" }
 sqlparser = { version = "0.61" }
 tempfile = { version = "3.27.0" }
 thiserror = { version = "2.0.18" }
 tokio = { version = "1.52", features = ["full"] }
 tracing = { version = "0.1.44" }
-uuid = { version = "1.23", features = ["serde", "v4"] }
+uuid = { version = "1.24", features = ["serde", "v4"] }
 aes-gcm = "0.10.3"
 aho-corasick = "1.1"
 airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "474f461a609c45554301a84aa37ffff8a68bb32c" }
@@ -146,7 +146,7 @@ airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "474f461a609c4555
 augurs-core = "0.10.2"
 augurs-ets = "0.10.2"
 augurs-mstl = "0.10.2"
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 apalis = "0.7.4"
 apalis-core = "0.7.4"
 apalis-sql = "0.7.4"
@@ -163,11 +163,11 @@ aws-sdk-sesv2 = "1"
 aws-sigv4 = "1"
 backoff = "0.4.0"
 base64 = "0.22"
-bcrypt = "0.19.1"
+bcrypt = "0.19.2"
 bollard = "0.20.2"
 chrono-english = "0.1.8"
-clap = "4.6.1"
-clickhouse = "0.15.0"
+clap = "4.6.2"
+clickhouse = "0.15.1"
 colored = "3.1.1"
 connectorx = "0.4.5"
 constant_time_eq = "0.5.0"
@@ -196,7 +196,7 @@ hmac = "0.13.0"
 home = "0.5"
 http = "1.4"
 human-panic = "2.0.8"
-humantime = "2.3.0"
+humantime = "2.4.0"
 include_dir = "0.7"
 indicatif = "0.18"
 indoc = "2.0.7"
@@ -204,7 +204,7 @@ itertools = "0.14.0"
 jsonschema = "0.33.0"
 jsonwebtoken = "10"
 lazy_static = "1.5.0"
-lettre = "0.11.21"
+lettre = "0.11.22"
 libc = "0.2"
 linfa = "0.8.1"
 linfa-reduction = "0.8.1"
@@ -229,17 +229,17 @@ rkyv = "0.7.46"
 rmcp = "0.10.0"
 rusqlite = "0.32"
 rustc_version_runtime = "0.3.0"
-rustls = "0.23.40"
+rustls = "0.23.42"
 schemars = "0.8.22"
 scopeguard = "1.2.0"
 secrecy = "0.10.3"
 self_update = "0.42.0"
 semver = "1.0"
-serde_arrow = "0.14.0"
+serde_arrow = "0.14.2"
 serde_jcs = "0.1.0"
 serde_urlencoded = "0.7"
-serde_with = "3.20.0"
-serial_test = "3.4.0"
+serde_with = "3.21.0"
+serial_test = "3.5.0"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
 short-uuid = "0.2.1"
@@ -252,7 +252,7 @@ strip-ansi-escapes = "=0.2.1"
 strsim = "0.11"
 syntect = "5.3"
 tabled = "0.20.0"
-terminal-light = "1.8.0"
+terminal-light = "1.9.0"
 terminal_size = "0.4.4"
 tokio-postgres = "0.7"
 # tokio-postgres TLS connector backed by rustls. Matches the workspace's
@@ -268,7 +268,7 @@ tar = "0.4"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7.18", features = ["rt"] }
 tower = "0.5.3"
-tower-http = "0.6.10"
+tower-http = "0.6.11"
 tower-serve-static = "0.1.2"
 tqdm = "0.8.0"
 tracing-appender = "0.2.5"
