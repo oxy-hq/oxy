@@ -16,6 +16,40 @@ const analyticsKeys = {
     [...analyticsKeys.all, "runsByThread", projectId, threadId] as const
 };
 
+const adminAssumeKeys = {
+  all: ["adminAssume"] as const,
+  current: () => [...adminAssumeKeys.all, "current"] as const,
+  history: () => [...adminAssumeKeys.all, "history"] as const
+};
+
+const adminPartnerKeys = {
+  all: ["adminPartner"] as const,
+  list: () => [...adminPartnerKeys.all, "list"] as const,
+  detail: (id: string) => [...adminPartnerKeys.all, "detail", id] as const
+};
+
+const auditKeys = {
+  all: ["audit"] as const,
+  search: (params: Record<string, unknown>) => [...auditKeys.all, "search", params] as const
+};
+
+const partnerKeys = {
+  all: ["partner"] as const,
+  mine: () => [...partnerKeys.all, "mine"] as const,
+  orgs: (partnerId: string) => [...partnerKeys.all, "orgs", partnerId] as const,
+  members: (partnerId: string, orgId: string) =>
+    [...partnerKeys.all, "members", partnerId, orgId] as const,
+  audit: (partnerId: string) => [...partnerKeys.all, "audit", partnerId] as const,
+  apps: (partnerId: string, orgId: string) =>
+    [...partnerKeys.all, "apps", partnerId, orgId] as const,
+  workspaces: (partnerId: string, orgId: string) =>
+    [...partnerKeys.all, "workspaces", partnerId, orgId] as const,
+  health: (partnerId: string) => [...partnerKeys.all, "health", partnerId] as const,
+  appTokens: (partnerId: string, appId: string) =>
+    [...partnerKeys.all, "app-tokens", partnerId, appId] as const,
+  people: (partnerId: string) => [...partnerKeys.all, "people", partnerId] as const
+};
+
 const threadKeys = {
   all: ["thread"] as const,
   list: (projectId: string, page?: number, limit?: number, search?: string) =>
@@ -755,6 +789,9 @@ const queryKeys = {
   customerApps: customerAppKeys,
   appAdmins: appAdminKeys,
   publishTokens: publishTokenKeys,
+  partnerPublishConsent: {
+    status: (orgId: string) => ["partner-publish-consent", orgId] as const
+  },
   oxyAccess: oxyAccessKeys,
   orgSubdomain: orgSubdomainKeys,
   customApps: customAppKeys,
@@ -809,7 +846,11 @@ const queryKeys = {
   modeling: modelingKeys,
   github: githubKeys,
   preagg: preaggKeys,
-  workspaceHealth: workspaceHealthKeys
+  workspaceHealth: workspaceHealthKeys,
+  partner: partnerKeys,
+  audit: auditKeys,
+  adminAssume: adminAssumeKeys,
+  adminPartner: adminPartnerKeys
 };
 
 export default queryKeys;

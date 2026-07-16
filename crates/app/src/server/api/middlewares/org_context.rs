@@ -11,9 +11,6 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::future::Future;
 use uuid::Uuid;
 
-use crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin;
-use crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner;
-
 #[derive(Clone, Debug)]
 pub struct OrgContext {
     pub org: entity::organizations::Model,
@@ -93,23 +90,53 @@ pub async fn org_middleware(
             // so they can support / triage tenants without being added as
             // a real member. Per-org handlers that must stay
             // member-restricted check `is_global_override` and 403.
-            if is_oxy_owner(&user.email) || is_oxy_app_admin(&user.email).await {
+            // Being staff is NOT enough. The operator must have deliberately
+            // started an assume-role session for THIS org — otherwise they are a
+            // plain non-member and get a 403 like anyone else. This is what turns
+            // the old silent, unbounded, unlogged override into an explicit,
+            // bounded, audited one. See `api::admin::assume`.
+            //
+            // TWO populations can act: Oxy staff (any org) and a partner (an
+            // assigned client, with `develop_apps`). `may_act_as` decides which —
+            // and it is re-checked here on every request, so revoking a partner's
+            // data-plane capability kills a live session's reach at once rather
+            // than at expiry.
+            use crate::server::api::admin::assume;
+            let live = assume::is_session_live(&db, user.id, org_id).await;
+            let authority = if live {
+                assume::may_act_as(&db, user.id, &user.email, org_id).await
+            } else {
+                None
+            };
+
+            if let Some(authority) = authority {
                 let now = Utc::now().into();
+                let role = authority.org_role();
+                let role_label = role.as_str();
                 let synth = entity::org_members::Model {
                     id: Uuid::nil(),
                     org_id,
                     user_id: user.id,
-                    role: entity::org_members::OrgRole::Owner,
+                    role,
                     created_at: now,
                     updated_at: now,
                 };
                 tracing::info!(
-                    admin_email = %user.email,
+                    actor_email = %user.email,
                     org_id = %org_id,
-                    "org_context: global override granted (no real membership; user is Global Owner or Global Admin)"
+                    ?authority,
+                    role = %role_label,
+                    "org_context: assume-role session active"
                 );
                 (synth, true)
             } else {
+                if live {
+                    tracing::warn!(
+                        actor_email = %user.email,
+                        org_id = %org_id,
+                        "org_context: live session but no authority — denying (capability revoked?)"
+                    );
+                }
                 return Err(StatusCode::FORBIDDEN);
             }
         }

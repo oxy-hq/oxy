@@ -17,6 +17,8 @@ use once_cell::sync::Lazy;
 use oxy::database::client::establish_connection;
 use oxy::database::filters::UserQueryFilterExt;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+
+use crate::server::api::audit;
 use oxy_shared::errors::OxyError;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
@@ -26,6 +28,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::member_authz;
 use super::middlewares::org_context::OrgContextExtractor;
 use super::middlewares::role_guards::{OrgAdmin, OrgOwner};
 
@@ -321,7 +324,29 @@ pub async fn list_orgs(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let org_ids: Vec<Uuid> = memberships.iter().map(|m| m.org_id).collect();
+    let mut org_ids: Vec<Uuid> = memberships.iter().map(|m| m.org_id).collect();
+
+    // Orgs the caller is ACTING AS. While an assume-role session is live, staff
+    // effectively *are* an Owner of that org (`org_context` synthesizes exactly
+    // that), so the org must appear in their org list — otherwise the frontend
+    // can't resolve `/{slug}` and the operator is told "You don't have permission"
+    // for a tenant they are, at that moment, administering.
+    //
+    // The old escape hatch was the admin org directory, but the admin surface is
+    // closed while acting (`assume::block_admin_while_acting`), which is what
+    // broke this. Making the list honest is better than punching a hole in the
+    // block: the truth is that you have this org right now.
+    let assumed: Vec<Uuid> = crate::server::api::admin::assume::live_sessions_for(&db, user.id)
+        .await
+        .into_iter()
+        .map(|s| s.org_id)
+        .collect();
+    for id in &assumed {
+        if !org_ids.contains(id) {
+            org_ids.push(*id);
+        }
+    }
+
     if org_ids.is_empty() {
         return Ok(Json(vec![]));
     }
@@ -338,15 +363,36 @@ pub async fn list_orgs(
     let member_counts = count_members_per_org(&db, &org_ids).await?;
     let workspace_counts = count_workspaces_per_org(&db, &org_ids).await?;
 
+    // The role an assumed org resolves to is NOT always Owner. Staff act as Owner;
+    // a partner acting as a client is synthesized as Admin (see
+    // `assume::ActingAs::org_role`). Label each assumed org with the role the
+    // server will actually enforce for it — hardcoding "owner" would surface
+    // owner-only affordances (delete-org, billing, promote) that then 403, which is
+    // exactly the mismatch this block is supposed to avoid.
+    let mut assumed_role: std::collections::HashMap<Uuid, &'static str> = Default::default();
+    for org_id in &assumed {
+        if let Some(authority) =
+            crate::server::api::admin::assume::may_act_as(&db, user.id, &user.email, *org_id).await
+        {
+            assumed_role.insert(*org_id, authority.org_role().as_str());
+        }
+    }
+
     let responses: Vec<OrgResponse> = orgs
         .iter()
         .filter_map(|org| {
-            let membership = memberships.iter().find(|m| m.org_id == org.id)?;
+            // A real membership wins; otherwise this org is here because we're
+            // acting as it, and the label is the role `org_context` will actually
+            // synthesize — never more, never less.
+            let role = match memberships.iter().find(|m| m.org_id == org.id) {
+                Some(m) => m.role.as_str().to_string(),
+                None => assumed_role.get(&org.id)?.to_string(),
+            };
             Some(OrgResponse {
                 id: org.id,
                 name: org.name.clone(),
                 slug: org.slug.clone(),
-                role: membership.role.as_str().to_string(),
+                role,
                 created_at: org.created_at.to_rfc3339(),
                 updated_at: org.updated_at.to_rfc3339(),
                 workspace_count: Some(workspace_counts.get(&org.id).copied().unwrap_or(0)),
@@ -564,21 +610,15 @@ pub async fn list_members(
 /// PATCH /orgs/:org_id/members/:user_id
 pub async fn update_member_role(
     OrgAdmin(ctx): OrgAdmin,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path((_org_id, target_user_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateRoleRequest>,
 ) -> Result<Json<MemberResponse>, StatusCode> {
-    // Owners cannot demote themselves — use "leave org" or transfer ownership first.
-    if target_user_id == ctx.membership.user_id && ctx.membership.role == OrgRole::Owner {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    // Validate the new role.
+    // Validate the new role, then apply the pre-load authority rules
+    // (owner-can't-self-demote + only-owner-grants-owner). See member_authz.
     let new_role = OrgRole::from_str(&req.role).map_err(|_| StatusCode::BAD_REQUEST)?;
-
-    // Only Owners can grant the Owner role.
-    if new_role == OrgRole::Owner && ctx.membership.role != OrgRole::Owner {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let is_self = target_user_id == ctx.membership.user_id;
+    member_authz::authorize_role_change_intent(&ctx.membership.role, is_self, &new_role)?;
 
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("DB connection error: {e}");
@@ -606,11 +646,8 @@ pub async fn update_member_role(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Only Owners can demote other Admins or Owners.
-    if matches!(target.role, OrgRole::Owner | OrgRole::Admin)
-        && ctx.membership.role != OrgRole::Owner
-    {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    member_authz::authorize_target_modification(&ctx.membership.role, &target.role)?;
+    let previous_role = target.role.clone();
 
     // Cannot change the last owner's role. The lock_exclusive() above holds
     // an exclusive lock on the target row through commit; locking all other
@@ -632,7 +669,7 @@ pub async fn update_member_role(
     }
 
     let mut active: org_members::ActiveModel = target.into();
-    active.role = ActiveValue::Set(new_role);
+    active.role = ActiveValue::Set(new_role.clone());
     active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
     let updated = active.update(&txn).await.map_err(|e| {
         tracing::error!("Failed to update member role: {e}");
@@ -647,6 +684,33 @@ pub async fn update_member_role(
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    // "Who changed this person's role" is exactly what an audit log is for, and it
+    // was recorded ONLY when a partner did it — the org's own admins and Oxy staff
+    // were invisible. An audit trail blind to its most privileged actors is worse
+    // than none: it implies coverage it doesn't have.
+    //
+    // The actor is the REAL user, never the synthetic Owner that `org_context`
+    // injects for staff — otherwise the log would launder an override into a
+    // legitimate membership. `is_global_override` records that it happened through
+    // one.
+    audit::record_in_txn(
+        &txn,
+        audit::AuditEntry::new(actor.email.clone(), "org.member.role_updated")
+            .actor(actor.id, audit::ActorType::User)
+            .org(ctx.org.id)
+            .target("user", target_user_id.to_string(), user.email.clone())
+            .change(
+                serde_json::json!({ "role": previous_role.as_str() }),
+                serde_json::json!({ "role": new_role.as_str() }),
+            )
+            .metadata(serde_json::json!({ "via_global_override": ctx.is_global_override })),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to audit org.member.role_updated: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Collect workspace ids inside the transaction so the broker revoke
     // operates on a stable snapshot of the org's workspaces at commit time.
@@ -699,12 +763,12 @@ pub async fn update_member_role(
 /// DELETE /orgs/:org_id/members/:user_id
 pub async fn remove_member(
     OrgAdmin(ctx): OrgAdmin,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path((_org_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, StatusCode> {
     // Owners cannot remove themselves — use a dedicated "leave org" flow.
-    if target_user_id == ctx.membership.user_id && ctx.membership.role == OrgRole::Owner {
-        return Err(StatusCode::BAD_REQUEST);
-    }
+    let is_self = target_user_id == ctx.membership.user_id;
+    member_authz::authorize_removal_intent(&ctx.membership.role, is_self)?;
 
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("DB connection error: {e}");
@@ -732,13 +796,8 @@ pub async fn remove_member(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Only Owners can remove other Owners or Admins.
-    if matches!(target.role, OrgRole::Owner | OrgRole::Admin)
-        && ctx.membership.role != OrgRole::Owner
-    {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    // Cannot remove the last owner.
+    member_authz::authorize_target_modification(&ctx.membership.role, &target.role)?;
+    let removed_role = target.role.clone();
     if target.role == OrgRole::Owner {
         let owner_count = OrgMembers::find()
             .filter(org_members::Column::OrgId.eq(ctx.org.id))
@@ -789,9 +848,39 @@ pub async fn remove_member(
         workspace_ids
     };
 
+    let target_email = Users::find_by_id(target_user_id)
+        .one(&txn)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query removed user: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .map(|u| u.email)
+        .unwrap_or_default();
+
     let active: org_members::ActiveModel = target.into();
     active.delete(&txn).await.map_err(|e| {
         tracing::error!("Failed to remove member: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Losing access is as auditable as gaining it — and the removal of an Owner or
+    // Admin is precisely the event a compromised-account investigation starts from.
+    audit::record_in_txn(
+        &txn,
+        audit::AuditEntry::new(actor.email.clone(), "org.member.removed")
+            .actor(actor.id, audit::ActorType::User)
+            .org(ctx.org.id)
+            .target("user", target_user_id.to_string(), target_email)
+            .change(
+                serde_json::json!({ "role": removed_role.as_str() }),
+                serde_json::json!(null),
+            )
+            .metadata(serde_json::json!({ "via_global_override": ctx.is_global_override })),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to audit org.member.removed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -838,11 +927,13 @@ pub async fn remove_member(
 /// POST /orgs/:org_id/invitations
 pub async fn create_invitation(
     OrgAdmin(ctx): OrgAdmin,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     headers: HeaderMap,
     Json(req): Json<InviteRequest>,
 ) -> Result<Json<InvitationResponse>, StatusCode> {
     // Validate role.
     let role = OrgRole::from_str(&req.role).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let invited_role = role.clone();
 
     // Only Owners can invite with the Owner role.
     if role == OrgRole::Owner && ctx.membership.role != OrgRole::Owner {
@@ -916,6 +1007,29 @@ pub async fn create_invitation(
         tracing::error!("Failed to insert invitation: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    // An invitation is a *pending* authority grant — the row is what a later
+    // "how did this person get Admin?" investigation traces back to. Best-effort,
+    // not in-txn: the invite is already committed and useful, and an audit failure
+    // must not make the operator retry a send. (The role change it eventually
+    // produces IS recorded durably, in `accept_invitation`'s membership write.)
+    audit::record_best_effort(
+        &db,
+        audit::AuditEntry::new(actor.email.clone(), "org.invitation.created")
+            .actor(actor.id, audit::ActorType::User)
+            .org(ctx.org.id)
+            .target(
+                "invitation",
+                invitation.id.to_string(),
+                invitation.email.clone(),
+            )
+            .change(
+                serde_json::json!(null),
+                serde_json::json!({ "role": invited_role.as_str() }),
+            )
+            .metadata(serde_json::json!({ "via_global_override": ctx.is_global_override })),
+    )
+    .await;
 
     // Fire off the invitation email in the background. Failure to send does not
     // block the response — the DB row + returned token remain the source of truth.
@@ -1408,7 +1522,7 @@ static INVITATION_TEMPLATE: Lazy<Handlebars<'static>> = Lazy::new(|| {
 /// Sends an invitation email. Piggybacks on the magic-link SES config for the
 /// sender identity; if magic-link auth is not configured, this is a no-op so
 /// the admin can still share the copy-able invite token manually.
-async fn send_invitation_email(
+pub(super) async fn send_invitation_email(
     to_email: &str,
     token: &str,
     base_url: &str,

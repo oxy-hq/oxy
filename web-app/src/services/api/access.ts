@@ -33,12 +33,14 @@ export const OxyAccessService = {
     return response.data;
   },
 
-  async enable(workspaceId: string): Promise<OxyAccessStatus> {
+  /** Lock Oxy staff OUT of this workspace. */
+  async lock(workspaceId: string): Promise<OxyAccessStatus> {
     const response = await apiClient.post(`/${workspaceId}/oxy-access`);
     return response.data;
   },
 
-  async disable(workspaceId: string): Promise<void> {
+  /** Lift the lockdown — restores the default (Oxy staff may access). */
+  async unlock(workspaceId: string): Promise<void> {
     await apiClient.delete(`/${workspaceId}/oxy-access`);
   }
 };

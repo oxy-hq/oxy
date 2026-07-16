@@ -10,6 +10,8 @@
 pub mod app_admins;
 pub mod app_publish_tokens;
 pub mod apps;
+pub mod assume;
+pub mod audit;
 pub mod billing;
 pub mod compiles;
 pub mod explorer;
@@ -18,6 +20,7 @@ pub mod metrics;
 pub mod org_subdomains;
 pub mod orgs_admin;
 pub mod oxy_access;
+pub mod partners;
 pub mod routing;
 pub mod users_admin;
 pub(crate) mod workspace_health;
@@ -78,10 +81,13 @@ use crate::server::router::AppState;
 ///   - POST   /admin/workspaces/{workspace_id}/transfer-org
 ///   - POST   /admin/workspace-health/{workspace_id}/eval
 /// Admin routes. The outer nest layer in `router::global` is permissive
-/// (OXY_OWNER **or** app_admins). `billing` and `app_admins` sub-routers
+/// (OXY_OWNER **or** app_admins). Only `billing` and `app_admins` sub-routers
 /// escalate to strict OXY_OWNER via `route_layer` — the inner layer runs
 /// after the outer one, so a request that passed the permissive check
-/// still gets a 403 here if the caller isn't an owner.
+/// still gets a 403 here if the caller isn't an owner. Everything else,
+/// including `partners` (tenant provisioning is an ops action, not platform
+/// governance), is reachable by Global Admins — matching orgs/users/workspaces
+/// and the `adminOrAppAdmin` Tenants surface that fronts them.
 ///
 /// `internal_jobs::router()` is mounted separately at `/admin/internal-jobs`
 /// in `router::global` because its routes were flattened during the
@@ -91,8 +97,13 @@ pub(crate) fn router() -> Router<AppState> {
     // the strict guard; everything else runs only under the outer
     // permissive guard.
     let strict = middleware::from_fn(oxy_owner_guard::oxy_owner_guard_middleware);
-    feature_flags::routes::router()
+
+    // The staff surface. Everything here is refused while the caller is acting as
+    // a tenant: you cannot wield staff powers and wear a customer's identity in
+    // the same breath. Ending the session (below) restores all of it.
+    let staff_surface = feature_flags::routes::router()
         .merge(apps::router())
+        .merge(audit::router())
         .merge(app_publish_tokens::router())
         .merge(explorer::router())
         .merge(metrics::router())
@@ -102,8 +113,15 @@ pub(crate) fn router() -> Router<AppState> {
         .merge(workspaces_admin::router())
         .merge(routing::router())
         .merge(workspace_health::router())
+        .merge(partners::router())
         .merge(billing::router().route_layer(strict.clone()))
         .merge(app_admins::router().route_layer(strict))
+        .route_layer(middleware::from_fn(assume::block_admin_while_acting));
+
+    // Assume-role itself lives at `/api/assume`, NOT here — see `assume::router`.
+    // It has to be reachable while acting (that's where the exit is) and by
+    // partners (who are not staff and would be 403'd by this surface's guard).
+    staff_surface
 }
 
 #[cfg(test)]
@@ -170,7 +188,11 @@ mod tests {
         let app_admins = Router::new()
             .route("/app-admins/probe", get(|| async { StatusCode::OK }))
             .route_layer(strict);
-        let open = Router::new().route("/feature-flags/probe", get(|| async { StatusCode::OK }));
+        // `partners` mounts WITHOUT the strict layer — a Global Admin must
+        // reach it (regression guard for the 403-on-partners bug).
+        let open = Router::new()
+            .route("/feature-flags/probe", get(|| async { StatusCode::OK }))
+            .route("/partners/probe", get(|| async { StatusCode::OK }));
         Router::new().merge(billing).merge(app_admins).merge(open)
     }
 
@@ -202,6 +224,11 @@ mod tests {
             request_as(app.clone(), "/app-admins/probe", Some(admin.clone())).await,
             StatusCode::FORBIDDEN,
             "Global Admin must NOT reach app_admins through the strict route_layer"
+        );
+        assert_eq!(
+            request_as(app.clone(), "/partners/probe", Some(admin.clone())).await,
+            StatusCode::OK,
+            "Global Admin MUST reach partners — provisioning is not owner-strict"
         );
         assert_eq!(
             request_as(app, "/feature-flags/probe", Some(admin)).await,

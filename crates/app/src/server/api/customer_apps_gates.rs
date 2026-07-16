@@ -196,9 +196,31 @@ pub async fn check_customer_app_gates(
             ));
         }
     };
+    // Access: a real org member, an Oxy app-admin, or a partner operator whose
+    // ceiling grants `develop_apps` over the org's managing partner (the shipped
+    // Cedar policy). NOTE — this is the DATA PLANE. `develop_apps` is the
+    // read-the-app's-data capability, deliberately DISTINCT from `manage_apps`
+    // (app lifecycle: publish / unpublish). A partner that can toggle an app's
+    // visibility cannot read its data unless its ceiling ALSO grants
+    // `develop_apps`; the split is what keeps "manage the app" from silently
+    // meaning "read the client's data". Granularity is deliberately org-wide (a
+    // developing partner works across the client's workspaces) and the grant is
+    // the ceiling itself (staff-set), so the data plane is not separately
+    // consent-gated the way publishing is. See
+    // partner_policy::partner_grants_app_access + its `manage_apps_does_not_grant
+    // _the_data_plane` test.
     let allowed = match is_org_member(&db, user.id, org_id).await {
         Ok(true) => true,
-        Ok(false) => is_app_admin_email(&db, &user.email).await.unwrap_or(false),
+        Ok(false) => {
+            is_app_admin_email(&db, &user.email).await.unwrap_or(false)
+                || crate::server::api::middlewares::partner_policy::partner_grants_app_access(
+                    &db,
+                    user.id,
+                    &user.email,
+                    org_id,
+                )
+                .await
+        }
         Err(e) => {
             error!("org membership check failed: {e}");
             return Err(err(

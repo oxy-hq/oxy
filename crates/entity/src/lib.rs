@@ -2,6 +2,7 @@
 
 pub mod prelude;
 
+pub mod admin_assume_sessions;
 pub mod apalis_jobs;
 pub mod api_keys;
 pub mod app_admins;
@@ -9,12 +10,15 @@ pub mod app_builds;
 pub mod app_function_invocations;
 pub mod app_functions;
 pub mod app_publish_tokens;
+pub mod app_publishers;
 pub mod apps;
 pub mod artifacts;
+pub mod audit_events;
 pub mod checkpoints;
 pub mod custom_app_event;
 pub mod custom_app_view_event;
 pub mod customer_app_automation_runs;
+pub mod oidc_used_jti;
 /// Back-compat alias for the renamed `customer_app_automation_runs` module.
 /// Procedures/Workflows were renamed to Automations; existing call sites
 /// referencing `entity::customer_app_procedure_runs` keep resolving here.
@@ -31,6 +35,11 @@ pub mod org_members;
 pub mod org_secrets;
 pub mod org_subdomains;
 pub mod organizations;
+pub mod partner_capabilities;
+pub mod partner_grants;
+pub mod partner_orgs;
+pub mod partner_publish_consent;
+pub mod partner_role_bindings;
 pub mod quickbooks_oauth_states;
 pub mod reconcile_configs;
 pub mod run_sequences;
@@ -55,7 +64,7 @@ pub mod threads;
 pub mod users;
 pub mod workspace_health_state;
 pub mod workspace_members;
-pub mod workspace_oxy_access;
+pub mod workspace_oxy_lockdown;
 pub mod workspaces;
 
 // ── compile boundary (Phase 1.6a) ────────────────────────────────────

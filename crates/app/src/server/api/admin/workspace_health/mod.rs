@@ -15,7 +15,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use sea_orm::EntityTrait;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Serialize;
 
 use crate::server::router::AppState;
@@ -53,7 +53,7 @@ impl From<&WorkspaceSignals> for SignalsRow {
 }
 
 #[derive(Serialize)]
-struct WorkspaceHealthRow {
+pub(crate) struct WorkspaceHealthRow {
     workspace_id: uuid::Uuid,
     /// Workspace display name, resolved from the `workspaces` row. `None` only
     /// when the workspace was deleted between the signal scan and this read.
@@ -103,13 +103,28 @@ pub(crate) fn router() -> Router<AppState> {
 /// gathering, no external calls.
 async fn list_workspace_health() -> Result<Json<WorkspaceHealthResponse>, Response> {
     let db = connect().await?;
-    let labels = queries::gather_workspace_labels(&db)
-        .await
-        .map_err(db_err)?;
-    let rows = entity::workspace_health_state::Entity::find()
-        .all(&db)
-        .await
-        .map_err(db_err)?;
+    let workspaces = health_rollup(&db, None).await.map_err(db_err)?;
+    Ok(Json(WorkspaceHealthResponse { workspaces }))
+}
+
+/// The rollup rows, worst-first, joined with display labels. `workspace_ids =
+/// None` returns every workspace (the staff cross-tenant view); `Some(ids)` scopes
+/// to that set (the partner-scoped view over its managed clients' workspaces).
+/// Reads the persisted sweep state only — no live evaluation.
+pub(crate) async fn health_rollup(
+    db: &sea_orm::DatabaseConnection,
+    workspace_ids: Option<&[uuid::Uuid]>,
+) -> Result<Vec<WorkspaceHealthRow>, sea_orm::DbErr> {
+    if matches!(workspace_ids, Some(ids) if ids.is_empty()) {
+        return Ok(Vec::new());
+    }
+    let labels = queries::gather_workspace_labels(db).await?;
+
+    let mut find = entity::workspace_health_state::Entity::find();
+    if let Some(ids) = workspace_ids {
+        find = find.filter(entity::workspace_health_state::Column::WorkspaceId.is_in(ids.to_vec()));
+    }
+    let rows = find.all(db).await?;
 
     let mut workspaces: Vec<WorkspaceHealthRow> = rows
         .into_iter()
@@ -120,7 +135,7 @@ async fn list_workspace_health() -> Result<Json<WorkspaceHealthResponse>, Respon
         .collect();
     // Worst-first: Unhealthy > Degraded > Healthy.
     workspaces.sort_by(|a, b| status_rank(&b.status).cmp(&status_rank(&a.status)));
-    Ok(Json(WorkspaceHealthResponse { workspaces }))
+    Ok(workspaces)
 }
 
 /// Response to an on-demand eval trigger: the `run_id` of the enqueued eval so

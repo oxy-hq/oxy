@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Navigate } from "react-router-dom";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useOrgs } from "@/hooks/api/organizations";
+import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import { getInjectedOrg } from "@/libs/orgSubdomain";
 import {
@@ -23,6 +24,17 @@ import type { Organization } from "@/types/organization";
  *   has orgs, no navigable ws     → /:slug/onboarding (every ws is still cloning)
  *   has orgs, ≥1 navigable ws     → /:slug/workspaces/:last-or-first-navigable
  *
+ * …**unless the user holds a partner role**, in which case every branch that would
+ * have dumped them into onboarding sends them to `/partners` instead. A partner's
+ * job is their clients; they do not necessarily want an Oxy workspace of their own,
+ * and being met with "create your first workspace" when you signed in to manage
+ * five other companies is nonsense. They can still onboard themselves — the partner
+ * console links straight to their own org.
+ *
+ * Note this only redirects the onboarding branches: a partner who DOES have a
+ * working workspace still lands in it, because that is their own product and they
+ * asked for it by having one.
+ *
  * The chosen org follows (a) last-org-slug from localStorage, else (b) the
  * first org returned by the API. Navigable means `status === "ready"` or
  * `"failed"` — cloning is skipped because it's transient, but failed is kept
@@ -31,6 +43,9 @@ import type { Organization } from "@/types/organization";
  */
 export default function PostLoginDispatcher() {
   const { data: orgs, isPending: orgsPending, isError: orgsError } = useOrgs();
+  const { data: user } = useCurrentUser();
+  // `partner_memberships` is already on /user — no extra request.
+  const isPartner = (user?.partner_memberships?.length ?? 0) > 0;
 
   const chosenOrg = useMemo(() => pickOrg(orgs), [orgs]);
 
@@ -71,7 +86,7 @@ export default function PostLoginDispatcher() {
   }
 
   if (!orgs || orgs.length === 0) {
-    return <Navigate to={ROUTES.ONBOARDING} replace />;
+    return <Navigate to={isPartner ? ROUTES.PARTNERS.ROOT : ROUTES.ONBOARDING} replace />;
   }
 
   if (!chosenOrg) return <FullPageSpinner />;
@@ -84,7 +99,12 @@ export default function PostLoginDispatcher() {
   }
 
   if (!workspaces || workspaces.length === 0) {
-    return <Navigate to={ROUTES.ORG(chosenOrg.slug).ONBOARDING} replace />;
+    return (
+      <Navigate
+        to={isPartner ? ROUTES.PARTNERS.ROOT : ROUTES.ORG(chosenOrg.slug).ONBOARDING}
+        replace
+      />
+    );
   }
 
   const target = pickWorkspace(workspaces, chosenOrg.id);
@@ -93,7 +113,12 @@ export default function PostLoginDispatcher() {
     // user can create a new one. Drop any stale per-org lastWorkspace id so
     // next visit doesn't re-select the broken workspace.
     clearLastWorkspaceId(chosenOrg.id);
-    return <Navigate to={ROUTES.ORG(chosenOrg.slug).ONBOARDING} replace />;
+    return (
+      <Navigate
+        to={isPartner ? ROUTES.PARTNERS.ROOT : ROUTES.ORG(chosenOrg.slug).ONBOARDING}
+        replace
+      />
+    );
   }
   setLastWorkspaceId(chosenOrg.id, target.id);
 

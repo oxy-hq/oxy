@@ -85,3 +85,19 @@
   # one judge call.
   cold_usd: 0.20
   warm_usd: 0.005
+
+- flow: admin-tenants-cockpit
+  # Navigate to /admin/tenants, confirm the cockpit shell, switch the rail
+  # to Partners, assert the registry resolves. No streaming LLM run — REST
+  # fetches + DOM assertions + one judge call. Same profile as
+  # admin-workspace-health.
+  cold_usd: 0.25
+  warm_usd: 0.005
+
+- flow: admin-custom-apps-tabs
+  # Navigate to /admin/apps, confirm the three-tab shell, switch to
+  # Organizations then Publish tokens, assert each resolves. No streaming LLM
+  # run — REST fetches + DOM assertions + one judge call. Same profile as
+  # admin-tenants-cockpit.
+  cold_usd: 0.25
+  warm_usd: 0.005

@@ -27,18 +27,17 @@ export const AdminDetailStats = ({
   <div
     className={cn(
       "grid divide-x divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card",
-      "shadow-[0_1px_0_0_color-mix(in_srgb,var(--border)_60%,transparent)]",
       items.length <= 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-4",
       className
     )}
   >
     {items.map((item, idx) => (
-      <div key={`${item.label}-${idx}`} className='flex flex-col justify-center gap-1.5 px-5 py-4'>
+      <div key={`${item.label}-${idx}`} className='flex flex-col justify-center gap-1 px-4 py-3'>
         <div className='flex items-center gap-1.5 font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
           {item.icon ? <item.icon className='size-3' /> : null}
           {item.label}
         </div>
-        <div className='font-semibold text-2xl tabular-nums tracking-tight'>{item.value}</div>
+        <div className='font-semibold text-lg tabular-nums tracking-tight'>{item.value}</div>
         {item.sub ? (
           <div className='truncate text-muted-foreground text-xs tabular-nums'>{item.sub}</div>
         ) : null}

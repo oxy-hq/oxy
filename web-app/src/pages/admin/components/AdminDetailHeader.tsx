@@ -27,27 +27,29 @@ export const AdminDetailHeader = ({
   /** Primary destructive / mutating actions. Rendered on the right. */
   actions?: ReactNode;
 }) => (
-  <header className='space-y-5'>
-    <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
-      {eyebrow}
-    </p>
-    <div className='flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between'>
-      <div className='flex min-w-0 items-start gap-4'>
+  <header className='space-y-3'>
+    {eyebrow ? (
+      <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
+        {eyebrow}
+      </p>
+    ) : null}
+    <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
+      <div className='flex min-w-0 items-start gap-3'>
         <div
           className={cn(
-            "flex size-14 shrink-0 items-center justify-center rounded-xl",
-            "border border-border/60 bg-card text-foreground/70 shadow-[0_1px_0_0_color-mix(in_srgb,var(--border)_60%,transparent)]"
+            "flex size-10 shrink-0 items-center justify-center rounded-lg",
+            "border border-border/60 bg-card text-foreground/70"
           )}
         >
-          <Icon className='size-6' />
+          <Icon className='size-5' />
         </div>
-        <div className='flex min-w-0 flex-col gap-1.5'>
-          <div className='flex flex-wrap items-center gap-3'>
-            <h1 className='truncate font-semibold text-3xl tracking-tight'>{title}</h1>
+        <div className='flex min-w-0 flex-col gap-1'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <h1 className='truncate font-semibold text-xl tracking-tight'>{title}</h1>
             {status}
           </div>
           {subtitle ? (
-            <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-sm'>
+            <div className='flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-muted-foreground text-xs'>
               {subtitle}
             </div>
           ) : null}

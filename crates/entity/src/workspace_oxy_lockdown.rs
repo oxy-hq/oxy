@@ -1,23 +1,30 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// One row per workspace that has opted into "Oxy can build tailored
-/// apps on your data". Combined with the `app_admins` table on the
-/// access path: any user in `app_admins` can access customer apps in
-/// workspaces that have a row here.
+/// One row per workspace that has **locked Oxy staff out**.
 ///
-/// Unique on `workspace_id` — presence of the row IS the toggle. The
-/// audit trail (`granted_by`, `created_at`) is incidental but useful
-/// in support tickets.
+/// This is the inverse of the old `workspace_oxy_access` consent table: the
+/// default (NO row) is that Oxy staff (`app_admins`) may access the workspace's
+/// customer apps, so support works without the customer having to opt in. A row
+/// here revokes that.
+///
+/// Tenant-sovereign: only a **real** org owner/admin may create or remove it —
+/// the synthesized global-operator Owner membership is rejected, so Oxy staff
+/// cannot unlock themselves. (The old toggle was guarded on the workspace Owner
+/// role, which operators get synthetically — meaning staff could grant themselves
+/// the very access the toggle existed to gate.)
+///
+/// Unique on `workspace_id` — presence of the row IS the lockdown. `locked_by` /
+/// `created_at` are the audit trail.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "workspace_oxy_access")]
+#[sea_orm(table_name = "workspace_oxy_lockdown")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     #[sea_orm(unique)]
     pub workspace_id: Uuid,
-    /// User who enabled access. NULL only if that user was deleted.
-    pub granted_by: Option<Uuid>,
+    /// The org officer who locked Oxy out. NULL only if that user was deleted.
+    pub locked_by: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
 }
 
@@ -33,7 +40,7 @@ pub enum Relation {
     Workspaces,
     #[sea_orm(
         belongs_to = "super::users::Entity",
-        from = "Column::GrantedBy",
+        from = "Column::LockedBy",
         to = "super::users::Column::Id",
         on_update = "NoAction",
         on_delete = "SetNull"

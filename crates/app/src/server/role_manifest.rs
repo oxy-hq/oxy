@@ -1894,7 +1894,7 @@ mod tests {
         for (is_nest, marker) in [(false, ".route("), (true, ".nest(")] {
             let mut hay = body;
             while let Some(i) = hay.find(marker) {
-                let after = hay[i + marker.len()..].trim_start();
+                let after = skip_ws_and_comments(&hay[i + marker.len()..]);
                 if let Some(rest) = after.strip_prefix('"')
                     && let Some(end) = rest.find('"')
                 {
@@ -1904,6 +1904,24 @@ mod tests {
             }
         }
         out
+    }
+
+    /// Skip whitespace AND `//` comments before a mount's path literal.
+    ///
+    /// Without this, `rustfmt` moving a comment *inside* the `.route(` call —
+    /// which is exactly what happened to `/oxy-access` — makes the mount
+    /// invisible to this test. That fails silently in the dangerous direction: an
+    /// unclassified FS-touching route would slip through the very check that
+    /// exists to catch it. (It surfaced as a bogus "stale acknowledgement",
+    /// which is the lucky case.)
+    fn skip_ws_and_comments(mut s: &str) -> &str {
+        loop {
+            s = s.trim_start();
+            let Some(rest) = s.strip_prefix("//") else {
+                return s;
+            };
+            s = rest.find('\n').map_or("", |i| &rest[i..]);
+        }
     }
 
     /// A concrete probe URI for a mount: `{param}` segments become `x`, and a

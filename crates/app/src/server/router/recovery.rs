@@ -726,7 +726,11 @@ async fn tick_cloud(
             Ok(Some(ws)) => match ws.path {
                 Some(p) => p,
                 None => {
-                    tracing::warn!(
+                    // A path-less workspace is an EXPECTED, non-actionable skip
+                    // (local-mode sentinels, demo/listing-only seeded rows), so
+                    // this is debug, not a per-cycle WARN. The genuinely-anomalous
+                    // case — a pending run for an UNKNOWN workspace — stays WARN.
+                    tracing::debug!(
                         target: "recovery",
                         workspace_id = %ws_id,
                         "latency worker: workspace has no path; skipping"

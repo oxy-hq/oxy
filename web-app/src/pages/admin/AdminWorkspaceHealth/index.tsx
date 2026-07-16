@@ -3,11 +3,17 @@ import { RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/shadcn/table";
 import queryKeys from "@/hooks/api/queryKey";
 import { useWorkspaceHealth } from "@/hooks/api/workspaceHealth/useWorkspaceHealth";
 import { timeAgo } from "@/libs/utils/date";
 import ROUTES from "@/libs/utils/routes";
 import { AdminStatusPill } from "@/pages/admin/components/AdminStatusPill";
+import {
+  ADMIN_HEADER_ROW_CLASS,
+  ADMIN_ROW_CLASS,
+  AdminTh
+} from "@/pages/admin/components/AdminTable";
 import { workspaceHealthTone } from "@/pages/admin/components/workspaceHealthTone";
 
 /**
@@ -65,33 +71,25 @@ export default function AdminWorkspaceHealthPage() {
           No workspaces found.
         </div>
       ) : (
-        <div className='overflow-hidden rounded-lg border border-border'>
-          <table className='w-full text-sm'>
-            <thead>
-              <tr className='border-border border-b bg-muted/30'>
-                <th className='px-4 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide'>
-                  Workspace
-                </th>
-                <th className='px-4 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide'>
-                  Status
-                </th>
-                <th className='px-4 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide'>
-                  Reasons
-                </th>
-                <th className='px-4 py-2.5 text-right font-medium text-muted-foreground text-xs uppercase tracking-wide'>
-                  Last checked
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className='overflow-hidden rounded-lg border border-border/60'>
+          <Table>
+            <TableHeader>
+              <TableRow className={ADMIN_HEADER_ROW_CLASS}>
+                <AdminTh>Workspace</AdminTh>
+                <AdminTh>Status</AdminTh>
+                <AdminTh>Reasons</AdminTh>
+                <AdminTh align='right'>Last checked</AdminTh>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {data.workspaces.map((ws) => (
-                <tr
+                <TableRow
                   key={ws.workspace_id}
-                  className='border-border border-b last:border-0 hover:bg-muted/20'
+                  className={ADMIN_ROW_CLASS}
                   data-testid='workspace-health-row'
                   data-status={ws.status}
                 >
-                  <td className='px-4 py-3'>
+                  <TableCell>
                     <Link
                       to={`${ROUTES.ADMIN.WORKSPACE_DETAIL(ws.workspace_id)}?tab=health`}
                       className='group block'
@@ -101,18 +99,18 @@ export default function AdminWorkspaceHealthPage() {
                       </span>
                       <span className='block text-muted-foreground text-xs'>
                         {ws.org_name ? `${ws.org_name} · ` : ""}
-                        <span className='font-mono'>{ws.workspace_id}</span>
+                        <span className='font-mono text-[10px]'>{ws.workspace_id}</span>
                       </span>
                     </Link>
-                  </td>
-                  <td className='px-4 py-3'>
+                  </TableCell>
+                  <TableCell>
                     <AdminStatusPill
                       tone={workspaceHealthTone(ws.status)}
                       label={ws.status}
                       data-testid='workspace-health-status-badge'
                     />
-                  </td>
-                  <td className='px-4 py-3'>
+                  </TableCell>
+                  <TableCell>
                     {ws.reasons.length === 0 ? (
                       <span className='text-muted-foreground/60'>—</span>
                     ) : (
@@ -124,8 +122,8 @@ export default function AdminWorkspaceHealthPage() {
                         ))}
                       </ul>
                     )}
-                  </td>
-                  <td className='px-4 py-3 text-right text-muted-foreground/70 text-xs'>
+                  </TableCell>
+                  <TableCell className='text-right text-muted-foreground text-xs tabular-nums'>
                     {ws.checked_at ? (
                       <span title={new Date(ws.checked_at).toLocaleString()}>
                         {timeAgo(ws.checked_at)}
@@ -133,11 +131,11 @@ export default function AdminWorkspaceHealthPage() {
                     ) : (
                       <span className='text-muted-foreground/50'>—</span>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

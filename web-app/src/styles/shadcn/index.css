@@ -305,6 +305,37 @@ body {
   display: flex;
 }
 
+/* Assume-role ("acting as") banner.
+ *
+ * `.root` is `position: fixed` + `display: flex`, so the banner CANNOT be a
+ * normal element wrapped around the app: an in-flow wrapper becomes a stray flex
+ * item with no width and collapses the whole app to content width. Instead the
+ * banner is a fixed overlay, and we reserve its height by pushing `.root` down and
+ * shrinking it — the app keeps its full-viewport flex layout, minus the strip.
+ *
+ * The class is toggled on <body> by `ActingShell` only while a session is live, so
+ * the normal layout is byte-for-byte unchanged. */
+:root {
+  --acting-banner-h: 2rem;
+}
+
+body.is-acting .root {
+  top: var(--acting-banner-h);
+  height: calc(100% - var(--acting-banner-h));
+  min-height: calc(100dvh - var(--acting-banner-h));
+}
+
+/* Fixed chrome has to be shifted too. Moving `.root` down does nothing for an
+ * element positioned against the VIEWPORT: the sidebar is `fixed inset-y-0
+ * h-svh`, so while acting it started at y=0 and collided with the banner (the
+ * Oxygen logo rendered underneath it). Anything else we later position `fixed`
+ * against the viewport needs the same treatment — which is the cost of the banner
+ * being an overlay, and still cheaper than making every page's layout reserve it. */
+body.is-acting [data-slot="sidebar"] > div.fixed {
+  top: var(--acting-banner-h);
+  height: calc(100svh - var(--acting-banner-h));
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--sidebar-border) transparent;

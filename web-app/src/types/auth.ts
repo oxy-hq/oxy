@@ -55,6 +55,33 @@ export interface OrgInfo {
  * `is_app_admin` mirrors `OXY_GLOBAL_ADMINS` (gates the customer-apps surface).
  * Both are UX-only — the server enforces independently.
  */
+export interface PartnerCapabilities {
+  manage_members: boolean;
+  /** Publish / unpublish apps only — NOT data access. */
+  manage_apps: boolean;
+  /** The custom-app data plane (query / semantic-query / agent runs). Default OFF. */
+  develop_apps: boolean;
+  view_audit: boolean;
+  manage_billing: boolean;
+  manage_secrets: boolean;
+  /** Onboard client orgs. Sensitive — it mints billable tenants. Default OFF. */
+  create_orgs: boolean;
+  manage_org_settings: boolean;
+}
+
+/**
+ * A partner this user operates. Non-empty `partner_memberships` means the user
+ * should see the partner console; `capabilities` — the partner's **ceiling** — lets
+ * the UI hide surfaces this operator can't use. UX-only: the server re-checks on
+ * every partner route.
+ */
+export interface PartnerMembership {
+  /** The partner IS an org, so this is an org id. */
+  partner_id: string;
+  slug: string;
+  capabilities: PartnerCapabilities;
+}
+
 export interface UserInfo {
   id: string;
   email: string;
@@ -63,6 +90,11 @@ export interface UserInfo {
   status?: string;
   is_owner: boolean;
   is_app_admin: boolean;
+  /**
+   * Present on `GET /user` (the canonical role source, `useCurrentUser`); the
+   * login response omits it, so treat as optional and default to empty.
+   */
+  partner_memberships?: PartnerMembership[];
 }
 
 export interface MessageResponse {

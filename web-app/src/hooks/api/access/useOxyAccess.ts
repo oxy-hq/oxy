@@ -12,23 +12,22 @@ export const useOxyAccess = (workspaceId: string) =>
   });
 
 /**
- * Toggle the per-workspace "let Oxy build tailored apps on our data"
- * flag. Mutation accepts the desired state; the hook routes to the
- * matching enable/disable endpoint and shows a toast.
+ * Set the per-workspace Oxy-staff LOCKDOWN. `true` = lock Oxy out; `false` =
+ * lift the lockdown (the default, where Oxy support can reach your apps).
  */
-export const useSetOxyAccess = (workspaceId: string) => {
+export const useSetOxyLockdown = (workspaceId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (enabled: boolean) => {
-      if (enabled) {
-        return OxyAccessService.enable(workspaceId);
+    mutationFn: async (locked: boolean) => {
+      if (locked) {
+        return OxyAccessService.lock(workspaceId);
       }
-      await OxyAccessService.disable(workspaceId);
+      await OxyAccessService.unlock(workspaceId);
       return null;
     },
-    onSuccess: (_, enabled) => {
+    onSuccess: (_, locked) => {
       qc.invalidateQueries({ queryKey: queryKeys.oxyAccess.status(workspaceId) });
-      toast.success(enabled ? "Oxy access granted" : "Oxy access revoked");
+      toast.success(locked ? "Oxy staff locked out" : "Oxy staff access restored");
     },
     onError: (err) => {
       const message = isAxiosError(err)

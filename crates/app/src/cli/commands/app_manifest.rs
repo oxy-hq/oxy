@@ -119,8 +119,8 @@ pub fn default_target(env: &str) -> Option<&'static str> {
         // may predate it. Vite serves the current route and proxies `/api/*`
         // to oxy on :3000, so build-config / publish / whoami flow through too.
         "local" => Some("http://localhost:5173"),
-        "dev" | "development" => Some("https://app-dev.oxygen-hq.com"),
-        "staging" => Some("https://app-staging.oxygen-hq.com"),
+        "dev" | "development" => Some("https://aip.dev.oxy.tech"),
+        "staging" => Some("https://aip.staging.oxy.tech"),
         "production" | "prod" => Some("https://app.oxygen-hq.com"),
         _ => None,
     }
@@ -200,10 +200,10 @@ mod tests {
     #[test]
     fn builtin_targets_for_known_environments() {
         assert_eq!(default_target("local"), Some("http://localhost:5173"));
-        assert_eq!(default_target("dev"), Some("https://app-dev.oxygen-hq.com"));
+        assert_eq!(default_target("dev"), Some("https://aip.dev.oxy.tech"));
         assert_eq!(
             default_target("staging"),
-            Some("https://app-staging.oxygen-hq.com")
+            Some("https://aip.staging.oxy.tech")
         );
         assert_eq!(
             default_target("production"),

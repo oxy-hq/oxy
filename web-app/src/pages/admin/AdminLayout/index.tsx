@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { SidebarInset, SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useActingSession } from "@/hooks/api/adminAssume/useActingSession";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import ROUTES from "@/libs/utils/routes";
 import { AdminSidebar } from "./components/AdminSidebar";
@@ -12,6 +13,7 @@ const PAGE_TITLES: Record<string, string> = {
   [ROUTES.ADMIN.INTERNAL_JOBS]: "Internal jobs",
   [ROUTES.ADMIN.COMPILES]: "Compile revisions",
   [ROUTES.ADMIN.EXPLORER]: "Explorer",
+  [ROUTES.ADMIN.AUDIT]: "Audit log",
   [ROUTES.ADMIN.APP_ADMINS]: "Global admins",
   [ROUTES.ADMIN.PUBLISH_TOKENS]: "Publish tokens",
   [ROUTES.ADMIN.CUSTOMER_APPS]: "Custom apps",
@@ -37,6 +39,7 @@ const APP_ADMIN_ROUTE_PREFIXES = [
   ROUTES.ADMIN.INTERNAL_JOBS,
   ROUTES.ADMIN.COMPILES,
   ROUTES.ADMIN.EXPLORER,
+  ROUTES.ADMIN.AUDIT,
   ROUTES.ADMIN.FEATURE_FLAGS,
   ROUTES.ADMIN.WORKSPACE_HEALTH,
   ROUTES.ADMIN.TENANTS,
@@ -63,6 +66,8 @@ export default function AdminLayout() {
     )?.[1] ??
     "Admin";
 
+  const acting = useActingSession();
+
   if (isPending) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
@@ -84,6 +89,17 @@ export default function AdminLayout() {
   // to the customer-apps page they actually have access to.
   if (!isOwner && !isAppAdminRoute(location.pathname)) {
     return <Navigate to={ROUTES.ADMIN.CUSTOMER_APPS} replace />;
+  }
+
+  // You cannot be in here while acting as a tenant. The server already refuses
+  // the whole staff surface (assume::block_admin_while_acting), so rendering the
+  // admin shell would just paint a page of 403s — but the deeper reason is that
+  // "acting as" only means something if it changes where you are and what you can
+  // do. Sitting in the admin panel with a banner on top changed neither.
+  //
+  // The banner's Stop button ends the session and brings you straight back.
+  if (acting.isActing && acting.landing) {
+    return <Navigate to={acting.landing} replace />;
   }
 
   return (

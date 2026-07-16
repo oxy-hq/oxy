@@ -16,6 +16,14 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         .route("/ready", get(healthcheck::readiness_check))
         .route("/live", get(healthcheck::liveness_check))
         .route("/version", get(healthcheck::version_info))
+        // Trusted-publishing OIDC exchange — unauthenticated by construction: the
+        // GitHub Actions OIDC JWT in the Authorization header IS the credential.
+        // Returns a short-lived, app-scoped publish token. See
+        // `customer_apps_publish_oidc`.
+        .route(
+            "/customer-apps/publish/oidc-exchange",
+            post(crate::api::customer_apps_publish_oidc::oidc_exchange_handler),
+        )
         .route("/auth/config", get(auth::get_config))
         .route("/auth/session", get(auth::get_session))
         .route("/auth/oauth/state", post(auth::issue_oauth_state))

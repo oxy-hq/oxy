@@ -1,4 +1,4 @@
-import { House, MessagesSquare, Shield } from "lucide-react";
+import { Handshake, House, MessagesSquare, Shield } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AskDock } from "@/components/Ask/AskDock";
@@ -33,6 +33,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   // one-click hop into the admin console. Tenant-internal org roles never do —
   // this mirrors the gate on the admin routes themselves.
   const isOperator = !!(profile?.is_owner || profile?.is_app_admin);
+  // Partner admins (users who administer ≥1 partner) get a console hop. The
+  // server enforces scope; this only decides whether to show the entry.
+  const isPartnerAdmin = !!profile?.partner_memberships?.length;
 
   const path = location.pathname;
   const inIde = /\/ide(\/|$)/.test(path);
@@ -89,18 +92,33 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const admin: RailItem = {
     key: "admin",
     label: "Admin",
-    tooltip: "Admin console — customer apps, tenants, feature flags, jobs",
+    tooltip: "Admin console — custom apps, tenants, feature flags, jobs",
     testId: "rail-admin",
     icon: <Shield className='h-4 w-4' />,
     active: path.startsWith("/admin"),
     onSelect: () => navigate("/admin/apps")
   };
 
+  // Partner console entry — shown to partner admins (non-operators reach it
+  // here; the server enforces scope on every call).
+  const partner: RailItem = {
+    key: "partner",
+    label: "Partners",
+    tooltip: "Partner console — manage your partner's organizations, members, and apps",
+    testId: "rail-partner",
+    icon: <Handshake className='h-4 w-4' />,
+    active: path.startsWith("/partners"),
+    onSelect: () => navigate("/partners")
+  };
+
   // Home + Chat share one block (no divider — both are primary HQ nav); apps get
   // their own divided group when the workspace has any.
   const groups: RailItem[][] = appItems.length ? [[hq, chat], appItems] : [[hq, chat]];
-  // System zone: Oxygen Factory, then the operator-only Admin hop below it.
-  const footerItems: RailItem[] = isOperator ? [core, admin] : [core];
+  // System zone: Oxygen Factory, then the Partner console (if any) and the
+  // operator-only Admin hop below it.
+  const footerItems: RailItem[] = [core];
+  if (isPartnerAdmin) footerItems.push(partner);
+  if (isOperator) footerItems.push(admin);
 
   return (
     <div className='flex h-full w-full'>
@@ -122,6 +140,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           top-left corner and the two bottom borders form one continuous line. */}
       <div className='flex h-full min-w-0 flex-1 flex-col'>
         {!hideRail && <TopBar />}
+        {/* Follows the operator INTO the tenant — this is where an unnoticed
+            impersonation would actually do damage. */}
         <div className='flex min-h-0 w-full flex-1'>
           <main className='relative flex h-full min-w-0 flex-1 flex-col bg-background'>
             {!hideStatus && <WorkspaceStatus />}

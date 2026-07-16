@@ -211,6 +211,16 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
       // where we set defaults (so user's `base` overrides ours).
       // For `server.proxy["/api"]` we only set when absent — Vite's
       // merge does the right thing here.
+      // Proxy table: the Oxy data plane (`/api`) plus this app's server-side
+      // function calls (`/fn`). The `/fn` key is scoped to THIS app's base so it
+      // never shadows the bundle's own assets served locally under
+      // `/customer-apps/<org>/<slug>/`. Point the target at `oxy proxy` (default
+      // localhost:3000) to hit a cloud env's data with your `oxy login` token.
+      const proxy: Record<string, ProxyOptions> = { "/api": apiProxy };
+      if (orgSlug && appSlug) {
+        proxy[`/customer-apps/${orgSlug}/${appSlug}/fn`] = apiProxy;
+      }
+
       const contribution: UserConfig = {
         base,
         build: {
@@ -221,9 +231,7 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
           emptyOutDir: true
         },
         server: {
-          proxy: {
-            "/api": apiProxy
-          }
+          proxy
         }
       };
       return contribution;

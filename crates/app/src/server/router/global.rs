@@ -14,7 +14,7 @@ use crate::api::github::{account, callback, installations};
 use crate::api::middlewares::{
     org_context, oxy_app_admin_guard, oxy_owner_or_app_admin_guard, subscription_guard,
 };
-use crate::api::{admin, onboarding, org_logo, organizations, user, workspaces};
+use crate::api::{admin, onboarding, org_logo, organizations, partner_console, user, workspaces};
 
 use super::AppState;
 
@@ -34,6 +34,24 @@ pub(super) fn build_global_routes() -> Router<AppState> {
         )
         .merge(airhouse::api::router::<AppState>())
         .nest("/orgs/{org_id}", build_org_routes())
+        // Partner self-service surface. `/partners` lists the partners the caller
+        // holds a role at; `/partners/{partner_org_id}/*` runs under
+        // `partner_middleware`, which resolves their PartnerScope (role ∩ ceiling
+        // ∩ assigned clients) and 403s anyone with no partner role there.
+        //
+        // The path param is the PARTNER'S ORG ID — a partner IS an org. All
+        // Postgres-only → FleetOk by default (HA-safe), not workspace-scoped.
+        // Assume-role ("act as"). Authenticated, NOT admin-gated: staff act as any
+        // org, a partner acts as an assigned client with `develop_apps`. The
+        // handlers authorize (`assume::may_act_as`). It must sit outside /admin
+        // because acting CLOSES /admin — the exit cannot live behind the door it
+        // locks.
+        .merge(admin::assume::router())
+        .merge(partner_console::routes())
+        .nest(
+            "/partners/{partner_org_id}",
+            partner_console::scoped_routes(),
+        )
         // `/admin/*` runs under the permissive owner-or-app-admin guard so
         // app admins can reach feature flags, customer apps, orgs / users /
         // workspaces management, and internal jobs. The sensitive subset —
@@ -50,18 +68,28 @@ pub(super) fn build_global_routes() -> Router<AppState> {
         // outer guard mirrors the broader `/admin/*` permissive guard.
         .nest(
             "/admin/internal-jobs",
-            admin::internal_jobs::router().layer(middleware::from_fn(
-                oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
-            )),
+            admin::internal_jobs::router()
+                // Refuse the staff surface while acting, exactly like `admin::router`
+                // does internally. This is a SIBLING nest — it never passes through
+                // `admin::router`, so the block it applies does not reach here. Any
+                // future `/admin/*` sibling needs this line too, or it silently
+                // becomes drivable mid-impersonation.
+                .layer(middleware::from_fn(admin::assume::block_admin_while_acting))
+                .layer(middleware::from_fn(
+                    oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
+                )),
         )
         // Compile boundary operator surface (Phase 1.6a+). List recent
         // revisions, drill into one, manually enqueue a Compile task.
         // Same guard layering as internal-jobs.
         .nest(
             "/admin/compiles",
-            admin::compiles::router().layer(middleware::from_fn(
-                oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
-            )),
+            admin::compiles::router()
+                // Sibling nest — see internal-jobs above.
+                .layer(middleware::from_fn(admin::assume::block_admin_while_acting))
+                .layer(middleware::from_fn(
+                    oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
+                )),
         )
         // Parallel customer-apps surface for OXY_GLOBAL_ADMINS. Reuses the same
         // handlers as /admin/apps but gated by a separate role so app admins
@@ -186,20 +214,49 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                     "/{id}/api-keys",
                     post(crate::server::api::customer_apps_api_keys::mint),
                 )
-                // One-way publish entry point: CI (or local `oxy publish`)
-                // uploads a built bundle tarball; oxy stores it in S3 and
-                // points the draft (or published, with --promote) channel
-                // at the new build. Raised body limit — bundles are a few
-                // MB, well over axum's 2 MB default. See
-                // `customer_apps_publish`.
+                // Trusted-publishing config: register / list / remove the GitHub
+                // workflows allowed to OIDC-publish this app. See
+                // `customer_apps_publish_oidc`.
+                .route(
+                    "/{id}/publishers",
+                    get(crate::server::api::customer_apps_publish_oidc::list_publishers)
+                        .post(crate::server::api::customer_apps_publish_oidc::register_publisher),
+                )
+                .route(
+                    "/{id}/publishers/{publisher_id}",
+                    axum::routing::delete(
+                        crate::server::api::customer_apps_publish_oidc::delete_publisher,
+                    ),
+                )
+                // Everything ABOVE is the interactive customer-apps admin surface
+                // (create / update / delete / rollback / batch): refuse it while a
+                // staff operator is acting as a tenant, closing the gap that this
+                // sibling nest never passed through `admin::router`'s block. `axum`
+                // applies a `.layer` only to routes registered before it, so this
+                // covers the routes above and NOT `/publish` below.
+                .layer(middleware::from_fn(admin::assume::block_admin_while_acting))
+                .layer(middleware::from_fn(
+                    oxy_app_admin_guard::oxy_app_admin_guard_middleware,
+                ))
+                // One-way publish entry point: CI (or local `oxy publish`) uploads
+                // a built bundle tarball. Registered AFTER both layers above, so
+                // it is neither app-admin-gated nor blocked-while-acting:
+                //   * NOT app-admin-gated — authorization is decided INSIDE
+                //     `publish()` by the three gates (org officer, or a partner
+                //     with manage_apps + assignment + the client's consent, or
+                //     staff-unless-locked). Gating the route to app_admins would
+                //     have made partner publish impossible.
+                //   * NOT blocked-while-acting — it is also the CI endpoint reached
+                //     by a publish token; blocking it would 403 a CI job merely
+                //     because the token's minter has a browser assume-session open.
+                // It remains behind the outer auth + `app_publish_token_scope`
+                // layers, so it is always authenticated. Raised body limit —
+                // bundles are a few MB, over axum's 2 MB default.
                 .route(
                     "/publish",
                     post(crate::server::api::customer_apps_publish::publish_handler)
                         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
-                )
-                .layer(middleware::from_fn(
-                    oxy_app_admin_guard::oxy_app_admin_guard_middleware,
-                )),
+                ),
         )
         .nest("/user/github", build_user_github_routes())
     // NOTE: Slack webhook + OAuth-callback + magic-link routes are NOT
@@ -227,6 +284,11 @@ fn build_org_routes() -> Router<AppState> {
         .route(
             "/logo",
             put(org_logo::upload_org_logo).delete(org_logo::delete_org_logo),
+        )
+        .route(
+            "/partner-publish-consent",
+            get(crate::server::api::partner_publish_consent::get_consent)
+                .put(crate::server::api::partner_publish_consent::set_consent),
         )
         .route("/members", get(organizations::list_members))
         .route(

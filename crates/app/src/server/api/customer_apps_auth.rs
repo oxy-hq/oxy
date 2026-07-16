@@ -4,12 +4,12 @@
 //!
 //! 1. **Org membership** — the historical check. A member of the owning
 //!    org sees every app in that org.
-//! 2. **Oxy access** — the workspace owner has flipped the "let Oxy
-//!    build apps on our data" toggle (a row in `workspace_oxy_access`)
-//!    AND the caller is a member of `app_admins` (an Oxy-staff role
-//!    managed by `OXY_OWNER` users). Neither half is sufficient on its
-//!    own — the customer must opt in per-workspace, and the user must
-//!    be a recognised Oxy staff member.
+//! 2. **Oxy staff** — the caller is a member of `app_admins` (an Oxy-staff
+//!    role managed by `OXY_OWNER` users) AND the workspace has NOT locked
+//!    Oxy out (no row in `workspace_oxy_lockdown`). Staff access is the
+//!    DEFAULT (inverted 2026-07-14 — the old opt-in consent row was
+//!    self-grantable by staff, so it protected nobody); an org officer can
+//!    revoke it at any time with the lockdown switch.
 //!
 //! The combined check is fronted by a `(user_id, app_id) → bool` cache
 //! so a Next.js page load's asset storm doesn't hit the DB three times
@@ -31,8 +31,8 @@ use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 use std::time::Instant;
 
-use entity::prelude::{AppAdmins, Apps, OrgMembers, Organizations, WorkspaceOxyAccess};
-use entity::{app_admins, apps, org_members, organizations, workspace_oxy_access};
+use entity::prelude::{AppAdmins, Apps, OrgMembers, Organizations, WorkspaceOxyLockdown};
+use entity::{app_admins, apps, org_members, organizations, workspace_oxy_lockdown};
 use oxy::database::client::establish_connection;
 use oxy_auth::authenticator::Authenticator;
 use oxy_auth::built_in::BuiltInAuthenticator;
@@ -97,7 +97,7 @@ pub fn invalidate_admin_cache() {
 /// independent access paths:
 ///
 /// - **Oxy staff path**: `app_admins` membership + the workspace has
-///   opted in via `workspace_oxy_access`. Works on draft (unpublished)
+///   not locked Oxy out (`workspace_oxy_lockdown`). Works on draft (unpublished)
 ///   apps too — that's how Oxy engineers iterate.
 /// - **Customer path**: the app is **published** (`published_at IS NOT
 ///   NULL`) AND the user is a member of the owning org. Unpublished
@@ -116,9 +116,10 @@ pub async fn user_can_access_app(
         return Ok(v);
     }
 
-    // Staff path first: works regardless of publish state.
+    // Staff path first: works regardless of publish state. Oxy staff may access
+    // BY DEFAULT — unless the org has locked them out (inverted 2026-07-14).
     let allowed = if is_app_admin_email(db, user_email).await?
-        && is_oxy_access_enabled(db, app.project_id).await?
+        && !is_oxy_locked_down(db, app.project_id).await?
     {
         true
     } else if app.published_at.is_some() {
@@ -150,14 +151,15 @@ pub(crate) async fn is_org_member(
 }
 
 /// True when the customer has enabled "Oxy can build tailored apps on
-/// our data" for this workspace. A row in `workspace_oxy_access` is
+/// Whether this workspace has LOCKED Oxy staff out. A row in
+/// `workspace_oxy_lockdown` is
 /// the toggle.
-pub async fn is_oxy_access_enabled(
+pub async fn is_oxy_locked_down(
     db: &DatabaseConnection,
     workspace_id: Uuid,
 ) -> Result<bool, DbErr> {
-    WorkspaceOxyAccess::find()
-        .filter(workspace_oxy_access::Column::WorkspaceId.eq(workspace_id))
+    WorkspaceOxyLockdown::find()
+        .filter(workspace_oxy_lockdown::Column::WorkspaceId.eq(workspace_id))
         .one(db)
         .await
         .map(|opt| opt.is_some())

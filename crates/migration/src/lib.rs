@@ -125,6 +125,11 @@ mod m20260702_000001_create_app_publish_tokens;
 mod m20260702_000001_create_backfill_ranges;
 mod m20260707_000001_app_builds_add_git_source;
 mod m20260712_000001_add_message_thread_indexes;
+mod m20260713_000001_partner_platform;
+mod m20260715_000001_app_publishing_auth;
+mod m20260715_000002_oidc_used_jti;
+mod m20260715_000003_publish_token_nullable_creator;
+mod m20260716_000001_app_build_validation_status;
 
 pub struct Migrator;
 
@@ -251,6 +256,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260702_000001_create_backfill_ranges::Migration),
             Box::new(m20260707_000001_app_builds_add_git_source::Migration),
             Box::new(m20260712_000001_add_message_thread_indexes::Migration),
+            Box::new(m20260713_000001_partner_platform::Migration),
+            Box::new(m20260715_000001_app_publishing_auth::Migration),
+            Box::new(m20260715_000002_oidc_used_jti::Migration),
+            Box::new(m20260715_000003_publish_token_nullable_creator::Migration),
+            Box::new(m20260716_000001_app_build_validation_status::Migration),
         ]
     }
 }

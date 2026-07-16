@@ -9,6 +9,7 @@ pub mod clean;
 mod compile;
 pub mod export_chart;
 mod init;
+mod init_ci;
 mod intent;
 mod login;
 mod looker;
@@ -16,9 +17,11 @@ mod make;
 mod mcp;
 mod migrate;
 mod migrate_automations;
+mod proxy;
 mod publish;
 pub mod run;
 mod seed;
+mod seed_partners;
 pub(crate) mod serve;
 mod start;
 mod status;
@@ -314,6 +317,13 @@ enum SubCommand {
     /// `apps/<org>/<app>/` path. Replaces `apps ensure` + `aws s3 sync`
     /// + the `/sync` callback. Intended for CI and local testing.
     Publish(publish::PublishArgs),
+    /// Generate a safe GitHub Actions workflow for trusted publishing (design §8).
+    ///
+    /// Writes .github/workflows/oxy-publish.yml with an isolated publish job
+    /// (id-token confined to a single environment-gated job) and prints the
+    /// publisher registration to complete. Reads nothing from the repo.
+    #[command(name = "init-ci")]
+    InitCi(init_ci::InitCiArgs),
     /// Authenticate the CLI against an oxy instance for `oxy publish`.
     ///
     /// Opens a browser to log in (loopback flow), caches the token per
@@ -322,6 +332,11 @@ enum SubCommand {
     Login(login::LoginArgs),
     /// Clear the cached `oxy login` token for a target.
     Logout(login::LogoutArgs),
+    /// Run a local outbound proxy so a custom app in `pnpm dev` hits a cloud
+    /// Oxy's real data. Reuses the `oxy login --env` token; defaults to port
+    /// 3000 (a drop-in for a local `oxy serve`). Guardrails: tracking events
+    /// dropped, side-effecting calls held (`--allow-events` / `--allow-writes`).
+    Proxy(proxy::ProxyArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -412,8 +427,8 @@ pub struct SeedArgs {
     /// Override the workspace path (defaults to `./examples`).
     #[clap(long)]
     pub workspace_path: Option<std::path::PathBuf>,
-    /// Drop the demo workspace row instead of seeding. Leaves the org +
-    /// guest user in place.
+    /// Tear down instead of seeding: drops the demo workspace AND the seeded
+    /// partner + tenant rows. Leaves the Local org + guest user in place.
     #[clap(long)]
     pub clear: bool,
 }
@@ -568,7 +583,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Apps(_) => "apps",
             SubCommand::Api(_) => "api",
             SubCommand::Publish(_) => "publish",
+            SubCommand::InitCi(_) => "init-ci",
             SubCommand::Login(_) => "login",
+            SubCommand::Proxy(_) => "proxy",
             SubCommand::Logout(_) => "logout",
         };
 
@@ -937,12 +954,20 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             publish::handle_publish_command(publish_args).await?;
         }
 
+        Some(SubCommand::InitCi(args)) => {
+            init_ci::handle_init_ci_command(args).await?;
+        }
+
         Some(SubCommand::Login(login_args)) => {
             login::handle_login_command(login_args).await?;
         }
 
         Some(SubCommand::Logout(logout_args)) => {
             login::handle_logout_command(logout_args).await?;
+        }
+
+        Some(SubCommand::Proxy(proxy_args)) => {
+            proxy::handle_proxy_command(proxy_args).await?;
         }
 
         None => {
@@ -1175,8 +1200,16 @@ async fn handle_check_for_updates() -> Result<(), OxyError> {
 async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
     use seed::*;
     if seed_args.clear {
-        clear_demo().await
+        // Guard BOTH teardowns UP FRONT. clear_demo has no is_local() gate of its
+        // own, so without this it would run (unguarded) before clear_partner_tenants
+        // rejected a non-local DB — a partial, guard-bypassing teardown. Refuse
+        // first; delete nothing on a remote DB.
+        seed_partners::refuse_if_not_local()?;
+        clear_demo().await?;
+        seed_partners::clear_partner_tenants().await
     } else {
+        // `seed_demo` seeds the demo workspace AND (folded in) the partner +
+        // tenant data — one command, no `--partners` flag.
         seed_demo(seed_args.workspace_path).await
     }
 }

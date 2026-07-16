@@ -61,7 +61,7 @@ pub struct TokenResponse {
     pub id: Uuid,
     pub name: String,
     pub token_prefix: String,
-    pub created_by: Uuid,
+    pub created_by: Option<Uuid>,
     pub created_at: String,
     pub last_used_at: Option<String>,
     pub revoked: bool,
@@ -109,10 +109,15 @@ pub async fn create_token(
         name: ActiveValue::Set(name.clone()),
         token_hash: ActiveValue::Set(generated.token_hash),
         token_prefix: ActiveValue::Set(generated.token_prefix.clone()),
-        created_by: ActiveValue::Set(actor.id),
+        created_by: ActiveValue::Set(Some(actor.id)),
         created_at: ActiveValue::Set(now),
         last_used_at: ActiveValue::Set(None),
         revoked_at: ActiveValue::Set(None),
+        // Staff-minted tokens stay app-unscoped and non-expiring — the existing
+        // Oxy-engineer CI flow. App-scoped fallback tokens (design §7) are minted
+        // elsewhere with both set.
+        app_id: ActiveValue::Set(None),
+        expires_at: ActiveValue::Set(None),
     }
     .insert(&db)
     .await
@@ -158,10 +163,12 @@ mod tests {
             name: "ci-publish".to_string(),
             token_hash: "deadbeef".repeat(8),
             token_prefix: "oxypublish_ab12cd34".to_string(),
-            created_by: Uuid::new_v4(),
+            created_by: Some(Uuid::new_v4()),
             created_at: now,
             last_used_at: None,
             revoked_at: revoked.then_some(now),
+            app_id: None,
+            expires_at: None,
         }
     }
 
@@ -194,10 +201,12 @@ mod tests {
             name: ActiveValue::Set("t".to_string()),
             token_hash: ActiveValue::Set(generated.token_hash.clone()),
             token_prefix: ActiveValue::Set(generated.token_prefix.clone()),
-            created_by: ActiveValue::Set(Uuid::new_v4()),
+            created_by: ActiveValue::Set(Some(Uuid::new_v4())),
             created_at: ActiveValue::Set(Utc::now().fixed_offset()),
             last_used_at: ActiveValue::Set(None),
             revoked_at: ActiveValue::Set(None),
+            app_id: ActiveValue::Set(None),
+            expires_at: ActiveValue::Set(None),
         };
         let ActiveValue::Set(stored_hash) = model.token_hash else {
             panic!("hash not set");

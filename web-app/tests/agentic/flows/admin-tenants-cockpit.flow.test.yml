@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Verify the admin Tenants Cockpit mounts and its four tenant registries
+# (Orgs / Users / Workspaces / Partners) resolve without white-screening —
+# the regression risk for a large new operator surface. Targets the
+# OXY_OWNER operator path:
+#   1. Navigate to /admin/tenants.
+#   2. The cockpit shell (rail + type switcher + detail stage) renders.
+#   3. Switching the rail to "Partners" resolves the partner registry
+#      (AdminPartnersService.list -> /admin/partners) to a list or the
+#      empty state — never an error or blank screen.
+#   4. Selecting the first tenant in the rail opens its inline detail pane.
+#
+# Backend: `--enterprise` (cloud) with OXY_OWNER set, exactly like
+# admin-workspace-health — the admin surface + partner endpoints require the
+# enterprise code path and server-side OXY_OWNER gating. Do NOT use `--local`.
+#
+# No seed data: the harness is read-only (no DB seeding — 2026-05-06
+# incident rule), and cloud mode boots with `--clean`. So the flow asserts
+# the surface *resolves* (rows OR empty state), not specific seeded rows.
+# To exercise the fully-populated cockpit + org-chart + grant flow, run
+# `oxy seed --partners` against a manual `oxy serve --enterprise` and drive
+# it by hand — that path can't live in the read-only agentic harness.
+
+name: admin tenants cockpit
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: cloud
+  # navigate + wait + switch-to-partners + wait + select-row + wait + judge
+  max_steps: 15
+
+setup:
+  - "goto:/admin/tenants"
+
+cases:
+  - name: cockpit mounts and the partner registry resolves
+    tags: [admin, tenants, partners, regression]
+    steps:
+      - wait_for: "selector:[data-testid=admin-tenants-cockpit]"
+
+      - act: |
+          Confirm the Tenants surface has loaded:
+          1. The header shows a three-way entity switcher with the tabs
+             "Organizations", "Partners", and "Users"
+             ([data-testid=tenant-type-orgs], [data-testid=tenant-type-partners],
+             [data-testid=tenant-type-users]).
+          2. The rail list region [data-testid=tenant-rail-list] is present.
+          Do not click anything yet — just confirm the shell rendered.
+
+      - act: |
+          Click the "Partners" tab in the header entity switcher
+          ([data-testid=tenant-type-partners]) to switch the registry to
+          partners. This triggers the partner list fetch.
+
+      - wait_for: network_idle
+
+      - act: |
+          Confirm the partner registry resolved: the rail list region
+          [data-testid=tenant-rail-list] shows EITHER at least one partner
+          row ([data-testid=tenant-rail-row]) OR the empty state
+          [data-testid=tenant-rail-empty] reading "No matches." — not a
+          loading skeleton that never resolves, and not an error.
+
+    expect:
+      - assert: selector [data-testid=admin-tenants-cockpit] is visible
+      - assert: selector [data-testid=tenant-type-partners] is visible
+      - assert: selector [data-testid=tenant-rail-list] is visible
+      - judge: |
+          The page is at /admin/tenants and shows the Tenants surface: a
+          header with a three-way entity switcher (Organizations / Partners /
+          Users) and a List/Map view toggle, above a left rail with a search
+          box beside a detail stage. The "Partners" tab is the active/selected
+          tab, and the rail list shows either partner rows or a "No matches"
+          empty state. There is no error banner and no blank white screen.

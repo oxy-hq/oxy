@@ -28,15 +28,16 @@ export const AccessStrip = ({
   workspaces
 }: {
   orgs: number;
+  /** Orgs that have locked Oxy out of at least one workspace. */
   withAccess: number;
   workspaces: number;
 }) => (
   <div className='flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b bg-muted/20 px-4 py-2 text-xs'>
     <AccessStat value={orgs} label={orgs === 1 ? "org" : "orgs"} />
-    <AccessStat value={withAccess} label='with access' />
+    <AccessStat value={withAccess} label='locked out' />
     <AccessStat value={workspaces} label='workspaces' />
     <span className='ml-auto flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground'>
-      <ShieldCheck className='size-3.5' /> Oxy access
+      <ShieldCheck className='size-3.5' /> Oxy access is the default
     </span>
   </div>
 );
@@ -53,17 +54,22 @@ const AccessStat = ({ value, label }: { value: number; label: string }) => (
 export const RowAction = ({
   icon: Icon,
   label,
-  onClick
+  onClick,
+  disabled
 }: {
   icon: LucideIcon;
   label: string;
   onClick: () => void;
+  /** Disabled actions stay VISIBLE (with an explanatory tooltip) so an operator
+   *  can see the capability exists and why it's unavailable — e.g. locked out. */
+  disabled?: boolean;
 }) => (
   <Tooltip>
     <TooltipTrigger asChild>
       <Button
         variant='ghost'
         size='icon'
+        disabled={disabled}
         className='size-7 text-muted-foreground hover:text-foreground'
         onClick={onClick}
         aria-label={label}
@@ -214,7 +220,7 @@ export const GrantsError = ({ error }: { error: unknown }) => (
       {isAxiosError(error) && error.response?.status === 403 ? (
         <>
           <p className='font-medium text-destructive text-sm'>
-            Your account isn't on the customer-apps allow list.
+            Your account isn't on the custom-apps allow list.
           </p>
           <p className='mt-2 text-muted-foreground text-xs'>
             Add your email to the oxy backend's{" "}

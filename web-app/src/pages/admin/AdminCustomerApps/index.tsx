@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAdminApps } from "@/hooks/api/customerApps/useCustomerApps";
 import { cn } from "@/libs/shadcn/utils";
+import AdminPublishTokens from "@/pages/admin/AdminPublishTokens";
 import type { CustomerApp } from "@/types/apps";
 import { AppCockpit } from "./components/AppCockpit";
 import { AppsTable } from "./components/AppsTable";
@@ -11,26 +12,26 @@ import { FleetStrip } from "./components/FleetStrip";
 import { AccessPane } from "./components/OxyAccessPanes/AccessPane";
 
 /**
- * Admin console for customer apps + the Oxy-access browser.
+ * Admin console for customer apps. Three tabs share the page shell via `?view=`:
+ *   apps     (default) → customer-app registry as a full-width table;
+ *                        `/admin/apps/:org/:app` opens the full-page detail.
+ *   access             → per-org view ("Organizations"): each org's Oxy-access
+ *                        (workspace lockdown) plus the custom apps it owns.
+ *   tokens             → Publish tokens (machine-auth bearer tokens for CI).
  *
- * Two tabs share the page shell, selected via `?view=`:
- *   apps   (default) → customer-app registry as a full-width management table;
- *                      `/admin/apps/:org/:app` opens the full-page detail.
- *   access           → orgs that granted Oxy access, with their workspaces +
- *                      grant metadata inline.
- *
- * A selected app (the `/admin/apps/:orgSlug/:appSlug` route) always implies
- * the Apps tab, so deep links keep working regardless of `?view`. Legacy
- * `?view=orgs` / `?view=projects` links fold into the unified Access tab.
+ * A selected app (the `/admin/apps/:orgSlug/:appSlug` route) always implies the
+ * Apps tab, so deep links keep working regardless of `?view`. Legacy
+ * `?view=orgs` / `?view=projects` links fold into the Organizations view.
  */
-type View = "apps" | "access";
+type View = "apps" | "access" | "tokens";
 
-// The Access label intentionally stays distinct from the cross-cutting tenant
-// directory under /admin/orgs and /admin/workspaces — this surface only lists
-// orgs/workspaces that have granted Oxy access for customer-app management.
+// "Organizations" here is the per-org custom-app view — each org's Oxy-access
+// (workspace lockdown) plus the apps it owns. It's scoped to the customer-apps
+// surface, distinct from the cross-cutting tenant directory at /admin/tenants.
 const TABS: { view: View; label: string; to: string }[] = [
   { view: "apps", label: "Apps", to: "/admin/apps" },
-  { view: "access", label: "Access", to: "/admin/apps?view=access" }
+  { view: "access", label: "Organizations", to: "/admin/apps?view=access" },
+  { view: "tokens", label: "Publish tokens", to: "/admin/apps?view=tokens" }
 ];
 
 export default function AdminCustomerApps() {
@@ -39,18 +40,30 @@ export default function AdminCustomerApps() {
   const view: View = params.appSlug ? "apps" : normalizeView(searchParams.get("view"));
 
   return (
-    <div className='flex h-[calc(100vh-3.5rem)] flex-col'>
+    <div data-testid='admin-customer-apps' className='flex h-[calc(100vh-3.5rem)] flex-col'>
       <AdminTabs active={view} />
-      {view === "apps" ? <AppsPane /> : <AccessPane />}
+      {view === "apps" ? (
+        <AppsPane />
+      ) : view === "access" ? (
+        <AccessPane />
+      ) : (
+        <div className='min-h-0 flex-1 overflow-auto'>
+          <AdminPublishTokens embedded />
+        </div>
+      )}
     </div>
   );
 }
 
 // `orgs` / `projects` are accepted for backward compatibility with bookmarked
-// links from the previous three-tab layout; both resolve to the merged Access
-// view.
+// links from the previous three-tab layout; both resolve to the merged
+// Organizations view.
 const normalizeView = (v: string | null): View =>
-  v === "access" || v === "orgs" || v === "projects" ? "access" : "apps";
+  v === "tokens"
+    ? "tokens"
+    : v === "access" || v === "orgs" || v === "projects"
+      ? "access"
+      : "apps";
 
 const AdminTabs = ({ active }: { active: View }) => (
   <div className='flex items-center gap-1 border-border border-b px-2'>
@@ -58,6 +71,7 @@ const AdminTabs = ({ active }: { active: View }) => (
       <Link
         key={t.view}
         to={t.to}
+        data-testid={`admin-apps-tab-${t.view}`}
         className={cn(
           "-mb-px border-b-2 px-2.5 py-1.5 text-xs transition-colors",
           active === t.view
@@ -156,7 +170,7 @@ const ErrorState = ({ error }: { error: unknown }) => (
       {isAxiosError(error) && error.response?.status === 403 ? (
         <>
           <p className='font-medium text-destructive text-sm'>
-            Your account isn't on the customer-apps allow list.
+            Your account isn't on the custom-apps allow list.
           </p>
           <p className='mt-2 text-muted-foreground text-xs'>
             Add your email to the oxy backend's{" "}

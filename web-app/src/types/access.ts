@@ -19,9 +19,16 @@ export interface AppAdmin {
  * Audit fields are only populated when `enabled` is true.
  */
 export interface OxyAccessStatus {
-  enabled: boolean;
-  granted_by: string | null;
-  granted_at: string | null;
+  /** True when the org has LOCKED Oxy staff OUT. Default is false (access allowed). */
+  locked: boolean;
+  locked_by: string | null;
+  locked_at: string | null;
+  /**
+   * Whether THIS caller may flip the switch. Only a real org owner/admin can —
+   * an Oxy operator viewing the workspace sees the state but cannot change it
+   * (they must not be able to unlock themselves).
+   */
+  can_manage: boolean;
 }
 
 /** Read-only org-subdomain status shown in customer settings. */

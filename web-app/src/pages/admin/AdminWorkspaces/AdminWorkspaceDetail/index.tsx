@@ -64,8 +64,15 @@ const STATUS_MAP: Record<string, { tone: AdminStatusTone; label: string }> = {
  * link), and as its own "Organization" card on the Overview tab. Member
  * rows cross-link to the user detail page, completing the triangle.
  */
-export default function AdminWorkspaceDetail() {
-  const { workspaceId = "" } = useParams<{ workspaceId: string }>();
+export default function AdminWorkspaceDetail({
+  workspaceId: workspaceIdProp,
+  embedded = false
+}: {
+  workspaceId?: string;
+  embedded?: boolean;
+} = {}) {
+  const { workspaceId: workspaceIdParam = "" } = useParams<{ workspaceId: string }>();
+  const workspaceId = workspaceIdProp ?? workspaceIdParam;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
@@ -117,17 +124,21 @@ export default function AdminWorkspaceDetail() {
   };
 
   return (
-    <div className='mx-auto max-w-7xl space-y-8 p-6 lg:px-10 lg:py-10'>
+    <div
+      className={embedded ? "space-y-6 p-4" : "mx-auto max-w-7xl space-y-6 p-6 lg:px-10 lg:py-10"}
+    >
       <AdminDetailHeader
         eyebrow={
-          <AdminDetailEyebrow
-            segments={[
-              { label: "Admin", to: ROUTES.ADMIN.TENANTS },
-              { label: "Tenants", to: ROUTES.ADMIN.TENANTS },
-              { label: "Workspaces", to: ROUTES.ADMIN.WORKSPACES },
-              { label: detail.name }
-            ]}
-          />
+          embedded ? undefined : (
+            <AdminDetailEyebrow
+              segments={[
+                { label: "Admin", to: ROUTES.ADMIN.TENANTS },
+                { label: "Tenants", to: ROUTES.ADMIN.TENANTS },
+                { label: "Workspaces", to: ROUTES.ADMIN.WORKSPACES },
+                { label: detail.name }
+              ]}
+            />
+          )
         }
         icon={FolderOpen}
         title={detail.name}

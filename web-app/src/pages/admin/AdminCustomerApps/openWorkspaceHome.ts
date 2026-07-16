@@ -1,5 +1,5 @@
 import ROUTES from "@/libs/utils/routes";
-import type { OxyAccessGrant } from "@/types/apps";
+import type { OxyAccessRow } from "@/types/apps";
 
 /**
  * Open a granted workspace's main UI (/home) in a NEW TAB from the admin
@@ -12,6 +12,6 @@ import type { OxyAccessGrant } from "@/types/apps";
  * backend workspace middleware to grant Global Owners/Admins access to
  * non-member orgs' workspaces (mirrors `org_middleware`).
  */
-export function openWorkspaceHome(grant: OxyAccessGrant): void {
+export function openWorkspaceHome(grant: OxyAccessRow): void {
   window.open(ROUTES.ORG(grant.org_slug).WORKSPACE(grant.workspace_id).HOME, "_blank", "noopener");
 }

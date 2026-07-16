@@ -13,6 +13,13 @@ export type OrgRoleId = "owner" | "admin" | "member";
 // Organizations (admin meta surface)
 // ---------------------------------------------------------------------------
 
+/** The partner managing an org (at most one — `partner_orgs.org_id` is unique). */
+export interface OrgPartnerRef {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface AdminOrgMeta {
   id: string;
   name: string;
@@ -21,6 +28,14 @@ export interface AdminOrgMeta {
   member_count: number;
   workspace_count: number;
   owner_email: string | null;
+  /** The partner that MANAGES this org. */
+  partner: OrgPartnerRef | null;
+  /**
+   * This org IS a partner. Distinct from `partner` above (its manager) — the
+   * Tenants directory lists the two populations separately, so conflating them
+   * would file an agency under its own client list.
+   */
+  is_partner: boolean;
 }
 
 export interface AdminOrgDetail extends AdminOrgMeta {
@@ -151,6 +166,12 @@ export const AdminOrgsService = {
 // Users (admin meta surface)
 // ---------------------------------------------------------------------------
 
+/** A partner this user operates. `id` is the partner's ORG id. */
+export interface UserPartnerRef {
+  id: string;
+  name: string;
+}
+
 export interface AdminUserRow {
   id: string;
   email: string;
@@ -160,6 +181,10 @@ export interface AdminUserRow {
   last_login_at: string;
   is_app_admin: boolean;
   org_count: number;
+  /** Non-empty ⇒ Partner Admin — a delegated cross-org authority that org_count alone hides. */
+  partners: UserPartnerRef[];
+  /** Highest org role ("owner" | "admin" | "member") — tenant hierarchy, not just a count. */
+  top_org_role: string | null;
 }
 
 export interface AdminUserDetail extends AdminUserRow {

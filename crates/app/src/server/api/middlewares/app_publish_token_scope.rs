@@ -178,6 +178,7 @@ mod tests {
     async fn inject_marker(mut req: Request<Body>, next: Next) -> Response {
         req.extensions_mut().insert(AppPublishTokenAuth {
             token_id: uuid::Uuid::nil(),
+            app_id: None,
         });
         next.run(req).await
     }

@@ -123,7 +123,7 @@ export default function AdminAppAdmins() {
             <div className='flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground'>
               <ShieldCheck className='size-8' />
               <p className='text-sm'>No app admins yet.</p>
-              <p className='text-xs'>Add one above to grant access to the customer-apps surface.</p>
+              <p className='text-xs'>Add one above to grant access to the custom-apps surface.</p>
             </div>
           ) : (
             <Table>

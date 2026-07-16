@@ -1,0 +1,51 @@
+use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
+
+/// One append-only audit event for a privileged/admin action. See
+/// `internal-docs/2026-07-16-partner-platform-design.md` §6.
+///
+/// No SeaORM relations by design: an audit event must outlive the rows it
+/// references (deleting an org/user must not touch its history), so scope ids
+/// and labels are denormalized here rather than joined. Rows are insert-only;
+/// treat this Model as read-after-write.
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+#[sea_orm(table_name = "audit_events")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub created_at: DateTimeWithTimeZone,
+    pub actor_user_id: Option<Uuid>,
+    pub actor_email: String,
+    /// `user` | `system` | `api_key` | `partner_admin`.
+    pub actor_type: String,
+    /// Versioned action name, e.g. `member.role.updated`, `custom_app.published`.
+    pub action: String,
+    /// Scope, denormalized at write time.
+    pub org_id: Option<Uuid>,
+    pub workspace_id: Option<Uuid>,
+    pub partner_id: Option<Uuid>,
+    pub target_type: Option<String>,
+    pub target_id: Option<String>,
+    pub target_label: Option<String>,
+    pub before: Option<Json>,
+    pub after: Option<Json>,
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+    pub request_id: Option<String>,
+    /// `success` | `failure`.
+    pub outcome: String,
+    pub reason: Option<String>,
+    pub metadata: Json,
+    /// Per-org hash chain (tamper-evidence); populated by the emission helper.
+    pub prev_hash: Option<String>,
+    pub hash: Option<String>,
+    /// DB-assigned monotonic insert sequence (`BIGSERIAL`). Strictly increasing,
+    /// so the per-org chain is ordered by this rather than the app-generated
+    /// `created_at` (skew-independent). Filled by the DB on insert.
+    pub seq: i64,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}

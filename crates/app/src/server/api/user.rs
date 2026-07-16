@@ -26,6 +26,32 @@ pub struct UserInfo {
     pub status: String,
     pub is_owner: bool,
     pub is_app_admin: bool,
+    /// Partners this user administers (empty for most users). Non-empty means
+    /// the frontend should surface the partner console. Each entry carries the
+    /// partner's capability snapshot so the UI can hide surfaces the partner
+    /// can't use. UX-only — the server re-checks on every partner route.
+    pub partner_memberships: Vec<PartnerMembershipInfo>,
+}
+
+#[derive(Serialize)]
+pub struct PartnerMembershipInfo {
+    pub partner_id: String,
+    pub slug: String,
+    /// The partner's ceiling — what any operator here may do. There are no
+    /// per-person roles; this is the whole capability story.
+    pub capabilities: PartnerCapabilitiesInfo,
+}
+
+#[derive(Serialize)]
+pub struct PartnerCapabilitiesInfo {
+    pub manage_members: bool,
+    pub manage_apps: bool,
+    pub develop_apps: bool,
+    pub view_audit: bool,
+    pub manage_billing: bool,
+    pub manage_secrets: bool,
+    pub create_orgs: bool,
+    pub manage_org_settings: bool,
 }
 
 #[derive(Serialize)]
@@ -41,6 +67,7 @@ pub async fn user_info_from(user: AuthenticatedUser) -> UserInfo {
     let is_owner = crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(&user.email);
     let is_app_admin =
         crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin(&user.email).await;
+    let partner_memberships = partner_memberships_for(&user).await;
     UserInfo {
         id: user.id.to_string(),
         email: user.email,
@@ -49,7 +76,36 @@ pub async fn user_info_from(user: AuthenticatedUser) -> UserInfo {
         status: user.status.as_str().to_string(),
         is_owner,
         is_app_admin,
+        partner_memberships,
     }
+}
+
+/// Resolve the partner memberships to expose on `UserInfo`. Fails closed to an
+/// empty list on any DB error — a partner just won't see the console until the
+/// DB recovers, rather than the whole `/user` call erroring.
+async fn partner_memberships_for(user: &AuthenticatedUser) -> Vec<PartnerMembershipInfo> {
+    use crate::server::api::middlewares::partner_authz::scopes_for_user;
+    let Ok(db) = oxy::database::client::establish_connection().await else {
+        return Vec::new();
+    };
+    scopes_for_user(&db, user.id, &user.email)
+        .await
+        .into_iter()
+        .map(|s| PartnerMembershipInfo {
+            partner_id: s.partner_id.to_string(),
+            slug: s.slug,
+            capabilities: PartnerCapabilitiesInfo {
+                manage_members: s.capabilities.manage_members,
+                manage_apps: s.capabilities.manage_apps,
+                develop_apps: s.capabilities.develop_apps,
+                view_audit: s.capabilities.view_audit,
+                manage_billing: s.capabilities.manage_billing,
+                manage_secrets: s.capabilities.manage_secrets,
+                create_orgs: s.capabilities.create_orgs,
+                manage_org_settings: s.capabilities.manage_org_settings,
+            },
+        })
+        .collect()
 }
 
 pub async fn logout() -> Result<(HeaderMap, Json<LogoutResponse>), StatusCode> {

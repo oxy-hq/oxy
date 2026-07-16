@@ -1,5 +1,3 @@
-use crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin;
-use crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner;
 use crate::server::router::AppState;
 use crate::server::service::retrieval::EnumIndexManager;
 use crate::server::service::secret_manager::SecretManagerService;
@@ -116,6 +114,36 @@ where
             });
 
         async move { result }
+    }
+}
+
+/// `true` when the caller's workspace role came from the **global-operator
+/// override** (a Global Owner / Global Admin who is not a real member of the org
+/// gets a synthesized org-Owner membership) rather than a real membership.
+///
+/// Guards for tenant-sovereign decisions MUST reject this — otherwise an Oxy
+/// operator can act as the customer. The Oxy-access lockdown switch is exactly
+/// such a decision: staff must not be able to unlock themselves.
+#[derive(Debug, Clone, Copy)]
+pub struct WorkspaceGlobalOverride(pub bool);
+
+impl<S> FromRequestParts<S> for WorkspaceGlobalOverride
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        // Absent (e.g. local mode) => not an override.
+        let v = parts
+            .extensions
+            .get::<WorkspaceGlobalOverride>()
+            .copied()
+            .unwrap_or(WorkspaceGlobalOverride(false));
+        async move { Ok(v) }
     }
 }
 
@@ -493,12 +521,18 @@ async fn authorize_workspace(
 
     request.extensions_mut().insert(workspace_row.clone());
 
-    let (org_membership, effective_role) =
+    let (org_membership, effective_role, is_global_override) =
         resolve_effective_role(&db, workspace_id, org_id, user_id, user_email).await?;
 
     request
         .extensions_mut()
         .insert(EffectiveWorkspaceRole(effective_role));
+    // Whether the Owner role above is REAL or a synthesized operator override.
+    // Surfaces that distinction to guards that must never accept an Oxy operator
+    // acting as the tenant (e.g. the Oxy-access lockdown switch).
+    request
+        .extensions_mut()
+        .insert(WorkspaceGlobalOverride(is_global_override));
     request.extensions_mut().insert(org_membership);
 
     if workspace_row.path.is_none() {
@@ -518,7 +552,7 @@ async fn resolve_effective_role(
     org_id: Uuid,
     user_id: Uuid,
     user_email: &str,
-) -> Result<(entity::org_members::Model, WorkspaceRole), StatusCode> {
+) -> Result<(entity::org_members::Model, WorkspaceRole, bool), StatusCode> {
     use entity::org_members::Column as OrgMemberCol;
     use entity::prelude::{OrgMembers, WorkspaceMembers};
     use entity::workspace_members::Column as WsMemberCol;
@@ -548,22 +582,45 @@ async fn resolve_effective_role(
     // even though the parallel `/orgs/{id}/*` routes already allow operators
     // through — the inconsistency that bounced operators out of granted
     // workspaces.
+    let mut is_global_override = false;
     let org_membership = match real_membership {
         Some(m) => m,
         None => {
-            if is_oxy_owner(user_email) || is_oxy_app_admin(user_email).await {
+            // Staff alone is not enough — an explicit, live assume-role session for
+            // THIS org is required (see `api::admin::assume`). Without it the
+            // operator is a plain non-member. This closes the silent override that
+            // (among other things) let staff self-grant the old Oxy-access toggle.
+            //
+            // Same two populations as `org_context`: staff, or a partner acting as
+            // an assigned client with `develop_apps`. Building a client's app means
+            // opening their workspace, so this is exactly where the data-plane
+            // capability has to be honoured.
+            use crate::server::api::admin::assume;
+            let live = assume::is_session_live(db, user_id, org_id).await;
+            let authority = if live {
+                assume::may_act_as(db, user_id, user_email, org_id).await
+            } else {
+                None
+            };
+
+            if let Some(authority) = authority {
                 let now = Utc::now().into();
+                let role = authority.org_role();
+                let role_label = role.as_str();
                 tracing::info!(
-                    operator_email = %user_email,
+                    actor_email = %user_email,
                     org_id = %org_id,
                     workspace_id = %workspace_id,
-                    "workspace_context: global override granted (no real membership; user is Global Owner or Global Admin)"
+                    ?authority,
+                    role = %role_label,
+                    "workspace_context: assume-role session active"
                 );
+                is_global_override = true;
                 entity::org_members::Model {
                     id: Uuid::nil(),
                     org_id,
                     user_id,
-                    role: entity::org_members::OrgRole::Owner,
+                    role,
                     created_at: now,
                     updated_at: now,
                 }
@@ -606,7 +663,7 @@ async fn resolve_effective_role(
         None => org_derived_role,
     };
 
-    Ok((org_membership, effective_role))
+    Ok((org_membership, effective_role, is_global_override))
 }
 
 /// Enqueue a promoting compile for an uncompiled workspace, deduped against any

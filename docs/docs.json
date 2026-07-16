@@ -108,7 +108,8 @@
               "build/embed-extend/a2a",
               "build/embed-extend/v0",
               "build/embed-extend/lovable",
-              "build/embed-extend/lovable-starter-prompt"
+              "build/embed-extend/lovable-starter-prompt",
+              "build/embed-extend/oxy-proxy"
             ]
           },
           {
@@ -142,6 +143,7 @@
             "pages": [
               "manage/index",
               "manage/teams",
+              "manage/permissions",
               "manage/secrets",
               "manage/api-keys",
               "manage/billing",

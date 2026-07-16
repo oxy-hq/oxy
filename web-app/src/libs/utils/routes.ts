@@ -1,6 +1,13 @@
 const ROUTES = {
   ROOT: "/",
   ONBOARDING: "/onboarding",
+  /** Partner console — a partner's home. Mirrors the ADMIN surface. */
+  PARTNERS: {
+    ROOT: "/partners",
+    APPS: "/partners/apps",
+    TEAM: "/partners/team",
+    ACTIVITY: "/partners/activity"
+  },
 
   AUTH: {
     LOGIN: "/login",
@@ -21,6 +28,7 @@ const ROUTES = {
     INTERNAL_JOBS: "/admin/internal-jobs",
     COMPILES: "/admin/compiles",
     EXPLORER: "/admin/explorer",
+    AUDIT: "/admin/audit",
     CUSTOMER_APPS: "/admin/apps",
     APP_ADMINS: "/admin/app-admins",
     PUBLISH_TOKENS: "/admin/publish-tokens",

@@ -1095,12 +1095,29 @@ pub async fn publish_app(
     let updated = publish_one(&db, id, user.id).await.map_err(|e| e.status)?;
     crate::server::api::customer_apps_auth::invalidate_access_cache();
     let org = load_org(&db, updated.org_id).await.map_err(|e| e.status)?;
+
+    // The SAME action taken by a partner was audited and by Oxy staff was not, so
+    // the trail recorded the delegated tier and was blind to the privileged one —
+    // backwards. Publishing puts an app in front of a customer's users; who did it
+    // is exactly the question an incident asks first.
+    crate::server::api::audit::record_best_effort(
+        &db,
+        crate::server::api::audit::AuditEntry::new(user.email.clone(), "app.published")
+            .actor(user.id, crate::server::api::audit::ActorType::User)
+            .org(updated.org_id)
+            .target("app", updated.id.to_string(), updated.name.clone()),
+    )
+    .await;
+
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
 
 /// Unpublish: null out `published_at`. Non-app-admins lose access on
 /// next request; the bundle itself stays untouched.
-pub async fn unpublish_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, StatusCode> {
+pub async fn unpublish_app(
+    oxy_auth::extractor::AuthenticatedUserExtractor(user): oxy_auth::extractor::AuthenticatedUserExtractor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<AppResponse>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("unpublish_app DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -1108,6 +1125,17 @@ pub async fn unpublish_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, St
     let updated = unpublish_one(&db, id).await.map_err(|e| e.status)?;
     crate::server::api::customer_apps_auth::invalidate_access_cache();
     let org = load_org(&db, updated.org_id).await.map_err(|e| e.status)?;
+
+    // Taking a customer's app DOWN is at least as auditable as putting it up.
+    crate::server::api::audit::record_best_effort(
+        &db,
+        crate::server::api::audit::AuditEntry::new(user.email.clone(), "app.unpublished")
+            .actor(user.id, crate::server::api::audit::ActorType::User)
+            .org(updated.org_id)
+            .target("app", updated.id.to_string(), updated.name.clone()),
+    )
+    .await;
+
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
 
@@ -1282,6 +1310,12 @@ pub async fn rollback_app(
     if build.app_id != id {
         return Err(StatusCode::BAD_REQUEST);
     }
+    // Promotion gate (validator-can't-be-bypassed): a historical build may be
+    // rolled back to the live channel only if its recorded validation is
+    // `passed` — otherwise rollback would be a way to make a failed build live.
+    if build.validation_status != "passed" {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
 
     let org = Organizations::find_by_id(row.org_id)
         .one(&db)
@@ -1327,8 +1361,8 @@ pub async fn delete_app(Path(id): Path<Uuid>) -> Result<StatusCode, StatusCode> 
 /// Shared failure type for the single-app and batch mutation paths. `status`
 /// drives the one-shot routes' HTTP code; `message` names the failure in a
 /// batch result row.
-struct AppOpError {
-    status: StatusCode,
+pub(crate) struct AppOpError {
+    pub(crate) status: StatusCode,
     message: String,
 }
 
@@ -1346,6 +1380,44 @@ impl AppOpError {
             message: "Internal server error.".into(),
         }
     }
+
+    /// A build can't be promoted because its recorded validation status is not
+    /// `passed` (the validator-can't-be-bypassed gate).
+    fn validation_failed(detail: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            message: detail.into(),
+        }
+    }
+}
+
+/// Promotion gate (validator-can't-be-bypassed): a build may reach the live
+/// (published) channel only if its recorded validation status is `passed`.
+/// Shared by EVERY AppOpError promotion path — publish, promote-latest — so no
+/// path can quietly re-open the invariant. A missing build is refused (you can't
+/// validate what isn't there), matching `customer_apps_publish::gate_promotion`.
+/// Dormant today (every stored build is `passed`); load-bearing once gate 2 can
+/// record `failed`.
+async fn gate_build_promotion(db: &DatabaseConnection, build_pk: Uuid) -> Result<(), AppOpError> {
+    let build = AppBuilds::find_by_id(build_pk)
+        .one(db)
+        .await
+        .map_err(|e| {
+            tracing::error!("promotion gate: build {build_pk} load failed: {e}");
+            AppOpError::internal()
+        })?
+        .ok_or_else(|| {
+            AppOpError::validation_failed(
+                "build not found — cannot promote a missing build to live".to_string(),
+            )
+        })?;
+    if build.validation_status != "passed" {
+        return Err(AppOpError::validation_failed(format!(
+            "build validation status is '{}', not 'passed' — cannot promote to live",
+            build.validation_status
+        )));
+    }
+    Ok(())
 }
 
 /// Load an app's org — needed to build [`AppResponse`]. A missing org is a
@@ -1365,7 +1437,7 @@ async fn load_org(
 /// Pure pointer move: stamp `published_at`/promoter, repoint the published
 /// channel at the current draft build, and drop the canonical-dir cache so the
 /// serve path resolves the freshly-published channel instead of a stale entry.
-async fn publish_one(
+pub(crate) async fn publish_one(
     db: &DatabaseConnection,
     id: Uuid,
     actor: Uuid,
@@ -1380,6 +1452,12 @@ async fn publish_one(
         .ok_or_else(AppOpError::not_found)?;
 
     let draft_ptr = row.draft_build_id;
+    // Promotion gate (validator-can't-be-bypassed): a draft goes live only if its
+    // recorded validation status is `passed`. Gate 1 stamps that at publish; a
+    // future deploy-time probe (gate 2) may downgrade it. Held at draft otherwise.
+    if let Some(ptr) = draft_ptr {
+        gate_build_promotion(db, ptr).await?;
+    }
     let now = Utc::now().fixed_offset();
     let mut active: apps::ActiveModel = row.into();
     active.published_at = ActiveValue::Set(Some(now));
@@ -1403,7 +1481,10 @@ async fn publish_one(
 /// Core unpublish mutation shared by [`unpublish_app`] and
 /// [`batch_unpublish_apps`]. Nulls `published_at` + the published channel
 /// pointer; the bundle bytes stay untouched.
-async fn unpublish_one(db: &DatabaseConnection, id: Uuid) -> Result<apps::Model, AppOpError> {
+pub(crate) async fn unpublish_one(
+    db: &DatabaseConnection,
+    id: Uuid,
+) -> Result<apps::Model, AppOpError> {
     let row = Apps::find_by_id(id)
         .one(db)
         .await
@@ -1484,6 +1565,12 @@ async fn promote_latest_one(
             status: StatusCode::UNPROCESSABLE_ENTITY,
             message: "No builds to promote.".into(),
         })?;
+
+    // Promotion gate (validator-can't-be-bypassed): the newest build goes live
+    // only if its recorded validation is `passed`. This is exactly where a
+    // freshly-uploaded-then-failed build would sit once gate 2 can downgrade a
+    // stored build, so promote-latest must not skip the check.
+    gate_build_promotion(db, latest.id).await?;
 
     let now = Utc::now().fixed_offset();
     let mut active: apps::ActiveModel = row.into();

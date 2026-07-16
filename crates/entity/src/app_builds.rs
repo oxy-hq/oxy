@@ -33,6 +33,15 @@ pub struct Model {
     pub commit_sha: Option<String>,
     /// Branch the build was published from.
     pub source_branch: Option<String>,
+    /// Recorded bundle-validation outcome: `passed` | `pending` | `failed`.
+    /// Promotion to live is gated on `passed` (the validator-can't-be-bypassed
+    /// invariant). Gate 1 (fast byte-level checks at publish) stamps `passed`;
+    /// a deeper deploy-time render probe (gate 2 — tracked follow-up) may
+    /// downgrade to `failed`. Defaults to `passed` for builds predating the
+    /// column (they are already serving).
+    pub validation_status: String,
+    /// Human-readable reason when `validation_status = failed`.
+    pub validation_detail: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

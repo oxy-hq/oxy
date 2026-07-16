@@ -8,7 +8,7 @@ import type {
   FunctionInvocation,
   FunctionRunDetail,
   ListdirResponse,
-  OxyAccessGrant,
+  OxyAccessRow,
   ProbeResponse,
   Template,
   UpdateAppRequest
@@ -44,7 +44,7 @@ export const CustomerAppsService = {
    * Every workspace that granted Oxy access, platform-wide, for the admin
    * org/project browser. App-admin gated (same surface as the registry).
    */
-  async listOxyAccess(): Promise<OxyAccessGrant[]> {
+  async listOxyAccess(): Promise<OxyAccessRow[]> {
     const response = await apiClient.get("/customer-apps/oxy-access");
     return response.data;
   },

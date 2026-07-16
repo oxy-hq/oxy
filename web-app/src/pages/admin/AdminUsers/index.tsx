@@ -1,7 +1,6 @@
-import { RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
+import { RefreshCw, Search, Users } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/shadcn/card";
 import { Input } from "@/components/ui/shadcn/input";
@@ -13,17 +12,13 @@ import {
   SelectValue
 } from "@/components/ui/shadcn/select";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/shadcn/table";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/shadcn/table";
 import { useAdminUsersList } from "@/hooks/api/adminTenants/useAdminUsers";
 import ROUTES from "@/libs/utils/routes";
 import type { UserStatusId } from "@/services/api/adminTenants";
+import { AdminStatusPill } from "../components/AdminStatusPill";
+import { ADMIN_HEADER_ROW_CLASS, ADMIN_ROW_CLASS, AdminTh } from "../components/AdminTable";
+import { orgRoleKind, RoleBadge } from "../components/RoleBadge";
 
 type StatusFilter = "all" | UserStatusId;
 
@@ -110,19 +105,19 @@ export default function AdminUsers() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead className='text-right'>Orgs</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last login</TableHead>
-                  <TableHead>Joined</TableHead>
+                <TableRow className={ADMIN_HEADER_ROW_CLASS}>
+                  <AdminTh>User</AdminTh>
+                  <AdminTh align='right'>Orgs</AdminTh>
+                  <AdminTh>Status</AdminTh>
+                  <AdminTh>Last login</AdminTh>
+                  <AdminTh>Joined</AdminTh>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map((u) => (
                   <TableRow
                     key={u.id}
-                    className='cursor-pointer hover:bg-muted/40'
+                    className={ADMIN_ROW_CLASS}
                     onClick={() => navigate(ROUTES.ADMIN.USER_DETAIL(u.id))}
                   >
                     <TableCell>
@@ -131,14 +126,19 @@ export default function AdminUsers() {
                           {(u.name || u.email).slice(0, 1)}
                         </div>
                         <div className='flex flex-col'>
-                          <span className='flex items-center gap-2 font-medium'>
+                          <span className='flex flex-wrap items-center gap-1.5 font-medium'>
                             {u.name || u.email}
-                            {u.is_app_admin ? (
-                              <Badge variant='outline' className='gap-1 px-1.5 py-0 text-[10px]'>
-                                <ShieldCheck className='size-3' />
-                                Global Admin
-                              </Badge>
-                            ) : null}
+                            {/* The three authorities are different in KIND, so they
+                                stack rather than collapse into one label. */}
+                            {u.is_app_admin && <RoleBadge kind='global_admin' />}
+                            {u.top_org_role && <RoleBadge kind={orgRoleKind(u.top_org_role)} />}
+                            {/* Delegated cross-org authority via a partner grant —
+                                one operator badge per partner they operate. */}
+                            {u.partners.map((p) => (
+                              <span key={p.id} title={`Partner access at ${p.name}`}>
+                                <RoleBadge kind='partner_operator' />
+                              </span>
+                            ))}
                           </span>
                           <span className='text-muted-foreground text-xs'>{u.email}</span>
                         </div>
@@ -146,7 +146,10 @@ export default function AdminUsers() {
                     </TableCell>
                     <TableCell className='text-right tabular-nums'>{u.org_count}</TableCell>
                     <TableCell>
-                      <StatusBadge status={u.status} />
+                      <AdminStatusPill
+                        tone={u.status === "deleted" ? "muted" : "ok"}
+                        label={u.status === "deleted" ? "Deactivated" : "Active"}
+                      />
                     </TableCell>
                     <TableCell className='text-muted-foreground text-sm tabular-nums'>
                       {new Date(u.last_login_at).toLocaleDateString()}
@@ -162,18 +165,6 @@ export default function AdminUsers() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: UserStatusId }) {
-  if (status === "deleted") {
-    return <Badge variant='outline'>Deactivated</Badge>;
-  }
-  return (
-    <Badge variant='default' className='gap-1.5'>
-      <span className='size-1.5 rounded-full bg-current opacity-70' />
-      Active
-    </Badge>
   );
 }
 

@@ -15,15 +15,9 @@ import { Badge } from "@/components/ui/shadcn/badge";
 import { Card, CardContent } from "@/components/ui/shadcn/card";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Switch } from "@/components/ui/shadcn/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/shadcn/table";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/shadcn/table";
 import { useFeatureFlags, useUpdateFeatureFlag } from "@/hooks/api/featureFlags";
+import { ADMIN_HEADER_ROW_CLASS, AdminTh } from "@/pages/admin/components/AdminTable";
 
 type PendingToggle = { key: string; nextValue: boolean };
 
@@ -80,17 +74,20 @@ export default function AdminFeatureFlags() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Flag</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Default</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead className='text-right'>Enabled</TableHead>
+                <TableRow className={ADMIN_HEADER_ROW_CLASS}>
+                  <AdminTh>Flag</AdminTh>
+                  <AdminTh>Description</AdminTh>
+                  <AdminTh>Default</AdminTh>
+                  <AdminTh>Updated</AdminTh>
+                  <AdminTh align='right'>Enabled</AdminTh>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {flags.map((flag) => (
-                  <TableRow key={flag.key} className='hover:bg-muted/40'>
+                  <TableRow
+                    key={flag.key}
+                    className='border-border/60 transition-colors hover:bg-muted/40'
+                  >
                     <TableCell>
                       <span className='font-mono text-sm'>{flag.key}</span>
                     </TableCell>

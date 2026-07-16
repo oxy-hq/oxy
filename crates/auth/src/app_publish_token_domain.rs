@@ -76,8 +76,13 @@ pub fn generate_token() -> GeneratedToken {
 /// (so the caller can attach an `AppPublishTokenAuth` scope marker).
 #[derive(Debug, Clone)]
 pub struct ResolvedAppPublishToken {
+    /// The owning user — real for a staff token, a synthetic machine principal for
+    /// an OIDC-minted app-scoped token (which has no human `created_by`).
     pub user: AuthenticatedUser,
     pub token_id: uuid::Uuid,
+    /// Set iff this is an app-scoped machine token. Flows into
+    /// `AppPublishTokenAuth.app_id`.
+    pub app_id: Option<uuid::Uuid>,
 }
 
 /// Resolve a presented plaintext app publish token to its owning user.
@@ -103,26 +108,53 @@ pub async fn resolve_app_publish_token(
         return Ok(None);
     };
 
-    let user = Users::find_by_id(token.created_by)
-        .one(db)
-        .await
-        .map_err(|e| OxyError::DBError(format!("app publish token owner lookup: {e}")))?;
-
-    let Some(user) = user else {
-        tracing::warn!(
-            token_id = %token.id,
-            "app publish token resolved but owning user {} is gone; treating as unauthenticated",
-            token.created_by
-        );
+    // Expiry — machine tokens carry one; staff tokens historically don't (NULL =
+    // non-expiring). An expired token authenticates as nothing.
+    if let Some(exp) = token.expires_at
+        && exp < chrono::Utc::now().fixed_offset()
+    {
         return Ok(None);
-    };
+    }
 
-    touch_last_used(db, token.id).await;
-
-    Ok(Some(ResolvedAppPublishToken {
-        user: AuthenticatedUser::from(user),
-        token_id: token.id,
-    }))
+    match token.created_by {
+        // Classic staff token — authenticates as its minting user.
+        Some(uid) => {
+            let user = Users::find_by_id(uid)
+                .one(db)
+                .await
+                .map_err(|e| OxyError::DBError(format!("app publish token owner lookup: {e}")))?;
+            let Some(user) = user else {
+                tracing::warn!(
+                    token_id = %token.id,
+                    "app publish token owner {uid} is gone; treating as unauthenticated"
+                );
+                return Ok(None);
+            };
+            touch_last_used(db, token.id).await;
+            Ok(Some(ResolvedAppPublishToken {
+                user: AuthenticatedUser::from(user),
+                token_id: token.id,
+                app_id: token.app_id,
+            }))
+        }
+        // OIDC-minted machine token — no human. It MUST carry an app_id (the
+        // exchange always sets one); a NULL-creator token without an app_id is
+        // malformed and authenticates as nothing. Downstream authorizes by app_id
+        // + consent, never by this principal, so it is a placeholder identity
+        // scoped to the publish path by the token-scope middleware.
+        None => {
+            let Some(app_id) = token.app_id else {
+                tracing::warn!(token_id = %token.id, "machine publish token has no app_id; rejecting");
+                return Ok(None);
+            };
+            touch_last_used(db, token.id).await;
+            Ok(Some(ResolvedAppPublishToken {
+                user: AuthenticatedUser::machine_publisher(),
+                token_id: token.id,
+                app_id: Some(app_id),
+            }))
+        }
+    }
 }
 
 /// Best-effort `last_used_at` bump. A transient failure here must not fail the

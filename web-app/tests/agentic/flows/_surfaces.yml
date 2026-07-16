@@ -54,3 +54,19 @@
     - "src/services/api/workspaceHealth.ts"
   flows:
     - admin-workspace-health
+
+- surface: admin-tenants-cockpit
+  paths:
+    - "src/pages/admin/AdminTenantsCockpit/"
+    - "src/hooks/api/adminPartners/"
+    - "src/services/api/adminPartners.ts"
+    - "src/types/adminPartners.ts"
+  flows:
+    - admin-tenants-cockpit
+
+- surface: admin-customer-apps
+  paths:
+    - "src/pages/admin/AdminCustomerApps/"
+    - "src/pages/admin/AdminPublishTokens/"
+  flows:
+    - admin-custom-apps-tabs

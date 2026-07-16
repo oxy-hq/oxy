@@ -20,12 +20,20 @@ pub struct Model {
     #[sea_orm(unique)]
     pub token_hash: String,
     pub token_prefix: String,
-    /// App-admin user who minted this token.
-    pub created_by: Uuid,
+    /// App-admin user who minted this token. **NULL for an OIDC-minted machine
+    /// token** (design §6) — it authorizes by `app_id` + consent, not by a user.
+    pub created_by: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
     pub last_used_at: Option<DateTimeWithTimeZone>,
     /// When set, the token is revoked and no longer authenticates.
     pub revoked_at: Option<DateTimeWithTimeZone>,
+    /// The app this token may publish. **NULL = legacy staff-wide token** (the
+    /// original identity-of-the-minter behaviour). Set = an app-scoped fallback
+    /// token that can only publish this one app.
+    pub app_id: Option<Uuid>,
+    /// **NULL = legacy non-expiring.** Required (enforced at the app layer) for a
+    /// partner-minted token — a long-lived secret in someone's CI must expire.
+    pub expires_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

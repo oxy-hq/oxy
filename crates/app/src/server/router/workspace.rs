@@ -91,11 +91,13 @@ pub(super) fn build_workspace_routes(
             "/members/{user_id}",
             delete(workspace_members::remove_workspace_role_override),
         )
+        // POST = lock Oxy staff OUT; DELETE = lift the lockdown (default is
+        // access-granted). Only a REAL org officer may do either.
         .route(
             "/oxy-access",
             get(workspace_oxy_access::get_oxy_access)
-                .post(workspace_oxy_access::enable_oxy_access)
-                .delete(workspace_oxy_access::disable_oxy_access),
+                .post(workspace_oxy_access::lock_oxy_access)
+                .delete(workspace_oxy_access::unlock_oxy_access),
         )
         .route("/org-subdomain", get(org_subdomain::get_org_subdomain))
         .route("/custom-apps", get(workspace_custom_apps::list_custom_apps))

@@ -43,6 +43,17 @@ pub(crate) fn router() -> Router<AppState> {
         )
 }
 
+/// A partner this user operates.
+///
+/// Not email-keyed: a partner's operators are ordinary members of the partner ORG,
+/// so this resolves through `org_members` → `partner_role_bindings` (a row = access).
+/// There is one operator role, so the reference is just the partner's identity.
+#[derive(Serialize, Clone)]
+pub struct UserPartnerRef {
+    pub id: Uuid,
+    pub name: String,
+}
+
 #[derive(Serialize)]
 pub struct AdminUserRow {
     pub id: Uuid,
@@ -53,6 +64,12 @@ pub struct AdminUserRow {
     pub last_login_at: String,
     pub is_app_admin: bool,
     pub org_count: i64,
+    /// Partners this user administers. Non-empty ⇒ they are a **Partner Admin**,
+    /// a delegated cross-org authority that is invisible from `org_count` alone.
+    pub partners: Vec<UserPartnerRef>,
+    /// Their highest role across their orgs ("owner" | "admin" | "member"), so
+    /// the directory shows tenant *hierarchy*, not just a membership count.
+    pub top_org_role: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -68,6 +85,8 @@ pub struct AdminUserDetail {
     pub is_app_admin: bool,
     pub org_memberships: Vec<UserOrgMembership>,
     pub workspace_memberships: Vec<UserWorkspaceMembership>,
+    /// Partners this user operates (drives the "Operates" section of the pane).
+    pub partners: Vec<UserPartnerRef>,
 }
 
 #[derive(Serialize)]
@@ -152,6 +171,13 @@ pub async fn list_users(
     let app_admin_set = lookup_app_admin_emails_in(&db, &emails_lower)
         .await
         .map_err(internal)?;
+    // Two more IN (...) lookups — still O(1) per page, no N+1.
+    let partner_map = lookup_partner_admins_in(&db, &user_ids)
+        .await
+        .map_err(internal)?;
+    let role_map = lookup_top_org_role_in(&db, &user_ids)
+        .await
+        .map_err(internal)?;
 
     let mut out = Vec::with_capacity(rows.len());
     for u in rows {
@@ -165,6 +191,8 @@ pub async fn list_users(
             last_login_at: u.last_login_at.to_rfc3339(),
             is_app_admin: app_admin_set.contains(&lc_email),
             org_count: org_counts.get(&u.id).copied().unwrap_or(0),
+            partners: partner_map.get(&u.id).cloned().unwrap_or_default(),
+            top_org_role: role_map.get(&u.id).cloned(),
         });
     }
 
@@ -255,6 +283,11 @@ pub async fn get_user_detail(
     let workspace_memberships = load_user_workspace_memberships(&db, user.id)
         .await
         .map_err(internal)?;
+    let partners = lookup_partner_admins_in(&db, &[user.id])
+        .await
+        .map_err(internal)?
+        .remove(&user.id)
+        .unwrap_or_default();
 
     Ok(Json(AdminUserDetail {
         id: user.id,
@@ -268,6 +301,7 @@ pub async fn get_user_detail(
         is_app_admin,
         org_memberships,
         workspace_memberships,
+        partners,
     }))
 }
 
@@ -704,4 +738,89 @@ mod tests {
             "must allow updating the last owner to Owner (no-op)"
         );
     }
+}
+
+#[derive(FromQueryResult)]
+struct PartnerAdminRow {
+    user_id: Uuid,
+    partner_id: Uuid,
+    partner_name: String,
+}
+
+/// Which partners each user holds a role at, and which role.
+///
+/// Keyed on `user_id`, not email: the old `partner_members` table keyed grants by
+/// email so they could precede first sign-in, and left `user_id` NULL forever.
+/// That duplicate membership system is gone — a partner's people are members of
+/// the partner org, and org invitations already cover the not-yet-signed-up case.
+///
+/// The chain is: the user is an `org_members` row in an org that holds a
+/// `partner_grant`, AND that membership carries a `partner_role_binding`. A member
+/// of Acme with no binding is just an Acme employee, so they correctly get nothing.
+async fn lookup_partner_admins_in(
+    db: &sea_orm::DatabaseConnection,
+    user_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<UserPartnerRef>>, sea_orm::DbErr> {
+    if user_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = sql_placeholders(user_ids.len());
+    let sql = format!(
+        "SELECT om.user_id, o.id AS partner_id, o.name AS partner_name \
+         FROM org_members om \
+         JOIN partner_role_bindings prb ON prb.org_member_id = om.id \
+         JOIN partner_grants pg ON pg.org_id = om.org_id \
+         JOIN organizations o ON o.id = om.org_id \
+         WHERE om.user_id IN ({placeholders}) AND pg.status = 'active'"
+    );
+    let values: Vec<sea_orm::Value> = user_ids.iter().map(|id| (*id).into()).collect();
+    let rows = PartnerAdminRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .all(db)
+    .await?;
+
+    let mut out: HashMap<Uuid, Vec<UserPartnerRef>> = HashMap::new();
+    for r in rows {
+        out.entry(r.user_id).or_default().push(UserPartnerRef {
+            id: r.partner_id,
+            name: r.partner_name,
+        });
+    }
+    Ok(out)
+}
+
+#[derive(FromQueryResult)]
+struct TopRoleRow {
+    user_id: Uuid,
+    role: String,
+}
+
+/// Each user's HIGHEST org role (owner > admin > member) — the tenant hierarchy
+/// the directory was missing. Ordered in SQL so one query answers it for a page.
+async fn lookup_top_org_role_in(
+    db: &sea_orm::DatabaseConnection,
+    user_ids: &[Uuid],
+) -> Result<HashMap<Uuid, String>, sea_orm::DbErr> {
+    if user_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = sql_placeholders(user_ids.len());
+    let sql = format!(
+        "SELECT DISTINCT ON (user_id) user_id, role FROM org_members \
+         WHERE user_id IN ({placeholders}) \
+         ORDER BY user_id, CASE role \
+           WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END"
+    );
+    let values: Vec<sea_orm::Value> = user_ids.iter().map(|id| (*id).into()).collect();
+    let rows = TopRoleRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .all(db)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.user_id, r.role)).collect())
 }

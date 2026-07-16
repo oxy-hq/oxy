@@ -4,21 +4,16 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/shadcn/table";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/shadcn/table";
 import { useAdminOrgsList } from "@/hooks/api/adminTenants/useAdminOrgs";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import { CopyableId } from "@/pages/admin/components/CopyableId";
 import { OrgLogo } from "@/pages/admin/components/OrgLogo";
+import PartnerChip from "../AdminTenantsCockpit/components/PartnerChip";
 import { AdminEmptyState } from "../components/AdminEmptyState";
 import { AdminStatusPill } from "../components/AdminStatusPill";
+import { ADMIN_HEADER_ROW_CLASS, ADMIN_ROW_CLASS, AdminTh } from "../components/AdminTable";
 
 /**
  * `/admin/orgs` — operator-grade directory of every organization on this
@@ -41,7 +36,7 @@ export default function AdminOrgs() {
         <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
           Admin · Tenants ·{" "}
           <Link to={ROUTES.ADMIN.TENANTS} className='hover:text-foreground'>
-            Overview
+            Directory
           </Link>{" "}
           / Organizations
         </p>
@@ -109,32 +104,21 @@ export default function AdminOrgs() {
         ) : (
           <Table>
             <TableHeader>
-              <TableRow className='border-border/60'>
-                <TableHead className='font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
-                  Organization
-                </TableHead>
-                <TableHead className='font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
-                  Owner
-                </TableHead>
-                <TableHead className='font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
-                  Status
-                </TableHead>
-                <TableHead className='text-right font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
-                  Members
-                </TableHead>
-                <TableHead className='text-right font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
-                  Workspaces
-                </TableHead>
-                <TableHead className='font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
-                  Created
-                </TableHead>
+              <TableRow className={ADMIN_HEADER_ROW_CLASS}>
+                <AdminTh>Organization</AdminTh>
+                <AdminTh>Owner</AdminTh>
+                <AdminTh>Partner</AdminTh>
+                <AdminTh>Status</AdminTh>
+                <AdminTh align='right'>Members</AdminTh>
+                <AdminTh align='right'>Workspaces</AdminTh>
+                <AdminTh>Created</AdminTh>
               </TableRow>
             </TableHeader>
             <TableBody>
               {orgs.map((org) => (
                 <TableRow
                   key={org.id}
-                  className='cursor-pointer border-border/60 transition-colors hover:bg-muted/40'
+                  className={ADMIN_ROW_CLASS}
                   onClick={() => navigate(ROUTES.ADMIN.ORG_DETAIL(org.id))}
                 >
                   <TableCell>
@@ -153,6 +137,15 @@ export default function AdminOrgs() {
                   </TableCell>
                   <TableCell className='font-mono text-[11px] text-muted-foreground'>
                     {org.owner_email ?? "—"}
+                  </TableCell>
+                  {/* Who ELSE administers this tenant. A partner is a delegated
+                      cross-org authority — invisible from owner/member counts. */}
+                  <TableCell>
+                    {org.partner ? (
+                      <PartnerChip name={org.partner.name} size='xs' />
+                    ) : (
+                      <span className='text-muted-foreground/50 text-xs'>—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <AdminStatusPill

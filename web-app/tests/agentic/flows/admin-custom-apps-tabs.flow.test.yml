@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Verify the admin Custom-apps console mounts and all THREE tabs
+# (Apps / Organizations / Publish tokens) resolve without white-screening — the
+# regression risk after folding the standalone Publish-tokens page into a tab
+# and renaming the "Access" tab to "Organizations". Targets the OXY_OWNER
+# operator path.
+#
+# Backend: `--enterprise` (cloud) with OXY_OWNER set, exactly like
+# admin-tenants-cockpit — the admin surface requires the enterprise code path +
+# server-side OXY_OWNER gating. Do NOT use `--local`.
+#
+# No seed data: the harness is read-only (2026-05-06 incident rule) and cloud
+# mode boots `--clean`, so the flow asserts each tab *resolves* (its loaded or
+# empty state), never specific rows.
+
+name: admin custom apps tabs
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: cloud
+  # navigate + confirm shell + two tab switches + waits + judge
+  max_steps: 15
+
+setup:
+  - "goto:/admin/apps"
+
+cases:
+  - name: the three custom-app tabs mount and resolve
+    tags: [admin, customer-apps, publish-tokens, regression]
+    steps:
+      - wait_for: "selector:[data-testid=admin-customer-apps]"
+
+      - act: |
+          Confirm the Custom-apps console loaded with a three-tab strip:
+          [data-testid=admin-apps-tab-apps] ("Apps"),
+          [data-testid=admin-apps-tab-access] ("Organizations"), and
+          [data-testid=admin-apps-tab-tokens] ("Publish tokens").
+          Do not click anything yet — just confirm the shell rendered.
+
+      - act: |
+          Click the "Organizations" tab ([data-testid=admin-apps-tab-access]).
+          This is the per-org access + apps view (formerly "Access").
+
+      - wait_for: network_idle
+
+      - act: |
+          Click the "Publish tokens" tab ([data-testid=admin-apps-tab-tokens]).
+          This renders the publish-token manager inline (folded in from the old
+          standalone /admin/publish-tokens page).
+
+      - wait_for: network_idle
+
+    expect:
+      - assert: selector [data-testid=admin-customer-apps] is visible
+      - assert: selector [data-testid=admin-apps-tab-tokens] is visible
+      - judge: |
+          The page is at /admin/apps on the Publish tokens tab. It shows the
+          publish-token UI (a create-token form and/or a token list) and the
+          "Use in CI (GitHub Actions)" instructions block. There is no error
+          banner and no blank white screen.

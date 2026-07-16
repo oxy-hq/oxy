@@ -1,20 +1,27 @@
-//! `/api/{workspace_id}/oxy-access` — toggle "let Oxy build tailored
-//! apps on our data" for a workspace.
+//! `/api/{workspace_id}/oxy-access` — the **Oxy-staff lockdown** switch.
 //!
-//! Org owners (resolved to workspace Owner by `workspace_middleware`)
-//! can enable or disable the toggle. While enabled, anyone in the
-//! `app_admins` table (Oxy staff) can access customer apps for this
-//! workspace. Disabling it deletes the row — there's no soft state.
+//! Model (inverted 2026-07-14; migration `m20260714_000002`):
+//!   * **Default: Oxy staff CAN access** this workspace's customer apps. No row,
+//!     no friction — support works out of the box.
+//!   * A row in `workspace_oxy_lockdown` means the org has **locked Oxy staff
+//!     out**. While locked, no `app_admins` member can reach the workspace's apps.
 //!
-//! See [`crate::server::api::customer_apps_auth`] for how the toggle is
+//! **Tenant-sovereign.** Locking/unlocking requires a *real* org owner/admin. The
+//! previous consent toggle was guarded on the workspace `Owner` role — but
+//! `workspace_context::resolve_effective_role` synthesizes an Owner membership for
+//! any Global Owner / Global Admin, so **Oxy staff could grant themselves the very
+//! access the toggle existed to gate**. The guard here rejects that synthetic
+//! override (`WorkspaceGlobalOverride`), so an operator cannot unlock themselves.
+//!
+//! See [`crate::server::api::customer_apps_auth`] for how the lockdown is
 //! consulted on the request path.
 
 use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
-use entity::prelude::WorkspaceOxyAccess;
+use entity::prelude::WorkspaceOxyLockdown;
 use entity::workspace_members::WorkspaceRole;
-use entity::workspace_oxy_access;
+use entity::workspace_oxy_lockdown;
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
@@ -22,31 +29,38 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::customer_apps_auth::invalidate_access_cache;
-use crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole;
+use crate::server::api::middlewares::workspace_context::{
+    EffectiveWorkspaceRole, WorkspaceGlobalOverride,
+};
 
-/// Status payload for the toggle. `enabled` is always present; the
-/// audit fields are only meaningful when `enabled` is true.
+/// Status payload. `locked` is always present; the audit fields are only
+/// meaningful when `locked` is true. `can_manage` tells the UI whether THIS
+/// caller may flip the switch (a real org officer) — an Oxy operator sees the
+/// state but cannot change it.
 #[derive(Serialize)]
-pub struct OxyAccessStatus {
-    pub enabled: bool,
-    pub granted_by: Option<Uuid>,
-    pub granted_at: Option<String>,
+pub struct OxyLockdownStatus {
+    pub locked: bool,
+    pub locked_by: Option<Uuid>,
+    pub locked_at: Option<String>,
+    pub can_manage: bool,
 }
 
-impl OxyAccessStatus {
-    fn disabled() -> Self {
+impl OxyLockdownStatus {
+    fn unlocked(can_manage: bool) -> Self {
         Self {
-            enabled: false,
-            granted_by: None,
-            granted_at: None,
+            locked: false,
+            locked_by: None,
+            locked_at: None,
+            can_manage,
         }
     }
 
-    fn from_row(row: workspace_oxy_access::Model) -> Self {
+    fn from_row(row: workspace_oxy_lockdown::Model, can_manage: bool) -> Self {
         Self {
-            enabled: true,
-            granted_by: row.granted_by,
-            granted_at: Some(row.created_at.to_rfc3339()),
+            locked: true,
+            locked_by: row.locked_by,
+            locked_at: Some(row.created_at.to_rfc3339()),
+            can_manage,
         }
     }
 }
@@ -56,94 +70,168 @@ pub struct WorkspaceIdPath {
     pub workspace_id: Uuid,
 }
 
-fn require_owner(role: WorkspaceRole) -> Result<(), StatusCode> {
-    if role >= WorkspaceRole::Owner {
-        Ok(())
-    } else {
-        Err(StatusCode::FORBIDDEN)
+/// Only a REAL org owner/admin may change the lockdown. Rejects:
+///   * members/viewers (403), and
+///   * the synthesized global-operator Owner — the whole point: Oxy staff must
+///     not be able to unlock themselves out of a customer's lockdown.
+fn require_real_org_officer(
+    role: WorkspaceRole,
+    WorkspaceGlobalOverride(is_override): WorkspaceGlobalOverride,
+) -> Result<(), StatusCode> {
+    if is_override {
+        tracing::warn!(
+            "oxy-access lockdown: rejected a global-operator override — only a real org officer may change it"
+        );
+        return Err(StatusCode::FORBIDDEN);
     }
+    if role < WorkspaceRole::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(())
+}
+
+/// Whether this caller may flip the switch (drives `can_manage` in the payload).
+fn can_manage(role: WorkspaceRole, ovr: WorkspaceGlobalOverride) -> bool {
+    require_real_org_officer(role, ovr).is_ok()
 }
 
 pub async fn get_oxy_access(
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    ovr: WorkspaceGlobalOverride,
     Path(WorkspaceIdPath { workspace_id }): Path<WorkspaceIdPath>,
-) -> Result<Json<OxyAccessStatus>, StatusCode> {
-    require_owner(role)?;
+) -> Result<Json<OxyLockdownStatus>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("get_oxy_access DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let row = WorkspaceOxyAccess::find()
-        .filter(workspace_oxy_access::Column::WorkspaceId.eq(workspace_id))
+    let row = WorkspaceOxyLockdown::find()
+        .filter(workspace_oxy_lockdown::Column::WorkspaceId.eq(workspace_id))
         .one(&db)
         .await
         .map_err(|e| {
             tracing::error!("get_oxy_access query failed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    Ok(Json(
-        row.map(OxyAccessStatus::from_row)
-            .unwrap_or_else(OxyAccessStatus::disabled),
-    ))
+
+    let manage = can_manage(role, ovr);
+    Ok(Json(match row {
+        Some(r) => OxyLockdownStatus::from_row(r, manage),
+        None => OxyLockdownStatus::unlocked(manage),
+    }))
 }
 
-pub async fn enable_oxy_access(
+/// `POST` — lock Oxy staff OUT of this workspace.
+pub async fn lock_oxy_access(
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    ovr: WorkspaceGlobalOverride,
     Path(WorkspaceIdPath { workspace_id }): Path<WorkspaceIdPath>,
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
-) -> Result<Json<OxyAccessStatus>, StatusCode> {
-    require_owner(role)?;
+) -> Result<Json<OxyLockdownStatus>, StatusCode> {
+    require_real_org_officer(role, ovr)?;
     let db = establish_connection().await.map_err(|e| {
-        tracing::error!("enable_oxy_access DB connect failed: {e}");
+        tracing::error!("lock_oxy_access DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    if let Some(existing) = WorkspaceOxyAccess::find()
-        .filter(workspace_oxy_access::Column::WorkspaceId.eq(workspace_id))
+    if let Some(existing) = WorkspaceOxyLockdown::find()
+        .filter(workspace_oxy_lockdown::Column::WorkspaceId.eq(workspace_id))
         .one(&db)
         .await
         .map_err(|e| {
-            tracing::error!("enable_oxy_access existence check failed: {e}");
+            tracing::error!("lock_oxy_access existence check failed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?
     {
-        return Ok(Json(OxyAccessStatus::from_row(existing)));
+        return Ok(Json(OxyLockdownStatus::from_row(existing, true)));
     }
 
-    let model = workspace_oxy_access::ActiveModel {
+    let model = workspace_oxy_lockdown::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         workspace_id: ActiveValue::Set(workspace_id),
-        granted_by: ActiveValue::Set(Some(actor.id)),
+        locked_by: ActiveValue::Set(Some(actor.id)),
         created_at: ActiveValue::NotSet,
     }
     .insert(&db)
     .await
     .map_err(|e| {
-        tracing::error!("enable_oxy_access insert failed: {e}");
+        tracing::error!("lock_oxy_access insert failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Staff lose access on the next request, not at TTL.
     invalidate_access_cache();
-    Ok(Json(OxyAccessStatus::from_row(model)))
+    tracing::info!(
+        %workspace_id, actor = %actor.email,
+        "oxy-access: workspace LOCKED Oxy staff out"
+    );
+    Ok(Json(OxyLockdownStatus::from_row(model, true)))
 }
 
-pub async fn disable_oxy_access(
+/// `DELETE` — remove the lockdown (restore the default: staff may access).
+pub async fn unlock_oxy_access(
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    ovr: WorkspaceGlobalOverride,
     Path(WorkspaceIdPath { workspace_id }): Path<WorkspaceIdPath>,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
-    require_owner(role)?;
+    require_real_org_officer(role, ovr)?;
     let db = establish_connection().await.map_err(|e| {
-        tracing::error!("disable_oxy_access DB connect failed: {e}");
+        tracing::error!("unlock_oxy_access DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    WorkspaceOxyAccess::delete_many()
-        .filter(workspace_oxy_access::Column::WorkspaceId.eq(workspace_id))
+
+    WorkspaceOxyLockdown::delete_many()
+        .filter(workspace_oxy_lockdown::Column::WorkspaceId.eq(workspace_id))
         .exec(&db)
         .await
         .map_err(|e| {
-            tracing::error!("disable_oxy_access failed: {e}");
+            tracing::error!("unlock_oxy_access delete failed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
     invalidate_access_cache();
+    tracing::info!(
+        %workspace_id, actor = %actor.email,
+        "oxy-access: workspace lockdown lifted"
+    );
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// THE regression guard. An Oxy operator reaches a tenant workspace with a
+    /// *synthesized* Owner role; they must not be able to lift the customer's
+    /// lockdown. This is the hole the old consent toggle had.
+    #[test]
+    fn global_operator_override_cannot_change_the_lockdown() {
+        let ovr = WorkspaceGlobalOverride(true);
+        // Even with a synthetic Owner role:
+        assert_eq!(
+            require_real_org_officer(WorkspaceRole::Owner, ovr),
+            Err(StatusCode::FORBIDDEN)
+        );
+        assert!(!can_manage(WorkspaceRole::Owner, ovr));
+    }
+
+    #[test]
+    fn real_org_officer_may_change_the_lockdown() {
+        let real = WorkspaceGlobalOverride(false);
+        assert_eq!(require_real_org_officer(WorkspaceRole::Owner, real), Ok(()));
+        assert_eq!(require_real_org_officer(WorkspaceRole::Admin, real), Ok(()));
+    }
+
+    #[test]
+    fn members_and_viewers_may_not() {
+        let real = WorkspaceGlobalOverride(false);
+        assert_eq!(
+            require_real_org_officer(WorkspaceRole::Member, real),
+            Err(StatusCode::FORBIDDEN)
+        );
+        assert_eq!(
+            require_real_org_officer(WorkspaceRole::Viewer, real),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
 }

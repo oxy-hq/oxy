@@ -1,6 +1,16 @@
-import { Building2, FolderOpen, MessageSquare, Play, Search, User } from "lucide-react";
+import {
+  Building2,
+  FolderOpen,
+  Handshake,
+  MessageSquare,
+  Play,
+  Search,
+  ShieldAlert,
+  User
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AssumeRoleDialog } from "@/components/admin/AssumeRoleDialog";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   CommandDialog,
@@ -31,6 +41,11 @@ import ROUTES from "@/libs/utils/routes";
 export const AdminEntitySearch = () => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // The org an operator has chosen to step into. Reaching a tenant's own product
+  // used to mean Directory → switch type → find the row → open the pane → Act as.
+  // Five steps to do the thing operators most often need to do, so it lives here:
+  // ⌘K, type three letters, act.
+  const [actOn, setActOn] = useState<{ id: string; name: string } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -76,6 +91,14 @@ export const AdminEntitySearch = () => {
 
   return (
     <>
+      {actOn && (
+        <AssumeRoleDialog
+          open
+          onOpenChange={(o) => !o && setActOn(null)}
+          org={actOn}
+          onStarted={() => setActOn(null)}
+        />
+      )}
       <Button
         variant='outline'
         size='sm'
@@ -116,12 +139,32 @@ export const AdminEntitySearch = () => {
                     value={`org ${org.name} ${org.slug} ${org.owner_email ?? ""}`}
                     onSelect={() => go(ROUTES.ADMIN.ORG_DETAIL(org.id))}
                   >
-                    <Building2 className='size-4 text-muted-foreground' />
+                    {org.is_partner ? (
+                      <Handshake className='size-4 text-primary' />
+                    ) : (
+                      <Building2 className='size-4 text-muted-foreground' />
+                    )}
                     <span className='flex-1 truncate'>{org.name}</span>
                     <span className='font-mono text-[11px] text-muted-foreground'>/{org.slug}</span>
                     <span className='hidden text-muted-foreground text-xs tabular-nums sm:inline'>
                       {org.member_count} mbr · {org.workspace_count} ws
                     </span>
+                    {/* Enter opens the admin record; this opens the TENANT — two
+                        different destinations, so two explicit affordances rather
+                        than one overloaded row. */}
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      className='h-6 gap-1 px-1.5 text-[11px]'
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpen(false);
+                        setActOn({ id: org.id, name: org.name });
+                      }}
+                    >
+                      <ShieldAlert className='size-3' />
+                      Act as
+                    </Button>
                   </CommandItem>
                 ))}
               </CommandGroup>

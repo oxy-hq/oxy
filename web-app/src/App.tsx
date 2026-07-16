@@ -29,6 +29,7 @@ import ROUTES from "@/libs/utils/routes";
 import ContextGraphPage from "@/pages/context-graph";
 import WorldModelView from "@/pages/ide/WorldModel";
 import { ErrorBoundary } from "@/sentry";
+import { ActingShell } from "./components/admin/ActingShell";
 import { BuilderDialog } from "./components/BuilderDialog";
 import { FileQuickOpen } from "./components/FileQuickOpen";
 import OrgGuard from "./components/OrgGuard";
@@ -119,11 +120,18 @@ const TracesPage = React.lazy(() => import("./pages/ide/observability/traces"));
 
 // Admin and Stripe return URLs are visited rarely; defer their bundles too.
 const AdminLayout = React.lazy(() => import("./pages/admin/AdminLayout"));
+// Partner console — same shell as admin, fewer capabilities.
+const PartnerLayout = React.lazy(() => import("./pages/partners/PartnerLayout"));
+const PartnerClients = React.lazy(() => import("./pages/partners/PartnerClients"));
+const PartnerCustomApps = React.lazy(() => import("./pages/partners/PartnerCustomApps"));
+const PartnerTeam = React.lazy(() => import("./pages/partners/PartnerTeam"));
+const PartnerActivity = React.lazy(() => import("./pages/partners/PartnerActivity"));
 const AdminBillingQueue = React.lazy(() => import("./pages/admin/AdminBillingQueue"));
 const AdminFeatureFlags = React.lazy(() => import("./pages/admin/AdminFeatureFlags"));
 const AdminInternalJobs = React.lazy(() => import("./pages/admin/AdminInternalJobs"));
 const AdminCompiles = React.lazy(() => import("./pages/admin/AdminCompiles"));
 const AdminExplorer = React.lazy(() => import("./pages/admin/AdminExplorer"));
+const AdminAudit = React.lazy(() => import("./pages/admin/AdminAudit"));
 // Customer-apps admin surface (new-auth): per-org app admins + the
 // customer-apps registry (Add / Link / Sync / Publish). Lazy-loaded
 // alongside the rest of admin since most users never visit it.
@@ -133,6 +141,7 @@ const AdminCustomerApps = React.lazy(() => import("./pages/admin/AdminCustomerAp
 // Tenant-management admin surfaces (OXY_OWNER-only). Lazy-loaded alongside
 // the rest of admin since most users never visit /admin/* at all.
 const AdminTenants = React.lazy(() => import("./pages/admin/AdminTenants"));
+const AdminTenantsCockpit = React.lazy(() => import("./pages/admin/AdminTenantsCockpit"));
 const AdminOrgs = React.lazy(() => import("./pages/admin/AdminOrgs"));
 const AdminOrgDetail = React.lazy(() => import("./pages/admin/AdminOrgs/AdminOrgDetail"));
 const AdminUsers = React.lazy(() => import("./pages/admin/AdminUsers"));
@@ -457,12 +466,18 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             first when not yet signed in. */}
         <Route path='/cli-auth' element={<CliAuth />} />
 
-        {/* Auth-gated routes */}
+        {/* Auth-gated routes. `ActingShell` wraps EVERY authenticated page so the
+            assume-role banner — and its one-click exit — follows an operator
+            wherever they land, including surfaces (the partner console) that use
+            neither WorkspaceShell nor AdminLayout. It renders children untouched
+            when no session is live. */}
         <Route
           path='/*'
           element={
             <ProtectedRoute>
-              <Outlet />
+              <ActingShell>
+                <Outlet />
+              </ActingShell>
             </ProtectedRoute>
           }
         >
@@ -487,6 +502,7 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/compiles' element={<AdminCompiles />} />
             {/* ROUTES.ADMIN.INTERNAL_JOBS */}
             <Route path='admin/explorer' element={<AdminExplorer />} />
+            <Route path='admin/audit' element={<AdminAudit />} />
             {/* ROUTES.ADMIN.EXPLORER */}
             <Route path='admin/app-admins' element={<AdminAppAdmins />} />
             {/* ROUTES.ADMIN.PUBLISH_TOKENS — open to any Global Admin */}
@@ -499,7 +515,8 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/apps' element={<AdminCustomerApps />} />
             <Route path='admin/apps/:orgSlug/:appSlug' element={<AdminCustomerApps />} />
             {/* Tenant-management surfaces — list + master/detail via :id tail. */}
-            <Route path='admin/tenants' element={<AdminTenants />} />
+            <Route path='admin/tenants' element={<AdminTenantsCockpit />} />
+            <Route path='admin/tenants/overview' element={<AdminTenants />} />
             <Route path='admin/orgs' element={<AdminOrgs />} />
             <Route path='admin/orgs/:orgId' element={<AdminOrgDetail />} />
             <Route path='admin/users' element={<AdminUsers />} />
@@ -507,6 +524,17 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/workspaces' element={<AdminWorkspaces />} />
             <Route path='admin/workspaces/:workspaceId' element={<AdminWorkspaceDetail />} />
             <Route path='admin/workspace-health' element={<AdminWorkspaceHealth />} />
+          </Route>
+
+          {/* Partner console — anyone holding a partner role (the server enforces
+              scope on every call). Same shell as AdminLayout, deliberately: both
+              are operations surfaces for administering organizations you don't
+              personally own. Not Oxy-staff-gated and not owner-redirected. */}
+          <Route path='partners' element={<PartnerLayout />}>
+            <Route index element={<PartnerClients />} />
+            <Route path='apps' element={<PartnerCustomApps />} />
+            <Route path='team' element={<PartnerTeam />} />
+            <Route path='activity' element={<PartnerActivity />} />
           </Route>
 
           {/* User-facing routes — owners get bounced to the admin queue. */}

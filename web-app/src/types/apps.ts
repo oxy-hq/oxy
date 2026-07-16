@@ -269,18 +269,24 @@ export interface CreateAppRequest {
 }
 
 /**
- * One Oxy-access grant from `GET /api/customer-apps/oxy-access`: a workspace
- * whose org enabled "let Oxy build apps on our data", flattened with its org
- * + grant metadata. Powers the admin Orgs / Projects browser.
+ * One workspace from `GET /api/customer-apps/oxy-access`, flattened with its org
+ * and its Oxy-staff LOCKDOWN state. Powers the admin Orgs / Projects browser.
+ *
+ * Inverted 2026-07-14: staff access is now the DEFAULT, so this lists EVERY
+ * workspace and flags the ones an org has locked us out of. `accessible` is the
+ * single field to read; `locked` is its negation plus audit metadata.
  */
-export interface OxyAccessGrant {
+export interface OxyAccessRow {
   workspace_id: string;
   workspace_name: string;
   org_id: string;
   org_name: string;
   org_slug: string;
-  granted_by_email: string | null;
-  granted_at: string;
+  /** May Oxy staff touch this workspace's apps? */
+  accessible: boolean;
+  locked: boolean;
+  locked_by_email: string | null;
+  locked_at: string | null;
 }
 
 /**

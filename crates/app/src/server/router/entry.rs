@@ -167,6 +167,11 @@ pub async fn api_router(
         crate::server::compile_maintenance::CompileMaintenanceConfig::from_env(),
     );
 
+    // Audit retention: the log is write-heavy, so keep a rolling 30-day window.
+    // Idempotent daily sweep; verification anchors on the oldest retained event so a
+    // prune doesn't report a false chain break.
+    crate::server::api::audit::spawn_audit_prune_loop();
+
     // Camera fleet stale-checker: flips edge_boxes.status to 'offline'
     // when last_seen_at goes silent past STALE_THRESHOLD. Bound to the
     // same shutdown token as the rest of the agentic state so it exits

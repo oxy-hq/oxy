@@ -1,0 +1,125 @@
+---
+title: Permissions
+description: How roles work across your organization — and for partners who manage other organizations
+type: concept
+audience: admin
+tier: standard
+---
+
+Oxygen has two independent role systems. Most people only ever need the first.
+
+1. **Organization roles** — who can do what **inside your own organization**.
+2. **Partner roles** — for organizations that **manage other organizations** on
+   their clients' behalf.
+
+If you are a normal Oxygen customer, you can stop after the first section.
+
+## Organization roles
+
+Everyone in your organization holds exactly one role.
+
+| Role | What they can do |
+| --- | --- |
+| **Owner** | Everything, including billing and transferring ownership. |
+| **Admin** | Invite and remove members, change settings, edit any project. |
+| **Member** | Build agents, run Automations, ask questions. |
+
+Manage these from **Manage → Members**.
+
+Two rules protect the organization from being taken over or locked out:
+
+- **Only an Owner can change another Owner or Admin.** An Admin can manage Members,
+  but not their peers.
+- **An organization always has at least one Owner.** The last Owner cannot be
+  removed or demoted — transfer ownership first.
+
+## Partner roles
+
+A **partner** is an organization that manages other organizations — an agency, a
+consultancy, a reseller.
+
+A partner is a **normal Oxygen organization**. It has its own workspaces, its own
+data, its own bill, and its own people. It simply *also* has permission to
+administer its clients' organizations.
+
+```
+Acme Consulting            ← a real organization (own data, own bill)
+  ├── manages → Northwind  ← a client organization
+  └── manages → Globex     ← a client organization
+```
+
+<Note>
+Your client's organization stays **theirs**. A partner administers it; it does not
+own it. Client Owners keep full control of their own organization, and a partner can
+never remove or demote a client's Owner.
+</Note>
+
+### Two things decide what a partner's person can do
+
+**1. What Oxygen allows the partner at all** — the *ceiling*.
+
+When Oxygen sets up a partnership, it grants the partner a set of permissions. This
+is the maximum the partner can ever have. A partner cannot raise its own ceiling.
+
+**2. What role their admin gives them** — within that ceiling.
+
+Inside the ceiling, the partner's own admin assigns each person a role and decides
+**which clients** that person handles.
+
+| Partner role | What they can do |
+| --- | --- |
+| **Partner admin** | Everything the partnership allows. |
+| **Account manager** | Onboard new client organizations, manage client members and settings. **Cannot access client data.** |
+| **Developer** | Build, publish, and unpublish apps — and query client data to build them. **Cannot manage people or onboard clients.** |
+| **Billing contact** | Billing only. |
+| **Auditor** | Read the activity log. Nothing else. |
+
+<Tip>
+Two people at the same partner can have completely different access. An **account
+manager** who handles Northwind cannot see Globex, and cannot query anyone's data. A
+**developer** assigned to Globex can query Globex's data but cannot invite anyone.
+</Tip>
+
+### Which clients a person handles
+
+Each partner person is either:
+
+- **Assigned to specific clients** — they can only reach those organizations, or
+- **Unassigned** — they can reach every client the partner manages.
+
+Unassigned is the default, which is what a small partner wants. Assign clients when
+you want an account manager to see only their own accounts.
+
+### Publishing apps vs. reading data
+
+These are **separate permissions**, on purpose.
+
+| Permission | Grants |
+| --- | --- |
+| **Publish apps** | Make an app live, or take it down. |
+| **App data access** | Run queries against the client's data — what you need to *build* an app. |
+
+A partner can be allowed to publish and manage apps **without** being able to read
+the underlying data. If a partner needs to build apps against your data, Oxygen must
+grant **App data access** explicitly — it is off by default.
+
+## Oxygen staff access
+
+Oxygen's support engineers can open the apps in your workspace so they can help you
+build and debug them. This is on by default so support works without setup.
+
+You can turn it off at any time: **Settings → Oxy staff access → Lock Oxy staff
+out**. While locked, no Oxygen employee can see your workspace's apps.
+
+<Warning>
+Only **your** organization's Owners and Admins can change this. Oxygen staff cannot
+unlock themselves.
+</Warning>
+
+## Everything is logged
+
+Every permission change — granting a partnership, changing a role, assigning a
+client, an Oxygen engineer accessing your organization — is written to a
+tamper-evident activity log, recorded against the **real person** who did it.
+
+Ask your Oxygen contact for your organization's activity log at any time.

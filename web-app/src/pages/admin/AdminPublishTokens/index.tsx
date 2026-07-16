@@ -10,6 +10,7 @@ import {
   useRevokePublishToken
 } from "@/hooks/api/publishTokens/usePublishTokens";
 import type { CreatedPublishToken, PublishToken } from "@/types/publishTokens";
+import CiInstructions from "./components/CiInstructions";
 import { CreatedTokenDialog } from "./components/CreatedTokenDialog";
 import { PublishTokenRow } from "./components/PublishTokenRow";
 import { RevokeTokenDialog } from "./components/RevokeTokenDialog";
@@ -25,7 +26,7 @@ import { RevokeTokenDialog } from "./components/RevokeTokenDialog";
  * `app_publish_token_scope` middleware). Tokens are managed across admins:
  * anyone here can revoke anyone's token.
  */
-export default function AdminPublishTokens() {
+export default function AdminPublishTokens({ embedded = false }: { embedded?: boolean } = {}) {
   const { data: tokens = [], isPending } = usePublishTokens();
   const create = useCreatePublishToken();
   const revoke = useRevokePublishToken();
@@ -54,8 +55,12 @@ export default function AdminPublishTokens() {
   return (
     <div className='mx-auto max-w-3xl p-6'>
       <div className='mb-6'>
-        <h1 className='font-semibold text-2xl tracking-tight'>Publish tokens</h1>
-        <p className='mt-1 text-muted-foreground text-sm'>
+        {!embedded && <h1 className='font-semibold text-2xl tracking-tight'>Publish tokens</h1>}
+        <p
+          className={
+            embedded ? "text-muted-foreground text-sm" : "mt-1 text-muted-foreground text-sm"
+          }
+        >
           Long-lived bearer tokens for machine auth — set one as the{" "}
           <span className='font-mono'>OXY_TOKEN</span> secret so{" "}
           <span className='font-mono'>oxy publish</span> works in CI without an expiring login. A
@@ -92,6 +97,8 @@ export default function AdminPublishTokens() {
           </form>
         </CardContent>
       </Card>
+
+      <CiInstructions />
 
       <Card>
         <CardContent className='p-0'>

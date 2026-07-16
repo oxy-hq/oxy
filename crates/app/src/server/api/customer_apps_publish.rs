@@ -8,12 +8,15 @@
 //! `--promote`) at the new build. Replaces the old
 //! `ensure` + `aws s3 sync` + callback-`/sync` dance.
 //!
-//! Gating: mounted under the app-admin guard, so the caller is trusted
-//! oxy staff. On top of that, an Oxy engineer may only publish into a
-//! workspace whose org has granted Oxy access (the `workspace_oxy_access`
-//! toggle) — org members publishing their own apps are exempt. We also
-//! validate that the target project belongs to the named org to catch
-//! fat-finger cross-org publishes.
+//! Gating: this route is deliberately **not** app-admin-gated — partners and CI
+//! publish through it — so [`authorize_publish`] IS the whole decision (never
+//! assume the caller is trusted staff). It resolves the caller to a
+//! [`customer_apps_publish_authz::PublishActor`] and defers to the pure, tested
+//! `publish_decision`: staff may publish unless the workspace locked Oxy out
+//! (`workspace_oxy_lockdown`); an org **Admin+** may publish their own app; a
+//! **partner** needs all three gates (assigned + `manage_apps` + client consent);
+//! a plain Member and an Outsider are **denied**. We also validate that the target
+//! project belongs to the named org to catch fat-finger cross-org publishes.
 
 use std::io::Read;
 use std::sync::Arc;
@@ -64,6 +67,15 @@ pub struct PublishInput {
     /// Authenticated publisher (app-admin). Recorded on the build for the
     /// "who deployed" audit in the admin UI.
     pub published_by: Option<Uuid>,
+    /// Email of the publisher — needed to resolve partner / staff authority for
+    /// the third-party publish path (a partner uploading into a client).
+    pub published_by_email: Option<String>,
+    /// Set iff the request authenticated via an **app-scoped** publish token —
+    /// OIDC-minted (no human) or partner-minted (a real `created_by`, design §7).
+    /// Either way the `app_id` confines the token: authorization is strictly
+    /// "this token's app == the target app AND the client consents", and it can
+    /// publish to that one app and nowhere else — not the user's broader gates.
+    pub machine_app_id: Option<Uuid>,
 }
 
 /// How the publisher referred to the target org. Accepting both lets
@@ -132,6 +144,10 @@ pub enum PublishError {
     OxyAccessDenied { org: String, project: Uuid },
     #[error("invalid bundle: {0}")]
     BadTarball(String),
+    /// A fast bundle-validation check failed (design doc §8, gate 1). Carries an
+    /// actionable check/message/remediation; surfaced as 422.
+    #[error("{0}")]
+    Invalid(crate::server::api::custom_apps_validate::BundleValidation),
     #[error("database error: {0}")]
     Db(String),
     #[error("storage error: {0}")]
@@ -151,7 +167,9 @@ impl PublishError {
                 StatusCode::UNPROCESSABLE_ENTITY
             }
             PublishError::OxyAccessDenied { .. } => StatusCode::FORBIDDEN,
-            PublishError::BadTarball(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            PublishError::BadTarball(_) | PublishError::Invalid(_) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             PublishError::Db(_) | PublishError::S3(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -265,36 +283,71 @@ async fn validate_project(
     }
 }
 
-/// Beyond the app-admin route guard: an Oxy engineer may only publish into
-/// a workspace whose org has granted Oxy access (`workspace_oxy_access`).
-/// Org members are exempt — they own the app, so a workspace owner (and a
-/// local-mode operator on their own org) can always publish regardless of
-/// the toggle. Mirrors the two-path model in
-/// [`customer_apps_auth::user_can_access_app`].
+/// The publish authorization gate. This route is **not** staff-gated at the router
+/// (partners and CI publish through it), so this function is the whole decision —
+/// it must never fail open. It resolves the caller to a
+/// [`customer_apps_publish_authz::PublishActor`] and defers to the pure, tested
+/// decision: an outsider or a plain Member is denied, an org **Admin+** may publish
+/// their own app, a **partner** needs all three gates, and **staff** may publish
+/// unless the workspace has locked Oxy out (`workspace_oxy_lockdown`). App-scoped
+/// machine tokens take the confined `app_id`-match path above, before any of this.
 async fn authorize_publish(
     db: &DatabaseConnection,
     org: &organizations::Model,
     input: &PublishInput,
 ) -> Result<(), PublishError> {
-    let is_member = match input.published_by {
-        Some(uid) => customer_apps_auth::is_org_member(db, uid, org.id)
-            .await
-            .map_err(|e| PublishError::Db(e.to_string()))?,
-        None => false,
-    };
-    if is_member {
-        return Ok(());
+    // OIDC-minted machine token: authorize by "this token's app is the target app
+    // AND the client consents". No user gates — the publisher registration the
+    // exchange verified IS the assignment, and consent is re-checked here so a
+    // revoke denies the next publish.
+    if let Some(machine_app_id) = input.machine_app_id {
+        let target =
+            find_app(db, org.id, &input.app_slug)
+                .await?
+                .ok_or(PublishError::OxyAccessDenied {
+                    org: org.slug.clone(),
+                    project: input.project_id,
+                })?;
+        let consent =
+            crate::server::api::customer_apps_publish_authz::consent_enabled(db, org.id).await;
+        if target.id == machine_app_id && consent {
+            return Ok(());
+        }
+        return Err(PublishError::OxyAccessDenied {
+            org: org.slug.clone(),
+            project: input.project_id,
+        });
     }
-    let granted = customer_apps_auth::is_oxy_access_enabled(db, input.project_id)
-        .await
-        .map_err(|e| PublishError::Db(e.to_string()))?;
-    if granted {
-        return Ok(());
-    }
-    Err(PublishError::OxyAccessDenied {
+
+    // Every non-machine publish routes through the ONE pure, tested decision
+    // (`publish_decision`): it denies an outsider and a plain Member, allows an org
+    // Admin+ and a partner with all three gates, and lets staff publish unless the
+    // workspace locked Oxy out. Conflating "staff" with "not a member" here is
+    // exactly how an outsider could publish into another tenant — so resolve the
+    // actor once and let the policy decide, never a bare `!locked ⇒ Ok`.
+    use crate::server::api::customer_apps_publish_authz as authz;
+    let deny = || PublishError::OxyAccessDenied {
         org: org.slug.clone(),
         project: input.project_id,
-    })
+    };
+    let (Some(uid), Some(email)) = (input.published_by, input.published_by_email.as_deref()) else {
+        return Err(deny());
+    };
+    let actor = authz::resolve_actor(db, uid, email, org.id).await;
+
+    // Read each side-fact only for the actor it applies to: the lockdown for staff,
+    // consent for a partner. Everyone else pays no extra query.
+    let staff_locked_out = if matches!(actor, authz::PublishActor::Staff) {
+        customer_apps_auth::is_oxy_locked_down(db, input.project_id)
+            .await
+            .map_err(|e| PublishError::Db(e.to_string()))?
+    } else {
+        false
+    };
+    let consent = matches!(actor, authz::PublishActor::Partner { .. })
+        && authz::consent_enabled(db, org.id).await;
+
+    authz::publish_decision(&actor, staff_locked_out, consent).map_err(|_| deny())
 }
 
 async fn find_app(
@@ -410,6 +463,12 @@ async fn record_build(
         source_repo: ActiveValue::Set(input.source_repo.clone()),
         commit_sha: ActiveValue::Set(input.commit_sha.clone()),
         source_branch: ActiveValue::Set(input.branch.clone()),
+        // Gate 1 (byte-level validation) already ran and passed to reach here —
+        // publish 422s otherwise, before storing. Record it so promotion can be
+        // gated on a persisted status. A future deploy-time probe (gate 2) may
+        // downgrade this to `failed`; nothing sets `pending` yet.
+        validation_status: ActiveValue::Set("passed".to_string()),
+        validation_detail: ActiveValue::NotSet,
     };
     model
         .insert(db)
@@ -567,6 +626,11 @@ async fn set_pointers(
     let mut active: apps::ActiveModel = row.into();
     active.draft_build_id = ActiveValue::Set(Some(build_pk));
     if promote {
+        // Promotion gate (validator-can't-be-bypassed): only a build whose
+        // validation is recorded `passed` may go live. Redundant on this path —
+        // the build was just gate-1 validated — but keeps every promotion point
+        // honest, so a build that hasn't passed can never reach the live channel.
+        gate_promotion(db, build_pk).await?;
         active.published_build_id = ActiveValue::Set(Some(build_pk));
         active.published_at = ActiveValue::Set(Some(Utc::now().fixed_offset()));
     }
@@ -574,6 +638,33 @@ async fn set_pointers(
         .update(db)
         .await
         .map_err(|e| PublishError::Db(e.to_string()))?;
+    Ok(())
+}
+
+/// Promotion gate (the enforcement half of "the validator can't be bypassed"):
+/// a build may reach the published/live channel only if its recorded validation
+/// status is `passed`. Gate 1 stamps `passed` at publish; a future deploy-time
+/// probe (gate 2) may downgrade to `failed`. Checked at every promotion point so
+/// no build can go live without a recorded pass. Today every stored build is
+/// `passed`, so this is dormant — but the boundary now exists and is honest.
+async fn gate_promotion(db: &DatabaseConnection, build_pk: Uuid) -> Result<(), PublishError> {
+    let build = app_builds::Entity::find_by_id(build_pk)
+        .one(db)
+        .await
+        .map_err(|e| PublishError::Db(e.to_string()))?
+        .ok_or_else(|| PublishError::Db(format!("build {build_pk} vanished mid-publish")))?;
+    if build.validation_status != "passed" {
+        return Err(PublishError::Invalid(
+            crate::server::api::custom_apps_validate::BundleValidation::new(
+                "validation_not_passed",
+                format!(
+                    "build validation status is '{}', not 'passed' — it cannot be promoted to live",
+                    build.validation_status
+                ),
+                "Re-publish after the bundle passes validation.",
+            ),
+        ));
+    }
     Ok(())
 }
 
@@ -626,6 +717,11 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
     authorize_publish(&db, &org, &input).await?;
 
     let files = unpack_tar_gz(&input.tarball)?;
+    // Fast deploy validation (design doc §8, gate 1): catch the known
+    // blank-screen causes (missing head, baked-vs-registered base-path
+    // mismatch) as an actionable 422 BEFORE storing the build.
+    crate::server::api::custom_apps_validate::validate_bundle(&files, &org.slug, &input.app_slug)
+        .map_err(PublishError::Invalid)?;
     let index_bytes = files
         .iter()
         .find(|(p, _)| p == "index.html")
@@ -710,8 +806,12 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
 /// consumes the body) to stamp `published_by` on the build.
 pub async fn publish_handler(
     oxy_auth::extractor::AuthenticatedUserExtractor(user): oxy_auth::extractor::AuthenticatedUserExtractor,
+    // Present iff authenticated via an app publish token; its `app_id` is set only
+    // for OIDC-minted machine tokens.
+    marker: Option<axum::Extension<oxy_auth::types::AppPublishTokenAuth>>,
     mut multipart: Multipart,
 ) -> Result<Json<PublishResult>, (StatusCode, String)> {
+    let machine_app_id = marker.and_then(|axum::Extension(m)| m.app_id);
     let mut org: Option<String> = None;
     let mut org_id: Option<Uuid> = None;
     // Tracks whether the publisher sent a non-empty `org_id` that
@@ -827,6 +927,8 @@ pub async fn publish_handler(
         source_repo,
         commit_sha,
         published_by: Some(user.id),
+        published_by_email: Some(user.email.clone()),
+        machine_app_id,
     };
 
     publish(input)

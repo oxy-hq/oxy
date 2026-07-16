@@ -14,6 +14,7 @@ import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import ROUTES from "@/libs/utils/routes";
 import { AdminEntitySearch } from "../../components/AdminEntitySearch";
+import { AdminIdentity } from "./AdminIdentity";
 import { SystemStatus } from "./SystemStatus";
 
 interface AdminTopbarProps {
@@ -25,7 +26,8 @@ interface AdminTopbarProps {
  * VSCode-like operations surface, so chrome earns its pixels. Left: sidebar
  * toggle, a back-to-home button (the only "exit admin" affordance), and the
  * breadcrumb. Right: live status, entity search, and the build badge (the
- * one-glance "which oxy build am I on?" answer when triaging staging vs prod).
+ * one-glance "which oxy build am I on?" answer when triaging staging vs prod), and
+ * the operator's own identity + platform role — see AdminIdentity.
  */
 export function AdminTopbar({ title }: AdminTopbarProps) {
   return (
@@ -55,6 +57,10 @@ export function AdminTopbar({ title }: AdminTopbarProps) {
         <SystemStatus />
         <Separator orientation='vertical' className='hidden h-4 md:block' />
         <AdminEntitySearch />
+        <Separator orientation='vertical' className='h-4' />
+        {/* Who is wielding this surface, and with what authority. Cross-tenant
+            power should never be anonymous. */}
+        <AdminIdentity />
         <Separator orientation='vertical' className='h-4' />
         <VersionBadge />
       </div>

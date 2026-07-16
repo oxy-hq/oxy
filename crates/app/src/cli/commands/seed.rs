@@ -71,6 +71,13 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
 
     bind_org_admin_emails(&conn).await?;
 
+    // Fold in the multi-tenant + partner test data (orgs, generated users,
+    // partnerships, workspaces) so the admin cockpit + partner console have
+    // realistic data out of the box — no separate `--partners` step. Each seeded
+    // workspace points at the demo project (`resolved_str`). Skips on a non-local
+    // DB, so this stays safe to run anywhere the demo-workspace seed runs.
+    super::seed_partners::seed_partner_tenants(&resolved_str).await?;
+
     println!();
     println!("Next:");
     println!("  cargo run -p oxy-app -- compile --workspace-path {resolved_str}");

@@ -13,6 +13,7 @@ import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { Organization } from "@/types/organization";
 import OrgLogoUpload from "./OrgLogoUpload";
+import PartnerPublishConsent from "./PartnerPublishConsent";
 
 interface GeneralSectionProps {
   org: Organization;
@@ -99,6 +100,10 @@ export default function GeneralSection({ org, onClose }: GeneralSectionProps) {
             {updateOrg.isPending ? "Saving..." : "Save"}
           </Button>
         </div>
+      </CanOrgAdmin>
+
+      <CanOrgAdmin>
+        <PartnerPublishConsent orgId={org.id} />
       </CanOrgAdmin>
 
       <CanOrgOwner>

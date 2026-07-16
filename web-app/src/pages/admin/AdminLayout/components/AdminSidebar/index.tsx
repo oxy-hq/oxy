@@ -4,11 +4,10 @@ import {
   Building2,
   FileCheck,
   Flag,
-  FolderOpen,
+  Handshake,
   HeartPulse,
   Inbox,
-  KeyRound,
-  LayoutDashboard,
+  ScrollText,
   ShieldCheck,
   Telescope,
   Users
@@ -80,6 +79,13 @@ const ADMIN_NAV: AdminNavItem[] = [
     adminOrAppAdmin: true,
     group: "operations"
   },
+  {
+    to: ROUTES.ADMIN.AUDIT,
+    label: "Audit log",
+    icon: ScrollText,
+    adminOrAppAdmin: true,
+    group: "operations"
+  },
   // "Global admins" manages the `app_admins` table itself — "promotion /
   // demotion of admin", strict Global Owner only.
   {
@@ -96,13 +102,8 @@ const ADMIN_NAV: AdminNavItem[] = [
     adminOrAppAdmin: true,
     group: "operations"
   },
-  {
-    to: ROUTES.ADMIN.PUBLISH_TOKENS,
-    label: "Publish tokens",
-    icon: KeyRound,
-    adminOrAppAdmin: true,
-    group: "operations"
-  },
+  // Publish tokens now lives as a tab inside Custom apps (/admin/apps?view=tokens),
+  // not its own nav item — it's part of shipping apps, not a separate surface.
   {
     to: ROUTES.ADMIN.WORKSPACE_HEALTH,
     label: "Workspace health",
@@ -110,35 +111,29 @@ const ADMIN_NAV: AdminNavItem[] = [
     adminOrAppAdmin: true,
     group: "operations"
   },
-  // Tenant management: cross-cutting directory of orgs / users / workspaces.
-  // Open to owner OR app admin — both flavors of operator triage tenants.
-  // Overview hub at the top of the group is the natural landing surface
-  // for tenant ops; the focused list pages remain the place to act.
+  // Tenant management: the unified, relationship-first directory of orgs /
+  // partners / users (workspaces live one level down, inside their org). Each
+  // entry is a shortcut to one entity type of the SAME surface — clicking
+  // "Partners" here is identical to picking Partners in the directory's own
+  // header switcher (both just drive `?type=`). Open to owner OR app admin.
   {
-    to: ROUTES.ADMIN.TENANTS,
-    label: "Overview",
-    icon: LayoutDashboard,
-    adminOrAppAdmin: true,
-    group: "tenants"
-  },
-  {
-    to: ROUTES.ADMIN.ORGS,
+    to: `${ROUTES.ADMIN.TENANTS}?type=orgs`,
     label: "Organizations",
     icon: Building2,
     adminOrAppAdmin: true,
     group: "tenants"
   },
   {
-    to: ROUTES.ADMIN.USERS,
-    label: "Users",
-    icon: Users,
+    to: `${ROUTES.ADMIN.TENANTS}?type=partners`,
+    label: "Partners",
+    icon: Handshake,
     adminOrAppAdmin: true,
     group: "tenants"
   },
   {
-    to: ROUTES.ADMIN.WORKSPACES,
-    label: "Workspaces",
-    icon: FolderOpen,
+    to: `${ROUTES.ADMIN.TENANTS}?type=users`,
+    label: "Users",
+    icon: Users,
     adminOrAppAdmin: true,
     group: "tenants"
   }
@@ -146,6 +141,9 @@ const ADMIN_NAV: AdminNavItem[] = [
 
 export function AdminSidebar() {
   const location = useLocation();
+  // The directory's active entity type, so the tenant nav shortcuts light up in
+  // lockstep with the directory's own header switcher (both read `?type=`).
+  const currentTenantType = new URLSearchParams(location.search).get("type") ?? "orgs";
   const { data: user } = useCurrentUser();
   const isOwner = user?.is_owner ?? false;
   const isAppAdmin = user?.is_app_admin ?? false;
@@ -191,7 +189,13 @@ export function AdminSidebar() {
               <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
               <SidebarMenu>
                 {items.map(({ to, label, icon: Icon }) => {
-                  const isActive = location.pathname.startsWith(to);
+                  // Tenant items carry a `?type=` query and share one pathname,
+                  // so match on the active type; everything else matches by path.
+                  const [itemPath, itemQuery] = to.split("?");
+                  const itemType = itemQuery ? new URLSearchParams(itemQuery).get("type") : null;
+                  const isActive = itemType
+                    ? location.pathname === ROUTES.ADMIN.TENANTS && currentTenantType === itemType
+                    : location.pathname.startsWith(itemPath);
                   const showHealthBadge =
                     to === ROUTES.ADMIN.WORKSPACE_HEALTH && attentionCount > 0;
                   return (

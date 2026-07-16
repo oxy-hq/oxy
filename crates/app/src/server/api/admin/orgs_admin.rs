@@ -45,6 +45,34 @@ pub(crate) fn router() -> Router<AppState> {
         )
 }
 
+/// Every org that holds a partner grant. Small (a handful of partners), so one
+/// unfiltered read is cheaper than a join per page.
+async fn partner_grant_ids(
+    db: &sea_orm::DatabaseConnection,
+) -> Result<std::collections::HashSet<Uuid>, StatusCode> {
+    Ok(entity::prelude::PartnerGrants::find()
+        .all(db)
+        .await
+        .map_err(|e| {
+            tracing::error!("orgs_admin: load partner grants: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .into_iter()
+        .map(|g| g.org_id)
+        .collect())
+}
+
+/// The partner (if any) that manages an org — `id` is the partner's ORG id, since
+/// a partner IS an org. `partner_orgs.managed_org_id` is UNIQUE, so an org has at
+/// most one. Powers the partner chip + relationship strip in the admin tenants UI
+/// without a per-row round-trip.
+#[derive(Serialize, Clone)]
+pub struct OrgPartnerRef {
+    pub id: Uuid,
+    pub name: String,
+    pub slug: String,
+}
+
 #[derive(Serialize)]
 pub struct AdminOrgMeta {
     pub id: Uuid,
@@ -54,6 +82,13 @@ pub struct AdminOrgMeta {
     pub member_count: i64,
     pub workspace_count: i64,
     pub owner_email: Option<String>,
+    /// The partner that MANAGES this org, if any.
+    pub partner: Option<OrgPartnerRef>,
+    /// This org IS a partner (it holds a grant). Distinct from `partner` above,
+    /// which is the org's *manager* — an org can be neither, either, or (in
+    /// principle) both, and the Tenants directory lists partners separately, so
+    /// the two facts must not be conflated.
+    pub is_partner: bool,
 }
 
 #[derive(Serialize)]
@@ -68,6 +103,7 @@ pub struct AdminOrgDetail {
     pub owner_email: Option<String>,
     pub owners: Vec<OrgUserSummary>,
     pub workspaces: Vec<OrgWorkspaceSummary>,
+    pub partner: Option<OrgPartnerRef>,
 }
 
 #[derive(Serialize)]
@@ -142,6 +178,11 @@ pub async fn list_orgs_meta(
     let owner_emails = lookup_owner_emails_in(&db, &org_ids)
         .await
         .map_err(internal)?;
+    let partners = lookup_partners_for_orgs(&db, &org_ids)
+        .await
+        .map_err(internal)?;
+
+    let partner_org_ids = partner_grant_ids(&db).await?;
 
     let mut out = Vec::with_capacity(orgs.len());
     for org in orgs {
@@ -153,6 +194,8 @@ pub async fn list_orgs_meta(
             member_count: member_counts.get(&org.id).copied().unwrap_or(0),
             workspace_count: workspace_counts.get(&org.id).copied().unwrap_or(0),
             owner_email: owner_emails.get(&org.id).cloned(),
+            partner: partners.get(&org.id).cloned(),
+            is_partner: partner_org_ids.contains(&org.id),
         });
     }
 
@@ -183,6 +226,10 @@ pub async fn get_org_detail(Path(org_id): Path<Uuid>) -> Result<Json<AdminOrgDet
     let ws_list = load_workspace_summaries(&db, org.id)
         .await
         .map_err(internal)?;
+    let partner = lookup_partners_for_orgs(&db, &[org.id])
+        .await
+        .map_err(internal)?
+        .remove(&org.id);
 
     Ok(Json(AdminOrgDetail {
         id: org.id,
@@ -195,6 +242,7 @@ pub async fn get_org_detail(Path(org_id): Path<Uuid>) -> Result<Json<AdminOrgDet
         owner_email,
         owners,
         workspaces: ws_list,
+        partner,
     }))
 }
 
@@ -250,6 +298,13 @@ pub async fn rename_org(
         "admin tenant action"
     );
 
+    let partner = lookup_partners_for_orgs(&db, &[updated.id])
+        .await
+        .map_err(internal)?
+        .remove(&updated.id);
+
+    let is_partner = partner_grant_ids(&db).await?.contains(&updated.id);
+
     Ok(Json(AdminOrgMeta {
         id: updated.id,
         name: updated.name,
@@ -258,6 +313,8 @@ pub async fn rename_org(
         member_count,
         workspace_count,
         owner_email,
+        partner,
+        is_partner,
     }))
 }
 
@@ -383,6 +440,57 @@ struct OrgIdCountRow {
 struct OrgIdEmailRow {
     org_id: Uuid,
     email: String,
+}
+
+#[derive(FromQueryResult)]
+struct OrgPartnerRow {
+    org_id: Uuid,
+    partner_id: Uuid,
+    partner_name: String,
+    partner_slug: String,
+}
+
+/// IN (...) join `partner_orgs` → `organizations`: the managing partner per org.
+///
+/// A partner IS an org, so the partner's name/slug come from `organizations` —
+/// there is no `partners` table any more. `partner_orgs.managed_org_id` is
+/// UNIQUE (one partner per client), so at most one row per org. Empty `org_ids`
+/// returns an empty map without round-tripping the DB.
+async fn lookup_partners_for_orgs(
+    db: &sea_orm::DatabaseConnection,
+    org_ids: &[Uuid],
+) -> Result<HashMap<Uuid, OrgPartnerRef>, sea_orm::DbErr> {
+    if org_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = sql_placeholders(org_ids.len());
+    let sql = format!(
+        "SELECT po.managed_org_id AS org_id, o.id AS partner_id, o.name AS partner_name, \
+                o.slug AS partner_slug \
+         FROM partner_orgs po JOIN organizations o ON o.id = po.partner_org_id \
+         WHERE po.managed_org_id IN ({placeholders})"
+    );
+    let values: Vec<sea_orm::Value> = org_ids.iter().map(|id| (*id).into()).collect();
+    let rows = OrgPartnerRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                r.org_id,
+                OrgPartnerRef {
+                    id: r.partner_id,
+                    name: r.partner_name,
+                    slug: r.partner_slug,
+                },
+            )
+        })
+        .collect())
 }
 
 /// IN (...) + GROUP BY member_count per org. Empty `org_ids` returns an

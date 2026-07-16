@@ -101,7 +101,7 @@ export function CreatedTokenDialog({ token, onClose }: CreatedTokenDialogProps) 
 
         <p className='flex items-center gap-1.5 text-muted-foreground text-xs'>
           <TriangleAlert className='size-3.5' />
-          Anyone with this token can publish customer apps on your behalf. Revoke it if it leaks.
+          Anyone with this token can publish custom apps on your behalf. Revoke it if it leaks.
         </p>
 
         <DialogFooter>
