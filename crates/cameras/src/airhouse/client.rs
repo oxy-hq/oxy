@@ -24,10 +24,21 @@
 //! in the background with exponential backoff, **re-minting** the ephemeral
 //! credential through the SA broker on each attempt (pgwire auth happens once
 //! at connect, so a live connection outlives its minting credential's TTL).
+//!
+//! # Liveness
+//!
+//! Reuse is only safe while the handle's reconnect driver is running — it is
+//! the driver, not the cached `Client`, that heals a dropped connection. Each
+//! handle therefore carries an `alive` flag cleared by the driver task's
+//! [`AliveGuard`] on *any* exit, and [`tenant_client`] evicts a handle whose
+//! driver is gone instead of serving it. Without that check a driverless
+//! handle stayed cached for the process's lifetime and failed every query with
+//! `connection closed` while never attempting to reconnect.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -62,6 +73,14 @@ pub struct TenantClient {
     /// `Arc<Client>`, so concurrent queries on the same tenant do not
     /// serialize on this lock.
     client: Arc<RwLock<Arc<Client>>>,
+    /// Cleared when the reconnect driver task ends, for **any** reason —
+    /// give-up bound, panic, or the runtime dropping the task. It is the
+    /// driver, not the inner `Client`, that makes this handle usable: while
+    /// the driver lives it swaps a fresh `Client` in after every drop, so a
+    /// momentarily-closed inner client is NOT dead. Once the driver is gone
+    /// nothing will ever reconnect, and every query on this handle fails with
+    /// `connection closed` forever — see [`is_live`](Self::is_live).
+    alive: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for TenantClient {
@@ -84,6 +103,18 @@ impl TenantClient {
     ) -> Result<Vec<SimpleQueryMessage>, tokio_postgres::Error> {
         let client = Arc::clone(&*self.client.read().await);
         client.simple_query(sql).await
+    }
+
+    /// True while this handle's reconnect driver is still running. Cheap,
+    /// non-blocking, no round-trip — safe to call on every checkout.
+    ///
+    /// Deliberately tracks the *driver*, not `Client::is_closed()`: a driver
+    /// that is mid-reconnect holds a closed inner client for a moment, and
+    /// treating that as dead would evict a perfectly good entry and spawn a
+    /// second driver for the same tenant (which the registry exists to
+    /// prevent).
+    pub fn is_live(&self) -> bool {
+        self.alive.load(Ordering::Acquire)
     }
 }
 
@@ -122,6 +153,26 @@ pub async fn tenant_client(
     let key = (workspace_id, role, purpose.as_str());
     let cell = {
         let mut guard = registry().lock().await;
+        // Drop a cached entry whose driver is gone before handing it out.
+        // `OnceCell` caches the first successful connect forever, so without
+        // this a handle orphaned by a dead driver is returned to every future
+        // caller and fails every query with `connection closed` until the
+        // process restarts — no reconnect is ever attempted, because the only
+        // thing that reconnects is the task that died. (Prod 2026-07-16: the
+        // cameras ingest and `/cameras/health-summary` wedged this way for
+        // hours against a healthy DP.) Safe against the mid-reconnect race:
+        // `is_live` tracks the driver, not the inner client.
+        if guard
+            .get(&key)
+            .and_then(|cell| cell.get())
+            .is_some_and(|client| !client.is_live())
+        {
+            tracing::warn!(
+                "cameras airhouse: cached tenant client has no live driver; \
+                 evicting so the next connect rebuilds it"
+            );
+            guard.remove(&key);
+        }
         guard
             .entry(key)
             .or_insert_with(|| Arc::new(OnceCell::new()))
@@ -152,7 +203,6 @@ impl TenantClient {
         let host = cfg.wire_host.clone();
         let port = cfg.wire_port;
         let insecure = insecure_from_env();
-        let key = (workspace_id, role, purpose.as_str());
         let max_reconnect_attempts = super::max_reconnect_attempts();
         let get_credentials = make_cred_fn(workspace_id, role, purpose, ttl);
 
@@ -163,17 +213,21 @@ impl TenantClient {
             .map_err(|e| AirhouseError::Connect(e.to_string()))?;
 
         let client_ref = Arc::new(RwLock::new(Arc::new(client)));
+        let alive = Arc::new(AtomicBool::new(true));
         spawn_driver(DriverCtx {
-            key,
             conn,
             client_ref: Arc::clone(&client_ref),
+            alive: Arc::clone(&alive),
             host,
             port,
             insecure,
             get_credentials,
             max_reconnect_attempts,
         });
-        Ok(Self { client: client_ref })
+        Ok(Self {
+            client: client_ref,
+            alive,
+        })
     }
 }
 
@@ -214,9 +268,10 @@ const MIN_STABLE_UPTIME: Duration = Duration::from_secs(30);
 /// Everything the background driver needs. Grouped into a struct so the spawn
 /// call stays under clippy's argument-count limit.
 struct DriverCtx {
-    key: Key,
     conn: BoxConn,
     client_ref: Arc<RwLock<Arc<Client>>>,
+    /// Cleared via [`AliveGuard`] when this driver task ends.
+    alive: Arc<AtomicBool>,
     host: String,
     port: u16,
     insecure: bool,
@@ -228,21 +283,37 @@ struct DriverCtx {
     max_reconnect_attempts: u32,
 }
 
-/// Give up + evict if `failures` has reached the bound. Returns `true` when the
-/// caller should stop the driver. Shared by the flap path and the
-/// connect-failure path so the give-up policy lives in one place.
-async fn give_up_if_exhausted(max: u32, failures: u32, key: &Key, reason: &str) -> bool {
+/// Give up if `failures` has reached the bound. Returns `true` when the caller
+/// should stop the driver. Shared by the flap path and the connect-failure path
+/// so the give-up policy lives in one place.
+///
+/// Eviction is *not* done here. Returning `true` drops the driver's
+/// [`AliveGuard`], which clears the handle's `alive` flag; the next
+/// [`tenant_client`] checkout sees the dead handle and rebuilds it. Removing
+/// the entry by key from here would race that rebuild and could evict a
+/// freshly-connected replacement.
+fn give_up_if_exhausted(max: u32, failures: u32, reason: &str) -> bool {
     if max == 0 || failures < max {
         return false;
     }
     tracing::warn!(
         "cameras airhouse giving up after {failures} {reason}; \
-         evicting tenant connection (re-established on next use)"
+         tenant connection will be re-established on next use"
     );
-    // Best-effort: drop the registry entry so a later request builds a fresh
-    // connection instead of finding this dead one.
-    registry().lock().await.remove(key);
     true
+}
+
+/// Clears a [`TenantClient`]'s `alive` flag when the driver task ends for
+/// **any** reason — the give-up bound, a panic, or the runtime dropping the
+/// task during shutdown. This is what makes a driverless handle detectable:
+/// the panic/abort paths never run the normal give-up code, and previously
+/// left the registry caching a handle nothing would ever reconnect.
+struct AliveGuard(Arc<AtomicBool>);
+
+impl Drop for AliveGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 /// Drive the pgwire connection future and reconnect with exponential backoff
@@ -253,14 +324,13 @@ async fn give_up_if_exhausted(max: u32, failures: u32, key: &Key, reason: &str) 
 /// spam) and a server-side DuckDB session alive forever. The bound trips on
 /// **both** repeated connect/auth failures (can't connect at all) **and**
 /// repeated flaps (connect succeeds but the session drops within
-/// [`MIN_STABLE_UPTIME`]); either way the registry entry is evicted and the
-/// next request re-establishes lazily. A connection that stays up resets the
-/// count.
+/// [`MIN_STABLE_UPTIME`]); either way the handle is marked dead and the next
+/// request re-establishes lazily. A connection that stays up resets the count.
 fn spawn_driver(ctx: DriverCtx) {
     let DriverCtx {
-        key,
         mut conn,
         client_ref,
+        alive,
         host,
         port,
         insecure,
@@ -268,6 +338,9 @@ fn spawn_driver(ctx: DriverCtx) {
         max_reconnect_attempts,
     } = ctx;
     tokio::spawn(async move {
+        // Marks the handle dead however this task ends — including a panic or
+        // an abort, which skip every `return` below.
+        let _alive_guard = AliveGuard(alive);
         let mut connected_at = Instant::now();
         let mut failures: u32 = 0;
         'session: loop {
@@ -286,14 +359,7 @@ fn spawn_driver(ctx: DriverCtx) {
                 failures = 0;
             } else {
                 failures += 1;
-                if give_up_if_exhausted(
-                    max_reconnect_attempts,
-                    failures,
-                    &key,
-                    "rapid reconnect flaps",
-                )
-                .await
-                {
+                if give_up_if_exhausted(max_reconnect_attempts, failures, "rapid reconnect flaps") {
                     return;
                 }
             }
@@ -332,14 +398,7 @@ fn spawn_driver(ctx: DriverCtx) {
 
                 // Reached only on a failed attempt (success `continue`s above).
                 failures += 1;
-                if give_up_if_exhausted(
-                    max_reconnect_attempts,
-                    failures,
-                    &key,
-                    "reconnect failures",
-                )
-                .await
-                {
+                if give_up_if_exhausted(max_reconnect_attempts, failures, "reconnect failures") {
                     return;
                 }
                 delay = (delay * 2).min(Duration::from_secs(30));
@@ -400,4 +459,62 @@ pub(super) fn tls_connector() -> MakeRustlsConnect {
         MakeRustlsConnect::new(cfg)
     })
     .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn give_up_bound_of_zero_retries_forever() {
+        assert!(!give_up_if_exhausted(0, u32::MAX, "test"));
+    }
+
+    #[test]
+    fn give_up_trips_only_once_failures_reach_the_bound() {
+        assert!(!give_up_if_exhausted(3, 2, "test"));
+        assert!(give_up_if_exhausted(3, 3, "test"));
+    }
+
+    /// The give-up bound is not the only way a driver dies — a panic unwinds
+    /// past every `return`. The guard must still mark the handle dead, or
+    /// `tenant_client` keeps serving a handle that nothing will ever
+    /// reconnect, failing every query with `connection closed` until the
+    /// process restarts (prod wedge, 2026-07-16).
+    #[tokio::test]
+    async fn driver_panic_marks_the_handle_dead() {
+        let alive = Arc::new(AtomicBool::new(true));
+        let held = Arc::clone(&alive);
+        let driver = tokio::spawn(async move {
+            let _guard = AliveGuard(held);
+            panic!("driver blew up");
+        });
+
+        assert!(driver.await.is_err(), "task should have panicked");
+        assert!(
+            !alive.load(Ordering::Acquire),
+            "a panicking driver must leave the handle marked dead"
+        );
+    }
+
+    /// The handle stays usable for exactly as long as its driver holds the
+    /// guard — a driver that is merely mid-reconnect must NOT read as dead, or
+    /// checkout would evict it and spawn a second driver for the tenant, which
+    /// the registry exists to prevent. Any exit then clears the flag, however
+    /// the task unwound.
+    #[test]
+    fn handle_is_live_while_the_driver_holds_the_guard_and_dead_once_it_drops() {
+        let alive = Arc::new(AtomicBool::new(true));
+        {
+            let _guard = AliveGuard(Arc::clone(&alive));
+            assert!(
+                alive.load(Ordering::Acquire),
+                "handle must stay live while its driver runs"
+            );
+        }
+        assert!(
+            !alive.load(Ordering::Acquire),
+            "handle must read dead once its driver's guard drops"
+        );
+    }
 }
