@@ -16,6 +16,13 @@ use super::ingest::{BoxHealthPayload, CameraHealthPayload, EventPayload};
 const DEFAULT_FLUSH_INTERVAL_MS: u64 = 5000;
 const DEFAULT_FLUSH_MAX_ROWS: usize = 5000;
 const DEFAULT_BUFFER_MAX_ROWS: usize = 100_000;
+/// Consecutive rejected flushes of the same `(stream, workspace)` before the
+/// batch is discarded — 60 × the 5s flush interval, so a batch is retried for
+/// ~5 minutes before it is judged poison. Comfortably rides out a DP rollout or
+/// a tripped circuit breaker (~30s), while bounding a content-rejected batch to
+/// minutes instead of the ~2.5h it wedged prod for on 2026-07-15. `0` restores
+/// the old retry-forever behaviour.
+const DEFAULT_MAX_FLUSH_ATTEMPTS: u32 = 60;
 
 /// One in-memory buffer per stream, each keyed by workspace (tenant).
 #[derive(Default)]
@@ -25,6 +32,11 @@ pub(crate) struct Buffers {
     pub box_health: HashMap<Uuid, Vec<BoxHealthPayload>>,
     /// Rows dropped since the last flush (cap exceeded); surfaced as a WARN.
     pub dropped: u64,
+    /// Consecutive failed flushes per `(stream, workspace)`. Cleared on the
+    /// first success. Drives [`requeue_or_quarantine`]'s poison-batch bound.
+    pub flush_failures: HashMap<(&'static str, Uuid), u32>,
+    /// Rows discarded by the poison-batch bound; surfaced as an ERROR.
+    pub quarantined: u64,
 }
 
 /// Append `rows` for `ws`; drop oldest beyond `cap` (counting into `dropped`).
@@ -80,6 +92,12 @@ static BUFFERING_DISABLED: LazyLock<bool> = LazyLock::new(|| {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
 });
+static MAX_FLUSH_ATTEMPTS: LazyLock<u32> = LazyLock::new(|| {
+    env_u64(
+        "OXY_CAMERAS_INGEST_MAX_FLUSH_ATTEMPTS",
+        DEFAULT_MAX_FLUSH_ATTEMPTS as u64,
+    ) as u32
+});
 
 pub(crate) fn flush_interval() -> Duration {
     *FLUSH_INTERVAL
@@ -95,6 +113,10 @@ pub(crate) fn buffer_max_rows() -> usize {
 
 pub(crate) fn buffering_disabled() -> bool {
     *BUFFERING_DISABLED
+}
+
+pub(crate) fn max_flush_attempts() -> u32 {
+    *MAX_FLUSH_ATTEMPTS
 }
 
 // ── Global singleton buffers + flush notify ──────────────────────────────────
@@ -268,35 +290,109 @@ fn requeue<T>(map: &mut HashMap<Uuid, Vec<T>>, dropped: &mut u64, ws: Uuid, mut 
     }
 }
 
+/// [`requeue`], bounded: once a `(stream, workspace)` has failed
+/// `max_flush_attempts` times in a row, discard the batch instead of putting
+/// it back.
+///
+/// Requeuing forever assumes every failure is transient. A batch that fails on
+/// its *content* never stops failing, so it is re-sent every flush interval —
+/// the same rows, the same rejection, indefinitely. The stream never drains,
+/// and each retry is another backend failure feeding the DP's circuit breaker.
+/// That is not hypothetical: on 2026-07-15 `oxy_cam_events` and
+/// `oxy_cam_camera_health` each re-sent a rejected batch every 5s for ~2.5h
+/// (~12 failures/min/stream), and only an `oxy-0` restart — which drops these
+/// in-memory buffers wholesale — cleared it.
+///
+/// Discarding loses the batch, which the retry-forever path *also* does: the
+/// buffer grows to `buffer_max_rows` and `requeue` silently drops the oldest
+/// rows anyway. The difference is that this bounds the loss, says so at ERROR,
+/// and lets the stream resume.
+///
+/// The counter resets after a quarantine so the next batch is judged on its own
+/// merits — a poison batch shouldn't leave the stream permanently trigger-happy.
+#[allow(clippy::too_many_arguments)]
+fn requeue_or_quarantine<T>(
+    map: &mut HashMap<Uuid, Vec<T>>,
+    dropped: &mut u64,
+    failures: &mut HashMap<(&'static str, Uuid), u32>,
+    quarantined: &mut u64,
+    stream: &'static str,
+    ws: Uuid,
+    failed: Vec<T>,
+    max: u32,
+) {
+    let attempts = failures.entry((stream, ws)).or_insert(0);
+    *attempts += 1;
+
+    if max == 0 || *attempts < max {
+        requeue(map, dropped, ws, failed);
+        return;
+    }
+
+    let n = failed.len();
+    *quarantined += n as u64;
+    failures.remove(&(stream, ws));
+    drop(failed);
+    tracing::error!(
+        workspace_id = %ws,
+        stream,
+        rows = n,
+        attempts = max,
+        "cameras ingest batch rejected {max} times in a row; discarding it. \
+         The rows are lost. A batch that fails this consistently is being \
+         refused on its content, not on a transient backend fault — check the \
+         airhouse DP logs for the underlying error"
+    );
+}
+
+/// Reset a `(stream, workspace)`'s consecutive-failure count after a flush
+/// lands, so only an *unbroken* run of rejections trips the poison-batch bound.
+/// Takes the lock only when there is something to clear — the steady state is a
+/// successful flush with no entry.
+fn clear_failures(buffers: &Mutex<Buffers>, stream: &'static str, ws: Uuid) {
+    let mut b = buffers.lock().unwrap_or_else(|p| p.into_inner());
+    b.flush_failures.remove(&(stream, ws));
+}
+
 /// Drain every buffer (swap-out under the lock) and write each batch outside
 /// the lock; requeue a batch whose write fails.
 pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
     // The guarded state is plain `Vec`/`HashMap`; recover from a poisoned lock
     // (`into_inner`) rather than panicking, so one unlucky panic can't wedge
     // every tenant's ingest for the process lifetime.
-    let (events, camera_health, box_health, dropped) = {
+    let (events, camera_health, box_health, dropped, quarantined) = {
         let mut b = buffers.lock().unwrap_or_else(|p| p.into_inner());
         (
             std::mem::take(&mut b.events),
             std::mem::take(&mut b.camera_health),
             std::mem::take(&mut b.box_health),
             std::mem::take(&mut b.dropped),
+            std::mem::take(&mut b.quarantined),
         )
     };
     if dropped > 0 {
         tracing::warn!(dropped, "cameras ingest buffer dropped rows (cap exceeded)");
     }
+    if quarantined > 0 {
+        tracing::error!(
+            quarantined,
+            "cameras ingest discarded rows from repeatedly-rejected batches"
+        );
+    }
     for (ws, rows) in events {
         let n = rows.len();
         let started = std::time::Instant::now();
         match sink.write_events(ws, &rows).await {
-            Ok(()) => tracing::info!(
-                workspace_id = %ws,
-                stream = "events",
-                rows = n,
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                "cameras ingest flushed"
-            ),
+            Ok(()) => {
+                tracing::info!(
+                    workspace_id = %ws,
+                    stream = "events",
+                    rows = n,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "cameras ingest flushed"
+                );
+                clear_failures(buffers, "events", ws);
+            }
             Err(e) => {
                 tracing::warn!(
                     workspace_id = %ws,
@@ -307,9 +403,22 @@ pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
                 );
                 let mut b = buffers.lock().unwrap_or_else(|p| p.into_inner());
                 let Buffers {
-                    events, dropped, ..
+                    events,
+                    dropped,
+                    flush_failures,
+                    quarantined,
+                    ..
                 } = &mut *b;
-                requeue(events, dropped, ws, rows);
+                requeue_or_quarantine(
+                    events,
+                    dropped,
+                    flush_failures,
+                    quarantined,
+                    "events",
+                    ws,
+                    rows,
+                    max_flush_attempts(),
+                );
             }
         }
     }
@@ -317,13 +426,16 @@ pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
         let n = rows.len();
         let started = std::time::Instant::now();
         match sink.write_camera_health(ws, &rows).await {
-            Ok(()) => tracing::info!(
-                workspace_id = %ws,
-                stream = "camera_health",
-                rows = n,
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                "cameras ingest flushed"
-            ),
+            Ok(()) => {
+                tracing::info!(
+                    workspace_id = %ws,
+                    stream = "camera_health",
+                    rows = n,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "cameras ingest flushed"
+                );
+                clear_failures(buffers, "camera_health", ws);
+            }
             Err(e) => {
                 tracing::warn!(
                     workspace_id = %ws,
@@ -336,9 +448,20 @@ pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
                 let Buffers {
                     camera_health,
                     dropped,
+                    flush_failures,
+                    quarantined,
                     ..
                 } = &mut *b;
-                requeue(camera_health, dropped, ws, rows);
+                requeue_or_quarantine(
+                    camera_health,
+                    dropped,
+                    flush_failures,
+                    quarantined,
+                    "camera_health",
+                    ws,
+                    rows,
+                    max_flush_attempts(),
+                );
             }
         }
     }
@@ -346,13 +469,16 @@ pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
         let n = rows.len();
         let started = std::time::Instant::now();
         match sink.write_box_health(ws, &rows).await {
-            Ok(()) => tracing::info!(
-                workspace_id = %ws,
-                stream = "box_health",
-                rows = n,
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                "cameras ingest flushed"
-            ),
+            Ok(()) => {
+                tracing::info!(
+                    workspace_id = %ws,
+                    stream = "box_health",
+                    rows = n,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "cameras ingest flushed"
+                );
+                clear_failures(buffers, "box_health", ws);
+            }
             Err(e) => {
                 tracing::warn!(
                     workspace_id = %ws,
@@ -365,9 +491,20 @@ pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
                 let Buffers {
                     box_health,
                     dropped,
+                    flush_failures,
+                    quarantined,
                     ..
                 } = &mut *b;
-                requeue(box_health, dropped, ws, rows);
+                requeue_or_quarantine(
+                    box_health,
+                    dropped,
+                    flush_failures,
+                    quarantined,
+                    "box_health",
+                    ws,
+                    rows,
+                    max_flush_attempts(),
+                );
             }
         }
     }
@@ -571,5 +708,138 @@ mod tests {
         flush_all(&bufs, &sink).await;
         // write failed → rows requeued for the next cycle.
         assert_eq!(bufs.lock().unwrap().events[&ws].len(), 2);
+    }
+
+    /// Below the bound a rejected batch keeps its place at the head, so a
+    /// transient backend fault (DP rollout, tripped breaker) loses nothing.
+    #[test]
+    fn rejected_batch_is_requeued_while_under_the_attempt_bound() {
+        let ws = Uuid::nil();
+        let mut map: HashMap<Uuid, Vec<EventPayload>> = HashMap::new();
+        let (mut dropped, mut quarantined) = (0u64, 0u64);
+        let mut failures = HashMap::new();
+
+        let mut batch = vec![event("a")];
+        for i in 1..3 {
+            requeue_or_quarantine(
+                &mut map,
+                &mut dropped,
+                &mut failures,
+                &mut quarantined,
+                "events",
+                ws,
+                batch,
+                3,
+            );
+            assert_eq!(map[&ws].len(), 1, "batch must survive attempt {i}");
+            assert_eq!(failures[&("events", ws)], i);
+            batch = map.remove(&ws).unwrap(); // the next flush drains it again
+        }
+        assert_eq!(quarantined, 0);
+    }
+
+    /// The bug this exists for: a batch rejected on its content is re-sent every
+    /// flush interval forever, wedging the stream and feeding the DP's breaker
+    /// (prod 2026-07-15: ~12 failures/min/stream for 2.5h). At the bound it must
+    /// be discarded so the stream can drain again.
+    #[test]
+    fn batch_is_quarantined_once_it_hits_the_attempt_bound() {
+        let ws = Uuid::nil();
+        let mut map: HashMap<Uuid, Vec<EventPayload>> = HashMap::new();
+        let (mut dropped, mut quarantined) = (0u64, 0u64);
+        let mut failures = HashMap::new();
+
+        // Three flush cycles: drain the buffer, fail, requeue — until the bound.
+        let mut batch = vec![event("a"), event("b")];
+        for _ in 0..3 {
+            requeue_or_quarantine(
+                &mut map,
+                &mut dropped,
+                &mut failures,
+                &mut quarantined,
+                "events",
+                ws,
+                batch,
+                3,
+            );
+            batch = map.remove(&ws).unwrap_or_default();
+        }
+
+        assert_eq!(quarantined, 2, "the rejected rows are counted as discarded");
+        assert!(
+            map.get(&ws).is_none_or(|b| b.is_empty()),
+            "the poison batch must not be put back"
+        );
+        assert!(
+            !failures.contains_key(&("events", ws)),
+            "counter resets after quarantine so the next batch starts clean"
+        );
+    }
+
+    /// Rows that arrived *during* the failed write are innocent — they were
+    /// never attempted. Quarantine must discard only the batch that was
+    /// actually rejected.
+    #[test]
+    fn quarantine_keeps_rows_that_arrived_during_the_write() {
+        let ws = Uuid::nil();
+        let mut map: HashMap<Uuid, Vec<EventPayload>> = HashMap::new();
+        map.insert(ws, vec![event("arrived-during-write")]);
+        let (mut dropped, mut quarantined) = (0u64, 0u64);
+        let mut failures = HashMap::new();
+
+        requeue_or_quarantine(
+            &mut map,
+            &mut dropped,
+            &mut failures,
+            &mut quarantined,
+            "events",
+            ws,
+            vec![event("poison")],
+            1,
+        );
+
+        assert_eq!(quarantined, 1);
+        assert_eq!(map[&ws].len(), 1);
+        assert_eq!(map[&ws][0].track_id, "arrived-during-write");
+    }
+
+    /// A success between rejections means the backend is flaky, not the batch —
+    /// the run must restart so flakiness never accumulates into a quarantine.
+    #[test]
+    fn success_resets_the_consecutive_failure_run() {
+        let ws = Uuid::nil();
+        let bufs = Mutex::new(Buffers::default());
+        bufs.lock()
+            .unwrap()
+            .flush_failures
+            .insert(("events", ws), 2);
+
+        clear_failures(&bufs, "events", ws);
+
+        assert!(bufs.lock().unwrap().flush_failures.is_empty());
+    }
+
+    /// `0` restores the pre-existing retry-forever behaviour as an escape hatch.
+    #[test]
+    fn attempt_bound_of_zero_never_quarantines() {
+        let ws = Uuid::nil();
+        let mut map: HashMap<Uuid, Vec<EventPayload>> = HashMap::new();
+        let (mut dropped, mut quarantined) = (0u64, 0u64);
+        let mut failures = HashMap::new();
+
+        for _ in 0..50 {
+            requeue_or_quarantine(
+                &mut map,
+                &mut dropped,
+                &mut failures,
+                &mut quarantined,
+                "events",
+                ws,
+                vec![event("a")],
+                0,
+            );
+        }
+        assert_eq!(quarantined, 0);
+        assert_eq!(map[&ws].len(), 50);
     }
 }
