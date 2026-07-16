@@ -2,11 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.106] - 2026-07-16
+
+### 💼 Other
+
+- *(deps)* Bump actions/setup-node from 6.4.0 to 7.0.0 (#2720)
+- *(deps)* Bump anthropics/claude-code-action from 1.0.171 to 1.0.174 (#2721)
+
 ## [0.5.105] - 2026-07-15
 
 ### 🐛 Bug Fixes
 
 - *(observability)* Render ClickHouse trace timestamps with %i, not %M (#2718)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.105 (#2719)
 
 ## [0.5.104] - 2026-07-15
 
