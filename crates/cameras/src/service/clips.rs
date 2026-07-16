@@ -270,6 +270,7 @@ pub async fn mint_get_url(workspace_id: Uuid, key: &str) -> ServiceResult<MintGe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn build_key_partitions_by_workspace_and_date() {
@@ -291,6 +292,7 @@ mod tests {
         );
     }
 
+    #[serial]
     #[test]
     fn from_env_returns_none_when_bucket_unset() {
         // SAFETY: tests run single-threaded under nextest's default.
@@ -300,6 +302,7 @@ mod tests {
         assert!(S3Config::from_env().is_none());
     }
 
+    #[serial]
     #[test]
     fn from_env_picks_up_overrides() {
         // SAFETY: see above.

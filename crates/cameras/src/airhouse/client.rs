@@ -118,12 +118,60 @@ impl TenantClient {
     }
 }
 
+/// Which airhouse DP pool a client connects to.
+///
+/// The DP fleet is split: a serving/ingest pool on `AIRHOUSE_WIRE_HOST` and an
+/// optional analytics pool on `AIRHOUSE_ANALYTICS_WIRE_HOST`, fronted by
+/// separate HAProxy backends (`dp` / `dp-analytics`) over separate pods. The
+/// split exists so heavy OLAP can't contend with latency-sensitive ingest —
+/// and, just as importantly, so one side failing doesn't take the other with
+/// it: each DP has its own circuit breaker, and a write-path fault trips only
+/// the pool it happens on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Pool {
+    /// The serving/ingest DP. Edge writes belong here — they're small, hot, and
+    /// what that pool is sized for.
+    Serving,
+    /// The analytics DP, when `AIRHOUSE_ANALYTICS_WIRE_HOST` is set; otherwise
+    /// falls back to serving, so deployments without a separate pool are
+    /// unaffected.
+    Analytics,
+}
+
+impl Pool {
+    /// Resolve to a concrete `(host, port)`, falling back to the serving
+    /// endpoint when no analytics pool is configured.
+    fn endpoint(self, cfg: &airhouse::AirhouseRuntimeConfig) -> (String, u16) {
+        self.resolve(cfg, airhouse::analytics_wire_endpoint())
+    }
+
+    /// The routing decision, with the analytics endpoint injected rather than
+    /// read from the environment — `set_var` is not thread-safe, so a test that
+    /// reached for the env would race every other test in the binary that reads
+    /// it.
+    fn resolve(
+        self,
+        cfg: &airhouse::AirhouseRuntimeConfig,
+        analytics: Option<airhouse::WireEndpoint>,
+    ) -> (String, u16) {
+        let serving = || (cfg.wire_host.clone(), cfg.wire_port);
+        match self {
+            Pool::Serving => serving(),
+            Pool::Analytics => analytics.map_or_else(serving, |e| (e.host, e.port)),
+        }
+    }
+}
+
 // ── Per-tenant registry ─────────────────────────────────────────────────────
 
 /// Key: one persistent connection per tenant **and** access pattern. Reader
 /// vs Writer vs Admin connect with different minted credentials, and the
 /// `purpose` segments the airhouse audit log, so they must not share a
 /// connection.
+///
+/// `purpose` also keeps the pools apart: reads and writes already carry
+/// distinct purposes, so a client on the analytics pool can never be handed to
+/// a caller that wanted the serving pool.
 type Key = (Uuid, UserRole, &'static str);
 
 /// Per-key lazily-initialised client cell. The `OnceCell` single-flights the
@@ -149,6 +197,7 @@ pub async fn tenant_client(
     role: UserRole,
     purpose: SystemPurpose,
     ttl: Duration,
+    pool: Pool,
 ) -> Result<Arc<TenantClient>, AirhouseError> {
     let key = (workspace_id, role, purpose.as_str());
     let cell = {
@@ -181,7 +230,7 @@ pub async fn tenant_client(
     // On error the cell stays uninitialised, so the next caller retries the
     // connect rather than caching a permanent failure.
     cell.get_or_try_init(|| async {
-        TenantClient::connect(workspace_id, role, purpose, ttl)
+        TenantClient::connect(workspace_id, role, purpose, ttl, pool)
             .await
             .map(Arc::new)
     })
@@ -195,13 +244,15 @@ impl TenantClient {
         role: UserRole,
         purpose: SystemPurpose,
         ttl: Duration,
+        pool: Pool,
     ) -> Result<Self, AirhouseError> {
         let cfg = match AirhouseConfig::from_env() {
             AirhouseConfig::Enabled(c) => c,
             _ => return Err(AirhouseError::Disabled),
         };
-        let host = cfg.wire_host.clone();
-        let port = cfg.wire_port;
+        // Captured for the driver's lifetime, so reconnects stay on the pool
+        // this client was opened against.
+        let (host, port) = pool.endpoint(&cfg);
         let insecure = insecure_from_env();
         let max_reconnect_attempts = super::max_reconnect_attempts();
         let get_credentials = make_cred_fn(workspace_id, role, purpose, ttl);
@@ -515,6 +566,51 @@ mod tests {
         assert!(
             !alive.load(Ordering::Acquire),
             "handle must read dead once its driver's guard drops"
+        );
+    }
+
+    fn cfg() -> airhouse::AirhouseRuntimeConfig {
+        airhouse::AirhouseRuntimeConfig {
+            base_url: "http://cp:8080".into(),
+            admin_token: "t".into(),
+            wire_host: "serving-host".into(),
+            wire_port: 5445,
+        }
+    }
+
+    fn analytics() -> Option<airhouse::WireEndpoint> {
+        Some(airhouse::WireEndpoint {
+            host: "analytics-host".into(),
+            port: 5446,
+        })
+    }
+
+    #[test]
+    fn serving_pool_ignores_the_analytics_endpoint() {
+        assert_eq!(
+            Pool::Serving.resolve(&cfg(), analytics()),
+            ("serving-host".to_string(), 5445),
+            "edge writes must stay on the serving DP even when an analytics pool exists"
+        );
+    }
+
+    #[test]
+    fn analytics_pool_routes_to_the_analytics_endpoint() {
+        assert_eq!(
+            Pool::Analytics.resolve(&cfg(), analytics()),
+            ("analytics-host".to_string(), 5446),
+            "dashboard reads must route to the analytics DP"
+        );
+    }
+
+    /// Deployments without a separate analytics pool must be unaffected — the
+    /// read path keeps working against the serving DP exactly as before.
+    #[test]
+    fn analytics_pool_falls_back_to_serving_when_unconfigured() {
+        assert_eq!(
+            Pool::Analytics.resolve(&cfg(), None),
+            ("serving-host".to_string(), 5445),
+            "no analytics pool configured ⇒ fall back to serving, not fail"
         );
     }
 }

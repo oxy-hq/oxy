@@ -551,6 +551,7 @@ mod tests {
     // `await_holding_lock` lint for this test module only.
     #![allow(clippy::await_holding_lock)]
     use super::*;
+    use serial_test::serial;
 
     // Serialize buffer-state tests so global OnceLock state doesn't race.
     static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -570,6 +571,7 @@ mod tests {
         }
     }
 
+    #[serial]
     #[tokio::test]
     async fn push_events_buffers_without_writing() {
         let _g = TEST_LOCK.lock().unwrap();

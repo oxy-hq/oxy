@@ -351,7 +351,9 @@ fn parse_env_hours(name: &str, default: Duration) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
+    #[serial]
     #[test]
     fn policy_from_env_uses_defaults_when_unset() {
         // SAFETY: tests run single-threaded under nextest's default.
@@ -365,6 +367,7 @@ mod tests {
         assert_eq!(p.warn_days, DEFAULT_WARN_DAYS);
     }
 
+    #[serial]
     #[test]
     fn policy_from_env_parses_overrides() {
         // SAFETY: see above.

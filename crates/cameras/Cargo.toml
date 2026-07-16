@@ -93,6 +93,12 @@ tracing = { workspace = true }
 #     a fresh tenant, drives the same /control/* flow, verifies via
 #     pgwire SELECT. #[ignore] by default; run with --run-ignored only
 #     after exporting AIRHOUSE_BASE_URL / ADMIN_TOKEN / WIRE_HOST / WIRE_PORT.
+#
+# serial_test: six modules here call set_var/remove_var in tests. That mutates
+# process-global state and is not thread-safe, while cargo runs tests on
+# parallel threads — so the env tests must serialize against EACH OTHER, which
+# per-module locks cannot do.
+serial_test = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tower = { version = "0.5.3", features = ["util"] }
 testcontainers = { version = "0.27", features = ["blocking", "reusable-containers"] }

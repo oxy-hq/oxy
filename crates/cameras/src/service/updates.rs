@@ -314,6 +314,7 @@ async fn edge_box_owned_by_workspace(
 mod compat_tests {
     use super::*;
     use serde_json::json;
+    use serial_test::serial;
     use std::sync::Mutex;
 
     // Env-mutating tests must serialize — set_var is global.
@@ -332,6 +333,7 @@ mod compat_tests {
         unsafe { std::env::remove_var(MIN_EDGE_PROTOCOL_ENV) };
     }
 
+    #[serial]
     #[test]
     fn returns_none_when_enforcement_disabled() {
         with_min(None, || {
@@ -340,6 +342,7 @@ mod compat_tests {
         });
     }
 
+    #[serial]
     #[test]
     fn returns_none_when_worker_at_min() {
         with_min(Some("2"), || {
@@ -348,6 +351,7 @@ mod compat_tests {
         });
     }
 
+    #[serial]
     #[test]
     fn returns_none_when_worker_above_min() {
         with_min(Some("2"), || {
@@ -356,6 +360,7 @@ mod compat_tests {
         });
     }
 
+    #[serial]
     #[test]
     fn flags_too_old_worker() {
         with_min(Some("3"), || {
@@ -366,6 +371,7 @@ mod compat_tests {
         });
     }
 
+    #[serial]
     #[test]
     fn returns_none_when_no_manifest_posted() {
         with_min(Some("2"), || {
@@ -373,6 +379,7 @@ mod compat_tests {
         });
     }
 
+    #[serial]
     #[test]
     fn returns_none_when_manifest_missing_protocol_version() {
         with_min(Some("2"), || {

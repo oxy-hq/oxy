@@ -189,6 +189,7 @@ pub async fn connect_and_ensure(workspace_id: Uuid) -> Result<Arc<TenantClient>,
         UserRole::Writer,
         SystemPurpose::EdgeIngest,
         ingest_ttl(),
+        client::Pool::Serving,
     )
     .await
 }
@@ -205,6 +206,22 @@ pub async fn connect_and_ensure(workspace_id: Uuid) -> Result<Arc<TenantClient>,
 ///   - Does NOT run schema DDL. If the table doesn't exist (no edge box ever
 ///     wrote to it), the SELECT just returns an empty set or errors as
 ///     `undefined_table`, both of which are accurate.
+///   - Routed to the **analytics** DP pool ([`client::Pool::Analytics`]) when
+///     one is configured. Every camera dashboard read — health-summary,
+///     compliance, cost, logs, rollup — funnels through here, so this is the
+///     one place that decides it.
+///
+/// Why the analytics pool: these are UI SELECTs that scan DuckLake, and they
+/// were sharing the serving DP with edge ingest. That coupled them in both
+/// directions — dashboard scans competing with hot writes, and, worse, a
+/// write-path fault taking the dashboard down with it. Each DP has its own
+/// circuit breaker: on 2026-07-15 rejected `oxy_cam_*` writes tripped the
+/// serving DP's breaker, and because reads lived on that same pool the
+/// dashboard went down with the ingest. On the analytics pool a write-path
+/// fault costs writes only.
+///
+/// Falls back to the serving endpoint when `AIRHOUSE_ANALYTICS_WIRE_HOST` is
+/// unset, so deployments without a separate analytics pool are unchanged.
 ///
 /// Like the write path, the underlying connection is **persistent and reused**
 /// per tenant rather than opened per request.
@@ -214,6 +231,7 @@ pub async fn connect_for_reads(workspace_id: Uuid) -> Result<Arc<TenantClient>, 
         UserRole::Reader,
         SystemPurpose::ComplianceReportsRead,
         read_ttl(),
+        client::Pool::Analytics,
     )
     .await
 }
@@ -306,10 +324,12 @@ pub async fn connect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     /// Env-var parsing must serialize: these touch the process-wide env.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    #[serial]
     #[test]
     fn ttls_and_chunk_fall_back_to_defaults_when_unset() {
         let _g = ENV_LOCK.lock().unwrap();
@@ -324,6 +344,7 @@ mod tests {
         assert_eq!(insert_chunk_rows(), DEFAULT_INSERT_CHUNK_ROWS);
     }
 
+    #[serial]
     #[test]
     fn env_overrides_are_honored() {
         let _g = ENV_LOCK.lock().unwrap();
@@ -344,6 +365,7 @@ mod tests {
         }
     }
 
+    #[serial]
     #[test]
     fn max_reconnect_attempts_parsing() {
         let _g = ENV_LOCK.lock().unwrap();
@@ -366,6 +388,7 @@ mod tests {
         unsafe { std::env::remove_var(var) };
     }
 
+    #[serial]
     #[test]
     fn zero_and_garbage_values_fall_back_to_defaults() {
         let _g = ENV_LOCK.lock().unwrap();

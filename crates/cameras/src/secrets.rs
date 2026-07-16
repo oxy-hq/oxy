@@ -54,6 +54,7 @@ pub fn looks_sealed(blob: &[u8]) -> bool {
 mod tests {
     use super::*;
     use base64::{Engine as _, engine::general_purpose};
+    use serial_test::serial;
     use std::sync::Mutex;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -68,6 +69,7 @@ mod tests {
         }
     }
 
+    #[serial]
     #[test]
     fn round_trip() {
         let _g = ENV_MUTEX.lock().unwrap();
@@ -76,6 +78,7 @@ mod tests {
         assert_eq!(open(&blob).unwrap(), b"device-secret-32-bytes-go-here..");
     }
 
+    #[serial]
     #[test]
     fn looks_sealed_is_true_after_seal() {
         let _g = ENV_MUTEX.lock().unwrap();
@@ -85,6 +88,7 @@ mod tests {
         assert!(!looks_sealed(b"raw-plaintext"));
     }
 
+    #[serial]
     #[test]
     fn open_rejects_plaintext() {
         let _g = ENV_MUTEX.lock().unwrap();
