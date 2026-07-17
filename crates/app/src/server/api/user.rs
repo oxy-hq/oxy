@@ -64,9 +64,15 @@ pub struct LogoutResponse {
 /// Build a [`UserInfo`] from the authenticated user. Async because
 /// `is_app_admin` is now a DB-backed check (see `app_admins` table).
 pub async fn user_info_from(user: AuthenticatedUser) -> UserInfo {
-    let is_owner = crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(&user.email);
-    let is_app_admin =
-        crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin(&user.email).await;
+    // Reported, not decided — so this takes the flag door, not a ring. With no
+    // connection we still know the owner half (an env read), and reporting `is_owner:
+    // false` at a Global Owner would hide their own UI over a DB blip.
+    let standing = match oxy::database::client::establish_connection().await {
+        Ok(db) => crate::server::authz::globals::platform_standing(&db, &user.email).await,
+        Err(_) => crate::server::authz::globals::platform_standing_offline(&user.email),
+    };
+    let is_owner = standing.is_global_owner;
+    let is_app_admin = standing.is_global_admin;
     let partner_memberships = partner_memberships_for(&user).await;
     UserInfo {
         id: user.id.to_string(),

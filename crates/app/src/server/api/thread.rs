@@ -1,5 +1,3 @@
-use crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin;
-use crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner;
 use crate::server::api::middlewares::role_guards::WorkspaceEditor;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::router::WorkspaceExtractor;
@@ -280,7 +278,26 @@ pub async fn get_thread(
         })? {
         Some(thread) => thread,
         None => {
-            let is_operator = is_oxy_owner(&user.email) || is_oxy_app_admin(&user.email).await;
+            // Falling back to the unscoped query is an operator power, so ask the
+            // ring rather than re-deciding what "operator" means here.
+            //
+            // Unknown standing denies. There is no legacy check beside this one to defer
+            // to, so unlike `enforce`, a fail-open here would be a real grant — a blip
+            // must not hand anyone another tenant's thread.
+            let is_operator = match crate::server::authz::loader::load_platform_facts(
+                &connection,
+                user.id,
+                &user.email,
+            )
+            .await
+            {
+                Some(facts) => crate::server::authz::allows(
+                    &facts,
+                    crate::server::authz::Action::PlatformOps,
+                    &crate::server::authz::Resource::platform(),
+                ),
+                None => false,
+            };
             if !is_operator {
                 return Err(StatusCode::NOT_FOUND);
             }

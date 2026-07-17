@@ -12,7 +12,8 @@ binary lives in the `app` crate (the default workspace member).
 crates/
   app/                      # (oxy-app / oxy binary) CLI + HTTP server, default member
   core/                     # (oxy) Core platform library, published as "oxy"
-  auth/                     # (oxy-auth) Auth & authorization
+  auth/                     # (oxy-auth) Authentication — who you are
+  authz/                    # (oxy-authz) Authorization — what you may do. THE authority model
   entity/  migration/       # Sea-ORM entities / migrations
   semantic/                 # (oxy-semantic) Semantic query layer (airlayer)
   shared/                   # (oxy-shared) Shared types, errors, infra
@@ -38,8 +39,8 @@ crates/
 web-app/                    # Frontend (see web-app/CLAUDE.md)
 ```
 
-Many crates carry their own `CLAUDE.md` (all `agentic/*`, `cameras`, `integration/unifi`) —
-read the local one before editing a crate. The two largest crates, `core` (`oxy`) and
+Many crates carry their own `CLAUDE.md` (all `agentic/*`, `authz`, `cameras`,
+`integration/unifi`) — read the local one before editing a crate. The two largest crates, `core` (`oxy`) and
 `app` (`oxy-app`), have crate-root `CLAUDE.md` guides too; start there before diving in.
 
 ## Build
@@ -92,6 +93,31 @@ never `println!` in library crates; CLI output via the `StyledText` trait from `
   their own project on disk. It is **not** the default. The production code path is
   `--enterprise` — use it for tests, demos, role-split, S3/worker-fleet, or anything
   production-shaped. `--local` only for the laptop-exploration case.
+
+## Authorization
+
+Every authorization decision goes through **`oxy-authz`** (`crates/authz`) — one exhaustive
+`match` in `allows()` that states every authority ring. `oxy-auth` is authentication (who
+you are); this is authorization (what you may do). Full guide: `crates/authz/CLAUDE.md`.
+
+- **Never decide access by hand.** No `matches!(role, Owner | Admin)` in a handler, no
+  reading `OXY_OWNER` / the `app_admins` table. Take a `role_guards::*` extractor (there
+  are 6), or call `server::authz::enforce_guard(..)`. `crates/app/tests/authz_boundaries.rs`
+  **fails the build** otherwise — its allowlist is a backlog, not an exemption list.
+- **Platform standing** (`is_owner` / `is_app_admin`) is read **only** by
+  `server::authz::globals`: one door for a decision, one for a flag to display.
+- **The crate owns the model; the app owns fact-loading** (`server::authz::loader`) —
+  loading needs DB primitives, so it can't live in the crate. Keep `oxy-authz` on
+  `uuid` + `tracing`: that's what lets the model be tested without a database.
+- **Decisions are `existing_allow && allows(..)`**, so the model can only ever *subtract*
+  and a mis-modeled ring cannot open a hole. Pass the **real** shipped check as
+  `existing_allow` — it's the oracle the differential tests use, not ceremony.
+- A new `Action` needs a `Ring` (the compiler enforces it) **and** a differential case.
+  Reuse a ring rather than inventing a synonym.
+
+Two engines were evaluated and rejected (Cedar — adopted then removed; Casbin). The
+reasoning is in `crates/authz/src/lib.rs` and the design doc — read it before proposing a
+third. Policy-as-data is an explicit non-goal; that's the requirement that pays for an engine.
 
 ## Product Context (Web UI)
 

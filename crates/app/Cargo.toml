@@ -20,9 +20,6 @@ default = ["customer-app-functions"]
 customer-app-functions = ["deno_core", "deno_error"]
 
 [dependencies]
-# In-process authorization policy engine for the partner tier (ADR
-# 2026-07-13). Embedded Rust crate — no external service.
-cedar-policy = "4"
 deno_core = { workspace = true, optional = true }
 deno_error = { workspace = true, optional = true }
 handlebars = { workspace = true }
@@ -64,6 +61,7 @@ agentic-automation = { workspace = true }
 airlayer = { workspace = true }
 oxy-airlayer-compat = { workspace = true }
 oxy-auth = { workspace = true }
+oxy-authz = { workspace = true }
 oxy-billing = { workspace = true }
 oxy-cameras = { workspace = true }
 oxy-compile = { workspace = true }

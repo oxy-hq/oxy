@@ -140,10 +140,9 @@ pub async fn resolve_actor(
     user_email: &str,
     target_org_id: Uuid,
 ) -> PublishActor {
-    if crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(user_email)
-        || crate::server::api::customer_apps_auth::is_app_admin_email(db, user_email)
-            .await
-            .unwrap_or(false)
+    if crate::server::authz::globals::platform_standing(db, user_email)
+        .await
+        .is_staff()
     {
         return PublishActor::Staff;
     }

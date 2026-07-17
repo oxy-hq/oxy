@@ -14,7 +14,7 @@
 //! is a separate follow-up; this PR makes the binding *recordable* so that
 //! work has something to read.
 //!
-//! Mounted behind the `/customer-apps` nest's `oxy_app_admin_guard` so only
+//! Mounted behind the `/customer-apps` nest's `oxy_owner_or_app_admin_guard` so only
 //! app-admins can mint. Org owners get the same effective access via the
 //! parallel `/admin/apps` surface.
 //!

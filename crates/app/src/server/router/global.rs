@@ -11,9 +11,7 @@ use axum::routing::{delete, get, patch, post, put};
 use crate::api::billing;
 use crate::api::github::namespaces as github;
 use crate::api::github::{account, callback, installations};
-use crate::api::middlewares::{
-    org_context, oxy_app_admin_guard, oxy_owner_or_app_admin_guard, subscription_guard,
-};
+use crate::api::middlewares::{org_context, oxy_owner_or_app_admin_guard, subscription_guard};
 use crate::api::{admin, onboarding, org_logo, organizations, partner_console, user, workspaces};
 
 use super::AppState;
@@ -235,8 +233,12 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 // applies a `.layer` only to routes registered before it, so this
                 // covers the routes above and NOT `/publish` below.
                 .layer(middleware::from_fn(admin::assume::block_admin_while_acting))
+                // Owner-or-admin, not admin-only. A Global Owner who isn't also in
+                // `app_admins` was 403'd here — locking the MORE senior role out of a
+                // surface the junior one runs. Both tiers reach the customer-app
+                // lifecycle; only owner-exclusive destructive operations separate them.
                 .layer(middleware::from_fn(
-                    oxy_app_admin_guard::oxy_app_admin_guard_middleware,
+                    oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
                 ))
                 // One-way publish entry point: CI (or local `oxy publish`) uploads
                 // a built bundle tarball. Registered AFTER both layers above, so
@@ -316,7 +318,8 @@ fn build_org_routes() -> Router<AppState> {
             patch(workspaces::rename_workspace),
         )
         .nest("/github", build_github_routes())
-        // Slack installation management (requires org membership, admin check inside handlers)
+        // Slack installation management. The admin check is the `OrgAdmin` extractor on the
+        // handlers themselves, not a hand-rolled role match — `get_status` is member-level.
         .route(
             "/slack/install",
             post(crate::integrations::slack::oauth::install::start_install),

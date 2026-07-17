@@ -102,7 +102,7 @@ pub(super) fn require_owner_for_sensitive_caps(
     manage_secrets: bool,
 ) -> Result<(), StatusCode> {
     if (manage_billing || manage_secrets)
-        && !crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(actor_email)
+        && !crate::server::authz::globals::is_global_owner(actor_email)
     {
         return Err(StatusCode::FORBIDDEN);
     }

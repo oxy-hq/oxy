@@ -935,10 +935,9 @@ pub async fn create_invitation(
     let role = OrgRole::from_str(&req.role).map_err(|_| StatusCode::BAD_REQUEST)?;
     let invited_role = role.clone();
 
-    // Only Owners can invite with the Owner role.
-    if role == OrgRole::Owner && ctx.membership.role != OrgRole::Owner {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    // Only Owners can invite with the Owner role — the rule lives in member_authz, so
+    // this site can't drift from the role-change path that shares it.
+    member_authz::authorize_owner_grant(&ctx.membership.role, role == OrgRole::Owner)?;
 
     // Normalize + format-check the invited email. Lowercased for
     // case-insensitive comparisons against existing rows.
@@ -1108,9 +1107,7 @@ pub async fn create_bulk_invitations(
     let mut seen_emails: std::collections::HashSet<String> = std::collections::HashSet::new();
     for inv in &req.invitations {
         let role = OrgRole::from_str(&inv.role).map_err(|_| StatusCode::BAD_REQUEST)?;
-        if role == OrgRole::Owner && ctx.membership.role != OrgRole::Owner {
-            return Err(StatusCode::FORBIDDEN);
-        }
+        member_authz::authorize_owner_grant(&ctx.membership.role, role == OrgRole::Owner)?;
         let email = normalize_invite_email(&inv.email)?;
         if !seen_emails.insert(email.clone()) {
             return Err(StatusCode::CONFLICT);

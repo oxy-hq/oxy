@@ -322,14 +322,11 @@ async fn serve_pretty(
             // forged it, `is_app_admin_email` denies them draft
             // access below.
             let cookie_wants_draft = super::customer_apps_preview::wants_draft_preview(&headers);
-            let is_staff =
-                match super::customer_apps_auth::is_app_admin_email(&db, &user.email).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        tracing::warn!("is_app_admin_email failed serving customer app {id}: {e}");
-                        false
-                    }
-                };
+            // Fail-closed inside the one reader: a lookup error reports no standing.
+            // Admin OR owner — both operator tiers reach every customer-app surface.
+            let is_staff = crate::server::authz::globals::platform_standing(&db, &user.email)
+                .await
+                .is_staff();
             let channel =
                 resolve_channel(cookie_wants_draft && is_staff, app.published_at.is_some());
             // New publish pipeline: when the channel has a build pointer,

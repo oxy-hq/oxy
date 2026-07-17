@@ -1,7 +1,7 @@
 //! Template gallery endpoint. The admin Create-new flow shows a
 //! picker of available templates; this endpoint serves the list.
 //! Admin-gated (the parent mount already wraps in
-//! `oxy_app_admin_guard`).
+//! `oxy_owner_or_app_admin_guard`).
 //!
 //! No screenshot endpoint yet — every `template.json` declares only
 //! `{id, name, description}`. Re-introduce a `screenshot_url` field on
@@ -23,7 +23,7 @@ pub struct TemplateListItem {
 }
 
 /// `GET /api/customer-apps/templates` (mounted under the
-/// `oxy_app_admin_guard` nest in `router/global.rs`, NOT the
+/// `oxy_owner_or_app_admin_guard` nest in `router/global.rs`, NOT the
 /// `oxy_owner_guard` `/api/admin/...` surface).
 pub async fn list_templates() -> Json<Vec<TemplateListItem>> {
     let items: Vec<TemplateListItem> = registry::templates()

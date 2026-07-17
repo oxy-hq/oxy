@@ -36,6 +36,11 @@ use crate::server::api::middlewares::partner_context::PartnerActor;
 /// A caller reaches this handler only with a live `PartnerScope`, so if they have no
 /// membership in the partner org they must be staff who assumed it (validated by
 /// `partner_middleware`) — which is allowed.
+///
+/// That is exactly the OrgAdmin ring — a real owner/admin, or an operator reaching in
+/// via the override — so it is enforced through the unified layer rather than
+/// re-deriving `Owner | Admin` here. An inline copy of a ring is how a call site drifts
+/// from the model it believes it implements.
 async fn require_people_admin(
     db: &DatabaseConnection,
     partner_org_id: Uuid,
@@ -47,10 +52,25 @@ async fn require_people_admin(
         .one(db)
         .await
         .map_err(internal("load caller membership"))?;
-    match membership {
-        Some(m) if matches!(m.role, OrgRole::Owner | OrgRole::Admin) => Ok(()),
-        Some(_) => Err(StatusCode::FORBIDDEN),
-        None => Ok(()), // no membership + a valid scope ⇒ staff assuming the partner
+    let legacy = match membership {
+        Some(m) => matches!(m.role, OrgRole::Owner | OrgRole::Admin),
+        None => true, // no membership + a valid scope ⇒ staff assuming the partner
+    };
+
+    let allowed = crate::server::authz::enforce_for(
+        db,
+        user.id,
+        &user.email,
+        "partner_console.people_admin",
+        crate::server::authz::Action::MemberSetRole,
+        crate::server::authz::Resource::org(partner_org_id),
+        legacy,
+    )
+    .await;
+    if allowed {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
     }
 }
 

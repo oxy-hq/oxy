@@ -76,7 +76,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::audit::{self, ActorType, AuditEntry};
-use crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner;
 use crate::server::router::AppState;
 
 /// Hard ceiling on a session. Non-renewable — an operator who needs longer starts
@@ -167,10 +166,9 @@ pub async fn may_act_as(
     user_email: &str,
     org_id: Uuid,
 ) -> Option<ActingAs> {
-    if is_oxy_owner(user_email)
-        || crate::server::api::customer_apps_auth::is_app_admin_email(db, user_email)
-            .await
-            .unwrap_or(false)
+    if crate::server::authz::globals::platform_standing(db, user_email)
+        .await
+        .is_staff()
     {
         return Some(ActingAs::Staff);
     }
@@ -236,6 +234,28 @@ pub async fn is_session_live(db: &DatabaseConnection, actor_user_id: Uuid, org_i
         Err(e) => {
             tracing::error!("admin/assume: liveness check failed (denying): {e}");
             false
+        }
+    }
+}
+
+/// Every org `actor_user_id` currently has a LIVE assume session for.
+///
+/// The batch form of [`is_session_live`], for callers that need the whole set rather
+/// than one answer — the authz fact loader, which has to know what an operator is
+/// standing in before any specific org is named. Liveness stays defined here, once.
+/// Fails CLOSED: a DB error yields no sessions, so the override is not granted.
+pub async fn live_assumed_org_ids(db: &DatabaseConnection, actor_user_id: Uuid) -> Vec<Uuid> {
+    let now = Utc::now().fixed_offset();
+    match AdminAssumeSessions::find()
+        .filter(admin_assume_sessions::Column::ActorUserId.eq(actor_user_id))
+        .filter(live_filter(now))
+        .all(db)
+        .await
+    {
+        Ok(rows) => rows.into_iter().map(|r| r.org_id).collect(),
+        Err(e) => {
+            tracing::error!("admin/assume: live-session listing failed (denying): {e}");
+            Vec::new()
         }
     }
 }
@@ -423,10 +443,9 @@ pub async fn history(
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<SessionDto>>, StatusCode> {
     let db = db().await?;
-    let staff = is_oxy_owner(&actor.email)
-        || crate::server::api::customer_apps_auth::is_app_admin_email(&db, &actor.email)
-            .await
-            .unwrap_or(false);
+    let staff = crate::server::authz::globals::platform_standing(&db, &actor.email)
+        .await
+        .is_staff();
     if !staff {
         return Err(StatusCode::FORBIDDEN);
     }

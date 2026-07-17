@@ -24,6 +24,7 @@ use std::future::Future;
 
 use super::org_context::OrgContext;
 use super::workspace_context::EffectiveWorkspaceRole;
+use crate::server::authz;
 
 /// Caller is the Org Owner. Only Owners pass; Admins and Members are rejected.
 #[derive(Debug)]
@@ -39,12 +40,25 @@ where
         parts: &mut Parts,
         _state: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        let result = match parts.extensions.get::<OrgContext>().cloned() {
-            None => Err(StatusCode::INTERNAL_SERVER_ERROR),
-            Some(ctx) if ctx.membership.role == OrgRole::Owner => Ok(OrgOwner(ctx)),
-            Some(_) => Err(StatusCode::FORBIDDEN),
-        };
-        async move { result }
+        async move {
+            let Some(ctx) = parts.extensions.get::<OrgContext>().cloned() else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            let legacy = ctx.membership.role == OrgRole::Owner;
+            let allowed = authz::enforce_guard(
+                parts,
+                "guard.org_owner",
+                authz::Action::OrgOwnerManage,
+                authz::Resource::org(ctx.org.id),
+                legacy,
+            )
+            .await;
+            if allowed {
+                Ok(OrgOwner(ctx))
+            } else {
+                Err(StatusCode::FORBIDDEN)
+            }
+        }
     }
 }
 
@@ -62,14 +76,27 @@ where
         parts: &mut Parts,
         _state: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        let result = match parts.extensions.get::<OrgContext>().cloned() {
-            None => Err(StatusCode::INTERNAL_SERVER_ERROR),
-            Some(ctx) if matches!(ctx.membership.role, OrgRole::Owner | OrgRole::Admin) => {
+        async move {
+            let Some(ctx) = parts.extensions.get::<OrgContext>().cloned() else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            let legacy = matches!(ctx.membership.role, OrgRole::Owner | OrgRole::Admin);
+            // Enforce the whole OrgAdmin ring at its choke point — MemberSetRole is a
+            // representative action of that ring.
+            let allowed = authz::enforce_guard(
+                parts,
+                "guard.org_admin",
+                authz::Action::MemberSetRole,
+                authz::Resource::org(ctx.org.id),
+                legacy,
+            )
+            .await;
+            if allowed {
                 Ok(OrgAdmin(ctx))
+            } else {
+                Err(StatusCode::FORBIDDEN)
             }
-            Some(_) => Err(StatusCode::FORBIDDEN),
-        };
-        async move { result }
+        }
     }
 }
 
@@ -97,15 +124,28 @@ where
         parts: &mut Parts,
         _state: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        let result = match parts.extensions.get::<OrgContext>().cloned() {
-            None => Err(StatusCode::INTERNAL_SERVER_ERROR),
-            Some(ctx) if ctx.is_global_override => Err(StatusCode::FORBIDDEN),
-            Some(ctx) if matches!(ctx.membership.role, OrgRole::Owner | OrgRole::Admin) => {
+        async move {
+            let Some(ctx) = parts.extensions.get::<OrgContext>().cloned() else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            // Real owner/admin only — the global-operator override is rejected.
+            let legacy = !ctx.is_global_override
+                && matches!(ctx.membership.role, OrgRole::Owner | OrgRole::Admin);
+            // OrgBilling is the OrgAdminStrict ring (admin_orgs only, no override).
+            let allowed = authz::enforce_guard(
+                parts,
+                "guard.org_admin_strict",
+                authz::Action::OrgBilling,
+                authz::Resource::org(ctx.org.id),
+                legacy,
+            )
+            .await;
+            if allowed {
                 Ok(OrgAdminStrict(ctx))
+            } else {
+                Err(StatusCode::FORBIDDEN)
             }
-            Some(_) => Err(StatusCode::FORBIDDEN),
-        };
-        async move { result }
+        }
     }
 }
 
@@ -127,12 +167,26 @@ where
         parts: &mut Parts,
         _state: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        let result = match parts.extensions.get::<OrgContext>().cloned() {
-            None => Err(StatusCode::INTERNAL_SERVER_ERROR),
-            Some(ctx) if ctx.is_global_override => Err(StatusCode::FORBIDDEN),
-            Some(ctx) => Ok(OrgMemberStrict(ctx)),
-        };
-        async move { result }
+        async move {
+            let Some(ctx) = parts.extensions.get::<OrgContext>().cloned() else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            // Any real member — the cross-tenant override is rejected.
+            let legacy = !ctx.is_global_override;
+            let allowed = authz::enforce_guard(
+                parts,
+                "guard.org_member_strict",
+                authz::Action::OrgReadStrict,
+                authz::Resource::org(ctx.org.id),
+                legacy,
+            )
+            .await;
+            if allowed {
+                Ok(OrgMemberStrict(ctx))
+            } else {
+                Err(StatusCode::FORBIDDEN)
+            }
+        }
     }
 }
 
@@ -151,16 +205,39 @@ where
         parts: &mut Parts,
         _state: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        let result = match parts.extensions.get::<EffectiveWorkspaceRole>().cloned() {
-            None => Err(StatusCode::INTERNAL_SERVER_ERROR),
-            Some(EffectiveWorkspaceRole(role))
-                if matches!(role, WorkspaceRole::Owner | WorkspaceRole::Admin) =>
-            {
+        async move {
+            let Some(EffectiveWorkspaceRole(role)) =
+                parts.extensions.get::<EffectiveWorkspaceRole>().cloned()
+            else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            let legacy = matches!(role, WorkspaceRole::Owner | WorkspaceRole::Admin);
+            // Enforce the WorkspaceManage ring; the workspace's org (from the Model the
+            // middleware attached) lets the org->workspace hierarchy resolve. When the
+            // workspace has no org (single-workspace local mode) the org model doesn't
+            // apply, so the legacy verdict stands.
+            let allowed = match parts.extensions.get::<entity::workspaces::Model>().cloned() {
+                Some(ws) => match ws.org_id {
+                    Some(org_id) => {
+                        authz::enforce_guard(
+                            parts,
+                            "guard.workspace_admin",
+                            authz::Action::WorkspaceManage,
+                            authz::Resource::workspace(ws.id, org_id),
+                            legacy,
+                        )
+                        .await
+                    }
+                    None => legacy,
+                },
+                None => legacy,
+            };
+            if allowed {
                 Ok(WorkspaceAdmin(role))
+            } else {
+                Err(StatusCode::FORBIDDEN)
             }
-            Some(_) => Err(StatusCode::FORBIDDEN),
-        };
-        async move { result }
+        }
     }
 }
 
@@ -199,14 +276,35 @@ where
         parts: &mut Parts,
         _state: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        let result = match parts.extensions.get::<EffectiveWorkspaceRole>().cloned() {
-            None => Err(StatusCode::INTERNAL_SERVER_ERROR),
-            Some(EffectiveWorkspaceRole(role)) if role > WorkspaceRole::Viewer => {
+        async move {
+            let Some(EffectiveWorkspaceRole(role)) =
+                parts.extensions.get::<EffectiveWorkspaceRole>().cloned()
+            else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            let legacy = role > WorkspaceRole::Viewer;
+            let allowed = match parts.extensions.get::<entity::workspaces::Model>().cloned() {
+                Some(ws) => match ws.org_id {
+                    Some(org_id) => {
+                        authz::enforce_guard(
+                            parts,
+                            "guard.workspace_editor",
+                            authz::Action::WorkspaceEdit,
+                            authz::Resource::workspace(ws.id, org_id),
+                            legacy,
+                        )
+                        .await
+                    }
+                    None => legacy,
+                },
+                None => legacy,
+            };
+            if allowed {
                 Ok(WorkspaceEditor(role))
+            } else {
+                Err(StatusCode::FORBIDDEN)
             }
-            Some(_) => Err(StatusCode::FORBIDDEN),
-        };
-        async move { result }
+        }
     }
 }
 

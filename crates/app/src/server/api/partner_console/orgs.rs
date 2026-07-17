@@ -34,7 +34,6 @@ use super::{ChildOrg, db, internal, require_org_scope};
 use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::api::middlewares::partner_authz::PartnerCapability;
 use crate::server::api::middlewares::partner_context::PartnerActor;
-use crate::server::api::middlewares::partner_policy;
 use crate::server::api::organizations::{is_reserved_slug, slugify_name};
 
 #[derive(Deserialize)]
@@ -64,7 +63,7 @@ pub async fn create_org(
     // one partner write that isn't gated on an existing assignment, which is
     // exactly why `create_orgs` is a ceiling flag that defaults OFF: it mints
     // billable tenants.
-    if !partner_policy::authorize_capability(&scope, PartnerCapability::CreateOrgs) {
+    if !crate::server::authz::partner_allows(&scope, None, PartnerCapability::CreateOrgs) {
         return Err(StatusCode::FORBIDDEN);
     }
 

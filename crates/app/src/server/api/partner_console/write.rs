@@ -1,8 +1,8 @@
 //! Partner member mutations for `/api/partners/{id}/orgs/{org_id}/members`.
 //!
 //! Every handler passes through [`require_org_scope`] — the cross-tenant
-//! boundary, where Cedar decides both capability and ownership against the
-//! partner's real managed-org subtree. On top of that, a hard
+//! boundary, where the `PartnerCap` ring decides both capability and ownership
+//! against the partner's real managed-org subtree. On top of that, a hard
 //! **owner guardrail**: a partner may only manage `Member`/`Admin` roles. It can
 //! never invite with, promote to, demote, or remove an **Owner** — that would
 //! let a partner seize the tenant it merely manages. This also preserves the

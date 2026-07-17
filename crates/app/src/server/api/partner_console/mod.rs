@@ -6,11 +6,15 @@
 //! capability AND that **this person** is assigned the org, returning `404` for
 //! out-of-set orgs so existence isn't leaked.
 //!
-//! Two people at the same partner can see completely different things here: an
-//! `account_manager` scoped to northwind can onboard clients and manage members
-//! but cannot query data; a `developer` scoped to globex can query and ship apps
-//! but cannot invite anyone. That is `role ∩ ceiling ∩ assignment`, resolved once
-//! in `partner_authz::resolve_scope` and enforced by Cedar.
+//! There are no per-person roles here, and no per-person org assignment: both collapsed
+//! into a single **partner access** switch. Everyone with access to a partner reaches
+//! all of that partner's clients and holds that partner's whole ceiling — so what a
+//! person may do is `ceiling ∩ clients`, resolved once in
+//! `partner_authz::resolve_scope` and decided by the `PartnerCap` rings in `oxy_authz`.
+//!
+//! The ceiling is therefore the entire capability story: a partner's people can do
+//! exactly what the partner was granted, no more, and there is no narrower slice to
+//! hand one of them.
 
 mod app_mgmt;
 mod health;
@@ -38,7 +42,6 @@ use crate::server::api::middlewares::partner_authz::{
     PartnerCapability, PartnerScope, scopes_for_user,
 };
 use crate::server::api::middlewares::partner_context::{PartnerActor, partner_middleware};
-use crate::server::api::middlewares::partner_policy;
 use crate::server::router::AppState;
 
 /// Top-level list route + the partner-scoped subtree (wrapped in
@@ -109,26 +112,26 @@ pub(super) fn internal<E: std::fmt::Display>(ctx: &'static str) -> impl Fn(E) ->
     }
 }
 
-/// The cross-tenant boundary. A partner action on a client org is allowed only if
-/// the actor's **role ∩ ceiling** holds `cap` AND the org is in their assigned set.
-/// Out-of-set orgs return `404` (not `403`) so a partner can't probe which orgs
-/// exist outside their subtree.
+/// The cross-tenant boundary. A partner action on a client org is allowed only if the
+/// **ceiling** of the partner being acted as holds `cap` AND the org is one of that
+/// partner's clients. Out-of-set orgs return `404` (not `403`) so a partner can't probe
+/// which orgs exist outside their subtree.
 pub(super) async fn require_org_scope(
     _db: &DatabaseConnection,
     scope: &PartnerScope,
     org_id: Uuid,
     cap: PartnerCapability,
 ) -> Result<(), StatusCode> {
-    // `scope.org_ids` is the partner's managed clients — every operator reaches all
-    // of them. Hand it to Cedar and let it decide both ownership (`resource in
-    // principal`) and capability.
+    // `scope.org_ids` is the partner's managed clients — every operator reaches all of
+    // them. The unified model decides both ownership (the org is this partner's client)
+    // and capability, scoped to the partner being acted as.
     let managed = &scope.org_ids;
-    if partner_policy::authorize_org(scope, org_id, managed, cap) {
+    if crate::server::authz::partner_allows(scope, Some(org_id), cap) {
         return Ok(());
     }
     // Deny: 404 when the partner doesn't manage the org (don't leak existence),
     // else 403 (manages it but the ceiling lacks the capability).
-    // Presentation only — the security decision was Cedar's above.
+    // Presentation only — the security decision was made above.
     Err(if managed.contains(&org_id) {
         StatusCode::FORBIDDEN
     } else {
@@ -363,7 +366,7 @@ pub async fn partner_audit(
     PartnerActor(scope): PartnerActor,
     Query(q): Query<AuditQuery>,
 ) -> Result<Json<Vec<AuditEventDto>>, StatusCode> {
-    if !partner_policy::authorize_capability(&scope, PartnerCapability::ViewAudit) {
+    if !crate::server::authz::partner_allows(&scope, None, PartnerCapability::ViewAudit) {
         return Err(StatusCode::FORBIDDEN);
     }
     let db = db().await?;

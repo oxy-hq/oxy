@@ -10,28 +10,9 @@
 //! customer-app registrations, owners manage org/billing/feature-flags
 //! and add/remove app admins.
 
-use axum::http::StatusCode;
-use axum::middleware::Next;
-use axum::response::Response;
 use oxy::database::client::establish_connection;
-use oxy_auth::types::AuthenticatedUser;
 
 use crate::server::api::customer_apps_auth::is_app_admin_email;
-
-pub async fn oxy_app_admin_guard_middleware(
-    request: axum::http::Request<axum::body::Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    let email = request
-        .extensions()
-        .get::<AuthenticatedUser>()
-        .map(|u| u.email.clone())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    if !is_oxy_app_admin(&email).await {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    Ok(next.run(request).await)
-}
 
 /// Returns `true` when `email` is in the `app_admins` table. Used by
 /// login responses to expose `is_app_admin` on the user payload so the

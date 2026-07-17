@@ -19,7 +19,7 @@
 use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
-use entity::prelude::WorkspaceOxyLockdown;
+use entity::prelude::{WorkspaceOxyLockdown, Workspaces};
 use entity::workspace_members::WorkspaceRole;
 use entity::workspace_oxy_lockdown;
 use oxy::database::client::establish_connection;
@@ -121,17 +121,57 @@ pub async fn get_oxy_access(
 }
 
 /// `POST` — lock Oxy staff OUT of this workspace.
+/// The Oxy-access switch is the WorkspaceAdminStrict ring: a REAL workspace officer,
+/// never the global-operator override (staff must not be able to unlock themselves).
+/// `require_real_org_officer` already states that rule in one place; this routes the
+/// same verdict through the model so the rule is declared there too. `existing &&
+/// unified` — the model can only tighten. The workspace's org is looked up so the
+/// org->workspace hierarchy resolves; without one (single-workspace local mode) the
+/// org model doesn't apply and the legacy verdict stands.
+async fn enforce_oxy_access(
+    db: &sea_orm::DatabaseConnection,
+    actor_id: Uuid,
+    actor_email: &str,
+    workspace_id: Uuid,
+    legacy: bool,
+) -> bool {
+    let org_id = Workspaces::find_by_id(workspace_id)
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|w| w.org_id);
+    match org_id {
+        Some(org_id) => {
+            crate::server::authz::enforce_for(
+                db,
+                actor_id,
+                actor_email,
+                "workspace.oxy_access",
+                crate::server::authz::Action::WorkspaceOxyAccess,
+                crate::server::authz::Resource::workspace(workspace_id, org_id),
+                legacy,
+            )
+            .await
+        }
+        None => legacy,
+    }
+}
+
 pub async fn lock_oxy_access(
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     ovr: WorkspaceGlobalOverride,
     Path(WorkspaceIdPath { workspace_id }): Path<WorkspaceIdPath>,
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
 ) -> Result<Json<OxyLockdownStatus>, StatusCode> {
-    require_real_org_officer(role, ovr)?;
+    let legacy = require_real_org_officer(role, ovr).is_ok();
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("lock_oxy_access DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    if !enforce_oxy_access(&db, actor.id, &actor.email, workspace_id, legacy).await {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     if let Some(existing) = WorkspaceOxyLockdown::find()
         .filter(workspace_oxy_lockdown::Column::WorkspaceId.eq(workspace_id))
@@ -174,11 +214,14 @@ pub async fn unlock_oxy_access(
     Path(WorkspaceIdPath { workspace_id }): Path<WorkspaceIdPath>,
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
-    require_real_org_officer(role, ovr)?;
+    let legacy = require_real_org_officer(role, ovr).is_ok();
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("unlock_oxy_access DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    if !enforce_oxy_access(&db, actor.id, &actor.email, workspace_id, legacy).await {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     WorkspaceOxyLockdown::delete_many()
         .filter(workspace_oxy_lockdown::Column::WorkspaceId.eq(workspace_id))

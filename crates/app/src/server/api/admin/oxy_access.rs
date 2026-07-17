@@ -9,7 +9,7 @@
 //! single field to read) while also surfacing the workspaces we're locked out of,
 //! which is exactly what an operator needs to see when an app won't open.
 //!
-//! Gated by the `/customer-apps` nest's `oxy_app_admin_guard`.
+//! Gated by the `/customer-apps` nest's `oxy_owner_or_app_admin_guard`.
 
 use std::collections::HashMap;
 

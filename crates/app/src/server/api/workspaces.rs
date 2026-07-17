@@ -24,6 +24,8 @@ use oxy::api_types::{
 use oxy::config::ConfigBuilder;
 use oxy::github::{default_git_client, github_token_for_workspace};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+
+use crate::server::authz;
 use oxy_git::{DirtyEntry, GitClient, ResetOutcome, cli::repo::find_git_root};
 use oxy_shared::errors::OxyError;
 
@@ -1495,6 +1497,7 @@ pub struct RenameWorkspaceRequest {
 // alongside the other role checks.
 pub async fn rename_workspace(
     OrgContextExtractor(ctx): OrgContextExtractor,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path((org_id, workspace_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<RenameWorkspaceRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -1545,9 +1548,27 @@ pub async fn rename_workspace(
         return Err((StatusCode::NOT_FOUND, "Workspace not found".to_string()));
     }
 
-    // Org admins/owners can rename any workspace; Org Members can rename only
-    // those they created. Rule lives in role_guards::ensure_org_admin_or_workspace_creator.
-    ensure_org_admin_or_workspace_creator(&ctx, &workspace)?;
+    // Org admins/owners can rename any workspace; Org Members can rename only those
+    // they created (role_guards::ensure_org_admin_or_workspace_creator) — the one
+    // authorization rule outside the role guards, now enforced through the unified
+    // WorkspaceRename ring. `existing && unified`, so the model can only tighten it.
+    let legacy = ensure_org_admin_or_workspace_creator(&ctx, &workspace).is_ok();
+    let allowed = authz::enforce_for(
+        &db,
+        actor.id,
+        &actor.email,
+        "workspace.rename",
+        authz::Action::WorkspaceRename,
+        authz::Resource::workspace_with_creator(workspace.id, org_id, workspace.created_by),
+        legacy,
+    )
+    .await;
+    if !allowed {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Only admins or workspace creator can rename".to_string(),
+        ));
+    }
 
     // Reject duplicate names within the same org.
     let name_taken = Workspaces::find()

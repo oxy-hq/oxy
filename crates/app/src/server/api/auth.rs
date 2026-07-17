@@ -984,16 +984,15 @@ async fn finalize_login(
         tracing::error!("Failed to create auth token: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    // Reported on the payload, not decided here — the flag door, not a ring.
+    let standing = crate::server::authz::globals::platform_standing(connection, &user.email).await;
     let user_info = UserInfo {
         id: user.id.to_string(),
         email: user.email.clone(),
         name: user.name.clone(),
         picture: user.picture.clone(),
-        is_owner: crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(&user.email),
-        is_app_admin: crate::server::api::middlewares::oxy_app_admin_guard::is_oxy_app_admin(
-            &user.email,
-        )
-        .await,
+        is_owner: standing.is_global_owner,
+        is_app_admin: standing.is_global_admin,
     };
 
     // Query org memberships for this user

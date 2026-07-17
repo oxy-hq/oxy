@@ -11,8 +11,7 @@
 //! FALLBACK (never returned to the browser): the browser's own cookie/session is
 //! forwarded transparently, and auth/login endpoints reach the backend
 //! unauthenticated so sign-in works. Authorization is decided by the cloud
-//! (including partner delegation via the shipped Cedar policy — see design doc
-//! §4); the proxy only forwards.
+//! (including partner delegation — see design doc §4); the proxy only forwards.
 
 use std::net::SocketAddr;
 use std::sync::Arc;

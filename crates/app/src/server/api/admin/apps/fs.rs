@@ -14,7 +14,7 @@
 //!
 //! Gated by the surrounding router middleware:
 //!   - `/api/admin/...` → oxy_owner_guard
-//!   - `/api/customer-apps/...` → oxy_app_admin_guard
+//!   - `/api/customer-apps/...` → oxy_owner_or_app_admin_guard
 //!
 //! See `internal-docs/customer-apps.md` for the broader design.
 

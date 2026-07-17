@@ -52,7 +52,8 @@ use uuid::Uuid;
 use oxy_auth::types::AuthenticatedUser;
 
 use crate::agentic_wiring::OxyProjectContext;
-use crate::server::api::customer_apps_auth::{is_app_admin_email, is_org_member};
+use crate::server::api::customer_apps_auth::is_org_member;
+use crate::server::authz;
 use crate::server::router::is_allowed_origin;
 use crate::server::service::secret_manager::SecretManagerService;
 
@@ -197,8 +198,8 @@ pub async fn check_customer_app_gates(
         }
     };
     // Access: a real org member, an Oxy app-admin, or a partner operator whose
-    // ceiling grants `develop_apps` over the org's managing partner (the shipped
-    // Cedar policy). NOTE — this is the DATA PLANE. `develop_apps` is the
+    // ceiling grants `develop_apps` over the org's managing partner. NOTE — this is
+    // the DATA PLANE. `develop_apps` is the
     // read-the-app's-data capability, deliberately DISTINCT from `manage_apps`
     // (app lifecycle: publish / unpublish). A partner that can toggle an app's
     // visibility cannot read its data unless its ceiling ALSO grants
@@ -207,13 +208,16 @@ pub async fn check_customer_app_gates(
     // developing partner works across the client's workspaces) and the grant is
     // the ceiling itself (staff-set), so the data plane is not separately
     // consent-gated the way publishing is. See
-    // partner_policy::partner_grants_app_access + its `manage_apps_does_not_grant
-    // _the_data_plane` test.
+    // `partner_authz::partner_grants_app_access` (called below), and the property is
+    // pinned by `oxy_authz`'s `app_access_is_member_global_admin_or_develop_apps_partner`
+    // — a manage_apps-only ceiling is denied AppAccess there.
     let allowed = match is_org_member(&db, user.id, org_id).await {
         Ok(true) => true,
         Ok(false) => {
-            is_app_admin_email(&db, &user.email).await.unwrap_or(false)
-                || crate::server::api::middlewares::partner_policy::partner_grants_app_access(
+            crate::server::authz::globals::platform_standing(&db, &user.email)
+                .await
+                .is_staff()
+                || crate::server::api::middlewares::partner_authz::partner_grants_app_access(
                     &db,
                     user.id,
                     &user.email,
@@ -229,6 +233,28 @@ pub async fn check_customer_app_gates(
             ));
         }
     };
+    // ENFORCE the unified AppAccess ring alongside the check above: the decision is
+    // `allowed && unified`, so the model can only ever tighten it — a mis-modeled ring
+    // can't hand a partner another tenant's data. Cannot be sampled: an authorization
+    // decision has to be deterministic. The load is scoped (no
+    // workspace-override query, which AppAccess never reads) so on this hot path it
+    // costs ~one extra short-circuiting partner query over the is_org_member +
+    // app-admin lookups the gate already does.
+    // Unknown facts (a lookup errored) defer to the gate's own verdict rather than
+    // denying — the conjunction only subtracts, so deferring can't open a hole, and a
+    // blip must not 403 every legitimate app user.
+    let allowed =
+        match authz::loader::load_principal_facts_scoped(&db, user.id, &user.email, false).await {
+            Some(facts) => authz::enforce(
+                "gate.customer_app",
+                &facts,
+                authz::Action::AppAccess,
+                &authz::Resource::app(project_id, org_id),
+                allowed,
+            ),
+            None => allowed,
+        };
+
     if !allowed {
         return Err(err(
             StatusCode::FORBIDDEN,

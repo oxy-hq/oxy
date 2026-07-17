@@ -8,6 +8,9 @@ use entity::org_members::OrgRole;
 use entity::prelude::{OrgMembers, Users, WorkspaceMembers};
 use entity::workspace_members::WorkspaceRole;
 use oxy::database::client::establish_connection;
+use oxy_auth::extractor::AuthenticatedUserExtractor;
+
+use crate::server::authz;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -68,10 +71,13 @@ pub(crate) fn validate_role_override(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Only Org Owners can grant workspace Owner role.
-    if *requested_role == WorkspaceRole::Owner && caller.role != OrgRole::Owner {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    // Only Org Owners can grant the workspace Owner role. Same invariant as granting an
+    // org Owner — "only an Owner mints an Owner" — so it shares member_authz's rule
+    // rather than restating it against a different role enum.
+    crate::server::api::member_authz::authorize_owner_grant(
+        &caller.role,
+        *requested_role == WorkspaceRole::Owner,
+    )?;
 
     Ok(())
 }
@@ -155,22 +161,37 @@ pub async fn list_workspace_members(
 pub async fn set_workspace_role_override(
     WorkspaceExtractor(workspace): WorkspaceExtractor,
     OrgMembershipExtractor(org_membership): OrgMembershipExtractor,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(WorkspaceMemberPath {
         workspace_id: _,
         user_id,
     }): Path<WorkspaceMemberPath>,
     Json(body): Json<SetRoleRequest>,
 ) -> Result<Json<serde_json::Value>, Response> {
-    if !matches!(org_membership.role, OrgRole::Owner | OrgRole::Admin) {
-        return Err(StatusCode::FORBIDDEN.into_response());
-    }
-
     let role = WorkspaceRole::from_str(&body.role)
         .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY.into_response())?;
 
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
+
+    // Managing an org's members is the OrgAdmin ring. Enforce it through the policy
+    // rather than re-deriving `Owner|Admin` inline — an inline copy is how a call site
+    // drifts from the model it thinks it implements.
+    let legacy = matches!(org_membership.role, OrgRole::Owner | OrgRole::Admin);
+    let allowed = authz::enforce_for(
+        &db,
+        actor.id,
+        &actor.email,
+        "workspace_members.set_role",
+        authz::Action::MemberSetRole,
+        authz::Resource::org(org_membership.org_id),
+        legacy,
+    )
+    .await;
+    if !allowed {
+        return Err(StatusCode::FORBIDDEN.into_response());
+    }
 
     // Fetch the target user's org membership to check role hierarchy.
     let target_membership = if let Some(org_id) = workspace.org_id {
@@ -244,18 +265,31 @@ pub async fn set_workspace_role_override(
 pub async fn remove_workspace_role_override(
     WorkspaceExtractor(workspace): WorkspaceExtractor,
     OrgMembershipExtractor(org_membership): OrgMembershipExtractor,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(WorkspaceMemberPath {
         workspace_id: _,
         user_id,
     }): Path<WorkspaceMemberPath>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    if !matches!(org_membership.role, OrgRole::Owner | OrgRole::Admin) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // OrgAdmin ring, via the policy — see `set_workspace_role_override`.
+    let legacy = matches!(org_membership.role, OrgRole::Owner | OrgRole::Admin);
+    let allowed = authz::enforce_for(
+        &db,
+        actor.id,
+        &actor.email,
+        "workspace_members.remove_role",
+        authz::Action::MemberRemove,
+        authz::Resource::org(org_membership.org_id),
+        legacy,
+    )
+    .await;
+    if !allowed {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     // Verify caller outranks target in org hierarchy.
     if let Some(org_id) = workspace.org_id {

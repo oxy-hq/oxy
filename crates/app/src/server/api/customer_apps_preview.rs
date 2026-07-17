@@ -134,7 +134,7 @@ fn clear_preview_cookie() -> String {
 
 /// `POST /api/customer-apps/preview-draft` — set the staff session
 /// into draft-preview mode. App-admin gated (the route layer
-/// installs `oxy_app_admin_guard_middleware`).
+/// installs `oxy_owner_or_app_admin_guard_middleware`).
 pub async fn enable_preview_draft() -> Result<axum::response::Response, StatusCode> {
     let mut headers = HeaderMap::new();
     let value = build_preview_cookie()

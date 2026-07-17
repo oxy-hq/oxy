@@ -235,12 +235,29 @@ pub async fn delete_git_namespace(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Allow deletion by org owners/admins, or the original creator.
+    // Allow deletion by org owners/admins, or the original creator — the same
+    // admin-or-creator ring as workspace rename, enforced through the policy instead
+    // of re-derived here (an inline copy drifts from the model it mirrors).
     let is_admin = matches!(
         org_ctx.membership.role,
         entity::org_members::OrgRole::Owner | entity::org_members::OrgRole::Admin
     );
-    if !is_admin && ns.created_by != user.id {
+    let legacy = is_admin || ns.created_by == user.id;
+    let allowed = crate::server::authz::enforce_for(
+        &db,
+        user.id,
+        &user.email,
+        "namespace.delete",
+        crate::server::authz::Action::NamespaceDelete,
+        crate::server::authz::Resource::namespace_with_creator(
+            ns.id,
+            org_ctx.org.id,
+            Some(ns.created_by),
+        ),
+        legacy,
+    )
+    .await;
+    if !allowed {
         return Err(StatusCode::FORBIDDEN);
     }
 

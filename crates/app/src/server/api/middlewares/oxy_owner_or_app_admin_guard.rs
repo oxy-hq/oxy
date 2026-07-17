@@ -18,19 +18,39 @@ pub async fn oxy_owner_or_app_admin_guard_middleware(
     request: axum::http::Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let email = request
+    let user = request
         .extensions()
         .get::<AuthenticatedUser>()
-        .map(|u| u.email.clone())
+        .cloned()
         .ok_or(StatusCode::UNAUTHORIZED)?;
-    // Owner is a synchronous env-var check; app-admin hits the DB. Order
-    // the check so owners (the more common admin caller) get the fast
-    // path and we only hit the DB for non-owners.
-    if is_oxy_owner(&email) {
-        return Ok(next.run(request).await);
+    // Owner is a synchronous env-var check; app-admin hits the DB. Order the check so
+    // owners (the more common admin caller) get the fast path and we only hit the DB
+    // for non-owners.
+    let legacy = is_oxy_owner(&user.email) || is_oxy_app_admin(&user.email).await;
+
+    // Platform tier through the shared model — see `Ring::GlobalAdminOrOwner` in
+    // `oxy_authz`. `existing && unified`; the ring reads only the global flags.
+    let facts = match oxy::database::client::establish_connection().await {
+        Ok(db) => {
+            crate::server::authz::loader::load_platform_facts(&db, user.id, &user.email).await
+        }
+        Err(_) => None,
+    };
+    let allowed = match facts {
+        Some(facts) => crate::server::authz::enforce(
+            "guard.oxy_owner_or_app_admin",
+            &facts,
+            crate::server::authz::Action::PlatformOps,
+            &crate::server::authz::Resource::platform(),
+            legacy,
+        ),
+        // Fail-safe: unknown standing (no connection, or the lookup errored) defers to
+        // the legacy verdict rather than locking operators out.
+        None => legacy,
+    };
+
+    if !allowed {
+        return Err(StatusCode::FORBIDDEN);
     }
-    if is_oxy_app_admin(&email).await {
-        return Ok(next.run(request).await);
-    }
-    Err(StatusCode::FORBIDDEN)
+    Ok(next.run(request).await)
 }

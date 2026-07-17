@@ -1,10 +1,9 @@
 use crate::integrations::slack::config::SlackConfig;
 use crate::integrations::slack::oauth::state::{CreateInstallState, OauthStateService};
 use crate::integrations::slack::scopes;
-use crate::server::api::middlewares::org_context::OrgContextExtractor;
+use crate::server::api::middlewares::role_guards::OrgAdmin;
 use axum::Json;
 use axum::http::StatusCode;
-use entity::org_members::OrgRole;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use serde::Serialize;
 
@@ -29,12 +28,8 @@ pub struct InstallUrlResponse {
 /// without needing auth on the navigation itself.
 pub async fn start_install(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgAdmin(ctx): OrgAdmin,
 ) -> Result<Json<InstallUrlResponse>, (StatusCode, String)> {
-    if !matches!(ctx.membership.role, OrgRole::Owner | OrgRole::Admin) {
-        return Err((StatusCode::FORBIDDEN, "admin role required".into()));
-    }
-
     let cfg = SlackConfig::from_env().into_runtime().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "Slack integration not configured on this server".to_string(),

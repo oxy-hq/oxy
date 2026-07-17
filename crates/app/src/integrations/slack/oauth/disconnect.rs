@@ -1,15 +1,13 @@
 use crate::integrations::slack::client::SlackClient;
 use crate::integrations::slack::services::installations::InstallationsService;
-use crate::server::api::middlewares::org_context::OrgContextExtractor;
+use crate::server::api::middlewares::role_guards::OrgAdmin;
 use axum::http::StatusCode;
-use entity::org_members::OrgRole;
 
-pub async fn disconnect(
-    OrgContextExtractor(ctx): OrgContextExtractor,
-) -> Result<StatusCode, (StatusCode, String)> {
-    if !matches!(ctx.membership.role, OrgRole::Owner | OrgRole::Admin) {
-        return Err((StatusCode::FORBIDDEN, "admin role required".into()));
-    }
+/// Disconnecting an org's Slack install is an org-admin action, so it takes the
+/// [`OrgAdmin`] extractor rather than restating the ring — the guard's own check is
+/// byte-identical to the `matches!(role, Owner | Admin)` this used to hand-roll, and
+/// going through it means this handler follows the ring if the ring ever moves.
+pub async fn disconnect(OrgAdmin(ctx): OrgAdmin) -> Result<StatusCode, (StatusCode, String)> {
     let inst = InstallationsService::find_active_by_org(ctx.org.id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;

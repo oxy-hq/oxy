@@ -118,7 +118,16 @@ pub async fn user_can_access_app(
 
     // Staff path first: works regardless of publish state. Oxy staff may access
     // BY DEFAULT — unless the org has locked them out (inverted 2026-07-14).
-    let allowed = if is_app_admin_email(db, user_email).await?
+    //
+    // "Staff" is admin OR owner, read through the one place that knows what the
+    // platform sources are. It used to be app-admin ONLY, so a Global Owner who wasn't
+    // also in `app_admins` could PUBLISH a customer app (publish resolves staff via
+    // platform_standing) but not VIEW one — the same question answered two ways in one
+    // subsystem. Both operator tiers reach everything; they separate only at
+    // owner-exclusive destructive operations.
+    let allowed = if crate::server::authz::globals::platform_standing(db, user_email)
+        .await
+        .is_staff()
         && !is_oxy_locked_down(db, app.project_id).await?
     {
         true
@@ -276,7 +285,11 @@ pub(crate) async fn authenticate_and_authorize(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let is_staff = is_app_admin_email(&db, &user.email).await.unwrap_or(false);
+    // Same definition as the access check above — otherwise an owner would pass access
+    // but be flagged a customer, and silently lose draft previews.
+    let is_staff = crate::server::authz::globals::platform_standing(&db, &user.email)
+        .await
+        .is_staff();
 
     Ok(AuthOutcome {
         app,

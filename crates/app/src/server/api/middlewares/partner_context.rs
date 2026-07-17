@@ -86,9 +86,9 @@ pub struct PartnerActor(pub PartnerScope);
 impl PartnerActor {
     /// `Ok` if this actor's ceiling holds `cap`, else `403`. The single place a
     /// capability-only check is turned into an HTTP decision; the decision itself is
-    /// made by the Cedar policy (see [`super::partner_policy`]).
+    /// made by the unified authz model.
     pub fn require(&self, cap: PartnerCapability) -> Result<(), StatusCode> {
-        if super::partner_policy::authorize_capability(&self.0, cap) {
+        if crate::server::authz::partner_allows(&self.0, None, cap) {
             Ok(())
         } else {
             Err(StatusCode::FORBIDDEN)

@@ -1,0 +1,16 @@
+[package]
+name = "oxy-authz"
+version.workspace = true
+authors.workspace = true
+description = "Authorization decision layer for Oxy"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Identifiers
+uuid = { workspace = true }
+
+# Logging
+tracing = { workspace = true }

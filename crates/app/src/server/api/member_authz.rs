@@ -17,6 +17,22 @@ use entity::org_members::OrgRole;
 
 // --- Org-admin tier -------------------------------------------------------
 
+/// The escalation guardrail: **only an Owner may grant Owner** — of an org or of a
+/// workspace. It keeps anyone below Owner structurally incapable of minting one, which
+/// is what stops org seizure and last-owner breaks.
+///
+/// `granting_owner` says "the role being handed out is Owner", so the org and workspace
+/// role enums share this one rule instead of each restating it. It was copied inline at
+/// three call sites — org invite, org bulk-invite, workspace role override — right
+/// beside the module that owns it. Relax one copy and the others silently don't follow,
+/// which for this particular invariant means someone below Owner can mint one.
+pub fn authorize_owner_grant(actor_role: &OrgRole, granting_owner: bool) -> Result<(), StatusCode> {
+    if granting_owner && *actor_role != OrgRole::Owner {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(())
+}
+
 /// Pre-load checks for an org-admin role change: an Owner can't change their own
 /// role inline (transfer ownership / leave instead), and only an Owner may grant
 /// the Owner role (no escalation).
@@ -28,10 +44,7 @@ pub fn authorize_role_change_intent(
     if is_self && *actor_role == OrgRole::Owner {
         return Err(StatusCode::BAD_REQUEST);
     }
-    if *new_role == OrgRole::Owner && *actor_role != OrgRole::Owner {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    Ok(())
+    authorize_owner_grant(actor_role, *new_role == OrgRole::Owner)
 }
 
 /// Post-load check shared by role-change and removal: only an Owner may modify a
