@@ -108,21 +108,10 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use migration::MigratorTrait;
-    use sea_orm::Database;
+    use crate::server::test_support::{SKIP_MSG, test_db};
 
-    // Mirrors the workspace_health `eval_pass` tests: a real Postgres pointed at
-    // by `OXY_TEST_DATABASE_URL`, skipped when unset. Constructing the executor
-    // needs a connection even though the negative paths reject before querying.
-    async fn test_db() -> Option<DatabaseConnection> {
-        let url = std::env::var("OXY_TEST_DATABASE_URL").ok()?;
-        let db = Database::connect(&url).await.ok()?;
-        migration::Migrator::up(&db, None).await.ok()?;
-        agentic_runtime::migration::RuntimeMigrator::up(&db, None)
-            .await
-            .ok()?;
-        Some(db)
-    }
+    // Constructing the executor needs a connection even though the negative
+    // paths reject before querying.
 
     fn assignment(spec: TaskSpec) -> TaskAssignment {
         TaskAssignment {
@@ -137,7 +126,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_wrong_kind() {
         let Some(db) = test_db().await else {
-            eprintln!("skipping: OXY_TEST_DATABASE_URL not set");
+            eprintln!("{SKIP_MSG}");
             return;
         };
         let exec = HealthEvalTaskExecutor { db };
@@ -157,7 +146,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_missing_workspace_id() {
         let Some(db) = test_db().await else {
-            eprintln!("skipping: OXY_TEST_DATABASE_URL not set");
+            eprintln!("{SKIP_MSG}");
             return;
         };
         let exec = HealthEvalTaskExecutor { db };
@@ -177,7 +166,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_non_custom_spec() {
         let Some(db) = test_db().await else {
-            eprintln!("skipping: OXY_TEST_DATABASE_URL not set");
+            eprintln!("{SKIP_MSG}");
             return;
         };
         let exec = HealthEvalTaskExecutor { db };

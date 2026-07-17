@@ -39,9 +39,10 @@ jobs:
 
   coverage:
     name: Code Coverage
-    needs: [ changesets ]
+    needs: [changesets]
     # Only run on oxy-hq/oxygen main branch and when oxy code has changed
-    if: github.repository == 'oxy-hq/oxygen' && github.ref == 'refs/heads/main' &&
+    if:
+      github.repository == 'oxy-hq/oxygen' && github.ref == 'refs/heads/main' &&
       needs.changesets.outputs.oxy == 'true'
     runs-on: "ubuntu-latest"
     # Full workspace build under llvm-cov instrumentation + nextest is the
@@ -93,7 +94,7 @@ jobs:
           make-default: true
 
       - name: Prep Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt, llvm-tools-preview
 

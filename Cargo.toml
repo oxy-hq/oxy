@@ -312,7 +312,7 @@ documentation = "https://oxygen-hq.com/docs"
 edition = "2024"
 exclude = []
 publish = false
-rust-version = "1.96.1"
+rust-version = "1.97.1"
 
 [profile.dev.package]
 # Disable optimization for native build dependencies to speed up dev builds

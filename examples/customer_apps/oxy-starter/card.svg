@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" aria-label="A single-file bundle querying the demo warehouse">
+  <rect width="480" height="300" fill="#0a0a0a" />
+
+  <!-- the bundle: one file -->
+  <rect x="36" y="86" width="112" height="76" rx="4" fill="#1a1a1a" stroke="rgba(255,255,255,0.145)" stroke-width="1" />
+  <text x="50" y="112" font-family="ui-monospace, Menlo, monospace" font-size="10.5" fill="#a1a1aa">index.html</text>
+  <rect x="50" y="124" width="66" height="3" fill="#27272a" />
+  <rect x="50" y="133" width="82" height="3" fill="#27272a" />
+  <rect x="50" y="142" width="44" height="3" fill="#27272a" />
+
+  <!-- the data plane call -->
+  <path d="M156 124 H196" stroke="#3550ff" stroke-width="1.5" />
+  <path d="M190 119 L196 124 L190 129" fill="none" stroke="#3550ff" stroke-width="1.5" />
+  <text x="156" y="114" font-family="ui-monospace, Menlo, monospace" font-size="9.5" fill="#60a5fa">/query</text>
+
+  <!-- the result -->
+  <rect x="204" y="60" width="240" height="180" rx="4" fill="#1a1a1a" stroke="rgba(255,255,255,0.145)" stroke-width="1" />
+
+  <!-- kpi row -->
+  <text x="222" y="88" font-family="ui-monospace, Menlo, monospace" font-size="17" fill="#ededed">45</text>
+  <text x="222" y="102" font-family="-apple-system, sans-serif" font-size="8" fill="#a1a1aa">STORES</text>
+  <text x="300" y="88" font-family="ui-monospace, Menlo, monospace" font-size="17" fill="#ededed">6,737</text>
+  <text x="300" y="102" font-family="-apple-system, sans-serif" font-size="8" fill="#a1a1aa">TOTAL SALES ($M)</text>
+  <path d="M204 118 H444" stroke="rgba(255,255,255,0.145)" stroke-width="1" />
+
+  <!-- leaderboard -->
+  <text x="222" y="140" font-family="-apple-system, sans-serif" font-size="8" fill="#a1a1aa">STORE</text>
+  <text x="404" y="140" font-family="-apple-system, sans-serif" font-size="8" fill="#a1a1aa">$M</text>
+  <g font-family="ui-monospace, Menlo, monospace" font-size="10.5" fill="#ededed">
+    <text x="222" y="162">20</text><text x="404" y="162">301.4</text>
+    <text x="222" y="182">4</text><text x="404" y="182">299.5</text>
+    <text x="222" y="202">14</text><text x="404" y="202">288.9</text>
+  </g>
+  <rect x="248" y="154" width="140" height="9" fill="#3550ff" opacity="0.85" />
+  <rect x="248" y="174" width="139" height="9" fill="#3550ff" opacity="0.6" />
+  <rect x="248" y="194" width="134" height="9" fill="#3550ff" opacity="0.35" />
+
+  <text x="36" y="272" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="11.5" fill="#a1a1aa">
+    Oxy Starter · one file, no build step
+  </text>
+</svg>

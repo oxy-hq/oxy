@@ -64,9 +64,9 @@ runs:
         make-default: true
 
     - name: Setup Rust
-      uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: 1.96.1
+        toolchain: stable
         targets: ${{ inputs.target }}
 
     - name: Setup Rust cache

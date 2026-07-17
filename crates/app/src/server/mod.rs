@@ -22,6 +22,8 @@ pub mod runtime_artifact;
 pub mod serve_mode;
 pub mod serve_safety;
 pub mod service;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod worker_health;
 pub mod worker_metrics;
 pub mod worker_runtime;

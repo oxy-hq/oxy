@@ -252,7 +252,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: Prep Rust (rustfmt)
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - name: cargo fmt --all --check
@@ -355,7 +355,7 @@ jobs:
           make-default: true
 
       - name: Prep Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - name: Install cargo tools

@@ -244,26 +244,13 @@ fn blank_signals(workspace_id: Uuid) -> WorkspaceSignals {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use migration::MigratorTrait;
-    use sea_orm::{ConnectionTrait, Database};
-
-    // Connects to the test DB and runs all migrations.
-    // Gated on OXY_TEST_DATABASE_URL; skips cleanly when not set.
-    async fn test_db() -> Option<DatabaseConnection> {
-        let url = std::env::var("OXY_TEST_DATABASE_URL").ok()?;
-        let db = Database::connect(&url).await.ok()?;
-        // Run all four migrators in startup order.
-        migration::Migrator::up(&db, None).await.ok()?;
-        agentic_runtime::migration::RuntimeMigrator::up(&db, None)
-            .await
-            .ok()?;
-        Some(db)
-    }
+    use crate::server::test_support::{SKIP_MSG, test_db};
+    use sea_orm::ConnectionTrait;
 
     #[tokio::test]
     async fn gathers_failed_runs_per_workspace() {
         let Some(db) = test_db().await else {
-            eprintln!("skipping: OXY_TEST_DATABASE_URL not set");
+            eprintln!("{SKIP_MSG}");
             return;
         };
         let ws = Uuid::new_v4();
@@ -292,7 +279,7 @@ mod tests {
     #[tokio::test]
     async fn scoped_gather_returns_only_target_workspace() {
         let Some(db) = test_db().await else {
-            eprintln!("skipping: OXY_TEST_DATABASE_URL not set");
+            eprintln!("{SKIP_MSG}");
             return;
         };
         let target = Uuid::new_v4();

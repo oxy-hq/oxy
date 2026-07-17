@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "slug": "oxy-starter",
+  "name": "Oxy Starter",
+  "description": "The smallest customer app: one file, no build step, two queries against the demo warehouse.",
+  "icon": "icon.svg",
+  "art": "card.svg",
+  "status": "Example app · seeded by `oxy seed` · queries oxymart",
+  "ask": {
+    "agent": "analytics.agentic.yml",
+    "suggestedQuestions": [
+      "Which oxymart stores sell the most?",
+      "How do holiday weeks compare to normal weeks?"
+    ]
+  }
+}

@@ -41,9 +41,12 @@ pub(super) struct OxyAppAskConfig {
 ///
 /// Schema version 2 is required. Version 1 bundles must be re-built with an
 /// updated SDK.
+/// `pub(crate)` so the seeded example bundle's manifest is validated against
+/// THIS type (`cli::commands::seed_apps`). A hand-rolled check in the seed
+/// would let the example drift out of schema without anything failing.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct OxyAppManifest {
+pub(crate) struct OxyAppManifest {
     pub schema_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,

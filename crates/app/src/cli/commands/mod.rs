@@ -20,7 +20,11 @@ mod migrate_automations;
 mod proxy;
 mod publish;
 pub mod run;
-mod seed;
+/// `pub` so integration tests can drive the seed directly (see
+/// `tests/seed_example_app.rs`) instead of shelling out to the binary — the
+/// seed is a fixture the tests are built on, not just a CLI command.
+pub mod seed;
+mod seed_apps;
 mod seed_partners;
 pub(crate) mod serve;
 mod start;

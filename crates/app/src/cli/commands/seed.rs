@@ -78,11 +78,44 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
     // DB, so this stays safe to run anywhere the demo-workspace seed runs.
     super::seed_partners::seed_partner_tenants(&resolved_str).await?;
 
+    deploy_example_apps(&conn, workspace_id, &resolved_str).await;
+
     println!();
     println!("Next:");
     println!("  cargo run -p oxy-app -- compile --workspace-path {resolved_str}");
     println!("  OXY_ROLE=ide cargo run -p oxy-app -- serve --enterprise");
     Ok(())
+}
+
+/// Deploy the example customer app to the demo workspace, and to Acme's (so the
+/// admin cockpit and the partner console both have a real app to show).
+///
+/// **Warns instead of failing.** The rest of the seed is the part a developer
+/// can't work without; the example app is a bonus on top. The one failure that's
+/// actually likely — `OXY_ROLE` exported in the shell, which makes the build
+/// store refuse a filesystem write — would otherwise turn a stray env var into a
+/// completely failed seed.
+async fn deploy_example_apps(conn: &sea_orm::DatabaseConnection, workspace_id: Uuid, path: &str) {
+    let mut targets = vec![super::seed_apps::AppTarget {
+        org_id: LOCAL_ORG_ID,
+        org_slug: "local".to_string(),
+        workspace_id,
+    }];
+    // Absent when the partner seed skipped (non-local DB) — deploy to the demo
+    // workspace anyway rather than treating that as an error.
+    match super::seed_apps::first_workspace_of(conn, "acme").await {
+        Ok(Some(acme)) => targets.push(acme),
+        Ok(None) => {}
+        Err(e) => println!("{} could not resolve Acme's workspace: {e}", "⚠️".warning()),
+    }
+
+    if let Err(e) = super::seed_apps::seed_example_apps(conn, path, &targets).await {
+        println!(
+            "{} example app not deployed: {e}\n  \
+             Everything else seeded. Re-run `oxy seed` once the cause is fixed.",
+            "⚠️".warning()
+        );
+    }
 }
 
 /// Ensure the Local organization exists at LOCAL_ORG_ID (nil). Shared with
@@ -225,20 +258,28 @@ async fn bind_org_admin_emails(conn: &sea_orm::DatabaseConnection) -> Result<(),
     Ok(())
 }
 
-/// Drop the demo workspace row. Org + guest user are left in place since
-/// other code paths (Airhouse provision, customer-apps demos) depend on
-/// the nil-UUID org existing.
+/// Drop the demo workspace row and every seeded example app. Org + guest user
+/// are left in place since other code paths (Airhouse provision, customer-apps
+/// demos) depend on the nil-UUID org existing.
 pub async fn clear_demo() -> Result<(), OxyError> {
     let conn = establish_connection().await?;
+
+    // Apps first. `apps.project_id` carries no foreign key, so deleting the
+    // workspace does NOT cascade to them — they'd survive as rows pointing at a
+    // workspace that no longer exists, and their bundle bytes would sit on disk
+    // with nothing left to reference them.
+    let apps = super::seed_apps::clear_example_apps(&conn).await?;
+
     let deleted = Workspaces::delete_by_id(demo_workspace_id())
         .exec(&conn)
         .await
         .map_err(|e| OxyError::DBError(format!("delete demo workspace: {e}")))?;
     println!(
-        "{} cleared demo workspace ({} row{})",
+        "{} cleared demo workspace ({} row{}) and {apps} example app{}",
         "🧹".info(),
         deleted.rows_affected,
-        if deleted.rows_affected == 1 { "" } else { "s" }
+        if deleted.rows_affected == 1 { "" } else { "s" },
+        if apps == 1 { "" } else { "s" }
     );
     Ok(())
 }

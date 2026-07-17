@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oxy Starter</title>
+    <style>
+      /* "Mission Control" tokens — the customer-app house style, dark-only.
+         Kept in sync with customer-apps/examples/hello-oxy/src/index.css.
+         A bundle is standalone, so the values are declared here rather than
+         imported. */
+      :root {
+        --background: #0a0a0a;
+        --foreground: #ededed;
+        --card: #1a1a1a;
+        --muted: #27272a;
+        --muted-foreground: #a1a1aa;
+        --border: rgba(255, 255, 255, 0.145);
+        --brand: #3550ff;
+        --info: #60a5fa;
+        --error: #ef4444;
+        --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 900px; margin: 0 auto; padding: 56px 24px 96px; }
+      code { font-family: var(--mono); font-size: 0.85em; background: var(--muted); padding: 0.05rem 0.3rem; }
+      ::selection { background: color-mix(in srgb, var(--info) 30%, transparent); }
+      *::-webkit-scrollbar { width: 6px; height: 6px; }
+      *::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 3px; }
+      *::-webkit-scrollbar-track { background: transparent; }
+
+      header { margin-bottom: 40px; }
+      h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 8px; }
+      .lede { color: var(--muted-foreground); margin: 0; max-width: 62ch; }
+
+      section { margin-top: 36px; }
+      .head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+      h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); margin: 0; }
+      .pattern { font-size: 11px; color: var(--muted-foreground); font-family: var(--mono); }
+
+      .panel { background: var(--card); border: 1px solid var(--border); overflow: hidden; }
+
+      /* Each panel shows the SQL that produced it — the app teaches by
+         exposing its own wiring rather than describing it. */
+      .source {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        margin: 0;
+        padding: 10px 14px;
+        background: var(--background);
+        border-top: 1px solid var(--border);
+        border-left: 2px solid var(--brand);
+        overflow-x: auto;
+        white-space: pre;
+      }
+
+      .kpis { display: grid; grid-template-columns: repeat(3, 1fr); }
+      .kpi { padding: 18px; border-right: 1px solid var(--border); }
+      .kpi:last-child { border-right: 0; }
+      .kpi .value { font-family: var(--mono); font-size: 24px; letter-spacing: -0.02em; }
+      .kpi .label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); margin-top: 4px; }
+      @media (max-width: 620px) {
+        .kpis { grid-template-columns: 1fr; }
+        .kpi { border-right: 0; border-bottom: 1px solid var(--border); }
+        .kpi:last-child { border-bottom: 0; }
+      }
+
+      .scroll { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12.5px; }
+      th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+      th { font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
+      tbody tr:last-child td { border-bottom: 0; }
+      td.num { text-align: right; }
+      td.null { color: var(--muted-foreground); font-style: italic; }
+
+      .contract { display: grid; grid-template-columns: 150px 1fr; }
+      .contract dt, .contract dd { padding: 9px 14px; margin: 0; border-bottom: 1px solid var(--border); min-width: 0; }
+      .contract dt { color: var(--muted-foreground); }
+      .contract dd { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+      .contract dt:last-of-type, .contract dd:last-of-type { border-bottom: 0; }
+      @media (max-width: 560px) {
+        .contract { grid-template-columns: 1fr; }
+        .contract dt { border-bottom: 0; padding-bottom: 0; }
+      }
+
+      .state { padding: 18px 14px; color: var(--muted-foreground); }
+      .skeleton { height: 10px; background: var(--muted); animation: pulse 1.4s ease-in-out infinite; }
+      .skeleton + .skeleton { margin-top: 10px; }
+      .skeleton.short { width: 40%; }
+      @keyframes pulse { 50% { opacity: 0.45; } }
+      @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+      .error { border-color: var(--error); }
+      .error .title { color: var(--error); font-weight: 600; padding: 14px 14px 0; }
+      .error p { padding: 0 14px; margin: 6px 0 0; color: var(--muted-foreground); }
+      .error p:last-child { padding-bottom: 14px; }
+      .note { color: var(--muted-foreground); font-size: 12.5px; margin: 10px 0 0; }
+    </style>
+  </head>
+  <body style="background: #0a0a0a">
+    <main>
+      <header>
+        <h1>Oxy Starter</h1>
+        <p class="lede">
+          One HTML file, no build step, no dependencies. Oxy serves it behind its auth gate,
+          injects the runtime identity, and answers both queries below on the same session
+          cookie. Read the source — it is the whole app.
+        </p>
+      </header>
+
+      <section>
+        <div class="head">
+          <h2>Demo warehouse</h2>
+          <span class="pattern">Pattern 1 · scalar aggregate</span>
+        </div>
+        <div id="kpis">
+          <div class="panel">
+            <div class="state"><div class="skeleton"></div><div class="skeleton short"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="head">
+          <h2>Top stores by sales</h2>
+          <span class="pattern">Pattern 2 · list query</span>
+        </div>
+        <div id="top-stores">
+          <div class="panel">
+            <div class="state"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="head">
+          <h2>What Oxy injected</h2>
+          <span class="pattern">Pattern 3 · runtime identity</span>
+        </div>
+        <div class="panel"><dl class="contract" id="contract"></dl></div>
+        <p class="note">
+          Read from <code>window.__OXY_APP__</code>. A bundle never hardcodes its org or
+          project — it addresses the data plane with the <code>projectId</code> Oxy gives it.
+        </p>
+      </section>
+    </main>
+
+    <script>
+      // Oxy splices window.__OXY_APP__ in before </head> at serve time
+      // (crates/app/src/server/api/customer_apps_serve.rs::inject_app_config),
+      // so it is defined by the time this script runs.
+      const app = window.__OXY_APP__;
+
+      // `local` is the DuckDB database in examples/config.yml, and `oxymart` is
+      // its demo sales table — the same one the example dashboards read. No
+      // credentials, so this works offline on a fresh clone.
+      const DATABASE = "local";
+
+      const KPI_SQL = `SELECT COUNT(DISTINCT Store)              AS stores,
+       ROUND(SUM(Weekly_Sales) / 1e6, 1) AS total_sales_musd,
+       ROUND(AVG(Weekly_Sales))          AS avg_weekly_sales
+FROM oxymart`;
+
+      const TOP_STORES_SQL = `SELECT Store,
+       ROUND(SUM(Weekly_Sales) / 1e6, 2) AS sales_musd
+FROM oxymart
+GROUP BY Store
+ORDER BY sales_musd DESC
+LIMIT 5`;
+
+      const el = (id) => document.getElementById(id);
+
+      function text(tag, value, className) {
+        const node = document.createElement(tag);
+        node.textContent = value;
+        if (className) node.className = className;
+        return node;
+      }
+
+      function panel(...children) {
+        const div = document.createElement("div");
+        div.className = "panel";
+        for (const child of children) div.append(child);
+        return div;
+      }
+
+      function withSource(node, sql) {
+        node.append(text("pre", sql, "source"));
+        return node;
+      }
+
+      function errorPanel(title, ...paragraphs) {
+        const box = panel(text("div", title, "title"));
+        box.classList.add("error");
+        for (const p of paragraphs) box.append(text("p", p));
+        return box;
+      }
+
+      function cell(value) {
+        // textContent, never innerHTML — warehouse values are untrusted.
+        if (value === null || value === undefined) return text("td", "null", "null");
+        if (typeof value === "object") return text("td", JSON.stringify(value));
+        return text("td", String(value), typeof value === "number" ? "num" : undefined);
+      }
+
+      async function query(sql) {
+        const response = await fetch(`/api/projects/${app.projectId}/query`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sql, database: DATABASE }),
+        });
+        if (!response.ok) {
+          const detail = (await response.text()).trim();
+          throw new Error(detail || `${response.status} ${response.statusText}`);
+        }
+        return response.json();
+      }
+
+      function queryFailed(err) {
+        return errorPanel(
+          "Query failed",
+          err.message,
+          `Oxy resolves "${DATABASE}" from the project's config.yml. If the workspace has not been compiled yet, run \`oxy compile\` and reload.`,
+        );
+      }
+
+      const KPI_LABELS = {
+        stores: "Stores",
+        total_sales_musd: "Total sales ($M)",
+        avg_weekly_sales: "Avg weekly sales ($)",
+      };
+
+      async function renderKpis() {
+        try {
+          const { columns, rows } = await query(KPI_SQL);
+          if (!rows.length) {
+            el("kpis").replaceChildren(
+              withSource(panel(text("div", "oxymart is empty.", "state")), KPI_SQL),
+            );
+            return;
+          }
+          const grid = document.createElement("div");
+          grid.className = "kpis";
+          columns.forEach((name, i) => {
+            const tile = document.createElement("div");
+            tile.className = "kpi";
+            const raw = rows[0][i];
+            tile.append(
+              text("div", raw === null ? "—" : Number(raw).toLocaleString(), "value"),
+              text("div", KPI_LABELS[name] ?? name, "label"),
+            );
+            grid.append(tile);
+          });
+          el("kpis").replaceChildren(withSource(panel(grid), KPI_SQL));
+        } catch (err) {
+          el("kpis").replaceChildren(withSource(queryFailed(err), KPI_SQL));
+        }
+      }
+
+      async function renderTopStores() {
+        try {
+          const { columns, rows, truncated } = await query(TOP_STORES_SQL);
+          if (!rows.length) {
+            el("top-stores").replaceChildren(
+              withSource(panel(text("div", "No rows.", "state")), TOP_STORES_SQL),
+            );
+            return;
+          }
+          const table = document.createElement("table");
+          const headRow = document.createElement("tr");
+          for (const c of columns) headRow.append(text("th", c));
+          table.createTHead().append(headRow);
+
+          const body = table.createTBody();
+          for (const row of rows) {
+            const tr = document.createElement("tr");
+            for (const value of row) tr.append(cell(value));
+            body.append(tr);
+          }
+
+          const scroll = document.createElement("div");
+          scroll.className = "scroll";
+          scroll.append(table);
+          const out = panel(scroll);
+          if (truncated) out.append(text("div", "Result truncated at the row cap.", "state"));
+          el("top-stores").replaceChildren(withSource(out, TOP_STORES_SQL));
+        } catch (err) {
+          el("top-stores").replaceChildren(withSource(queryFailed(err), TOP_STORES_SQL));
+        }
+      }
+
+      function renderContract() {
+        const dl = el("contract");
+        for (const [label, value] of [
+          ["Organization", app.orgSlug],
+          ["Project", app.projectId],
+          ["App", `${app.slug} · ${app.appId}`],
+          ["Branch", app.branch],
+        ]) {
+          dl.append(text("dt", label), text("dd", value ?? "—"));
+        }
+      }
+
+      function notServedByOxy() {
+        const message = errorPanel(
+          "Not served by Oxy",
+          "This page is open directly from disk, so it has no runtime identity and no session to query with.",
+          "Run `oxy seed`, then open it at /customer-apps/<org>/oxy-starter/.",
+        );
+        el("contract").replaceWith(message);
+        for (const id of ["kpis", "top-stores"]) {
+          el(id).replaceChildren(panel(text("div", "No query ran — see below.", "state")));
+        }
+      }
+
+      if (app) {
+        renderContract();
+        // Independent panels, so one failing query doesn't blank the other.
+        renderKpis();
+        renderTopStores();
+      } else {
+        notServedByOxy();
+      }
+    </script>
+  </body>
+</html>
