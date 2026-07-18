@@ -106,11 +106,11 @@ importers:
         specifier: 1.32.0
         version: 1.32.0
       '@formkit/auto-animate':
-        specifier: ^0.9.0
-        version: 0.9.0
+        specifier: ^0.10.0
+        version: 0.10.0
       '@hpcc-js/wasm':
-        specifier: ^2.34.6
-        version: 2.34.6
+        specifier: ^2.34.7
+        version: 2.34.7
       '@lottiefiles/react-lottie-player':
         specifier: ^3.6.0
         version: 3.6.0(react@19.2.7)
@@ -911,11 +911,11 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@formkit/auto-animate@0.9.0':
-    resolution: {integrity: sha512-VhP4zEAacXS3dfTpJpJ88QdLqMTcabMg0jwpOSxZ/VzfQVfl3GkZSCZThhGC5uhq/TxPHPzW0dzr4H9Bb1OgKA==}
+  '@formkit/auto-animate@0.10.0':
+    resolution: {integrity: sha512-KGomRttjUfORuPUaR/ZGQw+6xfMrTM+sxnILv7JAd9AmabU9rg9i6gF/iC0Ih+QpKCubJpCA/1DX9UHKE8cX+A==}
 
-  '@hpcc-js/wasm@2.34.6':
-    resolution: {integrity: sha512-LIXD3XX/v3muNiMJSRlXttRSZ+MfG6UILf2pkBhTZN6muNnuftTdNms1sYUGR3qZQruk29GiVgrt/9c7kh0o+Q==}
+  '@hpcc-js/wasm@2.34.7':
+    resolution: {integrity: sha512-P4O1u0V1bZkSIlzs6TjQotqZDW5oLqF4zKcEz1CWRZkIbJNdw/eCrpncRC52Zu0qGCnctkCkdUQjULROtU1Sbg==}
     hasBin: true
 
   '@humanfs/core@0.19.2':
@@ -5862,9 +5862,9 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@formkit/auto-animate@0.9.0': {}
+  '@formkit/auto-animate@0.10.0': {}
 
-  '@hpcc-js/wasm@2.34.6':
+  '@hpcc-js/wasm@2.34.7':
     dependencies:
       yargs: 18.0.0
 
