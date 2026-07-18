@@ -2,12 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.107] - 2026-07-17
+
+### 🚀 Features
+
+- *(partner)* Partner distribution platform + oxy proxy local-dev (#2710)
+- *(cameras)* Route dashboard reads to the analytics DP pool (#2733)
+- *(authz)* [**breaking**] Unify authorization behind one model (enforcing) (#2730)
+- *(seed)* Deploy an example customer app and test the seed against a real DB (#2734)
+
+### 🐛 Bug Fixes
+
+- *(cameras)* Rebuild the tenant airhouse client when its driver dies (#2729)
+- *(cameras)* Stop retrying a rejected ingest batch forever (#2732)
+
+### 💼 Other
+
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 2 updates (#2727)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update dependencies across multiple packages
+
 ## [0.5.106] - 2026-07-16
 
 ### 💼 Other
 
 - *(deps)* Bump actions/setup-node from 6.4.0 to 7.0.0 (#2720)
 - *(deps)* Bump anthropics/claude-code-action from 1.0.171 to 1.0.174 (#2721)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.106 (#2724)
 
 ## [0.5.105] - 2026-07-15
 
