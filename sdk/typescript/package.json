@@ -90,7 +90,7 @@
     "preact": "^10.29.7",
     "preact-render-to-string": "^6.7.0",
     "react": "^19.2.7",
-    "tsdown": "^0.22.8",
+    "tsdown": "^0.22.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
