@@ -5,6 +5,26 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Customer-app email sending** (oxy-internal `feat/customer-app-email-send`) —
+  Oxy Functions can send email via `ctx.email.send({ to, subject, html|text, ... })`,
+  backed by AWS SES. The **platform controls the `from` address**; the function
+  sets `replyTo` only. Gated by a new fail-closed `email: { send: true }`
+  capability on `OxyAppFunctionManifest`.
+- **`@oxy-hq/sdk/email`** — a new subpath export shipping
+  `render(Component, props)` (preact-render-to-string) so functions can author
+  email bodies as **preact** components and render them to HTML inside the
+  Functions isolate. `preact` / `preact-render-to-string` are optional peer
+  deps, so the main SDK bundle is unaffected. (React Email / react-dom can't run
+  in the isolate: its node build needs `node:stream`, its browser build needs
+  Web Streams the isolate lacks.)
+- **`OxyFunctionContext`** — the server-side function `ctx` is now typed
+  (`user`, `env`, `log`, `query`, `queryStream`, `fetch`, `warehouse`, `secrets`,
+  `semantic`, `airway`, `email`), exported from the customer-app entry.
+
 ## [2.2.0] - 2026-07-09
 
 Publishes the customer-app **Oxy Functions** platform and the **metric-tree /

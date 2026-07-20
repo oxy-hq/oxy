@@ -287,6 +287,11 @@ struct BuildConfigResp {
     project_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct OrgForProjectResp {
+    org_slug: String,
+}
+
 /// Subset of the server's `PublishResult` we render in the CLI.
 /// Tolerant of extra fields so server-side additions don't break a
 /// pinned CLI. `org_slug` (added 2026-06) lets us render the canonical
@@ -330,6 +335,35 @@ async fn fetch_project(target: &str, org: &str, app: &str) -> Result<String, Oxy
         .await
         .map_err(|e| OxyError::RuntimeError(format!("parse build-config: {e}")))?;
     Ok(cfg.project_id)
+}
+
+/// Resolve the org slug for a pinned workspace (`--project` / `OXY_PROJECT`).
+/// A workspace belongs to exactly one org, so this lets a from-source publish
+/// bake the `/customer-apps/<org>/<app>/` base path without a hardcoded
+/// `orgSlug` — the pinned project determines the org.
+async fn fetch_org_for_project(target: &str, project_id: &str) -> Result<String, OxyError> {
+    let url = format!("{target}/api/org-for-project/{project_id}");
+    let resp = http_client(30)?
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("GET {url}: {e}")))?;
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(OxyError::ConfigurationError(format!(
+            "workspace {project_id} not found on {target} — check --project / OXY_PROJECT."
+        )));
+    }
+    if !resp.status().is_success() {
+        return Err(OxyError::RuntimeError(format!(
+            "org-for-project lookup failed ({}) at {url}",
+            resp.status()
+        )));
+    }
+    let cfg: OrgForProjectResp = resp
+        .json()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("parse org-for-project: {e}")))?;
+    Ok(cfg.org_slug)
 }
 
 pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
@@ -385,6 +419,19 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
             ))
         })?;
 
+    // If no org was resolved but a workspace is pinned (--project / OXY_PROJECT),
+    // infer the org from it — a workspace belongs to exactly one org. This lets
+    // `oxy publish --project <uuid>` build from source without a hardcoded
+    // orgSlug: the base path /customer-apps/<org>/<app>/ (baked below) needs it.
+    let project_pin = args.project.clone().or_else(|| env_var("OXY_PROJECT"));
+    let org = match org {
+        Some(o) => Some(o),
+        None => match &project_pin {
+            Some(pid) => Some(fetch_org_for_project(&target, pid).await?),
+            None => None,
+        },
+    };
+
     // Bundle: build from the manifest, or take a pre-built --dir.
     let bundle_dir = match &args.dir {
         Some(d) => d.clone(),
@@ -394,7 +441,7 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
             // bundle, so the org must be known here (unlike a pre-built --dir).
             let org = org.as_deref().ok_or_else(|| {
                 OxyError::ConfigurationError(
-                    "missing org: needed to build the app's base path — set oxy-app.json orgSlug, --org, or OXY_ORG (or publish a pre-built bundle with --dir)".into(),
+                    "missing org: needed to build the app's base path — set oxy-app.json orgSlug, --org, OXY_ORG, or --project/OXY_PROJECT (a pinned workspace determines its org), or publish a pre-built bundle with --dir".into(),
                 )
             })?;
             let base_path = format!("/customer-apps/{org}/{app}/");
@@ -417,8 +464,8 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
         bundle_functions(m, &cwd, &bundle_dir)?;
     }
 
-    // Project: --project → OXY_PROJECT → build-config on the target.
-    let project = match args.project.clone().or_else(|| env_var("OXY_PROJECT")) {
+    // Project: pinned (--project / OXY_PROJECT) → else build-config on the target.
+    let project = match project_pin {
         Some(p) => p,
         // Looking up the project by (org, app) needs the org. Pass --project
         // to skip this — then the org can be inferred server-side.

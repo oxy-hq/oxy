@@ -16,6 +16,16 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./email": {
+      "import": {
+        "types": "./dist/email.d.mts",
+        "default": "./dist/email.mjs"
+      },
+      "require": {
+        "types": "./dist/email.d.cts",
+        "default": "./dist/email.cjs"
+      }
     }
   },
   "files": [
@@ -59,7 +69,17 @@
   },
   "homepage": "https://oxygen-hq.com",
   "peerDependencies": {
+    "preact": "^10.0.0",
+    "preact-render-to-string": "^6.0.0",
     "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "preact": {
+      "optional": true
+    },
+    "preact-render-to-string": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
@@ -67,6 +87,8 @@
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
     "eslint": "^10.7.0",
+    "preact": "^10.29.7",
+    "preact-render-to-string": "^6.7.0",
     "react": "^19.2.7",
     "tsdown": "^0.22.8",
     "typescript": "^7.0.2",

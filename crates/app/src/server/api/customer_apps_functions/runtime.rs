@@ -128,6 +128,11 @@ pub trait FunctionHost: Send + Sync {
     /// (`apps/<app_id>/<key>`) into the same namespace `ctx.env` reads. Gated
     /// by the fail-closed `secrets.write` manifest capability.
     async fn secrets_set(&self, key: String, value: String) -> Result<serde_json::Value, String>;
+    /// `ctx.email.send(input)` — send email on behalf of the app. Gated by the
+    /// fail-closed `email.send` manifest capability; the platform controls the
+    /// `from` address (the author may set `replyTo` only). `input` is the JS
+    /// payload object; returns `{ messageId }`.
+    async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String>;
 }
 
 /// A request the isolate sends to the broker loop.
@@ -162,6 +167,10 @@ enum HostCall {
     SecretsSet {
         key: String,
         value: String,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    SendEmail {
+        input: serde_json::Value,
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
 }
@@ -305,6 +314,30 @@ async fn op_ctx_secrets_set(
     Ok(reply_json("ctx.secrets.set", result))
 }
 
+/// `ctx.email.send(input)` — bridge to `FunctionHost::send_email`. `input` is
+/// the JS payload object, JSON-stringified by the bootstrap `__wrapOp`.
+#[op2(async)]
+#[string]
+async fn op_ctx_email_send(
+    state: Rc<RefCell<OpState>>,
+    #[string] input_json: String,
+) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let input: serde_json::Value =
+        serde_json::from_str(&input_json).unwrap_or(serde_json::Value::Null);
+    let (reply, rx) = oneshot::channel();
+    tx.send(HostCall::SendEmail { input, reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.email.send", result))
+}
+
 #[op2(async)]
 #[string]
 async fn op_ctx_semantic_query(
@@ -394,6 +427,7 @@ deno_core::extension!(
         op_ctx_secrets_set,
         op_ctx_semantic_query,
         op_ctx_airway_run,
+        op_ctx_email_send,
     ],
 );
 
@@ -500,6 +534,12 @@ globalThis.__buildCtx = (ctxData) => ({
     // set(key, value) — both stay bare strings so they arrive as the op's
     // `#[string]` args (matching op_ctx_airway_run's bare-string pipelineRef).
     set: (key, value) => __wrapOp("op_ctx_secrets_set")(String(key), String(value)),
+  },
+  email: {
+    // send(input) — input is an object; __wrapOp JSON-stringifies it. The host
+    // controls `from` (author sets replyTo only). Render templates to `html`
+    // with `render` from @oxy-hq/sdk/email before calling this.
+    send: (input) => __wrapOp("op_ctx_email_send")(input),
   },
   semantic: { query: __wrapOp("op_ctx_semantic_query") }, // spec is JSON-stringified by __wrapOp
   airway: {
@@ -664,6 +704,9 @@ pub async fn run(
                                 }
                                 HostCall::SecretsSet { key, value, reply } => {
                                     let _ = reply.send(host.secrets_set(key, value).await);
+                                }
+                                HostCall::SendEmail { input, reply } => {
+                                    let _ = reply.send(host.send_email(input).await);
                                 }
                             }
                         });
@@ -841,6 +884,12 @@ mod tests {
                 &self,
                 _key: String,
                 _value: String,
+            ) -> Result<serde_json::Value, String> {
+                Err("unused".into())
+            }
+            async fn send_email(
+                &self,
+                _input: serde_json::Value,
             ) -> Result<serde_json::Value, String> {
                 Err("unused".into())
             }

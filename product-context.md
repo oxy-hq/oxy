@@ -17,10 +17,9 @@ generate and run SQL, and get streamed results. Teams also build **Procedures** 
 Apps** (YAML dashboards), dbt-style transforms via **Airform**, and edit project
 files in the **Developer Portal IDE**.
 
-Three deployment modes — almost every bug report depends on which one:
-- **Local** (`oxy start`) — PostgreSQL in Docker, single workspace.
-- **Remote** (`oxy serve --local`) — single fixed workspace, embedded PostgreSQL, **no auth**.
-- **Cloud / multi-workspace** (`oxy serve`) — multi-tenant, multi-org, GitHub import, RBAC, magic-link auth, Stripe billing.
+Deployment modes — almost every bug report depends on which one:
+- **Cloud / enterprise** (`oxy serve`, `oxy serve --enterprise`, or `oxy start` for a Docker-Postgres dev box) — the real, maintained path: multi-tenant, multi-org, GitHub import, RBAC, magic-link auth, Stripe billing (`ServeMode::Cloud`). **"Run it locally" means this** — local development runs cloud/enterprise mode, not the legacy mode below. So dev-vs-prod is *not* distinguishable by mode; a dev box is cloud mode with non-prod secrets (e.g. no working SES → set `OXY_APP_EMAIL_LOCAL_TEST=1` to preview email).
+- **Legacy single-project** (`oxy serve --local`, `ServeMode::Local`) — one fixed workspace, embedded PostgreSQL, **no auth**. **Not actively used or maintained** — don't design new behavior around it; when in doubt, assume cloud/enterprise.
 
 ---
 
@@ -32,7 +31,7 @@ Three deployment modes — almost every bug report depends on which one:
 - **Agentic Agent** (`.agentic.yml`) = Oxy's multi-step FSM agent (two kinds: **analytics** and **app builder**), distinct from the single-shot sense of "agent."
 - **Builder Agent** = the file-editing copilot (chat **Build** mode) — distinct from the *app builder* agentic agent.
 - **Customer Apps Platform** (code-first React+Vite bundles, shipped with `oxy publish`) is **not** the same thing as YAML **Data Apps** (`.app.yml` dashboards).
-- **Oxy Functions** = server-side TypeScript handlers bundled *inside* a Customer App (declared in `oxy-app.json`, versioned and shipped with the frontend by `oxy publish`) that run on Oxy's managed runtime with data-plane access — **not** a YAML Automation task or Data App `task`. A function runs as an HTTP route (`useFunction` hook), a cron job on the durable task queue, or an Airway transform step; writing back to Oxy Secrets via `ctx.secrets.set` requires the `secrets.write` capability.
+- **Oxy Functions** = server-side TypeScript handlers bundled *inside* a Customer App (declared in `oxy-app.json`, versioned and shipped with the frontend by `oxy publish`) that run on Oxy's managed runtime with data-plane access — **not** a YAML Automation task or Data App `task`. A function runs as an HTTP route (`useFunction` hook), a cron job on the durable task queue, or an Airway transform step; writing back to Oxy Secrets via `ctx.secrets.set` requires the `secrets.write` capability, and sending email via `ctx.email.send` (AWS SES under the hood; the **platform** controls the `from` address, the function sets `replyTo` only) requires the `email.send` capability. Email templates are **preact** components rendered to HTML by `@oxy-hq/sdk/email`'s `render(Component, props)` — React Email / react-dom can't run in the Functions isolate (node:stream / Web Streams).
 - Four similarly-named third-party engines that are easy to confuse: **airlayer** (semantic layer), **Airform** (dbt-style modeling), **Airway** (ELT), **Airhouse** (a warehouse + connector).
 - **Verified Query** = a plain `.sql` file the analytics agent runs *as-is* when it matches the question (bypassing LLM SQL generation); surfaces a **Verified** badge.
 - **Two subdomain schemes, easy to confuse** — an **org subdomain** (`<org-slug>.oxygen-hq.com`) boots the whole product pre-scoped to that org's default project (skips the org/workspace picker), serving its custom apps under `/a/<slug>/`; a **customer-app subdomain** (`<org>--<slug>.customer-apps.oxygen-hq.com`) serves a single externally-hosted custom app at its own root.

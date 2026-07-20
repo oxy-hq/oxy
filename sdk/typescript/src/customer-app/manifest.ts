@@ -63,6 +63,14 @@ export interface OxyAppFunctionManifest {
    */
   secrets?: { write?: boolean };
   /**
+   * Capability to send email via `ctx.email.send` (fail-closed: omit → the
+   * host rejects `ctx.email.send` before any provider call). Declare for a
+   * function that emails the app's users — e.g. a `notify` route that sends a
+   * welcome message, or a scheduled digest. The sender mailbox is
+   * platform-controlled; a function may set `replyTo` but never `from`.
+   */
+  email?: { send?: boolean };
+  /**
    * Retry policy for **background** runs (a `schedule` fire or a manual job
    * trigger). Omit → a job run is attempted once. Route (HTTP) invocations are
    * request-scoped and never retried. `maxAttempts` counts the first try

@@ -114,6 +114,11 @@ struct FunctionManifestEntry {
     /// persist state (e.g. a scheduled token-refresher).
     #[serde(default)]
     secrets: Option<SecretsSpec>,
+    /// Opt-in capability to send email via `ctx.email.send` (fail-closed: absent
+    /// → sends rejected). The platform controls the `from` address; the function
+    /// may set `replyTo` only. Declare for functions that email end-users.
+    #[serde(default)]
+    email: Option<EmailSpec>,
     /// Retry policy for **background** runs (scheduled or manual job triggers) —
     /// absent → a job run is attempted once. Route invocations are request-scoped
     /// and never retried. Maps to the durable queue's `RetryPolicy` so a transient
@@ -152,6 +157,12 @@ struct SecretsSpec {
     write: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Default, Clone)]
+struct EmailSpec {
+    #[serde(default)]
+    send: Option<bool>,
+}
+
 impl FunctionManifestEntry {
     /// The cache TTL if opted in with a positive value, else `None`.
     fn cache_ttl(&self) -> Option<Duration> {
@@ -173,6 +184,11 @@ impl FunctionManifestEntry {
     /// Whether `ctx.secrets.set` is permitted (fail-closed default: false).
     fn secrets_write(&self) -> bool {
         self.secrets.as_ref().and_then(|s| s.write).unwrap_or(false)
+    }
+
+    /// Whether `ctx.email.send` is permitted (fail-closed default: false).
+    fn email_send(&self) -> bool {
+        self.email.as_ref().and_then(|e| e.send).unwrap_or(false)
     }
 
     /// Build a `RetryPolicy` for background runs from the manifest's `retries`
@@ -765,6 +781,7 @@ pub async fn handle_function_request(
         timeout,
         write_destinations: manifest.write_destinations(),
         secrets_write: manifest.secrets_write(),
+        email_send: manifest.email_send(),
         logs: logs.clone(),
         // Route path: cancellation is the `cancel_requested_at` DB flag (set on
         // client-gone / dashboard cancel), so a never-fired token suffices here.
@@ -967,6 +984,7 @@ pub(crate) async fn run_scheduled_function(
         timeout,
         write_destinations: manifest.write_destinations(),
         secrets_write: manifest.secrets_write(),
+        email_send: manifest.email_send(),
         logs: logs.clone(),
         cancel,
     })
@@ -1072,6 +1090,8 @@ struct RunArgs<'a> {
     write_destinations: Vec<String>,
     /// §11.x fail-closed capability gate for `ctx.secrets.set`.
     secrets_write: bool,
+    /// Fail-closed capability gate for `ctx.email.send`.
+    email_send: bool,
     /// Shared log buffer: the isolate appends `console.*`/`ctx.log`; the handler
     /// drains it after the run and sends it back as `log` frames (batched with
     /// the response, not live-tailed).
@@ -1125,6 +1145,8 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         args.app.id,
         args.user_id,
         args.secrets_write,
+        args.app.name.clone(),
+        args.email_send,
     ));
 
     let env = resolve_function_env(args.db, args.app.project_id, args.app.id).await;

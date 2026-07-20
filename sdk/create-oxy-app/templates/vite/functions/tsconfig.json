@@ -1,0 +1,17 @@
+{
+  "//": "Typecheck the server-side Oxy Functions. They run on the V8 isolate runtime, not the browser: NO DOM lib (the ambient `Response` is the runtime's), bundled by `oxy publish` (esbuild), never by Vite. `jsxImportSource: preact` covers email templates imported here.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": []
+  },
+  "include": ["."]
+}

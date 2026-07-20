@@ -211,6 +211,10 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     } else {
         ServeMode::Cloud
     };
+    // Capture the mode process-wide so request-agnostic code (e.g. the app email
+    // sender, which defaults to a browser preview locally instead of SES) can
+    // read it without threading it through every call.
+    crate::server::serve_mode::set_process_mode(mode);
 
     if matches!(mode, ServeMode::Cloud) {
         use crate::integrations::slack::config::SlackConfig;

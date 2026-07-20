@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@oxy-hq/sdk": "^2.0.0",
+    "preact": "^10.29.7",
+    "preact-render-to-string": "^6.7.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

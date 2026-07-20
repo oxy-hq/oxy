@@ -89,10 +89,12 @@ never `println!` in library crates; CLI output via the `StyledText` trait from `
   Entities in `entity`, migrations in `migration`.
 - **Docker** (`oxy start`): containers managed via `bollard` (not docker-compose) —
   `oxy-postgres` container, `oxy-postgres-data` volume; `oxy start --clean` for a fresh slate.
-- **`oxy serve --local`** is a narrow single-user/no-auth mode for a dev running Oxy against
-  their own project on disk. It is **not** the default. The production code path is
-  `--enterprise` — use it for tests, demos, role-split, S3/worker-fleet, or anything
-  production-shaped. `--local` only for the laptop-exploration case.
+- **`oxy serve --local`** is a **legacy**, narrow single-user/no-auth mode (one fixed project
+  on disk) — **not actively used or maintained**; don't design new behavior around it.
+  **Local development runs the production path**: `oxy serve --enterprise` (or `oxy start` for a
+  Docker-Postgres dev box) — cloud/enterprise mode, multi-tenant. Use `--enterprise`/cloud for
+  tests, demos, role-split, S3/worker-fleet, and anything production-shaped. A dev box is cloud
+  mode with non-prod secrets, so it's not distinguishable from prod by mode.
 
 ## Authorization
 
@@ -155,6 +157,12 @@ PRs that violate the right-hand column should be challenged through the matching
 - No `--release` for local/CI. No `println!` in library code (use `tracing`).
 - New crates must be added to the workspace `Cargo.toml` members list.
 - Never commit `.env` files or secrets.
+- **Local dev runs cloud/enterprise mode** (`oxy start` / `oxy serve --enterprise`), so a dev box
+  is indistinguishable from prod by `ServeMode` — never gate dev behavior on `ServeMode::Local`
+  (nobody runs the legacy `--local`) or on error heuristics. Concretely: customer-app email
+  (`ctx.email.send`) hits real SES in cloud mode; on a dev box set `OXY_APP_EMAIL_LOCAL_TEST=1`
+  (and `MAGIC_LINK_LOCAL_TEST=true`) to preview the rendered email in the browser instead of
+  sending. Both are in `.env.example`.
 
 ## code-review-graph MCP (use BEFORE Grep/Glob/Read)
 

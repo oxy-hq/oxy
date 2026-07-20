@@ -1,5 +1,10 @@
 {
   "schemaVersion": 2,
   "slug": "{{APP_SLUG}}",
-  "name": "{{APP_DISPLAY_NAME}}"
+  "name": "{{APP_DISPLAY_NAME}}",
+  "functions": {
+    "notify": {
+      "email": { "send": true }
+    }
+  }
 }

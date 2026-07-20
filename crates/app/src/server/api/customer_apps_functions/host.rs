@@ -53,6 +53,13 @@ pub struct ProjectFunctionHost {
     /// §11.x fail-closed: `ctx.secrets.set` is rejected unless the function
     /// declares the `secrets.write` capability in its manifest.
     secrets_write: bool,
+    /// App display name, used as the `From` friendly name on `ctx.email.send`.
+    app_name: String,
+    /// Fail-closed capability gate for `ctx.email.send`.
+    email_send: bool,
+    /// Per-invocation `ctx.email.send` counter (this host lives for exactly one
+    /// invocation), bounding email fan-out from a single run.
+    email_send_count: std::sync::atomic::AtomicUsize,
 }
 
 impl ProjectFunctionHost {
@@ -65,6 +72,8 @@ impl ProjectFunctionHost {
         app_id: Uuid,
         actor: Uuid,
         secrets_write: bool,
+        app_name: String,
+        email_send: bool,
     ) -> Self {
         Self {
             proj_ctx,
@@ -74,6 +83,9 @@ impl ProjectFunctionHost {
             app_id,
             actor,
             secrets_write,
+            app_name,
+            email_send,
+            email_send_count: std::sync::atomic::AtomicUsize::new(0),
             // `ctx.fetch` is defended in two layers:
             //  1. `is_safe_outbound` rejects the request URL up front (scheme,
             //     literal private IPs, internal suffixes).
@@ -349,6 +361,33 @@ impl FunctionHost for ProjectFunctionHost {
             .map_err(|e| format!("ctx.secrets.set failed: {e}"))?;
         Ok(serde_json::json!({ "ok": true }))
     }
+
+    async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
+        // Fail-closed: the function must declare the `email.send` capability.
+        if !self.email_send {
+            return Err(
+                "EmailCapabilityMissing: this function has not declared the `email.send` \
+                 capability (add \"email\": { \"send\": true } to its oxy-app.json entry)"
+                    .to_string(),
+            );
+        }
+        // Per-invocation fan-out cap (this host serves exactly one invocation).
+        let n = self
+            .email_send_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        if n > MAX_EMAILS_PER_INVOCATION {
+            return Err(format!(
+                "RateLimitExceeded: this invocation exceeded the \
+                 {MAX_EMAILS_PER_INVOCATION}-email limit"
+            ));
+        }
+        let parsed =
+            serde_json::from_value(input).map_err(|e| format!("InvalidEmailPayload: {e}"))?;
+        crate::emails::app_emailer::AppEmailer::from_env(self.app_name.clone())
+            .send(parsed)
+            .await
+    }
 }
 
 /// Hard ceiling for a host DB op. The runtime's per-function timeout (≤300s) is
@@ -362,6 +401,10 @@ impl FunctionHost for ProjectFunctionHost {
 /// above the max function timeout so it only fires as a backstop, never trips a
 /// legitimate long `airwayStep`.
 const HOST_DB_OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(330);
+
+/// Max `ctx.email.send` calls per function invocation — bounds email fan-out
+/// from a single run. The per-send recipient cap lives in `AppEmailer`.
+const MAX_EMAILS_PER_INVOCATION: usize = 20;
 
 async fn with_db_timeout<T>(
     label: &str,

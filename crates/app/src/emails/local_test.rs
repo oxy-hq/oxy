@@ -30,7 +30,7 @@ impl EmailProvider for LocalTestEmailProvider {
     }
 }
 
-fn open_in_browser(path: &std::path::Path) {
+pub(crate) fn open_in_browser(path: &std::path::Path) {
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(path).spawn();
 

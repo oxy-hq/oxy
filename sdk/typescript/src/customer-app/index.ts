@@ -27,6 +27,21 @@ export type { CustomerAppDebugSnapshot } from "./debug";
 export { getCustomerAppDebug } from "./debug";
 export type { CustomerAppErrorReport } from "./errors";
 export { apiErrorFromResponse, interpretCustomerAppError, OxyApiError } from "./errors";
+export type {
+  EmailSendInput,
+  EmailSendResult,
+  OxyAirwayApi,
+  OxyEmailApi,
+  OxyFetchResult,
+  OxyFunctionContext,
+  OxyFunctionHandler,
+  OxyFunctionRequest,
+  OxyFunctionRow,
+  OxyFunctionUser,
+  OxySecretsApi,
+  OxySemanticApi,
+  OxyWarehouseApi
+} from "./function-context";
 export type { OxyInjectedAppConfig } from "./inject";
 export { readInjectedAppConfig } from "./inject";
 export type { OxyAppLogger, OxyAppLogLevel } from "./logger";

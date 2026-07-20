@@ -8,7 +8,7 @@ use chrono::Utc;
 use entity::apps;
 use entity::org_members;
 use entity::organizations;
-use entity::prelude::{AppBuilds, Apps, OrgMembers, Organizations};
+use entity::prelude::{AppBuilds, Apps, OrgMembers, Organizations, Workspaces};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_shared::utils::slugify;
@@ -503,6 +503,42 @@ pub async fn get_build_config(
         branch: row.branch,
         org_slug: org.slug,
         app_slug: row.slug,
+    }))
+}
+
+#[derive(Serialize)]
+pub struct OrgForProjectResponse {
+    pub project_id: Uuid,
+    pub org_slug: String,
+}
+
+/// Public endpoint — resolve the org slug for a workspace (project) id. Lets
+/// `oxy publish --project <uuid>` build from source without a hardcoded
+/// `orgSlug`: a workspace belongs to exactly one org, so the org — and thus the
+/// `/customer-apps/<org>/<app>/` base path — is inferred from the pinned
+/// project. Public for the same reason as `get_build_config`: a project UUID and
+/// its org slug already appear in URLs; the data behind them is gated by org
+/// membership at `/api/*`.
+pub async fn get_org_for_project(
+    Path(project_id): Path<Uuid>,
+) -> Result<Json<OrgForProjectResponse>, StatusCode> {
+    let db = establish_connection()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let ws = Workspaces::find_by_id(project_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let org_id = ws.org_id.ok_or(StatusCode::NOT_FOUND)?;
+    let org = Organizations::find_by_id(org_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(OrgForProjectResponse {
+        project_id,
+        org_slug: org.slug,
     }))
 }
 

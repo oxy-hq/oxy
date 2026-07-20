@@ -5,7 +5,7 @@ use axum::Router;
 use axum::routing::{get, post};
 
 use crate::api::{auth, billing, healthcheck, user, webhooks};
-use crate::server::api::admin::apps::handlers::get_build_config;
+use crate::server::api::admin::apps::handlers::{get_build_config, get_org_for_project};
 use crate::server::api::{customer_apps_debug, projects};
 
 use super::AppState;
@@ -76,6 +76,10 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/apps/{org_slug}/{app_slug}/build-config",
             get(get_build_config),
         )
+        // Public: resolve a workspace's org slug so `oxy publish --project <id>`
+        // can bake the /customer-apps/<org>/<app>/ base path without a hardcoded
+        // orgSlug (same rationale as build-config — ids/slugs aren't secrets).
+        .route("/org-for-project/{project_id}", get(get_org_for_project))
         // Diagnostic snapshot for admins — what the server sees about
         // this app + its manifest. Same cookie-auth + org-membership
         // gate; human inspection only, shape not guaranteed stable.
