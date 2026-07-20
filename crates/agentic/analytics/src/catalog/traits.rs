@@ -4,8 +4,8 @@ use crate::types::AnalyticsIntent;
 
 use super::fuzzy_matches;
 use super::types::{
-    CatalogError, CatalogSearchResult, ColumnRange, DimensionSummary, JoinPath, MetricDef,
-    MetricSummary, QueryContext, SampleTarget,
+    CatalogError, CatalogSearchResult, ColumnRange, DimensionSummary, FreshnessTarget, JoinPath,
+    MetricDef, MetricSummary, QueryContext, SampleTarget,
 };
 
 /// Unified interface for all catalog implementations.
@@ -121,6 +121,22 @@ pub trait Catalog: Send + Sync {
     /// names — the caller should fall back to using the raw names as-is.
     fn resolve_sample_target(&self, table: &str, column: &str) -> Option<SampleTarget> {
         let _ = (table, column);
+        None
+    }
+
+    /// Resolve a semantic view (by view name or underlying table name) to the
+    /// info needed to probe its data freshness: physical table, watermark
+    /// column expression, and any `meta:`-declared freshness contract
+    /// (`freshness_watermark_column`, `freshness_expected_cadence`,
+    /// `freshness_complete_through`, `freshness_caveat`) plus the view's
+    /// `refresh_key: sql:` recency probe when present.
+    ///
+    /// Returns `None` when the catalog has no such view, or the view has no
+    /// usable watermark (no declared column and no date/datetime dimension).
+    /// The default implementation returns `None` so catalogs that do not
+    /// track freshness remain valid without change.
+    fn resolve_freshness_target(&self, view: &str) -> Option<FreshnessTarget> {
+        let _ = view;
         None
     }
 

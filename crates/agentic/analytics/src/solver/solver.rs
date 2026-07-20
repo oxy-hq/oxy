@@ -45,6 +45,12 @@ pub struct AnalyticsSolver {
     /// relative dates ("yesterday", "last week"). Sourced from `timezone:`
     /// in the agent YAML. `None` falls back to UTC (legacy behavior).
     pub(crate) timezone: Option<Tz>,
+    /// Precomputed ambient data-freshness hint (one line, e.g. "Data
+    /// coverage: sales_daily through 2026-07-17 (several times daily); ...").
+    /// Computed once per pipeline build from live MAX(watermark) probes
+    /// (TTL-cached process-wide); appended to the uncached dynamic suffix
+    /// beside the date hint. `None` when no view has a freshness target.
+    pub(crate) freshness_hint: Option<String>,
     /// SQL example files appended to the Solving prompt.
     pub(crate) sql_examples: Vec<String>,
     /// Markdown domain docs injected into Clarifying and Interpreting prompts.
@@ -163,6 +169,7 @@ impl AnalyticsSolver {
             event_tx: None,
             global_instructions: None,
             timezone: None,
+            freshness_hint: None,
             sql_examples: vec![],
             domain_docs: vec![],
             state_configs: HashMap::new(),
@@ -206,6 +213,7 @@ impl AnalyticsSolver {
             event_tx: None,
             global_instructions: None,
             timezone: None,
+            freshness_hint: None,
             sql_examples: vec![],
             domain_docs: vec![],
             state_configs: HashMap::new(),
@@ -478,6 +486,19 @@ impl AnalyticsSolver {
             None => now_utc.format("%Y-%m-%d").to_string(),
         };
         format!("Today is {date}.")
+    }
+
+    /// The full uncached dynamic system suffix for this run: the date hint,
+    /// plus the ambient data-freshness hint when one was computed. Kept out
+    /// of the cached system prefix (same rationale as the date hint - the
+    /// coverage dates advance daily and would otherwise invalidate every
+    /// prompt-cache hit).
+    pub(crate) fn system_hint(&self) -> String {
+        let date = Self::current_date_hint(self.timezone);
+        match &self.freshness_hint {
+            Some(f) => format!("{date}\n{f}"),
+            None => date,
+        }
     }
 
     /// Build a composite system prompt for a given state.

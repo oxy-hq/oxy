@@ -651,3 +651,145 @@ impl SolvedRule for DuplicateRowCheckRule {
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Rule: freshness_check
+// ---------------------------------------------------------------------------
+
+/// Guards against answers that silently present a partially-covered period as
+/// complete: when the spec's requested date range extends more than
+/// `threshold_days` past the latest date actually present in the result, the
+/// answer must state the coverage boundary.
+///
+/// Emits [`AnalyticsError::ValueAnomaly`], which routes to Interpret — the
+/// pipeline still answers, but the retry context carries the boundary so the
+/// final answer states it. Only evaluates when the executed query carried an
+/// explicit date range AND the result contains parseable date values; scalar
+/// aggregates with no date column are covered by the ambient freshness hint,
+/// not this rule.
+pub struct FreshnessCheckRule {
+    threshold_days: i64,
+}
+
+impl FreshnessCheckRule {
+    pub fn from_params(params: &Value) -> Result<Box<dyn SolvedRule>, RegistryError> {
+        let threshold_days = params
+            .get("threshold_days")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(1);
+        if threshold_days < 0 {
+            return Err(RegistryError::InvalidParams {
+                name: "freshness_check".into(),
+                reason: "threshold_days must be >= 0".into(),
+            });
+        }
+        Ok(Box::new(Self { threshold_days }))
+    }
+
+    /// Parse a date out of a cell rendered as text (`2026-07-17`, with or
+    /// without a time suffix) or a numeric `YYYYMMDD` value.
+    fn parse_cell_date(cell: &agentic_core::result::CellValue) -> Option<chrono::NaiveDate> {
+        use agentic_core::result::CellValue;
+        match cell {
+            CellValue::Text(s) => chrono::NaiveDate::parse_from_str(s.get(..10)?, "%Y-%m-%d").ok(),
+            CellValue::Number(n) => {
+                let n = *n as i64;
+                if !(19000101..=29991231).contains(&n) {
+                    return None;
+                }
+                chrono::NaiveDate::from_ymd_opt(
+                    (n / 10000) as i32,
+                    ((n / 100) % 100) as u32,
+                    (n % 100) as u32,
+                )
+            }
+            CellValue::Null => None,
+        }
+    }
+}
+
+impl SolvedRule for FreshnessCheckRule {
+    fn name(&self) -> &'static str {
+        "freshness_check"
+    }
+
+    fn description(&self) -> &'static str {
+        "The requested date range must not extend materially past the latest date present in the result."
+    }
+
+    fn check(&self, ctx: &SolvedCtx<'_>) -> Result<(), AnalyticsError> {
+        // Requested end: the latest parseable date across the spec's explicit
+        // time-dimension ranges. No explicit range -> nothing to compare.
+        let requested_end = ctx
+            .spec
+            .query_request_item
+            .as_ref()
+            .into_iter()
+            .flat_map(|qr| qr.time_dimensions.iter())
+            .filter_map(|td| td.date_range.as_ref())
+            .flat_map(|r| r.iter())
+            .filter_map(|s| chrono::NaiveDate::parse_from_str(s.get(..10)?, "%Y-%m-%d").ok())
+            .max();
+        let Some(requested_end) = requested_end else {
+            return Ok(());
+        };
+        // A range end in the future (month-to-date specs resolve to the full
+        // calendar month) is not staleness - clamp to today so ordinary
+        // to-date queries stay silent and only genuine gaps fire.
+        let requested_end = requested_end.min(chrono::Utc::now().date_naive());
+
+        // Coarse GROUP BY granularities bucket each result cell to its period
+        // START (DATE_TRUNC), so result_max sits up to a full period behind
+        // today even when data is current - a day-precision comparison would
+        // fire spuriously on the most common shape ("revenue by month this
+        // year"). The comparison is only reliable at day precision; for
+        // coarser buckets the ambient freshness hint carries each source's
+        // data-through instead, so skip.
+        let coarse = ctx
+            .spec
+            .query_request_item
+            .as_ref()
+            .into_iter()
+            .flat_map(|qr| qr.time_dimensions.iter())
+            .filter(|td| td.date_range.is_some())
+            .filter_map(|td| td.granularity.as_deref())
+            .any(|g| {
+                matches!(
+                    g.to_ascii_lowercase().as_str(),
+                    "week" | "month" | "quarter" | "year"
+                )
+            });
+        if coarse {
+            return Ok(());
+        }
+
+        // Latest date present anywhere in the result set.
+        let result_max = ctx
+            .result
+            .primary()
+            .data
+            .rows
+            .iter()
+            .flat_map(|row| row.0.iter())
+            .filter_map(Self::parse_cell_date)
+            .max();
+        let Some(result_max) = result_max else {
+            // No date values in the result (scalar/aggregate) - out of scope.
+            return Ok(());
+        };
+
+        let gap = (requested_end - result_max).num_days();
+        if gap > self.threshold_days {
+            return Err(AnalyticsError::ValueAnomaly {
+                column: "date coverage".into(),
+                value: result_max.to_string(),
+                reason: format!(
+                    "the requested range extends through {requested_end} but the data only \
+                     covers through {result_max} ({gap} days short) - the answer MUST state \
+                     'data covers through {result_max}' and must not present the period as complete"
+                ),
+            });
+        }
+        Ok(())
+    }
+}

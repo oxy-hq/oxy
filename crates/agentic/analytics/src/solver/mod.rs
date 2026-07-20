@@ -13,6 +13,7 @@
 pub(crate) mod clarifying;
 pub(crate) mod diagnosing;
 pub(crate) mod executing;
+pub(crate) mod freshness_hint;
 pub(crate) mod interpreting;
 pub(crate) mod prompts;
 pub(crate) mod resuming;

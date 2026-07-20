@@ -241,6 +241,7 @@ impl ValidationConfig {
                     },
                     entry("null_ratio_check"),
                     entry("duplicate_row_check"),
+                    entry("freshness_check"),
                 ],
             },
         }
@@ -256,11 +257,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_default_all_rules_has_14_rules() {
+    fn config_default_all_rules_has_15_rules() {
         let cfg = ValidationConfig::default_all_rules();
         assert_eq!(cfg.rules.specified.len(), 3);
         assert_eq!(cfg.rules.solvable.len(), 5);
-        assert_eq!(cfg.rules.solved.len(), 6);
+        assert_eq!(cfg.rules.solved.len(), 7);
     }
 
     #[test]

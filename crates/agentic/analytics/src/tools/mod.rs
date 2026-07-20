@@ -85,6 +85,17 @@ pub(super) const SAMPLE_COLUMNS_DESC: &str = "Batch-sample multiple columns in o
      date granularity — all in a single round-trip instead of calling \
      sample_column multiple times.";
 
+pub(super) const CHECK_DATA_FRESHNESS_DESC: &str = "Check how current each semantic view's data is. For each view, \
+     returns data_through (MAX of its watermark date column), staleness_days, \
+     and — when the view declares them — its expected_cadence, \
+     complete_through policy, and settlement caveat. Judge staleness against \
+     the declared cadence: a monthly-loaded source 20 days behind is healthy, \
+     an hourly one is not. Use BEFORE finalizing a query whose date range \
+     touches the recent edge (today/yesterday/this week/month-to-date) or a \
+     manually-loaded source, so filters and the eventual answer reflect the \
+     data that actually exists. Returns {results: [{view, data_through, \
+     staleness_days, expected_cadence?, complete_through?, caveat?}]}.";
+
 // ── Shared observability helpers ─────────────────────────────────────────────
 
 /// Emit a visible `tool.input` event on the current span.

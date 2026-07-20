@@ -25,8 +25,8 @@ pub mod rules;
 mod tests;
 
 pub use rules::{
-    DuplicateRowCheckRule, NoNanInfRule, NonEmptyRule, NullRatioCheckRule, OutlierDetectionRule,
-    ShapeMatchRule, TimeseriesDateCheckRule, TruncationWarningRule,
+    DuplicateRowCheckRule, FreshnessCheckRule, NoNanInfRule, NonEmptyRule, NullRatioCheckRule,
+    OutlierDetectionRule, ShapeMatchRule, TimeseriesDateCheckRule, TruncationWarningRule,
 };
 
 #[cfg(test)]

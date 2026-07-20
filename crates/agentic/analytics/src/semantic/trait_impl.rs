@@ -1,8 +1,8 @@
 //! `impl Catalog for SemanticCatalog` — the tool-facing catalog API.
 
 use crate::catalog::{
-    Catalog, CatalogError, ColumnRange, DimensionSummary, JoinPath, MetricDef, MetricSummary,
-    QueryContext, SampleTarget,
+    Catalog, CatalogError, ColumnRange, DimensionSummary, FreshnessTarget, JoinPath, MetricDef,
+    MetricSummary, QueryContext, SampleTarget,
 };
 use crate::types::AnalyticsIntent;
 
@@ -178,6 +178,64 @@ impl Catalog for SemanticCatalog {
         }
 
         None
+    }
+
+    fn resolve_freshness_target(&self, view: &str) -> Option<FreshnessTarget> {
+        let v = self.engine.views().iter().find(|x| {
+            x.name.eq_ignore_ascii_case(view)
+                || x.table
+                    .as_deref()
+                    .is_some_and(|t| t.eq_ignore_ascii_case(view))
+        })?;
+
+        let meta_first = |key: &str| -> Option<String> {
+            v.meta
+                .as_ref()
+                .and_then(|m| m.get(key))
+                .and_then(|values| values.first())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        };
+
+        // Watermark resolution: a `meta:`-declared column wins (using the
+        // matching dimension's expr when one exists, else the raw column
+        // name); otherwise fall back to the first date/datetime dimension.
+        let (watermark_name, watermark_expr, declared) =
+            if let Some(col) = meta_first("freshness_watermark_column") {
+                match v.dimensions.iter().find(|d| {
+                    d.name.eq_ignore_ascii_case(&col) || d.expr.eq_ignore_ascii_case(&col)
+                }) {
+                    Some(d) => (d.name.clone(), d.expr.clone(), true),
+                    None => (col.clone(), col, true),
+                }
+            } else {
+                let d = v.dimensions.iter().find(|d| {
+                    matches!(
+                        d.dimension_type,
+                        airlayer::schema::models::DimensionType::Date
+                            | airlayer::schema::models::DimensionType::Datetime
+                    )
+                })?;
+                (d.name.clone(), d.expr.clone(), false)
+            };
+
+        let refresh_key_sql = match &v.refresh_key {
+            Some(airlayer::schema::models::RefreshKey::Sql(sql)) => Some(sql.clone()),
+            _ => None,
+        };
+
+        Some(FreshnessTarget {
+            view: v.name.clone(),
+            table: v.table.clone().unwrap_or_else(|| v.name.clone()),
+            datasource: v.datasource.clone(),
+            watermark_expr,
+            watermark_name,
+            declared,
+            expected_cadence: meta_first("freshness_expected_cadence"),
+            complete_through: meta_first("freshness_complete_through"),
+            caveat: meta_first("freshness_caveat"),
+            refresh_key_sql,
+        })
     }
 
     fn try_compile(&self, intent: &AnalyticsIntent) -> Result<String, CatalogError> {

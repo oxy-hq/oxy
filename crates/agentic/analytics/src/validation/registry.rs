@@ -69,8 +69,9 @@ impl RuleRegistry {
             TimeseriesOrderByCheckRule,
         };
         use super::solved::{
-            DuplicateRowCheckRule, NoNanInfRule, NonEmptyRule, NullRatioCheckRule,
-            OutlierDetectionRule, ShapeMatchRule, TimeseriesDateCheckRule, TruncationWarningRule,
+            DuplicateRowCheckRule, FreshnessCheckRule, NoNanInfRule, NonEmptyRule,
+            NullRatioCheckRule, OutlierDetectionRule, ShapeMatchRule, TimeseriesDateCheckRule,
+            TruncationWarningRule,
         };
         use super::specified::{FilterUnambiguousRule, JoinKeyExistsRule, MetricResolvesRule};
 
@@ -117,6 +118,8 @@ impl RuleRegistry {
             .insert("null_ratio_check", NullRatioCheckRule::from_params);
         r.solved
             .insert("duplicate_row_check", DuplicateRowCheckRule::from_params);
+        r.solved
+            .insert("freshness_check", FreshnessCheckRule::from_params);
 
         r
     }

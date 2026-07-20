@@ -648,3 +648,171 @@ fn outlier_skips_when_fewer_than_min_rows_even_with_summary_stats() {
     // Should pass because min_rows gate fires before summary-stats check.
     assert_eq!(rule.check(&ctx), Ok(()));
 }
+
+// ── freshness_check ────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod freshness_check_tests {
+    use super::*;
+    use crate::types::query_request::{QueryRequestItem, TimeDimensionItem};
+    use crate::validation::rule::{SolvedCtx, SolvedRule};
+    use crate::validation::solved::FreshnessCheckRule;
+
+    fn rule() -> Box<dyn SolvedRule> {
+        FreshnessCheckRule::from_params(&serde_json::Value::Null).unwrap()
+    }
+
+    fn spec_with_range(end: &str) -> QuerySpec {
+        let mut spec = make_spec();
+        spec.query_request_item = Some(QueryRequestItem {
+            time_dimensions: vec![TimeDimensionItem {
+                dimension: "sales.business_date".into(),
+                granularity: Some("day".into()),
+                date_range: Some(vec!["2026-01-01".into(), end.into()]),
+            }],
+            ..Default::default()
+        });
+        spec
+    }
+
+    fn result_with_dates(max_date: &str) -> AnalyticsResult {
+        AnalyticsResult::single(
+            QueryResult {
+                columns: vec!["day".into(), "net".into()],
+                rows: vec![
+                    agentic_core::QueryRow(vec![
+                        CellValue::Text("2026-07-10".into()),
+                        CellValue::Number(10.0),
+                    ]),
+                    agentic_core::QueryRow(vec![
+                        CellValue::Text(max_date.into()),
+                        CellValue::Number(12.0),
+                    ]),
+                ],
+                total_row_count: 2,
+                truncated: false,
+            },
+            None,
+        )
+    }
+
+    #[test]
+    fn fires_when_range_outruns_data() {
+        let spec = spec_with_range("2026-07-18");
+        let result = result_with_dates("2026-07-16");
+        let ctx = SolvedCtx {
+            result: &result,
+            spec: &spec,
+        };
+        assert!(matches!(
+            rule().check(&ctx),
+            Err(AnalyticsError::ValueAnomaly { .. })
+        ));
+    }
+
+    #[test]
+    fn silent_within_threshold() {
+        let spec = spec_with_range("2026-07-17");
+        let result = result_with_dates("2026-07-16");
+        let ctx = SolvedCtx {
+            result: &result,
+            spec: &spec,
+        };
+        assert_eq!(rule().check(&ctx), Ok(()));
+    }
+
+    #[test]
+    fn silent_without_explicit_range() {
+        let spec = make_spec();
+        let result = result_with_dates("2026-07-01");
+        let ctx = SolvedCtx {
+            result: &result,
+            spec: &spec,
+        };
+        assert_eq!(rule().check(&ctx), Ok(()));
+    }
+
+    #[test]
+    fn silent_for_dateless_scalar_result() {
+        let spec = spec_with_range("2026-07-18");
+        let result = AnalyticsResult::single(
+            QueryResult {
+                columns: vec!["total".into()],
+                rows: vec![agentic_core::QueryRow(vec![CellValue::Number(15.8e6)])],
+                total_row_count: 1,
+                truncated: false,
+            },
+            None,
+        );
+        let ctx = SolvedCtx {
+            result: &result,
+            spec: &spec,
+        };
+        assert_eq!(rule().check(&ctx), Ok(()));
+    }
+
+    #[test]
+    fn future_range_end_clamped_to_today() {
+        // Month-to-date specs carry the full calendar month; a result that is
+        // current through today must not fire just because the range end is
+        // in the future.
+        let spec = spec_with_range("2999-12-31");
+        let today = chrono::Utc::now().date_naive().to_string();
+        let result = result_with_dates(&today);
+        let ctx = SolvedCtx {
+            result: &result,
+            spec: &spec,
+        };
+        assert_eq!(rule().check(&ctx), Ok(()));
+    }
+
+    #[test]
+    fn silent_on_coarse_granularity() {
+        // "revenue by month this year": a monthly GROUP BY buckets each cell to
+        // its period START, so result_max (July bucket = 2026-07-01) sits a
+        // full period behind the range end even when data is current. A day-
+        // precision comparison would fire spuriously; the rule must skip coarse
+        // granularities and leave that territory to the ambient hint. (The same
+        // shape at day granularity still fires - see fires_when_range_outruns_data.)
+        let mut spec = make_spec();
+        spec.query_request_item = Some(QueryRequestItem {
+            time_dimensions: vec![TimeDimensionItem {
+                dimension: "sales.business_date".into(),
+                granularity: Some("month".into()),
+                date_range: Some(vec!["2026-01-01".into(), "2026-12-31".into()]),
+            }],
+            ..Default::default()
+        });
+        let result = result_with_dates("2026-07-01");
+        let ctx = SolvedCtx {
+            result: &result,
+            spec: &spec,
+        };
+        assert_eq!(rule().check(&ctx), Ok(()));
+    }
+
+    #[test]
+    fn parses_numeric_yyyymmdd_cells() {
+        let spec = spec_with_range("2026-07-18");
+        let result = AnalyticsResult::single(
+            QueryResult {
+                columns: vec!["day".into(), "net".into()],
+                rows: vec![agentic_core::QueryRow(vec![
+                    CellValue::Number(20260714.0),
+                    CellValue::Number(9.0),
+                ])],
+                total_row_count: 1,
+                truncated: false,
+            },
+            None,
+        );
+        let ctx = SolvedCtx {
+            result: &result,
+            spec: &spec,
+        };
+        assert!(matches!(
+            rule().check(&ctx),
+            Err(AnalyticsError::ValueAnomaly { .. })
+        ));
+    }
+}

@@ -24,8 +24,8 @@ pub use schema::{SchemaCatalog, SchemaMergeError};
 pub use traits::Catalog;
 #[allow(unused_imports)]
 pub use types::{
-    CatalogError, CatalogSearchResult, ColumnRange, DimensionSummary, JoinPath, MetricDef,
-    MetricSummary, QueryContext, SampleTarget,
+    CatalogError, CatalogSearchResult, ColumnRange, DimensionSummary, FreshnessTarget, JoinPath,
+    MetricDef, MetricSummary, QueryContext, SampleTarget,
 };
 
 // ── Fuzzy matching ───────────────────────────────────────────────────────────

@@ -67,6 +67,10 @@ struct ViewShim {
     refresh_key: Option<airlayer::schema::models::RefreshKey>,
     #[serde(default)]
     pre_aggregations: Option<Vec<airlayer::schema::models::PreAggregation>>,
+    /// Free-form user metadata (e.g. the `freshness_*` contract keys read by
+    /// the `check_data_freshness` tool). Must survive the shim round-trip.
+    #[serde(default)]
+    meta: Option<std::collections::HashMap<String, Vec<String>>>,
 }
 
 /// Intermediate topic representation for oxy YAML files.
@@ -83,6 +87,8 @@ struct TopicShim {
     retrieval: Option<airlayer::schema::models::TopicRetrievalConfig>,
     #[serde(default)]
     default_filters: Option<Vec<airlayer::schema::models::TopicFilter>>,
+    #[serde(default)]
+    meta: Option<std::collections::HashMap<String, Vec<String>>>,
 }
 
 // ── YAML parsing ─────────────────────────────────────────────────────────────
@@ -108,7 +114,7 @@ pub fn parse_view_yaml(yaml: &str) -> Result<airlayer::View, SemanticError> {
         segments: shim.segments,
         pre_aggregations: shim.pre_aggregations,
         refresh_key: shim.refresh_key,
-        meta: None,
+        meta: shim.meta,
     })
 }
 
@@ -122,7 +128,7 @@ pub fn parse_topic_yaml(yaml: &str) -> Result<airlayer::Topic, SemanticError> {
         base_view: shim.base_view,
         retrieval: shim.retrieval,
         default_filters: shim.default_filters,
-        meta: None,
+        meta: shim.meta,
     })
 }
 

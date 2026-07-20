@@ -89,6 +89,48 @@ pub struct SampleTarget {
     pub datasource: Option<String>,
 }
 
+/// Resolved target for the `check_data_freshness` tool.
+///
+/// The watermark is the column expression whose `MAX(..)` answers "what date
+/// does this view's data actually run through?". Views can declare it — plus
+/// a human-maintained freshness contract — via free-form `meta:` keys:
+///
+/// ```yaml
+/// meta:
+///   freshness_watermark_column: ["business_date"]
+///   freshness_expected_cadence: ["several times daily"]
+///   freshness_complete_through: ["prior full day (America/Los_Angeles)"]
+///   freshness_caveat: ["Current business day is intraday-partial."]
+/// ```
+///
+/// Without a declaration the first date/datetime dimension is used.
+#[derive(Debug, Clone)]
+pub struct FreshnessTarget {
+    /// Semantic view name.
+    pub view: String,
+    /// Underlying database table.
+    pub table: String,
+    /// Connector/database name from the view's `datasource:`. `None` means
+    /// "use the default connector".
+    pub datasource: Option<String>,
+    /// SQL expression for the watermark column (a dimension's `expr`, or the
+    /// raw declared column name when it matches no dimension).
+    pub watermark_expr: String,
+    /// Logical name of the watermark (dimension name or declared column).
+    pub watermark_name: String,
+    /// `true` when the view declared the watermark in `meta:`; `false` when
+    /// it was inferred from the first date-typed dimension.
+    pub declared: bool,
+    /// Declared cadence (`meta: freshness_expected_cadence`).
+    pub expected_cadence: Option<String>,
+    /// Declared completeness policy (`meta: freshness_complete_through`).
+    pub complete_through: Option<String>,
+    /// Declared settlement caveat (`meta: freshness_caveat`).
+    pub caveat: Option<String>,
+    /// Recency-probe SQL from the view's `refresh_key: sql:`, if declared.
+    pub refresh_key_sql: Option<String>,
+}
+
 /// A resolved join path between two tables or views.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct JoinPath {

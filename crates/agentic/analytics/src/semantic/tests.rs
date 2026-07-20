@@ -192,3 +192,95 @@ fn to_table_summary_compact() {
     assert!(s.contains("orders") || s.contains("customers"));
     assert!(s.contains("2")); // view count
 }
+
+// ── resolve_freshness_target ──────────────────────────────────────────────
+
+fn sales_view_with_freshness_meta() -> &'static str {
+    r#"
+name: sales_daily
+description: Daily sales
+table: sales_daily_metrics
+datasource: warehouse
+refresh_key:
+  sql: SELECT MAX(loaded_at) FROM sales_daily_metrics
+meta:
+  freshness_watermark_column: ["business_date"]
+  freshness_expected_cadence: ["several times daily"]
+  freshness_complete_through: ["prior full day (America/Los_Angeles)"]
+  freshness_caveat: ["Current business day is intraday-partial."]
+entities:
+  - name: sales_day
+    type: primary
+    key: sales_day_key
+dimensions:
+  - name: sales_day_key
+    type: string
+    expr: sales_day_key
+  - name: business_date
+    type: date
+    expr: toDate(business_date)
+measures:
+  - name: net_sales
+    type: sum
+    expr: net_sales
+"#
+}
+
+#[test]
+fn freshness_target_uses_declared_meta_watermark() {
+    let cat = build_catalog(&[sales_view_with_freshness_meta()]);
+    let t = cat.resolve_freshness_target("sales_daily").unwrap();
+    assert!(t.declared);
+    // The declared column matches the `business_date` dimension, so the
+    // dimension's SQL expr is used (normalized), not the raw column name.
+    assert_eq!(t.watermark_name, "business_date");
+    assert_eq!(t.watermark_expr, "toDate(business_date)");
+    assert_eq!(t.table, "sales_daily_metrics");
+    assert_eq!(t.datasource.as_deref(), Some("warehouse"));
+    assert_eq!(t.expected_cadence.as_deref(), Some("several times daily"));
+    assert_eq!(
+        t.complete_through.as_deref(),
+        Some("prior full day (America/Los_Angeles)")
+    );
+    assert_eq!(
+        t.caveat.as_deref(),
+        Some("Current business day is intraday-partial.")
+    );
+    assert_eq!(
+        t.refresh_key_sql.as_deref(),
+        Some("SELECT MAX(loaded_at) FROM sales_daily_metrics")
+    );
+}
+
+#[test]
+fn freshness_target_falls_back_to_first_date_dimension() {
+    // orders_view declares no meta; its only date dimension is order_date.
+    let t = catalog().resolve_freshness_target("orders_view").unwrap();
+    assert!(!t.declared);
+    assert_eq!(t.watermark_name, "order_date");
+    assert_eq!(t.watermark_expr, "order_date");
+    assert_eq!(t.table, "orders");
+    assert!(t.expected_cadence.is_none());
+    assert!(t.refresh_key_sql.is_none());
+}
+
+#[test]
+fn freshness_target_resolves_by_underlying_table_name() {
+    let t = catalog().resolve_freshness_target("orders").unwrap();
+    assert_eq!(t.view, "orders_view");
+}
+
+#[test]
+fn freshness_target_none_without_date_dimension() {
+    // customers_view has only string/number dimensions and no meta.
+    assert!(
+        catalog()
+            .resolve_freshness_target("customers_view")
+            .is_none()
+    );
+}
+
+#[test]
+fn freshness_target_none_for_unknown_view() {
+    assert!(catalog().resolve_freshness_target("ghost_view").is_none());
+}

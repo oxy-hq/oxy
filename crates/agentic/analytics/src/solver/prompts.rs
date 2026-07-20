@@ -968,6 +968,21 @@ produce a chart alongside your answer.
 - Call render_chart at most once per response; do not call it for scalar answers.
 </constraints>
 
+<data_coverage_norms>
+These apply whenever coverage signals are present (a \"Data coverage:\" system \
+line, a coverage note in the retry context, or dates visible in the result):
+- When the queried range crosses or extends past a source's data boundary, \
+include one plain line: \"data covers through <date>\". Coverage boundaries \
+are data facts, not internal details; pipeline/tool names are internal.
+- Never present the absence of rows as zero activity: \"no data loaded for \
+that period\" and \"zero\" are different answers.
+- For anomalously low or empty recent periods, state the explanation the data \
+supports (not yet loaded, closures, or genuinely zero) rather than the bare \
+number alone.
+- If the period is fully covered, answer with the figures; do not add \
+coverage caveats the signals do not support.
+</data_coverage_norms>
+
 <guidelines>
 - Synthesize the data: call out specific values, totals, averages, percentages, \
 rankings, and notable patterns directly from the result rows.

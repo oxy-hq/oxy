@@ -72,6 +72,46 @@ async fn execute_specifying_tool_inner(
             }
         }
 
+        "check_data_freshness" => {
+            let views = params["views"]
+                .as_array()
+                .ok_or_else(|| ToolError::BadParams("missing 'views' array".into()))?;
+            if views.is_empty() {
+                return Err(ToolError::BadParams(
+                    "'views' array must not be empty".into(),
+                ));
+            }
+            let names: Vec<&str> = views
+                .iter()
+                .map(|v| {
+                    v.as_str().ok_or_else(|| {
+                        ToolError::BadParams("each view entry must be a string".into())
+                    })
+                })
+                .collect::<Result<Vec<_>, ToolError>>()?;
+
+            let futures: Vec<_> = names
+                .iter()
+                .map(|view| {
+                    check_single_view_freshness(view, catalog, connectors, default_connector)
+                })
+                .collect();
+            let results = futures::future::join_all(futures).await;
+
+            // Individual view errors become inline error objects rather than
+            // failing the whole batch — same convention as sample_columns.
+            let results_json: Vec<Value> = results
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| match r {
+                    Ok(v) => v,
+                    Err(e) => json!({ "view": names[i], "error": e.to_string() }),
+                })
+                .collect();
+
+            Ok(json!({ "results": results_json }))
+        }
+
         "sample_columns" => {
             let columns = params["columns"]
                 .as_array()
@@ -136,6 +176,117 @@ async fn execute_specifying_tool_inner(
 
         _ => Err(ToolError::UnknownTool(name.into())),
     }
+}
+
+/// Probe a single view's data freshness: resolve its watermark via the
+/// catalog, run `MAX(<watermark>)` against the view's connector, and compute
+/// staleness relative to today (UTC). Used by `check_data_freshness` (batch)
+/// above.
+///
+/// The declared freshness contract (`expected_cadence`, `complete_through`,
+/// `caveat` from the view's `meta:`) is passed through verbatim so the LLM
+/// can judge whether the observed staleness is normal for the source (a
+/// monthly-loaded source that is 20 days behind is healthy; an hourly one
+/// is not).
+async fn check_single_view_freshness(
+    view_param: &str,
+    catalog: &dyn Catalog,
+    connectors: &HashMap<String, Arc<dyn DatabaseConnector>>,
+    default_connector: &str,
+) -> Result<Value, ToolError> {
+    let target = catalog
+        .resolve_freshness_target(view_param)
+        .ok_or_else(|| {
+            ToolError::Execution(format!(
+                "no freshness target for '{view_param}': not a known semantic view, or it has \
+             no date/datetime dimension and no meta.freshness_watermark_column"
+            ))
+        })?;
+
+    // Connector routing: same rule as sample_single_column.
+    let connector: &dyn DatabaseConnector = {
+        let name = target
+            .datasource
+            .as_deref()
+            .filter(|n| connectors.contains_key(*n))
+            .unwrap_or(default_connector);
+        connectors
+            .get(name)
+            .ok_or_else(|| {
+                ToolError::Execution(format!(
+                    "no connector registered for '{name}' (requested for view '{view_param}')"
+                ))
+            })?
+            .as_ref()
+    };
+
+    let table_sql = format!("\"{}\"", target.table.replace('"', "\"\""));
+    let max_sql = format!(
+        "SELECT MAX({expr}) FROM {table_sql}",
+        expr = target.watermark_expr
+    );
+    let res = connector
+        .execute_query(&max_sql, 1)
+        .await
+        .map_err(|e| ToolError::Execution(e.to_string()))?;
+    let data_through = res
+        .result
+        .rows
+        .first()
+        .and_then(|row| row.0.first())
+        .map(cell_to_json)
+        .unwrap_or(Value::Null);
+
+    let mut out = json!({
+        "view": target.view,
+        "table": target.table,
+        "watermark": target.watermark_name,
+        "watermark_declared": target.declared,
+        "data_through": data_through,
+    });
+    if let Some(days) = staleness_days(&out["data_through"]) {
+        out["staleness_days"] = json!(days);
+    }
+    if let Some(c) = target.expected_cadence {
+        out["expected_cadence"] = json!(c);
+    }
+    if let Some(c) = target.complete_through {
+        out["complete_through"] = json!(c);
+    }
+    if let Some(c) = target.caveat {
+        out["caveat"] = json!(c);
+    }
+    if let Some(sql) = target.refresh_key_sql
+        && let Ok(rk) = connector.execute_query(&sql, 1).await
+        && let Some(cell) = rk.result.rows.first().and_then(|row| row.0.first())
+    {
+        out["refresh_key_value"] = cell_to_json(cell);
+    }
+    Ok(out)
+}
+
+/// Days between a watermark value and today (UTC). Handles ISO strings
+/// (`2026-07-14`, with or without a time suffix) and numeric `YYYYMMDD`
+/// values (e.g. ClickHouse `Int64` business dates). Returns `None` when the
+/// value has no recognizable date, in which case the raw `data_through` is
+/// still reported without a staleness figure.
+fn staleness_days(value: &Value) -> Option<i64> {
+    let date = if let Some(s) = value.as_str() {
+        chrono::NaiveDate::parse_from_str(s.get(..10)?, "%Y-%m-%d").ok()?
+    } else if let Some(n) = value.as_f64() {
+        let n = n as i64;
+        if !(19000101..=29991231).contains(&n) {
+            return None;
+        }
+        chrono::NaiveDate::from_ymd_opt(
+            (n / 10000) as i32,
+            ((n / 100) % 100) as u32,
+            (n % 100) as u32,
+        )?
+    } else {
+        return None;
+    };
+    Some((chrono::Utc::now().date_naive() - date).num_days())
 }
 
 /// Sample a single column: resolve via catalog, query the database for distinct
@@ -360,4 +511,39 @@ async fn sample_single_column(
     r["sample_values"] = json!(values);
     r["row_count"] = json!(row_count);
     Ok(r)
+}
+
+#[cfg(test)]
+mod freshness_tests {
+    use super::staleness_days;
+    use serde_json::json;
+
+    #[test]
+    fn staleness_from_iso_string() {
+        let today = chrono::Utc::now().date_naive();
+        assert_eq!(staleness_days(&json!(today.to_string())), Some(0));
+        let week_ago = today - chrono::Duration::days(7);
+        assert_eq!(staleness_days(&json!(week_ago.to_string())), Some(7));
+    }
+
+    #[test]
+    fn staleness_from_iso_datetime_string() {
+        let today = chrono::Utc::now().date_naive();
+        let v = json!(format!("{today} 22:19:16"));
+        assert_eq!(staleness_days(&v), Some(0));
+    }
+
+    #[test]
+    fn staleness_from_yyyymmdd_number() {
+        let today = chrono::Utc::now().date_naive();
+        let n: i64 = format!("{}", today.format("%Y%m%d")).parse().unwrap();
+        assert_eq!(staleness_days(&json!(n)), Some(0));
+    }
+
+    #[test]
+    fn staleness_none_for_unrecognizable() {
+        assert_eq!(staleness_days(&json!("not a date")), None);
+        assert_eq!(staleness_days(&json!(42)), None);
+        assert_eq!(staleness_days(&serde_json::Value::Null), None);
+    }
 }

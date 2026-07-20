@@ -634,6 +634,19 @@ impl AgentConfig {
             .with_max_tokens(self.llm.max_tokens)
             .with_workspace_path(base_dir.to_path_buf());
 
+        // Ambient data-freshness hint: probe each view's watermark once per
+        // build (TTL-cached process-wide) so every state's dynamic system
+        // suffix carries live coverage boundaries beside the date hint.
+        // Best-effort: `None` (no targets / probes failed) means the suffix
+        // is the date hint alone, exactly as before.
+        solver.freshness_hint = crate::solver::freshness_hint::compute_freshness_hint(
+            &base_dir.display().to_string(),
+            &*solver.catalog,
+            &solver.connectors,
+            &solver.default_connector,
+        )
+        .await;
+
         // Wire global thinking config: llm.thinking > top-level thinking.
         let effective_thinking = self.llm.thinking.as_ref().or(self.thinking.as_ref());
         if let Some(thinking_cfg) = effective_thinking {

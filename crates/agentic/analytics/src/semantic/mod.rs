@@ -314,10 +314,36 @@ impl SemanticCatalog {
                     .iter()
                     .map(|v_name| {
                         if let Some(view) = self.engine.view(v_name) {
-                            match view.description.as_deref() {
-                                Some(desc) if !desc.is_empty() => {
+                            // Seam 3 of the freshness design: surface the
+                            // declared meta contract at discovery time so
+                            // cadence/caveats reach triage without a tool
+                            // call and without duplicating them into the
+                            // description prose.
+                            let freshness = view.meta.as_ref().and_then(|m| {
+                                let first = |k: &str| {
+                                    m.get(k)
+                                        .and_then(|v| v.first())
+                                        .map(|s| s.trim())
+                                        .filter(|s| !s.is_empty())
+                                };
+                                let parts: Vec<&str> = [
+                                    first("freshness_expected_cadence"),
+                                    first("freshness_complete_through"),
+                                    first("freshness_caveat"),
+                                ]
+                                .into_iter()
+                                .flatten()
+                                .collect();
+                                (!parts.is_empty()).then(|| parts.join("; "))
+                            });
+                            match (view.description.as_deref(), freshness) {
+                                (Some(desc), Some(f)) if !desc.is_empty() => {
+                                    format!("{} ({}) [freshness: {}]", v_name, desc, f)
+                                }
+                                (Some(desc), None) if !desc.is_empty() => {
                                     format!("{} ({})", v_name, desc)
                                 }
+                                (_, Some(f)) => format!("{} [freshness: {}]", v_name, f),
                                 _ => v_name.clone(),
                             }
                         } else {

@@ -5,7 +5,9 @@ use serde_json::json;
 
 use crate::types::{ChartConfig, QuestionType};
 
-use super::{SAMPLE_COLUMNS_DESC, SEARCH_AUTOMATIONS_DESC, SEARCH_CATALOG_DESC};
+use super::{
+    CHECK_DATA_FRESHNESS_DESC, SAMPLE_COLUMNS_DESC, SEARCH_AUTOMATIONS_DESC, SEARCH_CATALOG_DESC,
+};
 
 // ── Tool definitions per state ────────────────────────────────────────────────
 
@@ -260,6 +262,12 @@ pub fn specifying_tools(has_semantic: bool, has_metric_tree: bool) -> Vec<ToolDe
             ..Default::default()
         },
     ];
+    if has_semantic {
+        // Freshness targets resolve through semantic views (watermark
+        // dimension + meta contract), so the tool is only offered when a
+        // semantic layer is present.
+        tools.push(check_data_freshness_tool_def());
+    }
     if !has_semantic {
         // Without a semantic layer, the LLM needs manual join discovery and
         // raw schema introspection tools.
@@ -290,6 +298,31 @@ pub fn specifying_tools(has_semantic: bool, has_metric_tree: bool) -> Vec<ToolDe
     // Metric-tree tools live in the dedicated `root_cause` handler.
     let _ = has_metric_tree;
     tools
+}
+
+/// Tool definition for `check_data_freshness`.
+///
+/// Offered in the **specifying** state when a semantic layer is present.
+/// The executor lives in [`super::specifying`]; targets resolve via
+/// [`crate::catalog::Catalog::resolve_freshness_target`].
+pub fn check_data_freshness_tool_def() -> ToolDef {
+    ToolDef {
+        name: "check_data_freshness",
+        description: CHECK_DATA_FRESHNESS_DESC,
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "views": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Semantic view names (or their underlying table names) to check."
+                }
+            },
+            "required": ["views"],
+            "additionalProperties": false
+        }),
+        ..Default::default()
+    }
 }
 
 /// Tools available during the **solving** state.
