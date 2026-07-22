@@ -81,6 +81,44 @@ function HistoryIcon() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg
+      width='14'
+      height='14'
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      aria-hidden='true'
+    >
+      <circle cx='11' cy='11' r='8' />
+      <path d='m21 21-4.3-4.3' />
+    </svg>
+  );
+}
+
+function ThreadIcon() {
+  return (
+    <svg
+      width='15'
+      height='15'
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      aria-hidden='true'
+    >
+      <path d='M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z' />
+      <path d='M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1' />
+    </svg>
+  );
+}
+
 function ExternalIcon() {
   return (
     <svg
@@ -157,6 +195,10 @@ interface Conversation {
   title: string;
   turns: CompletedTurn[];
   threadId: string | null;
+  /** ISO timestamp the conversation was started — the server thread's
+   *  `created_at` when restored, else when its first question was asked.
+   *  Drives the history list's time label and its created_at ordering. */
+  createdAt: string;
 }
 
 function chartsFrom(events: AgentRunEvent[]): ChartBlock[] {
@@ -165,6 +207,28 @@ function chartsFrom(events: AgentRunEvent[]): ChartBlock[] {
     .map((ev) => ev.data as ChartBlock)
     .filter((b) => b?.config && Array.isArray(b.columns) && Array.isArray(b.rows));
 }
+
+/** History label: a relative "N minutes/hours/days ago" for when the
+ *  conversation was started. */
+function formatHistoryTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+  if (s < 45) return "just now";
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} minute${min === 1 ? "" : "s"} ago`;
+  const hr = Math.round(s / 3600);
+  if (hr < 24) return `${hr} hour${hr === 1 ? "" : "s"} ago`;
+  const day = Math.round(s / 86400);
+  if (day < 30) return `${day} day${day === 1 ? "" : "s"} ago`;
+  const mo = Math.round(day / 30);
+  if (mo < 12) return `${mo} month${mo === 1 ? "" : "s"} ago`;
+  const yr = Math.round(day / 365);
+  return `${yr} year${yr === 1 ? "" : "s"} ago`;
+}
+
+/** How many history rows to show before the "Show more" button. */
+const HISTORY_PAGE_SIZE = 12;
 
 /** Rebuild a completed turn from a transcript turn's processed events —
  *  identical to what the live dock accumulates during a run. */
@@ -206,6 +270,9 @@ export function AskDock({
   const [threadId, setThreadId] = React.useState<string | null>(null);
   const [history, setHistory] = React.useState<Conversation[]>([]);
   const [historyOpen, setHistoryOpen] = React.useState(false);
+  // History panel search text + how many rows are revealed ("Show more").
+  const [historyQuery, setHistoryQuery] = React.useState("");
+  const [historyShown, setHistoryShown] = React.useState(HISTORY_PAGE_SIZE);
   const [restoring, setRestoring] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   // Generation guard for the async transcript restore: any conversation
@@ -214,6 +281,10 @@ export function AskDock({
   // current turns (which would leave the visible transcript and the resumed
   // thread pointing at different conversations).
   const restoreGenRef = React.useRef(0);
+  // Start time of the active conversation, captured once so the history
+  // entry keeps a stable created_at (set on the first ask, or to the server
+  // thread's created_at when one is restored; cleared on "new chat").
+  const startedAtRef = React.useRef<string | null>(null);
 
   const busy = run.state === "running";
 
@@ -246,7 +317,13 @@ export function AskDock({
     const finalized = finalizedPendingTurn();
     const all = finalized ? [...turns, finalized] : turns;
     if (all.length === 0) return null;
-    return { id: threadId ?? all[0].question, title: all[0].question, turns: all, threadId };
+    return {
+      id: threadId ?? all[0].question,
+      title: all[0].question,
+      turns: all,
+      threadId,
+      createdAt: startedAtRef.current ?? new Date().toISOString()
+    };
   };
 
   const resetToEmpty = () => {
@@ -256,6 +333,7 @@ export function AskDock({
     setPending(null);
     setDraft("");
     setThreadId(null);
+    startedAtRef.current = null;
   };
 
   const newChat = () => {
@@ -294,6 +372,9 @@ export function AskDock({
     setPending(null);
     setDraft("");
     setThreadId(id);
+    // Preserve the restored thread's own created_at for its history label.
+    startedAtRef.current =
+      serverThreads.find((t) => t.id === id)?.created_at ?? new Date().toISOString();
     setHistoryOpen(false);
     setRestoring(true);
     try {
@@ -315,6 +396,8 @@ export function AskDock({
     if (!question || busy) return;
     // A new question supersedes any in-flight restore for the prior context.
     restoreGenRef.current += 1;
+    // First ask of a fresh chat stamps its start time.
+    if (startedAtRef.current === null) startedAtRef.current = new Date().toISOString();
     if (pending !== null) {
       // Archive the finished turn before the hook resets for the next run.
       // A clarification prompt stands in for the answer so the exchange
@@ -342,21 +425,55 @@ export function AskDock({
   const empty = pending === null && turns.length === 0;
   const canNewChat = !empty;
 
-  // History panel: in-session conversations (rich) first, then persistent
-  // server threads not already present, excluding the active thread.
-  const historyEntries: Array<{ id: string; title: string; meta?: string; onOpen: () => void }> = [
-    ...history
-      .filter((c) => c.id !== threadId)
-      .map((c) => ({
-        id: c.id,
-        title: c.title,
-        meta: `${c.turns.length} message${c.turns.length === 1 ? "" : "s"}`,
-        onOpen: () => openConversation(c)
-      })),
+  // History panel: the active conversation plus every past one — the active
+  // one stays in the list (flagged `active` so the UI highlights it rather
+  // than hiding it). Matches snapshotCurrent()'s id so it dedupes cleanly.
+  const currentId = threadId ?? turns[0]?.question ?? pending ?? null;
+  const historyEntries: Array<{
+    id: string;
+    title: string;
+    createdAt: string;
+    active: boolean;
+    onOpen: () => void;
+  }> = [
+    ...history.map((c) => ({
+      id: c.id,
+      title: c.title,
+      createdAt: c.createdAt,
+      active: c.id === currentId,
+      onOpen: c.id === currentId ? () => setHistoryOpen(false) : () => openConversation(c)
+    })),
     ...serverThreads
-      .filter((t) => t.id !== threadId && !history.some((c) => c.id === t.id))
-      .map((t) => ({ id: t.id, title: t.title, onOpen: () => void openServerThread(t.id) }))
+      .filter((t) => !history.some((c) => c.id === t.id))
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        createdAt: t.created_at,
+        active: t.id === currentId,
+        onOpen: t.id === currentId ? () => setHistoryOpen(false) : () => void openServerThread(t.id)
+      }))
   ];
+  // A brand-new chat isn't in the server list yet — surface it so the active
+  // conversation is always present (and highlightable).
+  if (!empty && currentId != null && !historyEntries.some((e) => e.id === currentId)) {
+    historyEntries.push({
+      id: currentId,
+      title: turns[0]?.question ?? pending ?? currentId,
+      createdAt: startedAtRef.current ?? new Date().toISOString(),
+      active: true,
+      onOpen: () => setHistoryOpen(false)
+    });
+  }
+  // Order strictly by creation time (newest first) — not by which chat was
+  // last opened. ISO-8601 strings sort chronologically as plain text.
+  historyEntries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  // Search filter, then reveal up to `historyShown` rows ("Show more").
+  const q = historyQuery.trim().toLowerCase();
+  const filteredEntries = q
+    ? historyEntries.filter((e) => e.title.toLowerCase().includes(q))
+    : historyEntries;
+  const visibleEntries = filteredEntries.slice(0, historyShown);
 
   const placeholder =
     run.state === "needs_clarification"
@@ -392,7 +509,11 @@ export function AskDock({
             onClick={() => {
               const next = !historyOpen;
               setHistoryOpen(next);
-              if (next) refetchHistory();
+              if (next) {
+                refetchHistory();
+                setHistoryQuery("");
+                setHistoryShown(HISTORY_PAGE_SIZE);
+              }
             }}
             data-testid='askdock-history'
             aria-label='Chat history'
@@ -424,20 +545,57 @@ export function AskDock({
 
       {historyOpen ? (
         <div className='oxy-askdock__history' data-testid='askdock-history-panel'>
-          {historyEntries.length === 0 ? (
-            <p className='oxy-askdock__history-empty'>No previous chats yet.</p>
+          <div className='oxy-askdock__history-search'>
+            <SearchIcon />
+            <input
+              type='text'
+              className='oxy-askdock__history-searchinput'
+              placeholder='Search threads…'
+              value={historyQuery}
+              onChange={(e) => {
+                setHistoryQuery(e.target.value);
+                setHistoryShown(HISTORY_PAGE_SIZE);
+              }}
+              aria-label='Search threads'
+            />
+          </div>
+          {visibleEntries.length === 0 ? (
+            <p className='oxy-askdock__history-empty'>
+              {historyQuery ? "No matching chats." : "No previous chats yet."}
+            </p>
           ) : (
-            historyEntries.map((entry) => (
-              <button
-                key={entry.id}
-                type='button'
-                className='oxy-askdock__history-item'
-                onClick={entry.onOpen}
-              >
-                <span className='oxy-askdock__history-title'>{entry.title}</span>
-                {entry.meta && <span className='oxy-askdock__history-meta'>{entry.meta}</span>}
-              </button>
-            ))
+            <>
+              {visibleEntries.map((entry) => (
+                <button
+                  key={entry.id}
+                  type='button'
+                  className={cx(
+                    "oxy-askdock__history-item",
+                    entry.active && "oxy-askdock__history-item--active"
+                  )}
+                  onClick={entry.onOpen}
+                  title={entry.title}
+                  aria-current={entry.active ? "true" : undefined}
+                >
+                  <span className='oxy-askdock__history-icon'>
+                    <ThreadIcon />
+                  </span>
+                  <span className='oxy-askdock__history-title'>{entry.title}</span>
+                  <span className='oxy-askdock__history-time'>
+                    {formatHistoryTime(entry.createdAt)}
+                  </span>
+                </button>
+              ))}
+              {filteredEntries.length > visibleEntries.length && (
+                <button
+                  type='button'
+                  className='oxy-askdock__history-more'
+                  onClick={() => setHistoryShown((n) => n + HISTORY_PAGE_SIZE)}
+                >
+                  Show more
+                </button>
+              )}
+            </>
           )}
         </div>
       ) : (

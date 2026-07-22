@@ -1,6 +1,6 @@
 {
   "name": "@oxy-hq/sdk",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "React SDK for building customer-app bundles on the Oxy platform",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -49,9 +49,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown && cp src/shell/shell.css dist/shell.css",
-    "build:watch": "tsdown --watch",
-    "dev": "tsdown --watch",
+    "build": "tsdown",
+    "build:watch": "node scripts/watch-shell-css.mjs",
+    "dev": "node scripts/watch-shell-css.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint src --ext .ts",
     "test": "vitest run",

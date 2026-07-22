@@ -13,7 +13,7 @@
 // bootstrap request is in flight the frame renders with placeholders; if it
 // fails (older server, unauthenticated viewer), the children render bare.
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { useOxyApp, useResolvedManifest } from "../customer-app/react";
 import { AskDock } from "./AskDock";
 import { cx } from "./cx";
@@ -21,7 +21,6 @@ import { OxyMark } from "./marks";
 import { ShellPortalContext, useShellPortalContainer } from "./portal";
 import { type RailItem, ShellRail } from "./ShellRail";
 import { type ShellContextData, useShellContext } from "./shellContext";
-import { ShellTooltip } from "./Tooltip";
 import { Breadcrumb, SystemIndicator, TopBar, WorkspaceClock } from "./TopBar";
 import { WorkspaceTile } from "./WorkspaceTile";
 
@@ -65,26 +64,6 @@ function MessagesIcon() {
   );
 }
 
-/** Settings glyph (lucide "settings" outline, inlined). */
-function GearIcon() {
-  return (
-    <svg
-      width='16'
-      height='16'
-      viewBox='0 0 24 24'
-      fill='none'
-      stroke='currentColor'
-      strokeWidth='2'
-      strokeLinecap='round'
-      strokeLinejoin='round'
-      aria-hidden='true'
-    >
-      <path d='M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z' />
-      <circle cx='12' cy='12' r='3' />
-    </svg>
-  );
-}
-
 export interface OxyShellProps {
   children: ReactNode;
   /** Breadcrumb page label; defaults to this app's registered name. */
@@ -97,8 +76,8 @@ export interface OxyShellProps {
   /** Extra right-side top bar content, rendered after the status cluster
    *  (Sys · clock) and before the Ask Oxygen button. */
   topBarExtra?: ReactNode;
-  /** Rail bottom slot content, rendered above the built-in Settings
-   *  entry (the account cluster in the main web-app). */
+  /** Rail bottom slot content. The shell adds no built-in entries here —
+   *  a bundle that wants a Settings link supplies its own. */
   railBottom?: ReactNode;
   /** Drop the top bar and keep only the rail. */
   hideTopBar?: boolean;
@@ -114,6 +93,15 @@ export interface OxyShellProps {
    *  URLs. Leave unset in production. */
   productBaseUrl?: string;
   className?: string;
+  /** Background of the shell chrome — the icon rail, the top bar, and the
+   *  AskDock (they share one token). Any CSS color, including `var(--…)` to
+   *  track a host token (e.g. `var(--background)` to match the app's canvas).
+   *  Overrides the theme's default; leave unset to keep it. */
+  chromeBackground?: string;
+  /** Text/icon color on the chrome, paired with `chromeBackground` for
+   *  contrast when using a background outside the current light/dark family.
+   *  Unset keeps the theme's foreground. */
+  chromeForeground?: string;
 }
 
 /** Rewrite a shell-context relative product path to an absolute URL against
@@ -176,9 +164,27 @@ export function OxyShell({
   hideTopBar,
   askHotkey = true,
   productBaseUrl,
-  className
+  className,
+  chromeBackground,
+  chromeForeground
 }: OxyShellProps) {
   const abs = makeAbs(productBaseUrl);
+  // Chrome color overrides. We set the HOST tokens (--sidebar-background,
+  // --foreground, --muted-foreground) rather than the derived --oxy-shell-*
+  // ones: every sub-component (rail, top bar, AskDock…) is its own
+  // `.oxy-shell-scope` and re-derives `--oxy-shell-*` from these host tokens,
+  // so overriding a derived token here wouldn't reach them — overriding the
+  // host token (which they all read via `var()`) does. Only the tokens the
+  // caller provides are set; the theme keeps the rest.
+  const chromeStyle = {
+    ...(chromeBackground ? { "--sidebar-background": chromeBackground } : {}),
+    ...(chromeForeground
+      ? {
+          "--foreground": chromeForeground,
+          "--muted-foreground": `color-mix(in srgb, ${chromeForeground} 65%, transparent)`
+        }
+      : {})
+  } as CSSProperties;
   const { appSlug } = useOxyApp();
   // Safe here: OxyAppProvider only renders children once the manifest is
   // resolved, and OxyShell must sit inside the provider.
@@ -220,35 +226,17 @@ export function OxyShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [askAgent, askHotkey]);
 
-  // Bottom account cluster: the host app's custom content, then Settings —
-  // a full-page nav to the product surface, which opens the Unified
-  // Settings Dialog via its `?settings=<section>` deep link. Absent on
-  // servers that don't send the link yet.
-  const settingsEntry = data?.links.settings ? (
-    <ShellTooltip content='Settings'>
-      <a
-        href={abs(data.links.settings)}
-        aria-label='Settings'
-        data-testid='rail-settings'
-        className='oxy-rail__item'
-      >
-        <GearIcon />
-      </a>
-    </ShellTooltip>
-  ) : null;
-  const bottom =
-    railBottom || settingsEntry ? (
-      <>
-        {railBottom}
-        {settingsEntry}
-      </>
-    ) : undefined;
+  // Bottom rail slot: the host app's custom content only. The built-in
+  // Settings link was removed — a bundle that wants one can supply it via
+  // `railBottom`.
+  const bottom = railBottom;
 
   return (
     <ShellPortalContext.Provider value={container}>
       <div
         ref={setContainer}
         className={cx("oxy-shell-scope oxy-shell", degraded && "oxy-shell--degraded", className)}
+        style={chromeStyle}
       >
         {!degraded && (
           <ShellRail

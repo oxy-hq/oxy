@@ -125,6 +125,14 @@ pub(crate) fn build_cors_layer() -> CorsLayer {
             header::ORIGIN,
             HeaderName::from_static("x-requested-with"),
             HeaderName::from_static("x-request-id"),
+            // Cross-origin SSE for the customer-app shell's Ask Oxygen stream.
+            // Its fetch sends `Cache-Control: no-cache` (don't cache the stream)
+            // and, on reconnect, `Last-Event-ID` (replay from a known point).
+            // Neither is CORS-safelisted, so each triggers a preflight; without
+            // them here the browser blocks the request and the run reports
+            // "Failed to fetch". Same headers the external CORS layer allows.
+            header::CACHE_CONTROL,
+            HeaderName::from_static("last-event-id"),
         ])
 }
 
@@ -174,11 +182,22 @@ fn cors_allow(origin: &HeaderValue, headers: &HeaderMap) -> bool {
     is_dev_origin(origin) || is_self_origin(origin, headers)
 }
 
-/// Vite's canonical local-dev origins — the web-app (`:5173`) and a
-/// stand-alone bundle dev server (`:5174` per the Vite template). Always
+/// Canonical local-dev origins — Vite's web-app (`:5173`) and stand-alone
+/// bundle dev server (`:5174`), plus the `:3000`–`:3005` range used by
+/// customer-app dev servers (e.g. the Command Center on `:3005`). Always
 /// allowed so engineers don't need to configure anything to iterate locally.
 fn is_dev_origin(origin: &str) -> bool {
-    matches!(origin, "http://localhost:5173" | "http://localhost:5174")
+    matches!(
+        origin,
+        "http://localhost:5173"
+            | "http://localhost:5174"
+            | "http://localhost:3000"
+            | "http://localhost:3001"
+            | "http://localhost:3002"
+            | "http://localhost:3003"
+            | "http://localhost:3004"
+            | "http://localhost:3005"
+    )
 }
 
 /// Return `true` when `origin` (e.g. `https://app.oxygen-hq.com`) targets the
@@ -424,6 +443,14 @@ mod cors_tests {
     #[test]
     fn dev_origin_localhost_5174_is_allowed() {
         let headers = make_headers(&[("origin", "http://localhost:5174")]);
+        assert!(is_allowed_origin(&headers));
+    }
+
+    #[test]
+    fn dev_origin_localhost_3005_is_allowed() {
+        // Customer-app dev servers run on the :3000–:3005 range (e.g. the
+        // Command Center on :3005) and must reach the main `/api` cross-origin.
+        let headers = make_headers(&[("origin", "http://localhost:3005")]);
         assert!(is_allowed_origin(&headers));
     }
 

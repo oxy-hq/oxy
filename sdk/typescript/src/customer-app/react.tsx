@@ -61,6 +61,28 @@ function defaultFetcher(input: RequestInfo | URL, init?: RequestInit): Promise<R
   return fetch(input, { credentials: "include", ...init });
 }
 
+/**
+ * Resolve relative ("/…") request paths against `backendUrl` so the SDK's API
+ * calls reach a cross-origin oxy backend instead of the app's own origin.
+ *
+ * This is what lets a standalone dev app (e.g. served on `localhost:3005`)
+ * drive the wired shell — `shell-context`, Ask Oxygen agent asks, events —
+ * against oxy on another origin (`localhost:3000`) WITHOUT a same-origin dev
+ * proxy. The target origin must permit the app's origin (oxy's main `/api`
+ * allows configured dev origins + `credentials`); the external data API is a
+ * separate, wildcard-CORS surface.
+ *
+ * Opt-in: when `backendUrl` is unset the base fetcher is returned unchanged, so
+ * apps served same-origin by oxy keep their existing relative-URL behaviour.
+ * Absolute URLs and non-string inputs pass through untouched (no double-prefix).
+ */
+function withBackendBase(base: AppFetcher, backendUrl?: string): AppFetcher {
+  if (!backendUrl) return base;
+  const origin = backendUrl.replace(/\/+$/, "");
+  return (input, init) =>
+    base(typeof input === "string" && input.startsWith("/") ? origin + input : input, init);
+}
+
 interface OxyAppContextValue {
   status: "loading" | "ready" | "error";
   resolved?: ResolvedCustomerAppManifest;
@@ -91,6 +113,16 @@ export interface OxyAppProviderProps {
    * that sets `credentials: "include"` on every request.
    */
   fetcher?: AppFetcher;
+  /**
+   * Origin of the oxy backend to call (e.g. `https://oxy.example.com` or
+   * `http://localhost:3000`). When set, the SDK resolves its relative `/api/…`
+   * requests — `shell-context`, Ask Oxygen, events — against this origin
+   * instead of the app's own, so a standalone / cross-origin dev app can drive
+   * the wired shell without a same-origin proxy. The backend must allow the
+   * app's origin (see oxy's dev-origin CORS list). Leave unset when the app is
+   * served same-origin by oxy.
+   */
+  backendUrl?: string;
   children: React.ReactNode;
 }
 
@@ -99,11 +131,22 @@ export interface OxyAppProviderProps {
  * render after the manifest is ready (or the error fallback fires).
  */
 export function OxyAppProvider(props: OxyAppProviderProps): React.JSX.Element {
-  const { manifestOptions, fallback, errorFallback, fetcher: fetcherProp, children } = props;
-  // Stable fetcher reference: caller-supplied or the module-level default.
-  // We don't put this in state because it should never change after mount
-  // (same reasoning as manifestOptions).
-  const fetcher = fetcherProp ?? defaultFetcher;
+  const {
+    manifestOptions,
+    fallback,
+    errorFallback,
+    fetcher: fetcherProp,
+    backendUrl,
+    children
+  } = props;
+  // Stable fetcher reference: caller-supplied or the module-level default,
+  // wrapped so relative `/api/…` calls hit `backendUrl` when provided. We don't
+  // put this in state because it should never change after mount (same
+  // reasoning as manifestOptions).
+  const fetcher = React.useMemo(
+    () => withBackendBase(fetcherProp ?? defaultFetcher, backendUrl),
+    [fetcherProp, backendUrl]
+  );
   const [state, setState] = React.useState<OxyAppContextValue>({ status: "loading", fetcher });
 
   React.useEffect(() => {

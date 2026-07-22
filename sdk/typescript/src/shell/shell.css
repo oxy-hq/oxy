@@ -669,10 +669,65 @@
   color: var(--oxy-shell-muted-fg);
 }
 
+.oxy-askdock__history-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--oxy-shell-border);
+  border-radius: var(--oxy-shell-radius);
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-askdock__history-search:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--oxy-shell-ring) 45%, transparent);
+}
+
+.oxy-askdock__history-search svg {
+  flex: none;
+}
+
+.oxy-askdock__history-searchinput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--oxy-shell-foreground);
+  font-family: var(--oxy-shell-font);
+  font-size: 13px;
+}
+
+.oxy-askdock__history-searchinput::placeholder {
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-askdock__history-more {
+  align-self: center;
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--oxy-shell-muted-fg);
+  font-family: var(--oxy-shell-font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.oxy-askdock__history-more:hover {
+  color: var(--oxy-shell-foreground);
+}
+
 .oxy-askdock__history-item {
   display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
   width: 100%;
   border: none;
   border-radius: calc(var(--oxy-shell-radius) - 2px);
@@ -684,6 +739,12 @@
   transition: background 0.15s;
 }
 
+.oxy-askdock__history-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--oxy-shell-muted-fg);
+}
+
 .oxy-askdock__history-item:hover {
   background: var(--oxy-shell-accent);
 }
@@ -693,7 +754,20 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
 }
 
+/* The conversation currently open in the dock — kept in the list (not hidden)
+   and highlighted with the same background as :hover, plus a bolder title so
+   the current chat stays distinguishable from a merely-hovered one. */
+.oxy-askdock__history-item--active {
+  background: var(--oxy-shell-accent);
+}
+
+.oxy-askdock__history-item--active .oxy-askdock__history-title {
+  font-weight: 600;
+}
+
 .oxy-askdock__history-title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -701,9 +775,11 @@
   color: var(--oxy-shell-foreground);
 }
 
-.oxy-askdock__history-meta {
-  font-size: 11px;
+.oxy-askdock__history-time {
+  flex: none;
+  font-size: 12px;
   color: var(--oxy-shell-muted-fg);
+  white-space: nowrap;
 }
 
 .oxy-askdock__scroll {

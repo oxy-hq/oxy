@@ -5,6 +5,38 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-07-22
+
+Universalizes the customer-app shell: a bundle served from any origin can
+now drive the wired shell (shell-context, Ask Oxygen) and theme its chrome
+to match the host app.
+
+### Added
+
+- **`backendUrl` prop on `OxyAppProvider`** — the SDK resolves its relative
+  `/api/*` requests against this origin, so a cross-origin bundle reaches
+  the Oxy backend without a same-origin proxy. Opt-in: when unset, the
+  fetcher is unchanged.
+- **`chromeBackground` / `chromeForeground` props on `OxyShell`** — theme
+  the rail + top bar + AskDock by overriding the host tokens
+  (`--sidebar-background`, `--foreground`, `--muted-foreground`), which
+  every shell sub-scope re-derives from.
+- **AskDock history panel** — shows title + relative time ordered by
+  `created_at`, keeps and highlights the active chat, and adds a search box
+  and a "Show more" control.
+
+### Removed
+
+- **The built-in Settings rail item.** The shell adds no built-in rail
+  entries — a bundle that wants a Settings link supplies it via
+  `railBottom`.
+
+### Fixed
+
+- `dev` / `build:watch` now emit `dist/shell.css` too (tsdown `onSuccess`
+  plus a CSS watcher), so live CSS edits are reflected instead of going
+  stale until the next full `build`.
+
 ## [2.4.0] - 2026-07-21
 
 Ships the Oxygen workspace shell — the same 48px icon rail + universal
