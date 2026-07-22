@@ -4,22 +4,22 @@ import { type SemanticQueryRequest, SemanticService } from "@/services/api/seman
 import queryKeys from "./queryKey";
 
 export function useExecuteSemanticQuery() {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
 
   return useMutation({
     mutationFn: (request: SemanticQueryRequest) =>
-      SemanticService.executeSemanticQuery(projectId, request)
+      SemanticService.executeSemanticQuery(projectId, request, branchName)
   });
 }
 
 export function useCompileSemanticQuery() {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
 
   return useMutation({
     mutationFn: (request: SemanticQueryRequest) =>
-      SemanticService.compileSemanticQuery(projectId, request)
+      SemanticService.compileSemanticQuery(projectId, request, branchName)
   });
 }
 

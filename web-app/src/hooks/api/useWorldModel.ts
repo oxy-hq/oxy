@@ -14,11 +14,11 @@ import type {
 import queryKeys from "./queryKey";
 
 export function useWorldModel() {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
   return useQuery({
-    queryKey: queryKeys.worldModel.graph(projectId),
-    queryFn: () => WorldModelService.getWorldModel(projectId),
+    queryKey: queryKeys.worldModel.graph(projectId, branchName),
+    queryFn: () => WorldModelService.getWorldModel(projectId, branchName),
     staleTime: 5 * 60 * 1000,
     retry: false,
     // Harden against a partial response (e.g. a workspace whose semantic layer
@@ -34,13 +34,13 @@ export function useWorldModel() {
 }
 
 export function useWmInstances(entityId: string | null, search: string) {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
   return useQuery({
-    queryKey: queryKeys.worldModel.instances(projectId, entityId ?? "", search),
+    queryKey: queryKeys.worldModel.instances(projectId, branchName, entityId ?? "", search),
     queryFn: () => {
       if (!entityId) throw new Error("An entity is required");
-      return WorldModelService.getInstances(projectId, entityId, search, 50);
+      return WorldModelService.getInstances(projectId, entityId, search, 50, branchName);
     },
     enabled: !!entityId,
     staleTime: 60 * 1000,
@@ -64,12 +64,13 @@ export function useWmFilterInstances(
   search: string,
   page = 0
 ) {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
   const offset = page * WM_FILTER_INSTANCES_PAGE_SIZE;
   return useQuery({
     queryKey: queryKeys.worldModel.filterInstances(
       projectId,
+      branchName,
       seedEntityId ?? "",
       seedKey ?? "",
       entityId ?? "",
@@ -87,7 +88,8 @@ export function useWmFilterInstances(
         entityId,
         search,
         WM_FILTER_INSTANCES_PAGE_SIZE,
-        offset
+        offset,
+        branchName
       );
     },
     enabled: !!seedEntityId && !!seedKey && !!entityId,
@@ -97,7 +99,7 @@ export function useWmFilterInstances(
 }
 
 export function useWmFilterCounts(entityId: string | null, keyValue: string | null) {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
 
   const [counts, setCounts] = useState<Record<string, WmEntityCount> | null>(null);
@@ -161,13 +163,14 @@ export function useWmFilterCounts(entityId: string | null, keyValue: string | nu
         }
       },
       () => setIsLoading(false),
-      controller.signal
+      controller.signal,
+      branchName
     );
 
     return () => {
       controller.abort();
     };
-  }, [projectId, entityId, keyValue, reset]);
+  }, [projectId, branchName, entityId, keyValue, reset]);
 
   return { counts, isLoading };
 }
@@ -276,7 +279,7 @@ export function applyInstanceDetailEvent(
 }
 
 export function useWmInstanceDetail(entityId: string | null, keyValue: string | null) {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
 
   const [state, setState] = useState<WmInstanceDetailState>(EMPTY_INSTANCE_DETAIL_STATE);
@@ -313,13 +316,14 @@ export function useWmInstanceDetail(entityId: string | null, keyValue: string | 
         setState((prev) => applyInstanceDetailEvent(prev, event));
       },
       () => setIsLoading(false),
-      controller.signal
+      controller.signal,
+      branchName
     );
 
     return () => {
       controller.abort();
     };
-  }, [projectId, entityId, keyValue, reset]);
+  }, [projectId, branchName, entityId, keyValue, reset]);
 
   return { data: state.data, isLoading, error: null };
 }
@@ -366,13 +370,14 @@ export function useWmMeasureBreakdown(
   keyValue: string | null,
   measureName: string | null
 ) {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
   const queryClient = useQueryClient();
 
   const enabled = !!entityId && !!keyValue && !!measureName;
   const queryKey = queryKeys.worldModel.measureBreakdown(
     projectId,
+    branchName,
     entityId ?? "",
     keyValue ?? "",
     measureName ?? ""
@@ -411,7 +416,8 @@ export function useWmMeasureBreakdown(
             queryClient.setQueryData(queryKey, assembled);
           },
           () => resolve(assembled),
-          controller.signal
+          controller.signal,
+          branchName
         );
       })
   });

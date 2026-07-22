@@ -9,9 +9,15 @@ import { apiBaseURL } from "../env";
 import { apiClient } from "./axios";
 import fetchSSE from "./fetchSSE";
 
+// Every method threads the IDE's selected branch through as `?branch=` so the
+// backend's workspace middleware resolves the branch worktree instead of the
+// workspace root (see effective_workspace_path). Empty/undefined falls back to
+// the default branch server-side.
 export class WorldModelService {
-  static async getWorldModel(projectId: string): Promise<WorldModel> {
-    const response = await apiClient.get<WorldModel>(`/${projectId}/semantic/world-model`);
+  static async getWorldModel(projectId: string, branch?: string): Promise<WorldModel> {
+    const response = await apiClient.get<WorldModel>(`/${projectId}/semantic/world-model`, {
+      params: { branch: branch || undefined }
+    });
     return response.data;
   }
 
@@ -19,11 +25,19 @@ export class WorldModelService {
     projectId: string,
     entityId: string,
     search?: string,
-    limit = 50
+    limit = 50,
+    branch?: string
   ): Promise<WmInstancesResponse> {
     const response = await apiClient.get<WmInstancesResponse>(
       `/${projectId}/semantic/world-model/instances`,
-      { params: { entity: entityId, search: search || undefined, limit } }
+      {
+        params: {
+          entity: entityId,
+          search: search || undefined,
+          limit,
+          branch: branch || undefined
+        }
+      }
     );
     return response.data;
   }
@@ -40,7 +54,8 @@ export class WorldModelService {
     entityId: string,
     search?: string,
     limit = 50,
-    offset = 0
+    offset = 0,
+    branch?: string
   ): Promise<WmInstancesResponse> {
     const response = await apiClient.get<WmInstancesResponse>(
       `/${projectId}/semantic/world-model/filter-instances`,
@@ -51,7 +66,8 @@ export class WorldModelService {
           entity: entityId,
           search: search || undefined,
           limit,
-          offset: offset || undefined
+          offset: offset || undefined,
+          branch: branch || undefined
         }
       }
     );
@@ -64,16 +80,23 @@ export class WorldModelService {
     keyValue: string,
     onEvent: (event: WmFilterCountEvent) => void,
     onClose: () => void,
-    signal: AbortSignal
+    signal: AbortSignal,
+    branch?: string
   ): void {
-    fetchSSE<WmFilterCountEvent>(`${apiBaseURL}/${projectId}/semantic/world-model/filter-counts`, {
-      method: "POST",
-      body: { entity_id: entityId, key_value: keyValue },
-      onMessage: onEvent,
-      onClose,
-      onError: onClose,
-      signal
-    });
+    // Branch rides the query string — the workspace middleware only reads it
+    // from there, the POST body is the handler's own payload.
+    const qs = branch ? `?${new URLSearchParams({ branch })}` : "";
+    fetchSSE<WmFilterCountEvent>(
+      `${apiBaseURL}/${projectId}/semantic/world-model/filter-counts${qs}`,
+      {
+        method: "POST",
+        body: { entity_id: entityId, key_value: keyValue },
+        onMessage: onEvent,
+        onClose,
+        onError: onClose,
+        signal
+      }
+    );
   }
 
   static streamInstanceDetail(
@@ -82,9 +105,11 @@ export class WorldModelService {
     keyValue: string,
     onEvent: (event: WmInstanceDetailEvent) => void,
     onClose: () => void,
-    signal: AbortSignal
+    signal: AbortSignal,
+    branch?: string
   ): void {
     const params = new URLSearchParams({ entity: entityId, key: keyValue });
+    if (branch) params.set("branch", branch);
     fetchSSE<WmInstanceDetailEvent>(
       `${apiBaseURL}/${projectId}/semantic/world-model/instance-detail?${params}`,
       { method: "GET", onMessage: onEvent, onClose, onError: onClose, signal }
@@ -98,9 +123,11 @@ export class WorldModelService {
     measure: string,
     onEvent: (event: WmMeasureBreakdownEvent) => void,
     onClose: () => void,
-    signal: AbortSignal
+    signal: AbortSignal,
+    branch?: string
   ): void {
     const params = new URLSearchParams({ entity: entityId, key: keyValue, measure });
+    if (branch) params.set("branch", branch);
     fetchSSE<WmMeasureBreakdownEvent>(
       `${apiBaseURL}/${projectId}/semantic/world-model/measure-breakdown?${params}`,
       { method: "GET", onMessage: onEvent, onClose, onError: onClose, signal }

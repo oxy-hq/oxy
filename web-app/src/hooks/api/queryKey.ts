@@ -688,15 +688,16 @@ const semanticKeys = {
 
 const metricTreeKeys = {
   all: ["metric-tree"] as const,
-  tree: (projectId: string, root: string | undefined) =>
-    [...metricTreeKeys.all, "tree", projectId, root ?? null] as const,
-  sensitivity: (projectId: string, measureId: string | undefined) =>
-    [...metricTreeKeys.all, "sensitivity", projectId, measureId] as const,
+  tree: (projectId: string, branch: string, root: string | undefined) =>
+    [...metricTreeKeys.all, "tree", projectId, branch, root ?? null] as const,
+  sensitivity: (projectId: string, branch: string, measureId: string | undefined) =>
+    [...metricTreeKeys.all, "sensitivity", projectId, branch, measureId] as const,
   /** Cached period-over-period explain (used by the Insights inbox drawer
    *  so reopening the same anomaly reuses the result instead of re-running
    *  airlayer's recursive search). Keyed by the full request payload. */
   explain: (
     projectId: string,
+    branch: string,
     target: string,
     timeDimension: string,
     currentPeriod: readonly [string, string],
@@ -707,6 +708,7 @@ const metricTreeKeys = {
       ...metricTreeKeys.all,
       "explain",
       projectId,
+      branch,
       target,
       timeDimension,
       currentPeriod[0],
@@ -717,12 +719,13 @@ const metricTreeKeys = {
     ] as const,
   /** Time dimensions available per view — discovery endpoint that lets the
    *  metric-tree UI offer a real select instead of a hardcoded fallback. */
-  timeDimensions: (projectId: string) =>
-    [...metricTreeKeys.all, "time-dimensions", projectId] as const,
+  timeDimensions: (projectId: string, branch: string) =>
+    [...metricTreeKeys.all, "time-dimensions", projectId, branch] as const,
   /** Single-period distribution — same `ExplainResult` shape as `explain`
    *  but the baseline is auto-derived server-side. Keyed by request payload. */
   distribution: (
     projectId: string,
+    branch: string,
     target: string,
     timeDimension: string,
     period: readonly [string, string]
@@ -731,6 +734,7 @@ const metricTreeKeys = {
       ...metricTreeKeys.all,
       "distribution",
       projectId,
+      branch,
       target,
       timeDimension,
       period[0],
@@ -740,11 +744,13 @@ const metricTreeKeys = {
 
 const worldModelKeys = {
   all: ["world-model"] as const,
-  graph: (projectId: string) => [...worldModelKeys.all, "graph", projectId] as const,
-  instances: (projectId: string, entityId: string, search: string) =>
-    [...worldModelKeys.all, "instances", projectId, entityId, search] as const,
+  graph: (projectId: string, branch: string) =>
+    [...worldModelKeys.all, "graph", projectId, branch] as const,
+  instances: (projectId: string, branch: string, entityId: string, search: string) =>
+    [...worldModelKeys.all, "instances", projectId, branch, entityId, search] as const,
   filterInstances: (
     projectId: string,
+    branch: string,
     seedEntityId: string,
     seedKey: string,
     entityId: string,
@@ -755,18 +761,33 @@ const worldModelKeys = {
       ...worldModelKeys.all,
       "filter-instances",
       projectId,
+      branch,
       seedEntityId,
       seedKey,
       entityId,
       search,
       offset
     ] as const,
-  filterCounts: (projectId: string, entityId: string, keyValue: string) =>
-    [...worldModelKeys.all, "filter-counts", projectId, entityId, keyValue] as const,
-  instanceDetail: (projectId: string, entityId: string, keyValue: string) =>
-    [...worldModelKeys.all, "instance-detail", projectId, entityId, keyValue] as const,
-  measureBreakdown: (projectId: string, entityId: string, keyValue: string, measure: string) =>
-    [...worldModelKeys.all, "measure-breakdown", projectId, entityId, keyValue, measure] as const
+  filterCounts: (projectId: string, branch: string, entityId: string, keyValue: string) =>
+    [...worldModelKeys.all, "filter-counts", projectId, branch, entityId, keyValue] as const,
+  instanceDetail: (projectId: string, branch: string, entityId: string, keyValue: string) =>
+    [...worldModelKeys.all, "instance-detail", projectId, branch, entityId, keyValue] as const,
+  measureBreakdown: (
+    projectId: string,
+    branch: string,
+    entityId: string,
+    keyValue: string,
+    measure: string
+  ) =>
+    [
+      ...worldModelKeys.all,
+      "measure-breakdown",
+      projectId,
+      branch,
+      entityId,
+      keyValue,
+      measure
+    ] as const
 };
 
 const metricAnomaliesKeys = {

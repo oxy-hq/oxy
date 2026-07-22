@@ -111,14 +111,19 @@ export type ExecuteSemanticQueryResponse =
 export class SemanticService {
   static async executeSemanticQuery(
     projectId: string,
-    request: SemanticQueryRequest
+    request: SemanticQueryRequest,
+    branchName?: string
   ): Promise<ExecuteSemanticQueryResponse> {
     const { query, ...rest } = request;
     try {
-      const response = await apiClient.post(`/${projectId}/semantic`, {
-        ...query,
-        ...rest
-      });
+      const response = await apiClient.post(
+        `/${projectId}/semantic`,
+        {
+          ...query,
+          ...rest
+        },
+        { params: branchName ? { branch: branchName } : {} }
+      );
       return response.data;
     } catch (error) {
       if (error instanceof AxiosError && error.response?.data?.message) {
@@ -130,14 +135,19 @@ export class SemanticService {
 
   static async compileSemanticQuery(
     projectId: string,
-    request: SemanticQueryRequest
+    request: SemanticQueryRequest,
+    branchName?: string
   ): Promise<SemanticQueryCompileResponse> {
     const { query, ...rest } = request;
     try {
-      const response = await apiClient.post(`/${projectId}/semantic/compile`, {
-        ...query,
-        ...rest
-      });
+      const response = await apiClient.post(
+        `/${projectId}/semantic/compile`,
+        {
+          ...query,
+          ...rest
+        },
+        { params: branchName ? { branch: branchName } : {} }
+      );
       return response.data;
     } catch (error) {
       if (error instanceof AxiosError && error.response?.data?.message) {
