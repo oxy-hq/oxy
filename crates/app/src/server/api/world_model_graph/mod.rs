@@ -1,0 +1,26 @@
+//! World Model graph endpoints for the IDE:
+//!
+//! The entity-centric world model (every primary entity in the semantic
+//! layer, its measures, and promotion edges) plus instance drill-down
+//! (instance picker, filter counts, instance detail, measure breakdown).
+//!
+//! Split out of `semantic.rs` (file-size guideline): these handlers share
+//! the semantic-layer load + query-execution path with the semantic
+//! endpoints but form a self-contained surface. Distinct from
+//! `world_model.rs`, which serves the live world-model *app* (cameras,
+//! weather, event SSE, LLM proxy).
+//!
+//! Module layout (mechanical split of the former single file):
+//! - [`types`]   — the public `Wm*` serde DTOs.
+//! - [`query`]   — internal SQL/traversal helpers and their unit tests.
+//! - [`handlers`] — the six HTTP handlers.
+
+mod handlers;
+mod query;
+mod types;
+
+pub use handlers::{
+    get_world_model, get_world_model_filter_instances, get_world_model_instance_detail,
+    get_world_model_instances, get_world_model_measure_breakdown, post_world_model_filter_counts,
+};
+pub use types::*;

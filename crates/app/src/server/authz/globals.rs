@@ -16,7 +16,13 @@
 //! Keeping both behind this module is what stops the third pattern — a handler
 //! hand-rolling `is_oxy_owner() || is_app_admin()` and quietly inventing a policy.
 
-use sea_orm::DatabaseConnection;
+use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
+
+use entity::app_admins;
+use entity::prelude::AppAdmins;
+use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 
 /// What Oxy's platform sources say about a person. Not a decision — feed it to a ring,
 /// or report it.
@@ -41,6 +47,65 @@ pub fn is_global_owner(email: &str) -> bool {
     crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(email)
 }
 
+/// TTL for the `app_admins` membership cache. Matches the 60s the check used before it
+/// moved here from `customer_apps_auth`.
+const ADMIN_CACHE_TTL: Duration = Duration::from_secs(60);
+
+/// Cache of `app_admins` membership, keyed by the normalized email. Self-contained here
+/// (rather than reusing `customer_apps_auth`'s cache helper) so authz owns its only
+/// `app_admins` read with **no** import back into `customer_apps_*` — that import was a
+/// dependency cycle blocking the customer-apps surface from moving.
+fn admin_cache() -> &'static RwLock<HashMap<String, (bool, Instant)>> {
+    static CACHE: OnceLock<RwLock<HashMap<String, (bool, Instant)>>> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn cached_admin(email: &str) -> Option<bool> {
+    let cache = admin_cache().read().ok()?;
+    let (value, at) = cache.get(email)?;
+    (at.elapsed() < ADMIN_CACHE_TTL).then_some(*value)
+}
+
+fn set_cached_admin(email: String, is_admin: bool) {
+    if let Ok(mut cache) = admin_cache().write() {
+        // Sweep expired entries so churn of distinct emails can't grow the map unbounded.
+        cache.retain(|_, (_, at)| at.elapsed() < ADMIN_CACHE_TTL);
+        cache.insert(email, (is_admin, Instant::now()));
+    }
+}
+
+/// Drop every cached `app_admins` verdict. Callers on the write side — the admin
+/// grant/revoke endpoints and the env bootstrap — invalidate after mutating the table so
+/// a freshly granted admin isn't masked by a stale cached `false` for up to the TTL.
+pub fn invalidate_admin_cache() {
+    if let Ok(mut cache) = admin_cache().write() {
+        cache.clear();
+    }
+}
+
+/// Is `email` in the `app_admins` table (a Global Admin)? The `app_admins` read; cached
+/// for [`ADMIN_CACHE_TTL`]. `Err` is a lookup failure, distinct from a `false` verdict —
+/// [`platform_standing_checked`] is what decides how that unknown collapses.
+///
+/// Moved here from `customer_apps_auth` so authz owns this read outright; the only other
+/// caller is `oxy_app_admin_guard`.
+pub async fn is_app_admin_email(db: &DatabaseConnection, email: &str) -> Result<bool, DbErr> {
+    let key = email.trim().to_ascii_lowercase();
+    if key.is_empty() {
+        return Ok(false);
+    }
+    if let Some(v) = cached_admin(&key) {
+        return Ok(v);
+    }
+    let found = AppAdmins::find()
+        .filter(app_admins::Column::Email.eq(key.clone()))
+        .one(db)
+        .await?
+        .is_some();
+    set_cached_admin(key, found);
+    Ok(found)
+}
+
 /// Read the platform sources for `email`, distinguishing **"not staff"** from **"we
 /// could not find out"**. `None` is the latter: the `app_admins` lookup errored, so no
 /// verdict here is honest.
@@ -54,7 +119,7 @@ pub async fn platform_standing_checked(
     db: &DatabaseConnection,
     email: &str,
 ) -> Option<PlatformStanding> {
-    match crate::server::api::customer_apps_auth::is_app_admin_email(db, email).await {
+    match is_app_admin_email(db, email).await {
         Ok(is_global_admin) => Some(PlatformStanding {
             is_global_owner: is_global_owner(email),
             is_global_admin,
@@ -109,6 +174,22 @@ fn for_display(known: Option<PlatformStanding>, email: &str) -> PlatformStanding
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `app_admins` cache moved here with `is_app_admin_email` so that authz no
+    /// longer reaches into `customer_apps_auth` for it (that import was a cycle). A
+    /// cache that dropped writes would re-query every call — correctness-neutral but
+    /// the point of the cache — so pin the round-trip.
+    #[test]
+    fn admin_cache_round_trips_a_stored_verdict() {
+        let email = "admin-cache-probe@oxy.tech";
+        assert_eq!(cached_admin(email), None, "a cold cache misses");
+        set_cached_admin(email.to_string(), true);
+        assert_eq!(
+            cached_admin(email),
+            Some(true),
+            "a warm cache returns the stored verdict, not a re-query"
+        );
+    }
 
     /// The regression this exists to prevent: a DB outage must not un-own an owner.
     ///

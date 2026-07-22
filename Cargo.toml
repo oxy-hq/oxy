@@ -9,6 +9,7 @@ members = [
   "crates/entity",
   "crates/git",
   "crates/integration/looker",
+  "crates/integration/slack-client",
   "crates/metric-monitoring",
   "crates/integration/unifi",
   "crates/migration",
@@ -19,7 +20,6 @@ members = [
   "crates/semantic",
   "crates/shared",
   "crates/test-utils",
-  "crates/thread",
   "crates/infrastructure/llm/anthropic",
   "crates/infrastructure/llm/ollama",
   "crates/infrastructure/llm/gemini",
@@ -88,6 +88,7 @@ oxy-gemini = { path = "crates/infrastructure/llm/gemini" }
 oxy-git = { path = "crates/git" }
 oxy-llm = { path = "crates/infrastructure/llm/oxy-llm" }
 oxy-looker = { path = "crates/integration/looker" }
+oxy-slack-client = { path = "crates/integration/slack-client" }
 oxy-metric-monitoring = { path = "crates/metric-monitoring" }
 oxy-observability = { path = "crates/observability" }
 oxy-ollama = { path = "crates/infrastructure/llm/ollama" }
@@ -98,7 +99,6 @@ oxy-project = { path = "crates/project" }
 oxy-semantic = { path = "crates/semantic" }
 oxy-shared = { path = "crates/shared" }
 oxy-test-utils = { path = "crates/test-utils" }
-oxy-thread = { path = "crates/thread" }
 oxy-unifi = { path = "crates/integration/unifi" }
 oxy-workspace-fs = { path = "crates/workspace-fs" }
 
@@ -331,3 +331,10 @@ sqlx-postgres = { opt-level = 0 }
 
 [profile.dev]
 split-debuginfo = "shallow"
+# Line tables only (not full DWARF). Measured 2026-07-21 on a free 8-core box:
+# a warm one-file `cargo build -p oxy-app` incremental drops 146s -> 73s (-50%),
+# because the bin link + dsymutil write far less debug info. Backtraces keep file
+# + line numbers; interactive debuggers (lldb) lose local-variable inspection —
+# an accepted trade for this build-heavy workspace. `-C debuginfo=2` per-command
+# restores full DWARF if you need to step-debug.
+debug = "line-tables-only"

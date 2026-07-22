@@ -18,20 +18,21 @@
 //!   — we want operator-driven test alerts shipped first so the
 //!   transition logic has a known-good notifier to call.
 //!
-//! ## Why we don't import the app crate's Slack client
+//! ## Slack client
 //!
-//! `oxy-app` depends on `oxy-cameras` (mounts camera routes), so
-//! the reverse import is a cycle. We pay for ~10 lines of
-//! duplicated `chat.postMessage` plumbing rather than refactor
-//! the Slack client into `oxy-platform`. When a second non-app
-//! caller appears (e.g. observability alerts), that's the time
-//! to do the platform-extraction work.
+//! Uses the shared `oxy-slack-client` crate (a leaf: `reqwest` +
+//! `oxy-shared`), not the app crate's copy. `oxy-app` depends on
+//! `oxy-cameras`, so importing the client back from the app crate
+//! would be a cycle — the shared crate sits below both, so both
+//! depend on it cleanly. (Formerly this module hand-rolled ~40 lines
+//! of `chat.postMessage` plumbing to dodge that cycle.)
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use entity::{slack_channel_defaults, slack_installations, workspaces};
 use oxy_platform::secrets::OrgSecretsService;
+use oxy_slack_client::SlackClient;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect};
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
@@ -118,44 +119,20 @@ pub async fn notify(
         return Ok(false);
     };
 
-    let body = build_slack_body(&channel, payload);
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post("https://slack.com/api/chat.postMessage")
-        .bearer_auth(&bot_token)
-        .json(&body)
-        .send()
+    // `chat_post_message` surfaces HTTP, JSON, and Slack's `ok: false`
+    // logical failures as one `OxyError` (see `oxy_slack_client`). `mrkdwn`
+    // is Slack's default for `chat.postMessage`, so we needn't set it.
+    SlackClient::new()
+        .chat_post_message(&bot_token, &channel, &build_alert_text(payload), None)
         .await
-        .map_err(|e| ServiceError::Upstream(format!("slack request: {e}")))?;
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| ServiceError::Upstream(format!("slack body: {e}")))?;
-
-    if !status.is_success() {
-        return Err(ServiceError::Upstream(format!(
-            "slack chat.postMessage {status}: {text}"
-        )));
-    }
-    // Slack returns 200 even on logical failure (`ok: false`). Parse
-    // the body to surface the real outcome to the caller.
-    let parsed: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| ServiceError::Upstream(format!("slack json: {e}")))?;
-    if parsed.get("ok").and_then(|v| v.as_bool()) != Some(true) {
-        let err = parsed
-            .get("error")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-        return Err(ServiceError::Upstream(format!("slack error: {err}")));
-    }
+        .map_err(|e| ServiceError::Upstream(format!("slack chat.postMessage: {e}")))?;
     Ok(true)
 }
 
-/// Build the JSON body for `chat.postMessage`. Extracted for unit
-/// testing without hitting Slack.
-fn build_slack_body(channel: &str, payload: &AlertPayload) -> serde_json::Value {
+/// Build the alert message text. Extracted for unit testing without
+/// hitting Slack. Markdown is fine — `chat.postMessage` treats `mrkdwn`
+/// as true by default.
+fn build_alert_text(payload: &AlertPayload) -> String {
     let mut text = format!("⚠️ *{}*", payload.title);
     if let Some(detail) = &payload.detail {
         text.push('\n');
@@ -164,11 +141,7 @@ fn build_slack_body(channel: &str, payload: &AlertPayload) -> serde_json::Value 
     if let Some(url) = &payload.url {
         text.push_str(&format!("\n<{url}|Open Edge dashboard>"));
     }
-    serde_json::json!({
-        "channel": channel,
-        "text": text,
-        "mrkdwn": true,
-    })
+    text
 }
 
 #[cfg(test)]
@@ -176,33 +149,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn slack_body_includes_title_detail_url() {
-        let body = build_slack_body(
-            "C123",
-            &AlertPayload {
-                title: "Camera offline".into(),
-                detail: Some("Kitchen-1 @ Site A".into()),
-                url: Some("https://oxy.example.com/edge".into()),
-            },
-        );
-        let text = body["text"].as_str().unwrap();
+    fn alert_text_includes_title_detail_url() {
+        let text = build_alert_text(&AlertPayload {
+            title: "Camera offline".into(),
+            detail: Some("Kitchen-1 @ Site A".into()),
+            url: Some("https://oxy.example.com/edge".into()),
+        });
         assert!(text.contains("Camera offline"));
         assert!(text.contains("Kitchen-1 @ Site A"));
         assert!(text.contains("https://oxy.example.com/edge"));
-        assert_eq!(body["channel"], "C123");
     }
 
     #[test]
-    fn slack_body_omits_optional_fields_when_none() {
-        let body = build_slack_body(
-            "C123",
-            &AlertPayload {
-                title: "Heartbeat".into(),
-                detail: None,
-                url: None,
-            },
-        );
-        let text = body["text"].as_str().unwrap();
+    fn alert_text_omits_optional_fields_when_none() {
+        let text = build_alert_text(&AlertPayload {
+            title: "Heartbeat".into(),
+            detail: None,
+            url: None,
+        });
         assert!(text.contains("Heartbeat"));
         assert!(!text.contains("Open Edge dashboard"));
     }

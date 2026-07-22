@@ -8896,8 +8896,8 @@ dependencies = [
  "oxy-project",
  "oxy-semantic",
  "oxy-shared",
+ "oxy-slack-client",
  "oxy-test-utils",
- "oxy-thread",
  "oxy-workspace-fs",
  "parking_lot 0.12.5",
  "parquet",
@@ -9031,6 +9031,7 @@ dependencies = [
  "oxy-auth",
  "oxy-platform",
  "oxy-shared",
+ "oxy-slack-client",
  "oxy-unifi",
  "rand 0.10.1",
  "reqwest 0.12.28",
@@ -9312,6 +9313,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxy-slack-client"
+version = "0.5.107"
+dependencies = [
+ "oxy-shared",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "oxy-test-utils"
 version = "0.5.107"
 dependencies = [
@@ -9322,25 +9336,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "wiremock",
-]
-
-[[package]]
-name = "oxy-thread"
-version = "0.5.107"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "entity",
- "log",
- "oxy",
- "oxy-shared",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
 ]
 
 [[package]]

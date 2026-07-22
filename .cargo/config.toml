@@ -10,6 +10,22 @@ incremental = true
 [net]
 git-fetch-with-cli = true
 
+[alias]
+# Fast local loop — full debug info (debuggability unchanged), but skips the V8
+# (deno_core) isolate that powers Oxy Functions, so `oxy` still runs and only
+# Functions endpoints are inert. Use plain cargo (default features) when editing
+# customer-app functions/*.ts — CI and release always do.
+#
+# NOTE: measured 2026-07-20, the binary only shrinks 1.2 GB → 1.16 GB and an
+# incremental rebuild moves ~184s → ~178s — a few percent, not the "hundreds of
+# MB" an earlier draft claimed. The 1.2 GB is overwhelmingly DWARF debug info
+# across the whole dep graph, not deno_core. The real link/codegen levers are in
+# `[profile.dev]` (`debug = "line-tables-only"`), not feature-trimming. Keep
+# these aliases for the Functions-inert convenience, not for a build-time win.
+cf = "check --no-default-features -p oxy-app"
+bf = "build --no-default-features -p oxy-app"
+rf = "run   --no-default-features -p oxy-app"
+
 # mold linker is automatically set via Github Actions
 # on macos, ld64 already works fairly well so there is no reason to use mold
 # and this keeps the development environment simple

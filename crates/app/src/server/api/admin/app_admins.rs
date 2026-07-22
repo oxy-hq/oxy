@@ -19,7 +19,7 @@ use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilt
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_auth::invalidate_admin_cache;
+use crate::server::authz::globals::invalidate_admin_cache;
 use crate::server::router::AppState;
 
 pub(crate) fn router() -> Router<AppState> {

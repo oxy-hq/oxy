@@ -97,10 +97,6 @@ const ALLOWED: &[(&str, &str)] = &[
         "legacy term — the `is_staff` shape",
     ),
     (
-        "server/api/customer_apps_auth.rs",
-        "defines `is_app_admin_email` (the `app_admins` read `globals` wraps)",
-    ),
-    (
         "server/api/partner_console/people.rs",
         "legacy term for the partner-console ring",
     ),

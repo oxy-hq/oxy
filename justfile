@@ -28,6 +28,11 @@ build: build-backend build-frontend
 build-backend:
     cargo build 2>&1 | grep -E "^(error|warning\[)" || true
 
+# Build the backend FAST: full debug, but skips V8/Functions (deno_core) — a much
+# smaller binary to link. Opt back in with `just build-backend` when editing Functions.
+build-backend-fast:
+    cargo bf 2>&1 | grep -E "^(error|warning\[)" || true
+
 # Build the frontend
 build-frontend:
     pnpm build
@@ -37,6 +42,10 @@ build-frontend:
 # Run cargo check (fast type-check)
 check:
     cargo check 2>&1 | grep -E "^(error|warning\[)" || true
+
+# Type-check FAST: skips V8/Functions (deno_core).
+check-fast:
+    cargo cf 2>&1 | grep -E "^(error|warning\[)" || true
 
 # Lint everything
 lint: lint-backend lint-frontend
@@ -89,6 +98,11 @@ dev:
 # Start the Rust API server (http://localhost:3000)
 dev-backend:
     cargo run start
+
+# Start the API server FAST: skips V8/Functions (deno_core) for a quicker
+# build+run loop. Full debug info; Functions endpoints are inert.
+dev-backend-fast:
+    cargo rf -- start
 
 # `oxy start` runs its OWN oxy-clickhouse container — don't also `just clickhouse-up` (both bind :8123).
 # Start the API server with ClickHouse observability + enterprise UI

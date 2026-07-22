@@ -22,7 +22,7 @@
 //! Each test seeds its own uniquely-keyed rows, so they're independent and re-runnable.
 
 use entity::{
-    org_members, organizations, partner_capabilities, partner_grants, partner_orgs,
+    app_admins, org_members, organizations, partner_capabilities, partner_grants, partner_orgs,
     partner_role_bindings, users, workspace_members, workspaces,
 };
 use oxy::database::client::establish_connection;
@@ -91,6 +91,44 @@ async fn seed_membership(
     .await
     .expect("seed membership");
     id
+}
+
+async fn seed_app_admin(conn: &DatabaseConnection, email: &str) {
+    app_admins::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        email: ActiveValue::Set(email.to_string()),
+        granted_by: ActiveValue::Set(None),
+        created_at: ActiveValue::NotSet,
+    }
+    .insert(conn)
+    .await
+    .expect("seed app_admin");
+}
+
+/// The **positive** Global-Admin grant — the direction `app_admins` membership actually
+/// *elevates* a principal. `loader_derives_org_role_sets_from_real_rows` only asserts the
+/// negative (a user not in `app_admins` is not global admin), which a loader that never
+/// set the flag would also pass. Seed the row and prove the grant flows through the
+/// `authz::globals::is_app_admin_email` read the loader depends on.
+#[tokio::test]
+async fn loader_grants_global_admin_to_an_app_admins_member() {
+    if db_unavailable() {
+        eprintln!("skipping: OXY_DATABASE_URL unset");
+        return;
+    }
+    let conn = establish_connection().await.expect("db connect");
+
+    let (user_id, email) = seed_user(&conn).await;
+    seed_app_admin(&conn, &email).await;
+
+    let facts = load_principal_facts(&conn, user_id, &email)
+        .await
+        .expect("loader must resolve facts against a live seeded database");
+    assert!(
+        facts.is_global_admin,
+        "a user seeded into app_admins must load as Global Admin — the elevation path that \
+         only the negative case was guarding"
+    );
 }
 
 /// The org-role sets are the backbone of every tenant ring: `owned ⊆ admin ⊆ member`.

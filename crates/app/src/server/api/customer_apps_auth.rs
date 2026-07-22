@@ -17,8 +17,8 @@
 //! revocation of any source propagates within a minute.
 //!
 //! All helpers are async because the underlying tables are queried. The
-//! middleware/login-response paths use the email-keyed admin check
-//! (`is_app_admin_email`) which has its own small cache.
+//! email-keyed Global-Admin check (`app_admins`) now lives in
+//! `server::authz::globals::is_app_admin_email` — authz owns that read.
 //!
 //! ## Bundle / manifest helpers
 //!
@@ -64,29 +64,6 @@ fn set_cached_access(user_id: Uuid, app_id: Uuid, allowed: bool) {
 /// so we drop the whole cache.
 pub fn invalidate_access_cache() {
     if let Ok(mut guard) = access_cache().write() {
-        guard.clear();
-    }
-}
-
-// ── Global app admin cache (email-keyed) ────────────────────────────────────
-
-fn admin_cache() -> &'static RwLock<HashMap<String, (bool, Instant)>> {
-    static CACHE: OnceLock<RwLock<HashMap<String, (bool, Instant)>>> = OnceLock::new();
-    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
-fn cached_admin(email: &str) -> Option<bool> {
-    get_fresh(admin_cache(), &email.to_string())
-}
-
-fn set_cached_admin(email: String, is_admin: bool) {
-    insert_with_sweep(admin_cache(), email, is_admin);
-}
-
-/// Same broad-strokes invalidation as [`invalidate_access_cache`], for
-/// admin-table mutations.
-pub fn invalidate_admin_cache() {
-    if let Ok(mut guard) = admin_cache().write() {
         guard.clear();
     }
 }
@@ -172,26 +149,6 @@ pub async fn is_oxy_locked_down(
         .one(db)
         .await
         .map(|opt| opt.is_some())
-}
-
-/// Global app-admin check. Email is normalised (trim + lowercase) before
-/// lookup so the table can be queried case-insensitively without a
-/// functional index. Cached for [`CACHE_TTL`].
-pub async fn is_app_admin_email(db: &DatabaseConnection, email: &str) -> Result<bool, DbErr> {
-    let key = email.trim().to_ascii_lowercase();
-    if key.is_empty() {
-        return Ok(false);
-    }
-    if let Some(v) = cached_admin(&key) {
-        return Ok(v);
-    }
-    let found = AppAdmins::find()
-        .filter(app_admins::Column::Email.eq(key.clone()))
-        .one(db)
-        .await?
-        .is_some();
-    set_cached_admin(key, found);
-    Ok(found)
 }
 
 /// Convenience: load an app by `(org_slug, app_slug)`. Used by the few
@@ -364,7 +321,7 @@ pub async fn bootstrap_app_admins_from_env(db: &DatabaseConnection) -> Result<()
 
     let count = to_insert.len();
     AppAdmins::insert_many(to_insert).exec(db).await?;
-    invalidate_admin_cache();
+    crate::server::authz::globals::invalidate_admin_cache();
     tracing::info!(
         count,
         "bootstrap_app_admins: seeded {count} global admin(s) from env"

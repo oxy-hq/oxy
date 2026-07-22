@@ -12,6 +12,7 @@ exclude.workspace = true
 [dependencies]
 # Workspace internals
 oxy-shared = { workspace = true }
+oxy-slack-client = { workspace = true }
 oxy-unifi = { workspace = true }
 # AES-256-GCM envelope sealing for at-rest device_secret + (future)
 # RTSP credential blobs. Cameras pulls the helper from platform

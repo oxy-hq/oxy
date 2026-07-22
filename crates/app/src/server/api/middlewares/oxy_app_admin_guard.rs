@@ -12,7 +12,7 @@
 
 use oxy::database::client::establish_connection;
 
-use crate::server::api::customer_apps_auth::is_app_admin_email;
+use crate::server::authz::globals::is_app_admin_email;
 
 /// Returns `true` when `email` is in the `app_admins` table. Used by
 /// login responses to expose `is_app_admin` on the user payload so the
