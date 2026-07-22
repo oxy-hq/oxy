@@ -181,17 +181,20 @@
           ]
         },
         "vendor": {
-          "description": "Backend vendor.  Defaults to [`LlmVendor::Anthropic`].\n\nOverrides the vendor resolved from `ref` when both are set.",
-          "allOf": [
+          "description": "Backend vendor.  Defaults to [`LlmVendor::Anthropic`] when neither this field nor `ref` supplies one.\n\nOverrides the vendor resolved from `ref` when both are set — which is what lets a `config.yml` model supply the managed `key_var` secret and `api_url` while the agent redirects the call to a different wire protocol:\n\n```yaml llm: ref: o4-mini            # inherits key_var secret + api_url vendor: open_ai_compat  # …but talk /chat/completions, not /responses ```\n\n`Option` rather than a defaulted `LlmVendor` on purpose: the override above is only expressible if \"user wrote `anthropic`\" is distinguishable from \"field absent\". While this was a bare `LlmVendor` it silently defaulted, so the ref's vendor always won and this field did nothing whenever `ref` was set.",
+          "anyOf": [
             {
               "$ref": "#/definitions/LlmVendor"
+            },
+            {
+              "type": "null"
             }
           ]
         }
       }
     },
     "LlmVendor": {
-      "description": "LLM vendor / backend selector.\n\n```yaml llm: vendor: openai_compat   # Ollama, vLLM, LM Studio, … model: llama3.2 base_url: http://localhost:11434/v1 ```",
+      "description": "LLM vendor / backend selector.\n\n```yaml llm: vendor: open_ai_compat   # Ollama, vLLM, LM Studio, LangDock, … model: llama3.2 base_url: http://localhost:11434/v1 ```\n\n`rename_all = \"snake_case\"` derives `open_ai` / `open_ai_compat` from the variant names. The elided spellings (`openai`, `openai_compat`) are the ones people actually reach for — and were what this doc comment advertised while serde rejected them — so both are accepted as aliases.",
       "oneOf": [
         {
           "description": "Anthropic Messages API (default).  Uses `ANTHROPIC_API_KEY`.",
@@ -201,14 +204,14 @@
           ]
         },
         {
-          "description": "OpenAI Responses API (`/v1/responses`).  Uses `OPENAI_API_KEY`.",
+          "description": "OpenAI Responses API (`/v1/responses`).  Uses `OPENAI_API_KEY`.\n\nNote this is the **Responses** API, not Chat Completions — third-party OpenAI-compatible gateways that only implement `/chat/completions` (LangDock, many EU/self-hosted proxies) will 404 here. Use [`LlmVendor::OpenAiCompat`] for those.",
           "type": "string",
           "enum": [
             "open_ai"
           ]
         },
         {
-          "description": "OpenAI-compatible Chat Completions API (`/v1/chat/completions`). Suitable for Ollama, vLLM, LM Studio, and similar local/self-hosted backends.  Uses `OPENAI_API_KEY` as fallback (or pass `api_key` directly).",
+          "description": "OpenAI-compatible Chat Completions API (`/v1/chat/completions`). Suitable for Ollama, vLLM, LM Studio, LangDock, and similar self-hosted or third-party gateways.  Uses `OPENAI_API_KEY` as fallback (or pass `api_key` directly).",
           "type": "string",
           "enum": [
             "open_ai_compat"

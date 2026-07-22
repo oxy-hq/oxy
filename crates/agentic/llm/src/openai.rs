@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::pin::Pin;
 
 use async_stream::stream;
@@ -95,6 +96,9 @@ pub struct OpenAiProvider {
     /// Root of the Responses API, e.g. `"https://api.openai.com/v1"`.
     /// The `/responses` path is appended by [`Self::responses_url`].
     base_url: String,
+    /// Extra headers sent with every request, on top of the standard
+    /// `content-type` / `Authorization` pair.
+    headers: HashMap<String, String>,
     client: reqwest::Client,
 }
 
@@ -105,8 +109,16 @@ impl OpenAiProvider {
             api_key: api_key.into(),
             model: model.into(),
             base_url: OPENAI_BASE_URL.to_string(),
+            headers: HashMap::new(),
             client: build_llm_http_client(),
         }
+    }
+
+    /// Attach extra request headers, already resolved to literal values.
+    /// Sent in addition to `content-type` and `Authorization`.
+    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
+        self
     }
 
     /// Create a provider with a custom base URL.
@@ -128,6 +140,7 @@ impl OpenAiProvider {
             api_key: api_key.into(),
             model: model.into(),
             base_url: base,
+            headers: HashMap::new(),
             client: build_llm_http_client(),
         }
     }
@@ -257,15 +270,16 @@ impl LlmProvider for OpenAiProvider {
             ThinkingConfig::Disabled | ThinkingConfig::Manual { .. } => {}
         }
 
-        let response = self
+        let mut req = self
             .client
             .post(self.responses_url())
             .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(send_error_to_llm)?;
+            .header("content-type", "application/json");
+        for (name, value) in &self.headers {
+            req = req.header(name, value);
+        }
+
+        let response = req.json(&body).send().await.map_err(send_error_to_llm)?;
 
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
@@ -589,5 +603,24 @@ fn convert_anthropic_tool_msg(msg: &Value) -> Option<Vec<Value>> {
             Some(items)
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+
+    #[test]
+    fn responses_url_appends_to_custom_base() {
+        let p = OpenAiProvider::with_base_url("k", "m", "https://gw.example/v1//");
+        assert_eq!(p.responses_url(), "https://gw.example/v1/responses");
+    }
+
+    #[test]
+    fn headers_default_empty_and_are_stored() {
+        let p = OpenAiProvider::new("k", "m");
+        assert!(p.headers.is_empty());
+        let p = p.with_headers(HashMap::from([("x-gw".to_string(), "1".to_string())]));
+        assert_eq!(p.headers["x-gw"], "1");
     }
 }

@@ -476,3 +476,71 @@ fn resolve_timezone_rejects_invalid_agent_value() {
         Err(ConfigError::InvalidTimezone(_))
     ));
 }
+
+// ── llm.vendor parsing ─────────────────────────────────────────────────────
+
+#[test]
+fn llm_vendor_absent_is_none_not_anthropic() {
+    // The whole fix hinges on this: while `vendor` was a defaulted `LlmVendor`,
+    // an absent field was indistinguishable from an explicit `anthropic`, so an
+    // explicit vendor could never override the one inherited from `ref`.
+    let config = AgentConfig::from_yaml("llm:\n  ref: o4-mini\n").unwrap();
+    assert!(config.llm.vendor.is_none());
+}
+
+#[test]
+fn llm_vendor_parses_snake_case_and_elided_aliases() {
+    // `rename_all = "snake_case"` derives `open_ai_compat`, but the docs (and
+    // most people's fingers) say `openai_compat`. Both must parse.
+    for spelling in ["open_ai_compat", "openai_compat"] {
+        let yaml = format!("llm:\n  vendor: {spelling}\n");
+        let config = AgentConfig::from_yaml(&yaml).unwrap();
+        assert_eq!(
+            config.llm.vendor,
+            Some(LlmVendor::OpenAiCompat),
+            "{spelling} should parse as OpenAiCompat"
+        );
+    }
+    for spelling in ["open_ai", "openai"] {
+        let yaml = format!("llm:\n  vendor: {spelling}\n");
+        let config = AgentConfig::from_yaml(&yaml).unwrap();
+        assert_eq!(
+            config.llm.vendor,
+            Some(LlmVendor::OpenAi),
+            "{spelling} should parse as OpenAi"
+        );
+    }
+}
+
+// ── resolve_vendor precedence ──────────────────────────────────────────────
+
+#[test]
+fn resolve_vendor_explicit_yaml_overrides_ref() {
+    // The LangDock case: `config.yml` supplies the managed key_var secret and
+    // api_url via `ref`, while the agent redirects the wire protocol to Chat
+    // Completions. Before the fix the ref's vendor won and this was ignored,
+    // pinning the call to `/responses` — a 404 on gateways that don't have it.
+    assert_eq!(
+        resolve_vendor(Some(&LlmVendor::OpenAiCompat), Some(&LlmVendor::OpenAi)),
+        &LlmVendor::OpenAiCompat
+    );
+}
+
+#[test]
+fn resolve_vendor_explicit_anthropic_still_overrides_ref() {
+    // Guards the exact ambiguity that caused the bug: `anthropic` is the
+    // default value, so an explicit one must still beat the ref.
+    assert_eq!(
+        resolve_vendor(Some(&LlmVendor::Anthropic), Some(&LlmVendor::OpenAi)),
+        &LlmVendor::Anthropic
+    );
+}
+
+#[test]
+fn resolve_vendor_falls_back_to_ref_then_default() {
+    assert_eq!(
+        resolve_vendor(None, Some(&LlmVendor::OpenAi)),
+        &LlmVendor::OpenAi
+    );
+    assert_eq!(resolve_vendor(None, None), &LlmVendor::Anthropic);
+}

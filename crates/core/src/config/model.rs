@@ -27,7 +27,7 @@ pub use duckdb::{
     StorageConfig,
 };
 pub use oxy_llm::{
-    AnthropicModelConfig, GeminiModelConfig, HeaderValue, Model, OllamaModelConfig,
+    AnthropicModelConfig, GeminiModelConfig, HeaderValue, Model, OPENAI_API_URL, OllamaModelConfig,
     OpenAIModelConfig, default_openai_api_url,
 };
 use oxy_shared::errors::OxyError;
@@ -1507,6 +1507,37 @@ fn validate_models(models: &Vec<Model>, ctx: &ValidationContext) -> garde::Resul
                 }
                 validate_env_var(&config.key_var, ctx)
                     .map_err(|e| garde::Error::new(format!("models[{}].key_var: {}", i, e)))?;
+            }
+            Model::OpenAICompat { config } => {
+                if config.name.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].name: length is lower than 1",
+                        i
+                    )));
+                }
+                if config.model_ref.is_empty() {
+                    return Err(garde::Error::new(format!(
+                        "models[{}].model_ref: length is lower than 1",
+                        i
+                    )));
+                }
+                validate_env_var(&config.key_var, ctx)
+                    .map_err(|e| garde::Error::new(format!("models[{}].key_var: {}", i, e)))?;
+                // Unlike `openai`, there is no sensible default host for a
+                // compat gateway — the whole point is that it lives elsewhere.
+                // `api_url` defaults to OpenAI's own base via serde, which would
+                // silently send traffic to api.openai.com, so require it.
+                match config.api_url.as_deref() {
+                    Some(url) if url != OPENAI_API_URL && !url.is_empty() => {}
+                    _ => {
+                        return Err(garde::Error::new(format!(
+                            "models[{}].api_url: openai_compat requires an explicit api_url \
+                             (e.g. https://api.langdock.com/openai/eu/v1); use vendor: openai \
+                             to talk to api.openai.com",
+                            i
+                        )));
+                    }
+                }
             }
         }
     }
@@ -3077,6 +3108,95 @@ base_url: https://ws-api.toasttab.com
         assert_eq!(t.client_secret_var.as_deref(), Some("TOAST_CLIENT_SECRET"));
         assert_eq!(t.api_token_var, None);
         assert_eq!(t.base_url.as_deref(), Some("https://ws-api.toasttab.com"));
+    }
+
+    /// An OpenAI-compatible gateway (LangDock and similar EU/self-hosted
+    /// proxies): same config shape as `openai` — crucially including `key_var`,
+    /// so the credential resolves through the managed workspace secret store —
+    /// but the agentic pipeline routes it to `/chat/completions`.
+    #[test]
+    fn openai_compat_model_parses_with_key_var() {
+        use super::Model;
+        let yaml = r#"
+name: o4-mini
+vendor: openai_compat
+model_ref: o4-mini
+key_var: LANGDOCK_API_KEY
+api_url: https://api.langdock.com/openai/eu/v1
+"#;
+        let model: Model = serde_yaml::from_str(yaml).unwrap();
+        let Model::OpenAICompat { config } = &model else {
+            panic!("expected an openai_compat model, got {model:?}");
+        };
+        assert_eq!(config.name, "o4-mini");
+        assert_eq!(config.model_ref, "o4-mini");
+        assert_eq!(
+            config.api_url.as_deref(),
+            Some("https://api.langdock.com/openai/eu/v1")
+        );
+        // The differentiator from `ollama`, which also speaks Chat Completions
+        // but carries its key inline and so cannot bind a managed secret.
+        assert_eq!(model.key_var(), Some("LANGDOCK_API_KEY"));
+    }
+
+    /// `rename_all` isn't in play on this enum (variants are explicitly
+    /// renamed), but accept the snake_case spelling too so the value matches
+    /// `llm.vendor:` in `.agentic.yml`, where serde does derive it.
+    #[test]
+    fn openai_compat_accepts_snake_case_alias() {
+        use super::Model;
+        let yaml = "name: m\nvendor: open_ai_compat\nmodel_ref: m\nkey_var: K\napi_url: https://gw.example/v1\n";
+        let model: Model = serde_yaml::from_str(yaml).unwrap();
+        assert!(matches!(model, Model::OpenAICompat { .. }));
+    }
+
+    /// `key_var` is validated by `validate_env_var`, which requires the
+    /// variable to actually be set — so the fixture borrows `PATH` rather than
+    /// mutating the environment, which would make these order-dependent.
+    fn config_with_compat_model(api_url_line: &str) -> super::Config {
+        let yaml = format!(
+            "defaults:\n  database: local\n\
+             databases:\n  - name: local\n    type: duckdb\n    dataset: ./data\n\
+             models:\n  - name: gw\n    vendor: openai_compat\n    model_ref: m\n\
+             \x20   key_var: PATH\n{api_url_line}"
+        );
+        serde_yaml::from_str(&yaml).expect("config parses")
+    }
+
+    /// `api_url` is `#[serde(default)]`-ed to OpenAI's own host, so an omitted
+    /// value doesn't arrive as `None` — it arrives as api.openai.com. Without
+    /// this rule an `openai_compat` model would silently ship traffic to
+    /// OpenAI, which defeats the point of naming a gateway (and breaks
+    /// data-residency setups).
+    #[test]
+    fn openai_compat_rejects_missing_api_url() {
+        let config = config_with_compat_model("");
+        let err = config
+            .validate_config()
+            .expect_err("a compat model without api_url must be rejected");
+        assert!(
+            err.to_string().contains("api_url"),
+            "error should name the offending field, got: {err}"
+        );
+    }
+
+    /// Explicitly pinning OpenAI's host is the same hole spelled out longhand.
+    #[test]
+    fn openai_compat_rejects_explicit_openai_host() {
+        let config = config_with_compat_model(&format!("    api_url: {}\n", super::OPENAI_API_URL));
+        assert!(
+            config.validate_config().is_err(),
+            "pinning api.openai.com on a compat model must be rejected too"
+        );
+    }
+
+    #[test]
+    fn openai_compat_accepts_a_real_gateway_url() {
+        let config =
+            config_with_compat_model("    api_url: https://api.langdock.com/openai/eu/v1\n");
+        config
+            .validate_config()
+            .expect("a compat model pointing at a gateway is valid");
     }
 
     #[test]

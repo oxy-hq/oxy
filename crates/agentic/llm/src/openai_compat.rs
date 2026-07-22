@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::pin::Pin;
 
 use async_stream::stream;
@@ -173,6 +174,10 @@ pub struct OpenAiCompatProvider {
     model: String,
     /// Full Chat Completions URL used for every request.
     completions_url: String,
+    /// Extra headers sent with every request, on top of the standard
+    /// `content-type` / `Authorization` pair. Gateways such as Portkey and
+    /// Helicone authenticate or route on their own headers.
+    headers: HashMap<String, String>,
     client: reqwest::Client,
 }
 
@@ -195,6 +200,7 @@ impl OpenAiCompatProvider {
             api_key: api_key.into(),
             model: model.into(),
             completions_url: format!("{base}/chat/completions"),
+            headers: HashMap::new(),
             client: build_llm_http_client(),
         }
     }
@@ -213,8 +219,19 @@ impl OpenAiCompatProvider {
             api_key: api_key.into(),
             model: model.into(),
             completions_url: completions_url.into(),
+            headers: HashMap::new(),
             client: build_llm_http_client(),
         }
+    }
+
+    /// Attach extra request headers, already resolved to literal values.
+    ///
+    /// Sent *in addition to* `content-type` and `Authorization` — this is not a
+    /// way to replace them. Reserved for gateways that need their own header to
+    /// authenticate or route (`x-portkey-*`, `Helicone-Auth`, …).
+    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
+        self
     }
 
     /// Create a provider targeting an Azure OpenAI deployment.
@@ -353,6 +370,9 @@ impl LlmProvider for OpenAiCompatProvider {
 
         if !self.api_key.is_empty() {
             req = req.header("Authorization", format!("Bearer {}", self.api_key));
+        }
+        for (name, value) in &self.headers {
+            req = req.header(name, value);
         }
 
         let response = req.json(&body).send().await.map_err(send_error_to_llm)?;
@@ -688,6 +708,29 @@ fn convert_anthropic_tool_msg_to_chat(msg: &Value) -> Option<Vec<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn headers_default_empty_and_are_stored() {
+        let p = OpenAiCompatProvider::new("key", "m", "https://gw/v1");
+        assert!(p.headers.is_empty(), "no headers unless asked for");
+
+        let p = p.with_headers(HashMap::from([
+            ("x-portkey-provider".to_string(), "openai".to_string()),
+            ("Helicone-Auth".to_string(), "Bearer h".to_string()),
+        ]));
+        assert_eq!(p.headers.len(), 2);
+        assert_eq!(p.headers["x-portkey-provider"], "openai");
+        // Custom headers must not disturb the resolved endpoint.
+        assert_eq!(p.completions_url, "https://gw/v1/chat/completions");
+    }
+
+    #[test]
+    fn with_headers_survives_azure_construction() {
+        let p = OpenAiCompatProvider::for_azure("k", "m", "https://r.openai.azure.com", "d", "v")
+            .with_headers(HashMap::from([("x-trace".to_string(), "1".to_string())]));
+        assert_eq!(p.headers["x-trace"], "1");
+        assert!(p.completions_url.contains("/openai/deployments/d/"));
+    }
 
     #[test]
     fn for_azure_builds_correct_url() {

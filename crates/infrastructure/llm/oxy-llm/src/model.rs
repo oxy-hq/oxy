@@ -35,6 +35,23 @@ pub enum Model {
         #[serde(flatten)]
         config: AnthropicModelConfig,
     },
+    /// An OpenAI-compatible gateway that speaks **Chat Completions**
+    /// (`/chat/completions`) rather than the Responses API (`/responses`).
+    ///
+    /// Distinct from [`Model::OpenAI`] only in which wire protocol the agentic
+    /// pipeline targets — third-party and EU-hosted gateways (LangDock, vLLM,
+    /// LM Studio, most self-hosted proxies) implement Chat Completions only and
+    /// return 404 on `/responses`.
+    ///
+    /// Reuses [`OpenAIModelConfig`] so it inherits `key_var`, meaning the API
+    /// key resolves through the managed workspace secret store like any other
+    /// keyed vendor. [`Model::Ollama`] also targets Chat Completions but carries
+    /// its key inline with no `key_var`, so it cannot bind a managed secret.
+    #[serde(rename = "openai_compat", alias = "open_ai_compat")]
+    OpenAICompat {
+        #[serde(flatten)]
+        config: OpenAIModelConfig,
+    },
 }
 
 impl Model {
@@ -45,6 +62,7 @@ impl Model {
             Model::Ollama { config } => config.model_name(),
             Model::Google { config } => config.model_name(),
             Model::Anthropic { config } => config.model_name(),
+            Model::OpenAICompat { config } => config.model_name(),
         }
     }
 
@@ -55,6 +73,7 @@ impl Model {
             Model::Ollama { config } => config.name(),
             Model::Google { config } => config.name(),
             Model::Anthropic { config } => config.name(),
+            Model::OpenAICompat { config } => config.name(),
         }
     }
 
@@ -65,6 +84,7 @@ impl Model {
             Model::Google { config } => config.key_var(),
             Model::Anthropic { config } => config.key_var(),
             Model::Ollama { config } => config.key_var(), // Returns None
+            Model::OpenAICompat { config } => config.key_var(),
         }
     }
 
@@ -73,6 +93,7 @@ impl Model {
         match self {
             Model::OpenAI { config } => config.headers(),
             Model::Anthropic { config } => config.headers(),
+            Model::OpenAICompat { config } => config.headers(),
             _ => None,
         }
     }

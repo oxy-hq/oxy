@@ -283,22 +283,34 @@ fn parse_effort_level(s: &str) -> ThinkingConfig {
 ///
 /// ```yaml
 /// llm:
-///   vendor: openai_compat   # Ollama, vLLM, LM Studio, …
+///   vendor: open_ai_compat   # Ollama, vLLM, LM Studio, LangDock, …
 ///   model: llama3.2
 ///   base_url: http://localhost:11434/v1
 /// ```
-#[derive(Debug, Clone, Deserialize, Default, JsonSchema)]
+///
+/// `rename_all = "snake_case"` derives `open_ai` / `open_ai_compat` from the
+/// variant names. The elided spellings (`openai`, `openai_compat`) are the ones
+/// people actually reach for — and were what this doc comment advertised while
+/// serde rejected them — so both are accepted as aliases.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmVendor {
     /// Anthropic Messages API (default).  Uses `ANTHROPIC_API_KEY`.
     #[default]
     Anthropic,
     /// OpenAI Responses API (`/v1/responses`).  Uses `OPENAI_API_KEY`.
+    ///
+    /// Note this is the **Responses** API, not Chat Completions — third-party
+    /// OpenAI-compatible gateways that only implement `/chat/completions`
+    /// (LangDock, many EU/self-hosted proxies) will 404 here. Use
+    /// [`LlmVendor::OpenAiCompat`] for those.
+    #[serde(alias = "openai")]
     OpenAi,
     /// OpenAI-compatible Chat Completions API (`/v1/chat/completions`).
-    /// Suitable for Ollama, vLLM, LM Studio, and similar local/self-hosted
-    /// backends.  Uses `OPENAI_API_KEY` as fallback (or pass `api_key`
-    /// directly).
+    /// Suitable for Ollama, vLLM, LM Studio, LangDock, and similar
+    /// self-hosted or third-party gateways.  Uses `OPENAI_API_KEY` as
+    /// fallback (or pass `api_key` directly).
+    #[serde(alias = "openai_compat")]
     OpenAiCompat,
 }
 
@@ -318,11 +330,27 @@ pub struct LlmConfigYaml {
     #[serde(default, rename = "ref")]
     pub model_ref: Option<String>,
 
-    /// Backend vendor.  Defaults to [`LlmVendor::Anthropic`].
+    /// Backend vendor.  Defaults to [`LlmVendor::Anthropic`] when neither this
+    /// field nor `ref` supplies one.
     ///
-    /// Overrides the vendor resolved from `ref` when both are set.
+    /// Overrides the vendor resolved from `ref` when both are set — which is
+    /// what lets a `config.yml` model supply the managed `key_var` secret and
+    /// `api_url` while the agent redirects the call to a different wire
+    /// protocol:
+    ///
+    /// ```yaml
+    /// llm:
+    ///   ref: o4-mini            # inherits key_var secret + api_url
+    ///   vendor: open_ai_compat  # …but talk /chat/completions, not /responses
+    /// ```
+    ///
+    /// `Option` rather than a defaulted `LlmVendor` on purpose: the override
+    /// above is only expressible if "user wrote `anthropic`" is distinguishable
+    /// from "field absent". While this was a bare `LlmVendor` it silently
+    /// defaulted, so the ref's vendor always won and this field did nothing
+    /// whenever `ref` was set.
     #[serde(default)]
-    pub vendor: LlmVendor,
+    pub vendor: Option<LlmVendor>,
 
     /// Model ID.  Overrides the `model_ref` resolved from `ref`.
     #[serde(default)]
@@ -388,7 +416,7 @@ impl Default for LlmConfigYaml {
     fn default() -> Self {
         Self {
             model_ref: None,
-            vendor: LlmVendor::Anthropic,
+            vendor: None,
             model: None,
             api_key: None,
             base_url: None,

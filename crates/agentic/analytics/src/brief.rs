@@ -25,7 +25,7 @@ use tracing::Instrument;
 use agentic_core::events::Event;
 use agentic_runtime::handle::{PipelineHandle, PipelineOutcome};
 
-use crate::config::{AgentConfig, ConfigError, build_llm_client};
+use crate::config::{AgentConfig, ConfigError, LlmClientSpec, build_llm_client, resolve_vendor};
 use crate::events::AnalyticsEvent;
 use crate::llm::LlmClient;
 use crate::pipeline::PipelineParams;
@@ -128,29 +128,46 @@ pub async fn start_brief_pipeline(
 fn brief_llm_client(params: &PipelineParams) -> Result<LlmClient, ConfigError> {
     let cfg = &params.config.llm;
 
+    // Vendor resolves independently of which branch supplies the key/model, and
+    // mirrors the FSM path: an explicitly-written `llm.vendor` wins over the one
+    // inherited from `llm.ref:`. Branch (2) previously always took the ref's
+    // vendor, so a `ref` + `vendor:` override silently lost its override here.
+    let vendor = resolve_vendor(
+        cfg.vendor.as_ref(),
+        params.project_model.as_ref().map(|m| &m.vendor),
+    );
+
+    // Headers only ever come from the project model — the agent YAML has no
+    // `headers:` of its own — so both branches read them from there.
+    let headers = params
+        .project_model
+        .as_ref()
+        .and_then(|m| m.headers.as_ref());
+
     // (1) Explicit per-agent override on the YAML.
     if let (Some(api_key), Some(model)) = (cfg.api_key.as_deref(), cfg.model.as_deref()) {
-        return Ok(build_llm_client(
-            &cfg.vendor,
+        return Ok(build_llm_client(LlmClientSpec {
+            vendor,
             api_key,
             model,
-            cfg.base_url.as_deref(),
-            None,
-            None,
-        ));
+            base_url: cfg.base_url.as_deref(),
+            azure_deployment_id: None,
+            azure_api_version: None,
+            headers,
+        }));
     }
 
     // (2) Project-resolved model from `config.yml`.
     if let Some(info) = params.project_model.as_ref() {
-        let api_key = info.api_key.as_deref().unwrap_or_default();
-        return Ok(build_llm_client(
-            &info.vendor,
-            api_key,
-            &info.model,
-            info.base_url.as_deref(),
-            info.azure_deployment_id.as_deref(),
-            info.azure_api_version.as_deref(),
-        ));
+        return Ok(build_llm_client(LlmClientSpec {
+            vendor,
+            api_key: info.api_key.as_deref().unwrap_or_default(),
+            model: &info.model,
+            base_url: info.base_url.as_deref(),
+            azure_deployment_id: info.azure_deployment_id.as_deref(),
+            azure_api_version: info.azure_api_version.as_deref(),
+            headers,
+        }));
     }
 
     // (3) Nothing to build with.

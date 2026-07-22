@@ -68,6 +68,7 @@ impl ModelHeadersExt for Model {
         let headers_map = match self {
             Model::OpenAI { config } => config.headers.as_ref(),
             Model::Anthropic { config } => config.headers.as_ref(),
+            Model::OpenAICompat { config } => config.headers.as_ref(),
             _ => None,
         };
         let mut resolved_headers = HashMap::new();
@@ -87,7 +88,11 @@ impl IntoOpenAIConfig for Model {
         secrets_manager: &SecretsManager,
     ) -> Result<ConfigType, OxyError> {
         match self {
-            Model::OpenAI { config } => {
+            // Both variants build the same client here: this adapter drives
+            // `async_openai`'s Chat Completions surface, which an OpenAI-compat
+            // gateway serves natively. They diverge only in the agentic
+            // pipeline, which picks Responses vs Chat Completions by vendor.
+            Model::OpenAI { config } | Model::OpenAICompat { config } => {
                 // Resolve API key from secrets
                 let api_key = secrets_manager
                     .resolve_secret(&config.key_var)

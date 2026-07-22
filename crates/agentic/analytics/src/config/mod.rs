@@ -76,7 +76,10 @@ use crate::engine::looker::LookerEngine;
 use crate::engine::{EngineError, SemanticEngine};
 #[cfg(test)]
 use crate::llm::ReasoningEffort;
-use crate::llm::{DEFAULT_MODEL, LlmClient, OpenAiCompatProvider, OpenAiProvider, ThinkingConfig};
+use crate::llm::{
+    AnthropicProvider, DEFAULT_MODEL, LlmClient, OpenAiCompatProvider, OpenAiProvider,
+    ThinkingConfig,
+};
 use crate::semantic::SemanticCatalog;
 use crate::solver::AnalyticsSolver;
 use crate::validation::Validator;
@@ -204,18 +207,17 @@ pub struct ResolvedModelInfo {
     /// Base URL resolved from the project model config (e.g. Ollama's
     /// `api_url` or a custom OpenAI-compat endpoint).
     pub base_url: Option<String>,
-    /// True when populated from an explicit `llm.ref:` in the agent YAML
-    /// rather than from the project default model fallback.
-    ///
-    /// Used to decide vendor precedence: when a ref is set the ref's vendor
-    /// is preferred even if `llm.model` is also explicitly overridden.
-    pub is_explicit_ref: bool,
     /// Azure deployment ID (e.g. `"my-gpt4o-deployment"`). Present only for
     /// Azure OpenAI models configured with `azure_deployment_id` in config.yml.
     pub azure_deployment_id: Option<String>,
     /// Azure API version (e.g. `"2025-03-01-preview"`). Present only for
     /// Azure OpenAI models configured with `azure_api_version` in config.yml.
     pub azure_api_version: Option<String>,
+    /// Extra request headers from the model's `headers:` block, already
+    /// resolved (a `{ env_var: … }` entry is looked up in the secret store by
+    /// the host before it lands here). Needed by gateways that authenticate or
+    /// route on a header rather than the bearer token.
+    pub headers: Option<HashMap<String, String>>,
 }
 
 // ── BuildContext ──────────────────────────────────────────────────────────────
@@ -285,6 +287,26 @@ fn build_engine(cfg: &SemanticEngineConfig) -> Result<Box<dyn SemanticEngine>, C
     }
 }
 
+/// Resolve which vendor an agent talks to.
+///
+/// Precedence: an explicitly-written `llm.vendor` → the vendor inherited from
+/// `llm.ref:` → [`LlmVendor::Anthropic`].
+///
+/// The first rung is what lets a `config.yml` model supply a managed `key_var`
+/// secret and `api_url` while the agent overrides the *wire protocol* — the
+/// only way to reach an OpenAI-compatible gateway that serves
+/// `/chat/completions` but 404s on `/responses`.
+///
+/// Shared by the FSM path and the brief path; both computed it inline before,
+/// and they had already drifted apart.
+pub(crate) fn resolve_vendor<'a>(
+    yaml_vendor: Option<&'a LlmVendor>,
+    ref_vendor: Option<&'a LlmVendor>,
+) -> &'a LlmVendor {
+    const DEFAULT_VENDOR: &LlmVendor = &LlmVendor::Anthropic;
+    yaml_vendor.or(ref_vendor).unwrap_or(DEFAULT_VENDOR)
+}
+
 /// Build an [`LlmClient`] from the resolved vendor / key / model / base_url.
 ///
 /// Extracted so it can be called both for the global client and for per-state
@@ -293,24 +315,40 @@ fn build_engine(cfg: &SemanticEngineConfig) -> Result<Box<dyn SemanticEngine>, C
 /// When `azure_deployment_id` and `azure_api_version` are both `Some`, the
 /// model is Azure OpenAI: `OpenAiCompatProvider` is used with the full Azure
 /// Chat Completions URL regardless of `vendor`.
-pub(crate) fn build_llm_client(
-    vendor: &LlmVendor,
-    api_key: &str,
-    model: &str,
-    base_url: Option<&str>,
-    azure_deployment_id: Option<&str>,
-    azure_api_version: Option<&str>,
-) -> LlmClient {
+/// Everything needed to construct an [`LlmClient`], grouped so the builder
+/// doesn't grow past the argument limit as vendors gain knobs.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LlmClientSpec<'a> {
+    pub vendor: &'a LlmVendor,
+    pub api_key: &'a str,
+    pub model: &'a str,
+    pub base_url: Option<&'a str>,
+    pub azure_deployment_id: Option<&'a str>,
+    pub azure_api_version: Option<&'a str>,
+    /// Extra request headers, already resolved from `key_var`-style
+    /// references to literal values.
+    pub headers: Option<&'a HashMap<String, String>>,
+}
+
+pub(crate) fn build_llm_client(spec: LlmClientSpec<'_>) -> LlmClient {
+    let LlmClientSpec {
+        vendor,
+        api_key,
+        model,
+        base_url,
+        azure_deployment_id,
+        azure_api_version,
+        headers,
+    } = spec;
+    let extra_headers = || headers.cloned().unwrap_or_default();
+
     if let (Some(deployment_id), Some(api_version), Some(base)) =
         (azure_deployment_id, azure_api_version, base_url)
     {
-        return LlmClient::with_provider(OpenAiCompatProvider::for_azure(
-            api_key,
-            model,
-            base,
-            deployment_id,
-            api_version,
-        ));
+        return LlmClient::with_provider(
+            OpenAiCompatProvider::for_azure(api_key, model, base, deployment_id, api_version)
+                .with_headers(extra_headers()),
+        );
     }
     if azure_deployment_id.is_some() && azure_api_version.is_some() && base_url.is_none() {
         tracing::warn!(
@@ -324,18 +362,31 @@ pub(crate) fn build_llm_client(
         );
     }
     match vendor {
-        LlmVendor::Anthropic => LlmClient::with_model(api_key, model),
-        LlmVendor::OpenAi => {
-            let provider = if let Some(url) = base_url {
-                OpenAiProvider::with_base_url(api_key, model, url)
-            } else {
-                OpenAiProvider::new(api_key, model)
+        LlmVendor::Anthropic => {
+            // `base_url` used to be dropped here, so a `vendor: anthropic`
+            // model with a custom `api_url` silently talked to
+            // api.anthropic.com — the same class of leak as pointing
+            // `vendor: openai` at a Chat-Completions-only gateway. The value is
+            // a root; the provider appends `/messages`, exactly as the OpenAI
+            // providers append `/responses` and `/chat/completions`.
+            let provider = match base_url {
+                Some(url) => AnthropicProvider::with_base_url(api_key, model, url),
+                None => AnthropicProvider::new(api_key, model),
             };
-            LlmClient::with_provider(provider)
+            LlmClient::with_provider(provider.with_headers(extra_headers()))
+        }
+        LlmVendor::OpenAi => {
+            let provider = match base_url {
+                Some(url) => OpenAiProvider::with_base_url(api_key, model, url),
+                None => OpenAiProvider::new(api_key, model),
+            };
+            LlmClient::with_provider(provider.with_headers(extra_headers()))
         }
         LlmVendor::OpenAiCompat => {
             let url = base_url.unwrap_or("http://localhost:11434/v1");
-            LlmClient::with_provider(OpenAiCompatProvider::new(api_key, model, url))
+            LlmClient::with_provider(
+                OpenAiCompatProvider::new(api_key, model, url).with_headers(extra_headers()),
+            )
         }
     }
 }
@@ -528,23 +579,21 @@ impl AgentConfig {
             .unwrap_or(DEFAULT_MODEL)
             .to_string();
 
-        // Vendor precedence:
-        //   - When an explicit `llm.ref:` was supplied, the ref's vendor is the
-        //     base; `llm.vendor` can still override it but only when the yaml
-        //     also sets `llm.vendor` explicitly. Since we can't distinguish
-        //     "user set anthropic" from "defaulted to anthropic", the practical
-        //     rule is: ref vendor wins when a ref is present.
-        //   - Without a ref, the yaml vendor wins when `llm.model` is set
-        //     (user is picking a specific model, they own the vendor too);
-        //     otherwise fall back to the project default vendor.
-        let has_explicit_ref = pmi.as_ref().is_some_and(|m| m.is_explicit_ref);
-        let effective_vendor = if has_explicit_ref {
-            pmi.as_ref().map(|m| &m.vendor).unwrap_or(&self.llm.vendor)
-        } else if self.llm.model.is_some() {
-            &self.llm.vendor
-        } else {
-            pmi.as_ref().map(|m| &m.vendor).unwrap_or(&self.llm.vendor)
-        };
+        // Vendor precedence: explicit `llm.vendor` → ref's vendor → default.
+        //
+        // An explicitly-written `llm.vendor` always wins, including over a
+        // `ref`. That combination is the only way to inherit a config.yml
+        // model's managed `key_var` secret and `api_url` while overriding the
+        // wire protocol — needed for OpenAI-compatible gateways that serve
+        // `/chat/completions` but not `/responses` (LangDock and similar).
+        //
+        // This used to be unexpressible: `llm.vendor` was a defaulted
+        // `LlmVendor`, so "user wrote anthropic" and "field absent" were
+        // indistinguishable and the code conservatively let the ref's vendor
+        // win whenever a ref was present — silently ignoring the field its own
+        // docs said would override. `Option` makes the distinction real.
+        let effective_vendor =
+            resolve_vendor(self.llm.vendor.as_ref(), pmi.as_ref().map(|m| &m.vendor));
 
         // API key: YAML → project resolved key → vendor env var.
         let api_key = self
@@ -565,34 +614,34 @@ impl AgentConfig {
             .as_deref()
             .or(pmi.as_ref().and_then(|m| m.base_url.as_deref()));
 
-        // Azure fields from the project model config (not overridable per-state).
+        // Azure fields and custom headers come from the project model config
+        // (not overridable per-state).
         let azure_deployment_id = pmi.as_ref().and_then(|m| m.azure_deployment_id.as_deref());
         let azure_api_version = pmi.as_ref().and_then(|m| m.azure_api_version.as_deref());
+        let headers = pmi.as_ref().and_then(|m| m.headers.as_ref());
 
-        let client = build_llm_client(
-            effective_vendor,
-            &api_key,
-            &model,
-            effective_base_url,
+        let spec = LlmClientSpec {
+            vendor: effective_vendor,
+            api_key: &api_key,
+            model: &model,
+            base_url: effective_base_url,
             azure_deployment_id,
             azure_api_version,
-        );
+            headers,
+        };
+        let client = build_llm_client(spec);
 
         // Build per-state clients for states that declare a `model:` override.
-        // Inherits vendor / api_key / base_url / azure config from the global config.
+        // Inherits vendor / api_key / base_url / headers / azure from the global config.
         let state_clients: std::collections::HashMap<String, LlmClient> = self
             .states
             .iter()
             .filter_map(|(state_name, state_cfg)| {
                 state_cfg.model.as_deref().map(|state_model| {
-                    let c = build_llm_client(
-                        effective_vendor,
-                        &api_key,
-                        state_model,
-                        effective_base_url,
-                        azure_deployment_id,
-                        azure_api_version,
-                    );
+                    let c = build_llm_client(LlmClientSpec {
+                        model: state_model,
+                        ..spec
+                    });
                     (state_name.clone(), c)
                 })
             })
@@ -662,14 +711,10 @@ impl AgentConfig {
             solver = solver.with_global_thinking(thinking);
         }
         if let Some(ref override_model) = build_ctx.model_override {
-            let override_client = build_llm_client(
-                effective_vendor,
-                &api_key,
-                override_model,
-                effective_base_url,
-                azure_deployment_id,
-                azure_api_version,
-            );
+            let override_client = build_llm_client(LlmClientSpec {
+                model: override_model,
+                ..spec
+            });
             solver = solver.with_client_override(override_client);
         }
         // `with_client_override` already sets `extended_thinking_active = true`

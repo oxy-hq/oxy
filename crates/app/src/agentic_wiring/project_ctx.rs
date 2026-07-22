@@ -19,6 +19,9 @@ use agentic_pipeline::SharedMetricSink;
 use agentic_pipeline::platform::{MonitorScanPort, ProjectContext, ResolvedPipelineDestination};
 use async_trait::async_trait;
 use entity::workspace_members::WorkspaceRole;
+// Same trait the classic `.agent.yml` path uses to turn a `{ env_var: … }`
+// header reference into a literal, so both paths resolve headers identically.
+use oxy::adapters::openai::HeaderValueExt;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{DatabaseType, DuckDBOptions, IntegrationType, Model, SnowflakeAuthType};
 use oxy_shared::errors::OxyError;
@@ -1735,11 +1738,10 @@ async fn resolve_model_impl(
     has_explicit_model: bool,
     workspace_manager: &WorkspaceManager,
 ) -> Option<ResolvedModelInfo> {
-    let (name, is_explicit_ref) = if let Some(ref_name) = model_ref {
-        (ref_name, true)
+    let name = if let Some(ref_name) = model_ref {
+        ref_name
     } else if !has_explicit_model {
-        let n = workspace_manager.config_manager.default_model()?;
-        (n, false)
+        workspace_manager.config_manager.default_model()?
     } else {
         return None;
     };
@@ -1774,6 +1776,27 @@ async fn resolve_model_impl(
                         None,
                         None,
                     ),
+                    // Same Chat Completions wire protocol as Ollama, but with
+                    // `extra_api_key: None` so resolution falls through to
+                    // `key_var` below and picks up the managed workspace
+                    // secret. Ollama's inline `api_key` short-circuits that,
+                    // which is why it can't back a cloud-managed credential.
+                    Model::OpenAICompat { config: m } => {
+                        // Azure deployment routing is specific to Azure OpenAI
+                        // and isn't applied here; the fields exist only because
+                        // `OpenAIModelConfig` is shared with `vendor: openai`.
+                        // Warn rather than silently no-op — the likely way to
+                        // land here is copying an Azure model and flipping the
+                        // vendor, where a silent drop looks like it worked.
+                        if m.azure.is_some() {
+                            tracing::warn!(
+                                model = name,
+                                "azure_deployment_id / azure_api_version are ignored on an \
+                                 openai_compat model; use vendor: openai for Azure OpenAI"
+                            );
+                        }
+                        (LlmVendor::OpenAiCompat, m.api_url.clone(), None, None, None)
+                    }
                     Model::Google { .. } => {
                         tracing::warn!(
                             model = name,
@@ -1799,14 +1822,42 @@ async fn resolve_model_impl(
                 None
             };
 
+            // Custom headers, resolved here rather than in the agentic crate:
+            // a `{ env_var: … }` entry needs the secret store, which lives on
+            // this side of the boundary. Gateways like Portkey and Helicone
+            // authenticate on a header instead of the bearer token.
+            let headers = match model.headers() {
+                Some(map) if !map.is_empty() => {
+                    let mut resolved = HashMap::with_capacity(map.len());
+                    for (header_name, value) in map {
+                        match value.resolve(&workspace_manager.secrets_manager).await {
+                            Ok(v) => {
+                                resolved.insert(header_name.clone(), v);
+                            }
+                            // Skip rather than fail the whole model: a missing
+                            // header secret shouldn't make the agent
+                            // unresolvable, and the gateway's own error is far
+                            // more actionable than a config-load failure here.
+                            Err(e) => tracing::warn!(
+                                model = name,
+                                header = %header_name,
+                                "could not resolve header value, sending request without it: {e}"
+                            ),
+                        }
+                    }
+                    (!resolved.is_empty()).then_some(resolved)
+                }
+                _ => None,
+            };
+
             Some(ResolvedModelInfo {
                 model: model_name,
                 vendor,
                 api_key,
                 base_url,
-                is_explicit_ref,
                 azure_deployment_id,
                 azure_api_version,
+                headers,
             })
         }
         Err(e) => {

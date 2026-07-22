@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::pin::Pin;
 
 use async_stream::stream;
@@ -24,7 +25,15 @@ use super::{
 pub struct AnthropicProvider {
     api_key: String,
     model: String,
+    /// Root of the Anthropic API, e.g. `"https://api.anthropic.com/v1"`.
+    /// The `/messages` path is appended by [`Self::messages_url`], matching
+    /// `OpenAiProvider` (`/responses`) and `OpenAiCompatProvider`
+    /// (`/chat/completions`). All three therefore accept a model's `api_url`
+    /// verbatim, which is a root in every vendor's config.
     base_url: String,
+    /// Extra headers sent with every request, on top of the standard
+    /// `x-api-key` / `anthropic-version` / `content-type` set.
+    headers: HashMap<String, String>,
     client: reqwest::Client,
 }
 
@@ -34,24 +43,44 @@ impl AnthropicProvider {
         Self {
             api_key: api_key.into(),
             model: model.into(),
-            base_url: ANTHROPIC_API_URL.to_string(),
+            base_url: ANTHROPIC_BASE_URL.to_string(),
+            headers: HashMap::new(),
             client: build_llm_http_client(),
         }
     }
 
-    /// Create a provider with a custom base URL (primarily for tests).
-    #[cfg(test)]
+    /// Create a provider pointed at a custom endpoint.
+    ///
+    /// `base_url` is the **root** of the API, e.g.
+    /// `"https://api.anthropic.com/v1"` — `/messages` is appended. This is the
+    /// same shape a model's `api_url` carries in `config.yml`, so a value can
+    /// be passed straight through without normalisation.
     pub fn with_base_url(
         api_key: impl Into<String>,
         model: impl Into<String>,
         base_url: impl Into<String>,
     ) -> Self {
+        let mut base = base_url.into();
+        while base.ends_with('/') {
+            base.pop();
+        }
         Self {
             api_key: api_key.into(),
             model: model.into(),
-            base_url: base_url.into(),
+            base_url: base,
+            headers: HashMap::new(),
             client: build_llm_http_client(),
         }
+    }
+
+    fn messages_url(&self) -> String {
+        format!("{}/messages", self.base_url)
+    }
+
+    /// Attach extra request headers, already resolved to literal values.
+    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
+        self
     }
 
     fn block_to_wire(block: &ContentBlock) -> Value {
@@ -274,7 +303,7 @@ impl LlmProvider for AnthropicProvider {
 
         let mut req = self
             .client
-            .post(&self.base_url)
+            .post(self.messages_url())
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json");
@@ -285,6 +314,9 @@ impl LlmProvider for AnthropicProvider {
         // only need to know "is thinking on at all?".
         if !matches!(thinking, ThinkingConfig::Disabled) {
             req = req.header("anthropic-beta", ANTHROPIC_THINKING_BETA);
+        }
+        for (name, value) in &self.headers {
+            req = req.header(name, value);
         }
 
         let response = req.json(&body).send().await.map_err(send_error_to_llm)?;
@@ -536,5 +568,49 @@ impl LlmProvider for AnthropicProvider {
 
     fn model_name(&self) -> &str {
         &self.model
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_the_public_messages_endpoint() {
+        let p = AnthropicProvider::new("key", "claude-sonnet-5");
+        assert_eq!(p.messages_url(), "https://api.anthropic.com/v1/messages");
+        assert!(p.headers.is_empty());
+    }
+
+    /// Regression guard. `AnthropicModelConfig::api_url` is
+    /// `#[serde(default)]`-ed to the **root** `https://api.anthropic.com/v1`,
+    /// so an omitted `api_url` reaches `build_llm_client` as `Some(root)`, not
+    /// `None` — it always takes the `with_base_url` arm. While this provider
+    /// POSTed `base_url` verbatim that sent every default Anthropic agent to
+    /// `/v1` (404). Constructing from the config default must therefore land on
+    /// exactly the same URL as constructing with no override at all.
+    #[test]
+    fn config_default_root_matches_the_no_override_url() {
+        let from_config =
+            AnthropicProvider::with_base_url("key", "m", "https://api.anthropic.com/v1");
+        let from_default = AnthropicProvider::new("key", "m");
+        assert_eq!(from_config.messages_url(), from_default.messages_url());
+        assert_eq!(
+            from_config.messages_url(),
+            "https://api.anthropic.com/v1/messages"
+        );
+    }
+
+    #[test]
+    fn custom_root_gets_messages_appended() {
+        let p = AnthropicProvider::with_base_url("key", "m", "https://proxy.internal/v1//");
+        assert_eq!(p.messages_url(), "https://proxy.internal/v1/messages");
+    }
+
+    #[test]
+    fn custom_headers_are_stored() {
+        let p = AnthropicProvider::new("key", "m")
+            .with_headers(HashMap::from([("x-gw".to_string(), "1".to_string())]));
+        assert_eq!(p.headers["x-gw"], "1");
     }
 }

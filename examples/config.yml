@@ -129,6 +129,45 @@ models:
   #   azure_deployment_id: "SMART-Automated-gpt-4o"
   #   azure_api_version: "2024-08-01-preview"
   #   key_var: OPENAI_AZURE_KEY
+  # ── OpenAI-compatible gateways ─────────────────────────────────────────
+  # `openai_compat` calls {api_url}/chat/completions, where `openai` calls
+  # {api_url}/responses. Most gateways implement Chat Completions only, so
+  # pointing `vendor: openai` at one returns a 404 that looks like an auth
+  # failure. `api_url` is required — there is no default host for a gateway.
+  - name: langdock-o4-mini
+    vendor: openai_compat
+    model_ref: o4-mini
+    key_var: LANGDOCK_API_KEY
+    api_url: https://api.langdock.com/openai/eu/v1
+  - name: groq-llama3
+    vendor: openai_compat
+    model_ref: llama-3.3-70b-versatile
+    key_var: GROQ_API_KEY
+    api_url: https://api.groq.com/openai/v1
+  - name: litellm-proxy
+    vendor: openai_compat
+    model_ref: gpt-4.1
+    key_var: LITELLM_KEY
+    api_url: http://localhost:4000/v1
+  # Gateways that authenticate or route on their own header rather than the
+  # bearer token. Values are inline or pulled from a secret via `env_var`.
+  - name: portkey-gpt
+    vendor: openai_compat
+    model_ref: gpt-4.1
+    key_var: PORTKEY_API_KEY
+    api_url: https://api.portkey.ai/v1
+    headers:
+      x-portkey-provider: openai
+      x-portkey-virtual-key:
+        env_var: PORTKEY_VIRTUAL_KEY
+  # Anthropic-compatible proxy. `api_url` is the API root, same as the OpenAI
+  # vendors — Oxy appends /messages.
+  # - name: claude-via-proxy
+  #   vendor: anthropic
+  #   model_ref: claude-sonnet-4-6
+  #   key_var: ANTHROPIC_PROXY_KEY
+  #   api_url: https://proxy.internal/v1
+
   - name: llama3.2
     vendor: ollama
     model_ref: llama3.2:latest

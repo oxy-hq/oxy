@@ -1,0 +1,226 @@
+---
+title: "LLM gateways & proxies"
+---
+
+A *gateway* sits between Oxygen and a model provider — for cost control, key
+custody, failover, regional routing, or access to many models through one
+endpoint. Most expose an OpenAI-shaped API, so Oxygen talks to them through the
+`openai_compat` vendor.
+
+## The one thing that trips everyone up
+
+`vendor: openai` and `vendor: openai_compat` speak **different protocols**:
+
+| Vendor | Endpoint it calls |
+| --- | --- |
+| `openai` | `{api_url}/responses` — OpenAI's Responses API |
+| `openai_compat` | `{api_url}/chat/completions` — the de-facto standard |
+
+Nearly every gateway implements Chat Completions **only**. Pointing
+`vendor: openai` at one returns a **404** that reads like an outage or an auth
+problem but is neither — the path simply isn't there. If you see this, change
+the vendor, not the key:
+
+```json
+{"message":"Not found"}
+```
+
+## Quick start
+
+```yaml config.yml
+models:
+  - name: gateway-model
+    vendor: openai_compat
+    model_ref: <model id the gateway expects>
+    key_var: MY_GATEWAY_KEY          # name of a secret, not the key itself
+    api_url: https://gateway.example/v1
+```
+
+Store the value under **Settings → Secrets** with the name matching `key_var`
+exactly. On Oxygen Cloud the workspace secret store is the only source — a
+`.env` file is read in local mode only.
+
+`api_url` must be the **root** of the OpenAI-shaped API; Oxygen appends
+`/chat/completions`. It is required for `openai_compat` — there is no sensible
+default host for a gateway, and defaulting would silently send your traffic to
+OpenAI.
+
+Then point an agent at it:
+
+```yaml agents/analytics.agentic.yml
+llm:
+  ref: gateway-model
+```
+
+## Recipes
+
+<AccordionGroup>
+  <Accordion title="LiteLLM (self-hosted proxy)">
+    ```yaml
+    - name: litellm
+      vendor: openai_compat
+      model_ref: gpt-4.1          # whatever alias your LiteLLM config exposes
+      key_var: LITELLM_KEY        # your LiteLLM virtual key
+      api_url: http://litellm.internal:4000/v1
+    ```
+  </Accordion>
+
+  <Accordion title="OpenRouter">
+    ```yaml
+    - name: openrouter
+      vendor: openai_compat
+      model_ref: anthropic/claude-sonnet-5
+      key_var: OPENROUTER_API_KEY
+      api_url: https://openrouter.ai/api/v1
+    ```
+    Attribution headers (`HTTP-Referer`, `X-Title`) are optional — add them via
+    a `headers:` block if you want them.
+  </Accordion>
+
+  <Accordion title="Groq">
+    ```yaml
+    - name: groq
+      vendor: openai_compat
+      model_ref: llama-3.3-70b-versatile
+      key_var: GROQ_API_KEY
+      api_url: https://api.groq.com/openai/v1
+    ```
+  </Accordion>
+
+  <Accordion title="LangDock (EU-hosted)">
+    ```yaml
+    - name: langdock
+      vendor: openai_compat
+      model_ref: o4-mini
+      key_var: LANGDOCK_API_KEY
+      api_url: https://api.langdock.com/openai/eu/v1
+    ```
+  </Accordion>
+
+  <Accordion title="Together / Fireworks / DeepInfra / Cerebras / Mistral">
+    All follow the same shape — only `api_url` and `model_ref` change:
+    ```yaml
+    - name: together
+      vendor: openai_compat
+      model_ref: meta-llama/Llama-3.3-70B-Instruct-Turbo
+      key_var: TOGETHER_API_KEY
+      api_url: https://api.together.xyz/v1
+    ```
+  </Accordion>
+
+  <Accordion title="vLLM / LM Studio / Ollama (self-hosted)">
+    ```yaml
+    - name: local
+      vendor: openai_compat
+      model_ref: llama3.2
+      key_var: LOCAL_LLM_KEY      # any value; most local servers ignore auth
+      api_url: http://localhost:11434/v1
+    ```
+  </Accordion>
+
+  <Accordion title="Azure OpenAI (different — not openai_compat)">
+    Azure has its own deployment-scoped URL shape, so it stays on
+    `vendor: openai` with two extra fields:
+    ```yaml
+    - name: azure-gpt
+      vendor: openai
+      model_ref: gpt-4.1
+      key_var: AZURE_OPENAI_KEY
+      api_url: https://myresource.openai.azure.com
+      azure_deployment_id: my-deployment
+      azure_api_version: 2025-03-01-preview
+    ```
+    Oxygen builds the full
+    `/openai/deployments/{id}/chat/completions?api-version=…` URL for you.
+  </Accordion>
+</AccordionGroup>
+
+## Using a gateway without editing `config.yml`
+
+If a model is already defined as `vendor: openai`, an agentic agent can inherit
+its key and `api_url` while overriding only the protocol:
+
+```yaml analytics.agentic.yml
+llm:
+  ref: o4-mini             # inherits key_var secret + api_url
+  vendor: open_ai_compat   # ...but call /chat/completions
+```
+
+An explicitly-written `llm.vendor` always wins over the vendor implied by `ref`.
+
+<Warning>
+  This route inherits the referenced model's `api_url` **including its default**.
+  A `vendor: openai` model that omits `api_url` falls back to
+  `https://api.openai.com/v1`, so the override would send traffic to OpenAI over
+  Chat Completions. If you are using a gateway for data-residency reasons, make
+  sure the referenced model pins `api_url` — or define a proper
+  `openai_compat` model, which requires it.
+</Warning>
+
+## Gateways that need a custom header
+
+Some gateways authenticate or route on their own header rather than the bearer
+token. Add a `headers:` block — values can be inline or pulled from a secret:
+
+```yaml config.yml
+models:
+  - name: portkey
+    vendor: openai_compat
+    model_ref: gpt-4.1
+    key_var: PORTKEY_API_KEY
+    api_url: https://api.portkey.ai/v1
+    headers:
+      x-portkey-provider: openai
+      x-portkey-virtual-key:
+        env_var: PORTKEY_VIRTUAL_KEY   # resolved from Settings → Secrets
+```
+
+The same shape covers **Helicone** (`Helicone-Auth`), an authenticated
+**Cloudflare AI Gateway** (`cf-aig-authorization`), and OpenRouter's optional
+`HTTP-Referer` / `X-Title` attribution headers.
+
+Custom headers are sent *in addition to* the standard `content-type` and
+`Authorization` — they are not a way to replace them. A header whose secret
+can't be resolved is skipped with a warning rather than failing the run, so the
+gateway's own error surfaces instead of a config-load failure.
+
+## Anthropic-shaped gateways
+
+`vendor: anthropic` honours `api_url`, so an Anthropic-compatible proxy works
+directly:
+
+```yaml
+- name: claude-via-proxy
+  vendor: anthropic
+  model_ref: claude-sonnet-5
+  key_var: ANTHROPIC_PROXY_KEY
+  api_url: https://proxy.internal/v1
+```
+
+`api_url` is the **root**, consistent with the OpenAI vendors — Oxygen appends
+`/messages`, just as it appends `/responses` and `/chat/completions`. The
+default is `https://api.anthropic.com/v1`.
+
+## Not supported
+
+Gateways that don't expose an OpenAI-shaped API — **AWS Bedrock** (SigV4
+request signing) and **Vertex AI**'s native API — need a dedicated vendor.
+Vertex's OpenAI-compatible endpoint can work via `openai_compat`, but its access
+tokens are short-lived, so you'd have to refresh the secret.
+
+## Troubleshooting
+
+| Symptom | Cause |
+| --- | --- |
+| `404 {"message":"Not found"}` | `vendor: openai` against a Chat-Completions-only gateway. Switch to `openai_compat`. |
+| `You didn't provide an API key` | The `key_var` secret didn't resolve — check the secret name matches `key_var` exactly, and that it exists in *this* workspace. |
+| `Incorrect API key provided` | Key resolved, but the gateway rejected it. |
+| Works locally, fails on cloud | The key is in `.env`, which cloud doesn't read. Add it under Settings → Secrets. |
+| Traffic leaving your region | `api_url` unset or inherited from a model that defaults to `api.openai.com`. |
+
+## Testing a gateway setup
+
+`scripts/fake-llm-gateway/` in the Oxygen repo runs a local stand-in that 404s
+`/responses`, serves `/chat/completions`, and logs whether your key reached the
+`Authorization` header — useful for confirming a config before pointing it at a
+paid provider.

@@ -963,6 +963,10 @@ fn vendor_label_for_model(model: &oxy::config::model::Model) -> String {
         M::Anthropic { .. } => "Anthropic".to_string(),
         M::Google { .. } => "Google".to_string(),
         M::Ollama { .. } => "Ollama".to_string(),
+        // Label the credential, not the protocol — this string completes
+        // "Enter your ___ API key" in the onboarding prompt, and the user is
+        // holding a key for whichever gateway they pointed `api_url` at.
+        M::OpenAICompat { .. } => "OpenAI-compatible".to_string(),
     }
 }
 

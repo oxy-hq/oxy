@@ -1465,6 +1465,55 @@
               ]
             }
           }
+        },
+        {
+          "description": "An OpenAI-compatible gateway that speaks **Chat Completions** (`/chat/completions`) rather than the Responses API (`/responses`).\n\nDistinct from [`Model::OpenAI`] only in which wire protocol the agentic pipeline targets — third-party and EU-hosted gateways (LangDock, vLLM, LM Studio, most self-hosted proxies) implement Chat Completions only and return 404 on `/responses`.\n\nReuses [`OpenAIModelConfig`] so it inherits `key_var`, meaning the API key resolves through the managed workspace secret store like any other keyed vendor. [`Model::Ollama`] also targets Chat Completions but carries its key inline with no `key_var`, so it cannot bind a managed secret.",
+          "type": "object",
+          "required": [
+            "key_var",
+            "model_ref",
+            "name",
+            "vendor"
+          ],
+          "properties": {
+            "api_url": {
+              "default": "https://api.openai.com/v1",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "azure_api_version": {
+              "type": "string"
+            },
+            "azure_deployment_id": {
+              "type": "string"
+            },
+            "headers": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "$ref": "#/definitions/HeaderValue"
+              }
+            },
+            "key_var": {
+              "type": "string"
+            },
+            "model_ref": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "vendor": {
+              "type": "string",
+              "enum": [
+                "openai_compat"
+              ]
+            }
+          }
         }
       ]
     },

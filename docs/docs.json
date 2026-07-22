@@ -97,7 +97,8 @@
             "pages": [
               "build/connect-models/openai",
               "build/connect-models/anthropic",
-              "build/connect-models/gemini"
+              "build/connect-models/gemini",
+              "build/connect-models/gateways"
             ]
           },
           {
