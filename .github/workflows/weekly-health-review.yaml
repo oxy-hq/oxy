@@ -7,11 +7,12 @@
 #   Job 1 `review`  — a 6-dimension parallel matrix of READ-ONLY analyzers
 #                     (architecture / correctness / performance / security /
 #                     devex / ai-llm), each emitting file:line-cited findings.
-#   Job 2 `implement-and-pr` — synthesizes one prioritized P0→P4 report,
-#                     auto-implements ONLY the high-confidence low-risk subset
-#                     (compile-checked), applies the deterministic mechanical
-#                     fixes the old autofix bot did, and opens ONE PR for human
-#                     review. Never auto-merges.
+#   Job 2 `implement-and-pr` — synthesizes one prioritized P0→P4 report, then
+#                     implements a SUBSTANTIAL batch of the findings (clearly-
+#                     correct P0/P1 fixes plus the P3 refactor/DRY tier — biased
+#                     to act, since the PR runs full CI + human review and never
+#                     auto-merges), applies the deterministic mechanical fixes the
+#                     old autofix bot did, and opens ONE PR for human review.
 #
 # Safety rails learned from doing this by hand: scoped tool allowlists (no bare
 # Bash + secrets), per-job timeouts + --max-turns caps, SHA-pinned actions,
@@ -138,8 +139,9 @@ jobs:
     if: github.repository == 'oxy-hq/oxygen-internal' && !cancelled()
     runs-on: ubuntu-latest
     # Bound the whole implement + compile-check + PR loop. Generous because a
-    # cold cache pays for `cargo clippy --fix --workspace` on top of the agent.
-    timeout-minutes: 60
+    # cold cache pays for `cargo clippy --fix --workspace` on top of an agent that
+    # now lands a larger, refactor-inclusive changeset with tests.
+    timeout-minutes: 120
     permissions:
       contents: write
       pull-requests: write
@@ -235,23 +237,75 @@ jobs:
                  you changed in step B, and a "## Left for human triage" section
                  for everything you did NOT implement.
 
-            B) IMPLEMENT only the HIGH-CONFIDENCE, LOW-RISK subset. HARD RULES:
-               - Only safe, mechanical, or clearly-correct SMALL fixes — e.g. add
-                 a missing DB index migration, remove a stray debug log, batch an
-                 obvious N+1, add a missing timeout/retry, fix a doc, tighten an
-                 obvious validation, or the workspace-dependency consolidation the
-                 old autofix bot did (move deps used in ≥3 crates into
-                 [workspace.dependencies] as `{ workspace = true }`; never git
-                 deps; never change versions; preserve `optional = true`).
-               - NEVER attempt rearchitectures, crate splits, broad refactors,
-                 public API/signature changes, or anything spanning many files.
-               - Every change MUST keep the code compiling. After editing a crate,
-                 run `cargo check -p <that_crate>` (NOT the whole workspace, NOT
-                 --release, NOT nextest). Fix or fully REVERT anything that does
-                 not compile. If unsure whether a fix is safe, DO NOT make it —
-                 describe it in the report for humans instead.
-               - Respect every rule in CLAUDE.md and backend-architecture.md.
-               - Keep the TOTAL diff small and reviewable.
+            B) IMPLEMENT a SUBSTANTIAL batch of the findings — your default is to
+               FIX, not to defer. This PR is NEVER auto-merged: it runs the full
+               CI suite and a human reviews every line before anything lands. CI
+               and that reviewer are your safety net, so bias toward shipping the
+               change and letting them catch problems — NOT toward parking clearly-
+               correct work on a "human triage" list that in practice nobody ever
+               actions. A run that implements 2 of 23 findings has under-performed;
+               aim to land roughly 6–12 of them, spanning P1–P3.
+
+               TAKE THIS ON (previously deferred — now squarely IN scope):
+               - Clearly-correct P0/P1 code fixes: add a missing timeout/retry,
+                 honor a dropped `Retry-After`, batch an N+1, add an index
+                 migration, tighten a validation, fix a wrong comparison, default,
+                 or stale model id.
+               - The P3 refactor / DRY tier — de-duplicate copy-pasted logic,
+                 collapse a quadruplicated vocabulary into one canonical type, make
+                 a repeated drain loop generic, extract inline provisioning / OIDC /
+                 handler logic into a domain function. Multi-file refactors and
+                 function-signature changes WITHIN a crate are ALLOWED and
+                 encouraged when they kill real duplication or drift risk.
+               - The workspace-dependency consolidation the old autofix bot did:
+                 move deps used in ≥3 crates into [workspace.dependencies] as
+                 `{ workspace = true }` — never git deps, never version changes,
+                 preserve `optional = true`.
+               - Batch several related findings into one coherent change when that
+                 reads better than many tiny ones.
+
+               MAKE THE CALL: when a fix is clearly correct but you are "not 100%
+               sure a reviewer wouldn't want to weigh in," implement it and explain
+               your reasoning in the report — that judgment is exactly what you are
+               here to exercise. Deferring is reserved for the short deny-list
+               below, not for ordinary uncertainty.
+
+               ADD TESTS: for every non-trivial behavior change or refactor, add or
+               update a test in the same crate. Tests are what make a bold change
+               safe — for P1/P3 work they are not optional.
+
+               STILL LEAVE FOR HUMANS (keep this list SHORT — one line each in the
+               report saying why):
+               - Irreversible / destructive persisted-data changes: a migration
+                 that DROPS or rewrites an existing column, or a back-fill over live
+                 rows. (Additive migrations — a new index, a new nullable column —
+                 ARE fine and encouraged.)
+               - The cross-cutting authorization MODEL: anything that must go
+                 through oxy-authz's `allows()` match, or that re-scopes who-may-do-
+                 what across the data plane. A localized, well-tested security fix is
+                 fine; rewriting the auth/scoping model unattended is not.
+               - CI-workflow changes that alter permissions/secrets, or that you
+                 cannot even syntax-check here.
+               - Anything that would sweep hundreds of files or churn a public API
+                 the whole workspace depends on.
+
+               VERIFY: after editing a crate run `cargo check -p <that_crate>` (not
+               the whole workspace, not --release) and, if nextest is available,
+               `cargo nextest run -p <that_crate>` for the tests you touched; fix or
+               fully REVERT anything that fails. KNOWN SANDBOX LIMIT: this runner
+               often cannot fetch the private `airway-internal` git dependency, so
+               `cargo check` may fail at workspace resolution before any crate is
+               reached. If that happens, do NOT shrink your changeset — reason
+               carefully about compile-safety, make the change, note in the report
+               that local verification was unavailable, and rely on the PR's full CI
+               run + human review as the gate. Never trade away a good fix for the
+               inability to compile locally.
+
+               Respect every rule in CLAUDE.md and backend-architecture.md — the
+               agentic layering, the authz single-door, and the compile-boundary
+               rules are NOT what we are relaxing. Before you stop: if you have
+               implemented fewer than 5 findings, re-read this section — you are
+               almost certainly being too timid.
 
             CRITICAL branch hygiene: you are already on the correct branch. NEVER
             run `git checkout`, `git switch`, `git branch`, `git commit`,
@@ -260,8 +314,8 @@ jobs:
             not `cd` outside the repository. Just leave your edits uncommitted in
             the working tree and the report file written.
           claude_args: |
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(cargo check:*),Bash(cargo fmt:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*),Bash(ls:*),Bash(cat:*)"
-            --max-turns 80
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(cargo check:*),Bash(cargo clippy:*),Bash(cargo nextest run:*),Bash(cargo fmt:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*),Bash(ls:*),Bash(cat:*)"
+            --max-turns 160
             --model claude-opus-4-8
 
       # Deterministic mechanical cleanup carried over from the old autofix bot.

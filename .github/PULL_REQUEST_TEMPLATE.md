@@ -1,21 +1,18 @@
 <!-- markdownlint-disable MD041 -->
+<!-- Keep it short. These headings are a scaffold to fill in, not a form to pad —
+     delete any section that doesn't apply. -->
 
-<!-- Remove any sections that are not relevant. If you are not sure about any section, please ask.
-Otherwise, please fill out the sections below. -->
+## What & why
 
-## Description
+<!-- What this changes and the reason for it. Link the issue/thread. 1–3 sentences. -->
 
-## How Has This Been Tested?
+## Testing
 
-### Test Plan
+<!-- How you verified it: commands run, cases covered, or why no test is needed. -->
 
-## Checklist
+## Notes for reviewers
 
-- [x] My code follows the style guidelines of this project
-- [x] I have performed a self-review of my own code
-- [x] I have commented my code, particularly in hard-to-understand areas
-- [x] I have made corresponding changes to the documentation
-- [x] My changes generate no new warnings
-- [x] I have added tests that prove my fix is effective or that my feature works
-- [x] New and existing unit tests pass locally with my changes
-- [ ] **Positioning carried over verbatim** — required if this PR deletes a landing/homepage doc or touches more than ~50 files: homepage / positioning / tagline copy was ported verbatim from the prior file, not regenerated. (N/A otherwise.)
+<!-- Optional: risky areas, trade-offs, or follow-ups. Delete if there's nothing to flag. -->
+
+<!-- Required ONLY if this PR deletes a landing/homepage doc or touches >~50 files — delete otherwise. -->
+- [ ] Homepage / positioning / tagline copy was carried over **verbatim**, not regenerated.
