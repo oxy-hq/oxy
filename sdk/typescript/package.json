@@ -80,7 +80,7 @@
   },
   "homepage": "https://oxygen-hq.com",
   "dependencies": {
-    "@radix-ui/react-tooltip": "^1.2.11"
+    "@radix-ui/react-tooltip": "^1.2.13"
   },
   "peerDependencies": {
     "echarts": "^5.5.0 || ^6.0.0",
@@ -112,7 +112,7 @@
     "eslint": "^10.7.0",
     "preact": "^10.29.7",
     "preact-render-to-string": "^6.7.0",
-    "react": "^19.2.7",
+    "react": "^19.2.8",
     "tsdown": "^0.22.8",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
