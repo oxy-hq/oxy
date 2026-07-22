@@ -54,9 +54,24 @@ def workspace_member_names() -> list[str]:
     return names
 
 
+# Release tags are plain semver like "0.5.107" (mirrors cliff.toml `tag_pattern`).
+# This repo also carries unrelated tag schemes — the SDK packages tag as
+# "sdk/v2.4.0", "create-oxy-app/v0.2.0", "vite-plugin/v1.0.0" — so a bare
+# `git describe --tags` returns whichever tag of ANY scheme is closest to HEAD
+# and then crashes below parsing e.g. "sdk/v2.4.0" as a version. Restrict the
+# match to release tags so the SDK / create-oxy-app tags are ignored.
+RELEASE_TAG_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+
 try:
-    latest_tag = run(["git", "describe", "--tags", "--abbrev=0"])
+    latest_tag = run(
+        ["git", "describe", "--tags", "--abbrev=0", "--match", "[0-9]*.[0-9]*.[0-9]*"]
+    )
 except subprocess.CalledProcessError:
+    latest_tag = "0.0.0"
+
+# The --match glob is fnmatch, not an anchored regex, so validate the result and
+# fall back rather than crash if anything unexpected slips through.
+if not RELEASE_TAG_RE.match(latest_tag):
     latest_tag = "0.0.0"
 
 try:
@@ -66,7 +81,7 @@ try:
 except subprocess.CalledProcessError:
     commits = []
 
-major, minor, patch = map(int, latest_tag.lstrip("v").split("."))
+major, minor, patch = (int(x) for x in RELEASE_TAG_RE.match(latest_tag).groups())
 
 if major == 0:
     # Pre-1.0: always bump patch only
