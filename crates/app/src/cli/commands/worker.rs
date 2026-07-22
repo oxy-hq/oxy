@@ -181,10 +181,37 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
         "worker: shutdown signal received, cancelling outstanding tasks"
     );
     println!("{}", "Oxy worker shutting down".text());
+
+    // Close the claim path before anything else. The release below flips rows
+    // `claimed -> queued`, which fires the queue's NOTIFY trigger and wakes
+    // this process's own workers; without this gate they re-claim what we just
+    // released and the process exits holding it with the budget charged.
+    agentic_runtime::transport::begin_shutdown();
+
     shutdown.cancel();
     recovery_alive.store(false, std::sync::atomic::Ordering::Relaxed);
 
     drain_background(recovery_handle, health_handle).await;
+
+    // Give back every durable-queue claim this process holds so a successor
+    // can pick the work up immediately, budget-neutral. Placed after the
+    // background drain (the recovery loop and health server are joined there)
+    // and before `drop(runtime)`, which drops the DB connection the release
+    // needs.
+    //
+    // `drain_background` is not a barrier on task *execution* — it waits on
+    // the recovery loop and the health server, neither of which runs queued
+    // tasks. The guarantee that matters is the `begin_shutdown` above: no new
+    // claims from here on. A task still finishing when its row returns to
+    // `queued` is handled by the driver-lease CAS and the heartbeat's
+    // ownership predicate, not by ordering here.
+    //
+    // Deliberately NOT `worker_id` (that's `compute_worker_id()`, a
+    // display-only `{host}@{pid}` string used for logs/health/metrics).
+    // Actual queue claims are written by `DurableTransport` under the process
+    // worker identity (`{env}·{host}·{short}`) — the two ids differ, and
+    // releasing against the wrong one silently matches zero rows.
+    release_queue_claims(&runtime.db).await;
 
     // Dropping `runtime` releases router + background-job handles.
     drop(runtime);
@@ -228,6 +255,129 @@ async fn drain_background(recovery_handle: JoinHandle<()>, health_handle: Option
             Ok(Ok(())) => tracing::info!("worker: health server drained cleanly"),
             Ok(Err(e)) => tracing::warn!(error = ?e, "worker: health server join failed"),
             Err(_) => tracing::warn!("worker: health server did not drain within 5s; abandoning"),
+        }
+    }
+}
+
+/// How long [`release_queue_claims`] waits for the database before giving up.
+///
+/// Matches `oxy serve`'s `SHUTDOWN_HOOK_TIMEOUT` and for the same reason: a
+/// *wedged* database (a down one fails fast) must never be why this pod
+/// outlives its Kubernetes termination grace period and gets SIGKILLed —
+/// which would skip the release entirely, the opposite of what it is for.
+/// There are no `connect_timeout` / `acquire_timeout` overrides on the shared
+/// pool, so without this bound the wait really is unbounded.
+///
+/// **One budget for the whole sequence, not one per call.** `recovery.rs`'s
+/// `spawn_shutdown_hook` gets this for free — its mark-then-drain sequence
+/// sits inside the *outer* `SHUTDOWN_HOOK_TIMEOUT` that already wraps the
+/// whole hook body. `release_queue_claims` has no such outer bound (it is
+/// awaited directly from `run_worker`, not spawned-and-timed the way the HTTP
+/// hook is), so it wraps the mark + drain pair in a single
+/// `RELEASE_CLAIMS_TIMEOUT` itself. Timing each call separately would let
+/// worst-case shutdown take up to 20s — double what this constant documents
+/// and promises the Kubernetes termination grace period.
+const RELEASE_CLAIMS_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Release every durable-queue claim this process holds back to the queue,
+/// budget-neutral (`claim_count` is decremented, not charged) — the
+/// standalone-worker counterpart to `oxy serve`'s `spawn_shutdown_hook`. A
+/// rolling deploy evicts exactly this process, so a bounced task must not
+/// exhaust `max_claims` and dead-letter despite never failing.
+///
+/// **This is forward-looking wiring today.** The standalone `oxy worker`
+/// claims nothing yet — its `tick_once` only runs the reaper, and the file's
+/// TODO above still has it relying on the HTTP node to drive runs — so in the
+/// current shape the drain returns `Ok(0)` every time. It is here so the
+/// release exists the moment the worker starts claiming, rather than being an
+/// easily forgotten follow-up on the eviction path.
+///
+/// Best-effort and bounded: an error or a timeout degrades to the pre-existing
+/// behaviour (the reaper reclaims the claim once its visibility timeout
+/// expires), never a failed or hung shutdown.
+async fn release_queue_claims(db: &sea_orm::DatabaseConnection) {
+    // Lazily minted, so asking for the id unconditionally would forge a fresh
+    // one in a process that never built a `DurableTransport` and issue a
+    // guaranteed-zero-row UPDATE against a database that may be exactly what
+    // is making shutdown slow. `None` means this process never claimed.
+    let Some(worker_id) = agentic_runtime::transport::process_worker_id_if_initialized() else {
+        return;
+    };
+
+    // Tracks how far the sequence got, so a timeout can report "marked but
+    // not drained" rather than a generic "something timed out" — an operator
+    // reading the log needs to know whether the orphaned-root marking landed
+    // before the DB went unresponsive.
+    let mut marked_roots = false;
+
+    let sequence = async {
+        // Order matters: `mark_released_roots_global` matches on this
+        // worker's `worker_id` + `queue_status = 'claimed'`, and the drain
+        // below clears both. Run it first so an orphaned workflow/airway root
+        // becomes visible to the global claim path instead of waiting for a
+        // process restart — see `mark_released_roots_global`'s doc comment
+        // for why this is gated to `workflow`/`airway` and roots only.
+        match agentic_runtime::crud::mark_released_roots_global(db, worker_id).await {
+            Ok(0) => {}
+            Ok(marked) => tracing::info!(
+                target: "worker.recovery",
+                marked,
+                worker_id,
+                "graceful shutdown: made orphaned roots globally recoverable"
+            ),
+            Err(e) => tracing::warn!(
+                target: "worker.recovery",
+                error = %e,
+                worker_id,
+                "graceful shutdown: failed to mark roots global"
+            ),
+        }
+        marked_roots = true;
+
+        // Drained rather than released once: a claim in flight when the
+        // shutdown gate closed can land after the first pass. Bounded at 3
+        // passes, stopping on the first empty one.
+        match agentic_runtime::crud::drain_claims_for_worker(db, worker_id).await {
+            Ok(0) => {}
+            Ok(released) => tracing::info!(
+                target: "worker.recovery",
+                released,
+                worker_id,
+                "graceful shutdown: released claims back to the queue"
+            ),
+            Err(e) => tracing::warn!(
+                target: "worker.recovery",
+                error = %e,
+                worker_id,
+                "graceful shutdown: failed to release claims; the reaper will \
+                 reclaim them after the visibility timeout"
+            ),
+        }
+    };
+
+    if tokio::time::timeout(RELEASE_CLAIMS_TIMEOUT, sequence)
+        .await
+        .is_err()
+    {
+        if marked_roots {
+            tracing::warn!(
+                target: "worker.recovery",
+                timeout_secs = RELEASE_CLAIMS_TIMEOUT.as_secs(),
+                worker_id,
+                "graceful shutdown: timed out draining claims after marking \
+                 roots global; undrained claims will be reclaimed by the \
+                 reaper after the visibility timeout"
+            );
+        } else {
+            tracing::warn!(
+                target: "worker.recovery",
+                timeout_secs = RELEASE_CLAIMS_TIMEOUT.as_secs(),
+                worker_id,
+                "graceful shutdown: timed out before marking roots global; \
+                 neither the mark nor the drain ran to completion — orphaned \
+                 roots stay scoped and claims stay held until the next \
+                 recovery pass or the reaper's visibility timeout"
+            );
         }
     }
 }
@@ -302,7 +452,7 @@ async fn tick_once(
     }
     let transport =
         agentic_runtime::transport::DurableTransport::with_router(db.clone(), router.clone(), None);
-    let reaped = transport.run_reaper().await;
+    let reaped = transport.run_reaper().await.total();
     if reaped > 0 {
         tracing::info!(
             target: "worker.recovery",

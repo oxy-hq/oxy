@@ -1,9 +1,8 @@
 //! Durable task queue backing the coordinator/worker pipeline.
 
-use sea_orm::{
-    ActiveValue::*, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, QueryOrder,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use sea_orm::{ActiveValue::*, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait};
 
 use crate::lifecycle::crud::now;
 use crate::orchestrator::entity::task_queue;
@@ -81,8 +80,8 @@ pub async fn enqueue_task(
     Ok(())
 }
 
-/// Atomically claim the oldest queued task **that no co-located scoped
-/// coordinator owns** (`scope_owned = false`). Returns `None` if no such
+/// Atomically claim the oldest queued **root** task that no co-located
+/// scoped coordinator owns (`scope_owned = false`). Returns `None` if no such
 /// task is available. Uses `FOR UPDATE SKIP LOCKED` to avoid contention
 /// between concurrent workers.
 ///
@@ -92,6 +91,13 @@ pub async fn enqueue_task(
 /// coordinator that owns its tree — those rows are stamped `scope_owned =
 /// true` at enqueue (see [`TaskScope`]) and are claimed only via
 /// [`claim_task_under_root`], which deliberately ignores `scope_owned`.
+///
+/// Only **root** tasks (`parent_task_id IS NULL`) are eligible. A descendant
+/// claimed in isolation routes its outcome to whichever coordinator holds the
+/// transport, whose in-memory task map does not contain it — `handle_done`
+/// early-returns and the result is silently dropped, leaving the queue row
+/// `completed`, the run `delegating`, and the parent waiting forever. Subtrees
+/// are recovered by re-driving their root; see [`claim_task_under_root`].
 pub async fn claim_task(
     db: &DatabaseConnection,
     worker_id: &str,
@@ -111,6 +117,7 @@ pub async fn claim_task(
             SELECT task_id FROM agentic_task_queue \
             WHERE queue_status = 'queued' \
               AND scope_owned = false \
+              AND parent_task_id IS NULL \
             ORDER BY created_at \
             LIMIT 1 \
             FOR UPDATE SKIP LOCKED \
@@ -181,40 +188,173 @@ pub async fn get_queue_entry(
     task_queue::Entity::find_by_id(task_id).one(db).await
 }
 
-/// Update the heartbeat timestamp for a claimed task.
-pub async fn update_queue_heartbeat(db: &DatabaseConnection, task_id: &str) -> Result<(), DbErr> {
-    let model = task_queue::ActiveModel {
-        task_id: Set(task_id.to_string()),
-        last_heartbeat: Set(Some(now())),
-        updated_at: Set(now()),
-        ..Default::default()
-    };
-    task_queue::Entity::update(model).exec(db).await?;
-    Ok(())
+/// Refresh the heartbeat on a task **this worker still holds**.
+///
+/// The `worker_id = $2 AND queue_status = 'claimed'` predicate is
+/// load-bearing, not defensive. The heartbeat ticker is cancelled only when
+/// `handle_task` returns (see `orchestrator/worker.rs`), so a tick can land
+/// *after* graceful shutdown has already handed this process's claims back to
+/// the queue via [`release_claims_for_worker`]. An unconditional UPDATE by
+/// primary key would then either:
+///
+/// - re-stamp `last_heartbeat` on a row that is now `queued`, recreating the
+///   "queued row carrying a dead owner's heartbeat" state that the reaper's
+///   requeue path deliberately clears; or, worse,
+/// - stamp a heartbeat onto a **successor's** claim if a peer already
+///   re-claimed the row — masking that peer's death from the reaper for as
+///   long as this process lives.
+///
+/// Returns `true` if the row was stamped, `false` if this worker no longer
+/// owns it. A `false` is not an error: it is the normal outcome of a
+/// heartbeat racing shutdown, and callers should simply stop ticking.
+pub async fn update_queue_heartbeat(
+    db: &DatabaseConnection,
+    task_id: &str,
+    worker_id: &str,
+) -> Result<bool, DbErr> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE agentic_task_queue \
+             SET last_heartbeat = now(), updated_at = now() \
+             WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed'",
+            [task_id.into(), worker_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected() > 0)
 }
 
-/// Mark a claimed task as completed.
-pub async fn complete_queue_task(db: &DatabaseConnection, task_id: &str) -> Result<(), DbErr> {
-    let model = task_queue::ActiveModel {
-        task_id: Set(task_id.to_string()),
-        queue_status: Set("completed".to_string()),
-        updated_at: Set(now()),
-        ..Default::default()
-    };
-    task_queue::Entity::update(model).exec(db).await?;
-    Ok(())
+/// What an ownership-scoped terminal write actually did.
+///
+/// A plain `bool` conflated four genuinely different situations, and the one
+/// that matters operationally — "a peer owns this row, so this process's work
+/// is orphaned" — is the *rarest* of them. Callers that logged every `false`
+/// as a lost claim warned on two routine, entirely healthy paths (an ordinary
+/// user cancel, and any externally-driven root task), which is how a warning
+/// stops being read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalWrite {
+    /// The row was live and owned by this worker; it now carries the requested
+    /// status. The overwhelmingly common case.
+    Stamped,
+    /// The row is **already terminal and still owned by this worker** — most
+    /// often because the requester cancelled it (`cancel_queued_task` leaves
+    /// `worker_id` in place) a moment before the worker reported its own
+    /// outcome. The first terminal status wins and this write is a no-op.
+    /// Nothing is wrong and nothing is lost.
+    AlreadyTerminal,
+    /// No queue row exists for this task at all. Normal for root tasks
+    /// registered via `Coordinator::register_root`, which publishes no
+    /// assignment and therefore no queue row — every interactive
+    /// analytics/builder run reports its outcome this way.
+    NoRow,
+    /// A **different** worker holds the row. This is the hazard the ownership
+    /// predicate exists for: this process's outcome is being discarded by the
+    /// queue, and it is the only variant worth a warning.
+    NotOwned,
 }
 
-/// Mark a claimed task as failed.
-pub async fn fail_queue_task(db: &DatabaseConnection, task_id: &str) -> Result<(), DbErr> {
-    let model = task_queue::ActiveModel {
-        task_id: Set(task_id.to_string()),
-        queue_status: Set("failed".to_string()),
-        updated_at: Set(now()),
-        ..Default::default()
+/// Stamp a terminal `queue_status` on a task **this worker still holds**.
+///
+/// The `worker_id = $2` predicate is the same ownership guard
+/// [`update_queue_heartbeat`] carries, and it exists for the same reason —
+/// only sharper here, because a terminal status is not self-correcting the way
+/// a stale heartbeat is.
+///
+/// Graceful shutdown fires cancel tokens fire-and-forget and then immediately
+/// hands this process's claims back via [`release_claims_for_worker`], whose
+/// `claimed -> queued` transition NOTIFYs surviving peers. A peer can therefore
+/// re-claim the row within milliseconds — that immediacy is the whole point of
+/// the design — while this process's task is still winding down (an in-flight
+/// LLM call can take seconds to observe the cancel). When it finally reports
+/// its outcome, an UPDATE by primary key would stamp `completed`/`failed`/
+/// `cancelled` onto **the peer's live claim**. The peer then executes a task
+/// whose queue row is terminal, and if the peer dies the reaper skips it
+/// (terminal rows are not reaped), so the task is never requeued and its parent
+/// coordinator waits forever.
+///
+/// The `queue_status IN ('queued', 'claimed')` guard makes the **first**
+/// terminal status win: a user cancel followed by the worker's own `Failed`
+/// leaves the row `cancelled` rather than flipping to `failed` and then to
+/// `completed` depending on arrival order. See [`TerminalWrite`] for how the
+/// resulting no-op is distinguished from a genuinely lost claim — that
+/// distinction is the whole reason this returns an enum and not a `bool`.
+///
+/// Generic over the connection so it can run inside a caller's transaction —
+/// `agentic-automation`'s decision commit stamps the decision task's row in
+/// the same transaction as the run-state patch, and must roll the whole thing
+/// back on [`TerminalWrite::NotOwned`].
+pub async fn set_terminal_status_owned<C: ConnectionTrait>(
+    conn: &C,
+    task_id: &str,
+    worker_id: &str,
+    status: &str,
+) -> Result<TerminalWrite, DbErr> {
+    use sea_orm::{DatabaseBackend, Statement};
+    let res = conn
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE agentic_task_queue SET queue_status = $3, updated_at = now() \
+             WHERE task_id = $1 AND worker_id = $2 \
+               AND queue_status IN ('queued', 'claimed')",
+            [task_id.into(), worker_id.into(), status.into()],
+        ))
+        .await?;
+    if res.rows_affected() > 0 {
+        return Ok(TerminalWrite::Stamped);
+    }
+    classify_terminal_miss(conn, task_id, worker_id).await
+}
+
+/// Work out *why* a terminal write matched nothing. Only ever runs on the miss
+/// path, so the extra round-trip costs nothing in the common case.
+async fn classify_terminal_miss<C: ConnectionTrait>(
+    conn: &C,
+    task_id: &str,
+    worker_id: &str,
+) -> Result<TerminalWrite, DbErr> {
+    use sea_orm::{DatabaseBackend, Statement};
+    let row = conn
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT worker_id FROM agentic_task_queue WHERE task_id = $1",
+            [task_id.into()],
+        ))
+        .await?;
+    let Some(row) = row else {
+        return Ok(TerminalWrite::NoRow);
     };
-    task_queue::Entity::update(model).exec(db).await?;
-    Ok(())
+    let owner: Option<String> = row.try_get("", "worker_id")?;
+    // We still own it, so the UPDATE can only have been blocked by the status
+    // guard — the row is already terminal.
+    if owner.as_deref() == Some(worker_id) {
+        Ok(TerminalWrite::AlreadyTerminal)
+    } else {
+        Ok(TerminalWrite::NotOwned)
+    }
+}
+
+/// Mark a task **this worker holds** as completed. See
+/// [`set_terminal_status_owned`] for why the ownership predicate is
+/// load-bearing and what each [`TerminalWrite`] means.
+pub async fn complete_queue_task(
+    db: &DatabaseConnection,
+    task_id: &str,
+    worker_id: &str,
+) -> Result<TerminalWrite, DbErr> {
+    set_terminal_status_owned(db, task_id, worker_id, "completed").await
+}
+
+/// Mark a task **this worker holds** as failed. See
+/// [`set_terminal_status_owned`] for why the ownership predicate is
+/// load-bearing and what each [`TerminalWrite`] means.
+pub async fn fail_queue_task(
+    db: &DatabaseConnection,
+    task_id: &str,
+    worker_id: &str,
+) -> Result<TerminalWrite, DbErr> {
+    set_terminal_status_owned(db, task_id, worker_id, "failed").await
 }
 
 /// Re-enqueue a task that was previously claimed or failed. Resets queue_status
@@ -299,7 +439,60 @@ pub async fn mark_task_global(db: &DatabaseConnection, task_id: &str) -> Result<
     Ok(res.rows_affected())
 }
 
-/// Cancel a queued (not yet claimed) task.
+/// After [`release_claims_for_worker`], make the released **roots** eligible
+/// for the global recovery path by clearing `scope_owned`.
+///
+/// Scoped rows are otherwise invisible to `claim_task` and excluded from
+/// `find_stuck_runs`, so an orphan waits for a process restart. Clearing the
+/// flag lets `find_pending_global_runs` select the root for
+/// `recover_single_run`, which rebuilds a scoped transport and re-adopts the
+/// whole subtree via [`claim_task_under_root`].
+///
+/// **Gated to `workflow` / `airway` on purpose.** Recovery re-executes the
+/// interrupted unit from scratch. For automation/airway that is one step; for
+/// an agent run it is a full turn, i.e. duplicate LLM calls. This mirrors the
+/// `source_type` filter in `find_stuck_runs`. Agent runs stay stranded until
+/// restart — the existing, deliberate trade.
+///
+/// Only roots are touched (`parent_task_id IS NULL`): a descendant claimed in
+/// isolation has its outcome dropped. See [`claim_task`].
+///
+/// Matches on the task row's `worker_id` + `queue_status = 'claimed'`, so
+/// this must run **before** [`release_claims_for_worker`] clears both —
+/// order is not incidental.
+///
+/// Returns the number of roots made eligible.
+pub async fn mark_released_roots_global(
+    db: &DatabaseConnection,
+    worker_id: &str,
+) -> Result<u64, DbErr> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE agentic_task_queue q \
+             SET scope_owned = false, updated_at = now() \
+             FROM agentic_runs r \
+             WHERE q.run_id = r.id \
+               AND q.worker_id = $1 \
+               AND q.queue_status = 'claimed' \
+               AND q.parent_task_id IS NULL \
+               AND q.scope_owned = true \
+               AND r.source_type IN ('workflow', 'airway')",
+            [worker_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected())
+}
+
+/// Cancel a live (`queued` or `claimed`) task **on someone else's behalf**.
+///
+/// This is the *requester* side of cancellation — `CoordinatorTransport::cancel`
+/// and `cancel_subtree`, reached from a user pressing Stop or a parent tearing
+/// down a subtree. The caller holds no claim on the row (the worker executing it
+/// may not even be in this process), so an ownership predicate would break it.
+/// Deliberately **not** used by the worker's own outcome path; that one must be
+/// ownership-scoped — see [`cancel_queued_task_owned`].
 pub async fn cancel_queued_task(db: &DatabaseConnection, task_id: &str) -> Result<(), DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     db.execute(Statement::from_sql_and_values(
@@ -312,33 +505,158 @@ pub async fn cancel_queued_task(db: &DatabaseConnection, task_id: &str) -> Resul
     Ok(())
 }
 
+/// Cancel a task **this worker holds**, reporting its own `Cancelled` outcome.
+///
+/// The ownership-scoped counterpart to [`cancel_queued_task`]: the status guard
+/// alone is not enough on this path, because after graceful release the row can
+/// legitimately be `claimed` again — by a *peer*. See
+/// [`set_terminal_status_owned`] for the full failure mode.
+///
+/// This is [`set_terminal_status_owned`] with `status = "cancelled"` and
+/// nothing else. It reads as its own function because the *call site* is the
+/// thing worth naming (the worker's own outcome path, as opposed to the
+/// requester-side [`cancel_queued_task`]), but the SQL must not diverge:
+/// the ordinary sequence is "requester stamps `cancelled`, then the worker
+/// reports `Cancelled` a beat later", and any extra predicate here turns that
+/// entirely healthy handshake into a spurious miss on every user-pressed Stop.
+pub async fn cancel_queued_task_owned(
+    db: &DatabaseConnection,
+    task_id: &str,
+    worker_id: &str,
+) -> Result<TerminalWrite, DbErr> {
+    set_terminal_status_owned(db, task_id, worker_id, "cancelled").await
+}
+
+/// A task this reaper cycle moved to `dead`, captured **as it was while still
+/// claimed** — the dying worker's id is the whole point, and dead-lettering
+/// nulls `worker_id` out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeadTask {
+    pub task_id: String,
+    pub run_id: String,
+    /// The worker that held the claim when it was reaped. `None` only for a
+    /// row that was somehow `claimed` with no owner — itself worth seeing.
+    pub worker_id: Option<String>,
+}
+
+/// What a reaper cycle did. Kept split because a requeue is routine churn
+/// while a dead-letter is data leaving the pipeline — conflating them (as the
+/// previous `u64` return did) made the dead-letter rate invisible in logs and
+/// metrics.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReapOutcome {
+    /// Stale claims returned to `queued` for another worker to pick up.
+    pub requeued: u64,
+    /// Claims that exhausted `max_claims` and were moved to `dead`.
+    pub dead_lettered: u64,
+    /// Identity of each row moved to `dead` this cycle.
+    ///
+    /// Production reads this only inside [`reap_stale_tasks`], which emits the
+    /// per-row `warn!` before returning; no caller consumes it today. It is
+    /// carried on the outcome anyway because it is the **only** assertion
+    /// surface for that log line — the worker id appears nowhere else, and
+    /// without it a regression that silently logs `worker_id = <none>` (which
+    /// is exactly what the first cut of this code shipped) is invisible to
+    /// every test. Requeues deliberately stay aggregate: they are routine and
+    /// would flood a 30s loop.
+    pub dead_tasks: Vec<DeadTask>,
+}
+
+impl ReapOutcome {
+    /// Rows touched in total. Use only for "did anything happen" checks —
+    /// prefer the split fields for logging and metrics.
+    pub fn total(&self) -> u64 {
+        self.requeued + self.dead_lettered
+    }
+}
+
+/// Monotonic reap-event counters, read by `oxy-app`'s metrics endpoint
+/// (`/metrics`, `oxy worker --health-port`).
+///
+/// Incremented inside [`reap_stale_tasks`] itself, not by any one caller.
+/// This function is the single choke point every reap path funnels
+/// through: the periodic `orchestrator::background::run_reaper_cycle` loop,
+/// and — via `DurableTransport::run_reaper` — the `oxy worker` startup
+/// pre-pass, the admin `/run-reaper` handler, and pipeline recovery.
+/// Counting one call further up the stack (as a previous version of this
+/// code did, in `run_reaper_cycle`) silently missed the other three;
+/// counting here is correct by construction for all of them.
+///
+/// They live in `crud` rather than `background` on purpose: `background`
+/// already depends on `crud` (it calls [`reap_stale_tasks`]), and a static
+/// referenced from both directions would invert that — `crud` is the lower
+/// layer, so the statics belong here and `background` (and everyone else)
+/// reads them from this module.
+pub static TASKS_REQUEUED: AtomicU64 = AtomicU64::new(0);
+/// See [`TASKS_REQUEUED`] — same rationale, counts dead-letters instead of
+/// requeues.
+pub static TASKS_DEAD_LETTERED: AtomicU64 = AtomicU64::new(0);
+
 /// Reap stale claimed tasks whose heartbeat has expired past their
 /// visibility timeout. Tasks that have exceeded `max_claims` are
 /// dead-lettered instead of re-queued.
-///
-/// Returns the number of tasks affected.
-pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<u64, DbErr> {
-    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<ReapOutcome, DbErr> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
+
+    // Both statements run in one transaction so a failure of either leaves
+    // *neither* applied. Without it, a dead-letter UPDATE that autocommits
+    // followed by a failing requeue returns `Err` before `ReapOutcome` is
+    // built, so the caller's `Err` arm never increments
+    // `oxy_tasks_dead_lettered_total` — and those rows are now `'dead'`, so
+    // no later cycle re-matches `queue_status = 'claimed'` to count them.
+    // The batch would be permanently missing from the metric. Atomicity means
+    // the retry on the next tick re-does and re-counts the whole cycle.
+    let txn = db.begin().await?;
 
     // Dead-letter tasks that have been claimed too many times.
-    let dead = db
-        .execute(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "UPDATE agentic_task_queue \
-             SET queue_status = 'dead', worker_id = NULL, claimed_at = NULL, updated_at = now() \
+    //
+    // The identity of the dying row is captured in a CTE *before* the update
+    // rather than by a plain `RETURNING`, because Postgres `RETURNING`
+    // reflects the row's **post-update** state: with `SET worker_id = NULL`
+    // in the same statement, `RETURNING worker_id` yields NULL, silently
+    // reducing the whole point of this log line to `worker_id = <none>`.
+    // The `FOR UPDATE` both locks the doomed rows for the update that follows
+    // and forces the CTE to materialize; it also re-checks the predicate
+    // against the latest row version, so a task whose worker heartbeats
+    // concurrently drops out of the batch instead of being wrongly reaped.
+    #[derive(FromQueryResult)]
+    struct DeadRow {
+        task_id: String,
+        run_id: String,
+        worker_id: Option<String>,
+    }
+
+    let dead_rows = DeadRow::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        "WITH dying AS ( \
+             SELECT task_id, run_id, worker_id \
+             FROM agentic_task_queue \
              WHERE queue_status = 'claimed' \
                AND claim_count >= max_claims \
-               AND last_heartbeat < now() - (visibility_timeout_secs || ' seconds')::interval"
-                .to_string(),
-        ))
-        .await?;
+               AND last_heartbeat < now() - (visibility_timeout_secs || ' seconds')::interval \
+             FOR UPDATE \
+         ) \
+         UPDATE agentic_task_queue q \
+         SET queue_status = 'dead', worker_id = NULL, claimed_at = NULL, updated_at = now() \
+         FROM dying d \
+         WHERE q.task_id = d.task_id \
+         RETURNING d.task_id, d.run_id, d.worker_id"
+            .to_string(),
+    ))
+    .all(&txn)
+    .await?;
 
-    // Re-queue tasks that are still under max_claims.
-    let requeued = db
+    // Re-queue tasks that are still under max_claims. `last_heartbeat` is
+    // nulled to match `requeue_task` / `reset_task_to_queued` / the admin
+    // `reenqueue_dead` path — otherwise the row sits `queued` carrying its
+    // dead owner's expired heartbeat and "how long has this been queued"
+    // is unanswerable from the row.
+    let requeued = txn
         .execute(Statement::from_string(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue \
-             SET queue_status = 'queued', worker_id = NULL, claimed_at = NULL, updated_at = now() \
+             SET queue_status = 'queued', worker_id = NULL, claimed_at = NULL, \
+                 last_heartbeat = NULL, updated_at = now() \
              WHERE queue_status = 'claimed' \
                AND claim_count < max_claims \
                AND last_heartbeat < now() - (visibility_timeout_secs || ' seconds')::interval"
@@ -346,7 +664,189 @@ pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<u64, DbErr> {
         ))
         .await?;
 
-    Ok(dead.rows_affected() + requeued.rows_affected())
+    txn.commit().await?;
+
+    // Bump the counters here, after the commit — never before it and never
+    // in the caller. After it: a cycle whose transaction rolled back (the
+    // `?` above already returned `Err`) must not be counted, since the next
+    // tick will re-do and re-count the whole cycle. In this function, not
+    // the caller: see [`TASKS_REQUEUED`] for why counting here is what
+    // makes all four production reap call sites observed, not just one.
+    TASKS_REQUEUED.fetch_add(requeued.rows_affected(), Ordering::Relaxed);
+    TASKS_DEAD_LETTERED.fetch_add(dead_rows.len() as u64, Ordering::Relaxed);
+
+    // Logged only after the commit: a dead-letter that rolled back is not a
+    // dead-letter, and an operator chasing these must not be sent after rows
+    // that are still queued.
+    let dead_tasks: Vec<DeadTask> = dead_rows
+        .into_iter()
+        .map(|r| DeadTask {
+            task_id: r.task_id,
+            run_id: r.run_id,
+            worker_id: r.worker_id,
+        })
+        .collect();
+
+    for t in &dead_tasks {
+        tracing::warn!(
+            target: "background",
+            task_id = %t.task_id,
+            run_id = %t.run_id,
+            worker_id = t.worker_id.as_deref().unwrap_or("<none>"),
+            "dead-lettered: task exhausted max_claims"
+        );
+    }
+
+    Ok(ReapOutcome {
+        requeued: requeued.rows_affected(),
+        dead_lettered: dead_tasks.len() as u64,
+        dead_tasks,
+    })
+}
+
+/// Return every claim held by `worker_id` to the queue, **without charging
+/// the retry budget**.
+///
+/// Called on graceful shutdown. Releasing a lease you provably hold is safe;
+/// *stealing* one from a worker you merely believe is dead is not — which is
+/// why this is keyed on the caller's own `worker_id` and never runs from a
+/// successor sweeping on someone else's behalf.
+///
+/// `claim_count` is decremented (floored at 0) because the claim was given
+/// back rather than spent. Without this, a task bounced by three rolling
+/// deploys exhausts `max_claims` and dead-letters despite never failing.
+/// A hard crash (SIGKILL/OOM) never reaches this path and still charges,
+/// which is correct: an OOM may genuinely be the task's fault.
+///
+/// The `claimed -> queued` transition fires the `agentic_task_queue` NOTIFY
+/// trigger, so surviving workers wake immediately instead of waiting out the
+/// visibility timeout.
+///
+/// Returns the number of claims released.
+pub async fn release_claims_for_worker(
+    db: &DatabaseConnection,
+    worker_id: &str,
+) -> Result<u64, DbErr> {
+    use sea_orm::{DatabaseBackend, Statement};
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "UPDATE agentic_task_queue {RELEASE_SET_CLAUSE} \
+                 WHERE worker_id = $1 AND queue_status = 'claimed'"
+            ),
+            [worker_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected())
+}
+
+/// The `claimed -> queued` refund shared by both release paths.
+///
+/// **Two independent guards make a repeated release a no-op, and either one
+/// alone would suffice.** The obvious one is the callers' `queue_status =
+/// 'claimed'` predicate. The second is right here: `worker_id = NULL`. Once a
+/// row has been released it matches neither `worker_id = $1` nor
+/// `queue_status = 'claimed'`, so [`drain_claims_for_worker`]'s extra passes
+/// cannot double-refund `claim_count`.
+///
+/// Do not "simplify" `worker_id = NULL` out of this clause on the grounds that
+/// the status predicate already covers it. It does — today. Removing either
+/// guard silently reduces a belt-and-braces property to a single point of
+/// failure, and only the *combination* is what makes the drain safe to run
+/// unconditionally. `eviction_safety_test.rs`'s successor-claim and
+/// peer-takeover tests both fail if it goes.
+const RELEASE_SET_CLAUSE: &str = "SET queue_status = 'queued', \
+     worker_id = NULL, \
+     claimed_at = NULL, \
+     last_heartbeat = NULL, \
+     claim_count = GREATEST(claim_count - 1, 0), \
+     updated_at = now()";
+
+/// Hand a **single** claim back, without charging the retry budget.
+///
+/// The per-row counterpart to [`release_claims_for_worker`], used by
+/// `DurableTransport::recv_assignment` the instant it notices it has claimed a
+/// task while the process is shutting down. Scoped to one row on purpose: at
+/// that point sibling workers in this process are still legitimately executing
+/// their own claims, and a blanket release would yank rows out from under work
+/// that is going to finish.
+///
+/// Returns `true` if a claim was actually handed back.
+pub async fn release_claim(
+    db: &DatabaseConnection,
+    task_id: &str,
+    worker_id: &str,
+) -> Result<bool, DbErr> {
+    use sea_orm::{DatabaseBackend, Statement};
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "UPDATE agentic_task_queue {RELEASE_SET_CLAUSE} \
+                 WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed'"
+            ),
+            [task_id.into(), worker_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// How many times [`drain_claims_for_worker`] will re-run the release before
+/// giving up. Three is enough to close the gate-to-release race twice over;
+/// the bound exists so a pathological producer can never hold shutdown open.
+const RELEASE_DRAIN_ATTEMPTS: usize = 3;
+
+/// Release this worker's claims repeatedly until a pass matches nothing.
+///
+/// **Defense in depth, not the primary fix.** The gate-to-claim race — a
+/// worker that cleared `is_shutting_down()` and is awaiting its `claim_task`
+/// round-trip when the flag flips — is closed at its cause, in
+/// `DurableTransport::recv_assignment`, which re-checks the flag after the
+/// claim lands and hands the row straight back via [`release_claim`]. That is
+/// the only place with certain knowledge that the claim exists.
+///
+/// This loop cannot close that race on its own and should not be trusted to:
+/// if the process held no *other* claims, pass 1 returns 0 and the loop exits
+/// before the straggler ever lands. It is kept because it costs one cheap
+/// UPDATE and covers the residual case where a claim lands between the
+/// cause-level release and process exit.
+///
+/// Re-running is free of risk: the release is idempotent by construction — see
+/// [`RELEASE_SET_CLAUSE`] for the two independent guards that make a second
+/// pass match zero rows, which
+/// `releasing_twice_is_a_no_op_and_does_not_double_refund` pins down. Stops
+/// early on the first empty pass. Returns the total number of claims released.
+///
+/// On a mid-drain DB error the count from the passes that already succeeded is
+/// logged before the error propagates — those claims really were released, and
+/// an operator reading only "failed to release claims" would conclude the
+/// opposite.
+pub async fn drain_claims_for_worker(
+    db: &DatabaseConnection,
+    worker_id: &str,
+) -> Result<u64, DbErr> {
+    let mut total = 0;
+    for attempt in 0..RELEASE_DRAIN_ATTEMPTS {
+        match release_claims_for_worker(db, worker_id).await {
+            Ok(0) => break,
+            Ok(released) => total += released,
+            Err(e) => {
+                if total > 0 {
+                    tracing::warn!(
+                        target: "agentic",
+                        worker_id,
+                        released = total,
+                        attempt,
+                        "claim drain failed part-way: the claims counted here were \
+                         already released and are back on the queue"
+                    );
+                }
+                return Err(e);
+            }
+        }
+    }
+    Ok(total)
 }
 
 /// Delete terminal task-queue rows older than their retention window, so the

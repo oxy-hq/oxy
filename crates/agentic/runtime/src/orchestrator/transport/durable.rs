@@ -6,7 +6,8 @@
 //! receipt). Only the assignment direction needs durability — the single gap
 //! that existed with [`super::LocalTransport`].
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Duration;
 
 use agentic_core::delegation::{TaskAssignment, TaskOutcome, TaskSpec};
@@ -82,6 +83,90 @@ pub struct DurableTransport {
     router: Arc<dyn TaskRouter>,
 }
 
+/// The process-wide worker identity, generated once on first use.
+///
+/// Every `DurableTransport` in this process shares it, so
+/// `WHERE worker_id = process_worker_id()` selects exactly the claims this
+/// process holds — the predicate graceful release is built on.
+static PROCESS_WORKER_ID: OnceLock<String> = OnceLock::new();
+
+/// The process-wide worker identity. See [`build_worker_id`] for the format.
+pub fn process_worker_id() -> &'static str {
+    PROCESS_WORKER_ID.get_or_init(compute_worker_identity)
+}
+
+/// The process worker identity, but **only if it has already been minted**.
+///
+/// [`process_worker_id`] is lazily initialized, so calling it from a shutdown
+/// path is not free of consequence: a process that never constructed a
+/// `DurableTransport` has never written a `worker_id` into
+/// `agentic_task_queue`, and asking for the id at shutdown would mint a brand
+/// new one that matches zero rows by construction — a pointless UPDATE against
+/// a database that may be exactly the thing making shutdown slow.
+///
+/// Shutdown paths use this instead. `None` is a *fact* ("this process holds no
+/// claims, because it never claimed anything"), not a guess, so skipping the
+/// release on `None` cannot lose a claim.
+pub fn process_worker_id_if_initialized() -> Option<&'static str> {
+    PROCESS_WORKER_ID.get().map(String::as_str)
+}
+
+/// Set once this process starts shutting down; never cleared.
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// Edge-triggered companion to [`SHUTTING_DOWN`], cancelled by
+/// [`begin_shutdown`] and never reset.
+///
+/// The bool is the *level-triggered gate* a loop checks at its top; this token
+/// is the *edge-triggered wake* that lets an operation already in flight
+/// abandon promptly. During a co-located-DB shutdown (Ctrl-C in local/dev),
+/// the database dies at the same instant as the app, so a DB poll already
+/// awaiting would otherwise block the full pool `ACQUIRE_TIMEOUT` (~30s) before
+/// failing. Racing it against `shutdown_signal().cancelled()` collapses that
+/// wait to nothing — the loop parks on its bool gate instead.
+static SHUTDOWN_SIGNAL: LazyLock<CancellationToken> = LazyLock::new(CancellationToken::new);
+
+/// The process-wide shutdown signal, cancelled exactly when [`begin_shutdown`]
+/// is called.
+///
+/// `select!` an in-flight DB round-trip against `shutdown_signal().cancelled()`
+/// so a shutdown that races the poll abandons it instead of waiting out the
+/// pool acquire timeout. It is *only* for background polls (claim / heartbeat /
+/// latency); the graceful *release* itself must still run to completion, so it
+/// is bounded by its own hook timeout, not by this signal.
+pub fn shutdown_signal() -> &'static CancellationToken {
+    &SHUTDOWN_SIGNAL
+}
+
+/// Declare that this process is shutting down: no worker in it will claim
+/// another task from the durable queue.
+///
+/// **Must be called before [`crate::crud::release_claims_for_worker`].** The
+/// release's `claimed -> queued` transition fires the `agentic_task_queue`
+/// NOTIFY trigger, which actively *wakes* every in-process worker through the
+/// shared `PostgresTaskRouter`. Without this gate they immediately re-claim
+/// the rows just released (recharging `claim_count`), and then the process
+/// exits leaving those rows `claimed` by a dead worker with the budget spent —
+/// precisely the failure graceful release exists to prevent, relocated into a
+/// smaller window.
+///
+/// Sets the level-triggered [`SHUTTING_DOWN`] gate *and* cancels the
+/// edge-triggered [`shutdown_signal`] so an in-flight DB poll can abandon at
+/// once. The store happens before the cancel, so any task woken by the signal
+/// observes the flag already `true`.
+///
+/// Monotonic and idempotent: shutdown is a one-way door, and both `oxy serve`
+/// and `oxy worker` may reach it more than once.
+pub fn begin_shutdown() {
+    SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    SHUTDOWN_SIGNAL.cancel();
+}
+
+/// Whether [`begin_shutdown`] has been called in this process.
+pub fn is_shutting_down() -> bool {
+    SHUTTING_DOWN.load(Ordering::SeqCst)
+}
+
 /// Build a human-readable worker identity, used as the `worker_id` column of
 /// `agentic_task_queue` and surfaced in the admin "Internal jobs" console.
 ///
@@ -97,9 +182,17 @@ pub struct DurableTransport {
 /// - `short` — first 8 hex chars of a fresh UUID, so multiple worker
 ///   processes on one host stay distinct.
 ///
+/// Process-stable: every transport in this process returns the same id.
+///
 /// Legacy `worker-<uuid>` ids already in the DB are unaffected: `worker_id` is
 /// an opaque display string everywhere it is read.
 fn build_worker_id() -> String {
+    process_worker_id().to_string()
+}
+
+/// Generate a fresh identity. Called exactly once per process, via
+/// [`PROCESS_WORKER_ID`].
+fn compute_worker_identity() -> String {
     let env =
         first_nonempty_env(&["OXY_ENV", "ENVIRONMENT"]).unwrap_or_else(|| "local".to_string());
     let host =
@@ -226,32 +319,37 @@ impl DurableTransport {
         self.new_task_notify.notify_waiters();
     }
 
-    /// Update the heartbeat for a claimed task.
-    ///
-    /// Workers should call this periodically while executing a task to prevent
-    /// the reaper from re-queuing it.
-    pub async fn heartbeat(&self, task_id: &str) -> Result<(), TransportError> {
-        crud::update_queue_heartbeat(&self.db, task_id)
-            .await
-            .map_err(|e| TransportError::Other(format!("heartbeat failed: {e}")))
-    }
+    // `heartbeat` / `spawn_heartbeat` inherent methods removed: they duplicated
+    // the `WorkerTransport` impl below with a *divergent* contract (the
+    // inherent one returned `Result<bool>` where the trait returns
+    // `Result<()>`), so `t.heartbeat(&id)` meant different things depending
+    // only on whether the receiver was concrete or `dyn`. Every production
+    // call site goes through the trait — `Worker::handle_task`,
+    // `pipeline::recovery::spawn_virtual_worker`, and `pipeline`'s root-task
+    // driver all hold `Arc<dyn WorkerTransport>` — so the inherent pair was
+    // reachable only from itself.
 
     /// Run a single reaper cycle: re-queue stale tasks, dead-letter exhausted ones.
     ///
-    /// Returns the number of tasks affected.
-    pub async fn run_reaper(&self) -> u64 {
+    /// Returns the split requeued/dead-lettered counts.
+    pub async fn run_reaper(&self) -> crud::ReapOutcome {
         match crud::reap_stale_tasks(&self.db).await {
-            Ok(count) => {
-                if count > 0 {
-                    tracing::info!(count, "reaper: re-queued or dead-lettered stale tasks");
+            Ok(outcome) => {
+                if outcome.total() > 0 {
+                    tracing::info!(
+                        target: "agentic",
+                        requeued = outcome.requeued,
+                        dead_lettered = outcome.dead_lettered,
+                        "reaper: reclaimed stale tasks"
+                    );
                     // Wake workers so they can pick up re-queued tasks.
                     self.new_task_notify.notify_waiters();
                 }
-                count
+                outcome
             }
             Err(e) => {
                 tracing::error!("reaper failed: {e}");
-                0
+                crud::ReapOutcome::default()
             }
         }
     }
@@ -375,34 +473,6 @@ impl DurableTransport {
         });
         cancel
     }
-
-    /// Spawn a heartbeat loop for a specific task.
-    ///
-    /// Returns a `CancellationToken` — cancel it when the task completes.
-    pub fn spawn_heartbeat(
-        self: &Arc<Self>,
-        task_id: String,
-        interval: Duration,
-    ) -> CancellationToken {
-        let cancel = CancellationToken::new();
-        let transport = Arc::clone(self);
-        let cancel_clone = cancel.clone();
-        tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(interval);
-            loop {
-                tokio::select! {
-                    _ = ticker.tick() => {
-                        if let Err(e) = transport.heartbeat(&task_id).await {
-                            tracing::warn!(task_id = %task_id, "heartbeat failed: {e}");
-                            break;
-                        }
-                    }
-                    _ = cancel_clone.cancelled() => break,
-                }
-            }
-        });
-        cancel
-    }
 }
 
 #[async_trait]
@@ -480,21 +550,87 @@ impl CoordinatorTransport for DurableTransport {
 impl WorkerTransport for DurableTransport {
     async fn recv_assignment(&self) -> Option<TaskAssignment> {
         loop {
+            // Refuse to take on new work once this process has begun shutting
+            // down. Graceful release flips our claims `claimed -> queued`,
+            // which fires the queue's NOTIFY trigger and wakes *this* loop —
+            // so without the gate we would re-claim the very rows we just
+            // gave back, recharge `claim_count`, and then exit holding them.
+            // See [`begin_shutdown`].
+            //
+            // Park on the poll interval rather than spinning: nothing can
+            // clear the flag, and the process is on its way out anyway.
+            if is_shutting_down() {
+                tokio::time::sleep(self.poll_interval).await;
+                continue;
+            }
+
             // Try to claim a task from the queue. Scoped transports only
             // see tasks under their root — see `task_id_root` for why.
-            let claim_result = match &self.task_id_root {
-                Some(root) => crud::claim_task_under_root(&self.db, &self.worker_id, root).await,
-                None => crud::claim_task(&self.db, &self.worker_id).await,
+            //
+            // Race the claim round-trip against the process shutdown signal: a
+            // poll already in flight when a co-located DB dies on shutdown
+            // (Ctrl-C in local/dev) would otherwise block the full pool
+            // `ACQUIRE_TIMEOUT` (~30s) before erroring, pushing shutdown past
+            // the grace period. On shutdown we abandon the poll and loop; the
+            // `is_shutting_down()` gate at the top then parks us for good.
+            // `begin_shutdown` sets that gate before cancelling this signal, so
+            // the next iteration is guaranteed to see it.
+            let claim_result = tokio::select! {
+                _ = shutdown_signal().cancelled() => continue,
+                r = async {
+                    match &self.task_id_root {
+                        Some(root) => {
+                            crud::claim_task_under_root(&self.db, &self.worker_id, root).await
+                        }
+                        None => crud::claim_task(&self.db, &self.worker_id).await,
+                    }
+                } => r,
             };
             match claim_result {
                 Ok(Some(entry)) => {
+                    // Close the gate-to-claim race *at its cause*. The gate
+                    // above was clear when this iteration started, but the
+                    // claim is a round-trip: shutdown can begin while it is in
+                    // flight, and the release pass can therefore run before
+                    // this row lands `claimed`. The row would then be owned by
+                    // a process that is already gone, with `claim_count`
+                    // charged — exactly the state graceful release exists to
+                    // prevent, relocated into a smaller window.
+                    //
+                    // This is the only point in the system that knows both
+                    // that the claim exists and that the process is leaving,
+                    // so it is the only place the race can actually be closed.
+                    // `drain_claims_for_worker` can only *narrow* it, and if
+                    // this process held no other claims the drain's first pass
+                    // returns 0 and it stops before the straggler lands —
+                    // which is the likeliest shape of the race, since an idle
+                    // poller is precisely the worker sitting in `claim_task`.
+                    if is_shutting_down() {
+                        match crud::release_claim(&self.db, &entry.task_id, &self.worker_id).await {
+                            Ok(_) => tracing::info!(
+                                task_id = %entry.task_id,
+                                "claim landed during shutdown; handed straight back to the queue"
+                            ),
+                            Err(e) => tracing::warn!(
+                                task_id = %entry.task_id,
+                                "failed to hand back a claim taken during shutdown: {e} \
+                                 (the reaper will reclaim it after the visibility timeout)"
+                            ),
+                        }
+                        continue;
+                    }
+
                     // Deserialize spec and policy back into the assignment.
                     let spec: TaskSpec = match serde_json::from_value(entry.spec) {
                         Ok(s) => s,
                         Err(e) => {
                             tracing::error!(task_id = %entry.task_id, "failed to deserialize task spec: {e}");
-                            // Mark as failed and try the next task.
-                            let _ = crud::fail_queue_task(&self.db, &entry.task_id).await;
+                            // Mark as failed and try the next task. We hold the
+                            // claim — the UPDATE above just granted it — so the
+                            // ownership predicate matches.
+                            let _ =
+                                crud::fail_queue_task(&self.db, &entry.task_id, &self.worker_id)
+                                    .await;
                             continue;
                         }
                     };
@@ -531,7 +667,15 @@ impl WorkerTransport for DurableTransport {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("failed to claim task from queue: {e}");
+                    // A DB failure while shutting down is expected, not an
+                    // error: the co-located database is going down with us.
+                    // Keep the original ERROR level in steady state so a real
+                    // queue-connectivity problem is still loud.
+                    if is_shutting_down() {
+                        tracing::debug!("failed to claim task from queue during shutdown: {e}");
+                    } else {
+                        tracing::error!("failed to claim task from queue: {e}");
+                    }
                     tokio::time::sleep(self.poll_interval).await;
                 }
             }
@@ -542,15 +686,52 @@ impl WorkerTransport for DurableTransport {
         // On terminal outcomes, update the queue entry.
         match &msg {
             WorkerMessage::Outcome { task_id, outcome } => {
+                // Every terminal write is scoped to `self.worker_id`. This
+                // outcome can arrive after graceful release handed our claims
+                // back and a peer re-claimed the row — stamping it terminal
+                // then would strand the peer's live work. See
+                // `crud::queue::set_terminal_status_owned`.
                 let result = match outcome {
-                    TaskOutcome::Done { .. } => crud::complete_queue_task(&self.db, task_id).await,
-                    TaskOutcome::Failed(_) => crud::fail_queue_task(&self.db, task_id).await,
-                    TaskOutcome::Cancelled => crud::cancel_queued_task(&self.db, task_id).await,
+                    TaskOutcome::Done { .. } => {
+                        crud::complete_queue_task(&self.db, task_id, &self.worker_id).await
+                    }
+                    TaskOutcome::Failed(_) => {
+                        crud::fail_queue_task(&self.db, task_id, &self.worker_id).await
+                    }
+                    TaskOutcome::Cancelled => {
+                        crud::cancel_queued_task_owned(&self.db, task_id, &self.worker_id).await
+                    }
                     // Suspended is not terminal — task may resume.
-                    TaskOutcome::Suspended { .. } => Ok(()),
+                    TaskOutcome::Suspended { .. } => Ok(crud::TerminalWrite::Stamped),
                 };
-                if let Err(e) = result {
-                    tracing::warn!(task_id, "failed to update queue status: {e}");
+                match result {
+                    Ok(crud::TerminalWrite::Stamped) => {}
+                    // The requester already stamped this row terminal — an
+                    // ordinary user-pressed Stop beats the worker's own
+                    // `Cancelled` to the row on every single cancel, because
+                    // `CoordinatorTransport::cancel` awaits the DB write before
+                    // firing the in-memory token. Nothing is lost and nobody
+                    // else is involved; first terminal status wins.
+                    Ok(crud::TerminalWrite::AlreadyTerminal) => tracing::debug!(
+                        task_id,
+                        "queue row was already terminal; keeping the first status"
+                    ),
+                    // Root tasks registered via `Coordinator::register_root`
+                    // are driven by a virtual worker and never published as an
+                    // assignment, so they have no queue row to stamp. Routine.
+                    Ok(crud::TerminalWrite::NoRow) => {
+                        tracing::trace!(task_id, "no queue row for this task; nothing to stamp")
+                    }
+                    // The one case worth a warning: a *different* worker holds
+                    // the row, so this process just finished work the queue is
+                    // discarding.
+                    Ok(crud::TerminalWrite::NotOwned) => tracing::warn!(
+                        task_id,
+                        worker_id = %self.worker_id,
+                        "outcome dropped: another worker now holds this claim \
+                         (released on shutdown and re-claimed by a peer, or reaped)"
+                    ),
+                    Err(e) => tracing::warn!(task_id, "failed to update queue status: {e}"),
                 }
             }
             WorkerMessage::Event { .. } => {
@@ -573,14 +754,19 @@ impl WorkerTransport for DurableTransport {
     }
 
     async fn heartbeat(&self, task_id: &str) -> Result<(), TransportError> {
-        crud::update_queue_heartbeat(&self.db, task_id)
+        // The trait signature can't carry "you no longer own this"; a lost
+        // claim is a legitimate shutdown race, not a transport failure, so it
+        // maps to `Ok`. The ticker below is what actually needs to react.
+        crud::update_queue_heartbeat(&self.db, task_id, &self.worker_id)
             .await
+            .map(|_| ())
             .map_err(|e| TransportError::Other(format!("heartbeat failed: {e}")))
     }
 
     fn spawn_heartbeat(&self, task_id: &str, interval: Duration) -> CancellationToken {
         let cancel = CancellationToken::new();
         let db = self.db.clone();
+        let worker_id = self.worker_id.clone();
         let task_id = task_id.to_string();
         let cancel_clone = cancel.clone();
         tokio::spawn(async move {
@@ -588,12 +774,47 @@ impl WorkerTransport for DurableTransport {
             loop {
                 tokio::select! {
                     _ = ticker.tick() => {
-                        if let Err(e) = crud::update_queue_heartbeat(&db, &task_id).await {
-                            tracing::warn!(task_id = %task_id, "heartbeat failed: {e}");
-                            break;
+                        // Race the heartbeat write against shutdown too: an
+                        // in-flight write when the co-located DB dies would
+                        // otherwise block the full pool acquire timeout. On
+                        // shutdown, stop the ticker — there is nothing left to
+                        // keep alive.
+                        let beat = tokio::select! {
+                            _ = shutdown_signal().cancelled() => break,
+                            r = crud::update_queue_heartbeat(&db, &task_id, &worker_id) => r,
+                        };
+                        match beat {
+                            Ok(true) => {}
+                            // This ticker outlives `handle_task` only by the
+                            // width of one tick, but that is enough to land
+                            // after graceful release. Stop rather than stamp a
+                            // row we no longer hold.
+                            Ok(false) => {
+                                tracing::debug!(
+                                    task_id = %task_id,
+                                    "heartbeat: claim no longer held; stopping ticker"
+                                );
+                                break;
+                            }
+                            Err(e) => {
+                                // Expected once the co-located DB goes down on
+                                // shutdown; a real failure otherwise.
+                                if is_shutting_down() {
+                                    tracing::debug!(
+                                        task_id = %task_id,
+                                        "heartbeat failed during shutdown: {e}"
+                                    );
+                                } else {
+                                    tracing::warn!(task_id = %task_id, "heartbeat failed: {e}");
+                                }
+                                break;
+                            }
                         }
                     }
                     _ = cancel_clone.cancelled() => break,
+                    // Idle between ticks: abandon at once rather than waiting a
+                    // full interval to notice shutdown.
+                    _ = shutdown_signal().cancelled() => break,
                 }
             }
         });
@@ -643,5 +864,60 @@ mod worker_id_tests {
         // env + host segments are never blank
         assert!(!parts[0].is_empty());
         assert!(!parts[1].is_empty());
+    }
+
+    #[test]
+    fn worker_id_is_stable_within_a_process() {
+        let a = build_worker_id();
+        let b = build_worker_id();
+        assert_eq!(a, b, "worker_id must be process-stable, not per-transport");
+    }
+
+    #[test]
+    fn process_worker_id_matches_build_worker_id() {
+        assert_eq!(super::process_worker_id(), build_worker_id());
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::{begin_shutdown, is_shutting_down, shutdown_signal};
+
+    /// `begin_shutdown` must set BOTH the level-triggered gate and cancel the
+    /// edge-triggered signal — the signal is what lets an in-flight DB poll
+    /// abandon promptly instead of blocking the pool acquire timeout.
+    ///
+    /// Relies on nextest's process-per-test isolation: the two globals are
+    /// process-wide and monotonic (never reset), so this test owns a fresh
+    /// process where both start clear. Under a shared-process runner it would
+    /// still pass on a first run but is not re-entrant by design — shutdown is
+    /// a one-way door.
+    #[test]
+    fn begin_shutdown_sets_flag_and_cancels_signal() {
+        assert!(
+            !is_shutting_down(),
+            "flag must start clear in a fresh process"
+        );
+        assert!(
+            !shutdown_signal().is_cancelled(),
+            "signal must start un-cancelled in a fresh process"
+        );
+
+        begin_shutdown();
+
+        assert!(
+            is_shutting_down(),
+            "begin_shutdown must set the shutting-down flag"
+        );
+        assert!(
+            shutdown_signal().is_cancelled(),
+            "begin_shutdown must cancel the shutdown signal so in-flight polls can race it"
+        );
+
+        // Idempotent: shutdown is monotonic, so a second call is a no-op, not a
+        // panic or a reset.
+        begin_shutdown();
+        assert!(is_shutting_down());
+        assert!(shutdown_signal().is_cancelled());
     }
 }

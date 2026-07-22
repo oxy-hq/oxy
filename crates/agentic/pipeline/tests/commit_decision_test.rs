@@ -12,8 +12,8 @@
 use std::collections::HashMap;
 
 use agentic_automation::extension::{
-    AutomationRunState, CommitOutcome, DecisionCommit, DecisionTerminal, commit_decision,
-    insert_automation_state, load_automation_state,
+    AutomationRunState, CommitOutcome, DecisionClaim, DecisionCommit, DecisionTerminal,
+    commit_decision, insert_automation_state, load_automation_state,
 };
 use agentic_runtime::crud;
 use agentic_runtime::migration::RuntimeMigrator;
@@ -226,6 +226,7 @@ async fn continuing_commits_state_and_events_atomically() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::Unclaimed,
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_sql": {"rows": 3}}),
@@ -294,6 +295,7 @@ async fn complete_automation_terminal_atomically_finalizes_run_and_queue() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::Unclaimed,
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_fmt": {"text": "ok"}}),
@@ -336,6 +338,7 @@ async fn fail_automation_terminal_atomically_marks_run_and_queue_failed() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::Unclaimed,
             expected_version: 0,
             new_state: state,
             result_delta: json!({}),
@@ -401,6 +404,7 @@ async fn version_conflict_rolls_back_all_writes() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::Unclaimed,
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_fmt": {"text": "x"}}),
@@ -462,6 +466,7 @@ async fn events_append_after_existing_coordinator_events() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id,
+            claim: DecisionClaim::Unclaimed,
             expected_version: 0,
             new_state: state,
             result_delta: json!({}),
@@ -520,6 +525,7 @@ async fn sequential_deltas_accumulate_in_results_column() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::Unclaimed,
             expected_version: 0,
             new_state: state.clone(),
             result_delta: json!({"step_sql": {"rows": 3}}),
@@ -551,6 +557,7 @@ async fn sequential_deltas_accumulate_in_results_column() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::Unclaimed,
             expected_version: 1,
             new_state: state2,
             result_delta: json!({"step_fmt": {"text": "ok"}}),
@@ -601,6 +608,7 @@ async fn complete_automation_with_pending_steps_is_rejected() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::Unclaimed,
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_sql": {"rows": 1}}),
@@ -631,4 +639,166 @@ async fn complete_automation_with_pending_steps_is_rejected() {
         queue_status(&db, &decision_task_id).await.as_deref(),
         Some("queued")
     );
+}
+
+// ── Claim ownership on the decision task's queue row ─────────────────────────
+//
+// `commit_decision`'s terminal branches stamp `decision_task_id`'s queue row,
+// and that row is the decision task's *own* claim — this code runs inside
+// `TaskExecutor::execute` for that very task, on the automation path, which is
+// the primary durable-queue workload. Graceful shutdown makes the following
+// interleaving reachable within milliseconds:
+//
+//   1. this process claims the decision task and starts the inline step;
+//   2. SIGTERM — the release flips the claim back to `queued`, NOTIFY wakes
+//      the fleet, and a peer re-claims it;
+//   3. this process's inline step (an SQL or LLM call — seconds, not
+//      microseconds) finally finishes and commits.
+//
+// Stamping by primary key at step 3 lands `completed` on the peer's live
+// claim. If the peer then dies the reaper skips the row — terminal rows are
+// not reaped — so the task is never requeued and the parent coordinator waits
+// forever.
+
+/// Set a queue row's owner directly, simulating the peer takeover of step 2
+/// without needing a second live transport.
+async fn claim_as(db: &DatabaseConnection, task_id: &str, worker_id: &str) {
+    use sea_orm::{ConnectionTrait, Statement};
+    db.execute(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "UPDATE agentic_task_queue \
+         SET queue_status = 'claimed', worker_id = $2, claimed_at = now(), \
+             last_heartbeat = now(), claim_count = claim_count + 1 \
+         WHERE task_id = $1",
+        [task_id.into(), worker_id.into()],
+    ))
+    .await
+    .expect("claim as worker");
+}
+
+async fn queue_owner(db: &DatabaseConnection, task_id: &str) -> Option<String> {
+    crud::get_queue_entry(db, task_id)
+        .await
+        .unwrap()
+        .and_then(|m| m.worker_id)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn commit_rolls_back_rather_than_stamp_a_peers_reclaimed_row() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (run_id, mut state) = seed_run(&db).await;
+    let decision_task_id = run_id.clone();
+    seed_queue_row(&db, &decision_task_id, &run_id).await;
+
+    // Steps 1–2: we held the claim, were released on shutdown, and a peer
+    // re-claimed the row while our inline step was still running.
+    claim_as(&db, &decision_task_id, "peer").await;
+
+    // Step 3: our decision finally commits, still believing it owns the row.
+    state.current_step = state.workflow.tasks.len();
+    let outcome = commit_decision(
+        &db,
+        DecisionCommit {
+            run_id: run_id.clone(),
+            decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::HeldBy("dying".into()),
+            expected_version: 0,
+            new_state: state,
+            result_delta: json!({"step_fmt": {"text": "late"}}),
+            step_hash_delta: json!({}),
+            events: vec![("subrun_completed".into(), json!({"success": true}))],
+            attempt: 0,
+            terminal: DecisionTerminal::CompleteAutomation {
+                final_answer: "late".into(),
+            },
+        },
+    )
+    .await
+    .expect("commit_decision");
+
+    assert!(
+        matches!(outcome, CommitOutcome::ClaimLost),
+        "a commit from a worker that no longer owns the decision task must report ClaimLost, \
+         got {outcome:?}"
+    );
+
+    // The peer's claim is intact and still reapable if the peer dies.
+    assert_eq!(
+        queue_status(&db, &decision_task_id).await.as_deref(),
+        Some("claimed"),
+        "the peer's live claim must not be stamped terminal"
+    );
+    assert_eq!(
+        queue_owner(&db, &decision_task_id).await.as_deref(),
+        Some("peer")
+    );
+
+    // And the transaction rolled back: no run-row state, no events, no state
+    // advance. Committing these while the queue row belongs to someone else is
+    // exactly the split-brain the rollback exists to prevent.
+    assert_eq!(
+        run_task_status(&db, &run_id).await.as_deref(),
+        Some("running"),
+        "run state must not advance against a row this worker no longer owns"
+    );
+    assert!(
+        event_types(&db, &run_id).await.is_empty(),
+        "no events may be persisted by a rolled-back commit"
+    );
+    let final_state = load_automation_state(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(
+        final_state.decision_version, 0,
+        "the CAS must not have advanced"
+    );
+    assert_eq!(final_state.current_step, 0);
+    assert!(!final_state.results.contains_key("step_fmt"));
+}
+
+/// The other half: an ownership-scoped commit from the *actual* holder must
+/// still work. Without this, "always roll back" would satisfy the test above
+/// while breaking every automation in production.
+#[tokio::test(flavor = "multi_thread")]
+async fn commit_lands_for_the_worker_that_holds_the_claim() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (run_id, mut state) = seed_run(&db).await;
+    let decision_task_id = run_id.clone();
+    seed_queue_row(&db, &decision_task_id, &run_id).await;
+    claim_as(&db, &decision_task_id, "holder").await;
+
+    state.current_step = state.workflow.tasks.len();
+    let outcome = commit_decision(
+        &db,
+        DecisionCommit {
+            run_id: run_id.clone(),
+            decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::HeldBy("holder".into()),
+            expected_version: 0,
+            new_state: state,
+            result_delta: json!({"step_fmt": {"text": "ok"}}),
+            step_hash_delta: json!({}),
+            events: vec![("subrun_completed".into(), json!({"success": true}))],
+            attempt: 0,
+            terminal: DecisionTerminal::CompleteAutomation {
+                final_answer: "ok".into(),
+            },
+        },
+    )
+    .await
+    .expect("commit_decision");
+
+    assert!(
+        matches!(outcome, CommitOutcome::Committed),
+        "got {outcome:?}"
+    );
+    assert_eq!(
+        queue_status(&db, &decision_task_id).await.as_deref(),
+        Some("completed")
+    );
+    assert_eq!(run_task_status(&db, &run_id).await.as_deref(), Some("done"));
 }

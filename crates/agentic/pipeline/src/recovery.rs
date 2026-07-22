@@ -43,7 +43,7 @@ pub async fn recover_active_runs(
     // Pre-pass: clean up stale queue entries from the previous server lifetime.
     // Tasks "claimed" by now-dead workers get re-queued or dead-lettered.
     let transport = DurableTransport::with_router(db.clone(), router.clone(), None);
-    let reaped = transport.run_reaper().await;
+    let reaped = transport.run_reaper().await.total();
     if reaped > 0 {
         tracing::info!(target: "recovery", count = reaped, "reaper pre-pass: cleaned stale queue entries");
     }
@@ -129,7 +129,7 @@ pub async fn recover_stranded_runs(
     // Free entries claimed by workers that died — turns a crashed
     // interactive run into a stranded one this same pass.
     let transport = DurableTransport::with_router(db.clone(), router.clone(), None);
-    let reaped = transport.run_reaper().await;
+    let reaped = transport.run_reaper().await.total();
     if reaped > 0 {
         tracing::info!(target: "recovery", count = reaped, "global loop: reaped stale queue entries");
     }
@@ -218,7 +218,14 @@ pub async fn recover_pending_global_runs(
     let pending = match agentic_runtime::crud::find_pending_global_runs(&db, workspace_id).await {
         Ok(p) => p,
         Err(e) => {
-            tracing::error!(target: "recovery", error = %e, "latency loop: find_pending_global_runs failed");
+            // A DB failure while shutting down is expected (the co-located DB
+            // goes down with the process on Ctrl-C in local/dev), not an error
+            // — keep it loud only in steady state.
+            if agentic_runtime::transport::is_shutting_down() {
+                tracing::debug!(target: "recovery", error = %e, "latency loop: find_pending_global_runs failed during shutdown");
+            } else {
+                tracing::error!(target: "recovery", error = %e, "latency loop: find_pending_global_runs failed");
+            }
             return 0;
         }
     };
@@ -290,7 +297,22 @@ async fn recover_single_run(
     // periodic loop's job (Task 6).
     let driver_id = format!("recovery-{}", uuid::Uuid::new_v4());
     match agentic_runtime::crud::try_acquire_driver(&db, &root.id, &driver_id).await {
-        Ok(true) => {}
+        Ok(true) => {
+            // We now own this run: clear any stale "server restarted: run
+            // will be resumed automatically" note `cleanup_stale_runs` left
+            // behind (or any other prior error) so the UI doesn't keep
+            // showing a red "Pipeline error" banner over a run that's
+            // actually being resumed. Best-effort — a failure here shouldn't
+            // block the resume itself, just leaves the stale note in place.
+            if let Err(e) = agentic_runtime::crud::clear_run_error(&db, &root.id).await {
+                tracing::warn!(
+                    target: "recovery",
+                    run_id = %root.id,
+                    error = %e,
+                    "failed to clear stale error_message on recovery claim"
+                );
+            }
+        }
         Ok(false) => {
             tracing::info!(
                 target: "recovery",

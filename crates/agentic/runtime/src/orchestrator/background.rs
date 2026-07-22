@@ -242,16 +242,20 @@ pub fn start_with_options(
 
 async fn run_reaper_cycle(db: &DatabaseConnection) {
     match crud::reap_stale_tasks(db).await {
-        Ok(0) => {
-            // Quiet on the happy path — running every 30s, we'd
-            // flood the logs with "reaper cycle: 0 0" otherwise.
-        }
-        Ok(n) => {
-            tracing::info!(
-                target: "background",
-                count = n,
-                "reaper cycle: requeued or dead-lettered stale tasks"
-            );
+        Ok(outcome) => {
+            // `TASKS_REQUEUED` / `TASKS_DEAD_LETTERED` are incremented inside
+            // `reap_stale_tasks` itself (see `orchestrator::crud::queue`), not
+            // here — this is only one of four call sites that reach it.
+            // Logging stays gated on `total() > 0` so the 30s loop doesn't
+            // flood with "reaper cycle: 0 0" on the happy path.
+            if outcome.total() > 0 {
+                tracing::info!(
+                    target: "background",
+                    requeued = outcome.requeued,
+                    dead_lettered = outcome.dead_lettered,
+                    "reaper cycle: reclaimed stale tasks"
+                );
+            }
         }
         Err(e) => {
             tracing::warn!(

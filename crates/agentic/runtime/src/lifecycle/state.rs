@@ -130,6 +130,14 @@ impl RuntimeState {
     /// Returns the number of runs marked for shutdown. Unlike user-initiated
     /// cancel (which marks as "cancelled"/"failed" — not resumable), shutdown
     /// marks as "shutdown" which the recovery pipeline treats as resumable.
+    ///
+    /// This is the lifecycle half of process shutdown only. Releasing this
+    /// process's durable-queue claims (`orchestrator::crud::queue::
+    /// release_claims_for_worker`) is a separate, orchestrator-layer concern
+    /// and is the caller's responsibility to invoke after this returns — see
+    /// `spawn_shutdown_hook` in `oxy-app`'s `server::router::recovery` and the
+    /// `oxy worker` shutdown sequence in `cli::commands::worker`, both of
+    /// which may legitimately depend on both layers.
     pub async fn shutdown_all(&self, db: &sea_orm::DatabaseConnection) -> usize {
         let mut shutdown_count = 0;
         let run_ids: Vec<String> = self.cancel_txs.iter().map(|e| e.key().clone()).collect();

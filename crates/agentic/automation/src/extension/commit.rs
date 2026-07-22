@@ -44,6 +44,11 @@ pub struct DecisionCommit {
     /// Queue task id for the decision worker's claim. Flipped to `completed`
     /// or `failed` only for terminal variants; left untouched on `Continuing`.
     pub decision_task_id: String,
+    /// Who holds `decision_task_id`'s queue claim. See [`DecisionClaim`] —
+    /// production callers must pass [`DecisionClaim::HeldBy`], and the field
+    /// is deliberately not defaultable so that choosing otherwise is visible
+    /// at every construction site.
+    pub claim: DecisionClaim,
     /// `decision_version` read alongside `new_state` — the CAS predicate.
     pub expected_version: i64,
     /// Post-decision state. Version is managed by the persistence layer; the
@@ -72,6 +77,43 @@ pub struct DecisionCommit {
     pub terminal: DecisionTerminal,
 }
 
+/// Who owns the decision task's `agentic_task_queue` row for this commit.
+///
+/// The terminal branches of [`commit_decision`] stamp that row `completed` /
+/// `failed`. Doing so by primary key alone is the same hazard the durable
+/// transport's outcome path carries, and on the automation path it is the
+/// *primary* durable-queue workload rather than an edge case:
+///
+///  1. this process claims the decision task and starts the inline step;
+///  2. SIGTERM — graceful release flips the claim back to `queued`, NOTIFY
+///     wakes the fleet, and a peer re-claims within milliseconds;
+///  3. this process's inline step (an SQL or LLM call — seconds, not
+///     microseconds) finally finishes and commits;
+///  4. `completed` lands on **the peer's live claim**. If the peer then dies,
+///     the reaper skips the row because it is terminal, the task is never
+///     requeued, and the parent coordinator waits forever.
+///
+/// [`DecisionClaim::HeldBy`] scopes the write so step 4 matches nothing and
+/// the whole transaction rolls back instead — run state must never advance
+/// against a queue row this process no longer owns.
+#[derive(Debug, Clone)]
+pub enum DecisionClaim {
+    /// This worker holds the decision task's claim; terminal queue writes are
+    /// scoped to it. The id is the process worker identity
+    /// (`agentic_runtime::transport::process_worker_id`) — the same value the
+    /// claiming UPDATE wrote into `worker_id`.
+    HeldBy(String),
+    /// This commit is not driven by a durable-queue claim, so there is no
+    /// ownership to check: the caller reached `commit_decision` without going
+    /// through `recv_assignment` (tests that drive the decider directly), or
+    /// this process has never constructed a `DurableTransport` and therefore
+    /// provably holds no claims at all.
+    ///
+    /// Prefer [`DecisionClaim::HeldBy`] whenever a worker id is available —
+    /// this variant restores the unscoped write and with it the hazard above.
+    Unclaimed,
+}
+
 #[derive(Debug)]
 pub enum DecisionTerminal {
     /// Automation continuing — decision queue row untouched. The worker will
@@ -95,6 +137,13 @@ pub enum CommitOutcome {
     /// the decision task that produced this commit is stale and should be
     /// discarded. Another worker already advanced the workflow.
     VersionConflict,
+    /// A peer holds the decision task's queue claim (this process was
+    /// gracefully released and the row re-claimed while the decision was still
+    /// running). Nothing persisted — see [`DecisionClaim`]. Like
+    /// [`CommitOutcome::VersionConflict`] this is not an error: the peer that
+    /// owns the row will re-drive the decision from durable state, so the
+    /// caller should stop quietly rather than fail the run.
+    ClaimLost,
 }
 
 /// Atomically apply a workflow decision.
@@ -139,20 +188,94 @@ pub async fn commit_decision(
 
     append_events_in_txn(&txn, &commit.run_id, &commit.events, commit.attempt).await?;
 
+    // Terminal branches stamp the decision task's queue row. Do that *before*
+    // the run row so an unowned claim aborts the transaction without having
+    // written anything that matters, and roll back rather than commit — the
+    // whole point of the ownership check is that run state must not advance
+    // against a row a peer is actively driving.
+    let decision_row = DecisionRow {
+        task_id: &commit.decision_task_id,
+        run_id: &commit.run_id,
+        claim: &commit.claim,
+    };
     match &commit.terminal {
         DecisionTerminal::Continuing => {}
         DecisionTerminal::CompleteAutomation { final_answer } => {
+            if !stamp_decision_queue_row(&txn, decision_row, "completed").await? {
+                txn.rollback().await?;
+                return Ok(CommitOutcome::ClaimLost);
+            }
             set_run_terminal_in_txn(&txn, &commit.run_id, "done", Some(final_answer), None).await?;
-            set_queue_status_in_txn(&txn, &commit.decision_task_id, "completed").await?;
         }
         DecisionTerminal::FailAutomation { error } => {
+            if !stamp_decision_queue_row(&txn, decision_row, "failed").await? {
+                txn.rollback().await?;
+                return Ok(CommitOutcome::ClaimLost);
+            }
             set_run_terminal_in_txn(&txn, &commit.run_id, "failed", None, Some(error)).await?;
-            set_queue_status_in_txn(&txn, &commit.decision_task_id, "failed").await?;
         }
     }
 
     txn.commit().await?;
     Ok(CommitOutcome::Committed)
+}
+
+/// Stamp the decision task's queue row terminal inside the commit transaction.
+///
+/// Returns `false` when a *different* worker holds the row, which the caller
+/// must turn into a full rollback. Every other outcome is `true`:
+///
+/// - already terminal under our own ownership (the requester cancelled the run
+///   a beat before this decision landed) — the queue keeps its first terminal
+///   status, but the run state this decision computed is still ours to commit;
+/// - no queue row at all — the caller never went through the durable queue, so
+///   there is nothing to own and nothing to protect.
+async fn stamp_decision_queue_row(
+    txn: &DatabaseTransaction,
+    row: DecisionRow<'_>,
+    status: &str,
+) -> Result<bool, DbErr> {
+    use agentic_runtime::crud::TerminalWrite;
+
+    match row.claim {
+        DecisionClaim::HeldBy(worker_id) => {
+            let write = agentic_runtime::crud::set_terminal_status_owned(
+                txn,
+                row.task_id,
+                worker_id,
+                status,
+            )
+            .await?;
+            match write {
+                TerminalWrite::Stamped | TerminalWrite::AlreadyTerminal | TerminalWrite::NoRow => {
+                    Ok(true)
+                }
+                TerminalWrite::NotOwned => {
+                    tracing::warn!(
+                        run_id = %row.run_id,
+                        task_id = %row.task_id,
+                        worker_id = %worker_id,
+                        "decision commit aborted: another worker now holds this claim"
+                    );
+                    Ok(false)
+                }
+            }
+        }
+        DecisionClaim::Unclaimed => {
+            set_queue_status_in_txn(txn, row.task_id, status).await?;
+            Ok(true)
+        }
+    }
+}
+
+/// The three borrowed fields [`stamp_decision_queue_row`] needs, grouped so it
+/// can be called after `commit` has been partially moved into
+/// `apply_result_delta_in_txn`.
+#[derive(Clone, Copy)]
+struct DecisionRow<'a> {
+    task_id: &'a str,
+    run_id: &'a str,
+    claim: &'a DecisionClaim,
 }
 
 fn validate_invariants(commit: &DecisionCommit) -> Result<(), DbErr> {
@@ -267,6 +390,10 @@ async fn set_run_terminal_in_txn(
     Ok(())
 }
 
+/// Unscoped queue-status write, used only on the [`DecisionClaim::Unclaimed`]
+/// path. Do not reach for this from a caller that holds a claim — use
+/// `agentic_runtime::crud::set_terminal_status_owned` (via
+/// [`stamp_decision_queue_row`]) so a peer's live claim can't be stamped.
 async fn set_queue_status_in_txn(
     txn: &DatabaseTransaction,
     task_id: &str,

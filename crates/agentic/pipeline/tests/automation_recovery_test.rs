@@ -1055,7 +1055,13 @@ async fn test_happy_path_analytics_automation_step_done() {
     .expect("insert root");
 
     let state = Arc::new(RuntimeState::new());
-    let transport = DurableTransport::new(db.clone());
+    // Scoped to `root_id`, matching every production `Worker` site: a
+    // coordinator's own worker claims its subtree via
+    // `claim_task_under_root`, not the global `claim_task` (which now
+    // refuses tasks with a parent — see `queue::claim_task`). An unscoped
+    // transport here would starve this worker forever, since every task it
+    // needs to run is a descendant of `root_id`.
+    let transport = DurableTransport::new_scoped(db.clone(), root_id.clone());
     transport.run_reaper().await;
 
     let executor = Arc::new(HappyPathExecutor { db: db.clone() });

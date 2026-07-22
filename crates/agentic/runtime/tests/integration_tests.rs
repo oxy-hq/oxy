@@ -4875,9 +4875,13 @@ async fn test_complete_and_fail_task() {
     // Test complete.
     let (task_id_1, _) = enqueue_test_task(&db).await;
     crud::claim_task(&db, "w1").await.unwrap().unwrap();
-    crud::complete_queue_task(&db, &task_id_1)
-        .await
-        .expect("complete_queue_task failed");
+    assert_eq!(
+        crud::complete_queue_task(&db, &task_id_1, "w1")
+            .await
+            .expect("complete_queue_task failed"),
+        crud::TerminalWrite::Stamped,
+        "the claim holder's completion must land"
+    );
     let entry = crud::get_queue_entry(&db, &task_id_1)
         .await
         .unwrap()
@@ -4887,9 +4891,13 @@ async fn test_complete_and_fail_task() {
     // Test fail.
     let (task_id_2, _) = enqueue_test_task(&db).await;
     crud::claim_task(&db, "w1").await.unwrap().unwrap();
-    crud::fail_queue_task(&db, &task_id_2)
-        .await
-        .expect("fail_queue_task failed");
+    assert_eq!(
+        crud::fail_queue_task(&db, &task_id_2, "w1")
+            .await
+            .expect("fail_queue_task failed"),
+        crud::TerminalWrite::Stamped,
+        "the claim holder's failure must land"
+    );
     let entry = crud::get_queue_entry(&db, &task_id_2)
         .await
         .unwrap()
@@ -4926,10 +4934,21 @@ async fn test_heartbeat_and_reap() {
     // Claim it.
     crud::claim_task(&db, "w1").await.unwrap().unwrap();
 
-    // Heartbeat should update last_heartbeat.
-    crud::update_queue_heartbeat(&db, &task_id)
+    // Heartbeat should update last_heartbeat. Keyed on the claiming worker —
+    // a heartbeat may only stamp a row its own worker still holds.
+    let stamped = crud::update_queue_heartbeat(&db, &task_id, "w1")
         .await
         .expect("update_queue_heartbeat failed");
+    assert!(stamped, "the claim holder's heartbeat must stamp the row");
+
+    // A heartbeat from anyone else must not touch it.
+    let stolen = crud::update_queue_heartbeat(&db, &task_id, "someone-else")
+        .await
+        .expect("update_queue_heartbeat failed");
+    assert!(
+        !stolen,
+        "a heartbeat must never stamp a row held by another worker"
+    );
 
     // Backdate last_heartbeat to simulate stale worker.
     use agentic_runtime::entity::task_queue;
@@ -4946,7 +4965,8 @@ async fn test_heartbeat_and_reap() {
 
     // Reap stale tasks → should re-queue.
     let reaped = crud::reap_stale_tasks(&db).await.expect("reap failed");
-    assert_eq!(reaped, 1);
+    assert_eq!(reaped.requeued, 1);
+    assert_eq!(reaped.dead_lettered, 0);
 
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "queued");
@@ -5262,7 +5282,8 @@ async fn test_durable_transport_reaper_requeues_stale() {
 
     // Run reaper — should re-queue.
     let reaped = transport.run_reaper().await;
-    assert_eq!(reaped, 1);
+    assert_eq!(reaped.requeued, 1);
+    assert_eq!(reaped.dead_lettered, 0);
 
     // Task should be queued again.
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();

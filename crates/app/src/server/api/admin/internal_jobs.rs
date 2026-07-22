@@ -694,7 +694,7 @@ pub struct RunReaperResponse {
 async fn run_reaper() -> Result<Json<RunReaperResponse>, Response> {
     let db = connect().await?;
     let transport = agentic_runtime::transport::DurableTransport::new(db);
-    let rows_affected = transport.run_reaper().await;
+    let rows_affected = transport.run_reaper().await.total();
     Ok(Json(RunReaperResponse { rows_affected }))
 }
 

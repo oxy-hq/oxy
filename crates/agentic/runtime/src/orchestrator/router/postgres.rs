@@ -510,12 +510,25 @@ async fn run_listener(
                 // because a healthy production deployment should see
                 // exactly one of these per Postgres failover. Repeated
                 // logs at >30s cadence are a real signal.
-                tracing::warn!(
-                    target: "router.reconnect",
-                    reason = %exit,
-                    backoff_ms = backoff.as_millis() as u64,
-                    "listener connection lost; reconnecting"
-                );
+                //
+                // During shutdown, though, the co-located DB dies with the
+                // process (Ctrl-C in local/dev), so a lost listener is
+                // expected, not a signal — downgrade to debug so a clean
+                // shutdown stays quiet.
+                if crate::orchestrator::transport::is_shutting_down() {
+                    tracing::debug!(
+                        target: "router.reconnect",
+                        reason = %exit,
+                        "listener connection lost during shutdown; not a signal"
+                    );
+                } else {
+                    tracing::warn!(
+                        target: "router.reconnect",
+                        reason = %exit,
+                        backoff_ms = backoff.as_millis() as u64,
+                        "listener connection lost; reconnecting"
+                    );
+                }
                 // Wake any waiting worker once on disconnect — the
                 // catch-up claim covers the window between when the
                 // connection died and when we'll reconnect. Without

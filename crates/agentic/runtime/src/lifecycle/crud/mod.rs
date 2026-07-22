@@ -117,3 +117,32 @@ pub async fn reset_run_for_retry(db: &DatabaseConnection, run_id: &str) -> Resul
     run::Entity::update(model).exec(db).await?;
     Ok(())
 }
+
+/// Clear a run's `error_message` and nothing else.
+///
+/// `cleanup_stale_runs` stamps a "server restarted: run will be resumed
+/// automatically" placeholder into `error_message` on the runs it marks
+/// `needs_resume`/leaves `shutdown` so the UI has something to say while the
+/// run sits waiting to be re-claimed. That note is correct *while* the run
+/// is stranded, but once recovery actually re-claims and re-drives it, the
+/// note is stale — left in place it renders as a false red "Pipeline error"
+/// banner over a run that's healthy and resuming.
+///
+/// Unlike [`reset_run_for_retry`], this does NOT touch `answer` or the
+/// driver lease (`driver_id`/`driver_heartbeat_at`): a resume is not a
+/// retry-from-scratch — the prior answer is real state to preserve, and
+/// recovery is *acquiring* the driver lease right before calling this, not
+/// releasing it. No `updated_at` bump, matching the driver-lease helpers in
+/// `runs.rs` (`try_acquire_driver` / `heartbeat_driver` / `release_driver`):
+/// this is a UI-facing correction, not new run progress, so it shouldn't
+/// perturb staleness checks (e.g. `find_stuck_runs`'s grace window) that key
+/// off `updated_at`.
+pub async fn clear_run_error(db: &DatabaseConnection, run_id: &str) -> Result<(), DbErr> {
+    let model = run::ActiveModel {
+        id: Set(run_id.to_string()),
+        error_message: Set(None),
+        ..Default::default()
+    };
+    run::Entity::update(model).exec(db).await?;
+    Ok(())
+}

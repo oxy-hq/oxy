@@ -75,18 +75,21 @@ pub mod crud {
         update_run_terminal_from_events, update_task_status, upsert_suspension,
     };
     pub use crate::lifecycle::crud::{
-        DRIVER_LEASE_TTL_SECS, now, reset_run_for_retry, transition_run, user_facing_status,
+        DRIVER_LEASE_TTL_SECS, clear_run_error, now, reset_run_for_retry, transition_run,
+        user_facing_status,
     };
     pub use crate::lifecycle::crud::{events, queries, runs, suspension};
     pub use crate::orchestrator::crud::{
-        QueueStats, QueueTaskRow, StuckRun, TaskScope, cancel_queued_task, claim_task,
-        claim_task_under_root, cleanup_stale_runs, complete_child_done_txn,
-        complete_child_failed_txn, complete_queue_task, enqueue_task, fail_queue_task,
-        find_pending_global_runs, find_stuck_automation_runs, find_stuck_runs,
+        DeadTask, QueueStats, QueueTaskRow, ReapOutcome, StuckRun, TASKS_DEAD_LETTERED,
+        TASKS_REQUEUED, TaskScope, TerminalWrite, cancel_queued_task, cancel_queued_task_owned,
+        claim_task, claim_task_under_root, cleanup_stale_runs, complete_child_done_txn,
+        complete_child_failed_txn, complete_queue_task, drain_claims_for_worker, enqueue_task,
+        fail_queue_task, find_pending_global_runs, find_stuck_automation_runs, find_stuck_runs,
         get_active_root_runs, get_max_child_counter, get_outcomes_for_parent, get_queue_entry,
         get_queue_stats, get_resumable_root_runs, get_run_answer, increment_attempt,
-        insert_child_run, insert_task_outcome, mark_recovery_failed, mark_task_global,
-        purge_old_terminal_tasks, reap_stale_tasks, requeue_task, reset_task_to_queued,
+        insert_child_run, insert_task_outcome, mark_recovery_failed, mark_released_roots_global,
+        mark_task_global, purge_old_terminal_tasks, reap_stale_tasks, release_claim,
+        release_claims_for_worker, requeue_task, reset_task_to_queued, set_terminal_status_owned,
         suspend_with_data_txn, update_queue_heartbeat,
     };
     pub use crate::orchestrator::crud::{outcomes, queue, recovery};

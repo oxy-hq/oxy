@@ -657,3 +657,109 @@ async fn find_pending_global_runs_excludes_scope_owned_for_all_source_types() {
         );
     }
 }
+
+// ── Test: clear_run_error nulls only error_message ──────────────────────────
+//
+// Regression: `cleanup_stale_runs` stamps a "server restarted: run will be
+// resumed automatically" note into `error_message` on every run it marks
+// `needs_resume`. The frontend renders ANY non-null `error_message` as a red
+// "Pipeline error" banner (`PipelineHeader.tsx`), so a healthy run that is
+// actively being resumed kept showing an error. `recover_single_run` in
+// `agentic-pipeline` (crates/agentic/pipeline/src/recovery.rs) now calls
+// `clear_run_error` the moment it re-claims the driver lease — the single
+// choke point shared by startup recovery (`recover_active_runs`), the
+// periodic stranded-run sweep (`recover_stranded_runs`), and the latency
+// worker (`recover_pending_global_runs`), since all three drive through
+// `recover_single_run`.
+//
+// Unlike `reset_run_for_retry` (a full reset-in-place retry: also clears
+// `answer` and the driver lease), a *resume* must NOT touch those — the
+// prior answer is real state to preserve, and recovery is *acquiring* the
+// lease right before this call, not releasing it. This test exercises
+// `clear_run_error` directly against a seeded "just reclaimed by recovery"
+// row rather than driving a full recovery pass end-to-end: the real pass
+// spawns background worker/coordinator tasks that would race a synchronous
+// assertion, and (per `agentic-pipeline`'s own recovery tests) a `FakePlatform`
+// recovery attempt that fails downstream overwrites `error_message` again via
+// `mark_recovery_failed`, which would make the assertion meaningless anyway.
+// This is the altitude the task write-up calls "the clear-point function"
+// test as the acceptable fallback.
+#[tokio::test(flavor = "multi_thread")]
+async fn clear_run_error_nulls_error_but_preserves_answer_and_driver_lease() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let run_id = format!("resume-{}", uuid::Uuid::new_v4());
+    crud::insert_run(
+        &db,
+        &run_id,
+        "Q",
+        None,
+        "analytics",
+        None,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .unwrap();
+
+    // Simulate `cleanup_stale_runs`'s placeholder plus a real prior answer
+    // (e.g. a partial answer streamed before the crash) that must survive
+    // the clear.
+    crud::transition_run(
+        &db,
+        &run_id,
+        "needs_resume",
+        None,
+        Some("partial answer from before the crash"),
+        Some("server restarted: run will be resumed automatically"),
+    )
+    .await
+    .expect("seed needs_resume + placeholder error + answer");
+
+    // Simulate recovery's driver-lease acquisition, which happens
+    // immediately before the `clear_run_error` call at the real choke point
+    // (`recover_single_run` in agentic-pipeline).
+    let acquired = crud::try_acquire_driver(&db, &run_id, "recovery-test-driver")
+        .await
+        .expect("acquire driver lease");
+    assert!(acquired, "lease should be free to acquire");
+
+    let before = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(
+        before.error_message.as_deref(),
+        Some("server restarted: run will be resumed automatically")
+    );
+    assert!(before.driver_id.is_some(), "lease should now be held");
+
+    crud::clear_run_error(&db, &run_id)
+        .await
+        .expect("clear_run_error");
+
+    let after = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(
+        after.error_message, None,
+        "clear_run_error must null the stale placeholder"
+    );
+    assert_eq!(
+        after.answer.as_deref(),
+        Some("partial answer from before the crash"),
+        "clear_run_error must NOT touch answer — unlike reset_run_for_retry, \
+         a resume preserves prior state"
+    );
+    assert_eq!(
+        after.driver_id, before.driver_id,
+        "clear_run_error must NOT touch the driver lease — recovery is \
+         acquiring it here, not releasing it"
+    );
+    assert_eq!(
+        after.driver_heartbeat_at, before.driver_heartbeat_at,
+        "driver_heartbeat_at must be untouched too"
+    );
+    assert_eq!(
+        after.task_status.as_deref(),
+        Some("needs_resume"),
+        "clear_run_error must not touch task_status either"
+    );
+}

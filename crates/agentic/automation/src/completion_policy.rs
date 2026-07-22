@@ -16,6 +16,10 @@
 //!   optimistic-concurrency CAS on `decision_version` (a peer
 //!   coordinator advanced the run between our load and commit).
 //!   That peer is now driving the run; this completion is a no-op.
+//! - `workflow_claim_lost = true` — the decision task's queue claim
+//!   was handed back by graceful shutdown and re-claimed by a peer
+//!   before this decision committed, so `commit_decision` rolled
+//!   back. Same shape as a version conflict: the peer owns the run.
 //!
 //! Without this policy, the `agentic-runtime::coordinator` would
 //! have to hard-code these flag names and the `AutomationDecision`
@@ -58,7 +62,10 @@ impl CompletionPolicy for AutomationCompletionPolicy {
             };
         }
 
-        if flag(meta, "workflow_waiting_siblings") || flag(meta, "workflow_version_conflict") {
+        if flag(meta, "workflow_waiting_siblings")
+            || flag(meta, "workflow_version_conflict")
+            || flag(meta, "workflow_claim_lost")
+        {
             return CompletionAction::Defer;
         }
 

@@ -25,20 +25,60 @@ use crate::agentic_wiring::{OxyProjectContext, build_builder_bridges};
 use crate::server::serve_mode::{LOCAL_WORKSPACE_ID, ServeMode};
 use crate::server::service::secret_manager::SecretManagerService;
 
+/// Handles for the hooks spawned by [`spawn_shutdown_hook`], so the serve
+/// command can wait for them before the process exits.
+///
+/// A process-lifetime registry rather than a value threaded through the
+/// router return type, deliberately: `api_router` already returns a tuple
+/// consumed at nine call sites (most of them tests), and
+/// [`serve_application`](crate::cli::commands::serve) — the only place that
+/// owns the shutdown wait — never sees the `AgenticState` the hook is built
+/// from. Threading a third element through would be six signature changes to
+/// move a value whose lifetime is the process anyway, which is exactly what
+/// the shutdown token itself already is.
+static SHUTDOWN_HOOKS: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// How long [`await_shutdown_hooks`] waits before giving up on the hooks.
+///
+/// Well inside a default Kubernetes 30s termination grace period, so a slow
+/// or wedged database can never be the reason a pod gets SIGKILLed.
+const SHUTDOWN_HOOK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Spawn the graceful-shutdown hook. Returns immediately.
 ///
 /// When `agentic_state.shutdown_token` is cancelled (the serve command
 /// forwards SIGINT/SIGTERM into it), mark every active run as `"shutdown"`
-/// and signal their cancel channels. Runs with `task_status = "shutdown"`
-/// are picked up by [`recover_active_runs`] on the next startup, so this
-/// is the resumable counterpart to the `"cancelled"` state set by
-/// user-initiated cancel.
+/// and signal their cancel channels, then release this process's durable
+/// queue claims. Runs with `task_status = "shutdown"` are picked up by
+/// [`recover_active_runs`] on the next startup, so this is the resumable
+/// counterpart to the `"cancelled"` state set by user-initiated cancel.
+///
+/// The claim release happens here, in `oxy-app`, rather than inside
+/// `RuntimeState::shutdown_all` — `agentic-runtime`'s `lifecycle/` sub-layer
+/// (which owns `shutdown_all`) must have zero deps on its own `orchestrator/`
+/// sub-layer (see `crates/agentic/runtime/CLAUDE.md`), but `oxy-app` may
+/// legitimately import both, so this is where the two halves of "shut this
+/// process down" are stitched back together.
+///
+/// The handle is registered in [`SHUTDOWN_HOOKS`]; call
+/// [`await_shutdown_hooks`] on the way out of `serve` so the release
+/// actually lands instead of racing process exit.
 pub(super) fn spawn_shutdown_hook(agentic_state: Arc<AgenticState>) {
     let token = agentic_state.shutdown_token.clone();
     let runtime = agentic_state.runtime.clone();
     let db = agentic_state.db.clone();
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         token.cancelled().await;
+
+        // Close the claim path FIRST, before anything else touches the queue.
+        // The release below flips rows `claimed -> queued`, which fires the
+        // NOTIFY trigger and wakes this process's own workers; without this
+        // they would re-claim what we just released and die holding it. This
+        // is the only ordering guarantee here, and it is one we establish
+        // ourselves rather than inherit from `shutdown_all`.
+        agentic_runtime::transport::begin_shutdown();
+
         let count = runtime.shutdown_all(&db).await;
         if count > 0 {
             tracing::info!(
@@ -47,7 +87,125 @@ pub(super) fn spawn_shutdown_hook(agentic_state: Arc<AgenticState>) {
                 "graceful shutdown: marked active runs resumable"
             );
         }
+
+        // Give back every durable-queue claim this process holds so a
+        // successor can pick the work up immediately, budget-neutral.
+        //
+        // Note what this is NOT: `shutdown_all` fires cancel channels
+        // fire-and-forget (`tx.send(true).ok()`, no join), so a task that was
+        // mid-execution may still be running when its row goes back to
+        // `queued`. There is no completion barrier here, and the correctness
+        // of that is owned elsewhere — the `try_acquire_driver` CAS prevents
+        // double-drive, and the heartbeat's `worker_id`/`claimed` predicate
+        // stops a still-ticking heartbeat from re-stamping a row we no longer
+        // hold. What the `begin_shutdown` above guarantees is narrower and
+        // sufficient: nothing in this process claims *new* work from here on.
+        //
+        // `process_worker_id_if_initialized` rather than `process_worker_id`:
+        // the id is lazily minted, so asking for it here in a process that
+        // never built a `DurableTransport` would forge a fresh id and issue a
+        // guaranteed-zero-row UPDATE. `None` means we never claimed anything.
+        let Some(worker_id) = agentic_runtime::transport::process_worker_id_if_initialized() else {
+            return;
+        };
+
+        // Order matters: `mark_released_roots_global` matches on this
+        // worker's `worker_id` + `queue_status = 'claimed'`, and the drain
+        // below clears both (`worker_id -> NULL`, status -> `queued`). Run it
+        // first so an orphaned workflow/airway root becomes visible to the
+        // global claim path instead of waiting for a process restart — see
+        // `mark_released_roots_global`'s doc comment for why this is gated to
+        // `workflow`/`airway` and roots only.
+        match agentic_runtime::crud::mark_released_roots_global(&db, worker_id).await {
+            Ok(0) => {}
+            Ok(marked) => tracing::info!(
+                target: "recovery",
+                marked,
+                worker_id,
+                "graceful shutdown: made orphaned roots globally recoverable"
+            ),
+            Err(e) => tracing::warn!(
+                target: "recovery",
+                error = %e,
+                worker_id,
+                "graceful shutdown: failed to mark roots global"
+            ),
+        }
+
+        // `drain_claims_for_worker` rather than a single release pass: a worker
+        // that cleared the `is_shutting_down` gate before it was set can still
+        // land its claim *after* the release runs, and the `shutdown_all` above
+        // does one DB write per active run in between. The drain is bounded (3
+        // passes, stopping on the first empty one) so it stays inside
+        // `SHUTDOWN_HOOK_TIMEOUT`, which still wraps this whole task.
+        match agentic_runtime::crud::drain_claims_for_worker(&db, worker_id).await {
+            Ok(0) => {}
+            Ok(released) => tracing::info!(
+                target: "recovery",
+                released,
+                worker_id,
+                "graceful shutdown: released claims back to the queue"
+            ),
+            Err(e) => tracing::warn!(
+                target: "recovery",
+                error = %e,
+                worker_id,
+                "graceful shutdown: failed to release claims; the reaper will \
+                 reclaim them after the visibility timeout"
+            ),
+        }
     });
+    // A poisoned lock only means some other thread panicked while holding a
+    // `Vec<JoinHandle>`; the Vec is still structurally sound, so recover
+    // rather than turn a shutdown-path detail into a panic.
+    SHUTDOWN_HOOKS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(handle);
+}
+
+/// Wait for every registered shutdown hook to finish, bounded by
+/// [`SHUTDOWN_HOOK_TIMEOUT`].
+///
+/// The hooks are detached tasks racing process exit; without this the claim
+/// release in `shutdown_all` is a coin flip. Bounded because a slow database
+/// must not hold the pod past its termination grace period — on timeout we
+/// degrade to the pre-existing behaviour, where the reaper reclaims the
+/// claims once the visibility timeout expires.
+///
+/// `shutdown_token` is the one the hooks are parked on. If it was never
+/// cancelled the server is unwinding from an error rather than a signal, so
+/// the hooks will never fire and waiting on them would just burn the full
+/// timeout and log a shutdown warning for a failure that isn't one.
+pub(crate) async fn await_shutdown_hooks(shutdown_token: &tokio_util::sync::CancellationToken) {
+    if !shutdown_token.is_cancelled() {
+        return;
+    }
+
+    let handles: Vec<_> =
+        std::mem::take(&mut *SHUTDOWN_HOOKS.lock().unwrap_or_else(|e| e.into_inner()));
+    if handles.is_empty() {
+        return;
+    }
+
+    let drain = async {
+        for handle in handles {
+            // A hook that panicked has already logged; the remaining hooks
+            // still deserve their chance to release.
+            let _ = handle.await;
+        }
+    };
+
+    if tokio::time::timeout(SHUTDOWN_HOOK_TIMEOUT, drain)
+        .await
+        .is_err()
+    {
+        tracing::warn!(
+            target: "recovery",
+            timeout_secs = SHUTDOWN_HOOK_TIMEOUT.as_secs(),
+            "graceful shutdown: claim release timed out; the reaper will reclaim"
+        );
+    }
 }
 
 /// The in-process global driver loop: after one-shot startup recovery, re-run
@@ -602,31 +760,48 @@ fn spawn_latency_worker(
                     break;
                 }
                 _ = tokio::time::sleep(poll) => {
-                    let n = match mode {
-                        ServeMode::Local => {
-                            tick_local(
-                                &db,
-                                &runtime,
-                                schema_cache.as_ref(),
-                                builder_test_runner.as_ref(),
-                                builder_app_runner.as_ref(),
-                                &router,
-                                &ws_cache,
-                            )
-                            .await
+                    // Race the whole tick against shutdown. A poll (or a run
+                    // drive) already in flight when a co-located DB dies on
+                    // shutdown would otherwise block the full pool
+                    // `ACQUIRE_TIMEOUT` (~30s) before erroring, delaying the
+                    // bounded shutdown-hook wait that follows serve. On
+                    // shutdown we abandon the tick and break; any half-driven
+                    // Global run is picked back up by recovery on restart (or
+                    // by a peer), gated by the driver lease.
+                    let tick = async {
+                        match mode {
+                            ServeMode::Local => {
+                                tick_local(
+                                    &db,
+                                    &runtime,
+                                    schema_cache.as_ref(),
+                                    builder_test_runner.as_ref(),
+                                    builder_app_runner.as_ref(),
+                                    &router,
+                                    &ws_cache,
+                                )
+                                .await
+                            }
+                            ServeMode::Cloud => {
+                                tick_cloud(
+                                    &db,
+                                    &runtime,
+                                    schema_cache.as_ref(),
+                                    builder_test_runner.as_ref(),
+                                    builder_app_runner.as_ref(),
+                                    &router,
+                                    &ws_cache,
+                                )
+                                .await
+                            }
                         }
-                        ServeMode::Cloud => {
-                            tick_cloud(
-                                &db,
-                                &runtime,
-                                schema_cache.as_ref(),
-                                builder_test_runner.as_ref(),
-                                builder_app_runner.as_ref(),
-                                &router,
-                                &ws_cache,
-                            )
-                            .await
+                    };
+                    let n = tokio::select! {
+                        _ = shutdown.cancelled() => {
+                            tracing::info!(target: "recovery", "latency worker: shutdown during poll");
+                            break;
                         }
+                        n = tick => n,
                     };
                     if n > 0 {
                         tracing::info!(

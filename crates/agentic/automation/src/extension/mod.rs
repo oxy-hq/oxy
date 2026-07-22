@@ -8,7 +8,7 @@ pub(crate) mod crud;
 pub(crate) mod entity;
 pub mod migration;
 
-pub use commit::{CommitOutcome, DecisionCommit, DecisionTerminal, commit_decision};
+pub use commit::{CommitOutcome, DecisionClaim, DecisionCommit, DecisionTerminal, commit_decision};
 pub use migration::AutomationMigrator;
 
 use std::collections::HashMap;

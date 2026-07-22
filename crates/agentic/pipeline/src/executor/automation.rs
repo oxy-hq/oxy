@@ -347,11 +347,28 @@ impl PipelineTaskExecutor {
 
         // AutomationDecision tasks use their run_id as their queue task_id.
         let decision_task_id = run_id.to_string();
+        // We are running inside `TaskExecutor::execute`, i.e. on the worker
+        // that just claimed `decision_task_id`. Scope the commit's terminal
+        // queue write to that claim so a peer that re-claimed the row after a
+        // graceful release can't have its live claim stamped terminal by this
+        // (possibly dying) process — see `DecisionClaim`.
+        //
+        // `process_worker_id_if_initialized` rather than `process_worker_id`:
+        // an uninitialized cell is a *fact* that this process never built a
+        // `DurableTransport` and so holds no claims at all, and minting an id
+        // here would fabricate an owner that matches nothing.
+        let claim = match agentic_runtime::transport::process_worker_id_if_initialized() {
+            Some(worker_id) => {
+                agentic_automation::extension::DecisionClaim::HeldBy(worker_id.to_string())
+            }
+            None => agentic_automation::extension::DecisionClaim::Unclaimed,
+        };
         let outcome = agentic_automation::extension::commit_decision(
             &self.db,
             agentic_automation::extension::DecisionCommit {
                 run_id: run_id.to_string(),
                 decision_task_id,
+                claim,
                 expected_version,
                 new_state,
                 result_delta,
@@ -364,12 +381,19 @@ impl PipelineTaskExecutor {
         .await
         .map_err(|e| format!("commit_decision: {e}"))?;
 
-        if matches!(
-            outcome,
-            agentic_automation::extension::CommitOutcome::VersionConflict
-        ) {
-            tracing::debug!(run_id = %run_id, "AutomationDecision: version conflict — discarding");
-            return Ok(noop_version_conflict_task().await);
+        match outcome {
+            agentic_automation::extension::CommitOutcome::VersionConflict => {
+                tracing::debug!(run_id = %run_id, "AutomationDecision: version conflict — discarding");
+                return Ok(noop_stop_task("workflow_version_conflict").await);
+            }
+            // A peer re-claimed the decision task while this decision was
+            // running (graceful release during shutdown). Nothing was
+            // persisted; the peer drives the run from durable state.
+            agentic_automation::extension::CommitOutcome::ClaimLost => {
+                tracing::warn!(run_id = %run_id, "AutomationDecision: claim lost to a peer — discarding");
+                return Ok(noop_stop_task("workflow_claim_lost").await);
+            }
+            agentic_automation::extension::CommitOutcome::Committed => {}
         }
 
         // After commit succeeds, run the export plan. Walking the delta
@@ -565,13 +589,21 @@ async fn run_export_plan(
     }
 }
 
-async fn noop_version_conflict_task() -> ExecutingTask {
+/// A decision that persisted nothing and must not advance the run.
+///
+/// `flag` names *why* — `workflow_version_conflict` (a peer won the
+/// `decision_version` CAS) or `workflow_claim_lost` (a peer re-claimed the
+/// decision task's queue row after this process was gracefully released).
+/// Both are handled identically by `AutomationCompletionPolicy`: defer, and
+/// let the peer that actually owns the run drive it. The flags stay distinct
+/// so the reason is legible in the event log.
+async fn noop_stop_task(flag: &str) -> ExecutingTask {
     let (_, event_rx) = mpsc::channel::<(String, Value)>(1);
     let (outcome_tx, outcome_rx) = mpsc::channel::<TaskOutcome>(1);
     let _ = outcome_tx
         .send(TaskOutcome::Done {
             answer: String::new(),
-            metadata: Some(serde_json::json!({"workflow_version_conflict": true})),
+            metadata: Some(serde_json::json!({ flag: true })),
         })
         .await;
     ExecutingTask {

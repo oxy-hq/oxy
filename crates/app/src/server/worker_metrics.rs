@@ -14,6 +14,8 @@
 //! | `oxy_queue_depth_dead` | gauge | `task_kind` | same |
 //! | `oxy_worker_capacity` | gauge | `task_kind` | per-kind env caps |
 //! | `oxy_worker_info` | gauge=1 | `worker_id`, `version` | identity |
+//! | `oxy_tasks_requeued_total` | counter | (none) | `agentic_runtime::crud::TASKS_REQUEUED` |
+//! | `oxy_tasks_dead_lettered_total` | counter | (none) | `agentic_runtime::crud::TASKS_DEAD_LETTERED` |
 //! | `oxy_metrics_scrape_db_ok` | gauge=0/1 | (none) | DB read status this scrape |
 //!
 //! Per-process inflight counters (current concurrent tasks per
@@ -183,6 +185,38 @@ pub async fn metrics(State(state): State<MetricsState>) -> Response {
     body.push_str(&format!(
         "oxy_compile_promotion_lag {}\n",
         compile.promotion_lag
+    ));
+
+    // ── reap-event counters ─────────────────────────────────────────
+    // Monotonic, process-local counters incremented inside
+    // `agentic-runtime::orchestrator::crud::queue::reap_stale_tasks` itself
+    // (re-exported as `agentic_runtime::crud::TASKS_REQUEUED` /
+    // `TASKS_DEAD_LETTERED`), not by the caller — that function is the
+    // single choke point every reap path funnels through (the periodic
+    // `background::run_reaper_cycle` loop, this worker's startup pre-pass,
+    // the admin `/run-reaper` handler, and pipeline recovery), so counting
+    // there is what makes every reap in this process observable regardless
+    // of which path triggered it. They live in `agentic-runtime` rather
+    // than here because that's where `reap_stale_tasks` lives, and
+    // `agentic-runtime` must never depend on `oxy-app`. Read directly from
+    // the statics rather than mirroring them into `MetricsState`; the
+    // point-in-time `oxy_queue_depth_dead` gauge above answers "how many are
+    // dead right now", these answer "how often are we dead-lettering".
+    body.push_str(
+        "# HELP oxy_tasks_requeued_total Stale claims returned to the queue by the reaper.\n\
+         # TYPE oxy_tasks_requeued_total counter\n",
+    );
+    body.push_str(&format!(
+        "oxy_tasks_requeued_total {}\n",
+        agentic_runtime::crud::TASKS_REQUEUED.load(std::sync::atomic::Ordering::Relaxed)
+    ));
+    body.push_str(
+        "# HELP oxy_tasks_dead_lettered_total Claims moved to dead by the reaper.\n\
+         # TYPE oxy_tasks_dead_lettered_total counter\n",
+    );
+    body.push_str(&format!(
+        "oxy_tasks_dead_lettered_total {}\n",
+        agentic_runtime::crud::TASKS_DEAD_LETTERED.load(std::sync::atomic::Ordering::Relaxed)
     ));
 
     body.push_str(

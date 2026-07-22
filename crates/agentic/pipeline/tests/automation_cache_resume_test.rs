@@ -21,8 +21,8 @@ use agentic_automation::config::{
     AutomationConfig as WfConfig, FormatterConfig, TaskConfig, TaskType,
 };
 use agentic_automation::extension::{
-    AutomationMigrator, DecisionCommit, DecisionTerminal, commit_decision, insert_automation_state,
-    load_automation_state,
+    AutomationMigrator, DecisionClaim, DecisionCommit, DecisionTerminal, commit_decision,
+    insert_automation_state, load_automation_state,
 };
 use agentic_runtime::crud;
 use agentic_runtime::migration::RuntimeMigrator;
@@ -251,6 +251,7 @@ async fn drive_to_complete(db: &DatabaseConnection, run_id: &str) -> Vec<String>
             DecisionCommit {
                 run_id: run_id.to_string(),
                 decision_task_id: run_id.to_string(),
+                claim: DecisionClaim::Unclaimed,
                 expected_version,
                 new_state,
                 result_delta,

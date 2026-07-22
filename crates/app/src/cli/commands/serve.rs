@@ -20,6 +20,7 @@ use oxy::{
 };
 use oxy_cameras::CamerasMigrator;
 use oxy_shared::errors::OxyError;
+use std::future::IntoFuture;
 use std::net::SocketAddr;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
@@ -792,12 +793,27 @@ async fn handle_static_files(
     Ok(response)
 }
 
+/// How long the plain-HTTP path lets in-flight requests drain after the
+/// shutdown signal before it drops the serve future and moves on.
+///
+/// `axum::serve(...).with_graceful_shutdown(..)` otherwise waits for in-flight
+/// requests *indefinitely*, so a single handler wedged on a 30s DB pool acquire
+/// would delay the whole shutdown ~30s before `await_shutdown_hooks` even runs.
+/// Bounding it keeps total shutdown ≈ this deadline + the 10s hook budget,
+/// comfortably inside a default 30s Kubernetes grace period. The TLS path uses
+/// `axum_server`'s immediate `handle.shutdown()` and needs no equivalent.
+const GRACEFUL_DRAIN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
 async fn serve_application(
     app: Router,
     internal_app: Option<Router>,
     args: ServeArgs,
     shutdown_token: CancellationToken,
 ) -> Result<(), OxyError> {
+    // Both serve branches below consume `shutdown_token`; keep a handle so the
+    // shutdown-hook wait can tell a signalled shutdown from an error unwind.
+    let shutdown_observer = shutdown_token.clone();
+
     let socket_addr = format!("{}:{}", args.host, args.port)
         .parse()
         .or_else(|_| Ok(SocketAddr::from(([0, 0, 0, 0], args.port))))
@@ -860,7 +876,7 @@ async fn serve_application(
         });
     }
 
-    if args.http2_only {
+    let result = if args.http2_only {
         // If TLS cert/key files exist, use HTTPS+HTTP/2
         let cert_exists = std::path::Path::new(&args.tls_cert).exists();
         let key_exists = std::path::Path::new(&args.tls_key).exists();
@@ -905,7 +921,17 @@ async fn serve_application(
         tokio::spawn(async move {
             create_shutdown_signal().await;
             tracing::info!("Shutdown signal received, stopping server...");
+            // Set the shutdown flag at signal time — before any background
+            // loop does one more blocking DB poll — so `is_shutting_down()`
+            // gates catch immediately and in-flight polls race the shutdown
+            // signal. The shutdown hook also calls this (idempotent); doing it
+            // here is what makes the gates prompt. Mirrors `oxy worker`.
+            agentic_runtime::transport::begin_shutdown();
             token.cancel();
+            // `axum_server`'s `handle.shutdown()` is immediate (it stops
+            // accepting and drops in-flight connections at once), so the TLS
+            // path needs no separate drain deadline — unlike the plain-HTTP
+            // `with_graceful_shutdown` path below.
             shutdown_handle.shutdown();
         });
 
@@ -923,21 +949,57 @@ async fn serve_application(
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to bind to address: {}", e)))?;
 
+        // A clone of the same token the shutdown future cancels below — the
+        // drain deadline arm watches it so the clock starts at signal time,
+        // not at server start.
+        let drain_observer = shutdown_observer.clone();
         let shutdown = async move {
             create_shutdown_signal().await;
+            // Set the shutdown flag at signal time (see the TLS branch note):
+            // gates catch immediately, in-flight polls race the signal.
+            agentic_runtime::transport::begin_shutdown();
             shutdown_token.cancel();
         };
 
         // See the matching note above the TLS branch — same
         // `ConnectInfo<SocketAddr>` plumbing for the plain HTTP path.
-        axum::serve(
+        let serve_fut = axum::serve(
             listener,
             app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
         .with_graceful_shutdown(shutdown)
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("Server error: {}", e)))
-    }
+        .into_future();
+        tokio::pin!(serve_fut);
+
+        // Bound the in-flight-request drain: once the shutdown signal fires,
+        // give handlers at most `GRACEFUL_DRAIN_DEADLINE`, then drop the serve
+        // future and proceed to the (separately bounded) shutdown hooks. A
+        // clean drain that finishes first still wins the select.
+        tokio::select! {
+            r = &mut serve_fut => {
+                r.map_err(|e| OxyError::RuntimeError(format!("Server error: {}", e)))
+            }
+            _ = async {
+                drain_observer.cancelled().await;
+                tokio::time::sleep(GRACEFUL_DRAIN_DEADLINE).await;
+            } => {
+                tracing::warn!(
+                    drain_secs = GRACEFUL_DRAIN_DEADLINE.as_secs(),
+                    "graceful drain deadline reached; abandoning in-flight requests \
+                     so shutdown stays inside the grace period"
+                );
+                Ok(())
+            }
+        }
+    };
+
+    // Both branches above return only after the listener has drained, which
+    // is also after `shutdown_token` was cancelled — so the shutdown hooks
+    // are already running. Wait for them (bounded) rather than letting
+    // process exit race the claim release they perform.
+    crate::server::router::recovery::await_shutdown_hooks(&shutdown_observer).await;
+
+    result
 }
 
 async fn create_shutdown_signal() {
