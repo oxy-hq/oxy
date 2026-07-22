@@ -29,6 +29,7 @@ mod seed_partners;
 pub(crate) mod serve;
 mod start;
 mod status;
+mod test;
 mod worker;
 
 use crate::cli::commands::mcp::{start_mcp_sse_server, start_mcp_stdio};
@@ -40,6 +41,7 @@ use crate::server::service::sync::{SyncFilter, sync_databases};
 use ::oxy::adapters::secrets::SecretsManager;
 use ::oxy::adapters::workspace::builder::WorkspaceBuilder;
 use ::oxy::config::model::AppConfig;
+use ::oxy::config::test_config::TestFileConfig;
 use ::oxy::config::*;
 use ::oxy::sentry_config;
 use ::oxy::theme::StyledText;
@@ -172,6 +174,12 @@ enum SubCommand {
     ///
     /// Run SQL queries against databases or execute automations for data processing.
     Run(RunArgs),
+    /// Run evaluation tests defined in .test.yml files
+    ///
+    /// Executes the cases in a `.test.yml` file against its `.agentic.yml`
+    /// target, scores each run with an LLM judge, and reports accuracy and
+    /// consistency. Omit the file to run every `.test.yml` in the project.
+    Test(test::TestArgs),
     /// Build vector embeddings and sync integrations
     ///
     /// Process your project files and create searchable embeddings for
@@ -353,14 +361,6 @@ pub struct MakeArgs {
 pub enum OutputFormat {
     Pretty,
     Json,
-}
-
-#[derive(clap::ValueEnum, Clone, Debug)]
-pub enum ThresholdMode {
-    /// Average of all test accuracies must meet threshold
-    Average,
-    /// All individual test accuracies must meet threshold
-    All,
 }
 
 #[derive(Parser, Debug)]
@@ -571,6 +571,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Status => "status",
             SubCommand::Mcp(_) => "mcp",
             SubCommand::SelfUpdate => "self-update",
+            SubCommand::Test(_) => "test",
             SubCommand::TestTheme => "test-theme",
             SubCommand::GenConfigSchema(_) => "gen-config-schema",
             SubCommand::Make(_) => "make",
@@ -626,6 +627,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 (
                     "app.json",
                     serde_json::to_string_pretty(&schemars::schema_for!(AppConfig))?,
+                ),
+                (
+                    "agent-test.json",
+                    serde_json::to_string_pretty(&schemars::schema_for!(TestFileConfig))?,
                 ),
             ];
 
@@ -684,6 +689,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Run(run_args)) => {
             sentry_config::add_operation_context("run", Some(&run_args.file));
             handle_run_command(run_args).await?;
+        }
+        Some(SubCommand::Test(test_args)) => {
+            sentry_config::add_operation_context("test", test_args.file.as_deref());
+            test::handle_test_command(test_args).await?;
         }
         Some(SubCommand::Build(build_args)) => {
             sentry_config::add_operation_context("build", None);
