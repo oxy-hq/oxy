@@ -51,11 +51,42 @@ pub struct CompileStatus {
     /// Whether the IDE Compile button should be enabled. Mirrors the
     /// server-side gate so the FE doesn't need to re-implement it.
     pub can_compile: bool,
-    /// HEAD commit SHA on the workspace's default branch. `None` for
-    /// blank / demo / no-remote workspaces. The FE compares this
-    /// against `latest.git_sha` to label the button as
-    /// up-to-date / stale / never-compiled without a second request.
+    /// HEAD commit SHA on the workspace's default branch — the **working
+    /// copy**, not the remote and not what is being served. `None` for
+    /// blank / demo / no-remote workspaces.
+    ///
+    /// Do **not** use this alone to decide freshness. Compiles are always
+    /// taken from this same ref (`enqueue_compile` reads it too), so
+    /// `latest.git_sha == head_sha` is a tautology after any successful
+    /// compile and stays true no matter how far origin has moved ahead. That
+    /// comparison is what put a green "Up to date" next to a SHA that was
+    /// neither the remote tip nor the serving revision — see
+    /// oxygen-workspace-sync-bugs.md bug 3.
     pub head_sha: Option<String>,
+    /// SHA of the revision reads are actually served from — the workspace's
+    /// promoted `current_revision_id`. This is what "is my change live?"
+    /// means. `None` when nothing has been promoted yet.
+    ///
+    /// Distinct from `latest.git_sha`: `latest` is merely the newest revision
+    /// row, which may be mid-compile, failed, or ready-but-never-promoted.
+    pub compiled_sha: Option<String>,
+    /// SHA of `origin/<default_branch>` as of the last fetch — the tip a
+    /// merged PR lands on. Read from the local tracking ref; no network call.
+    pub remote_sha: Option<String>,
+    /// When origin was last contacted. `remote_sha` is only as trustworthy as
+    /// this is recent, so the UI must qualify its verdict when this is stale
+    /// or absent rather than assert freshness it cannot know.
+    pub remote_fetched_at: Option<DateTime<Utc>>,
+    /// Commits the serving revision has that `origin/<default_branch>` does
+    /// not, and vice versa.
+    ///
+    /// `compiled_sha != remote_sha` on its own does **not** mean "behind":
+    /// a revision compiled from a local-only commit (every restore mints one,
+    /// and restore now auto-compiles) is *ahead* of origin and fails the same
+    /// equality. Without ancestry the UI would tell an operator to compile
+    /// toward an older origin SHA. Both `None` when either end is unknown.
+    pub compiled_ahead: Option<u64>,
+    pub compiled_behind: Option<u64>,
     /// Workspace's default branch (`"main"` / `"master"` / custom).
     /// `None` matches `head_sha = None`.
     pub default_branch: Option<String>,
@@ -272,13 +303,29 @@ pub async fn compile_status(
             )
         })?;
 
+    // `kind = "main"` matters: draft revisions (per-user branch compiles) share
+    // this table, and an unfiltered "newest row" lets someone else's draft
+    // become the status the Compile button reports for main.
     let latest = entity::revisions::Entity::find()
         .filter(entity::revisions::Column::WorkspaceId.eq(workspace_id))
+        .filter(entity::revisions::Column::Kind.eq("main"))
         .order_by_desc(entity::revisions::Column::StartedAt)
         .one(&db)
         .await
         .map_err(internal)?
         .map(summarise);
+
+    // The promoted revision — what reads are actually served from. Resolved
+    // from `current_revision_id` rather than inferred from `latest`, because a
+    // ready revision is not necessarily the promoted one.
+    let compiled_sha = match workspace.current_revision_id {
+        Some(rev_id) => entity::revisions::Entity::find_by_id(rev_id)
+            .one(&db)
+            .await
+            .map_err(internal)?
+            .map(|r| r.git_sha),
+        None => None,
+    };
 
     // Allow Compile when the workspace has no resolvable default
     // branch (blank / demo / no-remote): the working tree is the
@@ -297,14 +344,11 @@ pub async fn compile_status(
     // up-to-date / stale without a follow-up request. Cheap — same
     // `get_branch_commit` call used at enqueue time, and we already
     // have the workspace path.
-    let head_sha = match (&default_branch, workspace.path.as_deref()) {
+    let git = match (&default_branch, workspace.path.as_deref()) {
         (Some(default), Some(path)) => {
-            let (sha, _subject) = oxy::github::default_git_client()
-                .get_branch_commit(std::path::Path::new(path), default)
-                .await;
-            if sha.is_empty() { None } else { Some(sha) }
+            read_git_facts(std::path::Path::new(path), default, compiled_sha.as_deref()).await
         }
-        _ => None,
+        _ => GitFacts::default(),
     };
 
     Ok(Json(CompileStatus {
@@ -312,11 +356,65 @@ pub async fn compile_status(
         current_revision_id: workspace.current_revision_id,
         latest,
         can_compile,
-        head_sha,
+        head_sha: git.head_sha,
+        compiled_sha,
+        remote_sha: git.remote_sha,
+        remote_fetched_at: git.remote_fetched_at,
+        compiled_ahead: git.compiled_ahead,
+        compiled_behind: git.compiled_behind,
         default_branch,
         boundary_active: crate::server::role_manifest::current_process_role()
             != crate::server::role_manifest::Role::All,
     }))
+}
+
+/// The git-derived half of `CompileStatus`, read from the working copy.
+#[derive(Default)]
+struct GitFacts {
+    head_sha: Option<String>,
+    remote_sha: Option<String>,
+    remote_fetched_at: Option<DateTime<Utc>>,
+    compiled_ahead: Option<u64>,
+    compiled_behind: Option<u64>,
+}
+
+/// Read HEAD, the cached remote tip, its age, and the serving revision's
+/// position relative to origin.
+///
+/// Deliberately does no fetch: this endpoint is polled by the IDE header, so a
+/// network round-trip per poll would put remote latency on a status widget.
+/// `git_fetch_maintenance` keeps the tracking ref warm instead, and
+/// `remote_fetched_at` lets the UI say how stale the answer is.
+async fn read_git_facts(
+    path: &std::path::Path,
+    default_branch: &str,
+    compiled_sha: Option<&str>,
+) -> GitFacts {
+    let git = oxy::github::default_git_client();
+    let (head, _subject) = git.get_branch_commit(path, default_branch).await;
+    let remote_sha = git.get_tracking_ref_sha(path, default_branch).await;
+    let remote_fetched_at = oxy_git::cli::push_pull::last_fetch_at(path)
+        .await
+        .map(DateTime::<Utc>::from);
+
+    // Ancestry of the SERVING revision against origin — not of HEAD. The
+    // question is "does origin have anything that isn't live yet", and HEAD is
+    // not what is live.
+    let (compiled_ahead, compiled_behind) = match (compiled_sha, remote_sha.as_deref()) {
+        (Some(compiled), Some(remote)) => {
+            let (ahead, behind) = git.get_ahead_behind_counts(path, compiled, remote).await;
+            (Some(ahead), Some(behind))
+        }
+        _ => (None, None),
+    };
+
+    GitFacts {
+        head_sha: if head.is_empty() { None } else { Some(head) },
+        remote_sha,
+        remote_fetched_at,
+        compiled_ahead,
+        compiled_behind,
+    }
 }
 
 fn summarise(r: entity::revisions::Model) -> RevisionSummary {

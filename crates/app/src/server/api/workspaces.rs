@@ -74,7 +74,13 @@ pub struct ProjectResponse {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 pub enum PullState {
+    /// Local branch matches origin exactly — nothing left to reconcile.
     Synced,
+    /// The pull succeeded, but local commits that are not on origin remain on
+    /// top. Distinct from `Synced` because it is not a resting state: those
+    /// commits block the next fast-forward and make restore refuse, so the
+    /// caller has something left to do (push them, or discard them).
+    AheadOfRemote,
     Conflict,
     Error,
 }
@@ -266,7 +272,7 @@ async fn git_pull(
     worktree: &std::path::Path,
     branch: &str,
     workspace: &entity::workspaces::Model,
-) -> Result<String, OxyError> {
+) -> Result<oxy_git::PullOutcome, OxyError> {
     let git = default_git_client();
     if !git.has_remote(worktree).await {
         return Err(OxyError::RuntimeError(
@@ -275,8 +281,7 @@ async fn git_pull(
     }
     let token = github_token_for_workspace(workspace).await?;
     git.pull_from_remote(worktree, branch, token.as_deref())
-        .await?;
-    Ok("Pulled latest changes from remote".to_string())
+        .await
 }
 
 async fn git_push(
@@ -524,18 +529,19 @@ async fn git_recent_commits(
     // Fetch one extra row so `has_more` is known without a second `git log`.
     let raw = git.get_recent_commits(worktree, limit + 1, offset).await;
     let has_more = raw.len() > limit;
-    let commits = raw
-        .into_iter()
-        .take(limit)
-        .map(|(hash, short_hash, message, author, date)| CommitEntry {
-            hash,
-            short_hash,
-            message,
-            author,
-            date,
-        })
-        .collect();
+    let commits = raw.into_iter().take(limit).map(commit_entry).collect();
     RecentCommitsResponse { commits, has_more }
+}
+
+fn commit_entry(c: oxy_git::RecentCommit) -> CommitEntry {
+    CommitEntry {
+        hash: c.hash,
+        short_hash: c.short_hash,
+        message: c.subject,
+        author: c.author,
+        date: c.relative_date,
+        on_remote: c.on_remote,
+    }
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────
@@ -562,7 +568,7 @@ pub async fn pull_changes(
     // Probe on-disk state rather than stderr — `git pull --rebase` exits
     // non-zero on conflict but the message is locale- and version-sensitive.
     match git_pull(worktree, &branch, &ws).await {
-        Ok(message) => {
+        Ok(outcome) => {
             if git.is_in_conflict(worktree).await {
                 Ok(ResponseJson(PullChangesResponse {
                     success: false,
@@ -578,10 +584,33 @@ pub async fn pull_changes(
                 // branch switch does.
                 app_state.semantic_layer_cache.remove(ws.id);
                 app_state.semantic_engine_cache.remove(ws.id);
+                // The pull rewrote the working copy, but reads are served from
+                // the promoted revision — so without this the runtime keeps
+                // serving the pre-pull configuration indefinitely, which is
+                // precisely what a user pulling is trying to stop.
+                if outcome.before_sha != outcome.after_sha {
+                    crate::server::compile_trigger::compile_after_content_change(
+                        ws.id,
+                        worktree,
+                        &branch,
+                        "after pull",
+                    )
+                    .await;
+                }
+                // `Synced` only when the local branch genuinely matches origin.
+                // A pull that brought nothing in because local commits sit on
+                // top is NOT synced — that is the stranded state, and calling
+                // it "Synced" is what sent an operator looking for the problem
+                // everywhere except the one commit causing it.
+                let state = if outcome.unpushed > 0 {
+                    PullState::AheadOfRemote
+                } else {
+                    PullState::Synced
+                };
                 Ok(ResponseJson(PullChangesResponse {
                     success: true,
-                    message,
-                    state: PullState::Synced,
+                    message: outcome.summary(),
+                    state,
                 }))
             }
         }
@@ -675,6 +704,12 @@ pub struct ResetToCommitResponse {
     /// the endpoint with `force=true` if the user confirms.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<Vec<DirtyEntry>>,
+    /// Populated only when `success=false` because the restore would drop
+    /// commits. Same contract as `dirty`: show them, then re-call with
+    /// `force=true` on confirm. Each entry's `on_remote` says whether losing it
+    /// is cheap (never pushed) or expensive (already on origin).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discarded_commits: Option<Vec<CommitEntry>>,
 }
 
 #[derive(Deserialize)]
@@ -791,6 +826,7 @@ pub async fn get_recent_commits(
 
 pub async fn reset_to_commit(
     _: WorkspaceAdmin,
+    Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<ResetToCommitQuery>,
 ) -> Result<ResponseJson<ResetToCommitResponse>, StatusCode> {
@@ -799,22 +835,53 @@ pub async fn reset_to_commit(
         .reset_to_commit(worktree, &query.commit, query.force)
         .await
     {
-        Ok(ResetOutcome::Done) => Ok(ResponseJson(ResetToCommitResponse {
-            success: true,
-            message: format!("Restored to {}", query.commit),
-            dirty: None,
-        })),
+        Ok(ResetOutcome::Done) => {
+            // A restore rewrites the working copy and commits the result, so
+            // the promoted revision no longer reflects the workspace. Ship it,
+            // or the restore is invisible to everything that reads compiled
+            // state. Note this promotes a local-only commit: that is what
+            // restore *means*, and it already happened on the manual path —
+            // this only removes the requirement to remember to click Compile.
+            let branch = resolve_branch(query.branch.clone(), worktree).await;
+            crate::server::compile_trigger::compile_after_content_change(
+                ws.id,
+                worktree,
+                &branch,
+                "after restore",
+            )
+            .await;
+            Ok(ResponseJson(ResetToCommitResponse {
+                success: true,
+                message: format!("Restored to {}", query.commit),
+                dirty: None,
+                discarded_commits: None,
+            }))
+        }
         Ok(ResetOutcome::Dirty(dirty)) => Ok(ResponseJson(ResetToCommitResponse {
             success: false,
             message: format!("{} uncommitted change(s) would be discarded", dirty.len()),
             dirty: Some(dirty),
+            discarded_commits: None,
         })),
+        Ok(ResetOutcome::WouldDiscardCommits(commits)) => {
+            let short = &query.commit[..query.commit.len().min(7)];
+            Ok(ResponseJson(ResetToCommitResponse {
+                success: false,
+                message: format!(
+                    "Restoring to {short} would discard {} commit(s) made after it.",
+                    commits.len()
+                ),
+                dirty: None,
+                discarded_commits: Some(commits.into_iter().map(commit_entry).collect()),
+            }))
+        }
         Err(e) => {
             error!("Failed to restore to commit: {}", e);
             Ok(ResponseJson(ResetToCommitResponse {
                 success: false,
                 message: format!("{e}"),
                 dirty: None,
+                discarded_commits: None,
             }))
         }
     }

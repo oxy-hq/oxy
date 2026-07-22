@@ -42,7 +42,15 @@ export const PullDialog = ({ open, onOpenChange, onConflict }: Props) => {
       });
 
       if (result.state === "Synced") {
-        toast.success("Pulled latest changes");
+        // The server's message says what actually happened — including
+        // "Already up to date", which a fixed "Pulled latest changes" hid.
+        toast.success(result.message || "Pulled latest changes");
+      } else if (result.state === "AheadOfRemote") {
+        toast.warning(result.message || "Pulled, but local commits remain", {
+          description:
+            "Local commits that aren't on origin sit on top of this branch. They block " +
+            "fast-forward pulls until you push or discard them."
+        });
       } else if (result.state === "Conflict") {
         toast.warning("Pull paused with conflicts", {
           description: "Resolve them in the changes panel."

@@ -9,7 +9,15 @@ export interface CommitEntry {
   short_hash: string;
   message: string;
   author: string;
+  /** Relative committer date ("9 minutes ago") — matches the order rows arrive in. */
   date: string;
+  /**
+   * `false` when the commit exists only in the workspace's working copy and has
+   * never been pushed. Omitted when there is no upstream to compare against.
+   * Local-only commits block fast-forward pulls and make restore refuse, so the
+   * list calls them out explicitly.
+   */
+  on_remote?: boolean;
 }
 
 export interface RecentCommitsResponse {
@@ -32,7 +40,14 @@ export interface DirtyEntry {
 export interface ResetToCommitResponse {
   success: boolean;
   message: string;
+  /** Set when the restore was refused because the working tree is dirty. */
   dirty?: DirtyEntry[];
+  /**
+   * Set when the restore was refused because it would drop commits. Both
+   * refusals are recoverable by re-issuing with `force=true`, so each needs its
+   * own confirmation — a refusal with no way to act on it reads as a dead button.
+   */
+  discarded_commits?: CommitEntry[];
 }
 
 export const WorkspaceService = {
@@ -76,7 +91,16 @@ export const WorkspaceService = {
   async pullChanges(
     workspaceId: string,
     branchName: string
-  ): Promise<{ success: boolean; message: string; state: "Synced" | "Conflict" | "Error" }> {
+  ): Promise<{
+    success: boolean;
+    /**
+     * What the pull actually did ("Already up to date with origin", "Pulled 3
+     * commits — now at cbe3089"). Surface it verbatim; do not substitute an
+     * optimistic string, or a no-op pull reads as a successful sync.
+     */
+    message: string;
+    state: "Synced" | "AheadOfRemote" | "Conflict" | "Error";
+  }> {
     const response = await apiClient.post(`/${workspaceId}/pull-changes`, null, {
       params: { branch: branchName }
     });

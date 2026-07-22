@@ -59,6 +59,7 @@ export function HistoryDialog({ open, onOpenChange, workspaceId, branch, onReset
           open
           shortHash={reset.pendingReset.shortHash}
           dirty={reset.pendingReset.dirty}
+          discardedCommits={reset.pendingReset.discardedCommits}
           loading={reset.resettingHash === reset.pendingReset.hash}
           onConfirm={reset.confirmReset}
           onCancel={reset.cancelReset}

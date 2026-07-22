@@ -108,7 +108,17 @@ pub struct CommitEntry {
     pub short_hash: String,
     pub message: String,
     pub author: String,
+    /// Relative **committer** date ("9 minutes ago"). Committer, not author:
+    /// `git log` orders by committer date, and `pull --rebase` preserves author
+    /// dates while rewriting position, so an author-dated label reads as a
+    /// sorting bug on any rebased history.
     pub date: String,
+    /// `Some(false)` marks a commit that exists only in the local working copy
+    /// and has never been pushed. `None` when there is no upstream to compare
+    /// against. Local-only commits block fast-forward pulls and make restore
+    /// refuse, so they are called out rather than left to be inferred.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_remote: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

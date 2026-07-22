@@ -1,4 +1,4 @@
-import { CircleCheck, GitCommit, Hammer, Loader2, TriangleAlert } from "lucide-react";
+import { CircleCheck, CircleDashed, GitCommit, Hammer, Loader2, TriangleAlert } from "lucide-react";
 import { CanWorkspaceEditor } from "@/components/auth/Can";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -11,23 +11,31 @@ import { useCompileStatus, useEnqueueCompile } from "@/hooks/api/compile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import type { CompileStatus, RevisionSummary } from "@/services/api/compile";
+import { deriveView, short, type View, type ViewKind } from "./deriveCompileView";
 
 /**
  * Manual Compile button in the IDE header next to Pull / Commit & Push.
  *
  * The button is a status surface that also affords action. It's never
- * "just a button" — even at rest it tells the reader (a) what the
- * shipped revision is, (b) whether new commits are sitting on the
- * default branch unshipped, and (c) when the last compile happened.
+ * "just a button" — even at rest it answers "is what I merged live?", so its
+ * resting label is load-bearing and must never overstate what is known.
  *
- * Five rendering states, each driven by metadata returned by
- * `/compile/status`:
- *   - **never**:  no revision yet. Brand-blue accent — call to action.
- *   - **fresh**:  HEAD === latest ready revision. Muted; nothing to do.
- *   - **stale**:  HEAD differs from latest ready revision. Amber accent
- *                 — the user has commits that haven't shipped.
+ * Rendering states, each driven by metadata returned by `/compile/status`:
+ *   - **never**:  nothing promoted yet. Brand-blue accent — call to action.
+ *   - **fresh**:  serving revision === origin tip. Muted; nothing to do.
+ *   - **ahead**:  serving revision has origin's tip as an ancestor plus unpushed
+ *                 local commits (what a restore leaves behind). Nothing on
+ *                 origin is waiting to ship, so this is a resting state —
+ *                 emphatically not "behind".
+ *   - **stale**:  origin has moved past the serving revision. Amber accent.
+ *   - **unverified**: serving a revision, but the origin tip is unknown or the
+ *                 last fetch is too old to claim freshness from. Muted, and
+ *                 pointedly *not* a check mark.
  *   - **compiling**: a revision is running. Pulsing blue.
  *   - **failed**: last compile failed. Destructive border.
+ *
+ * `head_sha` (the working copy) is shown for context but never used to decide
+ * freshness — see `deriveView` for why that comparison is circular.
  *
  * Blank / demo / no-remote workspaces have `head_sha = null`; they
  * collapse into a single "Compile working tree" affordance with no
@@ -86,7 +94,7 @@ export function CompileButton() {
         "group relative h-7 gap-1 overflow-hidden px-2 text-xs transition-colors duration-200",
         accentClassName(view.kind),
         view.kind === "stale" && "hover:bg-accent",
-        view.kind === "fresh" && "hover:bg-accent/60"
+        (view.kind === "fresh" || view.kind === "ahead") && "hover:bg-accent/60"
       )}
     >
       {/* status-driven left accent stripe — the build-tool indicator DNA */}
@@ -105,7 +113,7 @@ export function CompileButton() {
           className={cn(
             "ml-0.5 inline-flex items-center gap-1 rounded-sm border border-border/60 bg-muted/40 px-1 py-px font-mono text-[10px] text-muted-foreground transition-colors duration-200",
             view.kind === "stale" && "border-amber-500/40 text-amber-700 dark:text-amber-300",
-            view.kind === "fresh" && "text-muted-foreground",
+            (view.kind === "fresh" || view.kind === "ahead") && "text-muted-foreground",
             view.kind === "compiling" && "animate-pulse border-primary/40 text-primary"
           )}
         >
@@ -132,69 +140,19 @@ export function CompileButton() {
   );
 }
 
-// ── derived view ────────────────────────────────────────────────────
-
-type ViewKind = "never" | "fresh" | "stale" | "compiling" | "failed" | "no-git";
-
-interface View {
-  kind: ViewKind;
-  verb: string;
-  /** Short SHA chip text, e.g. `a3f4d12` or `a3f4d12 ↑`. Empty = hide chip. */
-  sha: string | null;
-}
-
-function deriveView(status: CompileStatus | undefined): View {
-  if (!status) {
-    return { kind: "never", verb: "Compile", sha: null };
-  }
-
-  const latest = status.latest;
-  if (latest?.status === "compiling") {
-    return {
-      kind: "compiling",
-      verb: "Compiling…",
-      sha: latest.git_sha ? short(latest.git_sha) : null
-    };
-  }
-  if (latest?.status === "failed") {
-    return {
-      kind: "failed",
-      verb: "Retry compile",
-      sha: latest.git_sha ? short(latest.git_sha) : null
-    };
-  }
-
-  // Blank / demo / no-remote — no SHA to track freshness against.
-  if (!status.head_sha) {
-    return { kind: "no-git", verb: "Compile", sha: null };
-  }
-
-  const lastReadySha = latest?.status === "ready" ? latest.git_sha : null;
-  if (!lastReadySha) {
-    return { kind: "never", verb: "Compile", sha: short(status.head_sha) };
-  }
-  if (lastReadySha === status.head_sha) {
-    return {
-      kind: "fresh",
-      verb: "Up to date",
-      sha: short(status.head_sha)
-    };
-  }
-  return {
-    kind: "stale",
-    verb: "Compile",
-    sha: `${short(status.head_sha)} ↑`
-  };
-}
-
 // ── visual atoms ────────────────────────────────────────────────────
 
 function StateIcon({ kind, loading }: { kind: ViewKind; loading: boolean }) {
   if (loading || kind === "compiling") {
     return <Loader2 className='size-3 animate-spin' />;
   }
-  if (kind === "fresh") return <CircleCheck className='size-3 text-emerald-600/80' />;
+  if (kind === "fresh" || kind === "ahead")
+    return <CircleCheck className='size-3 text-emerald-600/80' />;
   if (kind === "failed") return <TriangleAlert className='size-3 text-destructive' />;
+  // `unverified` deliberately does NOT get the check mark — the tick is the
+  // single glyph people read as "your change is live", and this state cannot
+  // vouch for that.
+  if (kind === "unverified") return <CircleDashed className='size-3 text-muted-foreground' />;
   return <Hammer className='size-3' />;
 }
 
@@ -224,7 +182,10 @@ function stripeClassName(kind: ViewKind): string {
     case "failed":
       return "bg-destructive";
     case "fresh":
+    case "ahead":
       return "bg-emerald-500/60";
+    case "unverified":
+      return "bg-muted-foreground/50";
     default:
       return "bg-muted-foreground/40";
   }
@@ -256,23 +217,44 @@ function CompileTooltipBody({ view, status }: { view: View; status: CompileStatu
     case "fresh":
       return (
         <div className='space-y-1 text-xs'>
-          <div>Up to date with main</div>
+          <div>Serving the latest commit on {status?.default_branch ?? "main"}.</div>
+          <ShaBreakdown status={status} />
           {describeLatestRevision(status?.latest)}
+        </div>
+      );
+    case "ahead":
+      return (
+        <div className='space-y-1 text-xs'>
+          <div>
+            Nothing on origin is waiting to ship. Serving {status?.compiled_ahead ?? 0} commit
+            {(status?.compiled_ahead ?? 0) === 1 ? "" : "s"} on top of{" "}
+            {status?.default_branch ?? "main"} that{" "}
+            {(status?.compiled_ahead ?? 0) === 1 ? "is" : "are"} not pushed.
+          </div>
+          {/* Deliberately not "everything on origin is live": these commits
+              contain origin's as ancestors, but a restore's tree can revert
+              their content. Ancestry is what we measured, so ancestry is what
+              we state. */}
+          <ShaBreakdown status={status} />
+        </div>
+      );
+    case "unverified":
+      return (
+        <div className='space-y-1 text-xs'>
+          <div>Serving a compiled revision — not verified against origin.</div>
+          <div className='text-muted-foreground'>
+            {status?.remote_sha
+              ? `Last fetched ${status.remote_fetched_at ? relative(status.remote_fetched_at) : "a while ago"}; origin may have moved since.`
+              : "This clone has not fetched from origin, so the remote tip is unknown."}
+          </div>
+          <ShaBreakdown status={status} />
         </div>
       );
     case "stale":
       return (
         <div className='space-y-1 text-xs'>
-          <div>New commits on main haven't shipped yet.</div>
-          <div className='text-muted-foreground'>
-            HEAD <span className='font-mono'>{short(status?.head_sha ?? "")}</span>
-            {status?.latest?.git_sha ? (
-              <>
-                {" · last shipped "}
-                <span className='font-mono'>{short(status.latest.git_sha)}</span>
-              </>
-            ) : null}
-          </div>
+          <div>Origin has commits that aren't being served yet.</div>
+          <ShaBreakdown status={status} />
         </div>
       );
     case "never":
@@ -296,6 +278,31 @@ function CompileTooltipBody({ view, status }: { view: View; status: CompileStatu
   }
 }
 
+/**
+ * The three SHAs, always labelled and never conflated. Collapsing them into one
+ * chip is what made "Up to date 0c9ad8f" unfalsifiable — the reader could not
+ * tell which of the three that SHA was, and it happened to be the only one that
+ * did not answer their question.
+ */
+function ShaBreakdown({ status }: { status: CompileStatus | undefined }) {
+  if (!status) return null;
+  const rows: Array<[string, string | null]> = [
+    ["serving", status.compiled_sha],
+    ["origin", status.remote_sha],
+    ["files", status.head_sha]
+  ];
+  return (
+    <div className='space-y-0.5 text-muted-foreground'>
+      {rows.map(([label, sha]) => (
+        <div key={label} className='flex gap-2'>
+          <span className='w-12 shrink-0'>{label}</span>
+          <span className='font-mono'>{sha ? short(sha) : "—"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function describeLatestRevision(latest: RevisionSummary | null | undefined) {
   if (!latest) return null;
   return (
@@ -303,10 +310,6 @@ function describeLatestRevision(latest: RevisionSummary | null | undefined) {
       Last compiled {latest.finished_at ? relative(latest.finished_at) : "—"}
     </div>
   );
-}
-
-function short(sha: string): string {
-  return sha.length > 7 ? sha.slice(0, 7) : sha;
 }
 
 function relative(iso: string): string {

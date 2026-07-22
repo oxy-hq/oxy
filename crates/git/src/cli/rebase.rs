@@ -2,8 +2,8 @@ use std::path::Path;
 
 use oxy_shared::errors::OxyError;
 
-use crate::cli::{repo, run};
-use crate::types::{DirtyEntry, DirtyKind, ResetOutcome};
+use crate::cli::{commit, repo, run};
+use crate::types::{DirtyEntry, DirtyKind, RecentCommit, ResetOutcome};
 
 /// Returns `true` if `root` is mid-rebase or mid-merge — i.e. `rebase-merge`,
 /// `rebase-apply`, or `MERGE_HEAD` exists on disk.
@@ -90,10 +90,9 @@ fn classify_porcelain(x: char, y: char) -> DirtyKind {
 ///
 /// Behavior:
 /// - If `force` is false and restoring would discard commits made after
-///   `commit` (on a GitHub-connected workspace these include merged pull
-///   requests — see #2512), returns an [`OxyError::ArgumentError`] naming how
-///   many commits would be lost and that `force` is required; nothing is
-///   modified.
+///   `commit` (on a GitHub-connected workspace these may include merged pull
+///   requests — see #2512), returns [`ResetOutcome::WouldDiscardCommits`] with
+///   the commits themselves; nothing is modified.
 /// - If `force` is false and the tree has uncommitted changes, returns
 ///   [`ResetOutcome::Dirty`] without modifying anything.
 /// - If `force` is true, performs a hard reset to `commit` followed by
@@ -124,16 +123,8 @@ pub async fn reset_to_commit(
         // include merged pull requests, so an unguarded restore silently
         // reverts them. Refuse unless the caller explicitly forces it.
         let discarded = commits_after(root, commit).await?;
-        if discarded > 0 {
-            let short = if commit.len() > 7 {
-                &commit[..7]
-            } else {
-                commit
-            };
-            return Err(OxyError::ArgumentError(format!(
-                "Restoring to {short} would discard {discarded} commit(s) made after it, \
-                 including any merged pull requests. Re-run with force to proceed."
-            )));
+        if !discarded.is_empty() {
+            return Ok(ResetOutcome::WouldDiscardCommits(discarded));
         }
 
         let dirty = working_tree_status(root).await?;
@@ -195,11 +186,28 @@ pub async fn reset_to_commit(
 /// — this is exactly how many commits a hard reset back to `commit` would
 /// discard. Returns 0 when the two are equal or the count can't be parsed.
 /// `commit` is already validated against shell metacharacters by the caller.
-async fn commits_after(root: &Path, commit: &str) -> Result<usize, OxyError> {
+/// The commits reachable from HEAD but not from `commit` — i.e. exactly what a
+/// restore to `commit` would drop. Newest first, each tagged with whether it
+/// exists on origin, so the caller can describe the loss precisely.
+///
+/// Bounded: a restore far back in history could otherwise materialise thousands
+/// of rows into a confirmation dialog. The count that matters for the decision
+/// is "more than you want to lose", which the first page already conveys.
+async fn commits_after(root: &Path, commit: &str) -> Result<Vec<RecentCommit>, OxyError> {
     let range = format!("{commit}..HEAD");
-    let out = run::run(root, &["rev-list", "--count", &range]).await?;
-    Ok(out.trim().parse::<usize>().unwrap_or(0))
+    let count = run::run(root, &["rev-list", "--count", &range])
+        .await?
+        .trim()
+        .parse::<usize>()
+        .unwrap_or(0);
+    if count == 0 {
+        return Ok(vec![]);
+    }
+    Ok(commit::get_recent_commits_in_range(root, &range, MAX_DISCARDED_COMMITS_LISTED).await)
 }
+
+/// How many discarded commits the guard enumerates for the confirmation.
+const MAX_DISCARDED_COMMITS_LISTED: usize = 50;
 
 /// Aborts an in-progress rebase or merge.
 pub async fn abort_rebase(root: &Path) -> Result<(), OxyError> {
@@ -399,9 +407,18 @@ mod tests {
         // Two commits (c2, c3) sit between `base` and HEAD — restoring without
         // force must refuse and leave history untouched (#2512).
         let result = reset_to_commit(root, &base, false).await;
-        assert!(
-            matches!(result, Err(OxyError::ArgumentError(_))),
-            "expected an ArgumentError guarding intervening commits, got: {result:?}"
+        let ResetOutcome::WouldDiscardCommits(discarded) = result.expect("guard is not an error")
+        else {
+            panic!("expected WouldDiscardCommits guarding intervening commits");
+        };
+
+        // The refusal names the commits, so the UI can show what is at stake and
+        // offer to force — a bare error string left it with nothing to act on.
+        let subjects: Vec<_> = discarded.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(
+            subjects,
+            vec!["c3", "c2"],
+            "discarded commits should be listed newest-first"
         );
 
         // HEAD is unchanged — still on c3.

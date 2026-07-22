@@ -18,8 +18,9 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use oxy_shared::errors::OxyError;
 
+use crate::cli::push_pull::PullOutcome;
 use crate::client::GitClient;
-use crate::types::{DirtyEntry, FileStatus, ResetOutcome};
+use crate::types::{DirtyEntry, FileStatus, RecentCommit, ResetOutcome};
 
 /// `GitClient` implementation that shells out to the system `git` binary.
 #[derive(Debug, Clone, Default)]
@@ -152,12 +153,7 @@ impl GitClient for CliGitClient {
         commit::get_head_commit_relative_date(root).await
     }
 
-    async fn get_recent_commits(
-        &self,
-        root: &Path,
-        n: usize,
-        offset: usize,
-    ) -> Vec<(String, String, String, String, String)> {
+    async fn get_recent_commits(&self, root: &Path, n: usize, offset: usize) -> Vec<RecentCommit> {
         commit::get_recent_commits(root, n, offset).await
     }
 
@@ -203,7 +199,7 @@ impl GitClient for CliGitClient {
         worktree_root: &Path,
         branch_name: &str,
         token: Option<&str>,
-    ) -> Result<(), OxyError> {
+    ) -> Result<PullOutcome, OxyError> {
         push_pull::pull_from_remote(worktree_root, branch_name, token).await
     }
 

@@ -50,6 +50,7 @@ export function HistoryPopover({ workspaceId, branch, onResetSuccess }: Props) {
           open
           shortHash={pendingReset.shortHash}
           dirty={pendingReset.dirty}
+          discardedCommits={pendingReset.discardedCommits}
           loading={resettingHash === pendingReset.hash}
           onConfirm={confirmReset}
           onCancel={cancelReset}
@@ -71,10 +72,10 @@ export function HistoryPopover({ workspaceId, branch, onResetSuccess }: Props) {
         </PopoverTrigger>
         <PopoverContent className='w-80 p-0' align='end' sideOffset={6}>
           <div className='border-b px-3 py-2'>
-            <p className='font-medium text-sm'>Recent commits</p>
+            <p className='font-medium text-sm'>Local branch history</p>
             <p className='text-[11px] text-muted-foreground'>
-              Select a commit to restore to it. A new commit will be created with those file
-              contents.
+              Newest first, as committed on this branch. Select a commit to restore to it — a new
+              commit will be created with those file contents.
             </p>
           </div>
           <div className='max-h-72 overflow-y-auto'>

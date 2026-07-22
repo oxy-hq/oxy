@@ -24,10 +24,31 @@ export interface CompileStatus {
   current_revision_id: string | null;
   latest: RevisionSummary | null;
   can_compile: boolean;
-  /** HEAD commit on the workspace's default branch. Null for blank /
-   * demo / no-remote workspaces. Compare against `latest.git_sha` to
-   * label the button as up-to-date or stale. */
+  /**
+   * HEAD commit on the workspace's **working copy** default branch. Null for
+   * blank / demo / no-remote workspaces.
+   *
+   * Never decide freshness from this alone: compiles are taken from this same
+   * ref, so `latest.git_sha === head_sha` is a tautology after any successful
+   * compile and stays true however far origin has moved ahead.
+   */
   head_sha: string | null;
+  /** SHA of the promoted revision reads are actually served from. This is what
+   * "is my change live?" asks about. Null when nothing is promoted yet. */
+  compiled_sha: string | null;
+  /** SHA of `origin/<default_branch>` as of the last fetch. Null when unknown. */
+  remote_sha: string | null;
+  /** When origin was last contacted. `remote_sha` is only as trustworthy as
+   * this is recent — qualify the verdict when it is stale or null. */
+  remote_fetched_at: string | null;
+  /**
+   * Position of the serving revision relative to `origin/<default_branch>`.
+   * `compiled_sha !== remote_sha` alone does not mean "behind" — a revision
+   * compiled from a local-only commit is *ahead* and fails the same equality.
+   * Null when either end is unknown.
+   */
+  compiled_ahead: number | null;
+  compiled_behind: number | null;
   /** Workspace's default branch (`main` / `master` / custom). Null
    * matches `head_sha = null`. */
   default_branch: string | null;

@@ -12,7 +12,9 @@ pub mod cli;
 pub mod client;
 pub mod types;
 
+pub use cli::push_pull::PullOutcome;
 pub use client::GitClient;
 pub use types::{
-    Auth, BranchInfo, BranchOrigin, DirtyEntry, DirtyKind, FileStatus, LocalRefOrigin, ResetOutcome,
+    Auth, BranchInfo, BranchOrigin, DirtyEntry, DirtyKind, FileStatus, LocalRefOrigin,
+    RecentCommit, ResetOutcome,
 };

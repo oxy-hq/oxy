@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use oxy_shared::errors::OxyError;
 
-use crate::types::{DirtyEntry, FileStatus, ResetOutcome};
+use crate::cli::push_pull::PullOutcome;
+use crate::types::{DirtyEntry, FileStatus, RecentCommit, ResetOutcome};
 
 /// Unified git operations surface.
 ///
@@ -102,12 +103,7 @@ pub trait GitClient: Send + Sync {
 
     async fn get_head_commit_relative_date(&self, root: &Path) -> Option<String>;
 
-    async fn get_recent_commits(
-        &self,
-        root: &Path,
-        n: usize,
-        offset: usize,
-    ) -> Vec<(String, String, String, String, String)>;
+    async fn get_recent_commits(&self, root: &Path, n: usize, offset: usize) -> Vec<RecentCommit>;
 
     async fn get_commit_by_sha(&self, root: &Path, sha: &str) -> (String, String);
 
@@ -137,7 +133,7 @@ pub trait GitClient: Send + Sync {
         worktree_root: &Path,
         branch: &str,
         token: Option<&str>,
-    ) -> Result<(), OxyError>;
+    ) -> Result<PullOutcome, OxyError>;
 
     /// Update the remote-tracking ref for `branch` without touching the
     /// local branch. Use this for a "Fetch" CTA — see `pull_from_remote`

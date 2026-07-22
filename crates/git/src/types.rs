@@ -49,15 +49,50 @@ pub struct DirtyEntry {
     pub kind: DirtyKind,
 }
 
-/// Outcome of `reset_to_commit`. When `force=false` and the working tree has
-/// changes, the caller gets back the file list so the UI can prompt for
-/// confirmation; otherwise the restore commit was created.
+/// Outcome of `reset_to_commit`. Both refusals are **typed**, not error
+/// strings: each one is recoverable by re-issuing with `force=true`, so the UI
+/// has to be able to tell them apart from a genuine failure in order to offer
+/// that. Returning `WouldDiscardCommits` as an `Err` is what left the IDE with
+/// no way to act on the refusal — see oxygen-workspace-sync-bugs.md bug 2.
 #[derive(Debug)]
 pub enum ResetOutcome {
     /// Restore commit was created (or there was nothing to commit).
     Done,
     /// Working tree is dirty and `force` was not set; no changes were made.
     Dirty(Vec<DirtyEntry>),
+    /// Restoring would drop commits made after the target and `force` was not
+    /// set; no changes were made. Carries the commits themselves — each tagged
+    /// with whether it exists on origin — so the confirmation can state the
+    /// real stakes. "1 local-only auto-commit" and "1 merged pull request" are
+    /// very different losses, and the old wording asserted the latter for both.
+    WouldDiscardCommits(Vec<RecentCommit>),
+}
+
+/// One entry of the workspace's commit history, as returned by
+/// [`crate::GitClient::get_recent_commits`].
+///
+/// `relative_date` is the **committer** date, not the author date. `git log`
+/// orders by committer date, so labelling rows with the author date makes a
+/// rebased commit appear out of order — a commit authored four weeks ago but
+/// replayed onto today's tip renders as "4 weeks ago" sitting above a commit
+/// labelled "9 minutes ago". Since `git pull --rebase` (the only pull we run)
+/// rewrites every local commit while preserving its author date, that skew is
+/// the normal case for any workspace carrying local commits, not an edge case.
+/// See oxygen-workspace-sync-bugs.md bug 6.
+#[derive(Debug, Clone)]
+pub struct RecentCommit {
+    pub hash: String,
+    pub short_hash: String,
+    pub subject: String,
+    pub author: String,
+    /// Relative **committer** date, e.g. "9 minutes ago".
+    pub relative_date: String,
+    /// Whether this commit is reachable from the upstream tracking ref.
+    /// `false` marks a local-only commit that has never been pushed — the
+    /// condition that silently strands a workspace (it blocks fast-forward
+    /// pulls and makes restore refuse), so the UI surfaces it explicitly.
+    /// `None` when there is no upstream to compare against.
+    pub on_remote: Option<bool>,
 }
 
 /// Where a branch lives. Returned by

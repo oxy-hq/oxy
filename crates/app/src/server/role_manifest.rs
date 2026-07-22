@@ -217,6 +217,19 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/compile",
         role: RouteRole::IdeOnly,
     },
+    // Status is *mostly* a Postgres read, but it also resolves the workspace's
+    // default branch, HEAD, `origin/<branch>` and the last-fetch time from the
+    // working copy's `.git` — so it belongs here with the trigger. On a serve
+    // replica (no clone) every one of those resolves empty, which silently
+    // downgraded the Compile button to its "no git" shape depending on which
+    // replica answered the poll. If this is ever made a pure Postgres read
+    // (persisting the git facts at compile time), move it back to
+    // FLEET_OK_ACKNOWLEDGED — it is a read, and reads want to be HA.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/compile/status",
+        role: RouteRole::IdeOnly,
+    },
     // ── File CRUD on the workspace ──────────────────────────────────────────
     ManifestEntry {
         method: "POST",
@@ -1804,7 +1817,6 @@ mod tests {
     /// disk, it belongs in IDE_ONLY_PATTERNS, not here.
     const FLEET_OK_ACKNOWLEDGED: &[&str] = &[
         // workspace metadata + access control (Postgres)
-        "/compile/status",
         "/members",
         "/members/{user_id}",
         "/oxy-access",

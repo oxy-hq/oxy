@@ -678,6 +678,29 @@ async fn resolve_effective_role(
 const LAZY_COMPILE_BACKOFF_SECS: i64 = 300;
 
 pub(crate) async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uuid) {
+    enqueue_compile_deduped(db, workspace_id, None, None, "lazy self-heal").await
+}
+
+/// Shared enqueue path for every *automatic* compile trigger: the lazy
+/// self-heal above and the post-pull / post-restore triggers in
+/// `server::compile_trigger`.
+///
+/// `git_sha` decides idempotency, and the two callers genuinely differ:
+///
+///   * `None` (self-heal) — the working tree is the identity. `oxy-compile`
+///     mints a unique `local-<uuid>` and deliberately opts out of the
+///     idempotency index, so every call produces a fresh revision.
+///   * `Some(sha)` (content change) — an addressable commit. The
+///     `(workspace_id, git_sha)` lookup then short-circuits a redundant
+///     compile down to a cheap promote. Passing `None` here instead would
+///     mint a new revision row on *every* pull, including no-op pulls.
+pub(crate) async fn enqueue_compile_deduped(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+    git_sha: Option<String>,
+    branch: Option<String>,
+    reason: &str,
+) {
     use sea_orm::{
         ColumnTrait, ConnectionTrait, DatabaseBackend, QueryFilter, Statement, TransactionTrait,
     };
@@ -776,22 +799,27 @@ pub(crate) async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, works
     if let Err(e) = agentic_runtime::crud::insert_run(
         &txn,
         &task_id,
-        "compile main (lazy self-heal)",
+        &format!("compile main ({reason})"),
         None,
         "compile",
-        Some(serde_json::json!({ "workspace_id": workspace_id, "lazy": true })),
+        Some(serde_json::json!({
+            "workspace_id": workspace_id,
+            "lazy": true,
+            "reason": reason,
+            "git_sha": git_sha,
+        })),
         workspace_id,
     )
     .await
     {
-        tracing::warn!(?e, %workspace_id, "lazy compile insert_run failed");
+        tracing::warn!(?e, %workspace_id, %reason, "auto compile insert_run failed");
         let _ = txn.rollback().await;
         return;
     }
     let spec = agentic_core::delegation::TaskSpec::Compile {
         workspace_id,
-        git_sha: None,
-        branch: None,
+        git_sha,
+        branch,
         promote: true,
         kind: Some("main".to_string()),
         owner_user_id: None,
@@ -807,14 +835,14 @@ pub(crate) async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, works
     )
     .await
     {
-        tracing::warn!(?e, %workspace_id, "lazy compile enqueue failed");
+        tracing::warn!(?e, %workspace_id, %reason, "auto compile enqueue failed");
         let _ = txn.rollback().await;
         return;
     }
 
     match txn.commit().await {
-        Ok(_) => tracing::info!(%workspace_id, "enqueued lazy compile (deduped) for workspace"),
-        Err(e) => tracing::warn!(?e, %workspace_id, "lazy compile commit failed"),
+        Ok(_) => tracing::info!(%workspace_id, %reason, "enqueued auto compile (deduped)"),
+        Err(e) => tracing::warn!(?e, %workspace_id, %reason, "auto compile commit failed"),
     }
 }
 
