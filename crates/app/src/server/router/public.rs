@@ -99,6 +99,26 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/projects/{project_id}/semantic-query",
             post(projects::semantic_query::run_semantic_query),
         )
+        // Shell bootstrap for `@oxy-hq/sdk/shell` chrome inside bundles:
+        // workspace/org identity + published-apps list + host-aware
+        // product links. Pure Postgres reads behind the same gate chain →
+        // FleetOk (deliberately not pinned in role_manifest.rs).
+        .route(
+            "/projects/{project_id}/shell-context",
+            get(crate::server::api::customer_apps_shell_context::get_shell_context),
+        )
+        // Bundle chat history for the SDK Ask dock. Pure Postgres reads
+        // behind the same gate chain → FleetOk (not pinned in
+        // role_manifest.rs). `/threads` lists the viewer's threads;
+        // `/threads/{id}` rebuilds a transcript for restore.
+        .route(
+            "/projects/{project_id}/threads",
+            get(crate::server::api::customer_apps_threads::list_threads),
+        )
+        .route(
+            "/projects/{project_id}/threads/{thread_id}",
+            get(crate::server::api::customer_apps_threads::get_thread_transcript),
+        )
         // Bundle-SDK custom event ingest — `useTrackEvent("name", {...})`.
         // Sits next to /query because both share the same gate chain
         // (cookie or bearer auth + org-member/app-admin access check).

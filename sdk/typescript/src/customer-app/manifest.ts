@@ -123,6 +123,13 @@ export interface OxyAppManifest {
    * static bundle (today's default). See the functions design doc.
    */
   functions?: Record<string, OxyAppFunctionManifest>;
+  /**
+   * Optional Ask Oxygen binding (agent ref + composer chips). The
+   * platform's registered copy is authoritative (surfaced by
+   * shell-context); this local copy is the dev-time fallback so the
+   * shell's Ask dock works before the app is registered.
+   */
+  ask?: { agent?: string; suggestedQuestions?: string[] };
 }
 
 // ── Resolved manifest ───────────────────────────────────────────────────────
@@ -300,8 +307,16 @@ function validateManifest(raw: unknown, url: string): OxyAppManifest {
   const orgSlug = typeof raw.orgSlug === "string" ? raw.orgSlug : undefined;
   const projectId = typeof raw.projectId === "string" ? raw.projectId : undefined;
   const functions = raw.functions !== undefined ? validateFunctions(raw.functions) : undefined;
+  const ask = isRecord(raw.ask)
+    ? {
+        agent: typeof raw.ask.agent === "string" ? raw.ask.agent : undefined,
+        suggestedQuestions: Array.isArray(raw.ask.suggestedQuestions)
+          ? raw.ask.suggestedQuestions.filter((q): q is string => typeof q === "string")
+          : undefined
+      }
+    : undefined;
 
-  return { schemaVersion: 2, name, slug, orgSlug, projectId, functions };
+  return { schemaVersion: 2, name, slug, orgSlug, projectId, functions, ask };
 }
 
 const FUNCTION_NAME_RE = /^[a-z][a-z0-9-]{0,63}$/;

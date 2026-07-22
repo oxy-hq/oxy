@@ -1,0 +1,1187 @@
+/* ============================================================================
+   @oxy-hq/sdk/shell — workspace chrome styles (icon rail + universal top bar)
+
+   Namespaced (`oxy-shell-*`) and self-contained: no Tailwind required in the
+   consuming app. Every color resolves through a two-level token scheme:
+
+     --oxy-shell-<name>: var(--<host token>, <pinned fallback>);
+
+   Inside the Oxygen web-app the host tokens (--sidebar-background, --border,
+   …) exist, so the shell tracks the product theme exactly. In an external
+   customer app the pinned fallbacks apply — their values are copied verbatim
+   from web-app/src/styles/shadcn/{light,dark}.css and must be kept in sync
+   with that file, not restyled here.
+
+   Dark mode: a `.dark` class on the scope element or any ancestor — the same
+   contract as the web-app (`data-theme` is decorative there; no CSS keys on
+   it). `color-scheme` is intentionally not set: the host app owns it.
+============================================================================ */
+
+.oxy-shell-scope {
+  --oxy-shell-sidebar-bg: var(--sidebar-background, #fafafa);
+  --oxy-shell-sidebar-accent: var(--sidebar-accent, rgba(228, 228, 231, 0.5));
+  --oxy-shell-sidebar-accent-fg: var(--sidebar-accent-foreground, #18181b);
+  --oxy-shell-sidebar-border: var(--sidebar-border, #e5e7eb);
+  --oxy-shell-background: var(--background, #ffffff);
+  --oxy-shell-foreground: var(--foreground, #0a0a0a);
+  --oxy-shell-muted: var(--muted, #e4e4e7);
+  --oxy-shell-muted-fg: var(--muted-foreground, #52525b);
+  --oxy-shell-primary: var(--primary, #18181b);
+  --oxy-shell-primary-fg: var(--primary-foreground, #fafafa);
+  --oxy-shell-accent: var(--accent, #f5f5f5);
+  --oxy-shell-border: var(--border, #d4d4d8);
+  --oxy-shell-ring: var(--ring, #a1a1a1);
+  --oxy-shell-success: var(--success, #22c55e);
+  --oxy-shell-destructive: var(--destructive, #e7000b);
+  --oxy-shell-tooltip-bg: var(--zinc-200, #e4e4e7);
+  --oxy-shell-link: var(--info, #2563eb);
+  --oxy-shell-radius: var(--radius, 0.625rem);
+  --oxy-shell-font: var(--font-inter, "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif);
+  --oxy-shell-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  font-family: var(--oxy-shell-font);
+}
+
+.dark .oxy-shell-scope,
+.oxy-shell-scope.dark {
+  --oxy-shell-sidebar-bg: var(--sidebar-background, #000000);
+  --oxy-shell-sidebar-accent: var(--sidebar-accent, rgba(255, 255, 255, 0.145));
+  --oxy-shell-sidebar-accent-fg: var(--sidebar-accent-foreground, #ededed);
+  --oxy-shell-sidebar-border: var(--sidebar-border, #27272a);
+  --oxy-shell-background: var(--background, #0a0a0a);
+  --oxy-shell-foreground: var(--foreground, #ededed);
+  --oxy-shell-muted: var(--muted, #27272a);
+  --oxy-shell-muted-fg: var(--muted-foreground, #a1a1aa);
+  --oxy-shell-primary: var(--primary, #ededed);
+  --oxy-shell-primary-fg: var(--primary-foreground, #0a0a0a);
+  --oxy-shell-accent: var(--accent, #262626);
+  --oxy-shell-border: var(--border, rgba(255, 255, 255, 0.145));
+  --oxy-shell-ring: var(--ring, #525252);
+  --oxy-shell-success: var(--success, #22c55e);
+  --oxy-shell-destructive: var(--destructive, #ff6467);
+  --oxy-shell-tooltip-bg: var(--muted, #27272a);
+  --oxy-shell-link: var(--info, #60a5fa);
+}
+
+/* ─── Frame (OxyShell / ShellLayout) ────────────────────────────────────── */
+
+.oxy-shell {
+  position: relative; /* portal anchor for tooltips */
+  display: flex;
+  height: 100%;
+  width: 100%;
+  background: var(--oxy-shell-background);
+  color: var(--oxy-shell-foreground);
+}
+
+/* Degraded (bootstrap unavailable): the wrappers stay mounted so the app
+   tree never reparents, but they impose nothing — no chrome, no colors,
+   no font, no scroll trap. */
+.oxy-shell--degraded,
+.oxy-shell--degraded .oxy-shell__main {
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+}
+
+.oxy-shell--degraded .oxy-shell__main {
+  overflow: visible;
+}
+
+.oxy-shell__content-col {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.oxy-shell__main {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  background: var(--oxy-shell-background);
+  /* `auto`, not `hidden`: bundle content flows naturally and scrolls
+     inside the frame; apps that manage their own scroll regions are
+     unaffected. */
+  overflow: auto;
+}
+
+/* ─── Icon rail ─────────────────────────────────────────────────────────── */
+
+.oxy-rail {
+  display: flex;
+  height: 100%;
+  width: 3rem; /* 48px — matches the web-app rail */
+  flex-shrink: 0;
+  flex-direction: column;
+  /* border color: the web-app frame borders resolve to --border (the global
+     base rule), NOT --sidebar-border — only the group divider uses that. */
+  border-right: 1px solid var(--oxy-shell-border);
+  background: var(--oxy-shell-sidebar-bg);
+}
+
+/* Fixed 3rem so the logo cell matches the top bar height exactly — the two
+   bottom borders line up into one continuous divider. */
+.oxy-rail__top {
+  display: flex;
+  height: 3rem;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--oxy-shell-border);
+  padding: 0 0.25rem;
+}
+
+.oxy-rail__nav {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  overflow-y: auto;
+  padding: 0.5rem 0.25rem;
+}
+
+.oxy-rail__divider {
+  margin: 0.25rem 0;
+  height: 1px;
+  width: 1.25rem;
+  flex-shrink: 0;
+  background: var(--oxy-shell-sidebar-border);
+}
+
+.oxy-rail__footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding-top: 0.5rem;
+}
+
+.oxy-rail__bottom {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  border-top: 1px solid var(--oxy-shell-border);
+  padding: 0.5rem 0.25rem;
+}
+
+/* Rail entry — replicates the web-app ghost icon Button + itemClasses. */
+.oxy-rail__item {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  background: transparent;
+  color: var(--oxy-shell-foreground);
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-decoration: none;
+  opacity: 0.6;
+  outline: none;
+  transition:
+    color 0.15s,
+    opacity 0.15s,
+    box-shadow 0.15s;
+}
+
+.oxy-rail__item:hover {
+  opacity: 1;
+  background: var(--oxy-shell-accent);
+}
+
+.oxy-rail__item:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+}
+
+.oxy-rail__item--active {
+  opacity: 1;
+  background: var(--oxy-shell-sidebar-accent);
+  color: var(--oxy-shell-sidebar-accent-fg);
+}
+
+.oxy-rail__item--active:hover {
+  /* Matches the original ghost Button: hover:bg-accent applies even on the
+     active item. */
+  background: var(--oxy-shell-accent);
+}
+
+.oxy-rail__item svg {
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+/* Replicates the shadcn Button rule [&_svg:not([class*='size-'])]:size-4 —
+   unsized icons clamp to 16px. */
+.oxy-rail__item svg:not([class*="size-"]) {
+  height: 1rem;
+  width: 1rem;
+}
+
+.oxy-rail__item-img {
+  height: 1.25rem;
+  width: 1.25rem;
+  border-radius: calc(var(--oxy-shell-radius) - 4px);
+  object-fit: contain;
+}
+
+.oxy-rail__item-letter {
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--oxy-shell-primary);
+}
+
+/* ─── Workspace tile ────────────────────────────────────────────────────── */
+
+.oxy-workspace-tile {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  background: color-mix(in srgb, var(--oxy-shell-primary) 10%, transparent);
+}
+
+.oxy-workspace-tile__img {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+}
+
+.oxy-workspace-tile__letter {
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--oxy-shell-primary);
+}
+
+/* ─── Top bar ───────────────────────────────────────────────────────────── */
+
+.oxy-topbar {
+  display: flex;
+  height: 3rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--oxy-shell-border);
+  background: var(--oxy-shell-sidebar-bg);
+  padding: 0 0.75rem;
+}
+
+.oxy-topbar__right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* ─── Breadcrumb ────────────────────────────────────────────────────────── */
+
+.oxy-breadcrumb {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.oxy-breadcrumb__workspace {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--oxy-shell-foreground);
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.oxy-breadcrumb__workspace:hover {
+  opacity: 0.7;
+}
+
+.oxy-breadcrumb__sep {
+  color: color-mix(in srgb, var(--oxy-shell-muted-fg) 40%, transparent);
+}
+
+.oxy-breadcrumb__page {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--oxy-shell-muted-fg);
+}
+
+/* ─── System indicator ──────────────────────────────────────────────────── */
+
+.oxy-sysind {
+  display: none;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: var(--oxy-shell-font-mono);
+  font-size: 12px;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-sysind__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.oxy-sysind__state--online {
+  color: var(--oxy-shell-success);
+}
+
+.oxy-sysind__state--offline {
+  color: var(--oxy-shell-destructive);
+}
+
+.oxy-sysind__dot-wrap {
+  position: relative;
+  display: inline-flex;
+  height: 0.375rem;
+  width: 0.375rem;
+}
+
+.oxy-sysind__dot {
+  position: relative;
+  display: inline-flex;
+  height: 0.375rem;
+  width: 0.375rem;
+  border-radius: 9999px;
+}
+
+.oxy-sysind__dot--online {
+  background: var(--oxy-shell-success);
+}
+
+.oxy-sysind__dot--offline {
+  background: var(--oxy-shell-destructive);
+}
+
+.oxy-sysind__ping {
+  position: absolute;
+  display: inline-flex;
+  height: 0.375rem;
+  width: 0.375rem;
+  border-radius: 9999px;
+  background: var(--oxy-shell-success);
+  opacity: 0.75;
+  animation: oxy-shell-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes oxy-shell-ping {
+  75%,
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* ─── Clock ─────────────────────────────────────────────────────────────── */
+
+.oxy-clock {
+  display: none;
+  font-family: var(--oxy-shell-font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--oxy-shell-muted-fg);
+}
+
+@media (min-width: 640px) {
+  .oxy-sysind {
+    display: inline-flex;
+  }
+
+  .oxy-clock {
+    display: inline;
+  }
+}
+
+/* ─── Tooltip (Radix content, portaled into the shell scope) ────────────── */
+
+.oxy-shell-tooltip {
+  z-index: 50;
+  width: fit-content;
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  background: var(--oxy-shell-tooltip-bg);
+  color: var(--oxy-shell-foreground);
+  padding: 0.375rem 0.75rem;
+  font-family: var(--oxy-shell-font);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-wrap: balance;
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
+  animation: oxy-shell-tooltip-in 0.15s ease-out;
+}
+
+/* Side-aware entry slide (0.5rem, mirroring the web-app's
+   data-[side=*]:slide-in-from-*-2) and an exit animation — Radix keeps the
+   content mounted until the closed-state animation finishes. */
+.oxy-shell-tooltip[data-side="right"] {
+  --oxy-shell-tip-slide: translateX(-0.5rem);
+}
+
+.oxy-shell-tooltip[data-side="left"] {
+  --oxy-shell-tip-slide: translateX(0.5rem);
+}
+
+.oxy-shell-tooltip[data-side="top"] {
+  --oxy-shell-tip-slide: translateY(0.5rem);
+}
+
+.oxy-shell-tooltip[data-side="bottom"] {
+  --oxy-shell-tip-slide: translateY(-0.5rem);
+}
+
+.oxy-shell-tooltip[data-state="closed"] {
+  animation: oxy-shell-tooltip-out 0.15s ease-in forwards;
+}
+
+@keyframes oxy-shell-tooltip-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+.oxy-shell-tooltip__arrow {
+  z-index: 50;
+  height: 0.625rem;
+  width: 0.625rem;
+  translate: 0 calc(-50% - 2px);
+  rotate: 45deg;
+  border-radius: 2px;
+  background: var(--oxy-shell-tooltip-bg);
+  fill: var(--oxy-shell-tooltip-bg);
+}
+
+@keyframes oxy-shell-tooltip-in {
+  from {
+    opacity: 0;
+    transform: var(--oxy-shell-tip-slide, none) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ─── Ask Oxygen button (top bar) ───────────────────────────────────────── */
+
+.oxy-askbtn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid var(--oxy-shell-border);
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  background: transparent;
+  padding: 0.25rem 0.5rem;
+  font-family: var(--oxy-shell-font);
+  font-size: 12px;
+  color: var(--oxy-shell-muted-fg);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.oxy-askbtn:hover {
+  border-color: color-mix(in srgb, var(--oxy-shell-primary) 40%, transparent);
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-askbtn--open {
+  border-color: color-mix(in srgb, var(--oxy-shell-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--oxy-shell-primary) 10%, transparent);
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-askbtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+}
+
+.oxy-askbtn__mark {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--oxy-shell-primary);
+}
+
+.oxy-askbtn__label,
+.oxy-askbtn__kbd {
+  display: none;
+}
+
+.oxy-askbtn__kbd {
+  border-radius: 4px;
+  background: var(--oxy-shell-muted);
+  padding: 0.125rem 0.375rem;
+  font-family: var(--oxy-shell-font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+@media (min-width: 640px) {
+  .oxy-askbtn__label {
+    display: inline;
+  }
+
+  .oxy-askbtn__kbd {
+    display: inline-block;
+  }
+}
+
+/* ─── Ask Oxygen dock ───────────────────────────────────────────────────── */
+
+.oxy-askdock {
+  display: flex;
+  height: 100%;
+  width: min(23rem, 85vw);
+  flex-shrink: 0;
+  flex-direction: column;
+  min-width: 0;
+  border-left: 1px solid var(--oxy-shell-border);
+  background: var(--oxy-shell-background);
+  color: var(--oxy-shell-foreground);
+  overflow: hidden;
+  transition: width 0.2s ease;
+}
+
+.oxy-askdock--closed {
+  width: 0;
+  border-left-width: 0;
+  visibility: hidden;
+}
+
+.oxy-askdock__head {
+  display: flex;
+  height: 3rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--oxy-shell-border);
+  padding: 0 0.75rem;
+}
+
+.oxy-askdock__mark {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: var(--oxy-shell-primary);
+}
+
+.oxy-askdock__title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.oxy-askdock__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.oxy-askdock__iconbtn {
+  display: inline-flex;
+  height: 1.75rem;
+  width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  background: transparent;
+  color: var(--oxy-shell-muted-fg);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.oxy-askdock__iconbtn:hover {
+  background: var(--oxy-shell-accent);
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-askdock__iconbtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+}
+
+.oxy-askdock__iconbtn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.oxy-askdock__iconbtn:disabled:hover {
+  background: transparent;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-askdock__iconbtn--active {
+  background: var(--oxy-shell-accent);
+  color: var(--oxy-shell-foreground);
+}
+
+/* ─── Chat history (session-scoped) ─────────────────────────────────────── */
+
+.oxy-askdock__history {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0.5rem;
+  gap: 0.25rem;
+}
+
+.oxy-askdock__history-empty {
+  margin: 0.75rem 0.5rem;
+  font-size: 12.5px;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-askdock__history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  width: 100%;
+  border: none;
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  background: transparent;
+  padding: 0.5rem 0.625rem;
+  font-family: var(--oxy-shell-font);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.oxy-askdock__history-item:hover {
+  background: var(--oxy-shell-accent);
+}
+
+.oxy-askdock__history-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+}
+
+.oxy-askdock__history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-askdock__history-meta {
+  font-size: 11px;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-askdock__scroll {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+
+.oxy-askdock__chips {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.oxy-askdock__chip {
+  border: 1px solid var(--oxy-shell-border);
+  border-radius: 999px;
+  background: transparent;
+  padding: 0.375rem 0.75rem;
+  font-family: var(--oxy-shell-font);
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--oxy-shell-foreground);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.oxy-askdock__chip:hover {
+  background: var(--oxy-shell-accent);
+}
+
+.oxy-askdock__chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+}
+
+.oxy-askdock__turn {
+  display: flex;
+  flex-direction: column;
+  font-size: 13.5px;
+}
+
+.oxy-askdock__q {
+  align-self: flex-end;
+  max-width: 85%;
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  background: var(--oxy-shell-muted);
+  padding: 0.375rem 0.625rem;
+  margin: 0.5rem 0 0.375rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.oxy-askdock__composer {
+  margin: 0.75rem;
+  flex-shrink: 0;
+  border: 1px solid var(--oxy-shell-border);
+  border-radius: var(--oxy-shell-radius);
+  padding: 0.625rem;
+  transition: border-color 0.15s;
+}
+
+.oxy-askdock__composer:focus-within {
+  border-color: var(--oxy-shell-ring);
+}
+
+.oxy-askdock__input {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--oxy-shell-foreground);
+  font-family: var(--oxy-shell-font);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.oxy-askdock__input::placeholder {
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-askdock__composer-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.oxy-askdock__send {
+  display: inline-flex;
+  height: 1.75rem;
+  width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  background: var(--oxy-shell-primary);
+  color: var(--oxy-shell-primary-fg);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.oxy-askdock__send:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.oxy-askdock__send:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+}
+
+/* ─── Reasoning trace (Ask dock) ────────────────────────────────────────── */
+
+.oxy-trace {
+  margin: 0.375rem 0;
+  border: 1px solid var(--oxy-shell-border);
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  font-size: 12px;
+  color: var(--oxy-shell-muted-fg);
+  overflow: hidden;
+}
+
+.oxy-trace__head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  background: transparent;
+  padding: 0.375rem 0.625rem;
+  font-family: var(--oxy-shell-font);
+  font-size: 12px;
+  color: var(--oxy-shell-muted-fg);
+  cursor: pointer;
+  text-align: left;
+}
+
+.oxy-trace__head:hover {
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-trace__head:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+}
+
+.oxy-trace__title {
+  font-weight: 600;
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-trace__meta {
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-trace__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  border-top: 1px solid var(--oxy-shell-border);
+  padding: 0.5rem 0.625rem;
+}
+
+.oxy-trace__step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.oxy-trace__step-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.oxy-trace__label {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-trace__summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-trace__icon {
+  flex-shrink: 0;
+  width: 0.875rem;
+  text-align: center;
+  font-size: 10px;
+}
+
+.oxy-trace__icon--ok {
+  color: var(--oxy-shell-success);
+}
+
+.oxy-trace__icon--fail {
+  color: var(--oxy-shell-destructive);
+}
+
+.oxy-trace__icon--wait {
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-trace__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-left: 0.375rem;
+  border-left: 2px solid var(--oxy-shell-border);
+  padding-left: 0.75rem;
+}
+
+.oxy-trace__row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+  font-size: 11.5px;
+}
+
+.oxy-trace__row--error .oxy-trace__row-label,
+.oxy-trace__row--error .oxy-trace__row-detail {
+  color: var(--oxy-shell-destructive);
+}
+
+.oxy-trace__row-label {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-trace__row-preview {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-trace__row-detail {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--oxy-shell-font-mono);
+  font-size: 10.5px;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-trace__think {
+  margin: 0.125rem 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--oxy-shell-muted-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.oxy-trace__spin {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--oxy-shell-border);
+  border-top-color: var(--oxy-shell-muted-fg);
+  animation: oxy-shell-spin 0.8s linear infinite;
+}
+
+.oxy-trace__spin--sm {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-width: 1.5px;
+}
+
+@keyframes oxy-shell-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oxy-trace__spin {
+    animation: none;
+  }
+}
+
+/* ─── Answer charts (chart_rendered blocks) ─────────────────────────────── */
+
+.oxy-chart {
+  margin: 0.5rem 0;
+  border: 1px solid var(--oxy-shell-border);
+  border-radius: calc(var(--oxy-shell-radius) - 2px);
+  padding: 0.625rem 0.625rem 0.375rem;
+}
+
+.oxy-chart__title {
+  margin-bottom: 0.375rem;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-chart__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.oxy-chart__grid line {
+  stroke: var(--oxy-shell-border);
+  stroke-width: 0.5;
+}
+
+/* Zero baseline for signed (negative-valued) bar/line charts — a touch
+   stronger than the grid so it reads as the axis origin. */
+.oxy-chart__grid-zero {
+  stroke: var(--oxy-shell-muted-fg);
+  stroke-width: 1;
+}
+
+.oxy-chart__tick {
+  fill: var(--oxy-shell-muted-fg);
+  font-family: var(--oxy-shell-font);
+  font-size: 8px;
+}
+
+.oxy-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.75rem;
+  padding: 0.25rem 0 0.125rem;
+}
+
+.oxy-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 10.5px;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-chart__legend-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+}
+
+.oxy-chart__table-wrap {
+  overflow-x: auto;
+}
+
+.oxy-chart__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.oxy-chart__table th {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--oxy-shell-border);
+  font-weight: 600;
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-chart__table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--oxy-shell-border);
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-chart__note {
+  padding: 0.25rem 0.5rem;
+  font-size: 10.5px;
+  color: var(--oxy-shell-muted-fg);
+}
+
+/* Per-step detail toggle: running steps show their rows, finished steps
+   collapse to the header line; the whole row is the toggle. */
+.oxy-trace__step-row--btn {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--oxy-shell-font);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.oxy-trace__step-row--btn:hover .oxy-trace__label {
+  color: var(--oxy-shell-foreground);
+}
+
+.oxy-trace__step-row--btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+  border-radius: 4px;
+}
+
+.oxy-trace__count {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-trace__step-chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-self: center;
+  color: var(--oxy-shell-muted-fg);
+}
+
+.oxy-trace__step-row--btn .oxy-trace__step-chevron:only-of-type,
+.oxy-trace__step-row--btn .oxy-trace__step-chevron {
+  margin-left: 0.25rem;
+}
+
+.oxy-trace__step-row--btn:not(:hover) .oxy-trace__step-chevron {
+  opacity: 0.6;
+}
+
+/* Expandable action detail: full tool input/output under the row. */
+.oxy-trace__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.oxy-trace__row--btn {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--oxy-shell-font);
+  cursor: pointer;
+  text-align: left;
+}
+
+.oxy-trace__row--btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
+  border-radius: 4px;
+}
+
+.oxy-trace__row--btn:not(:hover) .oxy-trace__step-chevron {
+  opacity: 0.6;
+}
+
+.oxy-trace__payloads {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Plain colored text, no card — matches the inline preview style. */
+.oxy-trace__payload {
+  margin: 0 0 0 0.25rem;
+  font-family: var(--oxy-shell-font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--oxy-shell-muted-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.oxy-trace__payload--out {
+  color: var(--oxy-shell-success);
+}

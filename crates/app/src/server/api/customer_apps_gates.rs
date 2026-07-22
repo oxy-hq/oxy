@@ -369,14 +369,33 @@ pub(crate) async fn build_project_context(
     project_id: Uuid,
 ) -> Result<OxyProjectContext, Response> {
     let branch_opt: Option<&str> = None;
-    let effective_path = match effective_workspace_path(workspace, branch_opt).await {
-        Ok(p) => p,
-        Err(e) => {
-            error!("effective_workspace_path failed: {e}");
-            return Err(err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "could not resolve workspace path",
-            ));
+    // The nil-UUID local workspace is a synthetic row with no `path` —
+    // its directory is resolved from the server's cwd at request time
+    // (config.yml walk-up), same as `resolve_workspace_path` and the
+    // workspace middleware do. Only registered cloud workspaces carry a
+    // DB path, so going straight to the row 500s every bundle endpoint
+    // on a local-mode workspace.
+    let effective_path = if project_id.is_nil() {
+        match oxy::config::resolve_local_workspace_path() {
+            Ok(p) => p,
+            Err(e) => {
+                error!("local workspace path resolution failed: {e}");
+                return Err(err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "could not resolve workspace path",
+                ));
+            }
+        }
+    } else {
+        match effective_workspace_path(workspace, branch_opt).await {
+            Ok(p) => p,
+            Err(e) => {
+                error!("effective_workspace_path failed: {e}");
+                return Err(err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "could not resolve workspace path",
+                ));
+            }
         }
     };
     let mut builder = match WorkspaceBuilder::new(project_id)

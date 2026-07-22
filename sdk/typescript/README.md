@@ -98,6 +98,46 @@ Hooks fail loudly if called outside `<OxyAppProvider>`. The default fetcher
 sends `credentials: "include"` so same-origin (served-by-oxy) calls carry the
 session cookie automatically.
 
+### Workspace shell (`@oxy-hq/sdk/shell`)
+
+The Oxygen workspace chrome — the 48px icon rail and universal top bar the
+main web-app renders — as reusable components, so your app reads as part of
+the same product. The main web-app consumes these exact components.
+
+```tsx
+import { OxyAppProvider } from "@oxy-hq/sdk";
+import { OxyShell } from "@oxy-hq/sdk/shell";
+import "@oxy-hq/sdk/shell.css";
+
+export function App() {
+  return (
+    <OxyAppProvider>
+      <OxyShell>
+        <Dashboard />
+      </OxyShell>
+    </OxyAppProvider>
+  );
+}
+```
+
+`OxyShell` bootstraps from `GET /api/projects/:id/shell-context` (workspace
+identity, sibling apps, host-aware navigation URLs) and degrades gracefully:
+if the endpoint is unavailable (older server), your app renders unchromed.
+
+| Export | What it does |
+| --- | --- |
+| `OxyShell` | Wired frame: rail + top bar + content column around your app. Slots: `topBarExtra`, `railBottom`, `hideTopBar`, `pageLabel`. |
+| `useShellContext()` | The raw shell bootstrap payload (`{ data, loading, error }`). |
+| `ShellRail`, `RailItem` | Presentational icon rail — props only, router-free. |
+| `TopBar`, `Breadcrumb`, `SystemIndicator`, `WorkspaceClock` | Presentational top bar pieces. |
+| `WorkspaceTile`, `OxyMark`, `OxygenFactoryMark` | Branding primitives. |
+| `workspaceLogoUrl(apiBaseUrl, wsId, version?)` | Workspace logo endpoint URL builder. |
+
+Styling: `shell.css` is namespaced (`oxy-shell-*`) — no Tailwind required, no
+global styles leak into your app. It follows your design tokens when present
+(`--sidebar-background`, `--foreground`, …) and falls back to the Oxygen
+defaults. Dark mode: put a `.dark` class on any ancestor.
+
 ## Docs
 
 - Hands-on dev + deploy guide: `docs/local-development.md` in the

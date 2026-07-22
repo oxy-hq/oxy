@@ -1552,6 +1552,8 @@ mod tests {
             );
         }
         // Postgres-backed run-state siblings are cross-process safe → FleetOk.
+        // The shell-context bootstrap (SDK shell chrome) is likewise a pure
+        // persisted-data read and must never get pinned to the singleton.
         let fleet_ok = [
             ("GET", format!("/api/projects/{pid}/procedures/runs/run-1")),
             (
@@ -1566,6 +1568,9 @@ mod tests {
                 "GET",
                 format!("/api/projects/{pid}/agents/runs/run-1/events"),
             ),
+            ("GET", format!("/api/projects/{pid}/shell-context")),
+            ("GET", format!("/api/projects/{pid}/threads")),
+            ("GET", format!("/api/projects/{pid}/threads/t-1")),
         ];
         for (method, path) in &fleet_ok {
             assert_eq!(

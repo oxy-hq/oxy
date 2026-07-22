@@ -18,6 +18,12 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY web-app/package.json ./web-app/
+# sdk/* are pnpm-workspace members, so their manifests must exist for
+# `pnpm install` to resolve the workspace lockfile — web-app does not depend
+# on them, so the sdk itself is never built here.
+COPY sdk/typescript/package.json ./sdk/typescript/
+COPY sdk/vite-plugin/package.json ./sdk/vite-plugin/
+COPY sdk/create-oxy-app/package.json ./sdk/create-oxy-app/
 RUN corepack enable && corepack prepare --activate && pnpm install
 
 COPY web-app/ ./web-app/

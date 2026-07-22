@@ -1,6 +1,6 @@
 {
   "name": "@oxy-hq/sdk",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "React SDK for building customer-app bundles on the Oxy platform",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -17,6 +17,17 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./shell": {
+      "import": {
+        "types": "./dist/shell.d.mts",
+        "default": "./dist/shell.mjs"
+      },
+      "require": {
+        "types": "./dist/shell.d.cts",
+        "default": "./dist/shell.cjs"
+      }
+    },
+    "./shell.css": "./dist/shell.css",
     "./email": {
       "import": {
         "types": "./dist/email.d.mts",
@@ -38,7 +49,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown && cp src/shell/shell.css dist/shell.css",
     "build:watch": "tsdown --watch",
     "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit",
@@ -68,16 +79,27 @@
     "url": "https://github.com/oxy-hq/oxy-internal/issues"
   },
   "homepage": "https://oxygen-hq.com",
+  "dependencies": {
+    "@radix-ui/react-tooltip": "^1.2.11"
+  },
   "peerDependencies": {
+    "echarts": "^5.5.0 || ^6.0.0",
     "preact": "^10.0.0",
     "preact-render-to-string": "^6.0.0",
-    "react": "^19.0.0"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "peerDependenciesMeta": {
+    "echarts": {
+      "optional": true
+    },
     "preact": {
       "optional": true
     },
     "preact-render-to-string": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     }
   },
@@ -86,6 +108,7 @@
     "@types/react": "^19.2.17",
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
+    "echarts": "^6.0.0",
     "eslint": "^10.7.0",
     "preact": "^10.29.7",
     "preact-render-to-string": "^6.7.0",

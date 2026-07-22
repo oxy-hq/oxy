@@ -29,8 +29,8 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use entity::organizations;
-use sea_orm::{DatabaseConnection, EntityTrait};
+use entity::{messages, organizations, threads};
+use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
 use tracing::{error, instrument, warn};
@@ -208,23 +208,100 @@ pub async fn start_ask(
     };
     let platform: Arc<dyn PlatformContext> = Arc::new(proj_ctx);
 
-    // 5. Build the pipeline. Analytics domain only — builder is
-    //    workspace-scoped and not exposed to bundles.
-    let thread_uuid = req
+    // 5. Resolve the thread. Reuse the client's thread on a follow-up;
+    //    otherwise provision one OWNED BY THE VIEWER (`user_id`) so it
+    //    surfaces in their bundle chat history (the auto-provision path in
+    //    `thread_owner.rs` leaves `user_id` null — no per-request user
+    //    there — which would make history un-scopable). Then record the
+    //    question as a human message so the transcript is reconstructable
+    //    on restore (the answer is replayed from the run's persisted
+    //    events; the bundle drive doesn't persist assistant messages).
+    let thread_uuid = match req
         .thread_id
         .as_deref()
-        .and_then(|s| Uuid::parse_str(s).ok());
+        .and_then(|s| Uuid::parse_str(s).ok())
+    {
+        Some(tid) => {
+            // Ownership gate: a client-supplied thread must belong to THIS
+            // viewer in THIS project before we append to it. Without this an
+            // authenticated caller who clears the gate for `project_id` could
+            // pass any thread UUID and inject a message into — and pull prior
+            // context out of — another user's/project's thread. A 404 (not
+            // 403) mirrors `customer_apps_threads.rs::get_thread_transcript`
+            // and avoids confirming the existence of others' threads.
+            match threads::Entity::find_by_id(tid).one(&gates_ctx.db).await {
+                Ok(Some(t))
+                    if t.project_id == project_id && t.user_id == Some(gates_ctx.user.id) =>
+                {
+                    tid
+                }
+                Ok(_) => return err(StatusCode::NOT_FOUND, "thread not found"),
+                Err(e) => {
+                    error!(error = %e, "customer-app ask: thread ownership lookup failed");
+                    return err(StatusCode::INTERNAL_SERVER_ERROR, "thread lookup failed");
+                }
+            }
+        }
+        None => {
+            let tid = Uuid::new_v4();
+            let title: String = req.question.chars().take(120).collect();
+            let thread = threads::ActiveModel {
+                id: Set(tid),
+                user_id: Set(Some(gates_ctx.user.id)),
+                title: Set(title),
+                input: Set(req.question.clone()),
+                output: Set(String::new()),
+                source: Set("customer-app".to_string()),
+                source_type: Set("analytics".to_string()),
+                references: Set("[]".to_string()),
+                is_processing: Set(false),
+                created_at: ActiveValue::not_set(),
+                project_id: Set(project_id),
+                sandbox_info: Set(None),
+            };
+            if let Err(e) = threads::Entity::insert(thread).exec(&gates_ctx.db).await {
+                error!(error = %e, "customer-app ask: thread create failed");
+                return err(StatusCode::INTERNAL_SERVER_ERROR, "could not create thread");
+            }
+            tid
+        }
+    };
 
-    let mut builder = PipelineBuilder::new(platform.clone())
+    // Persist the question (new thread or follow-up) as a human message.
+    // Fatal: this runs BEFORE the run is started, and the transcript endpoint
+    // pairs human messages to runs positionally — a silently-dropped question
+    // would shift every later turn's answer by one on restore. Failing here
+    // (before any run exists) keeps the question/run counts aligned.
+    let question_msg = messages::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        content: Set(req.question.clone()),
+        is_human: Set(true),
+        thread_id: Set(thread_uuid),
+        created_at: ActiveValue::not_set(),
+        input_tokens: Set(0),
+        output_tokens: Set(0),
+    };
+    if let Err(e) = messages::Entity::insert(question_msg)
+        .exec(&gates_ctx.db)
+        .await
+    {
+        error!(error = %e, "customer-app ask: question message persist failed");
+        return err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not record question",
+        );
+    }
+
+    // 6. Build the pipeline. Analytics domain only — builder is
+    //    workspace-scoped and not exposed to bundles.
+    let builder = PipelineBuilder::new(platform.clone())
         .workspace_id(project_id)
         .question(&req.question)
-        .schema_cache(Arc::clone(&agentic_state.schema_cache));
-    if let Some(tid) = thread_uuid {
-        builder = builder.thread(tid);
-    }
-    let builder = builder.analytics(&agent_id);
+        .schema_cache(Arc::clone(&agentic_state.schema_cache))
+        .thread(thread_uuid)
+        .analytics(&agent_id);
 
-    // 6. Start.
+    // 7. Start.
     let started = match builder.start(&agentic_state.db).await {
         Ok(s) => s,
         Err(e) => {
@@ -307,9 +384,8 @@ pub async fn start_ask(
         tracing::debug!(run_id = %run_id_for_drive, "customer-app ask: drive finished");
     });
 
-    let thread_id_str = thread_uuid
-        .map(|u| u.to_string())
-        .unwrap_or_else(|| run_id.clone());
+    // The thread is always provisioned now (§5), so return its id.
+    let thread_id_str = thread_uuid.to_string();
     let thread_url =
         build_thread_path(&agentic_state.db, &gates_ctx.workspace, &thread_id_str).await;
 

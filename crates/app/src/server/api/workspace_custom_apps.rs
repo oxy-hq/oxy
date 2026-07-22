@@ -187,20 +187,32 @@ pub async fn list_custom_apps(
         tracing::error!("list_custom_apps DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    let out = published_app_summaries(&db, workspace_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("list_custom_apps failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(Json(out))
+}
 
+/// Published-app summaries for a workspace. Shared by the workspace
+/// sidebar endpoint above and the customer-app shell-context endpoint
+/// (`customer_apps_shell_context.rs`) so the two surfaces can't drift
+/// on which apps are listed or how their URLs/icons resolve.
+pub(crate) async fn published_app_summaries(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+) -> Result<Vec<CustomAppSummary>, sea_orm::DbErr> {
     let rows = Apps::find()
         .filter(apps::Column::ProjectId.eq(workspace_id))
         .filter(apps::Column::PublishedAt.is_not_null())
         .order_by_asc(apps::Column::Name)
-        .all(&db)
-        .await
-        .map_err(|e| {
-            tracing::error!("list_custom_apps query failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        .all(db)
+        .await?;
 
     if rows.is_empty() {
-        return Ok(Json(vec![]));
+        return Ok(vec![]);
     }
 
     // Bulk-resolve org slugs in one query (apps for a workspace will
@@ -210,12 +222,8 @@ pub async fn list_custom_apps(
     let org_ids: HashSet<Uuid> = rows.iter().map(|a| a.org_id).collect();
     let orgs = Organizations::find()
         .filter(organizations::Column::Id.is_in(org_ids.iter().copied()))
-        .all(&db)
-        .await
-        .map_err(|e| {
-            tracing::error!("list_custom_apps org lookup failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        .all(db)
+        .await?;
     let slugs: HashMap<Uuid, String> = orgs.into_iter().map(|o| (o.id, o.slug)).collect();
 
     // Card metadata for the whole page in ONE batched `app_builds` query (no
@@ -237,7 +245,7 @@ pub async fn list_custom_apps(
             app, &slug, published, manifest,
         ));
     }
-    Ok(Json(out))
+    Ok(out)
 }
 
 #[cfg(test)]

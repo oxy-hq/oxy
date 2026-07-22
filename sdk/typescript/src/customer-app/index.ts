@@ -93,6 +93,7 @@ export {
   OxyChat,
   useAgentRun,
   useFunction,
+  useOxyApp,
   useProcedureRun,
   useQuery,
   useResolvedManifest,

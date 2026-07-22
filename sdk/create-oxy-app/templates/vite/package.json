@@ -10,7 +10,7 @@
     "screenshot": "node scripts/screenshot.mjs"
   },
   "dependencies": {
-    "@oxy-hq/sdk": "^2.0.0",
+    "@oxy-hq/sdk": "^2.4.0",
     "preact": "^10.29.7",
     "preact-render-to-string": "^6.7.0",
     "react": "^19.0.0",

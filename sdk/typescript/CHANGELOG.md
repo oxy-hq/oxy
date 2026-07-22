@@ -5,6 +5,85 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-07-21
+
+Ships the Oxygen workspace shell — the same 48px icon rail + universal
+top bar the main web-app renders — as a reusable subpath export, so a
+customer app reads as part of the HQ. The web-app consumes these exact
+components (oxygen-internal `internal-docs/2026-07-06-sdk-shell-universalization-design.md`).
+
+### Added
+
+- `@oxy-hq/sdk/shell` entry point: wired `OxyShell` + `useShellContext`
+  (bootstraps from the new bundle-gated `GET /api/projects/:id/shell-context`;
+  degrades to chrome-less rendering on older servers), and presentational
+  `ShellRail`/`RailItem`, `TopBar`, `Breadcrumb`, `SystemIndicator`,
+  `WorkspaceClock`, `WorkspaceTile`, `ShellTooltip`, `OxyMark`,
+  `OxygenFactoryMark`, `workspaceLogoUrl`.
+- `@oxy-hq/sdk/shell.css` — namespaced (`oxy-shell-*`) stylesheet; no
+  Tailwind required. Follows host design tokens when present, falls back
+  to the Oxygen defaults; dark mode via a `.dark` ancestor class.
+- `useOxyApp()` is now exported (low-level identity + fetcher access
+  without requiring the manifest to be ready).
+- **Reasoning trace in the Ask dock** — the same trace the main web-app
+  renders: header meta (LLM calls · total time · steps), step rows with
+  status, indented tool rows with input previews + durations, streamed
+  thinking text, and query rows with row counts. Expanded while
+  streaming, auto-collapses when the run settles. Exported standalone as
+  `ReasoningTrace` + `buildTraceSteps`/`aggregateLlmStats`.
+- **Interactive charts in the Ask dock** — `AnswerChart` renders
+  `chart_rendered` blocks with **ECharts** (the same library the main
+  web-app uses) when the host app has it installed: axis/item tooltips,
+  hover, legend, resize. `echarts` is an optional peer (dynamic import);
+  bundles without it fall back to the dependency-free SVG render. Table
+  type always uses the SVG/HTML table.
+- **Native charts in the Ask dock** — `chart_rendered` blocks from the
+  analytics pipeline render as dependency-free SVG (bar/line/pie, table
+  fallback) via the exported `AnswerChart`; the duplicate QUERY artifact
+  block is gone from the dock (the trace + chart carry that info).
+- **API-backed chat history** — the Ask dock's History now lists the
+  viewer's persistent threads from the bundle-gated
+  `GET /api/projects/:id/threads`, merged with the richer in-session
+  conversations. Opening a server thread fetches
+  `GET /api/projects/:id/threads/:tid` and rebuilds the transcript (trace,
+  charts, answer) by replaying the thread's persisted run events through
+  the same processor the live stream uses; follow-ups resume the thread.
+  Exported: `useThreadHistory`, `fetchThreadTranscript`. Requires an oxy
+  server that stamps `user_id` on bundle threads (same release); older
+  servers fall back to session-only history.
+- **New chat + history in the Ask dock header** — a `＋` action starts a
+  fresh conversation (new server thread) and a clock action opens
+  session-scoped history: chats started in this dock session, each
+  restorable (follow-ups resume its server thread via the SSE resume).
+  Bundles have no list-threads endpoint, so history is per-session, not
+  persisted across reloads.
+- **Ask Oxygen dock** in the shell: when the app manifest binds an agent
+  (`ask.agent`), the top bar shows the Ask Oxygen button (⌘K/Ctrl+K
+  toggles) and a right-side chat dock opens as a flex sibling —
+  compacting the app, not covering it. Multi-turn over `useAgentRun`
+  (follow-ups reuse the thread), suggested-question chips from
+  `ask.suggestedQuestions`, streamed answers with SQL artifacts, and an
+  "open in Oxygen" header link to the product Chat surface. Also
+  exported standalone as `AskDock`.
+- The shell rail's bottom cluster shows a **Settings** entry linking to
+  the product's Unified Settings Dialog (via the SPA's new
+  `?settings=<section>` deep link, returned as `links.settings` by
+  shell-context; hidden on servers that don't send it).
+
+### Fixed
+
+- `OxyAnswer` / `OxyChat` follow the host's design tokens when rendered
+  inside the shell scope (dark mode included) — hardcoded light-theme
+  colors remain only as fallbacks for standalone bundles. The spinner's
+  `oxy-spin` keyframes are now actually defined (injected once), so it
+  spins.
+
+### Changed
+
+- New runtime dependency: `@radix-ui/react-tooltip` (rail tooltips).
+- New optional peer: `react-dom` (only needed by the shell's tooltip
+  portal; data-only consumers are unaffected).
+
 ## [2.3.0] - 2026-07-20
 
 ### Added

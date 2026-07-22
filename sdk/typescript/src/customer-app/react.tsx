@@ -40,7 +40,7 @@ import {
   loadCustomerAppManifest,
   type ResolvedCustomerAppManifest
 } from "./manifest";
-import { isSafeLinkHref } from "./markdown";
+import { isSafeLinkHref, isTableStart, splitTableRow } from "./markdown";
 import { getCached, sharedQuery } from "./query-cache";
 
 // ── Context ─────────────────────────────────────────────────────────────────
@@ -210,16 +210,24 @@ export function useResolvedManifest(): ResolvedCustomerAppManifest {
 /**
  * Low-level hook that returns the raw context value (including the
  * fetcher). Prefer `useResolvedManifest` for manifest access; use
- * this only when you need the fetcher or projectId without requiring
- * the manifest to be ready (e.g. inside `useQuery`).
+ * this only when you need the fetcher or identity without requiring
+ * the manifest to be ready (e.g. inside `useQuery`, or the shell
+ * chrome, which must never block the app on the manifest load).
  */
-function useOxyApp(): { projectId: string | undefined; fetcher: AppFetcher } {
+export function useOxyApp(): {
+  projectId: string | undefined;
+  appSlug: string | undefined;
+  orgSlug: string | undefined;
+  fetcher: AppFetcher;
+} {
   const ctx = React.useContext(OxyAppContext);
   if (!ctx) {
     throw new Error("useOxyApp must be called inside <OxyAppProvider>");
   }
   return {
     projectId: ctx.resolved?.projectId,
+    appSlug: ctx.resolved?.appSlug,
+    orgSlug: ctx.resolved?.orgSlug,
     fetcher: ctx.fetcher
   };
 }
@@ -1162,16 +1170,17 @@ export function useAgentRun(input: UseAgentRunInput): UseAgentRunResult {
                       state: "failed",
                       error: new Error(message)
                     }));
-                  } else if (ev.event === "ask_user") {
-                    // Not terminal in the cancel-sense — the user
-                    // can resume by calling ask() again with the
-                    // same threadId. Keep runId set so cancel()
-                    // still works if the user prefers to abort.
+                  } else if (ev.event === "awaiting_input") {
+                    // Suspension for a clarifying question. The server emits
+                    // `awaiting_input` (UiBlock::AwaitingInput) with a
+                    // `questions: [{ prompt, suggestions }]` array — NOT an
+                    // `ask_user` event, which never fires. Not terminal in the
+                    // cancel-sense: the user resumes by calling ask() again with
+                    // the same threadId, so keep runId set so cancel() still
+                    // works if they prefer to abort.
                     terminated = true;
                     const clarification =
-                      typeof data === "object" && data !== null && "question" in data
-                        ? String((data as { question: unknown }).question)
-                        : "Agent needs clarification.";
+                      clarificationFromData(data) ?? "Agent needs clarification.";
                     setState((s) => ({
                       ...s,
                       state: "needs_clarification",
@@ -1199,6 +1208,18 @@ export function useAgentRun(input: UseAgentRunInput): UseAgentRunResult {
               }
             }
             if (terminated) return;
+            if (attempts >= 5) {
+              // Clean close without a terminal event hits the same
+              // ceiling as the error path — otherwise a server that
+              // keeps closing early spins the reconnect loop forever.
+              inflight.current.runId = undefined;
+              setState((s) => ({
+                ...s,
+                state: "failed",
+                error: new Error("run event stream closed without a terminal event")
+              }));
+              return;
+            }
             await sleep(1000, ctrl.signal);
           }
         } catch (e) {
@@ -1243,6 +1264,19 @@ function parseSseData(raw: string): unknown {
   } catch {
     return raw;
   }
+}
+
+/** Extract the clarifying-question text from an `awaiting_input` payload.
+ *  The server sends `{ questions: [{ prompt, suggestions }] }`; older shapes
+ *  used a single `{ question }`. Returns null when neither is present. */
+function clarificationFromData(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) return null;
+  const d = data as Record<string, unknown>;
+  const questions = Array.isArray(d.questions) ? d.questions : [];
+  const first = questions[0] as Record<string, unknown> | undefined;
+  if (first && typeof first.prompt === "string") return first.prompt;
+  if (typeof d.question === "string") return d.question;
+  return null;
 }
 
 /** UI event types in the analytics taxonomy that carry SQL the bundle
@@ -1639,6 +1673,7 @@ export interface OxyAnswerProps {
  * ```
  */
 export function OxyAnswer(props: OxyAnswerProps): React.JSX.Element {
+  ensureSpinKeyframes();
   const {
     answer,
     artifacts = [],
@@ -1729,6 +1764,7 @@ export interface OxyChatProps {
  * better expressed by the bundle.
  */
 export function OxyChat(props: OxyChatProps): React.JSX.Element {
+  ensureSpinKeyframes();
   const {
     agentId,
     placeholder = "Ask a question about your data…",
@@ -1922,7 +1958,8 @@ type MdBlock =
   | { kind: "h"; level: 1 | 2 | 3; text: string }
   | { kind: "p"; text: string }
   | { kind: "code"; lang: string; code: string }
-  | { kind: "list"; items: string[] };
+  | { kind: "list"; items: string[] }
+  | { kind: "table"; headers: string[]; rows: string[][] };
 
 function parseMarkdown(text: string): React.JSX.Element[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -1959,6 +1996,18 @@ function parseMarkdown(text: string): React.JSX.Element[] {
       i++;
       continue;
     }
+    // GFM table: header row followed by a delimiter row.
+    if (isTableStart(lines, i)) {
+      const headers = splitTableRow(line);
+      i += 2; // skip header + delimiter
+      const rows: string[][] = [];
+      while (i < lines.length && (lines[i] ?? "").includes("|") && (lines[i] ?? "").trim() !== "") {
+        rows.push(splitTableRow(lines[i] ?? ""));
+        i++;
+      }
+      blocks.push({ kind: "table", headers, rows });
+      continue;
+    }
     // List
     if (/^\s*[-*]\s+/.test(line)) {
       const items: string[] = [];
@@ -1983,7 +2032,8 @@ function parseMarkdown(text: string): React.JSX.Element[] {
         next.trim() === "" ||
         /^#{1,3}\s+/.test(next) ||
         /^```/.test(next) ||
-        /^\s*[-*]\s+/.test(next)
+        /^\s*[-*]\s+/.test(next) ||
+        isTableStart(lines, i)
       ) {
         break;
       }
@@ -2017,6 +2067,33 @@ function parseMarkdown(text: string): React.JSX.Element[] {
               <li key={i}>{renderInline(item)}</li>
             ))}
           </ul>
+        );
+      case "table":
+        return (
+          <div key={idx} style={styles.mdTableWrap}>
+            <table style={styles.mdTable}>
+              <thead>
+                <tr>
+                  {b.headers.map((h, hi) => (
+                    <th key={`${hi}-${h}`} style={styles.mdTh}>
+                      {renderInline(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {b.rows.map((row, ri) => (
+                  <tr key={`${ri}-${row[0] ?? ""}`}>
+                    {b.headers.map((_h, ci) => (
+                      <td key={ci} style={styles.mdTd}>
+                        {renderInline(row[ci] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         );
       case "p":
         return (
@@ -2094,6 +2171,20 @@ function renderInline(text: string): React.ReactNode[] {
 // with their own selectors, or skip the drop-in entirely and build
 // on `useAgentRun`.
 
+// The spinner animation referenced by `styles.spinner`. Injected once into
+// <head> at first render — the SDK ships no stylesheet on the main entry, so
+// without this the keyframes never exist and the spinner can't rotate.
+let spinKeyframesInjected = false;
+function ensureSpinKeyframes(): void {
+  if (spinKeyframesInjected || typeof document === "undefined") return;
+  spinKeyframesInjected = true;
+  if (document.getElementById("oxy-spin-keyframes")) return;
+  const el = document.createElement("style");
+  el.id = "oxy-spin-keyframes";
+  el.textContent = "@keyframes oxy-spin { to { transform: rotate(360deg); } }";
+  document.head.appendChild(el);
+}
+
 const SANS =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const MONO = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
@@ -2103,7 +2194,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: SANS,
     fontSize: 14,
     lineHeight: 1.5,
-    color: "#1f2937"
+    color: "var(--oxy-shell-foreground, #1f2937)"
   },
   statusRow: { display: "flex", alignItems: "center", gap: 8, padding: "8px 0" },
   spinner: {
@@ -2111,11 +2202,11 @@ const styles: Record<string, React.CSSProperties> = {
     width: 12,
     height: 12,
     borderRadius: "50%",
-    border: "2px solid #d1d5db",
-    borderTopColor: "#6b7280",
+    border: "2px solid var(--oxy-shell-border, #d1d5db)",
+    borderTopColor: "var(--oxy-shell-muted-fg, #6b7280)",
     animation: "oxy-spin 0.8s linear infinite"
   },
-  statusText: { color: "#6b7280" },
+  statusText: { color: "var(--oxy-shell-muted-fg, #6b7280)" },
   markdown: { marginTop: 8 },
   h1: { fontSize: 20, fontWeight: 600, margin: "16px 0 8px" },
   h2: { fontSize: 17, fontWeight: 600, margin: "14px 0 6px" },
@@ -2125,8 +2216,8 @@ const styles: Record<string, React.CSSProperties> = {
   codeBlock: {
     fontFamily: MONO,
     fontSize: 12,
-    background: "#f3f4f6",
-    border: "1px solid #e5e7eb",
+    background: "var(--oxy-shell-accent, #f3f4f6)",
+    border: "1px solid var(--oxy-shell-border, #e5e7eb)",
     borderRadius: 6,
     padding: "8px 10px",
     overflowX: "auto",
@@ -2135,11 +2226,11 @@ const styles: Record<string, React.CSSProperties> = {
   inlineCode: {
     fontFamily: MONO,
     fontSize: "0.92em",
-    background: "#f3f4f6",
+    background: "var(--oxy-shell-accent, #f3f4f6)",
     padding: "1px 4px",
     borderRadius: 3
   },
-  link: { color: "#2563eb", textDecoration: "underline" },
+  link: { color: "var(--oxy-shell-link, #2563eb)", textDecoration: "underline" },
   clarification: {
     marginTop: 12,
     padding: "10px 12px",
@@ -2164,7 +2255,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6
   },
-  threadLink: { fontSize: 12, color: "#6b7280", textDecoration: "none" },
+  threadLink: { fontSize: 12, color: "var(--oxy-shell-muted-fg, #6b7280)", textDecoration: "none" },
   betaBadge: {
     fontSize: 9,
     fontWeight: 600,
@@ -2178,9 +2269,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   artifactList: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 },
   artifact: {
-    border: "1px solid #e5e7eb",
+    border: "1px solid var(--oxy-shell-border, #e5e7eb)",
     borderRadius: 6,
-    background: "#fafafa",
+    background: "var(--oxy-shell-accent, #fafafa)",
     overflow: "hidden"
   },
   artifactHeader: {
@@ -2195,17 +2286,17 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontFamily: SANS,
     fontSize: 12,
-    color: "#374151"
+    color: "var(--oxy-shell-foreground, #374151)"
   },
   artifactBadge: {
     fontWeight: 600,
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.4,
-    color: "#4b5563"
+    color: "var(--oxy-shell-muted-fg, #4b5563)"
   },
-  artifactSummary: { color: "#6b7280", flex: 1 },
-  artifactToggle: { color: "#2563eb" },
+  artifactSummary: { color: "var(--oxy-shell-muted-fg, #6b7280)", flex: 1 },
+  artifactToggle: { color: "var(--oxy-shell-link, #2563eb)" },
   sqlBlock: {
     fontFamily: MONO,
     fontSize: 12,
@@ -2220,18 +2311,45 @@ const styles: Record<string, React.CSSProperties> = {
   resultsTh: {
     textAlign: "left",
     padding: "4px 8px",
-    borderBottom: "1px solid #e5e7eb",
+    borderBottom: "1px solid var(--oxy-shell-border, #e5e7eb)",
     fontWeight: 600,
-    color: "#374151"
+    color: "var(--oxy-shell-foreground, #374151)"
   },
-  resultsTd: { padding: "4px 8px", borderBottom: "1px solid #f3f4f6", color: "#1f2937" },
-  truncatedNote: { fontSize: 11, color: "#6b7280", padding: "6px 8px" },
-  chatWrap: { fontFamily: SANS, fontSize: 14, color: "#1f2937" },
+  resultsTd: {
+    padding: "4px 8px",
+    borderBottom: "1px solid var(--oxy-shell-border, #f3f4f6)",
+    color: "var(--oxy-shell-foreground, #1f2937)"
+  },
+  truncatedNote: { fontSize: 11, color: "var(--oxy-shell-muted-fg, #6b7280)", padding: "6px 8px" },
+  // GFM markdown tables (answer body).
+  mdTableWrap: { overflowX: "auto", margin: "8px 0" },
+  mdTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    fontSize: 12.5,
+    border: "1px solid var(--oxy-shell-border, #e5e7eb)"
+  },
+  mdTh: {
+    textAlign: "left",
+    padding: "5px 9px",
+    borderBottom: "1px solid var(--oxy-shell-border, #e5e7eb)",
+    background: "var(--oxy-shell-accent, #f3f4f6)",
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+    color: "var(--oxy-shell-foreground, #374151)"
+  },
+  mdTd: {
+    padding: "5px 9px",
+    borderTop: "1px solid var(--oxy-shell-border, #f3f4f6)",
+    verticalAlign: "top",
+    color: "var(--oxy-shell-foreground, #1f2937)"
+  },
+  chatWrap: { fontFamily: SANS, fontSize: 14, color: "var(--oxy-shell-foreground, #1f2937)" },
   chatForm: { display: "flex", gap: 8, marginBottom: 12 },
   chatInput: {
     flex: 1,
     padding: "8px 12px",
-    border: "1px solid #d1d5db",
+    border: "1px solid var(--oxy-shell-border, #d1d5db)",
     borderRadius: 6,
     fontSize: 14,
     fontFamily: SANS
@@ -2240,7 +2358,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "8px 16px",
     border: "none",
     borderRadius: 6,
-    background: "#2563eb",
+    background: "var(--oxy-shell-link, #2563eb)",
     color: "#ffffff",
     fontSize: 14,
     fontWeight: 500,
@@ -2248,12 +2366,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
   chatCancel: {
     padding: "8px 12px",
-    border: "1px solid #d1d5db",
+    border: "1px solid var(--oxy-shell-border, #d1d5db)",
     borderRadius: 6,
-    background: "#ffffff",
-    color: "#374151",
+    background: "var(--oxy-shell-background, #ffffff)",
+    color: "var(--oxy-shell-foreground, #374151)",
     fontSize: 14,
     cursor: "pointer"
   },
-  emptyState: { padding: "12px 0", color: "#9ca3af", fontStyle: "italic" }
+  emptyState: {
+    padding: "12px 0",
+    color: "var(--oxy-shell-muted-fg, #9ca3af)",
+    fontStyle: "italic"
+  }
 };

@@ -40,3 +40,53 @@ export function isSafeLinkHref(raw: string): boolean {
   const lower = cleaned.toLowerCase();
   return lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("mailto:");
 }
+
+// ── GFM table parsing (used by the OxyAnswer markdown renderer) ──────────────
+
+/** Unescape GFM cell escapes (`\|` → `|`, `\\` → `\`). */
+function unescapeCell(cell: string): string {
+  return cell.replace(/\\([|\\])/g, "$1");
+}
+
+/** Split a GFM table row into trimmed cells, dropping the outer pipes.
+ *  Splits on UNESCAPED `|` only — a `\|` inside a cell is a literal pipe,
+ *  not a column separator — then unescapes each cell. */
+export function splitTableRow(line: string): string[] {
+  const s = line.trim();
+  const cells: string[] = [];
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    // Keep the escape sequence intact here; `unescapeCell` collapses it below.
+    if (ch === "\\" && i + 1 < s.length) {
+      cur += ch + s[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === "|") {
+      cells.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  cells.push(cur);
+  // Drop the empty cells produced by the optional leading/trailing pipes,
+  // without eating a legitimately-empty first/last column mid-row.
+  if (cells.length > 1 && cells[0].trim() === "") cells.shift();
+  if (cells.length > 1 && cells[cells.length - 1].trim() === "") cells.pop();
+  return cells.map((c) => unescapeCell(c.trim()));
+}
+
+/** A GFM delimiter row: every cell is `-`s with optional leading/trailing `:`. */
+export function isTableDelimiter(line: string): boolean {
+  if (!line?.includes("-")) return false;
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
+}
+
+/** A table starts at `idx` when that line has a pipe and the next line is a
+ *  delimiter row. */
+export function isTableStart(lines: string[], idx: number): boolean {
+  return (lines[idx] ?? "").includes("|") && isTableDelimiter(lines[idx + 1] ?? "");
+}
