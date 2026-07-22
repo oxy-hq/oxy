@@ -1,5 +1,5 @@
 use airlayer::engine::promotions::Promotions;
-use airlayer::schema::models::{AdditivityClass, EntityType, MeasureType};
+use airlayer::schema::models::{EntityType, MeasureType};
 use std::collections::HashMap;
 
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
@@ -750,6 +750,8 @@ pub(super) fn apply_world_model_config(
 
 #[cfg(test)]
 mod wm_config_tests {
+    use airlayer::schema::models::AdditivityClass;
+
     use super::*;
     use crate::server::api::world_model_config::{WmEntityConfig, WmFieldConfig, WorldModelConfig};
 

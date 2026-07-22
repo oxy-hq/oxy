@@ -1,8 +1,6 @@
-use axum::extract::State;
-use chrono::{DateTime, Utc};
-use entity::settings::SyncStatus;
+use axum::extract::{Extension, Json, Path, Query, State};
+use axum::response::Json as ResponseJson;
 use reqwest::StatusCode;
-use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -13,138 +11,20 @@ use crate::server::api::middlewares::role_guards::{
 use crate::server::api::middlewares::workspace_context::{
     BranchQuery, EffectiveWorkspaceRole, WorkspaceManagerExtractor, WorkspacePath,
 };
+use crate::server::authz;
 use crate::server::router::AppState;
-use axum::extract::Extension;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::adapters::workspace::effective_workspace_path;
 use oxy::api_types::{
-    BranchOrigin, BranchType, CommitEntry, ProjectBranch, RecentCommitsResponse,
-    RevisionInfoResponse,
+    BranchOrigin, BranchType, ProjectBranch, RecentCommitsResponse, RevisionInfoResponse,
 };
 use oxy::config::ConfigBuilder;
-use oxy::github::{default_git_client, github_token_for_workspace};
+use oxy::github::default_git_client;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use oxy_git::{GitClient, ResetOutcome};
 
-use crate::server::authz;
-use oxy_git::{DirtyEntry, GitClient, ResetOutcome, cli::repo::find_git_root};
-use oxy_shared::errors::OxyError;
-
-use axum::{
-    extract::{Json, Path, Query},
-    response::Json as ResponseJson,
-};
-
-use utoipa::ToSchema;
-
-/// API wrapper for SyncStatus that implements ToSchema
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ApiSyncStatus {
-    Idle,
-    Syncing,
-    Synced,
-    Error,
-}
-
-impl From<SyncStatus> for ApiSyncStatus {
-    fn from(status: SyncStatus) -> Self {
-        match status {
-            SyncStatus::Idle => ApiSyncStatus::Idle,
-            SyncStatus::Syncing => ApiSyncStatus::Syncing,
-            SyncStatus::Synced => ApiSyncStatus::Synced,
-            SyncStatus::Error => ApiSyncStatus::Error,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct SwitchBranchRequest {
-    pub branch: String,
-    /// Optional fork point when creating a new branch.  Ignored when `branch`
-    /// already exists.  Defaults to git's `HEAD` of the main worktree.
-    #[serde(default)]
-    pub base_branch: Option<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ProjectResponse {
-    pub success: bool,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
-pub enum PullState {
-    /// Local branch matches origin exactly — nothing left to reconcile.
-    Synced,
-    /// The pull succeeded, but local commits that are not on origin remain on
-    /// top. Distinct from `Synced` because it is not a resting state: those
-    /// commits block the next fast-forward and make restore refuse, so the
-    /// caller has something left to do (push them, or discard them).
-    AheadOfRemote,
-    Conflict,
-    Error,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct PullChangesResponse {
-    pub success: bool,
-    pub message: String,
-    pub state: PullState,
-}
-
-/// The single source of truth for the workspace's git state. Only three
-/// shapes are valid; representing them as one enum (rather than two booleans)
-/// makes the impossible state `(no .git, but has remote)` unrepresentable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum GitMode {
-    /// No `.git` directory on disk. Pure local mode — no git UI.
-    None,
-    /// `.git` exists but no remote configured. Commits are local-only.
-    Local,
-    /// `.git` exists and a remote is configured (or `GIT_REPOSITORY_URL` is set).
-    Connected,
-}
-
-/// What the workspace's git mode allows. Derived from `GitMode` via
-/// `GitCapabilities::from(mode)` — never set ad-hoc. Adding a new git
-/// operation = one row here, no scattered conditionals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct GitCapabilities {
-    pub can_commit: bool,
-    pub can_browse_history: bool,
-    pub can_reset_to_commit: bool,
-    pub can_switch_branch: bool,
-    pub can_diff: bool,
-    pub can_push: bool,
-    pub can_pull: bool,
-    pub can_fetch: bool,
-    pub can_force_push: bool,
-    pub can_rebase: bool,
-    pub can_open_pr: bool,
-    pub auto_feature_branch_on_protected: bool,
-}
-
-impl From<GitMode> for GitCapabilities {
-    fn from(mode: GitMode) -> Self {
-        let local = matches!(mode, GitMode::Local | GitMode::Connected);
-        let connected = matches!(mode, GitMode::Connected);
-        Self {
-            can_commit: local,
-            can_browse_history: local,
-            can_reset_to_commit: local,
-            can_switch_branch: local,
-            can_diff: local,
-            can_push: connected,
-            can_pull: connected,
-            can_fetch: connected,
-            can_force_push: connected,
-            can_rebase: connected,
-            can_open_pr: connected,
-            auto_feature_branch_on_protected: connected,
-        }
-    }
-}
+use super::dto::*;
+use super::ops::*;
 
 /// Detect the workspace's git mode from disk + environment. The
 /// `GIT_REPOSITORY_URL` env var is treated as "remote configured" — cloud
@@ -163,396 +43,7 @@ pub async fn detect_git_mode(workspace_root: &std::path::Path) -> GitMode {
     }
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-pub struct WorkspaceDetailsResponse {
-    pub id: Uuid,
-    pub name: String,
-    pub workspace_id: Uuid,
-    pub active_branch: Option<ProjectBranch>,
-    pub created_at: String,
-    pub updated_at: String,
-
-    /// True when this workspace is registered but its directory does not exist
-    /// on disk (e.g. deleted externally). Frontend should show a toast.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_error: Option<String>,
-
-    /// Single source of truth for the workspace's git state.
-    pub git_mode: GitMode,
-
-    /// What the current `git_mode` allows. Derived from `git_mode`; the
-    /// frontend should branch on these flags rather than on `git_mode`
-    /// directly so that adding a new operation only requires one change.
-    pub capabilities: GitCapabilities,
-
-    /// Default branch (e.g. "main"). Only meaningful when `git_mode != None`.
-    pub default_branch: String,
-
-    /// Branches where saving a file auto-creates a feature branch. Configured
-    /// via `protected_branches` in config.yml; defaults to `[default_branch]`.
-    pub protected_branches: Vec<String>,
-
-    /// True when this workspace is in local mode and no `config.yml` is
-    /// resolvable. The frontend should render the setup dialog instead of
-    /// the main app. Always `false` in cloud mode.
-    #[serde(default)]
-    pub requires_local_setup: bool,
-
-    /// The authenticated user's effective role in this workspace
-    /// (`"owner" | "admin" | "member" | "viewer"`). Lets the UI gate
-    /// destructive actions without a 403 roundtrip.
-    pub current_user_role: String,
-
-    /// See `compute_workspace_storage_key`.
-    pub storage_key: String,
-}
-
-/// Returns the value to put in `WorkspaceDetailsResponse.storage_key`.
-/// `None` (cloud) yields the workspace UUID; `Some(path)` (local) yields
-/// `local:{hash}` over the canonical, absolute, OS-encoded path bytes so
-/// two `--local` sessions in different directories on the same dev port
-/// don't collide and a dev alternating `--local` and cloud on the same
-/// origin keeps separate keyspaces. Falls back through raw / current_dir
-/// joins when `canonicalize` fails so the helper is total.
-pub fn compute_workspace_storage_key(
-    workspace_id: Uuid,
-    local_path: Option<&std::path::Path>,
-) -> String {
-    match local_path {
-        Some(path) => {
-            use sha2::{Digest, Sha256};
-            let normalized = std::fs::canonicalize(path).unwrap_or_else(|_| {
-                if path.is_absolute() {
-                    path.to_path_buf()
-                } else {
-                    std::env::current_dir()
-                        .map(|cwd| cwd.join(path))
-                        .unwrap_or_else(|_| path.to_path_buf())
-                }
-            });
-            let digest = Sha256::digest(normalized.as_os_str().as_encoded_bytes());
-            format!("local:{}", &hex::encode(digest)[..16])
-        }
-        None => workspace_id.to_string(),
-    }
-}
-
-// BranchType and ProjectBranch imported from oxy::api_types
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct WorkspaceBranchesResponse {
-    pub branches: Vec<ProjectBranch>,
-}
-
-async fn workspace_root(ws: &entity::workspaces::Model) -> Result<std::path::PathBuf, StatusCode> {
-    effective_workspace_path(ws, None).await.map_err(|e| {
-        error!("Failed to resolve workspace path for {}: {}", ws.id, e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })
-}
-
-async fn git_fetch(
-    worktree: &std::path::Path,
-    branch: &str,
-    workspace: &entity::workspaces::Model,
-) -> Result<String, OxyError> {
-    let git = default_git_client();
-    if !git.has_remote(worktree).await {
-        return Err(OxyError::RuntimeError(
-            "No remote configured. Set GIT_REPOSITORY_URL to enable fetch.".to_string(),
-        ));
-    }
-    let token = github_token_for_workspace(workspace).await?;
-    git.fetch_remote_ref(worktree, branch, token.as_deref())
-        .await?;
-    Ok("Fetched latest from remote".to_string())
-}
-
-async fn git_pull(
-    worktree: &std::path::Path,
-    branch: &str,
-    workspace: &entity::workspaces::Model,
-) -> Result<oxy_git::PullOutcome, OxyError> {
-    let git = default_git_client();
-    if !git.has_remote(worktree).await {
-        return Err(OxyError::RuntimeError(
-            "No remote configured. Set GIT_REPOSITORY_URL to enable pull.".to_string(),
-        ));
-    }
-    let token = github_token_for_workspace(workspace).await?;
-    git.pull_from_remote(worktree, branch, token.as_deref())
-        .await
-}
-
-async fn git_push(
-    worktree: &std::path::Path,
-    message: &str,
-    workspace: &entity::workspaces::Model,
-) -> Result<String, OxyError> {
-    let git = default_git_client();
-    // Mid-rebase push either fatals on detached HEAD (`HEAD@<sha>` refspec)
-    // or commits garbage on top of the paused state.
-    if git.is_in_conflict(worktree).await {
-        return Err(OxyError::RuntimeError(
-            "Cannot push during an in-progress rebase. Resolve conflicts or abort first.".into(),
-        ));
-    }
-    if !message.is_empty() {
-        git.commit_changes(worktree, message).await?;
-    }
-    if git.has_remote(worktree).await {
-        let token = github_token_for_workspace(workspace).await?;
-        git.push_to_remote(worktree, token.as_deref()).await?;
-        Ok("Changes pushed to remote".to_string())
-    } else {
-        Ok("Changes committed successfully".to_string())
-    }
-}
-
-async fn git_force_push(
-    worktree: &std::path::Path,
-    workspace: &entity::workspaces::Model,
-) -> Result<String, OxyError> {
-    let git = default_git_client();
-    if git.is_in_conflict(worktree).await {
-        return Err(OxyError::RuntimeError(
-            "Cannot force-push during an in-progress rebase. Resolve conflicts or abort first."
-                .into(),
-        ));
-    }
-    let token = github_token_for_workspace(workspace).await?;
-    git.force_push_to_remote(worktree, token.as_deref()).await?;
-    Ok("Force push successful".to_string())
-}
-
-async fn git_revision_info(worktree: &std::path::Path, branch: &str) -> RevisionInfoResponse {
-    let git = default_git_client();
-    let (sha, message) = git.get_branch_commit(worktree, branch).await;
-    let current_commit = if sha.is_empty() {
-        String::new()
-    } else {
-        format!("{} - {}", &sha[..sha.len().min(7)], message)
-    };
-
-    let (tracking_sha, remote_url) = tokio::join!(
-        git.get_tracking_ref_sha(worktree, branch),
-        git.get_remote_url(worktree)
-    );
-
-    // `latest_sha`/`latest_commit` are display-only; empty string signals
-    // "no upstream tracked yet" to the FE.
-    let (latest_sha, latest_commit) = match tracking_sha.as_deref() {
-        None => (String::new(), String::new()),
-        Some(t) if t == sha => (sha.clone(), current_commit.clone()),
-        Some(t) => {
-            let (lsha, lmsg) = git.get_commit_by_sha(worktree, t).await;
-            let display = if lsha.is_empty() {
-                String::new()
-            } else {
-                format!("{} - {}", &lsha[..lsha.len().min(7)], lmsg)
-            };
-            (t.to_string(), display)
-        }
-    };
-
-    let is_in_conflict = git.is_in_conflict(worktree).await;
-    let (ahead_count, behind_count) = compute_ahead_behind(
-        worktree,
-        &sha,
-        tracking_sha.as_deref(),
-        remote_url.is_some(),
-    )
-    .await;
-
-    let uncommitted_count = git
-        .working_tree_status(worktree)
-        .await
-        .map(|entries| entries.len() as u64)
-        .unwrap_or(0);
-
-    let git_subfolder = find_git_root(worktree).and_then(|git_root| {
-        // Canonicalize both paths so symlinks and `..` components don't
-        // cause strip_prefix to return an empty or incorrect result.
-        let canon_worktree = worktree
-            .canonicalize()
-            .unwrap_or_else(|_| worktree.to_path_buf());
-        let canon_root = git_root.canonicalize().unwrap_or(git_root);
-        canon_worktree
-            .strip_prefix(&canon_root)
-            .ok()
-            .and_then(|p| p.to_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.replace('\\', "/"))
-    });
-
-    RevisionInfoResponse {
-        base_sha: sha.clone(),
-        head_sha: sha.clone(),
-        current_revision: sha.clone(),
-        latest_revision: latest_sha,
-        current_commit,
-        latest_commit,
-        ahead_count,
-        behind_count,
-        uncommitted_count,
-        is_in_conflict,
-        last_sync_time: None,
-        remote_url,
-        git_subfolder,
-    }
-}
-
-/// Compute `(ahead, behind)` of `local_sha` versus the upstream tracking
-/// ref, with fallback logic for branches that have never been pushed.
-///
-/// - `tracking_sha = Some(t)`: returns `local..t` and `t..local` counts.
-/// - `tracking_sha = None` with a remote: branch was forked locally but
-///   never pushed; estimate `ahead` as commits unique to this branch vs
-///   the default branch (size of the first push), `behind = 0`.
-/// - No remote: returns `(0, 0)`.
-async fn compute_ahead_behind(
-    worktree: &std::path::Path,
-    local_sha: &str,
-    tracking_sha: Option<&str>,
-    has_remote: bool,
-) -> (u64, u64) {
-    if local_sha.is_empty() {
-        return (0, 0);
-    }
-    let git = default_git_client();
-    if let Some(t) = tracking_sha {
-        return git.get_ahead_behind_counts(worktree, local_sha, t).await;
-    }
-    if !has_remote {
-        return (0, 0);
-    }
-    let default_branch = git.get_default_branch(worktree).await;
-    let (default_sha, _) = git.get_branch_commit(worktree, &default_branch).await;
-    if default_sha.is_empty() || default_sha == local_sha {
-        return (0, 0);
-    }
-    let (ahead, _behind_default) = git
-        .get_ahead_behind_counts(worktree, local_sha, &default_sha)
-        .await;
-    (ahead, 0)
-}
-
-/// Builds the workspace branch list with merged local + remote names so
-/// remote-only branches show up in the picker. Each branch carries its
-/// `BranchOrigin` for FE badging.
-async fn git_list_branches(
-    root: &std::path::Path,
-    workspace: Option<&entity::workspaces::Model>,
-    workspace_id: Uuid,
-) -> Vec<ProjectBranch> {
-    let git = default_git_client();
-    let token = if let Some(ws) = workspace {
-        github_token_for_workspace(ws).await.ok().flatten()
-    } else {
-        None
-    };
-    let infos = git.list_branches_with_origin(root, token.as_deref()).await;
-    let now = Utc::now().to_string();
-    infos
-        .into_iter()
-        .map(|info| {
-            let branch_type = match info.origin {
-                oxy_git::BranchOrigin::RemoteOnly => BranchType::Remote,
-                _ => BranchType::Local,
-            };
-            ProjectBranch {
-                id: Uuid::nil(),
-                name: info.name,
-                revision: String::new(),
-                workspace_id,
-                branch_type,
-                origin: info.origin.into(),
-                created_at: now.clone(),
-                updated_at: now.clone(),
-            }
-        })
-        .collect()
-}
-
-/// Switches the IDE-local branch. Materialises a local ref via
-/// `ensure_local_ref` (no checkout) before `worktree add` so the main
-/// worktree's HEAD and working tree are untouched.
-async fn git_switch_branch(
-    root: &std::path::Path,
-    branch: &str,
-    workspace: Option<&entity::workspaces::Model>,
-    workspace_id: Uuid,
-) -> Result<ProjectBranch, OxyError> {
-    let git = default_git_client();
-    git.ensure_initialized(root).await?;
-
-    let token = if let Some(ws) = workspace {
-        github_token_for_workspace(ws).await.ok().flatten()
-    } else {
-        None
-    };
-    let resolved_origin = git.ensure_local_ref(root, branch, token.as_deref()).await?;
-
-    git.get_or_create_worktree(root, branch).await?;
-    let now = Utc::now().to_string();
-    Ok(ProjectBranch {
-        id: Uuid::nil(),
-        workspace_id,
-        branch_type: BranchType::Local,
-        name: branch.to_string(),
-        revision: String::new(),
-        origin: resolved_origin.into(),
-        created_at: now.clone(),
-        updated_at: now,
-    })
-}
-
-async fn git_delete_branch(root: &std::path::Path, branch: &str) -> Result<(), OxyError> {
-    let git = default_git_client();
-    let default_branch = git.get_default_branch(root).await;
-    if branch == default_branch {
-        return Err(OxyError::RuntimeError(format!(
-            "Cannot delete the default branch '{default_branch}'"
-        )));
-    }
-    // Lenient validation so legacy `--` branches (predating the strict
-    // rule) can still be cleaned up.
-    git.delete_branch(root, branch).await
-}
-
-async fn git_recent_commits(
-    worktree: &std::path::Path,
-    limit: usize,
-    offset: usize,
-) -> RecentCommitsResponse {
-    let git = default_git_client();
-    // Fetch one extra row so `has_more` is known without a second `git log`.
-    let raw = git.get_recent_commits(worktree, limit + 1, offset).await;
-    let has_more = raw.len() > limit;
-    let commits = raw.into_iter().take(limit).map(commit_entry).collect();
-    RecentCommitsResponse { commits, has_more }
-}
-
-fn commit_entry(c: oxy_git::RecentCommit) -> CommitEntry {
-    CommitEntry {
-        hash: c.hash,
-        short_hash: c.short_hash,
-        message: c.subject,
-        author: c.author,
-        date: c.relative_date,
-        on_remote: c.on_remote,
-    }
-}
-
 // ─── Handlers ────────────────────────────────────────────────────────────
-
-/// Resolve the branch name from `?branch=`, falling back to the repo's default.
-async fn resolve_branch(query_branch: Option<String>, root: &std::path::Path) -> String {
-    match query_branch.filter(|b| !b.is_empty()) {
-        Some(b) => b,
-        None => default_git_client().get_default_branch(root).await,
-    }
-}
 
 pub async fn pull_changes(
     _: WorkspaceEditor,
@@ -656,65 +147,6 @@ pub async fn fetch_changes(
             }))
         }
     }
-}
-
-#[derive(Deserialize)]
-pub struct ResolveConflictQuery {
-    pub branch: Option<String>,
-    pub file: String,
-    /// `"mine"` = keep your local version; `"theirs"` = accept the remote version
-    pub side: String,
-}
-
-#[derive(Deserialize)]
-pub struct ResolveConflictWithContentQuery {
-    pub branch: Option<String>,
-    pub file: String,
-}
-
-#[derive(Deserialize)]
-pub struct UnresolveConflictQuery {
-    pub branch: Option<String>,
-    pub file: String,
-}
-
-#[derive(Deserialize)]
-pub struct RecentCommitsQuery {
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
-}
-
-#[derive(Deserialize)]
-pub struct ResetToCommitQuery {
-    pub branch: Option<String>,
-    pub commit: String,
-    /// When `true`, discard all working-tree changes (tracked + untracked) and
-    /// restore. When `false` (default), the call refuses if the tree is dirty
-    /// and returns the file list so the UI can confirm.
-    #[serde(default)]
-    pub force: bool,
-}
-
-#[derive(Serialize)]
-pub struct ResetToCommitResponse {
-    pub success: bool,
-    pub message: String,
-    /// Populated only when `success=false` and the working tree was dirty.
-    /// The UI should show these files in a confirmation dialog and re-call
-    /// the endpoint with `force=true` if the user confirms.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dirty: Option<Vec<DirtyEntry>>,
-    /// Populated only when `success=false` because the restore would drop
-    /// commits. Same contract as `dirty`: show them, then re-call with
-    /// `force=true` on confirm. Each entry's `on_remote` says whether losing it
-    /// is cheap (never pushed) or expensive (already on origin).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub discarded_commits: Option<Vec<CommitEntry>>,
-}
-
-#[derive(Deserialize)]
-pub struct ResolveConflictWithContentBody {
-    pub content: String,
 }
 
 pub async fn resolve_conflict_with_content(
@@ -947,11 +379,6 @@ pub async fn discard_all_changes(
     }
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct PushChangesRequest {
-    pub commit_message: Option<String>,
-}
-
 pub async fn push_changes(
     _: WorkspaceEditor,
     Extension(ws): Extension<entity::workspaces::Model>,
@@ -1061,59 +488,6 @@ pub async fn get_workspace(
         storage_key,
     )
     .await
-}
-
-/// Build a `WorkspaceDetailsResponse` in one of the two "no git visible"
-/// shapes. Shared between the missing-directory branch and the
-/// local-mode short-circuit so a future field addition only lands in
-/// one place.
-fn no_git_response(
-    workspace_id: Uuid,
-    name: &str,
-    now: String,
-    workspace_error: Option<String>,
-    requires_local_setup: bool,
-    current_user_role: String,
-    storage_key: String,
-) -> ResponseJson<WorkspaceDetailsResponse> {
-    let mode = GitMode::None;
-    ResponseJson(WorkspaceDetailsResponse {
-        id: workspace_id,
-        name: name.to_string(),
-        workspace_id: Uuid::nil(),
-        created_at: now.clone(),
-        updated_at: now,
-        active_branch: None,
-        workspace_error,
-        git_mode: mode,
-        capabilities: mode.into(),
-        default_branch: "main".to_string(),
-        protected_branches: vec!["main".to_string()],
-        requires_local_setup,
-        current_user_role,
-        storage_key,
-    })
-}
-
-/// Response builder for the local-mode "no config.yml yet" case. Exposed
-/// publicly so integration tests can assert the shape without spinning up
-/// the full router + DB.
-pub fn build_workspace_details_response_for_uninitialized_local(
-    workspace_id: Uuid,
-    name: &str,
-    current_user_role: String,
-    storage_key: String,
-) -> ResponseJson<WorkspaceDetailsResponse> {
-    let now = chrono::Utc::now().to_string();
-    no_git_response(
-        workspace_id,
-        name,
-        now,
-        None,
-        true,
-        current_user_role,
-        storage_key,
-    )
 }
 
 pub async fn build_workspace_details_response(
@@ -1319,13 +693,6 @@ pub async fn switch_workspace_branch(
     Ok(ResponseJson(branch))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ProjectStatus {
-    pub required_secrets: Option<Vec<String>>,
-    pub is_config_valid: bool,
-    pub error: Option<String>,
-}
-
 pub async fn get_workspace_status(
     State(_app_state): State<AppState>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
@@ -1368,62 +735,6 @@ pub async fn get_workspace_status(
     };
 
     Ok(axum::response::Json(status))
-}
-
-/// Summary of a registered workspace returned by `GET /orgs/{org_id}/workspaces`.
-#[derive(Debug, Serialize)]
-pub struct WorkspaceSummary {
-    pub id: Uuid,
-    pub org_id: Option<Uuid>,
-    pub name: String,
-    pub path: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub last_opened_at: Option<DateTime<Utc>>,
-    /// Display name of the user who created this workspace, if known.
-    pub created_by_name: Option<String>,
-    /// Number of `.agent.yml` files found (recursive).
-    pub agent_count: usize,
-    /// Number of `.automation.yml` files found (recursive).
-    pub workflow_count: usize,
-    /// Number of `.app.yml` files found (recursive).
-    pub app_count: usize,
-    /// Git remote URL (e.g. `https://github.com/org/repo`), if set.
-    pub git_remote: Option<String>,
-    /// Short commit hash + message of HEAD, if available.
-    pub git_commit: Option<String>,
-    /// Human-readable relative date of the last commit (e.g. "3 hours ago").
-    pub git_updated_at: Option<String>,
-    pub status: entity::workspaces::WorkspaceStatus,
-    pub error: Option<String>,
-}
-
-/// Count files whose name ends with `.<suffix>.yml` under `dir` (recursive, skips hidden dirs).
-fn count_yml_suffix(dir: &std::path::Path, suffix: &str) -> usize {
-    let pattern = format!(".{suffix}.yml");
-    let mut count = 0;
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                let hidden = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.starts_with('.'))
-                    .unwrap_or(false);
-                if !hidden {
-                    count += count_yml_suffix(&path, suffix);
-                }
-            } else if path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.ends_with(&pattern))
-                .unwrap_or(false)
-            {
-                count += 1;
-            }
-        }
-    }
-    count
 }
 
 /// GET /orgs/{org_id}/workspaces — list workspaces in the given org.
@@ -1549,12 +860,6 @@ pub async fn list_workspaces(
     Ok(ResponseJson(summaries))
 }
 
-/// PATCH /workspaces/{id}/rename — change the display name of a workspace.
-#[derive(Deserialize)]
-pub struct RenameWorkspaceRequest {
-    pub name: String,
-}
-
 // SECURITY: the access rule is "Org Owner/Admin OR the workspace creator".
 // The creator branch needs `ctx.membership.user_id` plus `workspace.created_by`,
 // which is only available after a DB lookup — so we can't use a pure typed
@@ -1672,39 +977,6 @@ pub async fn rename_workspace(
 
     info!("Renamed workspace {} to '{}'", workspace_id, name);
     Ok(StatusCode::OK)
-}
-
-/// DELETE /workspaces/{id} — remove a workspace record from the database.
-///
-/// Pass `?delete_files=true` to also remove the workspace directory from disk.
-/// Without that flag only the DB record is removed, leaving files intact.
-/// Requires Admin or Owner role.
-#[derive(Deserialize)]
-pub struct DeleteProjectQuery {
-    #[serde(default)]
-    pub delete_files: bool,
-}
-
-/// Best-effort removal of a workspace's schedule rows, to be called *after* the
-/// workspace has been deleted. Schedules carry a plain `workspace_id` with no FK,
-/// so nothing cascades — an orphaned `health_eval` row keeps firing health-eval
-/// tasks for the deleted workspace and piles them up in the dead-letter queue
-/// (`monitor_scan` rows do the same). Shared by every workspace-removal path
-/// (this handler, the admin delete, and org deletion) so they stay in sync.
-/// Logged, never fatal.
-pub(crate) async fn cleanup_workspace_schedules(
-    db: &sea_orm::DatabaseConnection,
-    workspace_id: Uuid,
-) {
-    match agentic_pipeline::scheduler::delete_workspace_schedules(db, workspace_id).await {
-        Ok(n) if n > 0 => info!("Removed {} schedule(s) for workspace {}", n, workspace_id),
-        Ok(_) => {}
-        Err(e) => tracing::warn!(
-            "Failed to delete schedules for workspace {}: {}",
-            workspace_id,
-            e
-        ),
-    }
 }
 
 pub async fn delete_workspace(

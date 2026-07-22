@@ -9,9 +9,11 @@
 //! `GET /apps/{id}/build-config` so that CI can fetch it without any
 //! per-app repo variables.
 
+mod dto;
 pub mod fs;
 pub mod functions;
 pub mod handlers;
+mod ops;
 pub mod templates;
 
 use axum::Router;
