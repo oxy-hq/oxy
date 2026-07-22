@@ -2,7 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.107] - 2026-07-17
+## [0.5.108] - 2026-07-22
+
+### 🚀 Features
+
+- *(agentic)* Check_data_freshness tool + preserve view meta through the shim (#2717)
+- *(customer-apps)* Send email from Oxy Functions via ctx.email.send (#2740)
+- *(runtime)* Worker eviction safety for the durable task queue (#2743)
+- *(cli)* Restore oxy test for .test.yml files (#2749)
+- Airway automation task type + trusted-load-completion consumption (#2747)
+- Sdk shell universalization — @oxy-hq/sdk/shell + backend (#2745)
+- *(models)* Add openai_compat vendor and honor explicit llm.vendor (#2751)
+
+### 🐛 Bug Fixes
+
+- Make world model, semantic query, and metric tree IDE surfaces branch-aware (#2750)
+- *(ide)* Stop reporting false workspace sync/compile status (#2754)
+- Handle non-release tags in version bump script (#2756)
+
+### 💼 Other
+
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 2 updates (#2728)
+
+### 🚜 Refactor
+
+- *(app)* Decompose oxy-app by forcing function (supersedes #2739) (#2748)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(sdk)* Release @oxy-hq/sdk 2.3.0 (/email subpath) (#2742)
+- Expand agentic autofix scope: P0/P1 fixes + P3 refactors, add test coverage (#2755)
+
+## [0.5.107] - 2026-07-18
 
 ### 🚀 Features
 
@@ -23,6 +54,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Update dependencies across multiple packages
+- Release 0.5.107 (#2726)
 
 ## [0.5.106] - 2026-07-16
 
