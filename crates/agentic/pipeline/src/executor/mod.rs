@@ -580,7 +580,7 @@ impl PipelineTaskExecutor {
         // A resumable backfill drives the run-scoped state store keyed by run_id
         // (cursor → resume_state); everything else uses the pipeline-global store.
         let resume_run_id = resumable_backfill.then(|| run_id.to_string());
-        Ok(worker.execute(spec, resume_run_id))
+        Ok(worker.execute(spec, resume_run_id, run_id.to_string()))
     }
 
     /// Reset a pipeline's provisioned schema: drop its destination tables and

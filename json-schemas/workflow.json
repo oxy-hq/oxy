@@ -1664,34 +1664,6 @@
           }
         },
         {
-          "type": "object",
-          "required": [
-            "type"
-          ],
-          "properties": {
-            "export": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/TaskExport"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "prompt": {
-              "default": "",
-              "type": "string"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "visualize"
-              ]
-            }
-          }
-        },
-        {
           "description": "`type: http_request` — make an outbound HTTP request from a workflow.\n\nThe reusable primitive behind the QuickBooks JE-posting automation (and the stop-gap for Oxy Functions' `ctx.fetch`). Templated fields render against the prior-step render context; `{{ secrets.NAME }}` resolves declared `secrets`. Egress is constrained (private/loopback/link-local hosts are always denied; `allow_hosts`, when set, is an additional allowlist).",
           "type": "object",
           "required": [
@@ -1785,6 +1757,37 @@
             "url": {
               "description": "Request URL (Jinja-templated).",
               "type": "string"
+            }
+          }
+        },
+        {
+          "description": "Run an airway ELT pipeline as an automation step.\n\nUnlike the other I/O task types this is **not** executed by `step_executor` — it is delegated as a `TaskSpec::Airway`, reusing the existing airway run path (secret resolution, Airhouse credential minting, backfill windowing, run-scoped state). See `StepKind::Airway`.\n\nA step completes only once the pipeline's end-of-load fold has committed, so a following `execute_sql` step reads a queryable table rather than a half-folded one.",
+          "type": "object",
+          "required": [
+            "pipeline",
+            "type"
+          ],
+          "properties": {
+            "pipeline": {
+              "description": "Workspace-relative path to the `.airway.yml` pipeline spec.",
+              "type": "string"
+            },
+            "resources": {
+              "description": "Explicit subset of the spec's resources (tables) to run. Omitted or empty runs the whole pipeline.",
+              "default": null,
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "airway"
+              ]
             }
           }
         },

@@ -199,6 +199,20 @@ impl DelegationResolver for AutomationDelegationResolver {
         _request: String,
         context: serde_json::Value,
     ) -> TaskSpec {
+        // Airway steps tunnel through an `Automation` target (DelegationTarget
+        // has no `Airway` variant) with the `__airway__` sentinel and the real
+        // spec under `airway_spec`. Rebuild it before the sub-automation
+        // routing below, which would otherwise try to load an on-disk
+        // automation named "__airway__".
+        if workflow_ref == "__airway__" {
+            if let Some(spec) = context
+                .get("airway_spec")
+                .and_then(|v| serde_json::from_value::<TaskSpec>(v.clone()).ok())
+            {
+                return spec;
+            }
+        }
+
         let step_config = context.get("step_config");
         let is_sub_automation_body = step_config
             .map(|sc| sc.get("type").is_none() && sc.get("tasks").is_some())
@@ -310,6 +324,37 @@ mod resolver_tests {
                 assert!(variables.is_some());
             }
             other => panic!("expected on-disk Automation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn airway_sentinel_rebuilds_the_airway_spec() {
+        // An `airway` step tunnels through an `Automation` target with the
+        // `__airway__` sentinel and the serialized spec under `airway_spec`.
+        // The resolver must rebuild `TaskSpec::Airway` — not try to load an
+        // on-disk automation named "__airway__".
+        let resolver = AutomationDelegationResolver;
+        let original = TaskSpec::Airway {
+            pipeline_ref: "pipelines/toast_pos.airway.yml".to_string(),
+            variables: None,
+            resources: vec!["orders".to_string()],
+            backfill_from: None,
+            backfill_to: None,
+        };
+        let target = DelegationTarget::Automation {
+            workflow_ref: "__airway__".to_string(),
+        };
+        let ctx = json!({ "airway_spec": serde_json::to_value(&original).unwrap() });
+        match resolver.resolve(target, "ignored".into(), ctx) {
+            TaskSpec::Airway {
+                pipeline_ref,
+                resources,
+                ..
+            } => {
+                assert_eq!(pipeline_ref, "pipelines/toast_pos.airway.yml");
+                assert_eq!(resources, vec!["orders".to_string()]);
+            }
+            other => panic!("expected the rebuilt Airway spec, got {other:?}"),
         }
     }
 

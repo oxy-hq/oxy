@@ -41,6 +41,17 @@ enum StepKind {
         src: String,
         variables: Option<Value>,
     },
+    /// Delegate to coordinator as a `TaskSpec::Airway`.
+    ///
+    /// Not `Delegated`: that path wraps the step as an opaque
+    /// `AutomationStep` handled by `step_executor`, which only sees a
+    /// `WorkspaceContext` (no `DatabaseConnection`) and returns
+    /// `Result<Value, String>` rather than the streaming handle an airway
+    /// run needs. Emitting `TaskSpec::Airway` reuses the working path.
+    Airway {
+        pipeline_ref: String,
+        resources: Vec<String>,
+    },
     /// Fan-out loop iterations via `ParallelDelegation`.
     Loop {
         values: Value,
@@ -152,6 +163,31 @@ impl AutomationStepOrchestrator {
                             step_config,
                             render_context: self.render_context.clone(),
                             workflow_context: self.workflow_context.clone(),
+                        },
+                    )
+                    .await
+                }
+
+                StepKind::Airway {
+                    pipeline_ref,
+                    resources,
+                } => {
+                    // Straight to the existing airway task spec, so the
+                    // coordinator routes it to `execute_airway` and it
+                    // inherits secret resolution, the Airhouse credential
+                    // provider and run-scoped state. Backfill bounds stay
+                    // `None` — windowed backfills are driven by the backfill
+                    // path, not by an automation step.
+                    self.suspend_for_step(
+                        &outcome_tx,
+                        &mut answer_rx,
+                        &step_name,
+                        TaskSpec::Airway {
+                            pipeline_ref,
+                            variables: None,
+                            resources,
+                            backfill_from: None,
+                            backfill_to: None,
                         },
                     )
                     .await
@@ -366,6 +402,11 @@ impl AutomationStepOrchestrator {
                 concurrency: loop_task.concurrency,
             },
 
+            TaskType::Airway(cfg) => StepKind::Airway {
+                pipeline_ref: cfg.pipeline.clone(),
+                resources: cfg.resources.clone().unwrap_or_default(),
+            },
+
             // All I/O task types: delegate to coordinator.
             TaskType::ExecuteSql(_)
             | TaskType::SemanticQuery(_)
@@ -513,6 +554,20 @@ impl AutomationStepOrchestrator {
                     "step_config": step_config,
                     "render_context": render_context,
                     "workflow_context": workflow_context,
+                }),
+            ),
+            // `DelegationTarget` has no `Airway` variant, so tunnel through an
+            // `Automation` target with a sentinel ref (mirrors
+            // `AutomationStep`); the resolver rebuilds the spec from
+            // `airway_spec`. Kept in sync with `spec_to_delegation_parts` on
+            // the stateless-decider path.
+            TaskSpec::Airway { .. } => (
+                DelegationTarget::Automation {
+                    workflow_ref: "__airway__".to_string(),
+                },
+                step_name.to_string(),
+                json!({
+                    "airway_spec": serde_json::to_value(&spec).unwrap_or(Value::Null),
                 }),
             ),
             _ => {

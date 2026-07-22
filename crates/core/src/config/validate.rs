@@ -192,8 +192,10 @@ pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> gard
         ),
         TaskType::SubAutomation(_)
         | TaskType::LoopSequential(_)
-        | TaskType::Visualize(_)
         | TaskType::HttpRequest(_)
+        // AirwayTask has no `export:` — its output is rows in the warehouse,
+        // not a file artifact.
+        | TaskType::Airway(_)
         | TaskType::Unknown => Ok(()),
         TaskType::Conditional(_) => Ok(()),
     }

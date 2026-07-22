@@ -1,3 +1,4 @@
+export { AirwayTaskFields } from "./AirwayTaskFields";
 export { AutomationTaskFields } from "./AutomationTaskFields";
 export { ConditionalTaskFields } from "./ConditionalTaskFields";
 export { ExecuteSqlTaskFields } from "./ExecuteSqlTaskFields";

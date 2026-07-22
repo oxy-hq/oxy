@@ -27,7 +27,7 @@ export enum TaskType {
   LOOP_SEQUENTIAL = "loop_sequential",
   WORKFLOW = "workflow",
   CONDITIONAL = "conditional",
-  VISUALIZE = "visualize"
+  AIRWAY = "airway"
 }
 
 export enum NoneTaskNodeType {
@@ -109,6 +109,14 @@ type ExecuteSqlTaskConfig = BaseTaskConfig & {
   database: string;
 };
 
+type AirwayTaskConfig = BaseTaskConfig & {
+  type: TaskType.AIRWAY;
+  // Workspace-relative path to the `.airway.yml` pipeline spec.
+  pipeline: string;
+  // Optional subset of the spec's resources; omitted/empty runs all.
+  resources?: string[];
+};
+
 type SemanticQueryTaskConfig = BaseTaskConfig & {
   type: TaskType.SEMANTIC_QUERY;
   database: string;
@@ -155,11 +163,6 @@ type LookerQueryTaskConfig = BaseTaskConfig & {
   limit?: number;
 };
 
-type VisualizeTaskConfig = BaseTaskConfig & {
-  type: TaskType.VISUALIZE;
-  prompt?: string;
-};
-
 // Unified TaskConfig type with discriminated union
 export type TaskConfig =
   | ExecuteSqlTaskConfig
@@ -170,7 +173,7 @@ export type TaskConfig =
   | LoopSequentialTaskConfig
   | ConditionalTaskConfig
   | AutomationTaskConfig
-  | VisualizeTaskConfig;
+  | AirwayTaskConfig;
 
 export type TaskConfigWithId = (
   | ExecuteSqlTaskConfig
@@ -181,7 +184,7 @@ export type TaskConfigWithId = (
   | LoopSequentialTaskConfigWithId
   | AutomationTaskConfigWithId
   | ConditionalTaskConfigWithId
-  | VisualizeTaskConfig
+  | AirwayTaskConfig
 ) & {
   id: string;
   automationId: string;

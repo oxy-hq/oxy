@@ -42,12 +42,15 @@ impl TemplateRegister for &Task {
             TaskType::LoopSequential(loop_task) => {
                 loop_task.tasks.register_template(renderer)?;
             }
-            TaskType::Visualize(_visualize_task) => {
-                // VisualizeTask doesn't have file templates to register
-            }
             TaskType::HttpRequest(_http_task) => {
                 // HttpRequestTask fields are inline templates (url/headers/body),
                 // not file references — nothing to register.
+            }
+            TaskType::Airway(_airway_task) => {
+                // `pipeline` is a workspace-relative `.airway.yml` path
+                // resolved by the airway run path (`resolve_pipeline_ref`),
+                // not a Jinja template the renderer owns — nothing to
+                // register.
             }
             TaskType::Unknown => {
                 // Unknown task type, skip

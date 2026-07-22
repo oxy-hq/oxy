@@ -125,7 +125,9 @@ pub enum AirwayEvent {
         rows: usize,
     },
 
-    /// Pipeline load completed successfully.
+    /// Pipeline load completed. Emitted even when the end-of-load fold
+    /// failed — every row was written, so the counts are still meaningful —
+    /// but `folds` then carries the failure and the run reports an error.
     LoadCompleted {
         pipeline_name: String,
         load_id: String,
@@ -133,6 +135,18 @@ pub enum AirwayEvent {
         /// Per-table row counts written to the destination.
         rows_loaded: std::collections::HashMap<String, usize>,
         duration_ms: i64,
+        /// Per-table end-of-load fold outcomes, empty for destinations with
+        /// no fold step (everything except airhouse `replacing`). This is
+        /// what distinguishes "written" from "queryable": a failed fold
+        /// leaves rows durable in the staging schema but invisible in the
+        /// public one.
+        ///
+        /// Carried as JSON for the same reason as `SchemaEvolved::changes`
+        /// — `airway::destination::TableFold` is the engine's type, and we
+        /// don't want oxy's serialised payloads to drift if airway evolves
+        /// it.
+        #[serde(default)]
+        folds: serde_json::Value,
     },
 
     /// Schema evolved (new tables or columns). `changes` is carried as
@@ -303,12 +317,15 @@ impl From<PipelineEvent> for AirwayEvent {
                 tables,
                 rows_loaded,
                 duration_ms,
+                folds,
             } => AirwayEvent::LoadCompleted {
                 pipeline_name,
                 load_id,
                 tables,
                 rows_loaded,
                 duration_ms,
+                // Same round-trip rationale as `SchemaEvolved` below.
+                folds: serde_json::to_value(&folds).unwrap_or(serde_json::Value::Null),
             },
             PipelineEvent::SchemaEvolved {
                 pipeline_name,
@@ -401,6 +418,13 @@ mod tests {
             tables: vec!["orders".to_string(), "customers".to_string()],
             rows_loaded: rows_loaded.clone(),
             duration_ms: 1234,
+            folds: vec![airway::destination::TableFold {
+                table: "orders".to_string(),
+                outcome: airway::destination::FoldOutcome::Committed {
+                    watermark: "2026-07-21T00:00:00".to_string(),
+                    attempts: 1,
+                },
+            }],
         };
 
         let domain_event: AirwayEvent = engine_event.into();
@@ -408,10 +432,18 @@ mod tests {
             AirwayEvent::LoadCompleted {
                 rows_loaded: got,
                 duration_ms,
+                folds,
                 ..
             } => {
                 assert_eq!(got, rows_loaded);
                 assert_eq!(duration_ms, 1234);
+                // Folds cross the boundary as JSON (the `SchemaEvolved`
+                // rationale): assert the outcome survives the round-trip.
+                assert_eq!(folds[0]["table"], serde_json::json!("orders"));
+                assert_eq!(
+                    folds[0]["outcome"]["status"],
+                    serde_json::json!("committed")
+                );
             }
             _ => panic!("wrong variant after From"),
         }

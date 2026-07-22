@@ -5,6 +5,7 @@ import {
   type TaskConfigWithId,
   TaskType
 } from "@/stores/useAutomation";
+import { AirwayNode } from "./nodes/AirwayNode";
 import { AutomationTaskNode } from "./nodes/AutomationTaskNode";
 import { ConditionalElseNode } from "./nodes/ConditionalElseNode";
 import { ConditionalIfNode } from "./nodes/ConditionalIfNode";
@@ -32,6 +33,9 @@ export function NodeContent({ parentId, task, type, data, ...props }: Props) {
   }
   if (task.type === "execute_sql") {
     return <ExecuteSqlNode task={task} />;
+  }
+  if (task.type === TaskType.AIRWAY) {
+    return <AirwayNode task={task} />;
   }
   if (task.type === TaskType.SEMANTIC_QUERY) {
     return <SemanticQueryNode task={task} />;

@@ -109,10 +109,16 @@ impl AirwayWorker {
     /// store — set for resumable backfills so a reset-in-place retry resumes
     /// mid-window and the live pipeline cursor is never touched. `None` = normal
     /// run against the pipeline-global store.
+    ///
+    /// `run_id` is the owning `agentic_runs` id — used to stamp the
+    /// engine-generated `load_id` onto the run extension once the load
+    /// finishes. Distinct from `resume_run_id`, which is only `Some` for
+    /// resumable backfills and selects the state store.
     pub fn execute(
         &self,
         spec: AirwayPipelineSpec,
         resume_run_id: Option<String>,
+        run_id: String,
     ) -> ExecutingTask {
         let (event_tx, event_rx) = mpsc::channel::<(String, Value)>(EVENT_BUFFER);
         let (outcome_tx, outcome_rx) = mpsc::channel::<TaskOutcome>(OUTCOME_BUFFER);
@@ -132,6 +138,7 @@ impl AirwayWorker {
             let handle = tokio::spawn(drive(
                 spec,
                 resume_run_id,
+                run_id,
                 db,
                 refresh_sink,
                 credential_provider,
@@ -169,6 +176,7 @@ impl AirwayWorker {
 async fn drive(
     spec: AirwayPipelineSpec,
     resume_run_id: Option<String>,
+    run_id: String,
     db: Arc<DatabaseConnection>,
     refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
     credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
@@ -184,6 +192,7 @@ async fn drive(
     // the latter would otherwise flip the run to failed with nothing
     // on the SSE stream, so the UI shows a status change but no cause.
     let saw_error = Arc::new(AtomicBool::new(false));
+    let db_for_extension = db.clone();
     let outcome = match run_pipeline(
         spec,
         resume_run_id,
@@ -196,10 +205,34 @@ async fn drive(
     )
     .await
     {
-        Ok(()) => TaskOutcome::Done {
-            answer: String::new(),
-            metadata: None,
-        },
+        Ok(info) => {
+            // Stamp the engine-generated load_id onto the extension row —
+            // `insert_run_extension` leaves it NULL and documents the worker
+            // as filling it in, which nothing did until now. Best-effort: a
+            // failure here must not flip an otherwise-successful run.
+            if let Err(e) = crate::extension::run_extension::set_run_load_id(
+                db_for_extension.as_ref(),
+                &run_id,
+                &info.load_id,
+            )
+            .await
+            {
+                warn!(run_id = %run_id, load_id = %info.load_id, error = %e,
+                      "failed to stamp load_id on the airway run extension");
+            }
+            // Carry the load_id and the fold outcomes out as task metadata —
+            // now actually persisted, since `update_run_done` no longer
+            // discards its patch. The folds are what let a consumer tell
+            // "written" from "queryable" without replaying the event stream.
+            let folds = serde_json::to_value(&info.folds).unwrap_or(serde_json::Value::Null);
+            TaskOutcome::Done {
+                answer: String::new(),
+                metadata: Some(serde_json::json!({
+                    "load_id": info.load_id,
+                    "folds": folds,
+                })),
+            }
+        }
         Err(err) => {
             if !saw_error.load(Ordering::Relaxed) {
                 let domain = AirwayEvent::PipelineError {
@@ -229,7 +262,7 @@ async fn run_pipeline(
     event_tx: mpsc::Sender<(String, Value)>,
     cancel: CancellationToken,
     saw_error: Arc<AtomicBool>,
-) -> Result<(), AirwayError> {
+) -> Result<airway::destination::LoadInfo, AirwayError> {
     // ── Build pluggable parts ──────────────────────────────────────────────
     let connector = build_source_connector(&spec.source, refresh_sink)?;
     let destination = build_destination(spec.destination.as_inline()?, credential_provider)?;
@@ -275,8 +308,12 @@ async fn run_pipeline(
         pipeline = pipeline.with_channel_capacity(cap);
     }
 
-    pipeline.run_source(source).await?;
-    Ok(())
+    // Returned rather than discarded: `drive` stamps `load_id` onto the run
+    // extension (documented as worker-filled, previously left NULL forever)
+    // and carries it out as task metadata. `?` keeps the engine-error →
+    // crate-error conversion that the previous `Ok(())` relied on.
+    let info = pipeline.run_source(source).await?;
+    Ok(info)
 }
 
 /// Subscriber on airway's `EventBus` that forwards every

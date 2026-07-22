@@ -2190,22 +2190,6 @@ pub struct SubAutomationTask {
 /// Back-compat alias: the sub-automation task was historically named `WorkflowTask`.
 pub type WorkflowTask = SubAutomationTask;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
-#[garde(context(ValidationContext))]
-pub struct VisualizeTask {
-    #[garde(skip)]
-    #[serde(default)]
-    pub prompt: String,
-    #[garde(dive)]
-    pub export: Option<TaskExport>,
-}
-
-impl Hash for VisualizeTask {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.prompt.hash(state);
-    }
-}
-
 impl Hash for SubAutomationTask {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.src.hash(state);
@@ -2406,6 +2390,30 @@ impl Hash for ConditionalTask {
     }
 }
 
+/// Run an airway ELT pipeline as an automation step.
+///
+/// Unlike the other I/O task types this is **not** executed by
+/// `step_executor` — it is delegated as a `TaskSpec::Airway`, reusing the
+/// existing airway run path (secret resolution, Airhouse credential minting,
+/// backfill windowing, run-scoped state). See `StepKind::Airway`.
+///
+/// A step completes only once the pipeline's end-of-load fold has committed,
+/// so a following `execute_sql` step reads a queryable table rather than a
+/// half-folded one.
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash)]
+#[garde(context(ValidationContext))]
+pub struct AirwayTask {
+    /// Workspace-relative path to the `.airway.yml` pipeline spec.
+    #[garde(length(min = 1))]
+    pub pipeline: String,
+
+    /// Explicit subset of the spec's resources (tables) to run. Omitted or
+    /// empty runs the whole pipeline.
+    #[serde(default)]
+    #[garde(skip)]
+    pub resources: Option<Vec<String>>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type")]
@@ -2429,10 +2437,10 @@ pub enum TaskType {
     SubAutomation(#[garde(dive)] SubAutomationTask),
     #[serde(rename = "conditional")]
     Conditional(#[garde(dive)] ConditionalTask),
-    #[serde(rename = "visualize")]
-    Visualize(#[garde(dive)] VisualizeTask),
     #[serde(rename = "http_request")]
     HttpRequest(#[garde(dive)] HttpRequestTask),
+    #[serde(rename = "airway")]
+    Airway(#[garde(dive)] AirwayTask),
     #[serde(other)]
     Unknown,
 }
@@ -2482,8 +2490,8 @@ impl Task {
             TaskType::Formatter(_) => "formatter",
             TaskType::SubAutomation(_) => "sub_workflow",
             TaskType::Conditional(_) => "conditional",
-            TaskType::Visualize(_) => "visualize",
             TaskType::HttpRequest(_) => "http_request",
+            TaskType::Airway(_) => "airway",
             TaskType::Unknown => "unknown",
         }
     }

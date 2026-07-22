@@ -923,6 +923,20 @@ fn spec_to_delegation_parts(
                 "workflow_context": workflow_context,
             }),
         ),
+        // `DelegationTarget` has no `Airway` variant, so — like
+        // `AutomationStep` above — tunnel through an `Automation` target with
+        // a sentinel ref and carry the real spec in context. The automation
+        // resolver (`AutomationDelegationResolver::resolve_automation`)
+        // rebuilds `TaskSpec::Airway` from `airway_spec`.
+        TaskSpec::Airway { .. } => (
+            DelegationTarget::Automation {
+                workflow_ref: "__airway__".to_string(),
+            },
+            step_name.to_string(),
+            serde_json::json!({
+                "airway_spec": serde_json::to_value(spec).unwrap_or(serde_json::Value::Null),
+            }),
+        ),
         _ => (
             DelegationTarget::Automation {
                 workflow_ref: "__unknown__".to_string(),
@@ -1110,5 +1124,33 @@ mod tests {
         };
         let (_, _, context) = spec_to_delegation_parts(&spec, "step");
         assert_eq!(context, serde_json::json!({}));
+    }
+
+    /// Regression: `DelegationTarget` has no `Airway` variant, so an airway
+    /// step must tunnel through the `__airway__` `Automation` sentinel with
+    /// the serialized spec in context — NOT hit the `_ =>` fallback, which
+    /// maps to `__unknown__` and makes the coordinator try to load an
+    /// automation named "__unknown__" ("failed to read workflow"). The spec
+    /// must round-trip back out of the context intact.
+    #[test]
+    fn spec_to_delegation_parts_tunnels_airway_through_sentinel() {
+        let spec = TaskSpec::Airway {
+            pipeline_ref: "pipelines/toast_pos.airway.yml".into(),
+            variables: None,
+            resources: vec!["orders".into()],
+            backfill_from: None,
+            backfill_to: None,
+        };
+        let (target, _request, context) = spec_to_delegation_parts(&spec, "ingest");
+        assert!(
+            matches!(target, DelegationTarget::Automation { ref workflow_ref } if workflow_ref == "__airway__"),
+            "airway must tunnel through the __airway__ sentinel, got {target:?}"
+        );
+        let rebuilt: TaskSpec =
+            serde_json::from_value(context.get("airway_spec").cloned().unwrap()).unwrap();
+        assert!(
+            matches!(rebuilt, TaskSpec::Airway { ref pipeline_ref, .. } if pipeline_ref == "pipelines/toast_pos.airway.yml"),
+            "context must carry the full Airway spec, got {rebuilt:?}"
+        );
     }
 }

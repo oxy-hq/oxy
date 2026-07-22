@@ -133,6 +133,12 @@ pub enum TaskType {
     LoopSequential(LoopConfig),
     #[serde(rename = "workflow")]
     SubAutomation(SubAutomationConfig),
+    /// Inspected rather than delegated-opaque: the decider reads it to build
+    /// a `TaskSpec::Airway`, reusing the existing airway run path instead of
+    /// routing through `step_executor` (which cannot reach a
+    /// `DatabaseConnection` and speaks request/response, not streaming).
+    #[serde(rename = "airway")]
+    Airway(AirwayConfig),
 
     // ── Delegated types (opaque to orchestrator) ────────────────────────
     #[serde(rename = "execute_sql")]
@@ -152,6 +158,11 @@ pub enum TaskType {
     // so the task variant is retired. `#[serde(other)]` catches any
     // leftover usage as `Unknown`, which the executor surfaces with a
     // clear "unknown task type" error.
+    //
+    // The retirement is now complete on both sides: `oxy_core`'s config
+    // `TaskType` used to keep a `Visualize` variant, so the validator
+    // accepted a task this executor rejected and the generated schemas
+    // advertised it to the IDE. Both enums now agree.
     #[serde(other)]
     Unknown,
 }
@@ -171,6 +182,7 @@ impl TaskType {
             TaskType::OmniQuery(_) => "omni_query",
             TaskType::LookerQuery(_) => "looker_query",
             TaskType::HttpRequest(_) => "http_request",
+            TaskType::Airway(_) => "airway",
             TaskType::Unknown => "unknown",
         }
     }
@@ -237,6 +249,17 @@ pub struct FormatterConfig {
     pub template: String,
 }
 
+/// Config for an `airway` automation step. Mirrors
+/// `oxy_core::config::model::AirwayTask`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AirwayConfig {
+    /// Workspace-relative path to the `.airway.yml` pipeline spec.
+    pub pipeline: String,
+    /// Explicit subset of the spec's resources to run. `None`/empty runs all.
+    #[serde(default)]
+    pub resources: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubAutomationConfig {
     pub src: PathBuf,
@@ -298,6 +321,76 @@ fn default_one() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn airway_step_parses_and_keeps_its_wire_tag() {
+        // The wire tag has to match `oxy_core::config::model::TaskType`'s
+        // `#[serde(rename = "airway")]` exactly — the two enums are separate
+        // types parsing the same YAML, and a mismatch would only surface at
+        // run time as an `Unknown` step (a "unknown task type" failure).
+        let yaml = r#"
+name: ingest_then_rollup
+tasks:
+  - name: ingest
+    type: airway
+    pipeline: pipelines/restaurant_analytics.airway.yml
+  - name: sales_rollup
+    type: execute_sql
+    database: pokehouse
+    sql_file: rollups/sales_daily_metrics.sql
+"#;
+        let config: AutomationConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.tasks.len(), 2);
+
+        match &config.tasks[0].task_type {
+            TaskType::Airway(cfg) => {
+                assert_eq!(cfg.pipeline, "pipelines/restaurant_analytics.airway.yml");
+                assert!(cfg.resources.is_none(), "omitted `resources` runs all");
+            }
+            other => panic!("expected an Airway step, got {}", other.name()),
+        }
+        assert_eq!(config.tasks[0].task_type.name(), "airway");
+    }
+
+    #[test]
+    fn airway_step_accepts_an_explicit_resource_subset() {
+        let yaml = r#"
+name: partial
+tasks:
+  - name: ingest
+    type: airway
+    pipeline: p.airway.yml
+    resources: [orders, order_checks]
+"#;
+        let config: AutomationConfig = serde_yaml::from_str(yaml).unwrap();
+        match &config.tasks[0].task_type {
+            TaskType::Airway(cfg) => {
+                assert_eq!(
+                    cfg.resources.as_deref(),
+                    Some(&["orders".to_string(), "order_checks".to_string()][..])
+                );
+            }
+            other => panic!("expected an Airway step, got {}", other.name()),
+        }
+    }
+
+    #[test]
+    fn retired_visualize_step_falls_through_to_unknown() {
+        // `type: visualize` was retired as a task (the chat agent's
+        // `visualize` *tool* replaced it). It must keep parsing — no
+        // `deny_unknown_fields` — and land on `Unknown`, which the executor
+        // rejects with a clear message rather than silently no-op'ing.
+        let yaml = r#"
+name: legacy
+tasks:
+  - name: chart
+    type: visualize
+    prompt: "plot it"
+"#;
+        let config: AutomationConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(matches!(config.tasks[0].task_type, TaskType::Unknown));
+        assert_eq!(config.tasks[0].task_type.name(), "unknown");
+    }
 
     #[test]
     fn test_parse_simple_automation() {

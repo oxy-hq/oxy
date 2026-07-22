@@ -36,6 +36,7 @@ pub async fn run_automation_step(
         TaskType::SubAutomation(_) => {
             Err("sub-automations are delegated via TaskSpec::Automation".into())
         }
+        TaskType::Airway(_) => Err("airway tasks are delegated via TaskSpec::Airway".into()),
 
         TaskType::OmniQuery(cfg) => execute_omni_query(workspace, cfg).await,
         TaskType::LookerQuery(cfg) => execute_looker_query(workspace, cfg).await,

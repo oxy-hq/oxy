@@ -79,6 +79,28 @@ where
     Ok(())
 }
 
+/// Stamp the engine-generated `load_id` onto an existing extension row.
+///
+/// `insert_run_extension` leaves `load_id` NULL and documents the worker as
+/// filling it in — but nothing ever did, so the column was permanently NULL
+/// and the loose reference to `airway_load_audit` was unusable as a join key.
+/// Best-effort: a missing extension row (non-airway run, or one predating the
+/// extension) is a no-op, matching `increment_retry_count`.
+pub async fn set_run_load_id<C>(db: &C, run_id: &str, load_id: &str) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    Entity::update_many()
+        .col_expr(
+            Column::LoadId,
+            sea_orm::sea_query::Expr::value(load_id.to_string()),
+        )
+        .filter(Column::RunId.eq(run_id.to_string()))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
 /// Look up the per-run metadata for an airway run. `None` when the
 /// run wasn't airway (or hasn't had its extension row inserted yet).
 pub async fn get_run_extension<C>(db: &C, run_id: &str) -> Result<Option<Model>, DbErr>

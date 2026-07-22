@@ -259,13 +259,24 @@ async fn insert_run_inner(
 // These thin wrappers delegate to `transition_run` so that existing callers
 // continue to compile without modification.
 
+/// Mark a run done, persisting `metadata_patch` onto `task_metadata`.
+///
+/// The patch used to be accepted and silently discarded, which made root-task
+/// completion the one terminal transition that lost its metadata — the
+/// suspension path (`crud::suspend_run_txn`) has always persisted it. Any
+/// structured result a root task wanted to carry out (airway load stats,
+/// rollup counts) vanished without a trace.
+///
+/// `None` leaves `task_metadata` untouched, matching [`transition_run`]'s
+/// "None means leave unchanged" convention, so callers passing `None` are
+/// unaffected.
 pub async fn update_run_done(
     db: &DatabaseConnection,
     run_id: &str,
     answer: &str,
-    _metadata_patch: Option<Value>,
+    metadata_patch: Option<Value>,
 ) -> Result<(), DbErr> {
-    transition_run(db, run_id, "done", None, Some(answer), None).await
+    transition_run(db, run_id, "done", metadata_patch, Some(answer), None).await
 }
 
 pub async fn update_run_failed(

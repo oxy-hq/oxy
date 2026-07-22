@@ -4,6 +4,7 @@ import {
   CircleAlert,
   CircleHelp,
   Code,
+  Database,
   FileText,
   GitBranch,
   Globe,
@@ -42,7 +43,7 @@ const nodeNameMap: Record<NodeType, string> = {
   conditional: "Conditional",
   "conditional-else": "Else",
   "conditional-if": "If",
-  visualize: "Visualize"
+  airway: "Airway"
 };
 
 const nodeIconMap: Record<NodeType, ReactElement> = {
@@ -57,7 +58,7 @@ const nodeIconMap: Record<NodeType, ReactElement> = {
   semantic_query: <Globe size={14} />,
   looker_query: <BarChart3 size={14} />,
   omni_query: <OmniIcon className='h-3.5 w-3.5' />,
-  visualize: <BarChart3 size={14} />
+  airway: <Database size={14} />
 };
 
 type Props = {

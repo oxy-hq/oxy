@@ -482,6 +482,36 @@ impl AutomationDecider {
                 }
             },
 
+            StepKind::Airway {
+                pipeline_ref,
+                resources,
+            } => {
+                // Straight to the existing airway task spec — no
+                // `AutomationStep` wrapper, so the coordinator routes it to
+                // `execute_airway` and it inherits secret resolution, the
+                // Airhouse credential provider, backfill windowing and
+                // run-scoped state. Backfill bounds stay `None`: a windowed
+                // backfill is driven by the backfill path, not by an
+                // automation step.
+                let spec = TaskSpec::Airway {
+                    pipeline_ref,
+                    variables: None,
+                    resources,
+                    backfill_from: None,
+                    backfill_to: None,
+                };
+                (
+                    state,
+                    AutomationDecision::DelegateStep {
+                        step_index,
+                        step_name,
+                        spec,
+                        trace_id,
+                        emitted_events: events,
+                    },
+                )
+            }
+
             StepKind::Delegated => {
                 let step_config =
                     serde_json::to_value(&task).unwrap_or_else(|_| json!({"name": step_name}));
@@ -954,6 +984,17 @@ impl AutomationDecider {
 enum StepKind {
     Inline,
     Delegated,
+    /// Delegate to the coordinator as a `TaskSpec::Airway`.
+    ///
+    /// Not `Delegated`: that wraps the step as an opaque `AutomationStep`
+    /// routed through `step_executor`, which only sees a `WorkspaceContext`
+    /// (no `DatabaseConnection`) and returns `Result<Value, String>` rather
+    /// than the streaming handle an airway run needs. Emitting the existing
+    /// `TaskSpec::Airway` reuses the working path instead.
+    Airway {
+        pipeline_ref: String,
+        resources: Vec<String>,
+    },
     Agent {
         agent_ref: String,
         prompt: String,
@@ -1006,6 +1047,11 @@ fn classify_step(state: &AutomationRunState, task_type: &TaskType) -> StepKind {
             values: serde_json::to_value(&loop_task.values).unwrap_or_default(),
             tasks: serde_json::to_value(&loop_task.tasks).unwrap_or_default(),
             concurrency: loop_task.concurrency,
+        },
+
+        TaskType::Airway(cfg) => StepKind::Airway {
+            pipeline_ref: cfg.pipeline.clone(),
+            resources: cfg.resources.clone().unwrap_or_default(),
         },
 
         TaskType::ExecuteSql(_)

@@ -1,4 +1,4 @@
-import { BarChart3, CodeXml, FileText, GitBranch, Globe, Pencil } from "lucide-react";
+import { CodeXml, Database, FileText, GitBranch, Globe, Pencil } from "lucide-react";
 import type { ElementType } from "react";
 import { useNavigate } from "react-router-dom";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
@@ -15,7 +15,7 @@ const NODE_ICONS: Record<string, ElementType> = {
   [TaskType.SEMANTIC_QUERY]: Globe,
   [TaskType.EXECUTE_SQL]: CodeXml,
   [TaskType.FORMATTER]: FileText,
-  [TaskType.VISUALIZE]: BarChart3,
+  [TaskType.AIRWAY]: Database,
   [TaskType.WORKFLOW]: GitBranch
 };
 
@@ -23,7 +23,7 @@ const NODE_LABELS: Record<string, string> = {
   [TaskType.SEMANTIC_QUERY]: "Semantic Query",
   [TaskType.EXECUTE_SQL]: "Execute SQL",
   [TaskType.FORMATTER]: "Formatter",
-  [TaskType.VISUALIZE]: "Visualize",
+  [TaskType.AIRWAY]: "Airway",
   [TaskType.WORKFLOW]: "Sub-automation"
 };
 

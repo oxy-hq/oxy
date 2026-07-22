@@ -22,6 +22,7 @@ import {
 import { Switch } from "@/components/ui/shadcn/switch";
 import type { AutomationFormData } from "..";
 import {
+  AirwayTaskFields,
   AutomationTaskFields,
   ConditionalTaskFields,
   ExecuteSqlTaskFields,
@@ -50,7 +51,8 @@ const TASK_TYPES = [
   { value: "formatter", label: "Formatter" },
   { value: "workflow", label: "Automation" },
   { value: "omni_query", label: "Omni Query" },
-  { value: "conditional", label: "Conditional" }
+  { value: "conditional", label: "Conditional" },
+  { value: "airway", label: "Airway" }
 ];
 
 const EXPORT_FORMATS = [
@@ -106,6 +108,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = 
     switch (taskType) {
       case "execute_sql":
         return <ExecuteSqlTaskFields index={index} basePath={basePath} />;
+
+      case "airway":
+        return <AirwayTaskFields index={index} basePath={basePath} />;
 
       case "semantic_query":
         return <SemanticQueryTaskFields index={index} basePath={basePath} />;

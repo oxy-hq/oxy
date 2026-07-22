@@ -128,8 +128,11 @@ destination:
 
     // ── Drive the worker ──────────────────────────────────────────────────
     let worker = AirwayWorker::new(Arc::new(db.clone()));
-    // Normal run (no resumable-backfill run-scoped store).
-    let mut task = worker.execute(spec, None);
+    // Normal run (no resumable-backfill run-scoped store). The third arg is
+    // the owning run id used to stamp the engine load_id onto the run
+    // extension; this test seeds no `agentic_runs`/extension row, so that
+    // stamp is a best-effort no-op (matches `set_run_load_id`'s contract).
+    let mut task = worker.execute(spec, None, "it-worker-run".to_string());
 
     // Collect events until the task produces its terminal outcome.
     let mut event_types: Vec<String> = Vec::new();

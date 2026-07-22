@@ -22,7 +22,7 @@ const nodeTypes: Record<NodeType, typeof DiagramNode> = {
   "conditional-if": DiagramNode,
   omni_query: DiagramNode,
   looker_query: DiagramNode,
-  visualize: DiagramNode
+  airway: DiagramNode
 } as const;
 
 interface AutomationDiagramProps {

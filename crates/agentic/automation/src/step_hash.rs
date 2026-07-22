@@ -51,6 +51,7 @@ pub const CONDITIONAL_CODE_VERSION: u32 = 1;
 pub const LOOP_SEQUENTIAL_CODE_VERSION: u32 = 1;
 pub const SUB_WORKFLOW_CODE_VERSION: u32 = 1;
 pub const HTTP_REQUEST_CODE_VERSION: u32 = 1;
+pub const AIRWAY_CODE_VERSION: u32 = 1;
 pub const UNKNOWN_CODE_VERSION: u32 = 1;
 
 /// Inputs that fully determine a step's effective identity.
@@ -105,6 +106,7 @@ fn code_version_for(t: &crate::config::TaskType) -> u32 {
         OmniQuery(_) => OMNI_QUERY_CODE_VERSION,
         LookerQuery(_) => LOOKER_QUERY_CODE_VERSION,
         HttpRequest(_) => HTTP_REQUEST_CODE_VERSION,
+        Airway(_) => AIRWAY_CODE_VERSION,
         Unknown => UNKNOWN_CODE_VERSION,
     }
 }
