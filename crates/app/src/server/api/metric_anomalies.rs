@@ -198,6 +198,48 @@ pub struct ScanResponse {
     /// list calls. Clients should refetch anomalies after a short delay.
     #[serde(default)]
     pub pending: bool,
+    /// One entry per monitor that errored, so the UI can tell the user
+    /// *which* monitor failed and *why* rather than just a count. Empty on a
+    /// clean scan and (necessarily) on the `pending` path, where the scan is
+    /// still running and failures aren't known yet.
+    #[serde(default)]
+    pub failures: Vec<ScanFailureDetail>,
+}
+
+/// A single failed monitor, flattened for the wire. Mirrors the fields the
+/// inbox needs to name the monitor + segment and show the error message.
+#[derive(Debug, Serialize)]
+pub struct ScanFailureDetail {
+    pub measure: String,
+    pub time_dimension: String,
+    pub granularity: String,
+    pub label: Option<String>,
+    /// Segment key when the failed monitor was a `group_by`/filtered segment
+    /// (e.g. `"labor_daily.restaurant_id=loc-abc"`); empty for chain-wide.
+    pub dimension_key: String,
+    /// Raw filters identifying the segment, mirroring the persisted anomaly's
+    /// `filters` so the inbox can render the failure with the same friendly
+    /// segment label it uses for anomaly rows. `None` for chain-wide monitors.
+    pub filters: Option<serde_json::Value>,
+    /// Human-readable error (the `ScanError` `Display` chain).
+    pub error: String,
+}
+
+fn to_failure_detail(f: &monitoring::service::MonitorFailure) -> ScanFailureDetail {
+    let filters = if f.entry.filters.is_empty() {
+        None
+    } else {
+        serde_json::to_value(&f.entry.filters).ok()
+    };
+    ScanFailureDetail {
+        measure: f.entry.measure.clone(),
+        time_dimension: f.entry.time_dimension.clone(),
+        granularity: f.entry.granularity.airlayer_str().to_string(),
+        label: f.entry.label.clone(),
+        dimension_key: monitoring::config::MonitorFilter::key_for(&f.entry.filters),
+        filters,
+        error: f.error.to_string(),
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -239,6 +281,7 @@ pub async fn run_scan(
             monitors_failed: 0,
             anomalies_persisted: 0,
             pending: true,
+            failures: Vec::new(),
         }));
     }
 
@@ -337,6 +380,7 @@ pub async fn run_scan(
             monitors_failed: result.failures.len(),
             anomalies_persisted: persisted,
             pending: false,
+            failures: result.failures.iter().map(to_failure_detail).collect(),
         })),
         Ok(Ok(Err(e))) => Err(e),
         Ok(Err(_)) => Err(AnomalyError::Internal("scan task dropped".into())),
@@ -353,6 +397,7 @@ pub async fn run_scan(
                 monitors_failed: 0,
                 anomalies_persisted: 0,
                 pending: true,
+                failures: Vec::new(),
             }))
         }
     }

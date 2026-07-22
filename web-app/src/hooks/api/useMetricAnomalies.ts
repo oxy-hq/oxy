@@ -46,8 +46,22 @@ export function useScanMetricAnomalies() {
       const failed = data.monitors_failed;
       const persisted = data.anomalies_persisted;
       if (failed > 0) {
+        const failures = data.failures ?? [];
+        // Name the first few failed monitors + their error in the toast; the
+        // inbox banner carries the full list. Sonner collapses newlines, so
+        // join with a middot rather than "\n".
+        const preview = failures
+          .slice(0, 3)
+          .map((f) => {
+            const name = f.label || f.measure;
+            const seg = f.dimension_key ? ` [${f.dimension_key}]` : "";
+            return `${name}${seg}: ${clampError(f.error)}`;
+          })
+          .join(" · ");
+        const more = failures.length > 3 ? ` · +${failures.length - 3} more` : "";
         toast.warning(
-          `Scanned ${monitors} monitor${monitors === 1 ? "" : "s"} (${failed} failed). ${persisted} anomalies persisted.`
+          `Scanned ${monitors} monitor${monitors === 1 ? "" : "s"} (${failed} failed). ${persisted} anomalies persisted.`,
+          { description: preview ? `${preview}${more}` : undefined, duration: 10_000 }
         );
       } else {
         toast.success(
@@ -60,6 +74,13 @@ export function useScanMetricAnomalies() {
       toast.error(`Scan failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   });
+}
+
+/** Clamp a single error message for the toast preview so one verbose
+ *  `ScanError` chain doesn't swamp the middot-joined list. The inbox banner
+ *  carries the full, untruncated error. */
+function clampError(error: string, max = 120): string {
+  return error.length > max ? `${error.slice(0, max - 1)}…` : error;
 }
 
 /** Mark an anomaly acknowledged / dismissed / new. */

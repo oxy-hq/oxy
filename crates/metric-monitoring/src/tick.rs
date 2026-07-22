@@ -141,6 +141,19 @@ pub async fn tick_workspace(
         });
     }
     let scan = scan_workspace(runner, &config_path, Utc::now(), None).await?;
+    // Surface which monitors failed (and why) in logs — the periodic path has
+    // no toast, so without this a broken monitor is invisible to ops.
+    for failure in &scan.failures {
+        tracing::warn!(
+            target: "metric_monitoring",
+            workspace_id = %workspace_id,
+            measure = %failure.entry.measure,
+            time_dimension = %failure.entry.time_dimension,
+            segment = %crate::config::MonitorFilter::key_for(&failure.entry.filters),
+            error = %failure.error,
+            "monitor scan failed for one monitor"
+        );
+    }
     let persisted = upsert_anomalies(db, workspace_id, &scan).await?;
     Ok(TickOutcome {
         workspace_id,

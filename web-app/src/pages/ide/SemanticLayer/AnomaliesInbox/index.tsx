@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
@@ -25,7 +25,13 @@ import {
   useScanMetricAnomalies,
   useUpdateAnomalyStatus
 } from "@/hooks/api/useMetricAnomalies";
-import type { AnomalySeverity, AnomalyStatus, MetricAnomaly } from "@/types/metricAnomalies";
+import type {
+  AnomalyFilter,
+  AnomalySeverity,
+  AnomalyStatus,
+  MetricAnomaly,
+  ScanFailure
+} from "@/types/metricAnomalies";
 import ExplainDrawer from "./ExplainDrawer";
 import MonitorsTab from "./MonitorsTab";
 
@@ -46,6 +52,7 @@ export default function AnomaliesInbox() {
   const [statusFilter, setStatusFilter] = useState<AnomalyStatus | "all">("new");
   const [asOf, setAsOf] = useState<string>("");
   const [selectedAnomaly, setSelectedAnomaly] = useState<MetricAnomaly | null>(null);
+  const [failuresDismissed, setFailuresDismissed] = useState(false);
 
   const {
     data: anomalies,
@@ -54,7 +61,11 @@ export default function AnomaliesInbox() {
   } = useMetricAnomalies(statusFilter === "all" ? undefined : statusFilter);
   const { data: monitors = [] } = useMonitors();
   const scanMutation = useScanMetricAnomalies();
-  const triggerScan = () => scanMutation.mutate(asOf || undefined);
+  const triggerScan = () => {
+    setFailuresDismissed(false);
+    scanMutation.mutate(asOf || undefined);
+  };
+  const scanFailures = scanMutation.data?.failures ?? [];
 
   return (
     <div className='flex h-full min-h-0 flex-col overflow-hidden'>
@@ -129,6 +140,13 @@ export default function AnomaliesInbox() {
             </div>
           </div>
 
+          {!failuresDismissed && scanFailures.length > 0 && (
+            <ScanFailuresBanner
+              failures={scanFailures}
+              onDismiss={() => setFailuresDismissed(true)}
+            />
+          )}
+
           <div className='flex-1 overflow-auto px-4 py-3'>
             {isLoading && (
               <div className='flex h-32 items-center justify-center'>
@@ -175,6 +193,54 @@ function EmptyState({ onScan, scanning }: { onScan: () => void; scanning: boolea
         {scanning ? <Spinner className='size-4' /> : <RefreshCw className='size-4' />}
         Scan now
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Persistent, dismissible banner listing the monitors that errored in the
+ * last scan — the toast is transient and truncates, so this is where a user
+ * sees *which* monitor failed and *why*. Cleared when the next scan starts.
+ */
+function ScanFailuresBanner({
+  failures,
+  onDismiss
+}: {
+  failures: ScanFailure[];
+  onDismiss: () => void;
+}) {
+  return (
+    <div className='mx-4 mt-3 rounded-md border border-orange-500/40 bg-orange-500/5 px-3 py-2'>
+      <div className='flex items-start justify-between gap-2'>
+        <div className='flex items-center gap-1.5 font-medium text-orange-600 text-sm dark:text-orange-400'>
+          <AlertTriangle className='size-4 shrink-0' />
+          {failures.length} monitor{failures.length === 1 ? "" : "s"} failed to scan
+        </div>
+        <Button
+          size='icon'
+          variant='ghost'
+          className='size-6 text-muted-foreground'
+          onClick={onDismiss}
+          aria-label='Dismiss scan failures'
+        >
+          <X className='size-4' />
+        </Button>
+      </div>
+      <ul className='mt-1.5 flex flex-col gap-1'>
+        {failures.map((f) => {
+          const segment = formatSegment(f);
+          return (
+            <li
+              key={`${f.measure}:${f.time_dimension}:${f.granularity}:${f.dimension_key}`}
+              className='text-muted-foreground text-xs'
+            >
+              <span className='font-medium text-foreground'>{f.label || f.measure}</span>
+              {segment && <span className='ml-1 text-muted-foreground'>[{segment}]</span>}
+              <span className='ml-1'>— {f.error}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -228,9 +294,10 @@ function AnomalyRow({
         <SeverityBadge severity={anomaly.severity} status={anomaly.status} />
       </TableCell>
       <TableCell>
-        <div className='flex flex-col'>
+        <div className='flex flex-col gap-1'>
           <span className='font-medium'>{anomaly.label || anomaly.measure}</span>
           <span className='text-muted-foreground text-xs'>{anomaly.measure}</span>
+          <SegmentBadge anomaly={anomaly} />
         </div>
       </TableCell>
       <TableCell className='text-sm'>
@@ -273,6 +340,44 @@ function AnomalyRow({
       </TableCell>
     </TableRow>
   );
+}
+
+/**
+ * Chain-wide monitors have no segment; segment (`group_by` / filtered)
+ * monitors render a chip so per-segment anomalies that share a measure/period
+ * are visibly distinct instead of reading as duplicates.
+ */
+function SegmentBadge({ anomaly }: { anomaly: MetricAnomaly }) {
+  const label = formatSegment(anomaly);
+  if (!label) return null;
+  return (
+    <Badge variant='secondary' className='w-fit font-normal text-xs'>
+      {label}
+    </Badge>
+  );
+}
+
+/** e.g. filters `[{member: "labor_daily.restaurant_id", values: ["loc-abc"]}]`
+ *  → `"restaurant_id: loc-abc"`. Falls back to the raw `dimension_key`.
+ *  Shared by anomaly rows and the scan-failures banner so the same segment
+ *  reads identically on both surfaces. */
+function formatSegment(segment: {
+  filters: AnomalyFilter[] | null;
+  dimension_key: string;
+}): string | null {
+  const { filters, dimension_key } = segment;
+  if (filters && filters.length > 0) {
+    return filters
+      .map((f) => `${shortMember(f.member)}: ${f.values.join(", ")}`)
+      .join(" · ");
+  }
+  return dimension_key ? dimension_key : null;
+}
+
+/** Strip the `view.` prefix from a fully-qualified dimension id. */
+function shortMember(member: string): string {
+  const dot = member.lastIndexOf(".");
+  return dot === -1 ? member : member.slice(dot + 1);
 }
 
 function SeverityBadge({ severity, status }: { severity: AnomalySeverity; status: AnomalyStatus }) {
