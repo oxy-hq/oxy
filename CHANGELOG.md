@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.109] - 2026-07-23
+
+### 🚀 Features
+
+- Universalize the customer-app shell (sdk 2.5.0) (#2687)
+
+### 🐛 Bug Fixes
+
+- Surface anomaly segments and scan failures in the Insights Inbox (#2758)
+
+### 💼 Other
+
+- *(deps)* Bump softprops/action-gh-release from 3.0.1 to 3.0.2 (#2763)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 10 updates (#2765)
+- *(deps)* Bump pnpm/action-setup from 5.0.0 to 6.0.9 (#2762)
+
+### 🚜 Refactor
+
+- *(app)* Rung-1 module splits of oxy-app god files (batch 1) (#2753)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update dependencies in TypeScript SDK and web app
+
 ## [0.5.108] - 2026-07-22
 
 ### 🚀 Features
@@ -32,6 +56,7 @@ All notable changes to this project will be documented in this file.
 
 - *(sdk)* Release @oxy-hq/sdk 2.3.0 (/email subpath) (#2742)
 - Expand agentic autofix scope: P0/P1 fixes + P3 refactors, add test coverage (#2755)
+- Release 0.5.108 (#2737)
 
 ## [0.5.107] - 2026-07-18
 
