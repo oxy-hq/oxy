@@ -19,7 +19,7 @@
 //! ## Trust posture (vs the customer-apps proxy)
 //!
 //! The ide upstream is OUR OWN backend inside the cluster, reached over an
-//! in-cluster Service. So — unlike `customer_apps_proxy`, which strips `Cookie`
+//! in-cluster Service. So — unlike `custom_apps_proxy`, which strips `Cookie`
 //! / `Authorization` to avoid leaking the session to a third party — we
 //! **preserve** auth headers: the forwarded request must stay the same
 //! authenticated user. We strip only RFC 7230 hop-by-hop headers and guard

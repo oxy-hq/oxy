@@ -12,12 +12,12 @@
  * - `s3`: bundle lives at `s3://<bucket>/apps/<org_slug>/<app_slug>/out/`,
  *   pulled into the state dir by `POST /api/customer-apps/<org>/<app>/sync`.
  */
-export type CustomerAppSource =
+export type CustomAppSource =
   | { type: "v0"; url: string }
   | { type: "local"; path: string }
   | { type: "s3" };
 
-export interface CustomerApp {
+export interface CustomApp {
   id: string;
   /** URL slug, unique within org. Auto-derived from name on create. */
   slug: string;
@@ -116,7 +116,7 @@ export interface BatchAppResult {
 
 /**
  * Summary returned by `GET /api/{workspaceId}/custom-apps`. Lighter
- * than [`CustomerApp`] because the workspace sidebar only needs the
+ * than [`CustomApp`] because the workspace sidebar only needs the
  * label + the URL it links to.
  */
 export interface CustomAppSummary {
@@ -235,7 +235,7 @@ export interface CreateAppRequest {
   /** Optional explicit slug. If absent, derived from `name` and deduped. */
   slug?: string;
   /** Defaults to `{ type: "s3" }` on the server when omitted. */
-  source?: CustomerAppSource;
+  source?: CustomAppSource;
   /**
    * When true and `source.type === "s3"`, the backend opens a PR on
    * `OXY_CUSTOMER_APPS_REPO` scaffolding `apps/<org>/<slug>/` before
@@ -357,7 +357,7 @@ export interface UpdateAppRequest {
    * (fixing a wrong-folder mistake) and for moving an app between
    * v0 / local / s3 without delete + recreate.
    */
-  source?: CustomerAppSource;
+  source?: CustomAppSource;
 }
 
 /**
@@ -365,7 +365,7 @@ export interface UpdateAppRequest {
  * Loose by design — the admin UI inspects it for humans; field
  * additions on the server should not break clients.
  */
-export interface CustomerAppDebug {
+export interface CustomAppDebug {
   org_slug: string;
   app_slug: string;
   app: {

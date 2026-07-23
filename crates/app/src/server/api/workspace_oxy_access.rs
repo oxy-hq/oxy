@@ -1,7 +1,7 @@
 //! `/api/{workspace_id}/oxy-access` — the **Oxy-staff lockdown** switch.
 //!
 //! Model (inverted 2026-07-14; migration `m20260714_000002`):
-//!   * **Default: Oxy staff CAN access** this workspace's customer apps. No row,
+//!   * **Default: Oxy staff CAN access** this workspace's custom apps. No row,
 //!     no friction — support works out of the box.
 //!   * A row in `workspace_oxy_lockdown` means the org has **locked Oxy staff
 //!     out**. While locked, no `app_admins` member can reach the workspace's apps.
@@ -13,7 +13,7 @@
 //! access the toggle existed to gate**. The guard here rejects that synthetic
 //! override (`WorkspaceGlobalOverride`), so an operator cannot unlock themselves.
 //!
-//! See [`crate::server::api::customer_apps_auth`] for how the lockdown is
+//! See [`crate::server::api::custom_apps_auth`] for how the lockdown is
 //! consulted on the request path.
 
 use axum::Json;
@@ -28,7 +28,7 @@ use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilt
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_auth::invalidate_access_cache;
+use crate::server::api::custom_apps_auth::invalidate_access_cache;
 use crate::server::api::middlewares::workspace_context::{
     EffectiveWorkspaceRole, WorkspaceGlobalOverride,
 };

@@ -1,7 +1,7 @@
 /**
  * @oxy-hq/vite-plugin — one plugin, six behaviors.
  *
- * Drop this into a customer-app's vite.config.ts and the ~50 lines of
+ * Drop this into a custom-app's vite.config.ts and the ~50 lines of
  * base-path / outDir / dev-proxy / manifest-copy boilerplate that
  * every app re-implements collapses to:
  *
@@ -299,7 +299,7 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
         // etc.) would close the inline script tag early and dump the
         // rest of the payload into the HTML stream. Low probability
         // (these are operator-controlled slugs) but the fix is one
-        // regex; mirrors `customer_apps_serve::inject_app_config`.
+        // regex; mirrors `custom_apps_serve::inject_app_config`.
         const payload = JSON.stringify({
           orgSlug: devIdentity.orgSlug,
           appSlug: devIdentity.appSlug,

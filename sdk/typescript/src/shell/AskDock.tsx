@@ -1,4 +1,4 @@
-// Ask Oxygen inside a customer app: the same right-side dock the main
+// Ask Oxygen inside a custom app: the same right-side dock the main
 // web-app opens with ⌘K, powered by the SDK's bundle-gated agent-run
 // stream (`useAgentRun`). Multi-turn: follow-ups reuse the run's thread.
 //
@@ -9,7 +9,7 @@
 // extended-thinking toggle — the bundle ask API doesn't carry it.
 
 import * as React from "react";
-import { type AgentRunEvent, OxyAnswer, useAgentRun, useOxyApp } from "../customer-app/react";
+import { type AgentRunEvent, OxyAnswer, useAgentRun, useOxyApp } from "../custom-app/react";
 import { AnswerChart, type ChartBlock } from "./AnswerChart";
 import { cx } from "./cx";
 import { OxyMark } from "./marks";

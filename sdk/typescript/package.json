@@ -1,7 +1,7 @@
 {
   "name": "@oxy-hq/sdk",
   "version": "2.6.0",
-  "description": "React SDK for building customer-app bundles on the Oxy platform",
+  "description": "React SDK for building custom-app bundles on the Oxy platform",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.cts",

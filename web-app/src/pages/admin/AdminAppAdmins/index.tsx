@@ -41,7 +41,7 @@ function formatGrantedAt(value: string): string {
  *
  * Members of this list see most of the admin surface (Feature flags,
  * Internal jobs, Customer apps, Organizations, Users, Workspaces) and
- * every registered customer app regardless of org membership. Only
+ * every registered custom app regardless of org membership. Only
  * Global Owners (OXY_OWNER env-var allow-list) can reach Billing queue
  * and this page.
  *

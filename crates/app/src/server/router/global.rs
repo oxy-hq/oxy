@@ -51,7 +51,7 @@ pub(super) fn build_global_routes() -> Router<AppState> {
             partner_console::scoped_routes(),
         )
         // `/admin/*` runs under the permissive owner-or-app-admin guard so
-        // app admins can reach feature flags, customer apps, orgs / users /
+        // app admins can reach feature flags, custom apps, orgs / users /
         // workspaces management, and internal jobs. The sensitive subset —
         // billing operations and the `app_admins` table itself — escalates
         // to strict OXY_OWNER via `route_layer` inside `admin::router()`.
@@ -91,7 +91,7 @@ pub(super) fn build_global_routes() -> Router<AppState> {
         )
         // Parallel customer-apps surface for OXY_GLOBAL_ADMINS. Reuses the same
         // handlers as /admin/apps but gated by a separate role so app admins
-        // can manage customer-app registrations without org/billing access.
+        // can manage custom-app registrations without org/billing access.
         .nest(
             "/customer-apps",
             Router::new()
@@ -161,32 +161,32 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                     "/batch/delete",
                     post(admin::apps::handlers::batch_delete_apps),
                 )
-                // Activity (usage tracking) — see `customer_apps_activity`.
+                // Activity (usage tracking) — see `custom_apps_activity`.
                 // Reads the `custom_app_view_event` + `custom_app_event`
                 // tables to power the AppDetail "Activity" tab.
                 .route(
                     "/{id}/activity/summary",
-                    get(crate::server::api::customer_apps_activity::get_summary),
+                    get(crate::server::api::custom_apps_activity::get_summary),
                 )
                 .route(
                     "/{id}/activity/visitors",
-                    get(crate::server::api::customer_apps_activity::get_visitors),
+                    get(crate::server::api::custom_apps_activity::get_visitors),
                 )
                 .route(
                     "/{id}/activity/events",
-                    get(crate::server::api::customer_apps_activity::get_events),
+                    get(crate::server::api::custom_apps_activity::get_events),
                 )
                 // Preview-draft cookie: flips this staff session into
                 // draft view on the customer URL. Replaces the
                 // (discoverable) `?view=draft` query param so the
                 // customer URL surface stays free of any "press here
-                // to flip" affordance. See `customer_apps_preview`.
+                // to flip" affordance. See `custom_apps_preview`.
                 .route(
                     "/preview-draft",
-                    post(crate::server::api::customer_apps_preview::enable_preview_draft)
-                        .delete(crate::server::api::customer_apps_preview::disable_preview_draft),
+                    post(crate::server::api::custom_apps_preview::enable_preview_draft)
+                        .delete(crate::server::api::custom_apps_preview::disable_preview_draft),
                 )
-                // Server-side folder picker for the "Add customer app"
+                // Server-side folder picker for the "Add custom app"
                 // dialog's local-link / create-new flow. Local-mode only;
                 // returns 404 in cloud. See `admin::apps::fs`.
                 .route("/fs/listdir", get(admin::apps::fs::listdir))
@@ -207,23 +207,23 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 // bundle's deploy env (e.g. `OXY_API_KEY` in Vercel). The
                 // Vercel-hosted Next.js server-side calls use it to
                 // authenticate back into oxy. See
-                // `customer_apps_api_keys`.
+                // `custom_apps_api_keys`.
                 .route(
                     "/{id}/api-keys",
-                    post(crate::server::api::customer_apps_api_keys::mint),
+                    post(crate::server::api::custom_apps_api_keys::mint),
                 )
                 // Trusted-publishing config: register / list / remove the GitHub
                 // workflows allowed to OIDC-publish this app. See
-                // `customer_apps_publish_oidc`.
+                // `custom_apps_publish_oidc`.
                 .route(
                     "/{id}/publishers",
-                    get(crate::server::api::customer_apps_publish_oidc::list_publishers)
-                        .post(crate::server::api::customer_apps_publish_oidc::register_publisher),
+                    get(crate::server::api::custom_apps_publish_oidc::list_publishers)
+                        .post(crate::server::api::custom_apps_publish_oidc::register_publisher),
                 )
                 .route(
                     "/{id}/publishers/{publisher_id}",
                     axum::routing::delete(
-                        crate::server::api::customer_apps_publish_oidc::delete_publisher,
+                        crate::server::api::custom_apps_publish_oidc::delete_publisher,
                     ),
                 )
                 // Everything ABOVE is the interactive customer-apps admin surface
@@ -235,7 +235,7 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 .layer(middleware::from_fn(admin::assume::block_admin_while_acting))
                 // Owner-or-admin, not admin-only. A Global Owner who isn't also in
                 // `app_admins` was 403'd here — locking the MORE senior role out of a
-                // surface the junior one runs. Both tiers reach the customer-app
+                // surface the junior one runs. Both tiers reach the custom-app
                 // lifecycle; only owner-exclusive destructive operations separate them.
                 .layer(middleware::from_fn(
                     oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
@@ -256,7 +256,7 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 // bundles are a few MB, over axum's 2 MB default.
                 .route(
                     "/publish",
-                    post(crate::server::api::customer_apps_publish::publish_handler)
+                    post(crate::server::api::custom_apps_publish::publish_handler)
                         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
                 ),
         )

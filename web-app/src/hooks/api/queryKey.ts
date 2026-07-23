@@ -515,28 +515,32 @@ const adminBillingKeys = {
   pendingCheckout: (orgId: string) => [...adminBillingKeys.all, "pendingCheckout", orgId] as const
 };
 
-const customerAppKeys = {
-  all: () => ["customerApps", "all"] as const,
-  manage: () => ["customerApps", "manage"] as const,
-  debug: (orgSlug: string, appSlug: string) => ["customerApps", "debug", orgSlug, appSlug] as const,
+const customAppKeys = {
+  // Broad union root — invalidating this refreshes every custom-app query,
+  // including the workspace-scoped `list` used by the HQ launcher + rail.
+  all: () => ["customApps"] as const,
+  manage: () => ["customApps", "manage"] as const,
+  debug: (orgSlug: string, appSlug: string) => ["customApps", "debug", orgSlug, appSlug] as const,
   listdir: (path: string, showHidden: boolean) =>
-    ["customerApps", "listdir", path, showHidden] as const,
-  probe: (path: string) => ["customerApps", "probe", path] as const,
-  builds: (id: string) => ["customerApps", "builds", id] as const,
-  functions: (id: string) => ["customerApps", "functions", id] as const,
+    ["customApps", "listdir", path, showHidden] as const,
+  probe: (path: string) => ["customApps", "probe", path] as const,
+  builds: (id: string) => ["customApps", "builds", id] as const,
+  functions: (id: string) => ["customApps", "functions", id] as const,
   functionInvocations: (id: string, name: string) =>
-    ["customerApps", "functions", id, name, "invocations"] as const,
-  functionRun: (id: string, runId: string) => ["customerApps", "functionRun", id, runId] as const,
-  activitySummary: (id: string) => ["customerApps", "activity", id, "summary"] as const,
+    ["customApps", "functions", id, name, "invocations"] as const,
+  functionRun: (id: string, runId: string) => ["customApps", "functionRun", id, runId] as const,
+  activitySummary: (id: string) => ["customApps", "activity", id, "summary"] as const,
   activityVisitors: (id: string, days: number) =>
-    ["customerApps", "activity", id, "visitors", days] as const,
+    ["customApps", "activity", id, "visitors", days] as const,
   activityEvents: (id: string, days: number, eventName: string | null) =>
-    ["customerApps", "activity", id, "events", days, eventName] as const,
+    ["customApps", "activity", id, "events", days, eventName] as const,
   // Key includes a version segment so any cache entry recorded
   // against the pre-fix URL (`/api/admin/customer-apps/templates`,
   // which SPA-fell-back to HTML) gets invalidated when this code
   // ships. Bump again if the response shape changes.
-  templates: () => ["customerApps", "templates", "v2"] as const
+  templates: () => ["customApps", "templates", "v2"] as const,
+  // Workspace-scoped published list (HQ launcher + workspace rail).
+  list: (workspaceId: string) => ["customApps", "list", workspaceId] as const
 };
 
 const appAdminKeys = {
@@ -559,11 +563,6 @@ const oxyAccessKeys = {
   status: (workspaceId: string) => [...oxyAccessKeys.all, "status", workspaceId] as const,
   // Platform-wide list of granted workspaces for the admin org/project browser.
   grants: () => [...oxyAccessKeys.all, "grants"] as const
-};
-
-const customAppKeys = {
-  all: ["customApps"] as const,
-  list: (workspaceId: string) => [...customAppKeys.all, "list", workspaceId] as const
 };
 
 const featureFlagKeys = {
@@ -807,7 +806,7 @@ const queryKeys = {
   camera: cameraKeys,
   billing: billingKeys,
   adminBilling: adminBillingKeys,
-  customerApps: customerAppKeys,
+  customApps: customAppKeys,
   appAdmins: appAdminKeys,
   publishTokens: publishTokenKeys,
   partnerPublishConsent: {
@@ -815,7 +814,6 @@ const queryKeys = {
   },
   oxyAccess: oxyAccessKeys,
   orgSubdomain: orgSubdomainKeys,
-  customApps: customAppKeys,
   featureFlags: featureFlagKeys,
   internalJobs: internalJobsKeys,
   compiles: compilesKeys,

@@ -52,7 +52,7 @@ pub struct AppState {
     /// hardcoded default. `None` when no worker is running.
     pub preagg_renewal_threshold_secs: Option<u64>,
     /// Shared agentic state — runtime, schema cache, event registry,
-    /// task router. Populated for the main API router so customer-app
+    /// task router. Populated for the main API router so custom-app
     /// endpoints (useAsk, useProcedureRun, useAgentRun) can reach the
     /// pipeline. `None` for the internal API router (no agentic
     /// surface needed there). Handlers should 503 when this is
@@ -125,7 +125,7 @@ pub(crate) fn build_cors_layer() -> CorsLayer {
             header::ORIGIN,
             HeaderName::from_static("x-requested-with"),
             HeaderName::from_static("x-request-id"),
-            // Cross-origin SSE for the customer-app shell's Ask Oxygen stream.
+            // Cross-origin SSE for the custom-app shell's Ask Oxygen stream.
             // Its fetch sends `Cache-Control: no-cache` (don't cache the stream)
             // and, on reconnect, `Last-Event-ID` (replay from a known point).
             // Neither is CORS-safelisted, so each triggers a preflight; without
@@ -184,7 +184,7 @@ fn cors_allow(origin: &HeaderValue, headers: &HeaderMap) -> bool {
 
 /// Canonical local-dev origins — Vite's web-app (`:5173`) and stand-alone
 /// bundle dev server (`:5174`), plus the `:3000`–`:3005` range used by
-/// customer-app dev servers (e.g. the Command Center on `:3005`). Always
+/// custom-app dev servers (e.g. the Command Center on `:3005`). Always
 /// allowed so engineers don't need to configure anything to iterate locally.
 fn is_dev_origin(origin: &str) -> bool {
     matches!(
@@ -223,7 +223,7 @@ fn is_self_origin(origin: &str, headers: &HeaderMap) -> bool {
 /// Check whether the `Origin` (or `Referer`) header on an incoming request
 /// targets a permitted origin. Mirrors the CORS layer's predicate as a
 /// belt-and-braces server-side check used by sensitive endpoints (the
-/// customer-app data gate, etc.).
+/// custom-app data gate, etc.).
 ///
 /// Rules:
 ///   - No `Origin` and no `Referer` → allowed (programmatic clients

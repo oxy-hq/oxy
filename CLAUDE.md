@@ -140,7 +140,7 @@ each `SKILL.md` carries the full trigger list and contract. The load-bearing con
 | `oxy-task-spec-default` | background work in `crates/app/src/server/` (`tokio::spawn`, periodic loops, LLM calls, clones >5s) | new long-running work is a `TaskSpec` in `agentic_task_queue`, **not** a spawn in an HTTP handler |
 | `oxy-compile-boundary` | new `.foo.yml` file type, or any per-request read that walks the workspace FS | every workspace artifact is a `*_definitions` Postgres row keyed by `revision_id`, not an FS read |
 | `oxy-route-classification` | add/move a route under `server/router/`, or a handler touching disk/`.git`/state dir | FS-touching routes MUST be `IdeOnly` in `role_manifest.rs`; persisted-data reads MUST stay `FleetOk` |
-| `oxy-customer-apps-perf` | add/move a `/customer-apps/**` route or customer-app data endpoint; any per-request read on that hot path | serving routes need Cache-Control + SSE-safe compression; result caches keyed `project_id`-first, read after auth gates, honor `?refresh` |
+| `oxy-customer-apps-perf` | add/move a `/customer-apps/**` route or custom-app data endpoint; any per-request read on that hot path | serving routes need Cache-Control + SSE-safe compression; result caches keyed `project_id`-first, read after auth gates, honor `?refresh` |
 
 PRs that violate the right-hand column should be challenged through the matching skill.
 
@@ -159,7 +159,7 @@ PRs that violate the right-hand column should be challenged through the matching
 - Never commit `.env` files or secrets.
 - **Local dev runs cloud/enterprise mode** (`oxy start` / `oxy serve --enterprise`), so a dev box
   is indistinguishable from prod by `ServeMode` — never gate dev behavior on `ServeMode::Local`
-  (nobody runs the legacy `--local`) or on error heuristics. Concretely: customer-app email
+  (nobody runs the legacy `--local`) or on error heuristics. Concretely: custom-app email
   (`ctx.email.send`) hits real SES in cloud mode; on a dev box set `OXY_APP_EMAIL_LOCAL_TEST=1`
   (and `MAGIC_LINK_LOCAL_TEST=true`) to preview the rendered email in the browser instead of
   sending. Both are in `.env.example`.

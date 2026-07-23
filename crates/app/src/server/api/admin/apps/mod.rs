@@ -2,7 +2,7 @@
 //!
 //! Mounted at `/api/admin/apps` via `router()`. Gated by oxy_owner_guard
 //! at the router layer (in `router/global.rs`). Customer apps are routed and
-//! served entirely inside oxy (see `customer_apps_serve`); no external
+//! served entirely inside oxy (see `custom_apps_serve`); no external
 //! routing infra (CloudFront/Route53) sits in the data path.
 //!
 //! Build-time config (project_id + branch) is served publicly via

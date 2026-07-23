@@ -2,7 +2,7 @@
 //! `GET  /api/projects/{project_id}/procedures/runs/{run_id}`            (poll)
 //! `POST /api/projects/{project_id}/procedures/runs/{run_id}/cancel`     (cancel)
 //!
-//! Long-running batch surface for customer-app bundles. An automation
+//! Long-running batch surface for custom-app bundles. An automation
 //! is a `.automation.yml` (or back-compat `.procedure.yml`) file in
 //! the project — multi-step orchestration (SQL, agent calls, file
 //! writes, etc.). Bundles use this to expose "Generate report" /
@@ -42,7 +42,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_gates::{check_customer_app_gates, parse_versioned_body};
+use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
 use crate::server::router::AppState;
 
 #[derive(Serialize)]
@@ -163,7 +163,7 @@ pub async fn start_automation_run(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    let gates_ctx = match check_customer_app_gates(&headers, project_id).await {
+    let gates_ctx = match check_custom_app_gates(&headers, project_id).await {
         Ok(c) => c,
         Err(resp) => return resp,
     };
@@ -191,7 +191,7 @@ pub async fn start_automation_run(
     // Discover all automation files (.procedure.yml / .automation.yml)
     // recursively under the workspace root, matching the convention used
     // by `list_workflows` in the config manager.
-    // The customer-app automation-id is the file's base name without the
+    // The custom-app automation-id is the file's base name without the
     // double extension; the file may live in any subdirectory (e.g.
     // `workflows/foo.automation.yml`), not just the project root.
     let all_automations = match proj_ctx
@@ -428,7 +428,7 @@ pub async fn poll_automation_run(
     Path((project_id, run_id)): Path<(Uuid, String)>,
     headers: HeaderMap,
 ) -> Response {
-    let _gates_ctx = match check_customer_app_gates(&headers, project_id).await {
+    let _gates_ctx = match check_custom_app_gates(&headers, project_id).await {
         Ok(c) => c,
         Err(resp) => return resp,
     };
@@ -530,7 +530,7 @@ pub async fn cancel_automation_run(
     Path((project_id, run_id)): Path<(Uuid, String)>,
     headers: HeaderMap,
 ) -> Response {
-    let _gates_ctx = match check_customer_app_gates(&headers, project_id).await {
+    let _gates_ctx = match check_custom_app_gates(&headers, project_id).await {
         Ok(c) => c,
         Err(resp) => return resp,
     };
@@ -746,17 +746,17 @@ pub fn spawn_periodic_sweep(
                                     evicted = report.evicted,
                                     stuck_cancelled = report.stuck_cancelled,
                                     stuck_failed = report.stuck_failed,
-                                    "customer-app procedure runs swept",
+                                    "custom-app procedure runs swept",
                                 );
                             }
                         }
                         Err(e) => {
-                            tracing::warn!(error = %e, "customer-app procedure sweep failed");
+                            tracing::warn!(error = %e, "custom-app procedure sweep failed");
                         }
                     }
                 }
                 _ = shutdown.cancelled() => {
-                    tracing::debug!("customer-app procedure sweep shutting down");
+                    tracing::debug!("custom-app procedure sweep shutting down");
                     return;
                 }
             }

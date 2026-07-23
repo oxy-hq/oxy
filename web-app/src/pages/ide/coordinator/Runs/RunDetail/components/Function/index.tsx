@@ -4,7 +4,7 @@ import { cn } from "@/libs/shadcn/utils";
 import type { RunEventEntry } from "@/services/api/coordinator";
 
 /**
- * Run detail body for a customer-app **Function Job** (`source_type =
+ * Run detail body for a custom-app **Function Job** (`source_type =
  * "app_function"`): a scheduled or manually-triggered background run of a
  * single Oxy Function. Unlike DAG/ELT runs there's no sub-step graph — the
  * debugging unit is the run's persisted log. We surface the return body (or

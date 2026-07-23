@@ -90,7 +90,7 @@ impl ApiKeyService {
             user_id: Set(params.user_id),
             // TODO(hash-at-rest): store sha256(key) and have validate_api_key
             // hash the lookup key. Flip in lockstep with the parallel TODO
-            // in `crates/app/src/server/api/customer_apps_api_keys.rs`.
+            // in `crates/app/src/server/api/custom_apps_api_keys.rs`.
             key_hash: Set(key.clone()),
             name: Set(params.name.clone()),
             expires_at: Set(params.expires_at.map(|dt| dt.into())),
@@ -99,8 +99,8 @@ impl ApiKeyService {
             is_active: Set(true),
             project_id: Set(params.project_id),
             last_used_at: NotSet,
-            // CLI / user-scoped keys aren't bound to a customer-app row.
-            // See `crates/app/src/server/api/customer_apps_api_keys.rs`
+            // CLI / user-scoped keys aren't bound to a custom-app row.
+            // See `crates/app/src/server/api/custom_apps_api_keys.rs`
             // for the app-scoped mint path.
             app_id: NotSet,
         };

@@ -1,7 +1,7 @@
 {
   "name": "@oxy-hq/vite-plugin",
   "version": "0.1.0",
-  "description": "Vite plugin for Oxy customer apps. Standardizes outDir, base path, manifest validation, and dev server config.",
+  "description": "Vite plugin for Oxy custom apps. Standardizes outDir, base path, manifest validation, and dev server config.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",

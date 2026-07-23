@@ -2,7 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// One row per (build, function): an Oxy Function shipped inside a
-/// customer-app bundle's `functions/` dir. The bundled JS lives in the
+/// custom-app bundle's `functions/` dir. The bundled JS lives in the
 /// build store under `artifact_key`; the function belongs to a specific
 /// `app_builds` row, so it versions and rolls back with its build via the
 /// existing channel pointers (no per-function channel state needed).

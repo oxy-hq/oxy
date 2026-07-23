@@ -1,8 +1,8 @@
-//! `AppFunctionTaskExecutor`: runs a **scheduled** customer-app Oxy Function as a
+//! `AppFunctionTaskExecutor`: runs a **scheduled** custom-app Oxy Function as a
 //! `TaskSpec::Custom { kind: "app_function" }` on the global-run fleet. Registered
 //! into the `CustomTaskRegistry` by `server::router::recovery`;
 //! `PipelineTaskExecutor` delegates the `app_function` kind here. The actual run
-//! is `customer_apps_functions::run_scheduled_function` (org-owner identity,
+//! is `custom_apps_functions::run_scheduled_function` (org-owner identity,
 //! `mode="schedule"` invocation record). See
 //! `internal-docs/2026-07-07-scheduled-oxy-functions-design.md`.
 
@@ -13,7 +13,7 @@ use sea_orm::DatabaseConnection;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-/// The `kind` discriminator for a scheduled customer-app function Custom task.
+/// The `kind` discriminator for a scheduled custom-app function Custom task.
 pub const APP_FUNCTION_KIND: &str = "app_function";
 
 pub struct AppFunctionTaskExecutor {
@@ -81,8 +81,8 @@ impl TaskExecutor for AppFunctionTaskExecutor {
                 ))
                 .await;
 
-            #[cfg(feature = "customer-app-functions")]
-            let outcome = match crate::server::api::customer_apps_functions::run_scheduled_function(
+            #[cfg(feature = "custom-app-functions")]
+            let outcome = match crate::server::api::custom_apps_functions::run_scheduled_function(
                 &db,
                 app_id,
                 &function_name,
@@ -103,10 +103,10 @@ impl TaskExecutor for AppFunctionTaskExecutor {
                 },
                 Err(e) => TaskOutcome::Failed(e),
             };
-            #[cfg(not(feature = "customer-app-functions"))]
+            #[cfg(not(feature = "custom-app-functions"))]
             let outcome = {
                 let _ = (&db, app_id, &function_name, &mode, input, cancel_child);
-                TaskOutcome::Failed("customer-app-functions feature not enabled".to_string())
+                TaskOutcome::Failed("custom-app-functions feature not enabled".to_string())
             };
 
             let _ = outcome_tx.send(outcome).await;

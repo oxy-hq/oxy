@@ -1,4 +1,4 @@
-//! `GET /api/{workspace_id}/custom-apps` — published customer apps
+//! `GET /api/{workspace_id}/custom-apps` — published custom apps
 //! for the current workspace.
 //!
 //! Powers the workspace sidebar's "Custom Apps" section. Mounted
@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::admin::apps::handlers::build_pretty_url;
-use crate::server::api::customer_apps_manifest::OxyAppManifest;
+use crate::server::api::custom_apps_manifest::OxyAppManifest;
 
 #[derive(Deserialize)]
 pub struct WorkspaceIdPath {
@@ -197,8 +197,8 @@ pub async fn list_custom_apps(
 }
 
 /// Published-app summaries for a workspace. Shared by the workspace
-/// sidebar endpoint above and the customer-app shell-context endpoint
-/// (`customer_apps_shell_context.rs`) so the two surfaces can't drift
+/// sidebar endpoint above and the custom-app shell-context endpoint
+/// (`custom_apps_shell_context.rs`) so the two surfaces can't drift
 /// on which apps are listed or how their URLs/icons resolve.
 pub(crate) async fn published_app_summaries(
     db: &sea_orm::DatabaseConnection,
@@ -230,7 +230,7 @@ pub(crate) async fn published_app_summaries(
     // N+1) — the same resolver the admin list uses. See the
     // `oxy-app-visual-identity` skill.
     let manifests =
-        crate::server::api::customer_apps_manifest::resolve_manifests_batch(&db, &rows).await;
+        crate::server::api::custom_apps_manifest::resolve_manifests_batch(&db, &rows).await;
     let mut out = Vec::with_capacity(rows.len());
     for app in rows {
         let Some(slug) = slugs.get(&app.org_id).cloned() else {

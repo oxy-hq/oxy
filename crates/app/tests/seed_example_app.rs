@@ -1,4 +1,4 @@
-//! `oxy seed` deploys the example customer app — end to end, against a real
+//! `oxy seed` deploys the example custom app — end to end, against a real
 //! Postgres and a real build store.
 //!
 //! The seed is a fixture the whole local-dev experience rests on, and every way
@@ -18,7 +18,7 @@ use common::{APP_SLUG, demo_workspace_id, examples_path, test_db};
 use entity::apps;
 use entity::prelude::{AppBuilds, Apps, Organizations, Workspaces};
 use oxy_app::cli::commands::seed;
-use oxy_app::server::api::customer_apps_build_store as store;
+use oxy_app::server::api::custom_apps_build_store as store;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 async fn seeded_app(db: &DatabaseConnection, org_slug: &str) -> apps::Model {

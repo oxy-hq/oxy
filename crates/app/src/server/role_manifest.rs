@@ -539,7 +539,7 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
     // workspace `/analytics` surface. The poll/cancel/stream siblings read run
     // state from Postgres and stay FleetOk. These live in `router/public.rs`,
     // OUTSIDE build_workspace_routes, so the workspace-mount drift test cannot
-    // see them — `customer_app_execution_routes_are_ide_only` pins them instead.
+    // see them — `custom_app_execution_routes_are_ide_only` pins them instead.
     ManifestEntry {
         method: "POST",
         path_pattern: "/api/projects/{project_id}/query",
@@ -1545,7 +1545,7 @@ mod tests {
     /// hand (and pins the Postgres-backed poll/cancel/stream siblings FleetOk so
     /// over-pinning them to the ide singleton would fail here too).
     #[test]
-    fn customer_app_execution_routes_are_ide_only() {
+    fn custom_app_execution_routes_are_ide_only() {
         let pid = "d9830be4-c6a4";
         let ide_only = [
             ("POST", format!("/api/projects/{pid}/query")),
@@ -1560,7 +1560,7 @@ mod tests {
             assert_eq!(
                 classify(method, path),
                 RouteRole::IdeOnly,
-                "customer-app execution route {method} {path} must be IdeOnly \
+                "custom-app execution route {method} {path} must be IdeOnly \
                  (runs inline from the working copy)"
             );
         }
@@ -1589,7 +1589,7 @@ mod tests {
             assert_eq!(
                 classify(method, path),
                 RouteRole::FleetOk,
-                "customer-app run-state route {method} {path} must stay FleetOk \
+                "custom-app run-state route {method} {path} must stay FleetOk \
                  (reads/writes Postgres run state, no working copy)"
             );
         }
@@ -1600,18 +1600,18 @@ mod tests {
     /// route must be IdeOnly — a serve replica forwards it to the ide. Static
     /// bundle assets are S3-backed and stay FleetOk.
     #[test]
-    fn customer_app_function_route_is_ide_only() {
+    fn custom_app_function_route_is_ide_only() {
         assert_eq!(
             classify("POST", "/customer-apps/acme/hello-oxy/fn/post-je"),
             RouteRole::IdeOnly,
-            "customer-app fn invocation must be IdeOnly (runs in-process from the working copy)"
+            "custom-app fn invocation must be IdeOnly (runs in-process from the working copy)"
         );
         // Static assets + index are served from S3 → any replica → FleetOk. The
         // 5-segment `.../fn/{name}` pattern must not capture these.
         assert_eq!(
             classify("GET", "/customer-apps/acme/hello-oxy/assets/main.js"),
             RouteRole::FleetOk,
-            "customer-app static assets stay FleetOk"
+            "custom-app static assets stay FleetOk"
         );
         assert_eq!(
             classify("GET", "/customer-apps/acme/hello-oxy"),

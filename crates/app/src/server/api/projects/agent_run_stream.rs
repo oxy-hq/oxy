@@ -1,5 +1,5 @@
 //! `GET /api/projects/{project_id}/agents/runs/{run_id}/events` — SSE
-//! stream of agent-run events for customer-app bundles.
+//! stream of agent-run events for custom-app bundles.
 //!
 //! Same agentic pipeline as `useAsk` (Phase 2) but with real-time
 //! event delivery instead of polling. Bundle authors who want a
@@ -40,7 +40,7 @@ use serde::Serialize;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_gates::check_customer_app_gates;
+use crate::server::api::custom_apps_gates::check_custom_app_gates;
 use crate::server::router::AppState;
 
 #[derive(Serialize)]
@@ -68,7 +68,7 @@ pub async fn stream_agent_run(
     // protection is enough; once the stream is open the only data
     // flowing is events the agentic pipeline already approved for
     // this user.
-    let _gates_ctx = match check_customer_app_gates(&headers, project_id).await {
+    let _gates_ctx = match check_custom_app_gates(&headers, project_id).await {
         Ok(c) => c,
         Err(resp) => return resp,
     };

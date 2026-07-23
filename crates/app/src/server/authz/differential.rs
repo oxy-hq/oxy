@@ -314,7 +314,7 @@ fn assert_app_ring(action: Action, restricted: bool, oracle: impl Fn(&AppScenari
 fn app_access_ring_matches_the_shipped_gate_for_an_open_app() {
     // Oracle = the shipped decision composed: `user_can_access_app`'s staff
     // short-circuit and org-membership customer path, plus the develop_apps
-    // partner term that `check_customer_app_gates` contributes. Unrestricted is
+    // partner term that `check_custom_app_gates` contributes. Unrestricted is
     // today's behavior and must be unchanged by the visibility work.
     assert_app_ring(Action::AppAccess, false, |s| {
         s.is_staff || s.has_develop_apps || s.is_org_member || s.is_org_admin || s.is_org_owner
@@ -338,7 +338,7 @@ fn app_access_ring_matches_the_shipped_gate_for_a_restricted_app() {
 
 #[test]
 fn app_admin_ring_matches_the_shipped_role_resolution() {
-    // Oracle = `customer_apps_auth::resolve_app_role`'s "admin" verdict: any org
+    // Oracle = `custom_apps_auth::resolve_app_role`'s "admin" verdict: any org
     // officer (owner/admin), an app-admin row, or staff. NOT a plain org member,
     // and NOT a develop_apps partner. Visibility does not affect who administers.
     for restricted in [false, true] {

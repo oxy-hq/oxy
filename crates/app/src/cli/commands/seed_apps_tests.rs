@@ -132,7 +132,7 @@ async fn example_bundle_manifest_matches_the_shipping_schema() {
     let raw = manifest_of(&files).expect("oxy-app.json parses as JSON");
     // The real type, so a schema change breaks the example loudly here
     // instead of quietly emptying its launcher card.
-    let manifest: crate::server::api::customer_apps_manifest::OxyAppManifest =
+    let manifest: crate::server::api::custom_apps_manifest::OxyAppManifest =
         serde_json::from_value(raw).expect("oxy-app.json matches OxyAppManifest");
     assert_eq!(
         manifest.schema_version, 2,
@@ -164,7 +164,7 @@ async fn example_bundle_index_html_has_the_injection_point() {
 async fn example_bundle_icon_and_art_resolve_to_real_files() {
     let files = example_bundle().await;
     let raw = manifest_of(&files).expect("manifest");
-    let manifest: crate::server::api::customer_apps_manifest::OxyAppManifest =
+    let manifest: crate::server::api::custom_apps_manifest::OxyAppManifest =
         serde_json::from_value(raw).expect("manifest");
 
     for (field, path) in [("icon", manifest.icon), ("art", manifest.art)] {
@@ -186,7 +186,7 @@ async fn example_bundle_icon_and_art_resolve_to_real_files() {
 #[tokio::test]
 async fn example_bundle_index_html_is_self_contained() {
     // The bundle is served verbatim from Oxy's origin with no build step to
-    // inline anything, and customer apps must not depend on third-party
+    // inline anything, and custom apps must not depend on third-party
     // hosts being reachable (or on what they might serve).
     let html = body(&example_bundle().await, "index.html");
     for needle in ["src=\"http", "href=\"http", "@import", "//cdn."] {

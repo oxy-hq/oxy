@@ -97,7 +97,7 @@ pub async fn publish_app(
         .await
         .map_err(|e| e.status)?;
     // Viewers' cached access must drop now, not at TTL (admin does the same).
-    crate::server::api::customer_apps_auth::invalidate_access_cache();
+    crate::server::api::custom_apps_auth::invalidate_access_cache();
 
     audit::record_best_effort(
         &db,
@@ -127,7 +127,7 @@ pub async fn unpublish_app(
     let saved = admin_apps::unpublish_one(&db, app_id)
         .await
         .map_err(|e| e.status)?;
-    crate::server::api::customer_apps_auth::invalidate_access_cache();
+    crate::server::api::custom_apps_auth::invalidate_access_cache();
 
     audit::record_best_effort(
         &db,

@@ -1,6 +1,6 @@
-# Oxy Starter — the example customer app
+# Oxy Starter — the example custom app
 
-The smallest complete [Customer App](../../../internal-docs/customer-apps.md): one HTML
+The smallest complete [Custom App](../../../internal-docs/customer-apps.md): one HTML
 file, no build step, no dependencies. `oxy seed` deploys it through the real publish path
 (`put_build` → `app_builds` → channel pointers), so it exercises the same serve code an
 `oxy publish` bundle does — and a fresh clone lands on a launcher with a working app on it.

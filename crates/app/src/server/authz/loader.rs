@@ -63,7 +63,7 @@ pub async fn load_principal_facts(
 /// As [`load_principal_facts`], but `include_workspace_facts = false` skips the
 /// `workspace_members` query that only the WorkspaceAdmin ring reads.
 ///
-/// This exists for the customer-app data plane, which enforces AppAccess on the query
+/// This exists for the custom-app data plane, which enforces AppAccess on the query
 /// hot path (`oxy-customer-apps-perf`): AppAccess reads member_orgs, is_global_admin
 /// and develop_apps_orgs only, so paying for the workspace-override lookup on every
 /// query would be pure waste. One function with a flag, rather than a second loader
@@ -97,7 +97,7 @@ pub async fn load_principal_facts_scoped(
     let (owned_orgs, admin_orgs, member_orgs) = derive_org_roles(&memberships);
     // Read the platform sources ONCE: the partner step needs the staff verdict to decide
     // whether to look for assume sessions at all, and the facts need the flags. This
-    // runs on the customer-app query hot path.
+    // runs on the custom-app query hot path.
     let standing = globals::platform_standing_checked(db, email).await?;
     // NOTE: partner standings still collapse a failed query to "no standing" inside
     // `partner_authz` (operated_partners / standings_for). Same class as the bug this
@@ -113,7 +113,7 @@ pub async fn load_principal_facts_scoped(
     };
     // Loaded on BOTH paths, unlike the workspace override: AppAccess itself reads
     // these once an app is restricted, and AppAccess is exactly what the scoped
-    // (customer-app hot path) caller enforces. Skipping it there would deny an app
+    // (custom-app hot path) caller enforces. Skipping it there would deny an app
     // member their own app.
     let (app_memberships, app_admin_memberships) = load_app_memberships(db, user_id).await?;
 

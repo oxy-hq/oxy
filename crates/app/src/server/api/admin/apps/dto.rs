@@ -9,7 +9,7 @@ use entity::apps;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_source::SourceSpec;
+use crate::server::api::custom_apps_source::SourceSpec;
 
 use super::ops::build_pretty_url;
 
@@ -182,7 +182,7 @@ impl AppResponse {
         // convention (local dev / custom-branded host), which is the
         // only case where the row should be hidden.
         let url_subdomain =
-            crate::server::api::customer_apps_host_dispatch::subdomain_url_for(org_slug, &m.slug);
+            crate::server::api::custom_apps_host_dispatch::subdomain_url_for(org_slug, &m.slug);
         Self {
             id: m.id,
             slug: m.slug,

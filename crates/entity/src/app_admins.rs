@@ -2,7 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Global "Oxy app admin" role. Members of this table can access the
-/// customer-apps admin surface and any registered customer app
+/// customer-apps admin surface and any registered custom app
 /// regardless of org membership. Managed by `OXY_OWNER` users only.
 ///
 /// Email is stored (not user_id) so grants can be created before the

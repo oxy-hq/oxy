@@ -1,4 +1,4 @@
-# oxy-hq/publish-action — publish a built customer-app bundle to Oxy via trusted
+# oxy-hq/publish-action — publish a built custom-app bundle to Oxy via trusted
 # publishing (design: internal-docs/2026-07-15-app-publishing-auth-design.md).
 #
 # No stored secret. The action mints a GitHub Actions OIDC token, exchanges it for
@@ -6,7 +6,7 @@
 # run in a job that has `id-token: write` — and, ideally, in an isolated publish
 # job whose only steps are download-artifact + this action (see `oxy init-ci`).
 name: Publish to Oxy
-description: Publish a built customer-app bundle to Oxy via GitHub Actions OIDC (no stored secret).
+description: Publish a built custom-app bundle to Oxy via GitHub Actions OIDC (no stored secret).
 branding:
   icon: upload-cloud
   color: blue

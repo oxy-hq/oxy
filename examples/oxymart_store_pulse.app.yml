@@ -1,6 +1,6 @@
 name: oxymart_store_pulse
 description: |
-  Tasks backing the `store-pulse-app` customer app — a single-store
+  Tasks backing the `store-pulse-app` custom app — a single-store
   drill-in that lets the customer pick a store and inspect its
   totals + recent weeks. Pairs 1:1 with the manifest at
   `examples/store-pulse-app/public/oxy-app.json`.

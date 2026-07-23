@@ -18,7 +18,7 @@
 //!
 //! Pod identity is the auth model — `aws_config::load_defaults` picks
 //! up the STS session attached to the workload's service account.
-//! Same shape as `customer_apps_build_store` in oxy-app.
+//! Same shape as `custom_apps_build_store` in oxy-app.
 //!
 //! Keys are content-addressed (`sha256(body)[..32]`) so identical
 //! blobs across workspaces share storage; the `(revision_id, name) →

@@ -6,7 +6,7 @@ use axum::routing::{get, post};
 
 use crate::api::{auth, billing, healthcheck, user, webhooks};
 use crate::server::api::admin::apps::handlers::{get_build_config, get_org_for_project};
-use crate::server::api::{customer_apps_debug, projects};
+use crate::server::api::{custom_apps_debug, projects};
 
 use super::AppState;
 
@@ -19,10 +19,10 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         // Trusted-publishing OIDC exchange — unauthenticated by construction: the
         // GitHub Actions OIDC JWT in the Authorization header IS the credential.
         // Returns a short-lived, app-scoped publish token. See
-        // `customer_apps_publish_oidc`.
+        // `custom_apps_publish_oidc`.
         .route(
             "/customer-apps/publish/oidc-exchange",
-            post(crate::api::customer_apps_publish_oidc::oidc_exchange_handler),
+            post(crate::api::custom_apps_publish_oidc::oidc_exchange_handler),
         )
         .route("/auth/config", get(auth::get_config))
         .route("/auth/session", get(auth::get_session))
@@ -85,12 +85,12 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         // gate; human inspection only, shape not guaranteed stable.
         .route(
             "/customer-apps/{org_slug}/{app_slug}/debug",
-            get(customer_apps_debug::get_debug),
+            get(custom_apps_debug::get_debug),
         )
-        // Project-scoped proxies for customer-app bundles. Auth is
+        // Project-scoped proxies for custom-app bundles. Auth is
         // performed inline (session cookie or API key) so these sit
         // in the public router rather than under workspace middleware.
-        // Shared gate chain lives in `customer_apps_gates.rs`.
+        // Shared gate chain lives in `custom_apps_gates.rs`.
         .route(
             "/projects/{project_id}/query",
             post(projects::query::run_query),
@@ -105,7 +105,7 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         // FleetOk (deliberately not pinned in role_manifest.rs).
         .route(
             "/projects/{project_id}/shell-context",
-            get(crate::server::api::customer_apps_shell_context::get_shell_context),
+            get(crate::server::api::custom_apps_shell_context::get_shell_context),
         )
         // Bundle chat history for the SDK Ask dock. Pure Postgres reads
         // behind the same gate chain → FleetOk (not pinned in
@@ -113,19 +113,19 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         // `/threads/{id}` rebuilds a transcript for restore.
         .route(
             "/projects/{project_id}/threads",
-            get(crate::server::api::customer_apps_threads::list_threads),
+            get(crate::server::api::custom_apps_threads::list_threads),
         )
         .route(
             "/projects/{project_id}/threads/{thread_id}",
-            get(crate::server::api::customer_apps_threads::get_thread_transcript),
+            get(crate::server::api::custom_apps_threads::get_thread_transcript),
         )
         // Bundle-SDK custom event ingest — `useTrackEvent("name", {...})`.
         // Sits next to /query because both share the same gate chain
         // (cookie or bearer auth + org-member/app-admin access check).
-        // See `customer_apps_activity::post_event`.
+        // See `custom_apps_activity::post_event`.
         .route(
             "/customer-apps/{project_id}/events",
-            post(crate::server::api::customer_apps_activity::post_event),
+            post(crate::server::api::custom_apps_activity::post_event),
         )
         // Phase 2 — one-shot ask. POST starts a run, GET polls for state.
         // Bundle SDK exposes both behind `useAsk({agentId})`.

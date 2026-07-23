@@ -3,7 +3,7 @@
 //! Sits behind the `oxy_owner_guard` middleware so only Oxy staff
 //! (members of the `OXY_OWNER` email allow-list) can add or remove
 //! global app admins. The role itself grants access to the
-//! customer-apps surface plus every registered customer app, replacing
+//! customer-apps surface plus every registered custom app, replacing
 //! the legacy `OXY_APP_ADMINS` env var.
 
 use axum::Json;

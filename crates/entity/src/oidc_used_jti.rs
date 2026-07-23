@@ -2,7 +2,7 @@
 //!
 //! Each accepted trusted-publishing token's `jti` is inserted here; a PK conflict
 //! on insert means the token is being replayed. DB-backed (not in-memory) because
-//! Oxy is multi-replica. See `customer_apps_publish_oidc`.
+//! Oxy is multi-replica. See `custom_apps_publish_oidc`.
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};

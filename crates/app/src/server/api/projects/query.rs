@@ -1,4 +1,4 @@
-//! `POST /api/projects/{project_id}/query` — SQL proxy for customer-app bundles.
+//! `POST /api/projects/{project_id}/query` — SQL proxy for custom-app bundles.
 //!
 //! Accepts a JSON body `{ sql, database? }`. Cookie auth gates the
 //! request; the caller must be a member of the org that owns the
@@ -31,7 +31,7 @@ use serde_json::Value as JsonValue;
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_gates::{check_customer_app_gates, parse_versioned_body};
+use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
 use crate::server::api::typed_stream::typed_stream_to_json_objects;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ pub async fn run_query(
     // origin checks always run before any extractor-shaped error
     // leaks route existence or body schema to an unauthenticated
     // caller.
-    let ctx = match check_customer_app_gates(&headers, project_id).await {
+    let ctx = match check_custom_app_gates(&headers, project_id).await {
         Ok(c) => c,
         Err(resp) => return resp,
     };
@@ -298,13 +298,13 @@ pub(crate) const FUNCTION_MAX_ROWS: usize = 100_000;
 /// Row cap for `ctx.queryStream` (design doc §11.5): a higher ceiling than
 /// `FUNCTION_MAX_ROWS` for genuinely large scans. The MVP implementation
 /// fetches up to this many rows in one shot and yields them to the isolate
-/// in client-side batches (see `ctx.queryStream` in `customer_apps_functions`);
+/// in client-side batches (see `ctx.queryStream` in `custom_apps_functions`);
 /// a true warehouse-cursor implementation is future work.
 pub(crate) const FUNCTION_STREAM_MAX_ROWS: usize = 1_000_000;
 
 /// Execute read-only SQL for an Oxy Function's `ctx.query`, returning the
 /// rows as JSON objects capped at `max_rows`. Shares the read-only gate and
-/// outer-LIMIT wrap with the customer-app `/query` endpoint so the safety
+/// outer-LIMIT wrap with the custom-app `/query` endpoint so the safety
 /// rules can't drift between the two call sites. Errors are returned as
 /// human-readable strings (the function runtime surfaces them to the isolate
 /// as a rejected promise).

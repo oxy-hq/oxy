@@ -270,7 +270,7 @@ pub async fn create_app(Json(req): Json<CreateAppRequest>) -> Result<Json<AppRes
     // whose caller asked for a PR and didn't get one — the only state that
     // exists post-handler is the state the response reflects.
     if req.scaffold_pr && row.source_type == "s3" {
-        match crate::server::api::customer_apps_scaffold::scaffold_pr(&db, &row, &org, template_id)
+        match crate::server::api::custom_apps_scaffold::scaffold_pr(&db, &row, &org, template_id)
             .await
         {
             Ok(pr_url) => {
@@ -346,7 +346,7 @@ pub async fn list_apps(
     // tracking table is unavailable.
     let app_ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
     let last_active =
-        crate::server::api::customer_apps_activity::last_active_at_by_app(&db, &app_ids)
+        crate::server::api::custom_apps_activity::last_active_at_by_app(&db, &app_ids)
             .await
             .unwrap_or_else(|e| {
                 tracing::warn!("last_active_at_by_app failed (filling Nones): {e}");
@@ -455,7 +455,7 @@ pub async fn get_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, StatusCo
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let manifests = crate::server::api::customer_apps_manifest::resolve_manifests_batch(
+    let manifests = crate::server::api::custom_apps_manifest::resolve_manifests_batch(
         &db,
         std::slice::from_ref(&row),
     )
@@ -570,7 +570,7 @@ pub async fn publish_app(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let updated = publish_one(&db, id, user.id).await.map_err(|e| e.status)?;
-    crate::server::api::customer_apps_auth::invalidate_access_cache();
+    crate::server::api::custom_apps_auth::invalidate_access_cache();
     let org = load_org(&db, updated.org_id).await.map_err(|e| e.status)?;
 
     // The SAME action taken by a partner was audited and by Oxy staff was not, so
@@ -600,7 +600,7 @@ pub async fn unpublish_app(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let updated = unpublish_one(&db, id).await.map_err(|e| e.status)?;
-    crate::server::api::customer_apps_auth::invalidate_access_cache();
+    crate::server::api::custom_apps_auth::invalidate_access_cache();
     let org = load_org(&db, updated.org_id).await.map_err(|e| e.status)?;
 
     // Taking a customer's app DOWN is at least as auditable as putting it up.
@@ -617,13 +617,13 @@ pub async fn unpublish_app(
 }
 
 /// `POST /admin/apps/{id}/functions/{name}/runs` — trigger a one-off background
-/// run of a customer-app Oxy Function as a job (the manual "run now" that isn't
+/// run of a custom-app Oxy Function as a job (the manual "run now" that isn't
 /// tied to a cron schedule). An optional JSON request body is handed to the
 /// function as its `req` input params (same shape a route invocation receives);
 /// an empty body runs it with no params. Enqueues a durable task on the global
 /// fleet and returns its `run_id`; the caller watches it in the orchestrator
 /// dashboard. Thin transport: parse input → enqueue → serialize (the work is in
-/// `customer_apps_functions::trigger_function_job`).
+/// `custom_apps_functions::trigger_function_job`).
 pub async fn run_function_job(
     oxy_auth::extractor::AuthenticatedUserExtractor(_user): oxy_auth::extractor::AuthenticatedUserExtractor,
     Path((id, name)): Path<(Uuid, String)>,
@@ -643,7 +643,7 @@ pub async fn run_function_job(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let run_id =
-        crate::server::api::customer_apps_functions::trigger_function_job(&db, id, &name, input)
+        crate::server::api::custom_apps_functions::trigger_function_job(&db, id, &name, input)
             .await
             .map_err(|e| {
                 tracing::warn!("run_function_job failed for {id}/{name}: {e}");
@@ -769,8 +769,8 @@ pub async fn rollback_app(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    crate::server::api::customer_apps_auth::invalidate_access_cache();
-    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    crate::server::api::custom_apps_auth::invalidate_access_cache();
+    crate::server::api::custom_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
 
@@ -800,7 +800,7 @@ pub async fn batch_publish_apps(
     // canonical-dir caches are dropped inside publish_one). Skip when nothing
     // changed.
     if results.iter().any(|r| r.ok) {
-        crate::server::api::customer_apps_auth::invalidate_access_cache();
+        crate::server::api::custom_apps_auth::invalidate_access_cache();
     }
     Ok(Json(BatchResponse::from_results(results)))
 }
@@ -823,7 +823,7 @@ pub async fn batch_promote_latest_apps(
         });
     }
     if results.iter().any(|r| r.ok) {
-        crate::server::api::customer_apps_auth::invalidate_access_cache();
+        crate::server::api::custom_apps_auth::invalidate_access_cache();
     }
     Ok(Json(BatchResponse::from_results(results)))
 }
@@ -842,7 +842,7 @@ pub async fn batch_unpublish_apps(
         });
     }
     if results.iter().any(|r| r.ok) {
-        crate::server::api::customer_apps_auth::invalidate_access_cache();
+        crate::server::api::custom_apps_auth::invalidate_access_cache();
     }
     Ok(Json(BatchResponse::from_results(results)))
 }

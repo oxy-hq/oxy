@@ -1,4 +1,4 @@
-// The wired workspace shell for customer-app bundles: the same icon rail +
+// The wired workspace shell for custom-app bundles: the same icon rail +
 // universal top bar the main web-app renders, fed by the bundle-gated
 // shell-context endpoint. Wrap the app's content with it inside
 // <OxyAppProvider>:
@@ -14,7 +14,7 @@
 // fails (older server, unauthenticated viewer), the children render bare.
 
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
-import { useOxyApp, useResolvedManifest } from "../customer-app/react";
+import { useOxyApp, useResolvedManifest } from "../custom-app/react";
 import { AskDock } from "./AskDock";
 import { cx } from "./cx";
 import { OxyMark } from "./marks";
@@ -152,7 +152,7 @@ function buildRailGroups(
 }
 
 /**
- * The workspace chrome around a customer app: icon rail + universal top bar
+ * The workspace chrome around a custom app: icon rail + universal top bar
  * + content column — visually identical to the main web-app shell.
  */
 export function OxyShell({

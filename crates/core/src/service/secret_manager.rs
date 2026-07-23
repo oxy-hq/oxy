@@ -545,7 +545,7 @@ impl SecretManagerService {
     /// Upsert an **app-scoped** secret: `apps/<app_id>/<key>`.
     ///
     /// This is the write counterpart to the `resolve_function_env` reader in the
-    /// customer-app functions runtime — it lets an Oxy Function (e.g. a scheduled
+    /// custom-app functions runtime — it lets an Oxy Function (e.g. a scheduled
     /// token-refresher) persist state into the same `apps/<app_id>/` namespace
     /// `ctx.env` reads. Only the caller-supplied `key` is validated against the
     /// name charset; the `apps/<app_id>/` prefix is system-generated, so the full

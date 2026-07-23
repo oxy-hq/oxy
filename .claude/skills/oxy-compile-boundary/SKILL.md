@@ -41,7 +41,7 @@ The original FS read pattern was the dominant runtime cost at any meaningful wor
 
 Skip this contract only when:
 - The file is purely IDE-editor state (already on the singleton, fine).
-- The artifact is a generated build product (charts, parquet caches, customer-app bundles) — those belong in S3, not the compile boundary.
+- The artifact is a generated build product (charts, parquet caches, custom-app bundles) — those belong in S3, not the compile boundary.
 - The read happens exactly once at server startup, not per-request (startup walks of `OXY_STATE_DIR` are fine).
 
 If you find yourself adding a `glob::glob(workspace_path)` or `fs::read_to_string(workspace_path.join(...))` in a request handler and the path is not already a compiled entity, you are on the wrong path. Open this skill and add the file type to the compile boundary first.

@@ -109,7 +109,7 @@ const ALLOWED: &[(&str, &str)] = &[
          — the needle matches the set {Owner, Admin}, not the question being asked of it",
     ),
     (
-        "server/api/customer_apps_publish_authz.rs",
+        "server/api/custom_apps_publish_authz.rs",
         "a named decision module of shape actor x state -> reason, not principal-action-resource; \
          it must explain *why* it denied, which a ring cannot express",
     ),

@@ -1,4 +1,4 @@
-//! `oxy publish` — self-contained, CI-free deploy for customer apps.
+//! `oxy publish` — self-contained, CI-free deploy for custom apps.
 //!
 //! From an app directory an engineer runs `oxy publish --env <env>`. The
 //! command reads `oxy-app.json`, builds the bundle per its `build` section

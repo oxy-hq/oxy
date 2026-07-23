@@ -1,8 +1,8 @@
 //! Host-based dispatch for bare **org subdomains** — e.g.
 //! `pokehouse.oxygen-hq.com`.
 //!
-//! Distinct from [`super::customer_apps_host_dispatch`], which handles the
-//! structural `<org>--<slug>.customer-apps[-env].<zone>` customer-app hosts.
+//! Distinct from [`super::custom_apps_host_dispatch`], which handles the
+//! structural `<org>--<slug>.customer-apps[-env].<zone>` custom-app hosts.
 //! A bare org subdomain is structurally identical to the admin host
 //! (`app.oxygen-hq.com`), so routing here is NOT a pure structural match: it
 //! needs a reserved-label guard plus a (cached) DB lookup against the
@@ -18,7 +18,7 @@
 //!      plane stays host-agnostic.
 //!   2. `/a/<slug>/…` → rewrite to `/customer-apps/<org>/<slug>/…` so the
 //!      org's custom apps serve through the existing
-//!      [`super::customer_apps_serve`] handler with a clean, term-free URL.
+//!      [`super::custom_apps_serve`] handler with a clean, term-free URL.
 //!   3. Anything else (product SPA routes) → attach an [`OrgSubdomainCtx`]
 //!      request extension so the static handler injects
 //!      `window.__OXY_ORG__` into `index.html`, and bounce an
@@ -140,7 +140,7 @@ pub fn parse_org_subdomain(host: &str) -> Option<String> {
 /// The in-zone first label, whatever it is (`app`, `aip`, `pokehouse`, …),
 /// reserved or not. Strips a port and a trailing FQDN dot; rejects a bare
 /// zone, an empty prefix, or a multi-label prefix (`a.b.<zone>` — the
-/// wildcard-hijack shape also guarded in customer_apps_host_dispatch). The
+/// wildcard-hijack shape also guarded in custom_apps_host_dispatch). The
 /// dispatch middleware needs the raw label to tell the product host (serve it)
 /// from a reserved-but-unbacked infra host (bounce to app) from an org
 /// candidate (resolve).
@@ -170,7 +170,7 @@ pub fn parse_org_subdomain_in_zone(host: &str, zone: &str) -> Option<String> {
 /// After the `app→aip` rename this follows config automatically (→ `aip`),
 /// so the pass-through host tracks the rename with no code change.
 fn app_host_label() -> Option<String> {
-    let base = super::customer_apps_host_dispatch::admin_base_url()?;
+    let base = super::custom_apps_host_dispatch::admin_base_url()?;
     let url: url::Url = base.parse().ok()?;
     let first = url.host_str()?.split('.').next()?;
     Some(first.to_ascii_lowercase())
@@ -307,7 +307,7 @@ async fn resolve_from_db(label: &str) -> Result<Option<OrgSubdomainCtx>, ()> {
 // ── Middleware ────────────────────────────────────────────────────────────
 
 /// Tower middleware mounted on the outer router, AFTER
-/// [`super::customer_apps_host_dispatch::subdomain_rewrite_middleware`]. See
+/// [`super::custom_apps_host_dispatch::subdomain_rewrite_middleware`]. See
 /// the module docs for the per-request decision tree.
 pub async fn org_host_dispatch_middleware(request: Request, next: Next) -> Response {
     let Some(host) = request
@@ -448,7 +448,7 @@ fn request_base_url(headers: &HeaderMap) -> String {
 
 fn redirect_to_app_login(headers: &HeaderMap, uri: &Uri) -> Response {
     let return_to = format!("{}{}", request_base_url(headers), uri);
-    let login_base = super::customer_apps_host_dispatch::admin_base_url()
+    let login_base = super::custom_apps_host_dispatch::admin_base_url()
         .unwrap_or_else(|| request_base_url(headers));
     let target = format!(
         "{login_base}/login?return_to={}",
@@ -458,7 +458,7 @@ fn redirect_to_app_login(headers: &HeaderMap, uri: &Uri) -> Response {
 }
 
 fn redirect_unknown_to_app() -> Response {
-    match super::customer_apps_host_dispatch::admin_base_url() {
+    match super::custom_apps_host_dispatch::admin_base_url() {
         Some(base) => Redirect::to(&format!("{base}/")).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
@@ -484,7 +484,7 @@ struct OrgInjectedConfig<'a> {
 
 /// Splice `window.__OXY_ORG__` into an HTML response's `<head>` when the
 /// org-subdomain context is present. Non-HTML responses pass through
-/// untouched. Mirrors `customer_apps_serve::inject_app_config`.
+/// untouched. Mirrors `custom_apps_serve::inject_app_config`.
 pub async fn inject_org_into_response(resp: Response, ctx: &OrgSubdomainCtx) -> Response {
     let is_html = resp
         .headers()
@@ -514,7 +514,7 @@ fn splice_org_script(bytes: &[u8], ctx: &OrgSubdomainCtx) -> Vec<u8> {
         org_slug: &ctx.org_slug,
         subdomain: &ctx.org_slug,
         default_project_id: ctx.default_workspace_id,
-        app_base_url: super::customer_apps_host_dispatch::admin_base_url(),
+        app_base_url: super::custom_apps_host_dispatch::admin_base_url(),
     };
     let json = match serde_json::to_string(&cfg) {
         Ok(j) => j,
@@ -641,9 +641,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_customer_apps_host() {
+    fn parse_rejects_custom_apps_host() {
         // The customer-apps host has a multi-label prefix → no match here
-        // (it's handled by customer_apps_host_dispatch, which runs first).
+        // (it's handled by custom_apps_host_dispatch, which runs first).
         assert_eq!(
             parse_org_subdomain_in_zone("acme--store.customer-apps.oxygen-hq.com", "oxygen-hq.com"),
             None

@@ -25,7 +25,7 @@ use common::{APP_SLUG, demo_workspace_id, examples_path, test_db};
 use entity::prelude::{Apps, Organizations};
 use entity::{apps, org_members, org_members::OrgRole, organizations};
 use oxy_app::cli::commands::seed;
-use oxy_app::server::api::{customer_apps_serve, workspace_custom_apps};
+use oxy_app::server::api::{custom_apps_serve, workspace_custom_apps};
 use oxy_auth::types::Identity;
 use oxy_auth::user::UserService;
 use sea_orm::{
@@ -48,7 +48,7 @@ fn router() -> Router {
         )
         .route(
             "/customer-apps/{*path}",
-            get(customer_apps_serve::serve_dispatch),
+            get(custom_apps_serve::serve_dispatch),
         )
 }
 
@@ -269,6 +269,6 @@ async fn a_non_member_cannot_open_another_orgs_app() {
     assert_eq!(
         status,
         StatusCode::FORBIDDEN,
-        "a non-member reached another org's customer app"
+        "a non-member reached another org's custom app"
     );
 }

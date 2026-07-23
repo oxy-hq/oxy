@@ -87,7 +87,7 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
     Ok(())
 }
 
-/// Deploy the example customer app to the demo workspace, and to Acme's (so the
+/// Deploy the example custom app to the demo workspace, and to Acme's (so the
 /// admin cockpit and the partner console both have a real app to show).
 ///
 /// **Warns instead of failing.** The rest of the seed is the part a developer

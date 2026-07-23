@@ -1,6 +1,6 @@
 # oxy-hq/publish-action
 
-Publish a built customer-app bundle to [Oxy](https://oxygen-hq.com) from GitHub
+Publish a built custom-app bundle to [Oxy](https://oxygen-hq.com) from GitHub
 Actions via **trusted publishing** — no stored token.
 
 The action mints a GitHub Actions OIDC token, exchanges it for a short-lived,

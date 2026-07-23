@@ -522,7 +522,7 @@ fn pin_org_subdomain_to_app_host(base: String) -> String {
         return base;
     };
     if crate::server::api::org_host_dispatch::parse_org_subdomain(host).is_some()
-        && let Some(app_host) = crate::server::api::customer_apps_host_dispatch::admin_base_url()
+        && let Some(app_host) = crate::server::api::custom_apps_host_dispatch::admin_base_url()
     {
         return app_host;
     }

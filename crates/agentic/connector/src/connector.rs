@@ -421,7 +421,7 @@ pub fn is_returning_statement(stmt: &str) -> bool {
 /// rows that never need a cap and its syntax varies by dialect.) A `WITH` that
 /// leads a write (`WITH x AS (…) INSERT …`) is a rare exception that wraps to a
 /// parse error rather than executing — a safe failure, and consistent with how
-/// the customer-app `/query` proxy already classifies `WITH` as read-shaped.
+/// the custom-app `/query` proxy already classifies `WITH` as read-shaped.
 pub fn is_wrappable_select(stmt: &str) -> bool {
     let body = strip_leading_noise(stmt);
     let kw: String = body

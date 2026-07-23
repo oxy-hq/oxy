@@ -275,7 +275,7 @@ export default defineConfig(({ mode }) => {
         // index.html and the bundle never renders.
         //
         // `xfwd: true` adds X-Forwarded-Host/Proto so oxy's redirect_to_login
-        // in customer_apps_serve.rs can build a return_to URL pointing back at
+        // in custom_apps_serve.rs can build a return_to URL pointing back at
         // the SPA host (:5173), not at oxy's own host (:3000).
         "/customer-apps": {
           target: DEV_PROXY_TARGET,

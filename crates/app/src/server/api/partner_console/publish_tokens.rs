@@ -4,7 +4,7 @@
 //! Safe by construction. The token carries `app_id`, so the publish path
 //! authorizes by "token's app == target app AND the client consents" and returns
 //! with **no fallthrough** to the minter's other authority (see
-//! `customer_apps_publish::authorize_publish`). So the token can publish to that
+//! `custom_apps_publish::authorize_publish`). So the token can publish to that
 //! ONE app and nowhere else, whatever else the operator manages. `created_by` is
 //! the minting operator (attribution + revocation), and the client's
 //! `partner_publish_consent` must be ON to mint — and is re-checked at publish, so
@@ -27,7 +27,7 @@ use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
 use crate::server::api::audit::{self, ActorType, AuditEntry};
-use crate::server::api::customer_apps_publish_authz::consent_enabled;
+use crate::server::api::custom_apps_publish_authz::consent_enabled;
 use crate::server::api::middlewares::partner_authz::{PartnerCapability, PartnerScope};
 use crate::server::api::middlewares::partner_context::PartnerActor;
 

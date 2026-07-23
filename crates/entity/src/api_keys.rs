@@ -16,7 +16,7 @@ pub struct Model {
     pub updated_at: DateTimeWithTimeZone,
     pub is_active: bool,
     pub project_id: Uuid,
-    /// When set, this key authenticates as the *customer app* (e.g. a
+    /// When set, this key authenticates as the *custom app* (e.g. a
     /// Vercel-hosted Next.js bundle's server-side calls back into oxy).
     /// Nullable so CLI-style user-scoped keys stay unaffected.
     pub app_id: Option<Uuid>,

@@ -1,16 +1,16 @@
 ---
 name: oxy-customer-apps-perf
-description: Use when adding or modifying a customer-app serving route (crates/app/src/server/api/customer_apps_serve.rs, the /customer-apps/{*path} handler in serve.rs) or a customer-app data endpoint (projects/query.rs, projects/semantic_query.rs). Encodes the serve-plane + data-plane performance guardrails so every customer app stays fast. Triggers on "customer-app cache", "Cache-Control", "ETag", "compression on customer-apps", "result cache", "project-scoped cache", or a new per-request read on the customer-app hot path.
+description: Use when adding or modifying a custom-app serving route (crates/app/src/server/api/custom_apps_serve.rs, the /customer-apps/{*path} handler in serve.rs) or a custom-app data endpoint (projects/query.rs, projects/semantic_query.rs). Encodes the serve-plane + data-plane performance guardrails so every custom app stays fast. Triggers on "custom-app cache", "Cache-Control", "ETag", "compression on customer-apps", "result cache", "project-scoped cache", or a new per-request read on the custom-app hot path.
 ---
 
 # Customer-apps performance (serve + data plane)
 
-The perf baseline every customer-app request must keep, established by PR #2634
+The perf baseline every custom-app request must keep, established by PR #2634
 (full rationale, threat model, and future options: `internal-docs/customer-apps-performance.md`).
 When you touch the serve or data path, preserve these — they are cheap to keep and
 expensive to retrofit under load.
 
-## Serve plane — `customer_apps_serve.rs`, `cli/commands/serve.rs`
+## Serve plane — `custom_apps_serve.rs`, `cli/commands/serve.rs`
 
 - **Content-hashed assets → immutable Cache-Control.** URLs under `assets/`
   (Vite / Astro / Rsbuild / SvelteKit) and `_next/static/` (Next) change only when
@@ -36,7 +36,7 @@ expensive to retrofit under load.
   across tenants**. `result_cache.rs` has a `miss_on_different_project_or_sql_or_db`
   test asserting exactly this; keep it. Namespace by endpoint (`query` vs `semantic`).
 - **Read the cache AFTER auth.** The `result_cache::get` must sit *below*
-  `check_customer_app_gates` in the handler, or a cached hit bypasses authorization.
+  `check_custom_app_gates` in the handler, or a cached hit bypasses authorization.
   Cache only successful responses (never error bodies).
 - **Honor `?refresh`.** Every cached endpoint parses `?refresh` (or `refresh=`) and
   bypasses the cache so callers can force-run.

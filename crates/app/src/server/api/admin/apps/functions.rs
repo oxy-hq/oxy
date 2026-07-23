@@ -1,4 +1,4 @@
-//! Read side of the customer-app **Oxy Functions** admin surface: list an app's
+//! Read side of the custom-app **Oxy Functions** admin surface: list an app's
 //! functions + their manifest config, their recent invocation history, and a
 //! single function-job run's status + persisted logs. Powers the AppDetail
 //! "Functions" section (manage / debug). The write side — triggering a job — is
@@ -104,7 +104,7 @@ pub struct FunctionRunLogLine {
 //
 // A decoupled view of the per-function `manifest_json` — just the fields the
 // admin surface displays. The authoritative parse lives in
-// `customer_apps_functions`; this projection keeps the admin module independent
+// `custom_apps_functions`; this projection keeps the admin module independent
 // of the runtime host.
 
 #[derive(Debug, serde::Deserialize, Default)]

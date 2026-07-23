@@ -35,7 +35,7 @@ pub struct Model {
     /// behavior). Whole-replacement; no partial merge in v1 (the
     /// "which key wins" footguns aren't worth it yet). Wire shape
     /// matches `OxyAppManifest` from
-    /// `crates/app/src/server/api/customer_apps_data_products.rs`.
+    /// `crates/app/src/server/api/custom_apps_data_products.rs`.
     pub manifest_override: Option<Json>,
     /// Populated by the PR-scaffold service when `scaffold_pr: true` was
     /// passed on create. NULL when no scaffold was requested or the

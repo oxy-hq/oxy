@@ -137,7 +137,7 @@ const AdminAudit = React.lazy(() => import("./pages/admin/AdminAudit"));
 // alongside the rest of admin since most users never visit it.
 const AdminAppAdmins = React.lazy(() => import("./pages/admin/AdminAppAdmins"));
 const AdminPublishTokens = React.lazy(() => import("./pages/admin/AdminPublishTokens"));
-const AdminCustomerApps = React.lazy(() => import("./pages/admin/AdminCustomerApps"));
+const AdminCustomApps = React.lazy(() => import("./pages/admin/AdminCustomApps"));
 // Tenant-management admin surfaces (OXY_OWNER-only). Lazy-loaded alongside
 // the rest of admin since most users never visit /admin/* at all.
 const AdminTenants = React.lazy(() => import("./pages/admin/AdminTenants"));
@@ -509,11 +509,11 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/publish-tokens' element={<AdminPublishTokens />} />
             {/* Customer-apps admin is mounted at /admin/apps (canonical
                 ROUTES.ADMIN.CUSTOMER_APPS in libs/utils/routes.ts) with an
-                optional master-detail tail. AdminCustomerApps reads
+                optional master-detail tail. AdminCustomApps reads
                 :orgSlug + :appSlug from useParams to pre-select the detail
                 pane; the bare /admin/apps lands on the list-only state. */}
-            <Route path='admin/apps' element={<AdminCustomerApps />} />
-            <Route path='admin/apps/:orgSlug/:appSlug' element={<AdminCustomerApps />} />
+            <Route path='admin/apps' element={<AdminCustomApps />} />
+            <Route path='admin/apps/:orgSlug/:appSlug' element={<AdminCustomApps />} />
             {/* Tenant-management surfaces — list + master/detail via :id tail. */}
             <Route path='admin/tenants' element={<AdminTenantsCockpit />} />
             <Route path='admin/tenants/overview' element={<AdminTenants />} />

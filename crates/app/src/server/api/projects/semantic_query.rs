@@ -1,5 +1,5 @@
 //! `POST /api/projects/{project_id}/semantic-query` — semantic-layer
-//! proxy for customer-app bundles.
+//! proxy for custom-app bundles.
 //!
 //! Bundle authors stop hand-rolling raw SQL against view-defined
 //! measures. Instead they reference the topic + dimensions + measures
@@ -8,7 +8,7 @@
 //! change without an edit.
 //!
 //! Pipeline:
-//!   1. Shared customer-app gates (auth → origin → workspace → org).
+//!   1. Shared custom-app gates (auth → origin → workspace → org).
 //!   2. Versioned body parse (`v: 1` honored; absent = v1 backcompat).
 //!   3. Airlayer compile via `agentic_semantic::resolve_and_compile` —
 //!      same code path the IDE's `/semantic/compile` uses, so bundles
@@ -38,7 +38,7 @@ use serde_json::Value as JsonValue;
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_gates::{check_customer_app_gates, parse_versioned_body};
+use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
 use crate::server::api::projects::query::{QueryResponse, json_objects_to_table};
 use crate::server::api::typed_stream::typed_stream_to_json_objects;
 
@@ -105,7 +105,7 @@ pub async fn run_semantic_query(
     body: axum::body::Bytes,
 ) -> Response {
     // 1. Shared gates.
-    let ctx = match check_customer_app_gates(&headers, project_id).await {
+    let ctx = match check_custom_app_gates(&headers, project_id).await {
         Ok(c) => c,
         Err(resp) => return resp,
     };

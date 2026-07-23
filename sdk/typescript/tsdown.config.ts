@@ -3,7 +3,7 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   // Multi-entry: shared modules (the OxyAppProvider context, logger, …)
   // land in a common chunk so `@oxy-hq/sdk` and `@oxy-hq/sdk/shell` see the
-  // SAME React context instance. Do not duplicate customer-app code into
+  // SAME React context instance. Do not duplicate custom-app code into
   // the shell entry. `src/email.ts` is a separate subpath entry
   // (`@oxy-hq/sdk/email`) keeping the preact email renderer out of the main
   // bundle — see src/email.ts.

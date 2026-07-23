@@ -211,14 +211,14 @@ pub(crate) fn agentic_error_response(
 }
 
 /// Row cap applied to ad-hoc IDE Database/SQL-tab queries. Matches the
-/// customer-app `/query` proxy `MAX_ROWS` so the two ad-hoc surfaces stay
+/// custom-app `/query` proxy `MAX_ROWS` so the two ad-hoc surfaces stay
 /// consistent. 10k rows is plenty for eyeballing data in the IDE and keeps a
 /// `SELECT col FROM huge_table` from pulling an entire column into the pod's
 /// heap (the connector fully materializes the result before returning).
 const IDE_MAX_ROWS: usize = 10_000;
 
 /// Wrap a `SELECT`/`WITH` query in an outer `LIMIT` so an unbounded scan can't
-/// OOM the pod, mirroring the customer-app `/query` proxy.
+/// OOM the pod, mirroring the custom-app `/query` proxy.
 ///
 /// The gate is [`is_wrappable_select`], NOT `is_returning_statement`: only
 /// statements valid as a derived table get wrapped. DDL/DML (`CREATE`/`INSERT`/
@@ -272,7 +272,7 @@ pub(crate) async fn run_via_agentic_connector(
     // neither a row-cap fill nor a connector byte-truncation (which can now stop
     // *below* 10k on wide rows) is signalled on this branch. Acceptable: the IDE
     // — the only surface that shows truncation to a human — always requests
-    // Parquet (which does carry the flag). The external customer-app `/query` +
+    // Parquet (which does carry the flag). The external custom-app `/query` +
     // `/semantic-query` proxies use `typed_stream_to_json_objects`, which DOES
     // return the connector flag, so programmatic JSON consumers there are covered.
     let (sql_to_run, capped) = cap_ide_result_rows(&payload.sql);

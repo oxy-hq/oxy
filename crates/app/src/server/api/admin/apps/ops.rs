@@ -48,7 +48,7 @@ pub(super) fn internal(_: impl std::fmt::Display) -> ApiErr {
 /// logic without spinning up an HTTP server or a database connection.
 pub(crate) fn validate_template_id(id: Option<&str>) -> Result<&str, String> {
     let id = id.unwrap_or("vite");
-    if crate::customer_app_template::registry::get_template(id).is_none() {
+    if crate::custom_app_template::registry::get_template(id).is_none() {
         return Err(format!("unknown template_id: {id}"));
     }
     Ok(id)
@@ -184,8 +184,7 @@ fn check_baked_base_path(
     let Ok(html) = std::str::from_utf8(&bytes) else {
         return Vec::new();
     };
-    let Some(baked) = crate::server::api::customer_apps_serve::first_customer_apps_prefix(html)
-    else {
+    let Some(baked) = crate::server::api::custom_apps_serve::first_custom_apps_prefix(html) else {
         // Bundle doesn't reference any /customer-apps/* prefix —
         // probably built without OXY_APP_BASE_PATH. The serve-time
         // path rewrite handles this case by injecting the expected
@@ -286,7 +285,7 @@ pub(super) async fn icon_art_by_app(
     org_slugs: &std::collections::HashMap<Uuid, String>,
 ) -> std::collections::HashMap<Uuid, (Option<String>, Option<String>)> {
     let manifests =
-        crate::server::api::customer_apps_manifest::resolve_manifests_batch(db, rows).await;
+        crate::server::api::custom_apps_manifest::resolve_manifests_batch(db, rows).await;
     rows.iter()
         .filter_map(|app| {
             let slug = org_slugs.get(&app.org_id)?;
@@ -364,7 +363,7 @@ impl AppOpError {
 /// (published) channel only if its recorded validation status is `passed`.
 /// Shared by EVERY AppOpError promotion path — publish, promote-latest — so no
 /// path can quietly re-open the invariant. A missing build is refused (you can't
-/// validate what isn't there), matching `customer_apps_publish::gate_promotion`.
+/// validate what isn't there), matching `custom_apps_publish::gate_promotion`.
 /// Dormant today (every stored build is `passed`); load-bearing once gate 2 can
 /// record `failed`.
 async fn gate_build_promotion(db: &DatabaseConnection, build_pk: Uuid) -> Result<(), AppOpError> {
@@ -443,7 +442,7 @@ pub(crate) async fn publish_one(
 
     // Per-app cache only — the global access cache is invalidated ONCE by the
     // caller (a batch would otherwise do N full global invalidations).
-    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    crate::server::api::custom_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
     Ok(updated)
 }
 
@@ -475,7 +474,7 @@ pub(crate) async fn unpublish_one(
 
     // Per-app cache only — the global access cache is invalidated ONCE by the
     // caller (a batch would otherwise do N full global invalidations).
-    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    crate::server::api::custom_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
     Ok(updated)
 }
 
@@ -490,7 +489,7 @@ pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), 
         .map_err(|_| AppOpError::internal())?
         .ok_or_else(AppOpError::not_found)?;
 
-    if let Err(e) = crate::server::api::customer_apps_build_store::delete_app(id).await {
+    if let Err(e) = crate::server::api::custom_apps_build_store::delete_app(id).await {
         tracing::warn!(
             "delete_one {id}: bundle bytes could not be removed from build store: {e} \
              — proceeding with DB row delete; reclaim manually if needed"
@@ -501,7 +500,7 @@ pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), 
     // (`ctx.storage`) holds its uploaded/generated files under a separate prefix.
     // Reclaim both, or a deleted app's customer uploads outlive it in S3 (cost +
     // a data-retention concern). Best-effort, same as the build store above.
-    if let Err(e) = crate::server::api::customer_apps_storage::delete_app_assets(id).await {
+    if let Err(e) = crate::server::api::custom_apps_storage::delete_app_assets(id).await {
         tracing::warn!(
             "delete_one {id}: asset silo could not be removed from storage: {e} \
              — proceeding with DB row delete; reclaim manually if needed"
@@ -566,7 +565,7 @@ pub(super) async fn promote_latest_one(
 
     // Per-app cache only — the global access cache is invalidated ONCE by the
     // caller (a batch would otherwise do N full global invalidations).
-    crate::server::api::customer_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    crate::server::api::custom_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
     Ok(updated)
 }
 

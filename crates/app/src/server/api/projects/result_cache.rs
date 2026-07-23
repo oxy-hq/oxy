@@ -1,4 +1,4 @@
-//! Short-TTL, project-scoped result cache for the customer-app data API.
+//! Short-TTL, project-scoped result cache for the custom-app data API.
 //!
 //! Stores the serialized JSON response body keyed by
 //! `(project_id, namespace, database, sql)` so repeat loads of the same query
@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use uuid::Uuid;
 
 const MAX_ENTRIES: usize = 2048;
-/// Default freshness window. Short — customer-app dashboards want recent data;
+/// Default freshness window. Short — custom-app dashboards want recent data;
 /// this only collapses bursts (re-renders, multiple widgets, fast reloads).
 const DEFAULT_TTL: Duration = Duration::from_secs(30);
 

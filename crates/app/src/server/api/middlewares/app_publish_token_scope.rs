@@ -63,7 +63,7 @@ pub async fn app_publish_token_scope_middleware(
 /// The narrow grant: reads anywhere on the customer-apps surface, but only the
 /// two publish endpoints may mutate.
 fn is_allowed(method: &Method, path: &str) -> bool {
-    if !under_customer_apps(path) {
+    if !under_custom_apps(path) {
         return false;
     }
     match *method {
@@ -79,7 +79,7 @@ fn is_allowed(method: &Method, path: &str) -> bool {
 
 /// Segment-boundary prefix check so `/customer-apps-evil` can't pass as
 /// `/customer-apps`.
-fn under_customer_apps(path: &str) -> bool {
+fn under_custom_apps(path: &str) -> bool {
     path == "/customer-apps"
         || path
             .strip_prefix("/customer-apps")
@@ -148,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn blocks_everything_off_the_customer_apps_surface() {
+    fn blocks_everything_off_the_custom_apps_surface() {
         // Token self-management must never be reachable by a token.
         assert!(!is_allowed(&Method::GET, "/admin/app-publish-tokens"));
         assert!(!is_allowed(&Method::POST, "/admin/app-publish-tokens"));

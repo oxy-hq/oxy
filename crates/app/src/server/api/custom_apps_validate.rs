@@ -7,7 +7,7 @@
 //! to fix) instead of a bundle that serves a blank "Loading…" forever. A build
 //! that passes is recorded `app_builds.validation_status = passed`, and promotion
 //! to the live channel is gated on that status
-//! (`customer_apps_publish::gate_promotion` + `admin::apps::handlers::publish_one`)
+//! (`custom_apps_publish::gate_promotion` + `admin::apps::handlers::publish_one`)
 //! — so a build that hasn't passed can never go live.
 //!
 //! The heavier **gate 2** — a deploy-time render probe that would re-validate the
@@ -101,7 +101,7 @@ pub fn validate_bundle(
     //    cause: serve-time rewriting patches index.html but can't reach into the
     //    JS chunks, so a mismatch 404s every data fetch. Note the expected prefix
     //    uses the frozen wire path `/customer-apps/`.
-    if let Some(baked) = crate::server::api::customer_apps_serve::first_customer_apps_prefix(html) {
+    if let Some(baked) = crate::server::api::custom_apps_serve::first_custom_apps_prefix(html) {
         let expected = format!("/customer-apps/{org_slug}/{app_slug}/");
         if baked != expected {
             return Err(BundleValidation::new(

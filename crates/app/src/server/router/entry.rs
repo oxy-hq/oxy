@@ -150,7 +150,7 @@ pub async fn api_router(
         spawn_recovery(agentic_state.clone(), mode);
     }
     spawn_shutdown_hook(agentic_state.clone());
-    // Periodic maintenance for customer-app procedure runs: TTL
+    // Periodic maintenance for custom-app procedure runs: TTL
     // sweep + cross-instance cancel reconciliation + stuck-row
     // recovery. Cheap (delete-many + two update-many every 10 min)
     // and keeps the table bounded under load.
@@ -344,7 +344,7 @@ pub async fn internal_api_router(
         startup_cwd: std::path::PathBuf::new(),
         preagg_cache: None,
         preagg_renewal_threshold_secs: None,
-        // Internal router has no customer-app endpoints; agentic state
+        // Internal router has no custom-app endpoints; agentic state
         // not needed and explicitly omitted.
         agentic_state: None,
         semantic_layer_cache: super::workspace_cache::new_semantic_layer_cache(),

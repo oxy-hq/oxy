@@ -1,7 +1,7 @@
 //! `POST /api/projects/{project_id}/agents/{agent_id}/asks` (start)
 //! `GET  /api/projects/{project_id}/agents/asks/{run_id}` (poll)
 //!
-//! One-shot natural-language entry point for customer-app bundles.
+//! One-shot natural-language entry point for custom-app bundles.
 //! The bundle starts an analytics-agent run; the server kicks off
 //! the pipeline (verified-query routing, semantic compile,
 //! interpretation) and writes events into the existing
@@ -19,7 +19,7 @@
 //! `agentic_pipeline::PipelineBuilder` — the SAME entry point the
 //! workspace `/runs` route uses for the IDE's analytics surface. So
 //! verified-query routing, clarification suspension, knowledge cards,
-//! tool selection are all live in customer-app land too.
+//! tool selection are all live in custom-app land too.
 
 use std::sync::Arc;
 
@@ -36,7 +36,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_gates::{check_customer_app_gates, parse_versioned_body};
+use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
 use crate::server::router::AppState;
 
 /// Build the relative path to the thread view in the oxy web app.
@@ -170,7 +170,7 @@ pub async fn start_ask(
     body: axum::body::Bytes,
 ) -> Response {
     // 1. Gates.
-    let gates_ctx = match check_customer_app_gates(&headers, project_id).await {
+    let gates_ctx = match check_custom_app_gates(&headers, project_id).await {
         Ok(c) => c,
         Err(resp) => return resp,
     };
@@ -188,7 +188,7 @@ pub async fn start_ask(
         );
     }
 
-    // 3. Agentic state must be available — the customer-app router
+    // 3. Agentic state must be available — the custom-app router
     //    populates it; 503 if a deployment shape missed it.
     let agentic_state = match app_state.agentic_state.as_ref() {
         Some(s) => s.clone(),
@@ -227,7 +227,7 @@ pub async fn start_ask(
             // authenticated caller who clears the gate for `project_id` could
             // pass any thread UUID and inject a message into — and pull prior
             // context out of — another user's/project's thread. A 404 (not
-            // 403) mirrors `customer_apps_threads.rs::get_thread_transcript`
+            // 403) mirrors `custom_apps_threads.rs::get_thread_transcript`
             // and avoids confirming the existence of others' threads.
             match threads::Entity::find_by_id(tid).one(&gates_ctx.db).await {
                 Ok(Some(t))
@@ -237,7 +237,7 @@ pub async fn start_ask(
                 }
                 Ok(_) => return err(StatusCode::NOT_FOUND, "thread not found"),
                 Err(e) => {
-                    error!(error = %e, "customer-app ask: thread ownership lookup failed");
+                    error!(error = %e, "custom-app ask: thread ownership lookup failed");
                     return err(StatusCode::INTERNAL_SERVER_ERROR, "thread lookup failed");
                 }
             }
@@ -251,7 +251,7 @@ pub async fn start_ask(
                 title: Set(title),
                 input: Set(req.question.clone()),
                 output: Set(String::new()),
-                source: Set("customer-app".to_string()),
+                source: Set("custom-app".to_string()),
                 source_type: Set("analytics".to_string()),
                 references: Set("[]".to_string()),
                 is_processing: Set(false),
@@ -260,7 +260,7 @@ pub async fn start_ask(
                 sandbox_info: Set(None),
             };
             if let Err(e) = threads::Entity::insert(thread).exec(&gates_ctx.db).await {
-                error!(error = %e, "customer-app ask: thread create failed");
+                error!(error = %e, "custom-app ask: thread create failed");
                 return err(StatusCode::INTERNAL_SERVER_ERROR, "could not create thread");
             }
             tid
@@ -285,7 +285,7 @@ pub async fn start_ask(
         .exec(&gates_ctx.db)
         .await
     {
-        error!(error = %e, "customer-app ask: question message persist failed");
+        error!(error = %e, "custom-app ask: question message persist failed");
         return err(
             StatusCode::INTERNAL_SERVER_ERROR,
             "could not record question",
@@ -308,7 +308,7 @@ pub async fn start_ask(
             warn!(
                 agent_id = %agent_id,
                 error = %e,
-                "customer-app ask: pipeline start failed"
+                "custom-app ask: pipeline start failed"
             );
             // Distinguish "agent not found" so the SDK can surface a
             // sharper error than a generic 500.
@@ -322,7 +322,7 @@ pub async fn start_ask(
                         "Expected `{agent_id}.agentic.yml` in the project root. \
                          Check the agent id matches a file under your workspace; \
                          agentic agents end in `.agentic.yml`, classic `.agent.yml` \
-                         agents aren't reachable from customer-app bundles."
+                         agents aren't reachable from custom-app bundles."
                     ),
                 );
             }
@@ -341,7 +341,7 @@ pub async fn start_ask(
     // only stamp the DB row and the drive loop would keep burning
     // LLM budget until natural completion.
     //
-    // `answer_tx` is registered but the customer-app surface
+    // `answer_tx` is registered but the custom-app surface
     // doesn't expose a `/answer` endpoint — clarification answers
     // go through `useAgentRun`'s re-`ask()` (new run, same
     // thread_id) rather than resuming a suspended run. The drive
@@ -381,7 +381,7 @@ pub async fn start_ask(
             router,
         )
         .await;
-        tracing::debug!(run_id = %run_id_for_drive, "customer-app ask: drive finished");
+        tracing::debug!(run_id = %run_id_for_drive, "custom-app ask: drive finished");
     });
 
     // The thread is always provisioned now (§5), so return its id.
@@ -409,7 +409,7 @@ pub async fn cancel_ask(
     Path((project_id, run_id)): Path<(Uuid, String)>,
     headers: HeaderMap,
 ) -> Response {
-    let _gates_ctx = match check_customer_app_gates(&headers, project_id).await {
+    let _gates_ctx = match check_custom_app_gates(&headers, project_id).await {
         Ok(c) => c,
         Err(resp) => return resp,
     };

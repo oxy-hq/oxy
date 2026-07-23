@@ -1,7 +1,7 @@
 {
   "name": "@oxy-hq/create-oxy-app",
   "version": "0.3.0",
-  "description": "Scaffold a new Oxy customer app from a curated template.",
+  "description": "Scaffold a new Oxy custom app from a curated template.",
   "type": "module",
   "bin": {
     "create-oxy-app": "./dist/cli.mjs"

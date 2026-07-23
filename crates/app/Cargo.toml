@@ -13,11 +13,11 @@ name = "oxy"
 path = "src/main.rs"
 
 [features]
-default = ["customer-app-functions"]
+default = ["custom-app-functions"]
 # V8-isolate runtime for Oxy Functions. On by default so `oxy serve --local`
 # runs the real runtime (see design doc §11.8); a build profile that wants to
 # skip V8 entirely can use `--no-default-features`.
-customer-app-functions = ["deno_core", "deno_error"]
+custom-app-functions = ["deno_core", "deno_error"]
 
 [dependencies]
 deno_core = { workspace = true, optional = true }

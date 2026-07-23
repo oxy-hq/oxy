@@ -1,11 +1,11 @@
 ---
 name: oxy-app-visual-identity
-description: Use when rendering or sourcing a customer app's icon/favicon or screenshot/art on ANY surface — the homepage launcher card (web-app/src/pages/launcher), the admin apps browser (web-app/src/pages/admin/AdminCustomerApps), an app rail tile, or any new place that shows an app's picture. Also when adding icon/art fields to an apps API DTO (workspace_custom_apps.rs, admin/apps/handlers.rs). Triggers on "app icon", "app favicon", "app art", "app screenshot", "AppCard icon", "AppFavicon", "icon_url", "art_url", "launcher card image", "app thumbnail/preview", "monogram fallback".
+description: Use when rendering or sourcing a custom app's icon/favicon or screenshot/art on ANY surface — the homepage launcher card (web-app/src/pages/launcher), the admin apps browser (web-app/src/pages/admin/AdminCustomApps), an app rail tile, or any new place that shows an app's picture. Also when adding icon/art fields to an apps API DTO (workspace_custom_apps.rs, admin/apps/handlers.rs). Triggers on "app icon", "app favicon", "app art", "app screenshot", "AppCard icon", "AppFavicon", "icon_url", "art_url", "launcher card image", "app thumbnail/preview", "monogram fallback".
 ---
 
 # Customer-app visual identity (icon + art), unified
 
-A customer app has exactly **two pictures**, and there is **one way** to source and
+A custom app has exactly **two pictures**, and there is **one way** to source and
 render each — everywhere. Do not grow a second mechanism per surface.
 
 **Scope: platform rendering only.** This is how *oxy* sources + renders app pictures.
@@ -65,10 +65,10 @@ re-derive URLs by hand.
   them via the shared helper + a batched manifest load.
 - **Frontend shared:** `AppMark` + `AppArt` (icon/art with fallbacks) — one home,
   imported by both `pages/launcher/components/AppCard.tsx` and
-  `pages/admin/AdminCustomerApps/**`.
+  `pages/admin/AdminCustomApps/**`.
 - **Manifest type:** `art` + `icon` on `OxyAppManifest`
-  (`crates/app/src/server/api/customer_apps_manifest.rs`); mirror any change in the SDK
-  manifest type + the customer-app author `oxy.d.ts`.
+  (`crates/app/src/server/api/custom_apps_manifest.rs`); mirror any change in the SDK
+  manifest type + the custom-app author `oxy.d.ts`.
 
 ## Litmus test before adding image code
 

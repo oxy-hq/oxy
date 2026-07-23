@@ -207,7 +207,7 @@ pub async fn typed_stream_to_json_array(
 /// Collect a [`TypedRowStream`] into `Vec<JsonValue>` where each row is a
 /// `{column_name: value}` object with values preserved as native JSON types
 /// (numbers stay numbers, bools stay bools, NULL → JSON null). This is the
-/// shape customer-app producers return — charting libraries inside bundles
+/// shape custom-app producers return — charting libraries inside bundles
 /// expect numeric axes, so we don't stringify everything the way the legacy
 /// `Vec<Vec<String>>` shape does.
 ///
@@ -238,7 +238,7 @@ pub async fn typed_stream_to_json_objects(
         out.push(serde_json::Value::Object(obj));
     }
     // Read the producer truncation flag now that the stream is drained, and
-    // return it alongside the rows: the customer-app `/query` + `/semantic-query`
+    // return it alongside the rows: the custom-app `/query` + `/semantic-query`
     // proxies infer truncation from `len() == MAX_ROWS`, which misses a wide-row
     // byte-truncation that stopped *below* MAX_ROWS. Callers OR this in.
     let connector_truncated = agentic_core::result::truncation_flag_set(&truncated);

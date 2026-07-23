@@ -1,4 +1,4 @@
-//! Example customer-app seed — deploys the checked-in `oxy-starter` bundle so a
+//! Example custom-app seed — deploys the checked-in `oxy-starter` bundle so a
 //! fresh `oxy seed` lands on a launcher with a real, clickable app instead of an
 //! empty grid.
 //!
@@ -38,7 +38,7 @@ use sea_orm::{
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::server::api::customer_apps_build_store as store;
+use crate::server::api::custom_apps_build_store as store;
 
 type Conn = sea_orm::DatabaseConnection;
 
@@ -84,7 +84,7 @@ fn app_id_for(org_id: Uuid) -> Uuid {
 ///
 /// A stable id would let edited bytes land on the prefix a running server has
 /// already cached, and the reader would keep serving the old page
-/// (`customer_apps_bundle_cache` keys on `(app_id, build_id, path)`). Hashing
+/// (`custom_apps_bundle_cache` keys on `(app_id, build_id, path)`). Hashing
 /// means changed bytes are a different build, so an edit can't be shadowed by
 /// a warm cache. It also mirrors what a real publish does with a commit sha.
 fn build_id_for(files: &[(String, Vec<u8>)]) -> String {

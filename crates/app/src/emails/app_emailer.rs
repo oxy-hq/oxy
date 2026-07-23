@@ -18,7 +18,7 @@ use serde::Deserialize;
 pub const MAX_RECIPIENTS_PER_SEND: usize = 50;
 
 /// Max combined **decoded** attachment bytes per send. Sits comfortably under
-/// SES's ~40 MB total message ceiling and under the 32 MiB customer-app request
+/// SES's ~40 MB total message ceiling and under the 32 MiB custom-app request
 /// body limit (a base64 payload inflates ~33% in transit, so ~10 MiB decoded is
 /// ~13.4 MiB on the wire). Anything larger should be stored via `ctx.storage`
 /// and emailed as a presigned link instead of inlined.
@@ -98,7 +98,7 @@ pub struct EmailAttachmentInput {
     content_id: Option<String>,
 }
 
-/// Sends email on behalf of a customer app's function. Platform-controlled
+/// Sends email on behalf of a custom app's function. Platform-controlled
 /// sender; SES transport in cloud, `tracing` log in local/dev. Cheap to
 /// construct (reads env only); the SES client is built lazily per send.
 pub struct AppEmailer {

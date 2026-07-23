@@ -7,11 +7,11 @@
 // processor the live SSE stream uses, so the dock rebuilds the reasoning
 // trace, charts, and answer with `buildTraceSteps` / the chart filter /
 // `extractAnswer` — identical to a live run. See
-// `crates/app/src/server/api/customer_apps_threads.rs`.
+// `crates/app/src/server/api/custom_apps_threads.rs`.
 
 import * as React from "react";
-import { getOxyAppLogger } from "../customer-app/logger";
-import { type AgentRunEvent, type AppFetcher, useOxyApp } from "../customer-app/react";
+import { getOxyAppLogger } from "../custom-app/logger";
+import { type AgentRunEvent, type AppFetcher, useOxyApp } from "../custom-app/react";
 
 export interface ThreadSummary {
   id: string;

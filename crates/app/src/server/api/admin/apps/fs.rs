@@ -1,7 +1,7 @@
-//! Server-side folder picker for the "Add customer app" dialog.
+//! Server-side folder picker for the "Add custom app" dialog.
 //!
 //! The operator needs to pick an existing bundle directory to link as the
-//! source of a customer app. Asking them to type the absolute path is
+//! source of a custom app. Asking them to type the absolute path is
 //! brittle — they hit `~`, `$HOME`, symlinks, trailing slashes, and silent
 //! typos that only surface as a 404 the next time the iframe loads.
 //!
@@ -331,8 +331,7 @@ pub async fn probe(
     if let Ok(bytes) = tokio::fs::read(canonical.join("index.html")).await {
         has_index_html = true;
         if let Ok(html) = std::str::from_utf8(&bytes) {
-            baked_base_path =
-                crate::server::api::customer_apps_serve::first_customer_apps_prefix(html);
+            baked_base_path = crate::server::api::custom_apps_serve::first_custom_apps_prefix(html);
         }
     }
 

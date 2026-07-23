@@ -1,7 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Persistent state for automation runs triggered from customer-app
+/// Persistent state for automation runs triggered from custom-app
 /// bundles via `useAutomationRun` (legacy: `useProcedureRun`). See
 /// `migration::m20260526_000001_create_customer_app_procedure_runs`
 /// for the original schema rationale; the table was renamed from

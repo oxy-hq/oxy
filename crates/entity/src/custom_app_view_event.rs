@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// One row per HTML serve of a custom-app bundle — the moment a user
 /// "opened the app" in their browser. Recorded server-side from
-/// `customer_apps_serve::serve_dispatch` via `tokio::spawn` so the
+/// `custom_apps_serve::serve_dispatch` via `tokio::spawn` so the
 /// write is fire-and-forget on the response path.
 ///
 /// The Activity tab in AppDetail queries this table for "who opened

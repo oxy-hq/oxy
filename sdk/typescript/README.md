@@ -1,6 +1,6 @@
 # @oxy-hq/sdk
 
-React SDK for building **customer-app bundles** on the [Oxy](https://oxygen-hq.com)
+React SDK for building **custom-app bundles** on the [Oxy](https://oxygen-hq.com)
 platform. A bundle is a normal Vite + React app that reads from its linked oxy
 project — raw SQL, the semantic layer, agents, and procedures — through a
 small set of hooks, plus a couple of drop-in components.

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This is the inverse of the old `workspace_oxy_access` consent table: the
 /// default (NO row) is that Oxy staff (`app_admins`) may access the workspace's
-/// customer apps, so support works without the customer having to opt in. A row
+/// custom apps, so support works without the customer having to opt in. A row
 /// here revokes that.
 ///
 /// Tenant-sovereign: only a **real** org owner/admin may create or remove it —

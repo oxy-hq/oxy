@@ -1,11 +1,11 @@
 // @oxy-hq/sdk/shell — the Oxygen workspace chrome (48px icon rail +
 // universal top bar) as reusable components. The main web-app renders these
-// same components, so a customer app that mounts them reads as one product.
+// same components, so a custom app that mounts them reads as one product.
 //
 // Two layers:
 // - Presentational (ShellRail, TopBar, Breadcrumb, …): props only, no
 //   router, no fetching. The web-app composes these with its own stores.
-// - Wired (OxyShell + useShellContext): full frame for customer-app
+// - Wired (OxyShell + useShellContext): full frame for custom-app
 //   bundles, fed by the bundle-gated `/api/projects/:id/shell-context`
 //   endpoint. Must be mounted inside <OxyAppProvider>.
 //

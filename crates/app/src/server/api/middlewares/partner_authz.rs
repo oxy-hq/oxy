@@ -45,7 +45,7 @@
 //!    clients. The partner tier used to carry its own Cedar policy for this; there is
 //!    now one model for all of Oxy's authorization, and no engine.
 //! 4. **Enforcement** — `partner_console::require_org_scope` (org-scoped actions) and
-//!    the customer-app gate (via [`partner_grants_app_access`], in this file) call the
+//!    the custom-app gate (via [`partner_grants_app_access`], in this file) call the
 //!    decision and map a Deny to 403/404. This is where a handler opts a route into a
 //!    capability.
 //!
@@ -64,7 +64,7 @@
 //!      PartnerCapability::ManageSchedules)`.
 //!
 //! **Gate a new endpoint on an existing capability**: just call `require_org_scope`
-//! (or check the cap in the customer-app gate). No policy or vocabulary change.
+//! (or check the cap in the custom-app gate). No policy or vocabulary change.
 //!
 //! **Change what a capability *means*** (the rule, not the name): edit `Ring::PartnerCap`
 //! in `oxy_authz::allows` — the one place every capability's rule is stated. If a
@@ -303,13 +303,13 @@ pub async fn partner_org_ids(db: &DatabaseConnection, partner_org_id: Uuid) -> V
         .unwrap_or_default()
 }
 
-/// Whether `user` reaches `org_id`'s customer-app DATA plane through partner
+/// Whether `user` reaches `org_id`'s custom-app DATA plane through partner
 /// delegation: the partner that manages the org, operated by this user (or assumed),
 /// whose ceiling grants `develop_apps`.
 ///
 /// The DATA PLANE requires develop_apps — manage_apps is lifecycle only. Ownership still
 /// comes from the partner's managed set, so this only holds for orgs it actually manages.
-/// Fails closed. Called by the customer-app gate so the console, admin preview and
+/// Fails closed. Called by the custom-app gate so the console, admin preview and
 /// serve/proxy share one decision.
 pub async fn partner_grants_app_access(
     db: &DatabaseConnection,
@@ -464,7 +464,7 @@ async fn standings_for(
 /// Costs nothing for the 99.9%: non-staff short-circuit before any query, because only
 /// staff can assume at all. `is_staff` is passed in rather than re-derived — the caller
 /// has already read the platform sources to build its facts, and this sits on the
-/// customer-app query hot path.
+/// custom-app query hot path.
 pub async fn assumed_partners(
     db: &DatabaseConnection,
     user_id: Uuid,

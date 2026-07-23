@@ -27,14 +27,14 @@ nearly everything (`oxy`, agentic-http/pipeline, integrations). Keep it thin:
 | `server/` | The Axum server (~80k LOC) — see breakdown below. |
 | `agentic_wiring/` | Adapts `oxy` state into the shape `agentic-pipeline` needs (`project_ctx.rs` is a 1.8k-line god file — a decomposition target). Has its own `CLAUDE.md`. |
 | `integrations/` | External integrations, notably the Slack bot (`integrations/slack/`). |
-| `emails/`, `customer_app_template/` | Transactional email (SES) + customer-app scaffold templates. |
+| `emails/`, `custom_app_template/` | Transactional email (SES) + custom-app scaffold templates. |
 | `observability_boot.rs` / `observability_setup.rs` | Tracing/observability bootstrap for the binary. |
 
 ### `server/` internals
 
 | Path | Owns |
 | ---- | ---- |
-| `server/api/**` | One file (or dir) per resource: `threads`, `apps`, `automation`, `projects/`, `admin/`, `billing/`, `customer_apps_*` (the serve + data hot path), `world_model_graph.rs` (4.8k — the single biggest file, a decomposition target), `workspaces.rs`, `onboarding.rs`, `auth.rs`. |
+| `server/api/**` | One file (or dir) per resource: `threads`, `apps`, `automation`, `projects/`, `admin/`, `billing/`, `custom_apps_*` (the serve + data hot path), `world_model_graph.rs` (4.8k — the single biggest file, a decomposition target), `workspaces.rs`, `onboarding.rs`, `auth.rs`. |
 | `server/router/` | Route mounting: `public.rs`, `protected.rs`, `workspace.rs`, `global.rs`, `entry.rs`, `openapi.rs`. `ROUTES.md` documents the surface. |
 | `server/role_manifest.rs` (~2k) | **Routing authority** for the split fleet — classifies every route `IdeOnly` vs `FleetOk`. FS/`.git`/state-dir routes MUST be `IdeOnly`; persisted-data reads MUST stay `FleetOk`. Invoke `oxy-route-classification` before touching routes. |
 | `server/{worker_runtime,worker_health,worker_metrics}.rs`, `preagg_*`, `compile_*` | Durable-task worker fleet + pre-aggregation + compile-boundary workers. |

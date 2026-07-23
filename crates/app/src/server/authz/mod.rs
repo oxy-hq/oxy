@@ -86,7 +86,7 @@ pub async fn enforce_guard(
 ///
 /// Call sites on a hot path should instead load scoped facts
 /// ([`loader::load_principal_facts_scoped`]) and call [`enforce`] directly, so they
-/// don't pay for facts their ring never reads — see the customer-app data-plane gate.
+/// don't pay for facts their ring never reads — see the custom-app data-plane gate.
 /// If you do that, handle the `None` the same way: defer, don't deny.
 pub async fn enforce_for(
     db: &sea_orm::DatabaseConnection,

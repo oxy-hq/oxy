@@ -30,11 +30,11 @@ Deployment modes — almost every bug report depends on which one:
 - **Oxygen Factory** = the Developer Portal / IDE, reached from the icon rail (renamed Studio → Oxygen Builder → Oxygen Core → **Oxygen Factory**). Same `/ide` surface, just the rail label.
 - **Agentic Agent** (`.agentic.yml`) = Oxy's multi-step FSM agent (two kinds: **analytics** and **app builder**), distinct from the single-shot sense of "agent."
 - **Builder Agent** = the file-editing copilot (chat **Build** mode) — distinct from the *app builder* agentic agent.
-- **Customer Apps Platform** (code-first React+Vite bundles, shipped with `oxy publish`) is **not** the same thing as YAML **Data Apps** (`.app.yml` dashboards).
-- **Oxy Functions** = server-side TypeScript handlers bundled *inside* a Customer App (declared in `oxy-app.json`, versioned and shipped with the frontend by `oxy publish`) that run on Oxy's managed runtime with data-plane access — **not** a YAML Automation task or Data App `task`. A function runs as an HTTP route (`useFunction` hook), a cron job on the durable task queue, or an Airway transform step; writing back to Oxy Secrets via `ctx.secrets.set` requires the `secrets.write` capability, and sending email via `ctx.email.send` (AWS SES under the hood; the **platform** controls the `from` address, the function sets `replyTo` only) requires the `email.send` capability. Email templates are **preact** components rendered to HTML by `@oxy-hq/sdk/email`'s `render(Component, props)` — React Email / react-dom can't run in the Functions isolate (node:stream / Web Streams).
+- **Custom Apps Platform** (code-first React+Vite bundles, shipped with `oxy publish`) is **not** the same thing as YAML **Data Apps** (`.app.yml` dashboards).
+- **Oxy Functions** = server-side TypeScript handlers bundled *inside* a Custom App (declared in `oxy-app.json`, versioned and shipped with the frontend by `oxy publish`) that run on Oxy's managed runtime with data-plane access — **not** a YAML Automation task or Data App `task`. A function runs as an HTTP route (`useFunction` hook), a cron job on the durable task queue, or an Airway transform step; writing back to Oxy Secrets via `ctx.secrets.set` requires the `secrets.write` capability, and sending email via `ctx.email.send` (AWS SES under the hood; the **platform** controls the `from` address, the function sets `replyTo` only) requires the `email.send` capability. Email templates are **preact** components rendered to HTML by `@oxy-hq/sdk/email`'s `render(Component, props)` — React Email / react-dom can't run in the Functions isolate (node:stream / Web Streams).
 - Four similarly-named third-party engines that are easy to confuse: **airlayer** (semantic layer), **Airform** (dbt-style modeling), **Airway** (ELT), **Airhouse** (a warehouse + connector).
 - **Verified Query** = a plain `.sql` file the analytics agent runs *as-is* when it matches the question (bypassing LLM SQL generation); surfaces a **Verified** badge.
-- **Two subdomain schemes, easy to confuse** — an **org subdomain** (`<org-slug>.oxygen-hq.com`) boots the whole product pre-scoped to that org's default project (skips the org/workspace picker), serving its custom apps under `/a/<slug>/`; a **customer-app subdomain** (`<org>--<slug>.customer-apps.oxygen-hq.com`) serves a single externally-hosted custom app at its own root.
+- **Two subdomain schemes, easy to confuse** — an **org subdomain** (`<org-slug>.oxygen-hq.com`) boots the whole product pre-scoped to that org's default project (skips the org/workspace picker), serving its custom apps under `/a/<slug>/`; a **custom-app subdomain** (`<org>--<slug>.customer-apps.oxygen-hq.com`) serves a single externally-hosted custom app at its own root.
 
 ---
 
@@ -42,7 +42,7 @@ Deployment modes — almost every bug report depends on which one:
 
 Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Global Owner** (`OXY_OWNER` env allow-list → `is_owner`) — Oxy staff; reaches everything, incl. the Billing queue and Global-admin management.
-- **Global Admin** (`app_admins` table, seeded by `OXY_GLOBAL_ADMINS`; legacy `OXY_APP_ADMINS` still accepted → `is_app_admin`) — Oxy ops; reaches most of admin + every customer app, but **not** Billing or Global-admin management.
+- **Global Admin** (`app_admins` table, seeded by `OXY_GLOBAL_ADMINS`; legacy `OXY_APP_ADMINS` still accepted → `is_app_admin`) — Oxy ops; reaches most of admin + every custom app, but **not** Billing or Global-admin management.
 - **Org Owner / Admin / Member** (`role` in `org_members`) — tenant-internal only, **no** platform reach. Workspace role derives via `EffectiveWorkspaceRole`.
 
 ---

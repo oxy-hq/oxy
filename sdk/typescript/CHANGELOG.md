@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.6.0] - 2026-07-23
 
-Adds a customer-app **asset store**, **email attachments**, and a
+Adds a custom-app **asset store**, **email attachments**, and a
 **per-app role** on `ctx.user` — three pieces of one story: an app can
 now accept a file, keep it, show it back, email it, and restrict who
 sees any of that.
@@ -56,7 +56,7 @@ sees any of that.
 
 ## [2.5.0] - 2026-07-22
 
-Universalizes the customer-app shell: a bundle served from any origin can
+Universalizes the custom-app shell: a bundle served from any origin can
 now drive the wired shell (shell-context, Ask Oxygen) and theme its chrome
 to match the host app.
 
@@ -90,7 +90,7 @@ to match the host app.
 
 Ships the Oxygen workspace shell — the same 48px icon rail + universal
 top bar the main web-app renders — as a reusable subpath export, so a
-customer app reads as part of the HQ. The web-app consumes these exact
+custom app reads as part of the HQ. The web-app consumes these exact
 components (oxygen-internal `internal-docs/2026-07-06-sdk-shell-universalization-design.md`).
 
 ### Added
@@ -183,11 +183,11 @@ components (oxygen-internal `internal-docs/2026-07-06-sdk-shell-universalization
   Web Streams the isolate lacks.)
 - **`OxyFunctionContext`** — the server-side function `ctx` is now typed
   (`user`, `env`, `log`, `query`, `queryStream`, `fetch`, `warehouse`, `secrets`,
-  `semantic`, `airway`, `email`), exported from the customer-app entry.
+  `semantic`, `airway`, `email`), exported from the custom-app entry.
 
 ## [2.2.0] - 2026-07-09
 
-Publishes the customer-app **Oxy Functions** platform and the **metric-tree /
+Publishes the custom-app **Oxy Functions** platform and the **metric-tree /
 anomalies** clients that accumulated on `main` since 2.1.0. All additive — no
 public export was removed or renamed.
 

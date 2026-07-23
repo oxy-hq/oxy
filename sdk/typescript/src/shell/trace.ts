@@ -7,7 +7,7 @@
 // fan-out cards, no thinking token stream, no artifact sidebar — labels,
 // statuses, and result summaries only.
 
-import type { AgentRunEvent } from "../customer-app/react";
+import type { AgentRunEvent } from "../custom-app/react";
 
 export type TraceStepStatus = "running" | "done" | "failed" | "suspended";
 

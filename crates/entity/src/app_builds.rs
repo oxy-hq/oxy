@@ -1,7 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// One row per successful publish of a customer app. The bundle's files
+/// One row per successful publish of a custom app. The bundle's files
 /// live in S3 under `s3_prefix`; `apps.draft_build_id` /
 /// `apps.published_build_id` point at the build currently serving each
 /// channel. Keeping every build (bounded by a keep-last-N GC) is what

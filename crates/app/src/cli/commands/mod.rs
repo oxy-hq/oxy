@@ -309,7 +309,7 @@ enum SubCommand {
     /// Hosts deployment-wide actions for the camera fleet (currently:
     /// device log retention sweep). Reserved for ops / cron flows.
     Cameras(cameras::CamerasArgs),
-    /// Manage customer-app registrations (create, list, delete).
+    /// Manage custom-app registrations (create, list, delete).
     ///
     /// Wraps the admin app-registry handlers directly — no HTTP server
     /// required. Intended for ops and CI scripts.
@@ -321,7 +321,7 @@ enum SubCommand {
     /// path is relative to the target's `/api/` surface. Handy for
     /// vibe-coding against your own workspace's data endpoints.
     Api(api::ApiArgs),
-    /// Publish a built customer-app bundle to oxy (one-way deploy).
+    /// Publish a built custom-app bundle to oxy (one-way deploy).
     ///
     /// Tars `./dist` (or `--dir`) and POSTs it to
     /// `<target>/api/customer-apps/publish`. Identity comes from flags,

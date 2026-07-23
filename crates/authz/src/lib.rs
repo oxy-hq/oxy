@@ -78,7 +78,7 @@ pub enum Action {
     /// least workspace Member (overrides only elevate), so this is effectively any
     /// member of the workspace's org, plus a managing partner or global operator.
     WorkspaceEdit,
-    /// Access a customer app's DATA plane (`check_customer_app_gates`): a real member
+    /// Access a custom app's DATA plane (`check_custom_app_gates`): a real member
     /// of the app's org, an Oxy global admin, or a partner operator whose ceiling
     /// grants `develop_apps`. Deliberately NOT the general "manage" partner path —
     /// develop_apps is the read-the-app's-data capability, distinct from manage_apps.
@@ -89,7 +89,7 @@ pub enum Action {
     /// That is the one place in this model where a fact SUBTRACTS reach rather
     /// than adding it.
     AppAccess,
-    /// Administer a customer app from *inside* the app — its privileged surface
+    /// Administer a custom app from *inside* the app — its privileged surface
     /// (e.g. the warehouse app's `?view=admin` and the data behind it). Any org
     /// **officer** (owner or admin), an `app_members` row with `role = 'admin'`,
     /// or Oxy staff.
@@ -134,7 +134,7 @@ pub enum Action {
     // middlewares. They fuse no facts (each is one global flag), so they add no
     // decision power; they buy one place to read.
     /// Any Oxy operator surface (`oxy_owner_or_app_admin_guard`): a global admin OR a
-    /// global owner. Both tiers reach everything — the admin console, the customer-app
+    /// global owner. Both tiers reach everything — the admin console, the custom-app
     /// lifecycle, all of it. There is deliberately no admin-ONLY action: the tiers
     /// separate at [`Action::PlatformOwnerOnly`], not before it.
     PlatformOps,
@@ -273,7 +273,7 @@ impl PrincipalFacts {
 
     /// A partner the principal operates that manages `org_id` AND holds `cap`. Not
     /// scoped to an acting partner: used where the shipped check resolves the partner
-    /// FROM the org (the customer-app data plane), not from the URL.
+    /// FROM the org (the custom-app data plane), not from the URL.
     fn any_partner_grants(&self, cap: Cap, org_id: Uuid) -> bool {
         self.partners.iter().any(|p| p.grants(cap, org_id))
     }
@@ -316,14 +316,14 @@ enum Ring {
     /// or a global operator (the `WorkspaceEditor` guard).
     WorkspaceEdit,
     /// Customer-app data plane: a real member of the app's org, a global admin, or a
-    /// partner with `develop_apps` over the org (`check_customer_app_gates`). NOT the
+    /// partner with `develop_apps` over the org (`check_custom_app_gates`). NOT the
     /// coarse managed-partner path, and NOT global owner (the check uses app-admin).
     ///
     /// Conditional on `resource.app_restricted`: a restricted app drops the plain
     /// org-membership term and demands an `app_members` row (org officers + staff +
     /// develop_apps partner remain).
     AppAccess,
-    /// A customer app's own privileged surface: any org officer (owner/admin), an
+    /// A custom app's own privileged surface: any org officer (owner/admin), an
     /// `app_members` admin row, or Oxy staff. No partner term — see
     /// [`Action::AppAdmin`].
     AppAdmin,
@@ -482,7 +482,7 @@ impl Resource {
         }
     }
 
-    /// A customer app, scoped to its owning org (the app is a child of the org, so
+    /// A custom app, scoped to its owning org (the app is a child of the org, so
     /// `resource in <org set>` resolves). `id` may be the app/project id.
     ///
     /// Treated as **unrestricted** (`visibility = 'org'`) — the historical rule. Use
@@ -499,7 +499,7 @@ impl Resource {
         }
     }
 
-    /// A customer app carrying its visibility. `id` MUST be the **app id** (not the
+    /// A custom app carrying its visibility. `id` MUST be the **app id** (not the
     /// project/workspace id): per-app membership is keyed by it, so passing the
     /// wrong id would silently deny every member of a restricted app.
     pub fn app_with_visibility(id: Uuid, org_id: Uuid, restricted: bool) -> Self {
@@ -1178,7 +1178,7 @@ mod policy_tests {
             ..facts()
         };
         assert!(!allows(&manage_only, Action::AppAccess, &app));
-        // A global owner reaches it too: both operator tiers reach every customer-app
+        // A global owner reaches it too: both operator tiers reach every custom-app
         // surface. This used to be admin-only, so an owner not in `app_admins` could
         // PUBLISH an app but not VIEW one.
         let go = PrincipalFacts {

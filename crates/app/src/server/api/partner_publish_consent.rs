@@ -9,7 +9,7 @@
 //! is [`OrgAdminStrict`], which rejects the synthetic-operator override, so neither
 //! Oxy staff nor the partner can flip it on the client's behalf. Revoking (setting
 //! it back to `false`) denies the partner's next publish immediately, because
-//! `customer_apps_publish_authz` reads this at publish time, not at mint time.
+//! `custom_apps_publish_authz` reads this at publish time, not at mint time.
 //!
 //! Every change is audited in the client's own log.
 

@@ -11,7 +11,7 @@ export type {
   ScanResponse
 } from "./anomalies";
 export { AnomaliesClient } from "./anomalies";
-export * from "./customer-app";
+export * from "./custom-app";
 
 // Metric-tree analyses
 export type {

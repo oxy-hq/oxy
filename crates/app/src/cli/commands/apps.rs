@@ -1,12 +1,12 @@
-//! `oxy apps` — manage customer-app registrations + scaffold new bundles.
+//! `oxy apps` — manage custom-app registrations + scaffold new bundles.
 //!
 //! Two flavors of subcommand share the namespace because they're both
-//! "things you do to customer apps from the CLI":
+//! "things you do to custom apps from the CLI":
 //!
 //! - **Registration** (`create`, `list`, `delete`) — thin wrappers
 //!   around the admin endpoint handlers. Calls them directly without
 //!   needing an HTTP server. Useful for ops + CI scripts.
-//! - **Bundle authoring** (`init`) — generates a new customer-app
+//! - **Bundle authoring** (`init`) — generates a new custom-app
 //!   bundle from a baked-in template. Lives next to registration so
 //!   the natural CLI flow is `oxy apps init my-app` → write code →
 //!   commit + push to the customer-apps repo (CI runs build + S3
@@ -29,7 +29,7 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use crate::server::api::admin::apps::handlers::{self, CreateAppRequest};
-use crate::server::api::customer_apps_source::SourceSpec;
+use crate::server::api::custom_apps_source::SourceSpec;
 
 #[derive(Parser, Debug)]
 pub struct AppsArgs {
@@ -48,7 +48,7 @@ pub enum AppsCommand {
         #[clap(long)]
         slug: String,
     },
-    /// Register a new customer app
+    /// Register a new custom app
     Create {
         /// Human-readable display name
         #[clap(long)]
@@ -98,7 +98,7 @@ pub async fn handle_apps_command(args: AppsArgs) -> Result<(), OxyError> {
 
 #[cfg(test)]
 mod init_tests {
-    use crate::customer_app_template::Substitutions;
+    use crate::custom_app_template::Substitutions;
 
     #[test]
     fn substitutions_replace_placeholders() {

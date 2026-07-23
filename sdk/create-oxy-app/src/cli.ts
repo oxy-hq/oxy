@@ -1,5 +1,5 @@
 /**
- * `create-oxy-app` — scaffold a new Oxy customer app.
+ * `create-oxy-app` — scaffold a new Oxy custom app.
  *
  * Usage:
  *   pnpm dlx create-oxy-app my-app
@@ -56,7 +56,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 function printHelp(): void {
   console.log(`
-create-oxy-app — scaffold a new Oxy customer app.
+create-oxy-app — scaffold a new Oxy custom app.
 
 Usage:
   create-oxy-app <name> [--template <id>]
@@ -117,7 +117,7 @@ async function copyTemplate(
     } else {
       const bytes = await fs.readFile(src, "utf-8");
       // Use the same placeholders as the server-side renderer
-      // (crates/app/src/customer_app_template/mod.rs) so a single
+      // (crates/app/src/custom_app_template/mod.rs) so a single
       // template set serves both code paths.
       const substituted = bytes
         .replace(/\{\{APP_DISPLAY_NAME\}\}/g, vars.name)

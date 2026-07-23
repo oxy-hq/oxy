@@ -7,13 +7,13 @@
 //! `{id, name, description}`. Re-introduce a `screenshot_url` field on
 //! `TemplateListItem` + a `GET .../templates/{id}/screenshot` handler
 //! when the first PNG ships; the UI's `<img>` branch can come back at
-//! the same time. The bundle filter in `customer_app_template/mod.rs`
+//! the same time. The bundle filter in `custom_app_template/mod.rs`
 //! already drops `screenshot.png` from the rendered scaffold.
 
 use axum::Json;
 use serde::Serialize;
 
-use crate::customer_app_template::registry;
+use crate::custom_app_template::registry;
 
 #[derive(Debug, Serialize)]
 pub struct TemplateListItem {

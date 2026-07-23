@@ -7,7 +7,7 @@
 //! `401 UNAUTHORIZED` when no authenticated user is present.
 //!
 //! Intentionally separate from `oxy_owner_guard`: app admins manage
-//! customer-app registrations, owners manage org/billing/feature-flags
+//! custom-app registrations, owners manage org/billing/feature-flags
 //! and add/remove app admins.
 
 use oxy::database::client::establish_connection;

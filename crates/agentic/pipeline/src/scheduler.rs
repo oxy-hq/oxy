@@ -354,7 +354,7 @@ pub async fn run_schedule_now(
     }
 }
 
-/// Seed + enqueue a one-off background run of a customer-app Oxy Function,
+/// Seed + enqueue a one-off background run of a custom-app Oxy Function,
 /// outside any schedule — the "run this function as a job now" path (manual or
 /// API trigger). Mirrors the scheduled `"function"` fire arm but carries no
 /// `schedule_id`. Entity/oxy-free: the host resolves the app + its retry policy
@@ -1091,7 +1091,7 @@ async fn fire_schedule(
             .map_err(|e| e.to_string())
         }
         "function" => {
-            // A scheduled customer-app Oxy Function. `target_ref` encodes
+            // A scheduled custom-app Oxy Function. `target_ref` encodes
             // "<app_id>/<function_name>"; the host-side `AppFunctionTaskExecutor`
             // (Custom-task registry) runs it under the org-owner identity. This
             // arm stays entity/oxy-free — it only seeds a run + a Custom task

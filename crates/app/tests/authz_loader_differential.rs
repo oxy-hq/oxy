@@ -485,7 +485,7 @@ async fn loader_loads_only_elevating_workspace_overrides() {
 
 // ── Per-app membership facts ──────────────────────────────────────────────────
 
-/// Seed a customer app. `project_id` is a workspace id but carries no FK, so a
+/// Seed a custom app. `project_id` is a workspace id but carries no FK, so a
 /// bare uuid is enough here — we're testing membership, not the workspace join.
 async fn seed_app(conn: &DatabaseConnection, org_id: Uuid, restricted: bool) -> Uuid {
     let id = Uuid::new_v4();

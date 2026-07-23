@@ -1,4 +1,4 @@
-//! Project-scoped HTTP endpoints that customer-app bundles call.
+//! Project-scoped HTTP endpoints that custom-app bundles call.
 //!
 //! Currently a single route — `POST /api/projects/{project_id}/query` —
 //! which proxies a SQL or semantic-query request to one of the project's

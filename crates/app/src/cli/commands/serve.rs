@@ -124,9 +124,9 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // Mirrors how `observability_boot::finalize` wires the
     // observability retention task. Runs every 6h; the first tick
     // fires 60s after startup so migrations can settle. See
-    // `customer_apps_tracking::spawn_retention_cleanup` for the
+    // `custom_apps_tracking::spawn_retention_cleanup` for the
     // failure-handling rationale.
-    crate::server::api::customer_apps_tracking::spawn_retention_cleanup();
+    crate::server::api::custom_apps_tracking::spawn_retention_cleanup();
 
     // Detect whether any cloud auth provider is configured — used only to
     // surface an informational log when `--local` is requested with providers
@@ -350,7 +350,7 @@ async fn seed_app_admins_from_env() -> Result<(), OxyError> {
     let db = establish_connection()
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
-    crate::server::api::customer_apps_auth::bootstrap_app_admins_from_env(&db)
+    crate::server::api::custom_apps_auth::bootstrap_app_admins_from_env(&db)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("app admin seed failed: {}", e)))?;
     Ok(())
@@ -602,11 +602,11 @@ async fn create_web_application(
     openapi_doc.servers = Some(vec![Server::new("/api")]);
     let static_service = service_fn(handle_static_files);
 
-    use crate::server::api::customer_apps_serve;
+    use crate::server::api::custom_apps_serve;
     use axum::routing::any;
 
     // Everything that must be subject to the host-based subdomain rewrite:
-    // the data API, the customer-app serve route, the SwaggerUI tree, and
+    // the data API, the custom-app serve route, the SwaggerUI tree, and
     // the static admin-SPA fallback. Global CORS + trace are applied here so
     // they wrap this whole surface.
     let main = Router::new()
@@ -627,7 +627,7 @@ async fn create_web_application(
             // brotli/gzip for bundle bytes. DefaultPredicate skips
             // text/event-stream (the /fn SSE stream) and already-encoded
             // bodies (the V0 proxy), so streaming is unaffected.
-            any(customer_apps_serve::serve_dispatch).layer(
+            any(custom_apps_serve::serve_dispatch).layer(
                 ServiceBuilder::new()
                     .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
                     .layer(CompressionLayer::new()),
@@ -671,7 +671,7 @@ async fn create_web_application(
         .layer(crate::server::router::build_cors_layer())
         .layer(create_trace_layer());
 
-    // Subdomain-based dispatch for customer-app bundles. Rewrites a
+    // Subdomain-based dispatch for custom-app bundles. Rewrites a
     // `<org>--<slug>.customer-apps[-env].<zone>` Host to the equivalent
     // `/customer-apps/<org>/<slug>/...` path so the route above takes over
     // (including the reverse-proxy path for remote-hosted sources). `/api/*`
@@ -684,9 +684,9 @@ async fn create_web_application(
     // fallback individually) and matches the path first, so a fallback-bound
     // request (`/`, `/foo.js`, `/_next/...`) is already routed to the static
     // admin SPA before the rewrite runs; the rewritten path then goes
-    // straight to the static file server and the customer app never loads
+    // straight to the static file server and the custom app never loads
     // (the staging/prod "blank page" bug). Regression test:
-    // `customer_apps_host_dispatch::subdomain_rewrite_must_run_before_routing`.
+    // `custom_apps_host_dispatch::subdomain_rewrite_must_run_before_routing`.
     // Two host-dispatch layers run before routing. The customer-apps rewrite
     // is first (it owns the structural `<org>--<slug>.customer-apps…` hosts);
     // the org-subdomain dispatch is second (bare `<org>.<zone>` hosts → org
@@ -694,7 +694,7 @@ async fn create_web_application(
     // neither matches, both fall through untouched.
     let main = ServiceBuilder::new()
         .layer(axum::middleware::from_fn(
-            crate::server::api::customer_apps_host_dispatch::subdomain_rewrite_middleware,
+            crate::server::api::custom_apps_host_dispatch::subdomain_rewrite_middleware,
         ))
         .layer(axum::middleware::from_fn(
             crate::server::api::org_host_dispatch::org_host_dispatch_middleware,
@@ -704,7 +704,7 @@ async fn create_web_application(
     // External API surface — a sibling of `main`, so it is NOT wrapped by the
     // global CORS/trace layers OR the subdomain rewrite. It carries its OWN
     // wide-open CORS (`build_external_cors_layer`) and is API-key-only; its
-    // callers use the admin host, never a customer-app subdomain. Every other
+    // callers use the admin host, never a custom-app subdomain. Every other
     // path falls through to `main`.
     let router = Router::new()
         .nest("/external/api", external_api_router)
@@ -1051,13 +1051,13 @@ mod tests {
     use tower_http::compression::CompressionLayer;
 
     #[tokio::test]
-    async fn customer_app_route_compresses_assets() {
+    async fn custom_app_route_compresses_assets() {
         // A handler standing in for a JS asset response (>32 bytes so the
         // size predicate allows compression).
         async fn asset() -> ([(axum::http::HeaderName, &'static str); 1], String) {
             (
                 [(axum::http::header::CONTENT_TYPE, "application/javascript")],
-                "console.log('hello world from a customer app bundle');".repeat(4),
+                "console.log('hello world from a custom app bundle');".repeat(4),
             )
         }
         let app = Router::new()
@@ -1077,7 +1077,7 @@ mod tests {
                 .get(axum::http::header::CONTENT_ENCODING)
                 .map(|v| v.to_str().unwrap()),
             Some("br"),
-            "customer-app assets must be brotli-compressed"
+            "custom-app assets must be brotli-compressed"
         );
     }
 }

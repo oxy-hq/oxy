@@ -5,7 +5,7 @@ import useCurrentOrg from "@/stores/useCurrentOrg";
 
 export type AlertSeverity = "critical" | "warning" | "info";
 
-/** Where a signal is addressed: a customer app, or Oxygen Factory (the system
+/** Where a signal is addressed: a custom app, or Oxygen Factory (the system
  *  layer — for data/source/pipeline issues). */
 export type SignalTarget = { app: string } | { core: true };
 
@@ -27,7 +27,7 @@ export interface HqSignal {
   category: string;
   title: string;
   destLabel: string;
-  /** Full-page link to a customer app (absolute, same-origin). */
+  /** Full-page link to a custom app (absolute, same-origin). */
   href?: string;
   /** In-SPA route (e.g. Oxygen Factory). */
   route?: string;

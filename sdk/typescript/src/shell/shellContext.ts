@@ -5,13 +5,13 @@
 // The server builds every URL in the response (`apps[].url`, `links.*`,
 // `logo_url`) because only it knows which host scheme is in play — an org
 // subdomain serves apps at `/a/<slug>/` same-origin, while a dedicated
-// customer-app subdomain needs absolute product-host URLs. Never derive
+// custom-app subdomain needs absolute product-host URLs. Never derive
 // product URLs client-side. See
-// `crates/app/src/server/api/customer_apps_shell_context.rs`.
+// `crates/app/src/server/api/custom_apps_shell_context.rs`.
 
 import * as React from "react";
-import { getOxyAppLogger } from "../customer-app/logger";
-import { useOxyApp } from "../customer-app/react";
+import { getOxyAppLogger } from "../custom-app/logger";
+import { useOxyApp } from "../custom-app/react";
 
 export interface ShellContextApp {
   id: string;
@@ -49,7 +49,7 @@ export interface UseShellContextResult {
 }
 
 /**
- * Fetch the shell bootstrap payload for the current customer app. Must be
+ * Fetch the shell bootstrap payload for the current custom app. Must be
  * called inside `<OxyAppProvider>`. Failure is non-fatal by design: the
  * shell degrades to chrome-less rendering (older servers don't have the
  * endpoint), so errors are surfaced on the result, never thrown.

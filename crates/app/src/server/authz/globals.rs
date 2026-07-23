@@ -48,12 +48,12 @@ pub fn is_global_owner(email: &str) -> bool {
 }
 
 /// TTL for the `app_admins` membership cache. Matches the 60s the check used before it
-/// moved here from `customer_apps_auth`.
+/// moved here from `custom_apps_auth`.
 const ADMIN_CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// Cache of `app_admins` membership, keyed by the normalized email. Self-contained here
-/// (rather than reusing `customer_apps_auth`'s cache helper) so authz owns its only
-/// `app_admins` read with **no** import back into `customer_apps_*` — that import was a
+/// (rather than reusing `custom_apps_auth`'s cache helper) so authz owns its only
+/// `app_admins` read with **no** import back into `custom_apps_*` — that import was a
 /// dependency cycle blocking the customer-apps surface from moving.
 fn admin_cache() -> &'static RwLock<HashMap<String, (bool, Instant)>> {
     static CACHE: OnceLock<RwLock<HashMap<String, (bool, Instant)>>> = OnceLock::new();
@@ -87,7 +87,7 @@ pub fn invalidate_admin_cache() {
 /// for [`ADMIN_CACHE_TTL`]. `Err` is a lookup failure, distinct from a `false` verdict —
 /// [`platform_standing_checked`] is what decides how that unknown collapses.
 ///
-/// Moved here from `customer_apps_auth` so authz owns this read outright; the only other
+/// Moved here from `custom_apps_auth` so authz owns this read outright; the only other
 /// caller is `oxy_app_admin_guard`.
 pub async fn is_app_admin_email(db: &DatabaseConnection, email: &str) -> Result<bool, DbErr> {
     let key = email.trim().to_ascii_lowercase();
@@ -176,7 +176,7 @@ mod tests {
     use super::*;
 
     /// The `app_admins` cache moved here with `is_app_admin_email` so that authz no
-    /// longer reaches into `customer_apps_auth` for it (that import was a cycle). A
+    /// longer reaches into `custom_apps_auth` for it (that import was a cycle). A
     /// cache that dropped writes would re-query every call — correctness-neutral but
     /// the point of the cache — so pin the round-trip.
     #[test]

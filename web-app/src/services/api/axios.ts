@@ -31,7 +31,7 @@ export const apiClient = axios.create({
   baseURL: apiBaseURL,
   // Send + receive cookies on every request. Without this, the browser
   // drops the `Set-Cookie: oxy_session=...` header on the login response,
-  // and the customer-app iframe + cross-subdomain SSO have nothing to
+  // and the custom-app iframe + cross-subdomain SSO have nothing to
   // attach. The bearer token in localStorage continues to work for the
   // SPA itself; the cookie is what lets bundle traffic authenticate.
   withCredentials: true

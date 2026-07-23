@@ -3,7 +3,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 /**
  * Ordered-list selection with shift-click range support — the spreadsheet
  * gesture operators expect from a dense data-grid. Shared by every admin
- * table with row selection + a bulk-action bar (compiles, customer apps).
+ * table with row selection + a bulk-action bar (compiles, custom apps).
  *
  * `ids` is the current row order; toggling with `shiftKey` selects every
  * row between the last anchor and the clicked row. The anchor resets to
