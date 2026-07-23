@@ -1,6 +1,4 @@
-use axum::extract::State;
 use axum::{
-    extract,
     http::{HeaderMap, StatusCode},
     response::Json,
 };
@@ -11,14 +9,25 @@ use governor::{
     clock::{Clock, DefaultClock},
 };
 use handlebars::Handlebars;
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{DecodingKey, Validation, decode};
 use once_cell::sync::Lazy;
 use oxy::config::auth::MagicLinkAuth;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::num::NonZeroU32;
 use url::Url;
 use uuid::Uuid;
+
+use oxy::database::errors::is_unique_violation;
+use oxy::{
+    config::constants::AUTHENTICATION_SECRET_KEY,
+    database::{client::establish_connection, filters::UserQueryFilterExt},
+};
+use oxy_auth::constants::SESSION_COOKIE_NAME;
+use oxy_shared::errors::OxyError;
+
+use super::dto::*;
+use super::handlers::create_auth_token;
 
 // ─── Magic Link Rate Limiter ────────────────────────────────────────────────
 //
@@ -33,7 +42,7 @@ static MAGIC_LINK_RATE_LIMITER: Lazy<DefaultKeyedRateLimiter<String>> =
 
 /// Returns `None` if the request is allowed, or `Some(seconds)` with the wait
 /// time until the next request is permitted.
-fn check_magic_link_rate_limit(email: &str) -> Option<u64> {
+pub(super) fn check_magic_link_rate_limit(email: &str) -> Option<u64> {
     match MAGIC_LINK_RATE_LIMITER.check_key(&email.to_lowercase()) {
         Ok(()) => None,
         Err(not_until) => {
@@ -42,14 +51,6 @@ fn check_magic_link_rate_limit(email: &str) -> Option<u64> {
         }
     }
 }
-
-use crate::server::router::AppState;
-use oxy::{
-    config::constants::AUTHENTICATION_SECRET_KEY,
-    database::{client::establish_connection, filters::UserQueryFilterExt},
-};
-use oxy_auth::constants::SESSION_COOKIE_NAME;
-use oxy_shared::errors::OxyError;
 
 /// Cookie lifetime — matches the JWT exp window in `create_auth_token`. If
 /// the JWT lifetime ever changes, change both together.
@@ -87,7 +88,7 @@ pub fn build_session_cookie(jwt: &str, secure: bool) -> String {
 /// Build the `Set-Cookie` header that clears the session cookie. Sent on
 /// logout. Must mirror the same `Domain` and `Path` as `build_session_cookie`
 /// so the browser actually overwrites the existing cookie.
-pub fn clear_session_cookie() -> String {
+pub(crate) fn clear_session_cookie() -> String {
     let mut parts = vec![
         format!("{SESSION_COOKIE_NAME}="),
         "Path=/".to_string(),
@@ -175,7 +176,7 @@ fn host_in_session_zone(host: &str) -> bool {
 /// must NOT silently activate just because `OXY_SESSION_COOKIE_DOMAIN`
 /// happens to be unset on a misconfigured production deploy, since that
 /// would turn `?return_to=http://localhost/...` into an open redirect.
-fn validate_return_to_url(url: &str) -> bool {
+pub(super) fn validate_return_to_url(url: &str) -> bool {
     let Some((scheme, host)) = parse_return_to_host(url) else {
         return false;
     };
@@ -200,28 +201,10 @@ fn allow_localhost_return() -> bool {
         .unwrap_or(false)
 }
 
-#[derive(Deserialize)]
-pub struct ValidateReturnToQuery {
-    pub url: String,
-}
-
-/// `GET /auth/return-to/validate?url=...` — public endpoint the web-app
-/// calls before performing a post-login redirect. Returns 200 if the URL is
-/// safe to follow, 403 otherwise. No body — status code is the result.
-pub async fn validate_return_to(
-    extract::Query(query): extract::Query<ValidateReturnToQuery>,
-) -> StatusCode {
-    if validate_return_to_url(&query.url) {
-        StatusCode::OK
-    } else {
-        StatusCode::FORBIDDEN
-    }
-}
-
 /// Build the `(HeaderMap, Json<AuthResponse>)` tuple returned by every
 /// successful login finalize. Centralized so all four providers
 /// (Google/GitHub/Okta/magic-link) emit the cookie identically.
-fn login_response(
+pub(super) fn login_response(
     request_headers: &HeaderMap,
     token: String,
     user: UserInfo,
@@ -237,131 +220,6 @@ fn login_response(
     (response_headers, Json(AuthResponse { token, user, orgs }))
 }
 
-/// `GET /auth/session` — hydrate the SPA's auth state from the `oxy_session`
-/// cookie.
-///
-/// The session cookie is scoped to `.oxygen-hq.com`, so it is shared across
-/// every org subdomain — but the SPA's bearer token lives in `localStorage`,
-/// which is **per-origin**. A browser that lands on `pokehouse.oxygen-hq.com`
-/// with a valid cookie therefore has no SPA token and would otherwise render a
-/// local login (whose OAuth `redirect_uri` is the subdomain → the provider
-/// rejects it). This endpoint re-reads the cookie JWT, re-issues a token +
-/// cookie, and returns the user + orgs so the SPA can `login()` without a
-/// redundant round-trip to the app-host login. Returns `401` when no valid
-/// session cookie is present, so the caller can fall back to centralized login.
-pub async fn get_session(
-    headers: HeaderMap,
-) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
-    let jwt =
-        oxy_auth::built_in::extract_session_cookie(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let claims = decode::<Claims>(
-        &jwt,
-        &DecodingKey::from_secret(AUTHENTICATION_SECRET_KEY.as_bytes()),
-        &Validation::default(),
-    )
-    .map_err(|e| {
-        tracing::debug!("session hydrate: cookie JWT rejected: {e}");
-        StatusCode::UNAUTHORIZED
-    })?
-    .claims;
-
-    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
-
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("session hydrate: db connect failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user = Users::find_by_id(user_id)
-        .one(&connection)
-        .await
-        .map_err(|e| {
-            tracing::error!("session hydrate: user lookup failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .filter(|u| u.status == UserStatus::Active)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    let (token, user_info, orgs) = finalize_login(user, &connection).await?;
-    Ok(login_response(&headers, token, user_info, orgs))
-}
-
-#[derive(Deserialize)]
-pub struct GoogleAuthRequest {
-    pub code: String,
-    /// Opaque token issued by `POST /auth/oauth/state`. Required to defend
-    /// against CSRF-style cross-user auth injection on the OAuth callback.
-    pub state: String,
-}
-
-#[derive(Deserialize)]
-pub struct OktaAuthRequest {
-    pub code: String,
-    /// See `GoogleAuthRequest::state`.
-    pub state: String,
-}
-
-#[derive(Deserialize)]
-pub struct MagicLinkRequest {
-    pub email: String,
-    /// Optional post-login redirect target. Forwarded into the magic-link
-    /// email so the user lands back on the requesting page (an
-    /// `<app>.oxygen-hq.com` subdomain gated by the external auth proxy). The
-    /// web-app, not the server, performs the redirect after `verify`; the
-    /// server validates the target via `validate_return_to` before the
-    /// browser follows it.
-    #[serde(default)]
-    pub return_to: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct MagicLinkVerifyRequest {
-    pub token: String,
-}
-
-#[derive(Serialize)]
-pub struct AuthResponse {
-    pub token: String,
-    pub user: UserInfo,
-    pub orgs: Vec<OrgInfo>,
-}
-
-#[derive(Serialize)]
-pub struct OrgInfo {
-    pub id: String,
-    pub name: String,
-    pub slug: String,
-    pub role: String,
-}
-
-/// Global profile fields. Role / admin status are per-org and live on
-/// `OrgInfo` in the login response or on `GET /orgs`. `is_owner` reflects
-/// the `OXY_OWNER` allow-list (Oxy staff). `is_app_admin` reflects
-/// membership in the `app_admins` table and gates the customer-apps
-/// surface.
-#[derive(Serialize)]
-pub struct UserInfo {
-    pub id: String,
-    pub email: String,
-    pub name: String,
-    pub picture: Option<String>,
-    pub is_owner: bool,
-    pub is_app_admin: bool,
-}
-
-#[derive(Serialize)]
-pub struct MessageResponse {
-    pub message: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Claims {
-    sub: String,
-    email: String,
-    exp: usize,
-    iat: usize,
-}
-
 // ─── OAuth state (CSRF defense) ────────────────────────────────────────────
 //
 // The frontend fetches a signed state token via `POST /auth/oauth/state`,
@@ -372,50 +230,11 @@ struct Claims {
 
 /// Time-to-live for an OAuth state token. Long enough to complete the round
 /// trip through an interactive provider, short enough to limit replay.
-const OAUTH_STATE_TTL_SECS: i64 = 10 * 60;
+pub(super) const OAUTH_STATE_TTL_SECS: i64 = 10 * 60;
 
-#[derive(Serialize, Deserialize)]
-struct OAuthStateClaims {
-    /// Random nonce — the state is single-use only in practice because the
-    /// frontend generates a new one per login attempt.
-    nonce: String,
-    /// Marker claim so a JWT intended for user auth cannot be repurposed as
-    /// an OAuth state and vice versa.
-    purpose: String,
-    exp: usize,
-    iat: usize,
-}
+pub(super) const OAUTH_STATE_PURPOSE: &str = "oauth-state";
 
-const OAUTH_STATE_PURPOSE: &str = "oauth-state";
-
-#[derive(Serialize)]
-pub struct OAuthStateResponse {
-    pub state: String,
-}
-
-pub async fn issue_oauth_state() -> Result<Json<OAuthStateResponse>, StatusCode> {
-    let now = Utc::now();
-    let exp = now + Duration::seconds(OAUTH_STATE_TTL_SECS);
-    let nonce_bytes: [u8; 16] = rand::random();
-    let claims = OAuthStateClaims {
-        nonce: hex::encode(nonce_bytes),
-        purpose: OAUTH_STATE_PURPOSE.to_string(),
-        exp: exp.timestamp() as usize,
-        iat: now.timestamp() as usize,
-    };
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(AUTHENTICATION_SECRET_KEY.as_bytes()),
-    )
-    .map_err(|e| {
-        tracing::error!("Failed to sign OAuth state: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    Ok(Json(OAuthStateResponse { state: token }))
-}
-
-fn verify_oauth_state(state: &str) -> Result<(), StatusCode> {
+pub(super) fn verify_oauth_state(state: &str) -> Result<(), StatusCode> {
     let validation = Validation::default();
     let data = decode::<OAuthStateClaims>(
         state,
@@ -431,384 +250,6 @@ fn verify_oauth_state(state: &str) -> Result<(), StatusCode> {
         return Err(StatusCode::UNAUTHORIZED);
     }
     Ok(())
-}
-
-#[derive(Serialize)]
-pub struct AuthConfigResponse {
-    pub auth_enabled: bool,
-    pub google: Option<GoogleConfig>,
-    pub okta: Option<OktaConfig>,
-    pub magic_link: Option<bool>,
-    pub enterprise: bool,
-    /// True when observability has a backend wired up. False when `--enterprise`
-    /// is on but `OXY_OBSERVABILITY_BACKEND` is unset — the UI should surface a
-    /// "not configured" banner on observability pages in that case.
-    pub observability_enabled: bool,
-    /// Present when `GITHUB_CLIENT_ID` is set — enables "Login with GitHub".
-    pub github: Option<GitHubAuthConfig>,
-    /// "local" when the server is running `oxy serve --local`, "cloud" otherwise.
-    /// Frontend uses this to pick a route tree.
-    pub mode: &'static str,
-    /// Mirror of the backend `billing` feature flag. When false the FE hides
-    /// the org Billing settings tab and the admin Billing queue surfaces a
-    /// "Billing is disabled" notice instead of a misleading empty state.
-    pub billing_enabled: bool,
-}
-
-#[derive(Serialize)]
-pub struct GoogleConfig {
-    pub client_id: String,
-}
-
-#[derive(Serialize)]
-pub struct OktaConfig {
-    pub client_id: String,
-    pub domain: String,
-}
-
-#[derive(Serialize)]
-pub struct GitHubAuthConfig {
-    pub client_id: String,
-}
-
-pub async fn get_config(
-    State(app_state): State<AppState>,
-) -> Result<Json<AuthConfigResponse>, StatusCode> {
-    let auth_config = oxy::config::oxy::get_oxy_config()
-        .ok()
-        .and_then(|config| config.authentication);
-
-    let has_google = auth_config
-        .as_ref()
-        .and_then(|auth| auth.google.as_ref())
-        .is_some();
-    let has_okta = auth_config
-        .as_ref()
-        .and_then(|auth| auth.okta.as_ref())
-        .is_some();
-    let has_magic_link = auth_config
-        .as_ref()
-        .and_then(|auth| auth.magic_link.as_ref())
-        .is_some();
-
-    let auth_enabled = (has_google || has_okta || has_magic_link) && !app_state.mode.is_local();
-
-    let github_client_id = std::env::var("GITHUB_CLIENT_ID").ok();
-
-    let observability_enabled = app_state.observability.is_some();
-    let billing_enabled = crate::server::feature_flags::is_enabled("billing");
-
-    if !auth_enabled || app_state.internal {
-        return Ok(Json(AuthConfigResponse {
-            auth_enabled: false,
-            google: None,
-            okta: None,
-            magic_link: None,
-            enterprise: app_state.enterprise,
-            observability_enabled,
-            github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
-            mode: app_state.mode.label(),
-            billing_enabled,
-        }));
-    }
-
-    let google_client_id = auth_config
-        .as_ref()
-        .and_then(|auth| auth.google.as_ref())
-        .map(|google| google.client_id.clone());
-    let okta_config = auth_config
-        .as_ref()
-        .and_then(|auth| auth.okta.as_ref())
-        .map(|okta| OktaConfig {
-            client_id: okta.client_id.clone(),
-            domain: okta.domain.clone(),
-        });
-
-    let config = AuthConfigResponse {
-        auth_enabled: true,
-        google: google_client_id.map(|client_id| GoogleConfig { client_id }),
-        okta: okta_config,
-        magic_link: if has_magic_link { Some(true) } else { None },
-        enterprise: app_state.enterprise,
-        observability_enabled,
-        github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
-        mode: app_state.mode.label(),
-        billing_enabled,
-    };
-
-    Ok(Json(config))
-}
-
-pub async fn create_auth_token(user: users::Model) -> Result<String, StatusCode> {
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user_clone = user.clone();
-    let mut user_update: users::ActiveModel = user.into();
-    user_update.last_login_at = Set(chrono::Utc::now().into());
-    user_update.update(&connection).await.map_err(|e| {
-        tracing::error!("Failed to update user last login: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let now = Utc::now();
-    let exp = now + Duration::weeks(1);
-
-    let claims = Claims {
-        sub: user_clone.id.to_string(),
-        email: user_clone.email.clone(),
-        exp: exp.timestamp() as usize,
-        iat: now.timestamp() as usize,
-    };
-
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(AUTHENTICATION_SECRET_KEY.as_bytes()),
-    )
-    .map_err(|e| {
-        tracing::error!("Failed to generate JWT token: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok(token)
-}
-
-pub async fn google_auth(
-    headers: HeaderMap,
-    extract::Json(google_request): extract::Json<GoogleAuthRequest>,
-) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
-    verify_oauth_state(&google_request.state)?;
-    let base_url = extract_base_url_from_headers(&headers);
-    let user_info = exchange_google_code_for_user_info(&google_request.code, &base_url)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to exchange Google code: {}", e);
-            StatusCode::UNAUTHORIZED
-        })?;
-
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user = match Users::find()
-        .filter_by_email(&user_info.email)
-        .one(&connection)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to query user: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })? {
-        Some(existing_user) if existing_user.status == UserStatus::Active => {
-            // Update existing active user
-            let mut user_update: users::ActiveModel = existing_user.clone().into();
-            user_update.name = Set(user_info.name.clone());
-            user_update.picture = Set(user_info.picture.clone());
-            user_update.email_verified = Set(true);
-            user_update.last_login_at = Set(chrono::Utc::now().into());
-            user_update.update(&connection).await.map_err(|e| {
-                tracing::error!("Failed to update user: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-        }
-        Some(existing_user) if existing_user.status == UserStatus::Deleted => {
-            // User account has been deleted - unauthorized
-            tracing::warn!(
-                "Deleted user {} attempted to authenticate via Google",
-                user_info.email
-            );
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-        Some(existing_user) => {
-            // Handle any other status - update existing user info
-            let mut user_update: users::ActiveModel = existing_user.clone().into();
-            user_update.name = Set(user_info.name.clone());
-            user_update.picture = Set(user_info.picture.clone());
-            user_update.email_verified = Set(true);
-            user_update.last_login_at = Set(chrono::Utc::now().into());
-            user_update.update(&connection).await.map_err(|e| {
-                tracing::error!("Failed to update user: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-        }
-        None => {
-            let new_user = users::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                email: Set(user_info.email.clone()),
-                name: Set(user_info.name.clone()),
-                picture: Set(user_info.picture.clone()),
-                email_verified: Set(true),
-                magic_link_token: sea_orm::ActiveValue::NotSet,
-                magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
-                status: Set(UserStatus::Active),
-                created_at: sea_orm::ActiveValue::NotSet,
-                last_login_at: sea_orm::ActiveValue::NotSet,
-            };
-
-            insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
-        }
-    };
-
-    let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
-    Ok(login_response(&headers, token, user_info_payload, orgs))
-}
-
-pub async fn okta_auth(
-    headers: HeaderMap,
-    extract::Json(okta_request): extract::Json<OktaAuthRequest>,
-) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
-    verify_oauth_state(&okta_request.state)?;
-    let base_url = extract_base_url_from_headers(&headers);
-    let user_info = exchange_okta_code_for_user_info(&okta_request.code, &base_url)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to exchange Okta code: {}", e);
-            StatusCode::UNAUTHORIZED
-        })?;
-
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user = match Users::find()
-        .filter_by_email(&user_info.email)
-        .one(&connection)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to query user: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })? {
-        Some(existing_user) if existing_user.status == UserStatus::Deleted => {
-            // User account has been deleted - unauthorized
-            tracing::warn!(
-                "Deleted user {} attempted to authenticate via Okta",
-                user_info.email
-            );
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-        Some(existing_user) => {
-            // Update existing user info
-            let mut user_update: users::ActiveModel = existing_user.clone().into();
-            user_update.name = Set(user_info.name.clone());
-            user_update.picture = Set(user_info.picture.clone());
-            user_update.email_verified = Set(true);
-            user_update.last_login_at = Set(chrono::Utc::now().into());
-            user_update.update(&connection).await.map_err(|e| {
-                tracing::error!("Failed to update user: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-        }
-        None => {
-            let new_user = users::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                email: Set(user_info.email.clone()),
-                name: Set(user_info.name.clone()),
-                picture: Set(user_info.picture.clone()),
-                email_verified: Set(true),
-                magic_link_token: sea_orm::ActiveValue::NotSet,
-                magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
-                status: Set(UserStatus::Active),
-                created_at: sea_orm::ActiveValue::NotSet,
-                last_login_at: sea_orm::ActiveValue::NotSet,
-            };
-
-            insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
-        }
-    };
-
-    let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
-    Ok(login_response(&headers, token, user_info_payload, orgs))
-}
-
-#[derive(Deserialize)]
-pub struct GitHubAuthRequest {
-    pub code: String,
-    /// See `GoogleAuthRequest::state`.
-    pub state: String,
-}
-
-pub async fn github_auth(
-    headers: HeaderMap,
-    extract::Json(payload): extract::Json<GitHubAuthRequest>,
-) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
-    verify_oauth_state(&payload.state)?;
-    let base_url = extract_base_url_from_headers(&headers);
-    let user_info = exchange_github_code_for_user_info(&payload.code, &base_url)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to exchange GitHub code: {}", e);
-            StatusCode::UNAUTHORIZED
-        })?;
-
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user = match Users::find()
-        .filter_by_email(&user_info.email)
-        .one(&connection)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to query user: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })? {
-        Some(existing_user) if existing_user.status == UserStatus::Deleted => {
-            tracing::warn!(
-                "Deleted user {} attempted to authenticate via GitHub",
-                user_info.email
-            );
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-        Some(existing_user) => {
-            let mut user_update: users::ActiveModel = existing_user.clone().into();
-            user_update.name = Set(user_info.name.clone());
-            user_update.picture = Set(user_info.picture.clone());
-            user_update.email_verified = Set(true);
-            user_update.last_login_at = Set(chrono::Utc::now().into());
-            user_update.update(&connection).await.map_err(|e| {
-                tracing::error!("Failed to update user: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-        }
-        None => {
-            let new_user = users::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                email: Set(user_info.email.clone()),
-                name: Set(user_info.name.clone()),
-                picture: Set(user_info.picture.clone()),
-                email_verified: Set(true),
-                magic_link_token: sea_orm::ActiveValue::NotSet,
-                magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
-                status: Set(UserStatus::Active),
-                created_at: sea_orm::ActiveValue::NotSet,
-                last_login_at: sea_orm::ActiveValue::NotSet,
-            };
-            insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
-        }
-    };
-
-    let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
-    Ok(login_response(&headers, token, user_info_payload, orgs))
-}
-
-#[derive(Deserialize)]
-struct GitHubUserInfo {
-    name: Option<String>,
-    login: String,
-    avatar_url: Option<String>,
-    email: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct GitHubEmailEntry {
-    email: String,
-    primary: bool,
-    verified: bool,
 }
 
 /// Exchange a GitHub OAuth authorization code for user profile info and the raw
@@ -829,7 +270,7 @@ fn oauth_redirect_base(base_url: &str) -> String {
         .unwrap_or_else(|| base_url.to_string())
 }
 
-async fn exchange_github_code_for_user_info(
+pub(super) async fn exchange_github_code_for_user_info(
     code: &str,
     base_url: &str,
 ) -> Result<OAuthUserInfo, OxyError> {
@@ -934,11 +375,9 @@ async fn exchange_github_code_for_user_info(
     })
 }
 
-use oxy::database::errors::is_unique_violation;
-
 /// Insert a new user, handling the race condition where another request may have
 /// created the same user concurrently.
-async fn insert_user_or_fetch_existing(
+pub(super) async fn insert_user_or_fetch_existing(
     new_user: users::ActiveModel,
     email: &str,
     connection: &DatabaseConnection,
@@ -976,7 +415,7 @@ async fn insert_user_or_fetch_existing(
 /// Called after every login (Google, Okta, GitHub, magic link verify). Role
 /// and admin status are per-org and appear on `OrgInfo` below — not on
 /// `UserInfo` — so that callers never have to reason about a global role.
-async fn finalize_login(
+pub(super) async fn finalize_login(
     user: users::Model,
     connection: &DatabaseConnection,
 ) -> Result<(String, UserInfo, Vec<OrgInfo>), StatusCode> {
@@ -1038,7 +477,7 @@ async fn finalize_login(
     Ok((token, user_info, orgs))
 }
 
-pub(super) fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
+pub(crate) fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
     pin_org_subdomain_to_app_host(extract_base_url_raw(headers))
 }
 
@@ -1082,22 +521,15 @@ fn pin_org_subdomain_to_app_host(base: String) -> String {
     let Some(host) = url.host_str() else {
         return base;
     };
-    if super::org_host_dispatch::parse_org_subdomain(host).is_some()
-        && let Some(app_host) = super::customer_apps_host_dispatch::admin_base_url()
+    if crate::server::api::org_host_dispatch::parse_org_subdomain(host).is_some()
+        && let Some(app_host) = crate::server::api::customer_apps_host_dispatch::admin_base_url()
     {
         return app_host;
     }
     base
 }
 
-#[derive(Deserialize)]
-struct OAuthUserInfo {
-    email: String,
-    name: String,
-    picture: Option<String>,
-}
-
-async fn exchange_google_code_for_user_info(
+pub(super) async fn exchange_google_code_for_user_info(
     code: &str,
     base_url: &str,
 ) -> Result<OAuthUserInfo, OxyError> {
@@ -1193,14 +625,7 @@ async fn exchange_google_code_for_user_info(
     Ok(user_info)
 }
 
-#[derive(Deserialize)]
-struct OktaUserInfo {
-    email: String,
-    name: String,
-    picture: Option<String>,
-}
-
-async fn exchange_okta_code_for_user_info(
+pub(super) async fn exchange_okta_code_for_user_info(
     code: &str,
     base_url: &str,
 ) -> Result<OktaUserInfo, OxyError> {
@@ -1306,7 +731,7 @@ async fn exchange_okta_code_for_user_info(
 
 /// Basic RFC-5321-bounded email format check. Not exhaustive, but filters out
 /// obviously malformed inputs before they reach the DB or SES.
-fn is_valid_email_format(email: &str) -> bool {
+pub(super) fn is_valid_email_format(email: &str) -> bool {
     if email.len() > 254 {
         return false;
     }
@@ -1340,56 +765,7 @@ fn is_email_allowed(email: &str, config: &MagicLinkAuth) -> bool {
     true
 }
 
-pub async fn request_magic_link(
-    headers: HeaderMap,
-    extract::Json(req): extract::Json<MagicLinkRequest>,
-) -> axum::response::Response {
-    use axum::http::header::RETRY_AFTER;
-    use axum::response::IntoResponse;
-
-    // Normalize email to lowercase at the point of ingestion so all downstream
-    // code (allowlist check, DB queries, SES) operates on a consistent value.
-    let req = MagicLinkRequest {
-        email: req.email.to_lowercase(),
-        return_to: req.return_to,
-    };
-
-    // Validate email format before doing anything else.
-    if !is_valid_email_format(&req.email) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(MessageResponse {
-                message: "Invalid email address.".to_string(),
-            }),
-        )
-            .into_response();
-    }
-
-    // Rate limit — checked before allowlist so timing cannot reveal allowlist membership.
-    if let Some(retry_after_secs) = check_magic_link_rate_limit(&req.email) {
-        let mins = retry_after_secs.div_ceil(60);
-        tracing::warn!("Magic link rate limit exceeded for: {}", req.email);
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            [(
-                RETRY_AFTER,
-                axum::http::HeaderValue::from_str(&retry_after_secs.to_string())
-                    .unwrap_or_else(|_| axum::http::HeaderValue::from_static("3600")),
-            )],
-            Json(MessageResponse {
-                message: format!(
-                    "Too many sign-in attempts. Please try again in {mins} minute{}.",
-                    if mins == 1 { "" } else { "s" }
-                ),
-            }),
-        )
-            .into_response();
-    }
-
-    request_magic_link_inner(headers, req).await.into_response()
-}
-
-async fn request_magic_link_inner(
+pub(super) async fn request_magic_link_inner(
     headers: HeaderMap,
     req: MagicLinkRequest,
 ) -> Result<Json<MessageResponse>, StatusCode> {
@@ -1539,47 +915,6 @@ async fn request_magic_link_inner(
     }))
 }
 
-pub async fn verify_magic_link(
-    headers: HeaderMap,
-    extract::Json(req): extract::Json<MagicLinkVerifyRequest>,
-) -> Result<(HeaderMap, Json<AuthResponse>), StatusCode> {
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user = Users::find()
-        .filter_active_by_magic_link_token(&req.token)
-        .one(&connection)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to query user by magic link token: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    // Check expiry
-    let expires_at = user
-        .magic_link_token_expires_at
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    if Utc::now() > expires_at.with_timezone(&Utc) {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    // Clear token, mark email verified
-    let mut user_update: users::ActiveModel = user.into();
-    user_update.magic_link_token = Set(None);
-    user_update.magic_link_token_expires_at = Set(None);
-    user_update.email_verified = Set(true);
-    let user = user_update.update(&connection).await.map_err(|e| {
-        tracing::error!("Failed to clear magic link token: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let (token, user_info, orgs) = finalize_login(user, &connection).await?;
-    Ok(login_response(&headers, token, user_info, orgs))
-}
-
 async fn send_magic_link_email(
     to_email: &str,
     token: &str,
@@ -1620,7 +955,7 @@ async fn send_magic_link_email(
 
 static MAGIC_LINK_TEMPLATE: Lazy<Handlebars<'static>> = Lazy::new(|| {
     let mut hbs = Handlebars::new();
-    hbs.register_template_string("magic_link", include_str!("../../emails/magic_link.hbs"))
+    hbs.register_template_string("magic_link", include_str!("../../../emails/magic_link.hbs"))
         .expect("magic_link.hbs is valid");
     hbs
 });
@@ -1635,44 +970,4 @@ fn build_magic_link_email_html(magic_link_url: &str, to_email: &str) -> Result<S
     MAGIC_LINK_TEMPLATE
         .render("magic_link", &data)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to render magic link template: {e}")))
-}
-
-#[cfg(test)]
-mod mode_field_tests {
-    use super::*;
-    use crate::server::serve_mode::ServeMode;
-
-    #[test]
-    fn local_mode_serializes() {
-        let response = AuthConfigResponse {
-            auth_enabled: false,
-            google: None,
-            okta: None,
-            magic_link: None,
-            enterprise: false,
-            observability_enabled: false,
-            github: None,
-            mode: ServeMode::Local.label(),
-            billing_enabled: false,
-        };
-        let json = serde_json::to_value(&response).expect("serialize");
-        assert_eq!(json["mode"], "local");
-    }
-
-    #[test]
-    fn cloud_mode_serializes() {
-        let response = AuthConfigResponse {
-            auth_enabled: false,
-            google: None,
-            okta: None,
-            magic_link: None,
-            enterprise: false,
-            observability_enabled: false,
-            github: None,
-            mode: ServeMode::Cloud.label(),
-            billing_enabled: false,
-        };
-        let json = serde_json::to_value(&response).expect("serialize");
-        assert_eq!(json["mode"], "cloud");
-    }
 }

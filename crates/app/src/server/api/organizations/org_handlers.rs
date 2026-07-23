@@ -1,0 +1,347 @@
+use axum::extract::Json;
+use axum::http::StatusCode;
+use chrono::Utc;
+use entity::org_members;
+use entity::org_members::OrgRole;
+use entity::organizations;
+use entity::prelude::*;
+use entity::workspaces;
+use oxy::database::client::establish_connection;
+use oxy_auth::extractor::AuthenticatedUserExtractor;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QuerySelect,
+    TransactionTrait,
+};
+use uuid::Uuid;
+
+use crate::server::api::middlewares::org_context::OrgContextExtractor;
+use crate::server::api::middlewares::role_guards::{OrgAdmin, OrgOwner};
+
+use super::dto::*;
+use super::ops::*;
+
+// ---------------------------------------------------------------------------
+// Organization CRUD
+// ---------------------------------------------------------------------------
+
+/// POST /orgs
+pub async fn create_org(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(req): Json<CreateOrgRequest>,
+) -> Result<Json<OrgResponse>, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("DB connection error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let slug = slugify_name(&req.slug);
+    if slug.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if is_reserved_slug(&slug) {
+        // Not a collision — the resource doesn't exist, the name is forbidden
+        // because it would shadow a top-level frontend route. 422 lets the
+        // client distinguish this from a real slug-taken case.
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    let txn = db.begin().await.map_err(|e| {
+        tracing::error!("Failed to begin transaction: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Best-effort slug uniqueness check. The DB UNIQUE constraint is the real
+    // guard against races; this SELECT is an early-exit optimisation only.
+    let existing = Organizations::find()
+        .filter(organizations::Column::Slug.eq(&slug))
+        .one(&txn)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check slug uniqueness: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    if existing.is_some() {
+        return Err(StatusCode::CONFLICT);
+    }
+
+    let now = Utc::now().fixed_offset();
+    let org_id = Uuid::new_v4();
+
+    let org = organizations::ActiveModel {
+        id: ActiveValue::Set(org_id),
+        name: ActiveValue::Set(req.name),
+        slug: ActiveValue::Set(slug),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
+        created_at: ActiveValue::Set(now),
+        updated_at: ActiveValue::Set(now),
+    };
+    let org = org.insert(&txn).await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("unique") || msg.contains("duplicate") {
+            tracing::warn!("Slug uniqueness conflict on insert (caught at DB level): {e}");
+            return StatusCode::CONFLICT;
+        }
+        tracing::error!("Failed to insert organization: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Add the creator as owner.
+    let member = org_members::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        org_id: ActiveValue::Set(org_id),
+        user_id: ActiveValue::Set(user.id),
+        role: ActiveValue::Set(OrgRole::Owner),
+        created_at: ActiveValue::Set(now),
+        updated_at: ActiveValue::Set(now),
+    };
+    member.insert(&txn).await.map_err(|e| {
+        tracing::error!("Failed to insert org member: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Eager-insert the org_billing row so the SubscriptionGuard always finds
+    // it. Status starts as `incomplete` — admin runs `provision_subscription`
+    // after the sales call to flip it Active.
+    let billing = entity::org_billing::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        org_id: ActiveValue::Set(org_id),
+        status: ActiveValue::Set(entity::org_billing::BillingStatus::Incomplete),
+        seats_paid: ActiveValue::Set(0),
+        created_at: ActiveValue::Set(now),
+        updated_at: ActiveValue::Set(now),
+        ..Default::default()
+    };
+    billing.insert(&txn).await.map_err(|e| {
+        tracing::error!("Failed to insert org_billing row: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    txn.commit().await.map_err(|e| {
+        tracing::error!("Failed to commit transaction: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Airhouse provisioning is explicit only — the user triggers it from the
+    // Settings → Airhouse page via POST /api/airhouse/me/provision.
+
+    Ok(Json(org_response(&org, &OrgRole::Owner)))
+}
+
+/// GET /orgs
+pub async fn list_orgs(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+) -> Result<Json<Vec<OrgResponse>>, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("DB connection error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let memberships = OrgMembers::find()
+        .filter(org_members::Column::UserId.eq(user.id))
+        .all(&db)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query memberships: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let mut org_ids: Vec<Uuid> = memberships.iter().map(|m| m.org_id).collect();
+
+    // Orgs the caller is ACTING AS. While an assume-role session is live, staff
+    // effectively *are* an Owner of that org (`org_context` synthesizes exactly
+    // that), so the org must appear in their org list — otherwise the frontend
+    // can't resolve `/{slug}` and the operator is told "You don't have permission"
+    // for a tenant they are, at that moment, administering.
+    //
+    // The old escape hatch was the admin org directory, but the admin surface is
+    // closed while acting (`assume::block_admin_while_acting`), which is what
+    // broke this. Making the list honest is better than punching a hole in the
+    // block: the truth is that you have this org right now.
+    let assumed: Vec<Uuid> = crate::server::api::admin::assume::live_sessions_for(&db, user.id)
+        .await
+        .into_iter()
+        .map(|s| s.org_id)
+        .collect();
+    for id in &assumed {
+        if !org_ids.contains(id) {
+            org_ids.push(*id);
+        }
+    }
+
+    if org_ids.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    let orgs = Organizations::find()
+        .filter(organizations::Column::Id.is_in(org_ids.clone()))
+        .all(&db)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query organizations: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let member_counts = count_members_per_org(&db, &org_ids).await?;
+    let workspace_counts = count_workspaces_per_org(&db, &org_ids).await?;
+
+    // The role an assumed org resolves to is NOT always Owner. Staff act as Owner;
+    // a partner acting as a client is synthesized as Admin (see
+    // `assume::ActingAs::org_role`). Label each assumed org with the role the
+    // server will actually enforce for it — hardcoding "owner" would surface
+    // owner-only affordances (delete-org, billing, promote) that then 403, which is
+    // exactly the mismatch this block is supposed to avoid.
+    let mut assumed_role: std::collections::HashMap<Uuid, &'static str> = Default::default();
+    for org_id in &assumed {
+        if let Some(authority) =
+            crate::server::api::admin::assume::may_act_as(&db, user.id, &user.email, *org_id).await
+        {
+            assumed_role.insert(*org_id, authority.org_role().as_str());
+        }
+    }
+
+    let responses: Vec<OrgResponse> = orgs
+        .iter()
+        .filter_map(|org| {
+            // A real membership wins; otherwise this org is here because we're
+            // acting as it, and the label is the role `org_context` will actually
+            // synthesize — never more, never less.
+            let role = match memberships.iter().find(|m| m.org_id == org.id) {
+                Some(m) => m.role.as_str().to_string(),
+                None => assumed_role.get(&org.id)?.to_string(),
+            };
+            Some(OrgResponse {
+                id: org.id,
+                name: org.name.clone(),
+                slug: org.slug.clone(),
+                role,
+                created_at: org.created_at.to_rfc3339(),
+                updated_at: org.updated_at.to_rfc3339(),
+                workspace_count: Some(workspace_counts.get(&org.id).copied().unwrap_or(0)),
+                member_count: Some(member_counts.get(&org.id).copied().unwrap_or(0)),
+            })
+        })
+        .collect();
+
+    Ok(Json(responses))
+}
+
+/// GET /orgs/:org_id
+pub async fn get_org(
+    OrgContextExtractor(ctx): OrgContextExtractor,
+) -> Result<Json<OrgResponse>, StatusCode> {
+    Ok(Json(org_response(&ctx.org, &ctx.membership.role)))
+}
+
+/// PATCH /orgs/:org_id
+pub async fn update_org(
+    OrgAdmin(ctx): OrgAdmin,
+    Json(req): Json<UpdateOrgRequest>,
+) -> Result<Json<OrgResponse>, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("DB connection error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let mut active: organizations::ActiveModel = ctx.org.clone().into();
+    if let Some(name) = req.name {
+        active.name = ActiveValue::Set(name);
+    }
+    if let Some(slug) = req.slug {
+        let normalized = slugify_name(&slug);
+        if normalized.is_empty() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        if is_reserved_slug(&normalized) {
+            // See create_org — 422 distinguishes "forbidden name" from a real
+            // slug-already-taken collision.
+            return Err(StatusCode::UNPROCESSABLE_ENTITY);
+        }
+        active.slug = ActiveValue::Set(normalized);
+    }
+    active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
+
+    let updated = active.update(&db).await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("unique") || msg.contains("duplicate") {
+            tracing::warn!("Slug uniqueness conflict on update (caught at DB level): {e}");
+            return StatusCode::CONFLICT;
+        }
+        tracing::error!("Failed to update organization: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(Json(org_response(&updated, &ctx.membership.role)))
+}
+
+/// DELETE /orgs/:org_id
+pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("DB connection error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // The org delete below cascades its workspaces away (FK ON DELETE CASCADE),
+    // so capture their ids up front — we need them both to deprovision airhouse
+    // tenants (below) and to clean up their orphaned schedule rows (after the
+    // delete), neither of which the cascade handles.
+    let workspace_ids: Vec<Uuid> = match workspaces::Entity::find()
+        .filter(workspaces::Column::OrgId.eq(ctx.org.id))
+        .select_only()
+        .column(workspaces::Column::Id)
+        .into_tuple()
+        .all(&db)
+        .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(
+                org_id = %ctx.org.id,
+                "failed to list org workspaces for cleanup: {e}"
+            );
+            Vec::new()
+        }
+    };
+
+    // Deprovision each of the org's workspaces before deleting the org.
+    // The airhouse_tenants table is keyed by workspace_id (since the
+    // m20260430 rebind), so passing org.id to deprovision was a no-op
+    // and the SAs leaked. The FK to workspaces is ON DELETE CASCADE so
+    // the local rows would still get cleaned up by the org delete below,
+    // but the airhouse-side service accounts wouldn't be revoked. This
+    // loop hits airhouse with each workspace's SA before we drop the
+    // local data.
+    if let Some(provisioner) = airhouse::provisioner_for(db.clone()) {
+        for workspace_id in &workspace_ids {
+            if let Err(e) = provisioner.deprovision(*workspace_id).await {
+                tracing::warn!(
+                    org_id = %ctx.org.id,
+                    workspace_id = %workspace_id,
+                    "airhouse tenant deprovisioning failed: {e}"
+                );
+            }
+        }
+    }
+
+    Organizations::delete_by_id(ctx.org.id)
+        .exec(&db)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete organization: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Schedules carry a plain `workspace_id` with no FK, so the org-delete
+    // cascade above leaves them behind — remove each cascaded workspace's rows
+    // or their health_eval/monitor schedules keep firing into the dead-letter
+    // queue.
+    for workspace_id in &workspace_ids {
+        crate::server::api::workspaces::cleanup_workspace_schedules(&db, *workspace_id).await;
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+#[path = "../organizations_tests.rs"]
+mod organizations_tests;
