@@ -82,7 +82,24 @@ pub enum Action {
     /// of the app's org, an Oxy global admin, or a partner operator whose ceiling
     /// grants `develop_apps`. Deliberately NOT the general "manage" partner path —
     /// develop_apps is the read-the-app's-data capability, distinct from manage_apps.
+    ///
+    /// When the app is **restricted** (`apps.visibility = 'members'`), plain org
+    /// membership no longer suffices — the principal must hold an `app_members`
+    /// row, or be an org officer (owner/admin) / staff / a develop_apps partner.
+    /// That is the one place in this model where a fact SUBTRACTS reach rather
+    /// than adding it.
     AppAccess,
+    /// Administer a customer app from *inside* the app — its privileged surface
+    /// (e.g. the warehouse app's `?view=admin` and the data behind it). Any org
+    /// **officer** (owner or admin), an `app_members` row with `role = 'admin'`,
+    /// or Oxy staff.
+    ///
+    /// The `app_members` admin role extends admin rights DOWNWARD: it names an
+    /// app's administrator who is NOT an org officer (the warehouse admin who
+    /// isn't org staff), without granting org-wide billing/member management.
+    /// Deliberately not a develop_apps partner — building an app is not
+    /// administering its live privileged surface.
+    AppAdmin,
     /// Rename a workspace (`ensure_org_admin_or_workspace_creator`): an org
     /// owner/admin, OR the plain member who CREATED that workspace. The creator half
     /// is the only place a `created_by` self-claim grants a workspace action, so it
@@ -128,7 +145,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 23] = [
+    pub const ALL: [Action; 24] = [
         Action::OrgRead,
         Action::MemberInvite,
         Action::MemberSetRole,
@@ -139,6 +156,7 @@ impl Action {
         Action::WorkspaceManage,
         Action::WorkspaceEdit,
         Action::AppAccess,
+        Action::AppAdmin,
         Action::WorkspaceRename,
         Action::NamespaceDelete,
         Action::WorkspaceOxyAccess,
@@ -169,6 +187,7 @@ impl Action {
             Action::WorkspaceManage => "workspace_manage",
             Action::WorkspaceEdit => "workspace_edit",
             Action::AppAccess => "app_access",
+            Action::AppAdmin => "app_admin",
             Action::WorkspaceRename => "workspace_rename",
             Action::NamespaceDelete => "namespace_delete",
             Action::WorkspaceOxyAccess => "workspace_oxy_access",
@@ -198,6 +217,7 @@ impl Action {
             Action::WorkspaceManage => Ring::WorkspaceAdmin,
             Action::WorkspaceEdit => Ring::WorkspaceEdit,
             Action::AppAccess => Ring::AppAccess,
+            Action::AppAdmin => Ring::AppAdmin,
             Action::WorkspaceRename | Action::NamespaceDelete => Ring::OrgAdminOrCreator,
             Action::WorkspaceOxyAccess => Ring::WorkspaceAdminStrict,
             Action::PartnerManageMembers => Ring::PartnerCap(Cap::ManageMembers),
@@ -298,7 +318,15 @@ enum Ring {
     /// Customer-app data plane: a real member of the app's org, a global admin, or a
     /// partner with `develop_apps` over the org (`check_customer_app_gates`). NOT the
     /// coarse managed-partner path, and NOT global owner (the check uses app-admin).
+    ///
+    /// Conditional on `resource.app_restricted`: a restricted app drops the plain
+    /// org-membership term and demands an `app_members` row (org officers + staff +
+    /// develop_apps partner remain).
     AppAccess,
+    /// A customer app's own privileged surface: any org officer (owner/admin), an
+    /// `app_members` admin row, or Oxy staff. No partner term — see
+    /// [`Action::AppAdmin`].
+    AppAdmin,
     /// Org owner/admin (via the hierarchy) OR the thing's creator — the plain member
     /// who made it may manage it. The creator claim reads `resource.owner`
     /// (`created_by`), and is confined to the actions that opt into this ring, so it
@@ -353,6 +381,11 @@ pub struct Resource {
     /// capability through partner B must not authorize anything while scoped to A.
     /// `None` for every non-partner decision.
     pub partner: Option<Uuid>,
+    /// For an `App` resource: the app is restricted to explicitly-listed members
+    /// (`apps.visibility = 'members'`). `false` — the default everywhere else —
+    /// preserves the historical "any org member" rule, so this can only ever
+    /// tighten a specific app and never loosens one.
+    pub app_restricted: bool,
 }
 
 impl Resource {
@@ -364,6 +397,7 @@ impl Resource {
             org_id,
             owner: None,
             partner: None,
+            app_restricted: false,
         }
     }
 
@@ -376,6 +410,7 @@ impl Resource {
             org_id,
             owner: None,
             partner: None,
+            app_restricted: false,
         }
     }
 
@@ -390,6 +425,7 @@ impl Resource {
             org_id: Uuid::nil(),
             owner: None,
             partner: None,
+            app_restricted: false,
         }
     }
 
@@ -402,6 +438,7 @@ impl Resource {
             org_id: Uuid::nil(),
             owner: None,
             partner: Some(partner_id),
+            app_restricted: false,
         }
     }
 
@@ -414,6 +451,7 @@ impl Resource {
             org_id: client_org_id,
             owner: None,
             partner: Some(acting_partner),
+            app_restricted: false,
         }
     }
 
@@ -427,6 +465,7 @@ impl Resource {
             org_id,
             owner: created_by,
             partner: None,
+            app_restricted: false,
         }
     }
 
@@ -439,11 +478,16 @@ impl Resource {
             org_id,
             owner: created_by,
             partner: None,
+            app_restricted: false,
         }
     }
 
     /// A customer app, scoped to its owning org (the app is a child of the org, so
     /// `resource in <org set>` resolves). `id` may be the app/project id.
+    ///
+    /// Treated as **unrestricted** (`visibility = 'org'`) — the historical rule. Use
+    /// [`Resource::app_with_visibility`] where the app row is in hand, so a
+    /// restricted app is actually enforced.
     pub fn app(id: Uuid, org_id: Uuid) -> Self {
         Self {
             kind: ResourceKind::App,
@@ -451,6 +495,17 @@ impl Resource {
             org_id,
             owner: None,
             partner: None,
+            app_restricted: false,
+        }
+    }
+
+    /// A customer app carrying its visibility. `id` MUST be the **app id** (not the
+    /// project/workspace id): per-app membership is keyed by it, so passing the
+    /// wrong id would silently deny every member of a restricted app.
+    pub fn app_with_visibility(id: Uuid, org_id: Uuid, restricted: bool) -> Self {
+        Self {
+            app_restricted: restricted,
+            ..Self::app(id, org_id)
         }
     }
 }
@@ -486,6 +541,13 @@ pub struct PrincipalFacts {
     /// the org-derived workspace role comes free from the org sets via the hierarchy,
     /// and overrides can only elevate, never downgrade.
     pub ws_admin_override: Vec<Uuid>,
+    /// Apps where the principal holds an `app_members` row of ANY role. Read only
+    /// by [`Ring::AppAccess`], and only when the app is restricted — so an app
+    /// whose visibility is `org` behaves exactly as it did before this existed.
+    pub app_memberships: Vec<Uuid>,
+    /// Apps where the principal's `app_members` row is `role = 'admin'`. A subset
+    /// of [`Self::app_memberships`]; gates [`Ring::AppAdmin`].
+    pub app_admin_memberships: Vec<Uuid>,
     pub is_global_admin: bool,
     pub is_global_owner: bool,
 }
@@ -578,9 +640,30 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
         // scoped to an acting partner. And it is develop_apps, never the coarse managed
         // path: reading an app's data is not managing its lifecycle.
         Ring::AppAccess => {
-            in_org(&facts.member_orgs)
-                || is_global
+            // Break-glass regardless of visibility: staff, a develop_apps partner,
+            // and any org OFFICER (owner or admin — `admin_orgs` contains owners).
+            // An org's own officers are never locked out of its apps.
+            let unconditional = is_global
                 || facts.any_partner_grants(Cap::DevelopApps, resource.org_id)
+                || in_org(&facts.admin_orgs);
+            if resource.app_restricted {
+                // Restricted: plain org membership is NOT enough — that is the
+                // whole point. An explicit `app_members` row (either role) is.
+                unconditional || facts.app_memberships.contains(&resource.id)
+            } else {
+                // Unrestricted (the default): unchanged — any member of the org.
+                unconditional || in_org(&facts.member_orgs)
+            }
+        }
+        // An org officer (owner or admin) administers every app in the org. The
+        // `app_members` admin role extends that DOWNWARD to a non-officer — the
+        // app's designated admin who isn't org staff (e.g. the warehouse admin) —
+        // without granting org-wide billing/member powers. No develop_apps term:
+        // building an app is not administering its live privileged surface.
+        Ring::AppAdmin => {
+            is_global
+                || in_org(&facts.admin_orgs)
+                || facts.app_admin_memberships.contains(&resource.id)
         }
         // The console IS scoped: the capability must come from the partner being acted
         // as. Operating a partner that grants `cap` over some other client authorizes
@@ -900,6 +983,7 @@ mod policy_tests {
             org_id: org(),
             owner: Some(user()),
             partner: None,
+            app_restricted: false,
         };
         assert!(allows(&f, Action::OrgRead, &thread));
         // A different user does not own it.
@@ -922,6 +1006,7 @@ mod policy_tests {
             org_id: org(),
             owner: Some(user()),
             partner: None,
+            app_restricted: false,
         };
         // Owning a thread grants the read...
         assert!(allows(&f, Action::OrgRead, &thread));
@@ -939,6 +1024,7 @@ mod policy_tests {
             org_id: org(),
             owner: Some(user()),
             partner: None,
+            app_restricted: false,
         };
         assert!(!allows(&f, Action::OrgRead, &owned_workspace));
         assert!(!allows(&f, Action::WorkspaceManage, &owned_workspace));
@@ -1102,6 +1188,169 @@ mod policy_tests {
         assert!(allows(&go, Action::AppAccess, &app));
         // A plain outsider is denied.
         assert!(!allows(&facts(), Action::AppAccess, &app));
+    }
+
+    #[test]
+    fn restricted_app_drops_plain_org_membership_but_keeps_break_glass() {
+        let app_id = Uuid::from_u128(950);
+        let open = Resource::app_with_visibility(app_id, org(), false);
+        let restricted = Resource::app_with_visibility(app_id, org(), true);
+
+        // A plain org member: reaches an open app, DENIED a restricted one. This
+        // is the subtraction the whole feature exists for.
+        let member = PrincipalFacts {
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        assert!(allows(&member, Action::AppAccess, &open));
+        assert!(!allows(&member, Action::AppAccess, &restricted));
+
+        // The same member WITH an app_members row reaches it (either role).
+        let app_member = PrincipalFacts {
+            member_orgs: vec![org()],
+            app_memberships: vec![app_id],
+            ..facts()
+        };
+        assert!(allows(&app_member, Action::AppAccess, &restricted));
+
+        // A membership in a DIFFERENT app doesn't help.
+        let elsewhere = PrincipalFacts {
+            member_orgs: vec![org()],
+            app_memberships: vec![Uuid::from_u128(951)],
+            ..facts()
+        };
+        assert!(!allows(&elsewhere, Action::AppAccess, &restricted));
+
+        // Break-glass: an org officer (owner OR admin) and Oxy staff still reach a
+        // restricted app, so an org can't lock itself (or support) out of its app.
+        let owner = PrincipalFacts {
+            owned_orgs: vec![org()],
+            admin_orgs: vec![org()],
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        let org_admin = PrincipalFacts {
+            admin_orgs: vec![org()],
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        let staff = PrincipalFacts {
+            is_global_admin: true,
+            ..facts()
+        };
+        assert!(allows(&owner, Action::AppAccess, &restricted));
+        assert!(allows(&org_admin, Action::AppAccess, &open));
+        assert!(allows(&org_admin, Action::AppAccess, &restricted));
+        assert!(allows(&staff, Action::AppAccess, &restricted));
+
+        // A develop_apps partner keeps its data-plane reach.
+        let dev_partner = PrincipalFacts {
+            partners: vec![standing(partner_org(), org(), &[Cap::DevelopApps])],
+            ..facts()
+        };
+        assert!(allows(&dev_partner, Action::AppAccess, &restricted));
+
+        // An outsider is denied either way.
+        let outsider = PrincipalFacts {
+            member_orgs: vec![other_org()],
+            ..facts()
+        };
+        assert!(!allows(&outsider, Action::AppAccess, &open));
+        assert!(!allows(&outsider, Action::AppAccess, &restricted));
+    }
+
+    #[test]
+    fn app_admin_is_an_org_officer_the_app_admin_role_or_staff() {
+        let app_id = Uuid::from_u128(960);
+        let app = Resource::app_with_visibility(app_id, org(), false);
+
+        // The feature's reason to exist: an app admin who is only a plain org
+        // member — admin rights extended DOWNWARD to a non-officer.
+        let app_admin = PrincipalFacts {
+            member_orgs: vec![org()],
+            app_memberships: vec![app_id],
+            app_admin_memberships: vec![app_id],
+            ..facts()
+        };
+        assert!(allows(&app_admin, Action::AppAdmin, &app));
+
+        // A non-admin app member reaches the app but NOT its privileged surface.
+        let app_member = PrincipalFacts {
+            member_orgs: vec![org()],
+            app_memberships: vec![app_id],
+            ..facts()
+        };
+        assert!(allows(&app_member, Action::AppAccess, &app));
+        assert!(!allows(&app_member, Action::AppAdmin, &app));
+
+        // Any org officer (owner OR admin) administers every app in the org, and
+        // staff are break-glass.
+        let owner = PrincipalFacts {
+            owned_orgs: vec![org()],
+            admin_orgs: vec![org()],
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        let org_admin = PrincipalFacts {
+            admin_orgs: vec![org()],
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        let staff = PrincipalFacts {
+            is_global_owner: true,
+            ..facts()
+        };
+        assert!(allows(&owner, Action::AppAdmin, &app));
+        assert!(allows(&org_admin, Action::AppAdmin, &app));
+        assert!(allows(&staff, Action::AppAdmin, &app));
+
+        // But a plain org MEMBER (no app-admin row) does not administer it — the
+        // line is at officer, not member.
+        let plain_member = PrincipalFacts {
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        assert!(!allows(&plain_member, Action::AppAdmin, &app));
+
+        // Admin of a DIFFERENT app grants nothing here.
+        let other_app_admin = PrincipalFacts {
+            member_orgs: vec![org()],
+            app_admin_memberships: vec![Uuid::from_u128(961)],
+            ..facts()
+        };
+        assert!(!allows(&other_app_admin, Action::AppAdmin, &app));
+
+        // A develop_apps partner builds the app but does not administer it.
+        let dev_partner = PrincipalFacts {
+            partners: vec![standing(partner_org(), org(), &Cap::ALL)],
+            ..facts()
+        };
+        assert!(!allows(&dev_partner, Action::AppAdmin, &app));
+
+        // A plain member and an outsider hold nothing.
+        assert!(!allows(&facts(), Action::AppAdmin, &app));
+    }
+
+    #[test]
+    fn app_membership_facts_do_not_leak_into_other_rings() {
+        // Pins the blast radius: holding an app-admin row must not confer org or
+        // workspace authority — the failure mode if a future ring reads these sets.
+        let app_id = Uuid::from_u128(970);
+        let f = PrincipalFacts {
+            member_orgs: vec![org()],
+            app_memberships: vec![app_id],
+            app_admin_memberships: vec![app_id],
+            ..facts()
+        };
+        assert!(!allows(&f, Action::MemberSetRole, &Resource::org(org())));
+        assert!(!allows(&f, Action::OrgBilling, &Resource::org(org())));
+        assert!(!allows(&f, Action::OrgOwnerManage, &Resource::org(org())));
+        assert!(!allows(
+            &f,
+            Action::WorkspaceManage,
+            &Resource::workspace(Uuid::from_u128(971), org())
+        ));
+        assert!(!allows(&f, Action::PlatformOps, &Resource::platform()));
     }
 
     #[test]

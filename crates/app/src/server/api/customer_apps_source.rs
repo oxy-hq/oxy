@@ -124,6 +124,7 @@ mod tests {
 
     fn fake_app(source_type: &str, source_config: serde_json::Value) -> apps::Model {
         apps::Model {
+            visibility: "org".to_string(),
             id: uuid::Uuid::nil(),
             slug: "x".to_string(),
             name: "X".to_string(),

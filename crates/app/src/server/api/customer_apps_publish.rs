@@ -400,6 +400,9 @@ async fn upsert_app(
         .clone()
         .unwrap_or_else(|| humanize_slug(&input.app_slug));
     let model = apps::ActiveModel {
+        // Leave to the DB default ('org'): a new app is org-visible unless
+        // explicitly restricted later.
+        visibility: sea_orm::ActiveValue::NotSet,
         id: ActiveValue::Set(id),
         slug: ActiveValue::Set(input.app_slug.clone()),
         name: ActiveValue::Set(name),

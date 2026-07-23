@@ -303,6 +303,9 @@ async fn ensure_app(conn: &Conn, target: &AppTarget, app_id: Uuid) -> Result<(),
     }
 
     apps::ActiveModel {
+        // Leave to the DB default ('org'): a new app is org-visible unless
+        // explicitly restricted later.
+        visibility: sea_orm::ActiveValue::NotSet,
         id: ActiveValue::Set(app_id),
         slug: ActiveValue::Set(APP_SLUG.to_string()),
         name: ActiveValue::Set("Oxy Starter".to_string()),

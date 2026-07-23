@@ -7,12 +7,26 @@
 //!
 //! Design: `internal-docs/2026-07-20-customer-app-email-send-design.md`.
 
-use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message as SesMessage};
+use aws_sdk_sesv2::types::{
+    Attachment, AttachmentContentDisposition, Body, Content, Destination, EmailContent,
+    Message as SesMessage,
+};
 use serde::Deserialize;
 
 /// Max combined `to` + `cc` + `bcc` recipients per `ctx.email.send` call
 /// (Cloudflare's number). Bounds fan-out from a single send.
 pub const MAX_RECIPIENTS_PER_SEND: usize = 50;
+
+/// Max combined **decoded** attachment bytes per send. Sits comfortably under
+/// SES's ~40 MB total message ceiling and under the 32 MiB customer-app request
+/// body limit (a base64 payload inflates ~33% in transit, so ~10 MiB decoded is
+/// ~13.4 MiB on the wire). Anything larger should be stored via `ctx.storage`
+/// and emailed as a presigned link instead of inlined.
+pub const MAX_ATTACHMENT_TOTAL_BYTES: usize = 10 * 1024 * 1024;
+
+/// Max attachment count per send — bounds work per message independently of the
+/// byte cap (a thousand 1-byte parts is also a bad message).
+pub const MAX_ATTACHMENTS_PER_SEND: usize = 20;
 
 /// Default platform sender mailbox when `OXY_APP_EMAIL_FROM` is unset. Must be a
 /// verified SES identity in the target account.
@@ -56,9 +70,32 @@ pub struct EmailSendInput {
     text: Option<String>,
     #[serde(rename = "idempotencyKey", default)]
     idempotency_key: Option<String>,
+    /// Files to attach, base64-encoded by the author. Bounded by
+    /// [`MAX_ATTACHMENTS_PER_SEND`] and [`MAX_ATTACHMENT_TOTAL_BYTES`].
+    #[serde(default)]
+    attachments: Option<Vec<EmailAttachmentInput>>,
     /// Not an accepted field — captured only to reject it explicitly.
     #[serde(default)]
     from: Option<String>,
+}
+
+/// One author-supplied attachment. `content` is base64 (the only way binary can
+/// cross the isolate's JSON op boundary); it is decoded and size-checked here.
+#[derive(Debug, Deserialize)]
+pub struct EmailAttachmentInput {
+    #[serde(default)]
+    filename: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(rename = "contentType", default)]
+    content_type: Option<String>,
+    /// Render inline (e.g. an image referenced by `cid:`) rather than as a
+    /// downloadable attachment. Defaults to false.
+    #[serde(default)]
+    inline: Option<bool>,
+    /// Content-ID for an inline part, referenced from the HTML as `cid:<id>`.
+    #[serde(rename = "contentId", default)]
+    content_id: Option<String>,
 }
 
 /// Sends email on behalf of a customer app's function. Platform-controlled
@@ -176,6 +213,7 @@ impl AppEmailer {
         {
             return Err("InvalidEmailPayload: `idempotencyKey` exceeds 256 characters".to_string());
         }
+        let attachments = validate_attachments(input.attachments.unwrap_or_default())?;
         Ok(ValidatedEmail {
             subject,
             to,
@@ -184,6 +222,7 @@ impl AppEmailer {
             reply_to: input.reply_to.filter(|s| !s.is_empty()),
             html: input.html,
             text: input.text,
+            attachments,
         })
     }
 
@@ -194,11 +233,16 @@ impl AppEmailer {
     fn preview_local(&self, msg: &ValidatedEmail) -> serde_json::Value {
         let message_id = format!("local-test-{}", uuid::Uuid::new_v4());
         // Prefer the HTML body for a faithful preview; fall back to text.
-        let (contents, ext) = match (&msg.html, &msg.text) {
+        let (mut contents, ext) = match (&msg.html, &msg.text) {
             (Some(html), _) => (html.clone(), "html"),
             (None, Some(text)) => (text.clone(), "txt"),
             (None, None) => (String::new(), "txt"),
         };
+        // The preview doesn't send, so attachments would otherwise be invisible —
+        // list them so a dev can confirm what WOULD have been attached.
+        if !msg.attachments.is_empty() {
+            contents.push_str(&attachment_manifest(&msg.attachments, ext));
+        }
         let dir = preview_dir();
         prune_old_previews(&dir);
         let path = dir.join(format!("email-{message_id}.{ext}"));
@@ -232,10 +276,15 @@ impl AppEmailer {
             dest = dest.set_bcc_addresses(Some(msg.bcc.clone()));
         }
 
-        let content = SesMessage::builder()
+        let mut content = SesMessage::builder()
             .subject(text_content(&msg.subject)?)
-            .body(build_body(msg.html.as_deref(), msg.text.as_deref())?)
-            .build();
+            .body(build_body(msg.html.as_deref(), msg.text.as_deref())?);
+        // Attachments ride the SES v2 **simple** content path — `Message` carries
+        // them natively, so this needs no hand-built raw MIME.
+        if !msg.attachments.is_empty() {
+            content = content.set_attachments(Some(build_attachments(&msg.attachments)?));
+        }
+        let content = content.build();
 
         let mut req = client
             .send_email()
@@ -265,6 +314,257 @@ struct ValidatedEmail {
     reply_to: Option<String>,
     html: Option<String>,
     text: Option<String>,
+    attachments: Vec<ValidatedAttachment>,
+}
+
+/// An attachment whose base64 has been decoded and size-checked.
+#[derive(Debug)]
+struct ValidatedAttachment {
+    filename: String,
+    bytes: Vec<u8>,
+    content_type: Option<String>,
+    inline: bool,
+    content_id: Option<String>,
+}
+
+/// Decode + bound the author's attachments. Enforces the count cap, the
+/// **decoded** total-byte cap, a non-empty header-safe filename, and rejects
+/// malformed base64 loudly rather than silently sending an empty part.
+fn validate_attachments(
+    inputs: Vec<EmailAttachmentInput>,
+) -> Result<Vec<ValidatedAttachment>, String> {
+    if inputs.len() > MAX_ATTACHMENTS_PER_SEND {
+        return Err(format!(
+            "TooManyAttachments: {} attachments exceeds the per-send limit of \
+             {MAX_ATTACHMENTS_PER_SEND}",
+            inputs.len()
+        ));
+    }
+    let mut out = Vec::with_capacity(inputs.len());
+    let mut total = 0usize;
+    for (idx, a) in inputs.into_iter().enumerate() {
+        let filename = a
+            .filename
+            .as_deref()
+            .map(attachment_filename)
+            .filter(|f| !f.is_empty())
+            .ok_or_else(|| {
+                format!("InvalidEmailPayload: attachment[{idx}] requires a `filename`")
+            })?;
+        let content = a.content.ok_or_else(|| {
+            format!(
+                "InvalidEmailPayload: attachment[{idx}] ('{filename}') requires base64 `content`"
+            )
+        })?;
+        // Ignore whitespace/newlines a caller may have wrapped the base64 in.
+        let compact: String = content.chars().filter(|c| !c.is_whitespace()).collect();
+        let bytes = base64_decode(&compact).map_err(|e| {
+            format!("InvalidEmailPayload: attachment[{idx}] ('{filename}') `content` is not valid base64: {e}")
+        })?;
+        total = total.saturating_add(bytes.len());
+        if total > MAX_ATTACHMENT_TOTAL_BYTES {
+            return Err(format!(
+                "AttachmentTooLarge: attachments total {total} bytes, over the \
+                 {MAX_ATTACHMENT_TOTAL_BYTES}-byte per-send limit; store the file with \
+                 ctx.storage and email a presigned link instead"
+            ));
+        }
+        out.push(ValidatedAttachment {
+            filename,
+            bytes,
+            content_type: a.content_type.filter(|s| !s.trim().is_empty()),
+            inline: a.inline.unwrap_or(false),
+            content_id: a.content_id.filter(|s| !s.trim().is_empty()),
+        });
+    }
+    Ok(out)
+}
+
+/// Standard-base64 decode (accepts the common unpadded form too).
+fn base64_decode(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(s)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(s))
+}
+
+/// Header-safe attachment filename: drop CR/LF and quote characters (MIME
+/// header-injection defense) and any path separators, then bound the length.
+fn attachment_filename(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let mut out: String = base
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '"' | '\r' | '\n'))
+        .collect();
+    out = out.trim().to_string();
+    out.truncate(200);
+    out
+}
+
+/// Render the attachment list for the local preview (which never sends, so the
+/// parts would otherwise be invisible). Renders each part as a mail-client-style
+/// chip (icon · name · size · type · disposition) under a clear "preview only"
+/// banner, so a developer sees exactly what WOULD have been attached.
+fn attachment_manifest(attachments: &[ValidatedAttachment], ext: &str) -> String {
+    let n = attachments.len();
+    let plural = if n == 1 { "" } else { "s" };
+    if ext == "html" {
+        let chips: String = attachments
+            .iter()
+            .map(|a| {
+                let ct = a
+                    .content_type
+                    .as_deref()
+                    .unwrap_or("application/octet-stream");
+                let disposition = if a.inline { "inline" } else { "attachment" };
+                format!(
+                    "<div style=\"display:flex;align-items:center;gap:10px;border:1px solid #e5e7eb;\
+                     border-radius:8px;background:#f9fafb;padding:8px 12px;margin-top:6px;max-width:380px\">\
+                       <div style=\"font-size:22px;line-height:1\">{icon}</div>\
+                       <div style=\"min-width:0\">\
+                         <div style=\"font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;\
+                          text-overflow:ellipsis\">{name}</div>\
+                         <div style=\"color:#6b7280;font-size:12px\">{size} &middot; {label} &middot; {disposition}</div>\
+                       </div>\
+                     </div>",
+                    icon = file_emoji(ct, &a.filename),
+                    name = html_escape(&a.filename),
+                    size = human_size(a.bytes.len()),
+                    label = html_escape(&type_label(ct)),
+                )
+            })
+            .collect();
+        format!(
+            "<hr style=\"border:none;border-top:1px solid #e5e7eb;margin:16px 0\">\
+             <section style=\"font:13px/1.5 -apple-system,system-ui,sans-serif;color:#374151\">\
+               <div style=\"font-weight:600;color:#111827\">\
+                 \u{1F4CE} {n} attachment{plural} \
+                 <span style=\"font-weight:400;color:#9ca3af\">— preview only, not sent</span>\
+               </div>{chips}\
+             </section>"
+        )
+    } else {
+        let lines: String = attachments
+            .iter()
+            .map(|a| {
+                let ct = a
+                    .content_type
+                    .as_deref()
+                    .unwrap_or("application/octet-stream");
+                let disposition = if a.inline { "inline" } else { "attachment" };
+                format!(
+                    "  • {} ({}, {}, {})",
+                    a.filename,
+                    human_size(a.bytes.len()),
+                    type_label(ct),
+                    disposition
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("\n\n--- {n} attachment{plural} (preview only, not sent) ---\n{lines}\n")
+    }
+}
+
+/// Bytes as a compact human size ("2035" → "2.0 KB").
+fn human_size(bytes: usize) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    let b = bytes as f64;
+    if b < KB {
+        format!("{bytes} B")
+    } else if b < MB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{:.1} MB", b / MB)
+    }
+}
+
+/// A short human label for a MIME type ("text/csv" → "CSV").
+fn type_label(content_type: &str) -> String {
+    let base = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim();
+    match base {
+        "text/csv" => "CSV".to_string(),
+        "application/pdf" => "PDF".to_string(),
+        "application/json" => "JSON".to_string(),
+        "text/plain" => "Text".to_string(),
+        "text/html" => "HTML".to_string(),
+        "image/png" => "PNG".to_string(),
+        "image/jpeg" => "JPEG".to_string(),
+        "image/gif" => "GIF".to_string(),
+        "application/zip" => "ZIP".to_string(),
+        other => other.rsplit('/').next().unwrap_or(other).to_uppercase(),
+    }
+}
+
+/// An emoji for the preview chip, keyed off the content type (then the extension).
+fn file_emoji(content_type: &str, filename: &str) -> &'static str {
+    let base = content_type.split(';').next().unwrap_or("").trim();
+    if base.starts_with("image/") {
+        return "🖼️";
+    }
+    match base {
+        "application/pdf" => "📄",
+        "text/csv"
+        | "application/vnd.ms-excel"
+        | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "📊",
+        "application/zip" | "application/gzip" => "📦",
+        "text/plain" | "text/html" | "application/json" => "📄",
+        _ => match filename
+            .rsplit('.')
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "csv" | "xlsx" | "xls" => "📊",
+            "pdf" => "📄",
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => "🖼️",
+            "zip" | "gz" | "tar" => "📦",
+            "txt" | "json" | "html" | "md" => "📄",
+            _ => "📎",
+        },
+    }
+}
+
+/// Minimal HTML escaping for the preview manifest (filenames are author-supplied).
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Map validated attachments onto SES v2 `Attachment` parts.
+fn build_attachments(attachments: &[ValidatedAttachment]) -> Result<Vec<Attachment>, String> {
+    attachments
+        .iter()
+        .map(|a| {
+            let mut b = Attachment::builder()
+                .raw_content(aws_sdk_sesv2::primitives::Blob::new(a.bytes.clone()))
+                .file_name(&a.filename)
+                .content_disposition(if a.inline {
+                    AttachmentContentDisposition::Inline
+                } else {
+                    AttachmentContentDisposition::Attachment
+                });
+            if let Some(ct) = &a.content_type {
+                b = b.content_type(ct);
+            }
+            if let Some(cid) = &a.content_id {
+                b = b.content_id(cid);
+            }
+            b.build().map_err(|e| {
+                format!(
+                    "InvalidEmailPayload: could not build attachment '{}': {e}",
+                    a.filename
+                )
+            })
+        })
+        .collect()
 }
 
 /// Build a UTF-8 SES `Content`.
@@ -556,5 +856,160 @@ mod tests {
             })))
             .unwrap_err();
         assert!(err.contains("idempotencyKey"), "{err}");
+    }
+
+    // ── Attachments ──────────────────────────────────────────────────────────
+
+    /// `b64("hello")` == `aGVsbG8=`.
+    fn with_attachments(attachments: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "to": "a@b.com", "subject": "hi", "text": "yo", "attachments": attachments
+        })
+    }
+
+    #[test]
+    fn decodes_attachment_and_defaults_disposition() {
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "report.pdf", "content": "aGVsbG8=", "contentType": "application/pdf" }
+            ]))))
+            .expect("valid");
+        assert_eq!(msg.attachments.len(), 1);
+        let a = &msg.attachments[0];
+        assert_eq!(a.filename, "report.pdf");
+        assert_eq!(a.bytes, b"hello");
+        assert_eq!(a.content_type.as_deref(), Some("application/pdf"));
+        assert!(!a.inline, "attachment disposition is the default");
+        // Maps onto a real SES part.
+        assert_eq!(build_attachments(&msg.attachments).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn accepts_inline_attachment_with_content_id() {
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "logo.png", "content": "aGVsbG8=", "inline": true, "contentId": "logo" }
+            ]))))
+            .expect("valid");
+        assert!(msg.attachments[0].inline);
+        assert_eq!(msg.attachments[0].content_id.as_deref(), Some("logo"));
+        assert!(build_attachments(&msg.attachments).is_ok());
+    }
+
+    #[test]
+    fn tolerates_whitespace_wrapped_base64() {
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "a.txt", "content": "aGVs\nbG8=\n" }
+            ]))))
+            .expect("valid");
+        assert_eq!(msg.attachments[0].bytes, b"hello");
+    }
+
+    #[test]
+    fn rejects_bad_base64_rather_than_sending_an_empty_part() {
+        let err = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "a.txt", "content": "!!!not base64!!!" }
+            ]))))
+            .unwrap_err();
+        assert!(err.contains("not valid base64"), "{err}");
+    }
+
+    #[test]
+    fn requires_filename_and_content() {
+        let err = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "content": "aGVsbG8=" }
+            ]))))
+            .unwrap_err();
+        assert!(err.contains("`filename`"), "{err}");
+        let err = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "a.txt" }
+            ]))))
+            .unwrap_err();
+        assert!(err.contains("`content`"), "{err}");
+    }
+
+    #[test]
+    fn enforces_total_attachment_byte_cap() {
+        // One attachment just over the cap (base64 of N zero bytes).
+        let raw = vec![0u8; MAX_ATTACHMENT_TOTAL_BYTES + 1];
+        use base64::Engine as _;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&raw);
+        let err = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "big.bin", "content": b64 }
+            ]))))
+            .unwrap_err();
+        assert!(err.starts_with("AttachmentTooLarge"), "{err}");
+        assert!(
+            err.contains("ctx.storage"),
+            "should point at the link path: {err}"
+        );
+    }
+
+    #[test]
+    fn enforces_attachment_count_cap() {
+        let many: Vec<serde_json::Value> = (0..MAX_ATTACHMENTS_PER_SEND + 1)
+            .map(|i| serde_json::json!({ "filename": format!("f{i}.txt"), "content": "aGVsbG8=" }))
+            .collect();
+        let err = emailer()
+            .validate(parse(with_attachments(serde_json::json!(many))))
+            .unwrap_err();
+        assert!(err.starts_with("TooManyAttachments"), "{err}");
+    }
+
+    #[test]
+    fn attachment_filename_strips_paths_and_header_injection() {
+        assert_eq!(attachment_filename("../../etc/passwd"), "passwd");
+        assert_eq!(
+            attachment_filename("a\r\nBcc: evil@x.com"),
+            "aBcc: evil@x.com"
+        );
+        assert_eq!(attachment_filename("we\"ird.txt"), "weird.txt");
+    }
+
+    #[test]
+    fn no_attachments_is_still_valid() {
+        let msg = emailer()
+            .validate(parse(serde_json::json!({
+                "to": "a@b.com", "subject": "hi", "text": "yo"
+            })))
+            .expect("valid");
+        assert!(msg.attachments.is_empty());
+    }
+
+    #[test]
+    fn preview_manifest_helpers_are_human_readable() {
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(2035), "2.0 KB");
+        assert_eq!(human_size(5 * 1024 * 1024), "5.0 MB");
+        assert_eq!(type_label("text/csv"), "CSV");
+        assert_eq!(type_label("application/pdf"), "PDF");
+        assert_eq!(type_label("application/x-thing; charset=utf-8"), "X-THING");
+        assert_eq!(file_emoji("text/csv", "r.csv"), "📊");
+        assert_eq!(file_emoji("application/pdf", "r.pdf"), "📄");
+        assert_eq!(file_emoji("image/png", "c.png"), "🖼️");
+        // Falls back to the extension when the content type is generic.
+        assert_eq!(file_emoji("application/octet-stream", "photo.jpg"), "🖼️");
+    }
+
+    #[test]
+    fn preview_manifest_html_lists_each_attachment() {
+        let atts = vec![ValidatedAttachment {
+            filename: "store-report.csv".into(),
+            bytes: vec![0u8; 2035],
+            content_type: Some("text/csv".into()),
+            inline: false,
+            content_id: None,
+        }];
+        let html = attachment_manifest(&atts, "html");
+        assert!(html.contains("1 attachment"), "{html}");
+        assert!(html.contains("preview only"), "{html}");
+        assert!(html.contains("store-report.csv"), "{html}");
+        assert!(html.contains("2.0 KB"), "{html}");
+        assert!(html.contains("CSV"), "{html}");
     }
 }

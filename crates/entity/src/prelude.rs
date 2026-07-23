@@ -7,6 +7,7 @@ pub use super::app_admins::Entity as AppAdmins;
 pub use super::app_builds::Entity as AppBuilds;
 pub use super::app_function_invocations::Entity as AppFunctionInvocations;
 pub use super::app_functions::Entity as AppFunctions;
+pub use super::app_members::Entity as AppMembers;
 pub use super::app_publish_tokens::Entity as AppPublishTokens;
 pub use super::app_publishers::Entity as AppPublishers;
 pub use super::apps::Entity as Apps;

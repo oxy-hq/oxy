@@ -5,6 +5,55 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-07-23
+
+Adds a customer-app **asset store**, **email attachments**, and a
+**per-app role** on `ctx.user` — three pieces of one story: an app can
+now accept a file, keep it, show it back, email it, and restrict who
+sees any of that.
+
+### Added
+
+- **`ctx.storage`** — the app's asset store, covering both kinds of file
+  an app produces, in one per-app silo:
+  - **Uploaded**: `getUploadUrl()` mints a presigned PUT and the browser
+    uploads **straight to S3**, so uploads aren't bounded by the request
+    body limit and the bytes never pass through the function or oxy.
+  - **Generated**: `put(pathname, body, { encoding: "base64" })` writes a
+    file the function itself produced — binary (PDF, PNG, Parquet) is
+    first-class, not text-only.
+
+    Full surface: `getUploadUrl`, `getDownloadUrl`, `put`, `get`, `head`,
+    `list`, `delete`, `copy`. Gated by new fail-closed
+    `storage: { read, write }` capabilities in `oxy-app.json`.
+
+    Notable defaults, and why: **`allowOverwrite` is false** (silently
+    clobbering an asset is worse than an error — enforced atomically via
+    an S3 conditional write, not a racy check-then-put); **`list` is
+    cursor-paginated** (a silo with 100k assets must not become one
+    unbounded walk); **download links can live up to 7 days**, SigV4's own
+    limit, because a link emailed to a human outlives a 15-minute upload
+    window. Every asset is private — reads are always presigned and
+    time-boxed; there is no public-access mode by design.
+
+    Keys are confined to the calling app: another app's key is rejected on
+    every operation, not just on read.
+
+- **Email attachments** — `ctx.email.send({ attachments: [...] })` with
+  `filename`, base64 `content`, optional `contentType`, and `inline` +
+  `contentId` for `cid:`-referenced images. Max 20 per send and 10 MiB
+  decoded in total; past that, store the file with `ctx.storage` and email
+  a presigned link instead (which is the better shape anyway, since the
+  file is usually retained regardless).
+
+- **`ctx.user.appRole`** — `"admin"`, `"member"`, or absent, derived
+  server-side from per-app membership (with org-owner / Oxy-staff
+  break-glass). This is what a privileged in-app surface should gate on:
+  unlike a query param or a client-side flag, the client cannot forge it.
+  Deliberately *not* the org role — an app admin administers one app
+  without holding org-Admin, which also carries billing and member
+  management.
+
 ## [2.5.0] - 2026-07-22
 
 Universalizes the customer-app shell: a bundle served from any origin can

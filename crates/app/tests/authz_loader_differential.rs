@@ -22,8 +22,8 @@
 //! Each test seeds its own uniquely-keyed rows, so they're independent and re-runnable.
 
 use entity::{
-    app_admins, org_members, organizations, partner_capabilities, partner_grants, partner_orgs,
-    partner_role_bindings, users, workspace_members, workspaces,
+    app_admins, app_members, apps, org_members, organizations, partner_capabilities,
+    partner_grants, partner_orgs, partner_role_bindings, users, workspace_members, workspaces,
 };
 use oxy::database::client::establish_connection;
 use oxy_app::server::authz::loader::load_principal_facts;
@@ -481,4 +481,129 @@ async fn loader_loads_only_elevating_workspace_overrides() {
             "ws_admin_override must carry only Admin/Owner elevations (role={role:?})"
         );
     }
+}
+
+// ── Per-app membership facts ──────────────────────────────────────────────────
+
+/// Seed a customer app. `project_id` is a workspace id but carries no FK, so a
+/// bare uuid is enough here — we're testing membership, not the workspace join.
+async fn seed_app(conn: &DatabaseConnection, org_id: Uuid, restricted: bool) -> Uuid {
+    let id = Uuid::new_v4();
+    apps::ActiveModel {
+        id: ActiveValue::Set(id),
+        slug: ActiveValue::Set(format!("authz-diff-app-{id}")),
+        name: ActiveValue::Set("Authz Differential App".into()),
+        org_id: ActiveValue::Set(org_id),
+        project_id: ActiveValue::Set(Uuid::new_v4()),
+        branch: ActiveValue::Set("main".into()),
+        source_repo: ActiveValue::Set("authz/diff".into()),
+        status: ActiveValue::Set("active".into()),
+        source_type: ActiveValue::Set("local".into()),
+        source_config: ActiveValue::Set(serde_json::json!({})),
+        visibility: ActiveValue::Set(if restricted { "members" } else { "org" }.to_string()),
+        ..Default::default()
+    }
+    .insert(conn)
+    .await
+    .expect("seed app");
+    id
+}
+
+async fn seed_app_member(conn: &DatabaseConnection, app_id: Uuid, user_id: Uuid, role: &str) {
+    app_members::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        app_id: ActiveValue::Set(app_id),
+        user_id: ActiveValue::Set(user_id),
+        role: ActiveValue::Set(role.to_string()),
+        created_at: ActiveValue::NotSet,
+        created_by: ActiveValue::Set(None),
+    }
+    .insert(conn)
+    .await
+    .expect("seed app member");
+}
+
+/// The facts half of the per-app work: `app_members` rows must reach
+/// `PrincipalFacts`, with `admin ⊆ all` the way the org sets nest. If this
+/// regresses, `Ring::AppAccess` denies a restricted app to its own members and
+/// `Ring::AppAdmin` denies the app's admin — both silent, both fail-closed, and
+/// neither visible to the hand-built unit differential.
+#[tokio::test]
+async fn loader_derives_app_membership_sets_from_real_rows() {
+    if db_unavailable() {
+        eprintln!("skipping: OXY_DATABASE_URL not set");
+        return;
+    }
+    let conn = establish_connection().await.expect("connect");
+    let org_id = seed_org(&conn).await;
+
+    // A plain app member: in `app_memberships`, NOT in the admin set.
+    let (member_id, member_email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, member_id, org_members::OrgRole::Member).await;
+    let app_id = seed_app(&conn, org_id, true).await;
+    seed_app_member(&conn, app_id, member_id, "member").await;
+
+    let facts = load_principal_facts(&conn, member_id, &member_email)
+        .await
+        .expect("loader must resolve facts against a live seeded database");
+    assert!(
+        facts.app_memberships.contains(&app_id),
+        "an app_members row must load into app_memberships"
+    );
+    assert!(
+        !facts.app_admin_memberships.contains(&app_id),
+        "role='member' must NOT load as an app admin — that would hand the app's \
+         privileged surface to every member"
+    );
+
+    // An app admin: in BOTH sets (admin implies membership, like owner→member).
+    let (admin_id, admin_email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, admin_id, org_members::OrgRole::Member).await;
+    seed_app_member(&conn, app_id, admin_id, "admin").await;
+    let facts = load_principal_facts(&conn, admin_id, &admin_email)
+        .await
+        .expect("loader facts");
+    assert!(facts.app_memberships.contains(&app_id));
+    assert!(
+        facts.app_admin_memberships.contains(&app_id),
+        "role='admin' must load into app_admin_memberships"
+    );
+
+    // A user with no app_members row holds neither, even as an org member.
+    let (outsider_id, outsider_email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, outsider_id, org_members::OrgRole::Member).await;
+    let facts = load_principal_facts(&conn, outsider_id, &outsider_email)
+        .await
+        .expect("loader facts");
+    assert!(
+        !facts.app_memberships.contains(&app_id) && !facts.app_admin_memberships.contains(&app_id),
+        "plain org membership must not synthesize per-app membership — that would \
+         make restricted apps meaningless"
+    );
+}
+
+/// Membership must not bleed across apps: a row for app A says nothing about B.
+#[tokio::test]
+async fn loader_scopes_app_membership_to_its_own_app() {
+    if db_unavailable() {
+        eprintln!("skipping: OXY_DATABASE_URL not set");
+        return;
+    }
+    let conn = establish_connection().await.expect("connect");
+    let org_id = seed_org(&conn).await;
+    let (user_id, email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, user_id, org_members::OrgRole::Member).await;
+
+    let mine = seed_app(&conn, org_id, true).await;
+    let theirs = seed_app(&conn, org_id, true).await;
+    seed_app_member(&conn, mine, user_id, "admin").await;
+
+    let facts = load_principal_facts(&conn, user_id, &email)
+        .await
+        .expect("loader facts");
+    assert!(facts.app_admin_memberships.contains(&mine));
+    assert!(
+        !facts.app_memberships.contains(&theirs) && !facts.app_admin_memberships.contains(&theirs),
+        "admin of one app must not confer standing on another app in the same org"
+    );
 }

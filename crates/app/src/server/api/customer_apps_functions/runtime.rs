@@ -55,6 +55,12 @@ pub struct CtxUser {
     pub id: String,
     pub email: String,
     pub org_id: String,
+    /// The caller's role **within this app** — `"admin"`, `"member"`, or absent.
+    /// Server-derived from `app_members` (plus org-owner / staff break-glass); an
+    /// app gates its privileged surface on this rather than on a client-side flag
+    /// or a hard-coded email allowlist. Mirrors `Ring::AppAdmin` in `oxy-authz`.
+    #[serde(rename = "appRole", skip_serializing_if = "Option::is_none")]
+    pub app_role: Option<String>,
 }
 
 /// Result of running a function to completion.
@@ -133,6 +139,16 @@ pub trait FunctionHost: Send + Sync {
     /// `from` address (the author may set `replyTo` only). `input` is the JS
     /// payload object; returns `{ messageId }`.
     async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String>;
+    /// `ctx.storage.{getUploadUrl,getDownloadUrl,list,put,get}` — presigned S3
+    /// file storage scoped to the app's silo. `op` selects the operation;
+    /// `payload` carries its args. Gated by the fail-closed `storage.{read,write}`
+    /// manifest capabilities (write for uploads/put, read for the rest). Mirrors
+    /// `warehouse_write`'s single-op-dispatcher shape.
+    async fn storage(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, String>;
 }
 
 /// A request the isolate sends to the broker loop.
@@ -171,6 +187,11 @@ enum HostCall {
     },
     SendEmail {
         input: serde_json::Value,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    Storage {
+        op: String,
+        payload: serde_json::Value,
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
 }
@@ -338,6 +359,32 @@ async fn op_ctx_email_send(
     Ok(reply_json("ctx.email.send", result))
 }
 
+/// `ctx.storage.*` — bridge to `FunctionHost::storage`. `op` selects the
+/// operation ("getUploadUrl" / "getDownloadUrl" / "list" / "put" / "get"),
+/// `payload` carries its args (JSON-stringified by `__wrapOp`).
+#[op2(async)]
+#[string]
+async fn op_ctx_storage(
+    state: Rc<RefCell<OpState>>,
+    #[string] op: String,
+    #[string] payload_json: String,
+) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let payload: serde_json::Value =
+        serde_json::from_str(&payload_json).unwrap_or(serde_json::Value::Null);
+    let (reply, rx) = oneshot::channel();
+    tx.send(HostCall::Storage { op, payload, reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.storage", result))
+}
+
 #[op2(async)]
 #[string]
 async fn op_ctx_semantic_query(
@@ -428,6 +475,7 @@ deno_core::extension!(
         op_ctx_semantic_query,
         op_ctx_airway_run,
         op_ctx_email_send,
+        op_ctx_storage,
     ],
 );
 
@@ -540,6 +588,40 @@ globalThis.__buildCtx = (ctxData) => ({
     // controls `from` (author sets replyTo only). Render templates to `html`
     // with `render` from @oxy-hq/sdk/email before calling this.
     send: (input) => __wrapOp("op_ctx_email_send")(input),
+  },
+  storage: {
+    // The app's asset store — uploaded files AND generated ones, one silo.
+    // getUploadUrl/getDownloadUrl mint presigned URLs the BROWSER talks to
+    // directly (bytes never cross this boundary); put/get/head/list/delete/copy
+    // are server-side. `op` stays a bare string and the rest is packed into a
+    // payload object that __wrapOp JSON-stringifies (matching ctx.warehouse).
+    getUploadUrl: (opts) => __wrapOp("op_ctx_storage")("getUploadUrl", opts || {}),
+    getDownloadUrl: (key, opts) =>
+      __wrapOp("op_ctx_storage")("getDownloadUrl", Object.assign({ key: String(key) }, opts || {})),
+    // put(pathname, body, opts) — body is a string; pass
+    // { encoding: "base64" } for binary assets (PDF/PNG/Parquet).
+    put: (pathname, body, opts) =>
+      __wrapOp("op_ctx_storage")(
+        "put",
+        Object.assign({ pathname: String(pathname), body: String(body) }, opts || {})
+      ),
+    get: (key, opts) =>
+      __wrapOp("op_ctx_storage")("get", Object.assign({ key: String(key) }, opts || {})),
+    head: (key) => __wrapOp("op_ctx_storage")("head", { key: String(key) }),
+    list: (opts) => __wrapOp("op_ctx_storage")("list", opts || {}),
+    // delete(key) or delete([key, ...])
+    delete: (keyOrKeys) =>
+      __wrapOp("op_ctx_storage")(
+        "delete",
+        Array.isArray(keyOrKeys)
+          ? { keys: keyOrKeys.map(String) }
+          : { key: String(keyOrKeys) }
+      ),
+    copy: (fromKey, toPathname, opts) =>
+      __wrapOp("op_ctx_storage")(
+        "copy",
+        Object.assign({ fromKey: String(fromKey), toPathname: String(toPathname) }, opts || {})
+      ),
   },
   semantic: { query: __wrapOp("op_ctx_semantic_query") }, // spec is JSON-stringified by __wrapOp
   airway: {
@@ -707,6 +789,9 @@ pub async fn run(
                                 }
                                 HostCall::SendEmail { input, reply } => {
                                     let _ = reply.send(host.send_email(input).await);
+                                }
+                                HostCall::Storage { op, payload, reply } => {
+                                    let _ = reply.send(host.storage(op, payload).await);
                                 }
                             }
                         });
@@ -893,6 +978,13 @@ mod tests {
             ) -> Result<serde_json::Value, String> {
                 Err("unused".into())
             }
+            async fn storage(
+                &self,
+                _op: String,
+                _payload: serde_json::Value,
+            ) -> Result<serde_json::Value, String> {
+                Err("unused".into())
+            }
         }
 
         let artifact = r#"
@@ -906,6 +998,7 @@ mod tests {
                 id: "u".into(),
                 email: "e@example.com".into(),
                 org_id: "o".into(),
+                app_role: None,
             },
             env: Default::default(),
         };

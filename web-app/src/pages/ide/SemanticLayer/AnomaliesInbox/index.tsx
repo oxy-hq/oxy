@@ -367,9 +367,7 @@ function formatSegment(segment: {
 }): string | null {
   const { filters, dimension_key } = segment;
   if (filters && filters.length > 0) {
-    return filters
-      .map((f) => `${shortMember(f.member)}: ${f.values.join(", ")}`)
-      .join(" · ");
+    return filters.map((f) => `${shortMember(f.member)}: ${f.values.join(", ")}`).join(" · ");
   }
   return dimension_key ? dimension_key : null;
 }

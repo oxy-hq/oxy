@@ -28,6 +28,7 @@ export { getCustomerAppDebug } from "./debug";
 export type { CustomerAppErrorReport } from "./errors";
 export { apiErrorFromResponse, interpretCustomerAppError, OxyApiError } from "./errors";
 export type {
+  EmailAttachment,
   EmailSendInput,
   EmailSendResult,
   OxyAirwayApi,
@@ -40,7 +41,15 @@ export type {
   OxyFunctionUser,
   OxySecretsApi,
   OxySemanticApi,
-  OxyWarehouseApi
+  OxyStorageApi,
+  OxyWarehouseApi,
+  StorageDownloadUrl,
+  StorageListPage,
+  StorageObject,
+  StoragePutOptions,
+  StoragePutResult,
+  StorageUploadUrl,
+  StorageUploadUrlInput
 } from "./function-context";
 export type { OxyInjectedAppConfig } from "./inject";
 export { readInjectedAppConfig } from "./inject";

@@ -480,9 +480,9 @@ pub(crate) async fn unpublish_one(
 }
 
 /// Core delete shared by [`delete_app`] and [`batch_delete_apps`]. Removes the
-/// bundle bytes before the DB row so a partial failure leaves a recoverable
-/// orphan row rather than an orphan S3 prefix; build-store failure is logged,
-/// never fatal.
+/// bundle bytes AND the app's asset silo before the DB row so a partial failure
+/// leaves a recoverable orphan row rather than orphan S3 prefixes; either
+/// storage failure is logged, never fatal.
 pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), AppOpError> {
     let row = Apps::find_by_id(id)
         .one(db)
@@ -493,6 +493,17 @@ pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), 
     if let Err(e) = crate::server::api::customer_apps_build_store::delete_app(id).await {
         tracing::warn!(
             "delete_one {id}: bundle bytes could not be removed from build store: {e} \
+             — proceeding with DB row delete; reclaim manually if needed"
+        );
+    }
+
+    // The bundle store holds the app's published JS; the asset store
+    // (`ctx.storage`) holds its uploaded/generated files under a separate prefix.
+    // Reclaim both, or a deleted app's customer uploads outlive it in S3 (cost +
+    // a data-retention concern). Best-effort, same as the build store above.
+    if let Err(e) = crate::server::api::customer_apps_storage::delete_app_assets(id).await {
+        tracing::warn!(
+            "delete_one {id}: asset silo could not be removed from storage: {e} \
              — proceeding with DB row delete; reclaim manually if needed"
         );
     }

@@ -531,6 +531,7 @@ mod tests {
 
     fn fake_app(name: &str, slug: &str) -> apps::Model {
         apps::Model {
+            visibility: "org".to_string(),
             id: uuid::Uuid::nil(),
             slug: slug.to_string(),
             name: name.to_string(),

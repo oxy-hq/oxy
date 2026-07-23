@@ -57,6 +57,10 @@ pub struct ProjectFunctionHost {
     app_name: String,
     /// Fail-closed capability gate for `ctx.email.send`.
     email_send: bool,
+    /// Fail-closed capability gate for `ctx.storage` reads (getDownloadUrl / list / get).
+    storage_read: bool,
+    /// Fail-closed capability gate for `ctx.storage` writes (getUploadUrl / put).
+    storage_write: bool,
     /// Per-invocation `ctx.email.send` counter (this host lives for exactly one
     /// invocation), bounding email fan-out from a single run.
     email_send_count: std::sync::atomic::AtomicUsize,
@@ -74,6 +78,8 @@ impl ProjectFunctionHost {
         secrets_write: bool,
         app_name: String,
         email_send: bool,
+        storage_read: bool,
+        storage_write: bool,
     ) -> Self {
         Self {
             proj_ctx,
@@ -85,6 +91,8 @@ impl ProjectFunctionHost {
             secrets_write,
             app_name,
             email_send,
+            storage_read,
+            storage_write,
             email_send_count: std::sync::atomic::AtomicUsize::new(0),
             // `ctx.fetch` is defended in two layers:
             //  1. `is_safe_outbound` rejects the request URL up front (scheme,
@@ -388,6 +396,195 @@ impl FunctionHost for ProjectFunctionHost {
             .send(parsed)
             .await
     }
+
+    async fn storage(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        use crate::server::api::customer_apps_storage as st;
+
+        // Fail-closed capability gate: uploads/put need `storage.write`; the
+        // read paths need `storage.read`.
+        let needs_write = matches!(op.as_str(), "getUploadUrl" | "put");
+        if needs_write && !self.storage_write {
+            return Err(
+                "StorageCapabilityMissing: this function has not declared the `storage.write` \
+                 capability (add \"storage\": { \"write\": true } to its oxy-app.json entry)"
+                    .to_string(),
+            );
+        }
+        if !needs_write && !self.storage_read {
+            return Err(
+                "StorageCapabilityMissing: this function has not declared the `storage.read` \
+                 capability (add \"storage\": { \"read\": true } to its oxy-app.json entry)"
+                    .to_string(),
+            );
+        }
+
+        let str_field = |key: &str| payload.get(key).and_then(|v| v.as_str());
+        let bool_field = |key: &str| payload.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+        let u64_field = |key: &str| payload.get(key).and_then(|v| v.as_u64());
+        let required = |field: &str| format!("ctx.storage.{op}: `{field}` is required");
+
+        match op.as_str() {
+            "getUploadUrl" => {
+                // `pathname` is the general form; `filename` is the ergonomic
+                // shorthand for "a human picked a file", which lands under
+                // `uploads/`. Generated assets pass `pathname` directly.
+                let pathname = match (str_field("pathname"), str_field("filename")) {
+                    (Some(p), _) => p.to_string(),
+                    (None, Some(f)) => format!("uploads/{f}"),
+                    (None, None) => return Err(required("pathname")),
+                };
+                let content_length =
+                    u64_field("contentLength").ok_or_else(|| required("contentLength"))?;
+                let out = st::get_upload_url(
+                    self.app_id,
+                    &pathname,
+                    str_field("contentType").unwrap_or(""),
+                    content_length,
+                    u64_field("expiresInSeconds"),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| e.to_string())
+            }
+            "getDownloadUrl" => {
+                let key = str_field("key").ok_or_else(|| required("key"))?;
+                let out = st::get_download_url(
+                    self.app_id,
+                    key,
+                    u64_field("expiresInSeconds"),
+                    bool_field("download"),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| e.to_string())
+            }
+            "put" => {
+                let pathname = str_field("pathname")
+                    .or_else(|| str_field("key"))
+                    .ok_or_else(|| required("pathname"))?;
+                let body = str_field("body").ok_or_else(|| required("body"))?;
+                // base64 is how a BINARY generated asset (PDF, PNG, Parquet)
+                // crosses the isolate's JSON boundary; utf8 is the default for
+                // text a function built itself.
+                let bytes = match str_field("encoding").unwrap_or("utf8") {
+                    "base64" => decode_base64(body)
+                        .map_err(|e| format!("ctx.storage.put: `body` is not valid base64: {e}"))?,
+                    "utf8" => body.as_bytes().to_vec(),
+                    other => {
+                        return Err(format!(
+                            "ctx.storage.put: unknown encoding '{other}' (expected 'utf8' or \
+                             'base64')"
+                        ));
+                    }
+                };
+                let out = st::put(
+                    self.app_id,
+                    pathname,
+                    bytes,
+                    st::PutOptions {
+                        content_type: str_field("contentType").map(str::to_string),
+                        add_random_suffix: bool_field("addRandomSuffix"),
+                        allow_overwrite: bool_field("allowOverwrite"),
+                        cache_control_max_age: u64_field("cacheControlMaxAge"),
+                    },
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| e.to_string())
+            }
+            "get" => {
+                let key = str_field("key").ok_or_else(|| required("key"))?;
+                let encoding = str_field("encoding").unwrap_or("utf8").to_string();
+                if !matches!(encoding.as_str(), "utf8" | "base64") {
+                    return Err(format!(
+                        "ctx.storage.get: unknown encoding '{encoding}' (expected 'utf8' or \
+                         'base64')"
+                    ));
+                }
+                match st::get(self.app_id, key).await.map_err(|e| e.to_string())? {
+                    Some((bytes, content_type)) => {
+                        let size = bytes.len();
+                        let body = if encoding == "base64" {
+                            encode_base64(&bytes)
+                        } else {
+                            String::from_utf8_lossy(&bytes).into_owned()
+                        };
+                        Ok(serde_json::json!({
+                            "body": body,
+                            "contentType": content_type,
+                            "size": size,
+                            "encoding": encoding,
+                        }))
+                    }
+                    None => Ok(serde_json::Value::Null),
+                }
+            }
+            "head" => {
+                let key = str_field("key").ok_or_else(|| required("key"))?;
+                match st::head(self.app_id, key)
+                    .await
+                    .map_err(|e| e.to_string())?
+                {
+                    Some(meta) => serde_json::to_value(meta).map_err(|e| e.to_string()),
+                    None => Ok(serde_json::Value::Null),
+                }
+            }
+            "list" => {
+                let out = st::list(
+                    self.app_id,
+                    str_field("prefix"),
+                    u64_field("limit").map(|v| v as usize),
+                    str_field("cursor").map(str::to_string),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| e.to_string())
+            }
+            "delete" => {
+                // One key or a batch, mirroring the object-store idiom.
+                let keys: Vec<String> = match payload.get("keys") {
+                    Some(serde_json::Value::Array(items)) => items
+                        .iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect(),
+                    _ => vec![str_field("key").ok_or_else(|| required("key"))?.to_string()],
+                };
+                let deleted = st::delete(self.app_id, &keys)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(serde_json::json!({ "deleted": deleted }))
+            }
+            "copy" => {
+                let from = str_field("fromKey").ok_or_else(|| required("fromKey"))?;
+                let to = str_field("toPathname").ok_or_else(|| required("toPathname"))?;
+                let out = st::copy(self.app_id, from, to, bool_field("allowOverwrite"))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| e.to_string())
+            }
+            other => Err(format!("ctx.storage: unknown op '{other}'")),
+        }
+    }
+}
+
+/// Decode a base64 `ctx.storage` payload, tolerating whitespace/newlines a caller
+/// may have wrapped it in. base64 is the only way binary can cross the isolate's
+/// JSON op boundary.
+fn decode_base64(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine as _;
+    let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    base64::engine::general_purpose::STANDARD
+        .decode(&compact)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(&compact))
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
 /// Hard ceiling for a host DB op. The runtime's per-function timeout (≤300s) is

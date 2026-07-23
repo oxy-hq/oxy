@@ -72,8 +72,26 @@ pub struct Model {
     /// `ON DELETE SET NULL`. NULL until the first promote.
     pub last_promoted_by: Option<Uuid>,
     pub last_promoted_at: Option<DateTimeWithTimeZone>,
+    /// Who may open this app: `org` (default — any member of the owning org,
+    /// the historical behavior) or `members` (only rows in `app_members`, plus
+    /// the org owner and Oxy staff as break-glass). Read as a fact by
+    /// `server::authz::loader`; the rule itself lives in `oxy-authz`
+    /// (`Ring::AppAccess`). Kept as text with a DB CHECK rather than a PG enum
+    /// so adding a tier later doesn't need a type migration.
+    #[sea_orm(default_value = "org")]
+    pub visibility: String,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+}
+
+impl Model {
+    /// True when this app is restricted to explicitly-listed members
+    /// (`visibility = 'members'`). Anything unrecognized reads as unrestricted,
+    /// matching the column default — a garbled value must not silently lock an
+    /// org out of its own app.
+    pub fn is_restricted(&self) -> bool {
+        self.visibility == "members"
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

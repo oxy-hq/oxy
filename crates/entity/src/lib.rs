@@ -9,6 +9,7 @@ pub mod app_admins;
 pub mod app_builds;
 pub mod app_function_invocations;
 pub mod app_functions;
+pub mod app_members;
 pub mod app_publish_tokens;
 pub mod app_publishers;
 pub mod apps;

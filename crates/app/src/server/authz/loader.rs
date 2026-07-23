@@ -111,6 +111,11 @@ pub async fn load_principal_facts_scoped(
     } else {
         Vec::new()
     };
+    // Loaded on BOTH paths, unlike the workspace override: AppAccess itself reads
+    // these once an app is restricted, and AppAccess is exactly what the scoped
+    // (customer-app hot path) caller enforces. Skipping it there would deny an app
+    // member their own app.
+    let (app_memberships, app_admin_memberships) = load_app_memberships(db, user_id).await?;
 
     Some(PrincipalFacts {
         user_id,
@@ -119,6 +124,8 @@ pub async fn load_principal_facts_scoped(
         member_orgs,
         partners,
         ws_admin_override,
+        app_memberships,
+        app_admin_memberships,
         is_global_admin: standing.is_global_admin,
         is_global_owner: standing.is_global_owner,
     })
@@ -220,6 +227,41 @@ fn caps_of(c: &partner_authz::Capabilities) -> Vec<Cap> {
         }
     }
     caps
+}
+
+/// Apps where the user holds an `app_members` row, as `(every app, admin apps)`.
+/// One bounded query on the `user_id` index; `admin ⊆ all`, mirroring how the org
+/// sets nest so a ring reads one set rather than re-deriving the role.
+///
+/// `None` = the query errored. Same reasoning as the org sets and the workspace
+/// override: a member of a RESTRICTED app whose lookup blips is not "a user with no
+/// app membership" — reporting them as one costs them the app entirely.
+async fn load_app_memberships(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+) -> Option<(Vec<Uuid>, Vec<Uuid>)> {
+    let rows = entity::prelude::AppMembers::find()
+        .filter(entity::app_members::Column::UserId.eq(user_id))
+        .all(db)
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                target: "authz",
+                error = %e,
+                user = %user_id,
+                "app membership lookup failed — facts are unknown, not empty"
+            );
+        })
+        .ok()?;
+    let mut all = Vec::with_capacity(rows.len());
+    let mut admins = Vec::new();
+    for row in rows {
+        if row.is_admin() {
+            admins.push(row.app_id);
+        }
+        all.push(row.app_id);
+    }
+    Some((all, admins))
 }
 
 /// Workspaces where a `workspace_members` override raises the user to Admin or Owner.

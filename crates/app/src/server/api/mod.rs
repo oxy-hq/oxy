@@ -33,6 +33,7 @@ pub mod customer_apps_scaffold;
 pub mod customer_apps_serve;
 pub mod customer_apps_shell_context;
 pub mod customer_apps_source;
+pub mod customer_apps_storage;
 pub mod customer_apps_sync;
 pub mod customer_apps_threads;
 pub mod customer_apps_tracking;

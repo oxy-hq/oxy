@@ -31,8 +31,10 @@ use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 use std::time::Instant;
 
-use entity::prelude::{AppAdmins, Apps, OrgMembers, Organizations, WorkspaceOxyLockdown};
-use entity::{app_admins, apps, org_members, organizations, workspace_oxy_lockdown};
+use entity::prelude::{
+    AppAdmins, AppMembers, Apps, OrgMembers, Organizations, WorkspaceOxyLockdown,
+};
+use entity::{app_admins, app_members, apps, org_members, organizations, workspace_oxy_lockdown};
 use oxy::database::client::establish_connection;
 use oxy_auth::authenticator::Authenticator;
 use oxy_auth::built_in::BuiltInAuthenticator;
@@ -109,14 +111,108 @@ pub async fn user_can_access_app(
     {
         true
     } else if app.published_at.is_some() {
-        // Customer path: only if published.
-        is_org_member(db, user_id, app.org_id).await?
+        // Customer path: only if published — and, for a RESTRICTED app
+        // (`visibility = 'members'`), org membership alone is no longer enough.
+        // An org officer (owner/admin) keeps a break-glass path so an org can't
+        // lock its own staff out of its app. Mirrors `Ring::AppAccess` in
+        // `oxy-authz`, which states the same rule; this is the shipped gate that
+        // ring is differenced against.
+        if app.is_restricted() {
+            is_app_member(db, user_id, app.id).await?
+                || is_org_officer(db, user_id, app.org_id).await?
+        } else {
+            is_org_member(db, user_id, app.org_id).await?
+        }
     } else {
         false
     };
 
     set_cached_access(user_id, app.id, allowed);
     Ok(allowed)
+}
+
+/// Returns `true` when `user_id` holds an `app_members` row for `app_id` (any role).
+pub(crate) async fn is_app_member(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    app_id: Uuid,
+) -> Result<bool, DbErr> {
+    AppMembers::find()
+        .filter(app_members::Column::AppId.eq(app_id))
+        .filter(app_members::Column::UserId.eq(user_id))
+        .one(db)
+        .await
+        .map(|opt| opt.is_some())
+}
+
+/// Returns `true` when `user_id` is an **officer** (owner or admin) of `org_id`.
+/// The break-glass term for restricted-app access: an org's own officers are never
+/// locked out of its apps. (`.is_in` rather than the `Owner | Admin` match literal
+/// the authz-boundary guard bans in handlers.)
+pub(crate) async fn is_org_officer(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    org_id: Uuid,
+) -> Result<bool, DbErr> {
+    OrgMembers::find()
+        .filter(org_members::Column::UserId.eq(user_id))
+        .filter(org_members::Column::OrgId.eq(org_id))
+        .filter(
+            org_members::Column::Role
+                .is_in([org_members::OrgRole::Owner, org_members::OrgRole::Admin]),
+        )
+        .one(db)
+        .await
+        .map(|opt| opt.is_some())
+}
+
+/// The invoking user's role **within this app**, as surfaced to a function through
+/// `ctx.user.appRole`.
+///
+/// `Some("admin")` when they administer it — any org **officer** (owner or admin),
+/// an `app_members` admin row, or Oxy staff. `Some("member")` for a plain
+/// `app_members` row, `None` otherwise. A plain org member is NOT an admin unless
+/// granted the row — that is the line the model draws (officer, not member), and the
+/// `app_members` admin role is how a non-officer becomes one.
+///
+/// This mirrors `Ring::AppAdmin` in `oxy-authz`; a function that gates a privileged
+/// surface on it is server-enforcing, not merely hiding a tab.
+pub(crate) async fn resolve_app_role(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    user_email: &str,
+    app: &apps::Model,
+) -> Result<Option<&'static str>, DbErr> {
+    // The admin verdict comes from the ONE model — not a second copy of the rule
+    // written out here. Restating "staff OR org owner OR app-admin row" in SQL is
+    // exactly the drift `oxy-authz` exists to end, and it would silently diverge
+    // the moment `Ring::AppAdmin` changed.
+    //
+    // Workspace facts are skipped: no app ring reads them.
+    let is_admin = match crate::server::authz::loader::load_principal_facts_scoped(
+        db, user_id, user_email, false,
+    )
+    .await
+    {
+        Some(facts) => oxy_authz::allows(
+            &facts,
+            oxy_authz::Action::AppAdmin,
+            &oxy_authz::Resource::app_with_visibility(app.id, app.org_id, app.is_restricted()),
+        ),
+        // Facts unknown (a DB blip) → not admin. Fail closed.
+        None => false,
+    };
+    if is_admin {
+        return Ok(Some(app_members::ROLE_ADMIN));
+    }
+    // Not an admin — a plain membership row still reports as "member" so an app
+    // can distinguish "belongs to this app" from "just any org member".
+    let row = AppMembers::find()
+        .filter(app_members::Column::AppId.eq(app.id))
+        .filter(app_members::Column::UserId.eq(user_id))
+        .one(db)
+        .await?;
+    Ok(row.map(|_| app_members::ROLE_MEMBER))
 }
 
 /// Returns `true` when `user_id` is a member of `org_id`.

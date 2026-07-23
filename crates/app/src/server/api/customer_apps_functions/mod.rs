@@ -119,6 +119,12 @@ struct FunctionManifestEntry {
     /// may set `replyTo` only. Declare for functions that email end-users.
     #[serde(default)]
     email: Option<EmailSpec>,
+    /// Opt-in capability for `ctx.storage` (fail-closed: absent → all storage ops
+    /// rejected). `read` permits getDownloadUrl/list/get; `write` permits
+    /// getUploadUrl/put. Scoped to the app's own `customer-app-storage/<app_id>/`
+    /// silo. Declare for functions that accept uploads or serve stored files.
+    #[serde(default)]
+    storage: Option<StorageSpec>,
     /// Retry policy for **background** runs (scheduled or manual job triggers) —
     /// absent → a job run is attempted once. Route invocations are request-scoped
     /// and never retried. Maps to the durable queue's `RetryPolicy` so a transient
@@ -163,6 +169,14 @@ struct EmailSpec {
     send: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Default, Clone)]
+struct StorageSpec {
+    #[serde(default)]
+    read: Option<bool>,
+    #[serde(default)]
+    write: Option<bool>,
+}
+
 impl FunctionManifestEntry {
     /// The cache TTL if opted in with a positive value, else `None`.
     fn cache_ttl(&self) -> Option<Duration> {
@@ -189,6 +203,18 @@ impl FunctionManifestEntry {
     /// Whether `ctx.email.send` is permitted (fail-closed default: false).
     fn email_send(&self) -> bool {
         self.email.as_ref().and_then(|e| e.send).unwrap_or(false)
+    }
+
+    /// Whether `ctx.storage` reads (getDownloadUrl/list/get) are permitted
+    /// (fail-closed default: false).
+    fn storage_read(&self) -> bool {
+        self.storage.as_ref().and_then(|s| s.read).unwrap_or(false)
+    }
+
+    /// Whether `ctx.storage` writes (getUploadUrl/put) are permitted
+    /// (fail-closed default: false).
+    fn storage_write(&self) -> bool {
+        self.storage.as_ref().and_then(|s| s.write).unwrap_or(false)
     }
 
     /// Build a `RetryPolicy` for background runs from the manifest's `retries`
@@ -782,6 +808,8 @@ pub async fn handle_function_request(
         write_destinations: manifest.write_destinations(),
         secrets_write: manifest.secrets_write(),
         email_send: manifest.email_send(),
+        storage_read: manifest.storage_read(),
+        storage_write: manifest.storage_write(),
         logs: logs.clone(),
         // Route path: cancellation is the `cancel_requested_at` DB flag (set on
         // client-gone / dashboard cancel), so a never-fired token suffices here.
@@ -985,6 +1013,8 @@ pub(crate) async fn run_scheduled_function(
         write_destinations: manifest.write_destinations(),
         secrets_write: manifest.secrets_write(),
         email_send: manifest.email_send(),
+        storage_read: manifest.storage_read(),
+        storage_write: manifest.storage_write(),
         logs: logs.clone(),
         cancel,
     })
@@ -1092,6 +1122,10 @@ struct RunArgs<'a> {
     secrets_write: bool,
     /// Fail-closed capability gate for `ctx.email.send`.
     email_send: bool,
+    /// Fail-closed capability gates for `ctx.storage` (read: getDownloadUrl/list/get;
+    /// write: getUploadUrl/put).
+    storage_read: bool,
+    storage_write: bool,
     /// Shared log buffer: the isolate appends `console.*`/`ctx.log`; the handler
     /// drains it after the run and sends it back as `log` frames (batched with
     /// the response, not live-tailed).
@@ -1147,15 +1181,37 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         args.secrets_write,
         args.app.name.clone(),
         args.email_send,
+        args.storage_read,
+        args.storage_write,
     ));
 
     let env = resolve_function_env(args.db, args.app.project_id, args.app.id).await;
+
+    // The caller's role within THIS app, resolved server-side. This is what lets a
+    // function gate a privileged surface (e.g. the warehouse app's `?view=admin`)
+    // on something the client cannot forge, instead of a hard-coded email
+    // allowlist. Fail CLOSED: an errored lookup yields no role, never "admin".
+    let app_role = match crate::server::api::customer_apps_auth::resolve_app_role(
+        args.db,
+        args.user_id,
+        &args.user_email,
+        args.app,
+    )
+    .await
+    {
+        Ok(role) => role.map(str::to_string),
+        Err(e) => {
+            error!("app role lookup failed for app {}: {e}", args.app.id);
+            None
+        }
+    };
 
     let ctx = runtime::InvocationCtx {
         user: runtime::CtxUser {
             id: args.user_id.to_string(),
             email: args.user_email,
             org_id: args.org_id.to_string(),
+            app_role,
         },
         env,
     };
