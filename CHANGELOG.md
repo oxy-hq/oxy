@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.110] - 2026-07-23
+
+### 🚜 Refactor
+
+- *(app)* Rung-1 module splits of oxy-app god files (batch 2) (#2761)
+
+### ⚙️ Miscellaneous Tasks
+
+- Upgrade dependencies (apache-arrow, elkjs, testing-library) (#2766)
+
 ## [0.5.109] - 2026-07-23
 
 ### 🚀 Features
@@ -25,6 +35,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Update dependencies in TypeScript SDK and web app
+- Release 0.5.109 (#2759)
 
 ## [0.5.108] - 2026-07-22
 
