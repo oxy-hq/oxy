@@ -2,7 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.111] - 2026-07-23
+## [0.5.112] - 2026-07-24
+
+### 🚀 Features
+
+- *(authz)* Explain the staff assume-role 403 instead of denying opaquely (#2777)
+
+### 🐛 Bug Fixes
+
+- *(shell)* Drop the workspace-tile fill behind a real logo (#2771)
+- *(workspace-health)* Stop the health check counting its own eval runs (#2776)
+
+### 🚜 Refactor
+
+- *(authz)* Extract oxy-server-authz crate (+ widen the security-boundary test) (#2772)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(claude)* Allow kubectl without a per-call prompt (#2778)
+
+## [0.5.111] - 2026-07-24
 
 ### 🚀 Features
 
@@ -11,6 +30,10 @@ All notable changes to this project will be documented in this file.
 ### 🚜 Refactor
 
 - Rename "customer apps" → "custom apps" (unify the two names) (#2774)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.111 (#2773)
 
 ## [0.5.110] - 2026-07-23
 
