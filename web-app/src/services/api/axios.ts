@@ -1,6 +1,7 @@
 import axios from "axios";
 import { toast } from "sonner";
 import { getInjectedOrg } from "@/libs/orgSubdomain";
+import { reportAssumeRequired } from "@/libs/utils/assumeRequired";
 import { clearAuthScopedStorage } from "@/libs/utils/authStorage";
 import { reportIdeReachable, reportIdeUnavailable } from "@/libs/utils/ideHealth";
 import { usePaywallStore } from "@/stores/usePaywallStore";
@@ -88,10 +89,22 @@ const makeResponseErrorHandler = () => {
     }
 
     if (status === 403 && !publicAPIPaths.includes(url)) {
-      const now = Date.now();
-      if (now - last403At > 1500) {
-        last403At = now;
-        toast.error("You don't have permission to do this.");
+      // Staff hitting a tenant workspace without a live assume-role session:
+      // the backend stamps `x-oxy-assume-required: <org_id>`. That's a policy
+      // boundary, not a missing permission, and it has a way through — so it
+      // gets the assume prompt rather than the generic denial toast.
+      const assumeOrgId = error.response?.headers?.["x-oxy-assume-required"];
+      if (assumeOrgId) {
+        const body = error.response?.data as
+          | { org_name?: string | null; message?: string | null }
+          | undefined;
+        reportAssumeRequired(assumeOrgId, body?.org_name ?? null, body?.message ?? null);
+      } else {
+        const now = Date.now();
+        if (now - last403At > 1500) {
+          last403At = now;
+          toast.error("You don't have permission to do this.");
+        }
       }
     }
 

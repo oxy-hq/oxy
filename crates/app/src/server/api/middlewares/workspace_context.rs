@@ -79,6 +79,75 @@ impl IntoResponse for WorkspaceManagerMissing {
     }
 }
 
+/// Why a workspace request was refused, in a shape the caller can act on.
+///
+/// `Status` is the ordinary path — an opaque code, exactly as before.
+/// `AssumeRequired` is the one denial that is a **policy boundary, not a fault**:
+/// Oxy staff get the ability to *assume* a tenant role, never ambient read access
+/// to tenant data (`api::admin::assume`; this is the silent override closed in
+/// #2710). A bare 403 there reads as a bug and sends operators hunting through
+/// releases, so it explains itself instead — the reason, the org to assume, and an
+/// `x-oxy-assume-required` header the frontend keys off to offer the assume dialog
+/// in place of a dead error.
+pub enum WorkspaceAccessError {
+    Status(StatusCode),
+    AssumeRequired {
+        workspace_id: Uuid,
+        org_id: Uuid,
+        /// Best-effort: the FE opens the assume dialog pre-scoped with it, and
+        /// the message names the tenant instead of a UUID. `None` when the
+        /// lookup failed — never a reason to turn a 403 into a 500.
+        org_name: Option<String>,
+    },
+}
+
+impl From<StatusCode> for WorkspaceAccessError {
+    fn from(status: StatusCode) -> Self {
+        Self::Status(status)
+    }
+}
+
+impl IntoResponse for WorkspaceAccessError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Status(status) => status.into_response(),
+            Self::AssumeRequired {
+                workspace_id,
+                org_id,
+                org_name,
+            } => {
+                let tenant = org_name
+                    .clone()
+                    .unwrap_or_else(|| "the owning org".to_string());
+                let mut response = (
+                    StatusCode::FORBIDDEN,
+                    axum::Json(serde_json::json!({
+                        "error": "workspace_access_denied",
+                        "reason": "assume_role_required",
+                        "message": format!(
+                            "Oxy staff do not get ambient access to tenant data. Viewing this \
+                             workspace requires an explicit assume-role session for {tenant} — \
+                             time-boxed and audited."
+                        ),
+                        "workspace_id": workspace_id,
+                        "org_id": org_id,
+                        "org_name": org_name,
+                    })),
+                )
+                    .into_response();
+                // FE interceptor keys off this to swap the dead 403 for the
+                // assume-role dialog, scoped to the org that must be assumed.
+                if let Ok(value) = axum::http::HeaderValue::from_str(&org_id.to_string()) {
+                    response
+                        .headers_mut()
+                        .insert("x-oxy-assume-required", value);
+                }
+                response
+            }
+        }
+    }
+}
+
 /// Marker inserted by the workspace middleware when a serve replica
 /// refuses to fall through to FS. The `WorkspaceManagerExtractor`
 /// promotes it to a structured rejection so handlers don't have to
@@ -386,10 +455,10 @@ pub async fn workspace_middleware(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     mut request: Request<axum::body::Body>,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, WorkspaceAccessError> {
     if workspace_id == Uuid::nil() {
         tracing::warn!("Nil-UUID workspace path is not allowed");
-        return Err(StatusCode::NOT_FOUND);
+        return Err(StatusCode::NOT_FOUND.into());
     }
 
     let branch_id = Uuid::nil();
@@ -489,7 +558,7 @@ async fn authorize_workspace(
     user_id: Uuid,
     user_email: &str,
     request: &mut Request<axum::body::Body>,
-) -> Result<Option<entity::workspaces::Model>, StatusCode> {
+) -> Result<Option<entity::workspaces::Model>, WorkspaceAccessError> {
     use entity::prelude::Workspaces;
 
     let db = establish_connection().await.map_err(|e| {
@@ -552,7 +621,7 @@ async fn resolve_effective_role(
     org_id: Uuid,
     user_id: Uuid,
     user_email: &str,
-) -> Result<(entity::org_members::Model, WorkspaceRole, bool), StatusCode> {
+) -> Result<(entity::org_members::Model, WorkspaceRole, bool), WorkspaceAccessError> {
     use entity::org_members::Column as OrgMemberCol;
     use entity::prelude::{OrgMembers, WorkspaceMembers};
     use entity::workspace_members::Column as WsMemberCol;
@@ -596,14 +665,16 @@ async fn resolve_effective_role(
             // opening their workspace, so this is exactly where the data-plane
             // capability has to be honoured.
             use crate::server::api::admin::assume;
-            let live = assume::is_session_live(db, user_id, org_id).await;
-            let authority = if live {
-                assume::may_act_as(db, user_id, user_email, org_id).await
-            } else {
-                None
-            };
+            // Capability is independent of an active session — `may_act_as` reads
+            // platform standing / partner scope only. Compute it FIRST so the
+            // refusal can be shaped for the population that can actually act on
+            // it: a plain non-member must stay opaque (naming the org to anyone
+            // who guesses a workspace id is disclosure), while staff and partners
+            // get the explanation and the way through.
+            let authority = assume::may_act_as(db, user_id, user_email, org_id).await;
+            let live = authority.is_some() && assume::is_session_live(db, user_id, org_id).await;
 
-            if let Some(authority) = authority {
+            if let (Some(authority), true) = (authority, live) {
                 let now = Utc::now().into();
                 let role = authority.org_role();
                 let role_label = role.as_str();
@@ -624,14 +695,43 @@ async fn resolve_effective_role(
                     created_at: now,
                     updated_at: now,
                 }
-            } else {
+            } else if authority.is_none() {
+                // A plain non-member. Nothing here is actionable for them and the
+                // org's existence/name is not theirs to learn, so this stays the
+                // opaque 403 it has always been.
                 tracing::warn!(
-                    "User {} denied access to workspace {} (not a member of org {})",
-                    user_id,
-                    workspace_id,
-                    org_id
+                    actor = %user_id,
+                    workspace_id = %workspace_id,
+                    org_id = %org_id,
+                    "workspace_context: denied — not a member of this org"
                 );
-                return Err(StatusCode::FORBIDDEN);
+                return Err(StatusCode::FORBIDDEN.into());
+            } else {
+                // Staff or an assigned partner, without a live session for this
+                // org. They CAN act here, so the wall explains itself rather than
+                // reading as a bug — see `WorkspaceAccessError::AssumeRequired`.
+                tracing::warn!(
+                    actor = %user_id,
+                    workspace_id = %workspace_id,
+                    org_id = %org_id,
+                    "workspace_context: denied — has authority for this org but no \
+                     live assume-role session"
+                );
+                // Name the tenant so the message and the assume dialog read
+                // "Pokehouse", not a UUID. Denial-only path, so the extra read
+                // costs nothing on the hot path — and a failed lookup just
+                // degrades the wording.
+                let org_name = entity::prelude::Organizations::find_by_id(org_id)
+                    .one(db)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|org| org.name);
+                return Err(WorkspaceAccessError::AssumeRequired {
+                    workspace_id,
+                    org_id,
+                    org_name,
+                });
             }
         }
     };
@@ -1121,6 +1221,46 @@ mod tests {
     use super::*;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
+
+    /// An ordinary status denial stays opaque — same bytes as before this
+    /// type existed, so nothing that mapped a bare code changes shape.
+    #[test]
+    fn access_error_status_passes_through_unchanged() {
+        let response = WorkspaceAccessError::Status(StatusCode::NOT_FOUND).into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(
+            response.headers().get("x-oxy-assume-required").is_none(),
+            "a plain status denial must not advertise assume-role"
+        );
+    }
+
+    /// The staff denial explains itself. This is the contract the FE keys off
+    /// to swap a dead 403 for the assume-role dialog — the header carries the
+    /// org that must be assumed, so the dialog opens pre-scoped.
+    #[test]
+    fn access_error_assume_required_advertises_org_to_assume() {
+        let workspace_id = Uuid::new_v4();
+        let org_id = Uuid::new_v4();
+        let response = WorkspaceAccessError::AssumeRequired {
+            workspace_id,
+            org_id,
+            org_name: Some("Pokehouse".to_string()),
+        }
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let header = response
+            .headers()
+            .get("x-oxy-assume-required")
+            .expect("assume-required denial must carry the org header")
+            .to_str()
+            .expect("header is ascii");
+        assert_eq!(
+            header,
+            org_id.to_string(),
+            "header must name the org to assume, not the workspace"
+        );
+    }
 
     /// Generic 503 — no header, no workspace_id in the body — so legacy
     /// behavior is preserved when the workspace genuinely has no path.

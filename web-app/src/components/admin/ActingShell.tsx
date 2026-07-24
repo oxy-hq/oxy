@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect } from "react";
 import { AssumeBanner } from "@/components/admin/AssumeBanner";
+import { AssumeRequiredPrompt } from "@/components/admin/AssumeRequiredPrompt";
 import { useActingSession } from "@/hooks/api/adminAssume/useActingSession";
 
 /**
@@ -28,6 +29,10 @@ export function ActingShell({ children }: { children: ReactNode }) {
   return (
     <>
       <AssumeBanner />
+      {/* Both are portal/overlay-only, so neither adds an in-flow layout node
+          (see the constraint above). The banner covers a session you're IN; the
+          prompt covers a session you NEED. */}
+      <AssumeRequiredPrompt />
       {children}
     </>
   );
