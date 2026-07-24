@@ -8895,6 +8895,7 @@ dependencies = [
  "oxy-observability",
  "oxy-project",
  "oxy-semantic",
+ "oxy-server-authz",
  "oxy-shared",
  "oxy-slack-client",
  "oxy-test-utils",
@@ -9278,6 +9279,24 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.19",
  "tracing",
+]
+
+[[package]]
+name = "oxy-server-authz"
+version = "0.5.110"
+dependencies = [
+ "axum",
+ "chrono",
+ "entity",
+ "oxy-auth",
+ "oxy-authz",
+ "oxy-platform",
+ "oxy-shared",
+ "sea-orm",
+ "serial_test",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

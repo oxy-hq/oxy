@@ -44,7 +44,7 @@ impl PlatformStanding {
 /// The owner allow-list alone — an env read with no DB, so sync callers that need only
 /// this half don't have to become async to go through the front door.
 pub fn is_global_owner(email: &str) -> bool {
-    crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(email)
+    crate::oxy_owner_guard::is_oxy_owner(email)
 }
 
 /// TTL for the `app_admins` membership cache. Matches the 60s the check used before it

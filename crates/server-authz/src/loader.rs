@@ -25,8 +25,8 @@ use uuid::Uuid;
 
 use oxy_authz::{Cap, PartnerStanding, PrincipalFacts};
 
-use crate::server::api::middlewares::partner_authz;
-use crate::server::authz::globals;
+use crate::globals;
+use crate::partner_authz;
 
 /// Load the authorization-relevant facts for a principal. `None` means **"we don't
 /// know"** — a lookup errored — and is deliberately not the same value as `Some(facts)`

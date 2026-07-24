@@ -1,0 +1,36 @@
+[package]
+name = "oxy-server-authz"
+version.workspace = true
+authors.workspace = true
+description = "App-side authorization wiring for Oxy (fact loading, guards, partner tier)"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# The transport-agnostic decision model this crate wires into the app.
+oxy-authz = { workspace = true }
+
+# Fact sources: DB entities + platform primitives.
+entity = { workspace = true }
+oxy-auth = { workspace = true }
+oxy-platform = { workspace = true }
+oxy-shared = { workspace = true }
+
+# Database
+sea-orm = { workspace = true }
+
+# HTTP (request extensions / middleware / status codes)
+axum = { workspace = true }
+
+# Identifiers, time, logging
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+chrono = { workspace = true }
+# The role-guard extractor tests are `#[tokio::test]`s.
+tokio = { workspace = true, features = ["macros", "rt"] }

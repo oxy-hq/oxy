@@ -62,6 +62,7 @@ airlayer = { workspace = true }
 oxy-airlayer-compat = { workspace = true }
 oxy-auth = { workspace = true }
 oxy-authz = { workspace = true }
+oxy-server-authz = { workspace = true }
 oxy-billing = { workspace = true }
 oxy-cameras = { workspace = true }
 oxy-compile = { workspace = true }

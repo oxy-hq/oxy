@@ -2,7 +2,7 @@ use crate::server::router::AppState;
 use crate::server::service::retrieval::EnumIndexManager;
 use crate::server::service::secret_manager::SecretManagerService;
 use agentic_semantic::refresh_key_cache::RefreshKeyCache;
-use axum::extract::{FromRequestParts, OptionalFromRequestParts, Path};
+use axum::extract::{FromRequestParts, Path};
 use axum::extract::{Query, State};
 use axum::http::request::Parts;
 use axum::{
@@ -216,46 +216,13 @@ where
     }
 }
 
-/// The resolved workspace role for the current user.
-#[derive(Clone, Debug)]
-pub struct EffectiveWorkspaceRole(pub WorkspaceRole);
-
-impl<S> FromRequestParts<S> for EffectiveWorkspaceRole
-where
-    S: Send + Sync,
-{
-    type Rejection = StatusCode;
-
-    fn from_request_parts(
-        parts: &mut Parts,
-        _state: &S,
-    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        let result = parts
-            .extensions
-            .get::<EffectiveWorkspaceRole>()
-            .cloned()
-            .ok_or(StatusCode::INTERNAL_SERVER_ERROR);
-
-        async move { result }
-    }
-}
-
-/// Local mode doesn't attach an `EffectiveWorkspaceRole`, so handlers that work
-/// in both modes (e.g. `list_apps`) read it as `Option<EffectiveWorkspaceRole>`.
-impl<S> OptionalFromRequestParts<S> for EffectiveWorkspaceRole
-where
-    S: Send + Sync,
-{
-    type Rejection = std::convert::Infallible;
-
-    fn from_request_parts(
-        parts: &mut Parts,
-        _state: &S,
-    ) -> impl Future<Output = Result<Option<Self>, Self::Rejection>> + Send {
-        let result = parts.extensions.get::<EffectiveWorkspaceRole>().cloned();
-        async move { Ok(result) }
-    }
-}
+// `EffectiveWorkspaceRole` and its extension-reading extractors moved to
+// `oxy-server-authz` (state-agnostic authz context, consumed by the workspace
+// role guards that also moved). The workspace middleware below still resolves
+// and inserts it; re-exported here so the original
+// `middlewares::workspace_context::EffectiveWorkspaceRole` path — including the
+// integration tests' `oxy_app::api::...` path — keeps resolving.
+pub use oxy_server_authz::workspace_role::EffectiveWorkspaceRole;
 
 /// Layer-1 preagg cache + renewal threshold, attached by the workspace
 /// middleware so handlers can compile semantic queries through the same

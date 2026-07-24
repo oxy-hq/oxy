@@ -4,6 +4,7 @@ members = [
   "crates/app",
   "crates/auth",
   "crates/authz",
+  "crates/server-authz",
   "crates/cameras",
   "crates/core",
   "crates/entity",
@@ -81,6 +82,7 @@ oxy-airlayer-compat = { path = "crates/infrastructure/semantic" }
 oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }
 oxy-auth = { path = "crates/auth" }
 oxy-authz = { path = "crates/authz" }
+oxy-server-authz = { path = "crates/server-authz" }
 oxy-billing = { path = "crates/billing" }
 oxy-cameras = { path = "crates/cameras" }
 oxy-compile = { path = "crates/oxy-compile" }

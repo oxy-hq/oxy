@@ -69,8 +69,8 @@ use entity::prelude::{AdminAssumeSessions, Organizations};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, TransactionTrait,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -78,10 +78,14 @@ use uuid::Uuid;
 use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::router::AppState;
 
-/// Hard ceiling on a session. Non-renewable — an operator who needs longer starts
-/// a new (separately audited) session, so a long investigation leaves a trail of
-/// deliberate re-entries rather than one silently-extended grant.
-const MAX_SESSION: i64 = 60;
+// The pure liveness-query cluster now lives in `oxy-server-authz` so the authz fact
+// loader and the partner tier can read session liveness without depending on `oxy-app`.
+// The handlers below use `MAX_SESSION` / `live_filter` internally; the three query fns
+// are re-exported so external callers keep resolving `assume::…` unchanged.
+use oxy_server_authz::assume_liveness::{MAX_SESSION, live_filter};
+pub use oxy_server_authz::assume_liveness::{
+    is_session_live, live_assumed_org_ids, live_sessions_for,
+};
 
 /// Mounted at `/api/assume`, NOT under `/admin`.
 ///
@@ -206,56 +210,6 @@ impl ActingAs {
         match self {
             ActingAs::Staff => entity::org_members::OrgRole::Owner,
             ActingAs::Partner => entity::org_members::OrgRole::Admin,
-        }
-    }
-}
-
-/// A session is live when it hasn't been ended and hasn't expired.
-fn live_filter(now: chrono::DateTime<chrono::FixedOffset>) -> Condition {
-    Condition::all()
-        .add(admin_assume_sessions::Column::EndedAt.is_null())
-        .add(admin_assume_sessions::Column::ExpiresAt.gt(now))
-}
-
-/// **The enforcement primitive.** `org_context` / `workspace_context` call this
-/// before synthesizing an Owner membership: no live session for `(actor, org)`,
-/// no override. Fails CLOSED — a DB error denies the override rather than
-/// silently granting cross-tenant reach.
-pub async fn is_session_live(db: &DatabaseConnection, actor_user_id: Uuid, org_id: Uuid) -> bool {
-    let now = Utc::now().fixed_offset();
-    match AdminAssumeSessions::find()
-        .filter(admin_assume_sessions::Column::ActorUserId.eq(actor_user_id))
-        .filter(admin_assume_sessions::Column::OrgId.eq(org_id))
-        .filter(live_filter(now))
-        .one(db)
-        .await
-    {
-        Ok(row) => row.is_some(),
-        Err(e) => {
-            tracing::error!("admin/assume: liveness check failed (denying): {e}");
-            false
-        }
-    }
-}
-
-/// Every org `actor_user_id` currently has a LIVE assume session for.
-///
-/// The batch form of [`is_session_live`], for callers that need the whole set rather
-/// than one answer — the authz fact loader, which has to know what an operator is
-/// standing in before any specific org is named. Liveness stays defined here, once.
-/// Fails CLOSED: a DB error yields no sessions, so the override is not granted.
-pub async fn live_assumed_org_ids(db: &DatabaseConnection, actor_user_id: Uuid) -> Vec<Uuid> {
-    let now = Utc::now().fixed_offset();
-    match AdminAssumeSessions::find()
-        .filter(admin_assume_sessions::Column::ActorUserId.eq(actor_user_id))
-        .filter(live_filter(now))
-        .all(db)
-        .await
-    {
-        Ok(rows) => rows.into_iter().map(|r| r.org_id).collect(),
-        Err(e) => {
-            tracing::error!("admin/assume: live-session listing failed (denying): {e}");
-            Vec::new()
         }
     }
 }
@@ -509,29 +463,6 @@ async fn partner_org_ids(db: &DatabaseConnection) -> std::collections::HashSet<U
 }
 
 // ── acting is a MODE, not a badge ─────────────────────────────────────────
-
-/// Every live session this actor holds. `resolve_scope` and the admin guard both
-/// read it, so "am I acting?" has exactly one answer.
-///
-/// Fails CLOSED for authorization (empty ⇒ no synthesized reach) — but note the
-/// admin guard below reads it in the opposite direction, where empty means
-/// *allowed*. That asymmetry is deliberate and safe: a DB error there means staff
-/// keep their normal admin access, which is the status quo, not an escalation.
-pub async fn live_sessions_for(
-    db: &DatabaseConnection,
-    actor_user_id: Uuid,
-) -> Vec<admin_assume_sessions::Model> {
-    let now = Utc::now().fixed_offset();
-    AdminAssumeSessions::find()
-        .filter(admin_assume_sessions::Column::ActorUserId.eq(actor_user_id))
-        .filter(live_filter(now))
-        .all(db)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!("admin/assume: live session lookup failed: {e}");
-            Vec::new()
-        })
-}
 
 /// **Acting closes the admin surface.**
 ///
