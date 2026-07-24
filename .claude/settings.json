@@ -29,7 +29,8 @@
       "Bash(jq:*)",
       "Bash(python3:*)",
       "Bash(which:*)",
-      "Bash(env:*)"
+      "Bash(env:*)",
+      "Bash(kubectl:*)"
     ],
     "deny": []
   },
