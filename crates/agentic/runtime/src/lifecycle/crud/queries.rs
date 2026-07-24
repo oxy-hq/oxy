@@ -18,6 +18,13 @@ use super::user_facing_status;
 /// default — they'd otherwise flood the run list at the worker's
 /// heartbeat cadence (preagg_cycle fires every 30s by default).
 /// Must stay in sync with the frontend constant of the same name.
+///
+/// Not the same list as `NON_WORKSPACE_RUN_SOURCES` in
+/// `oxy-app`'s `server::api::admin::workspace_health::queries`, and not a
+/// superset of it: this one answers "hide from the run feed?", that one answers
+/// "does a failure here indict the tenant?". `health_eval_workspace` is excluded
+/// there but stays visible here on purpose. A new daemon `source_type` should be
+/// considered for both.
 pub const SYSTEM_SOURCE_TYPES: &[&str] = &["preagg_cycle"];
 
 pub struct ToolExchangeRow {

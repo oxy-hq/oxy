@@ -4,6 +4,51 @@ use uuid::Uuid;
 
 use super::evaluator::{HealthThresholds, WorkspaceSignals};
 
+/// Run `source_type`s the health signal must ignore: platform daemon runs the
+/// workspace never asked for.
+///
+/// `health_eval_workspace` above all — those rows are seeded by *this very
+/// health check* (`start_health_eval_run` inserts one `agentic_runs` row per
+/// workspace per `health_check.interval`, default 1h). Counting them makes the
+/// check grade itself: an idle workspace's entire denominator is health runs, so
+/// a broken eval task reads as "23/24 runs failed (96%)" on every tenant
+/// simultaneously — including empty demo/test orgs that ran nothing at all.
+///
+/// The test is *whose failure it is*, not whether a human pressed a button.
+/// A `health_eval_workspace` or `preagg_cycle` failure is a platform problem —
+/// it says nothing about the tenant, and both fire on a timer, so they also
+/// reach workspaces with no content at all. Other auto-generated runs are
+/// deliberately **kept** counted, because their failure *is* a workspace fault
+/// and they only exist where the workspace created the work:
+/// - `compile` (auto/lazy compile on workspace-context load) fails when the
+///   tenant's own `config.yml` / YAML is broken — exactly what an unhealthy
+///   workspace looks like.
+/// - `monitor_scan` only runs if the workspace defined a `.monitor.yml`, and
+///   fails on that monitor's definition or warehouse.
+///
+/// Deliberately kept local instead of folded into `agentic_runtime`'s
+/// `SYSTEM_SOURCE_TYPES`: that list also drives the coordinator run feed and the
+/// per-job "Recent runs" history, where scheduled health fires are meant to stay
+/// visible (see `start_health_eval_run`'s `schedule_id` stamping). A new daemon
+/// `source_type` therefore has to be weighed against **both** lists.
+const NON_WORKSPACE_RUN_SOURCES: &[&str] = &["health_eval_workspace", "preagg_cycle"];
+
+/// SQL predicate excluding [`NON_WORKSPACE_RUN_SOURCES`], for a table aliased
+/// `alias` (empty for an unaliased `agentic_runs`).
+///
+/// Rows with a NULL `source_type` are explicitly kept: a bare `NOT IN` evaluates
+/// to NULL for them, which the WHERE clause treats as false and would silently
+/// drop legacy runs out of the denominator.
+fn exclude_daemon_runs(alias: &str) -> String {
+    let col = format!("{alias}source_type");
+    let list = NON_WORKSPACE_RUN_SOURCES
+        .iter()
+        .map(|s| format!("'{s}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(" AND ({col} IS NULL OR {col} NOT IN ({list}))")
+}
+
 #[derive(Debug, FromQueryResult)]
 struct RunAggRow {
     workspace_id: Uuid,
@@ -42,6 +87,11 @@ pub async fn gather_signals(
     // `task_status` is nullable in the schema; NULL rows are excluded from the
     // FILTER aggregates naturally (SQL ignores NULLs in COUNT FILTER).
     //
+    // Daemon runs are excluded from both numerator and denominator — most
+    // importantly this check's own `health_eval_workspace` runs, which would
+    // otherwise make every idle workspace's failure rate a measurement of the
+    // health checker rather than of the workspace.
+    //
     // make_interval's `hours` param is int4; bind i32 so Postgres doesn't see a
     // bigint (which fails named-arg function resolution). An optional
     // workspace_id filter binds $2 when scoping to a single workspace.
@@ -53,6 +103,7 @@ pub async fn gather_signals(
          FROM agentic_runs \
          WHERE created_at > now() - make_interval(hours => $1)",
     );
+    run_sql.push_str(&exclude_daemon_runs(""));
     let mut run_params: Vec<sea_orm::Value> = vec![(t.window_hours as i32).into()];
     if let Some(ws) = workspace_id {
         run_sql.push_str(" AND workspace_id = $2");
@@ -111,12 +162,16 @@ pub async fn gather_signals(
     // so every dead task has a live run row. Caveat: an orphaned dead task (only
     // possible if a run row is deleted via direct SQL bypassing CASCADE) would be
     // undercounted.
+    // Daemon runs are excluded here too: a dead-lettered health-eval task would
+    // otherwise flag the Queue dimension unhealthy on every workspace at once,
+    // the same self-grading loop as the job-liveness signal above.
     let mut dl_sql = String::from(
         "SELECT r.workspace_id, COUNT(*)::bigint AS dead_letter_count \
          FROM agentic_task_queue q \
          JOIN agentic_runs r ON r.id = q.run_id \
          WHERE q.queue_status = 'dead'",
     );
+    dl_sql.push_str(&exclude_daemon_runs("r."));
     let mut dl_params: Vec<sea_orm::Value> = Vec::new();
     if let Some(ws) = workspace_id {
         dl_sql.push_str(" AND r.workspace_id = $1");
@@ -274,6 +329,123 @@ mod tests {
         let mine = signals.iter().find(|s| s.workspace_id == ws).unwrap();
         assert_eq!(mine.failed_runs, 3);
         assert_eq!(mine.total_runs, 3);
+    }
+
+    /// The health check must never count its own eval runs. Regression test for
+    /// the alert storm where every workspace — including empty demo orgs — read
+    /// "23/24 runs failed (96%)": the hourly `health_eval_workspace` run rows are
+    /// the entire denominator for an idle workspace, so a failing eval task made
+    /// the checker report on itself, once per tenant.
+    #[tokio::test]
+    async fn health_eval_runs_are_not_counted_as_workspace_runs() {
+        let Some(db) = test_db().await else {
+            eprintln!("{SKIP_MSG}");
+            return;
+        };
+        let ws = Uuid::new_v4();
+        // 24 failed health-eval runs — one full day at the default 1h cadence —
+        // plus one real failed workspace run.
+        for _ in 0..24 {
+            insert_run(&db, ws, "failed", Some("health_eval_workspace")).await;
+        }
+        insert_run(&db, ws, "failed", Some("analytics")).await;
+
+        let signals = gather_signals(&db, &HealthThresholds::default(), Some(ws))
+            .await
+            .unwrap();
+        let mine = signals.iter().find(|s| s.workspace_id == ws).unwrap();
+        assert_eq!(
+            mine.total_runs, 1,
+            "health-eval runs must be excluded from the denominator"
+        );
+        assert_eq!(
+            mine.failed_runs, 1,
+            "health-eval runs must be excluded from the numerator"
+        );
+    }
+
+    /// A NULL `source_type` is workspace work of unknown provenance, not a
+    /// daemon run — a bare `NOT IN` would evaluate NULL and silently drop it.
+    #[tokio::test]
+    async fn null_source_type_runs_are_still_counted() {
+        let Some(db) = test_db().await else {
+            eprintln!("{SKIP_MSG}");
+            return;
+        };
+        let ws = Uuid::new_v4();
+        insert_run(&db, ws, "failed", None).await;
+
+        let signals = gather_signals(&db, &HealthThresholds::default(), Some(ws))
+            .await
+            .unwrap();
+        let mine = signals.iter().find(|s| s.workspace_id == ws).unwrap();
+        assert_eq!(mine.total_runs, 1);
+        assert_eq!(mine.failed_runs, 1);
+    }
+
+    /// `compile` and `monitor_scan` rows are auto-generated too, but their
+    /// failures are the workspace's own (a broken `config.yml`, a broken
+    /// `.monitor.yml`) and they only exist where the workspace created the work.
+    /// Locks in that the exclusion stayed narrow — see
+    /// [`NON_WORKSPACE_RUN_SOURCES`].
+    #[tokio::test]
+    async fn workspace_attributable_daemon_runs_stay_counted() {
+        let Some(db) = test_db().await else {
+            eprintln!("{SKIP_MSG}");
+            return;
+        };
+        let ws = Uuid::new_v4();
+        insert_run(&db, ws, "failed", Some("compile")).await;
+        insert_run(&db, ws, "failed", Some("monitor_scan")).await;
+        insert_run(&db, ws, "failed", Some("health_eval_workspace")).await;
+
+        let signals = gather_signals(&db, &HealthThresholds::default(), Some(ws))
+            .await
+            .unwrap();
+        let mine = signals.iter().find(|s| s.workspace_id == ws).unwrap();
+        assert_eq!(
+            mine.total_runs, 2,
+            "compile and monitor_scan are workspace faults and must stay counted"
+        );
+        assert_eq!(mine.failed_runs, 2);
+    }
+
+    /// Seed one `agentic_runs` row. `source_type` is nullable, so `None` writes
+    /// a genuine SQL NULL.
+    async fn insert_run(
+        db: &DatabaseConnection,
+        ws: Uuid,
+        task_status: &str,
+        source_type: Option<&str>,
+    ) {
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO agentic_runs \
+                (id, workspace_id, question, task_status, source_type, attempt, created_at, updated_at) \
+             VALUES ($1, $2, '', $3, $4, 0, now(), now())",
+            [
+                Uuid::new_v4().to_string().into(),
+                ws.into(),
+                task_status.into(),
+                source_type.map(str::to_string).into(),
+            ],
+        ))
+        .await
+        .unwrap();
+    }
+
+    #[test]
+    fn daemon_exclusion_keeps_null_source_types() {
+        let sql = exclude_daemon_runs("");
+        assert!(sql.contains("source_type IS NULL"), "got: {sql}");
+        assert!(sql.contains("'health_eval_workspace'"), "got: {sql}");
+    }
+
+    #[test]
+    fn daemon_exclusion_qualifies_aliased_columns() {
+        let sql = exclude_daemon_runs("r.");
+        assert!(sql.contains("r.source_type IS NULL"), "got: {sql}");
+        assert!(sql.contains("r.source_type NOT IN"), "got: {sql}");
     }
 
     #[tokio::test]
