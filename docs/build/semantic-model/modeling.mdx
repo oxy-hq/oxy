@@ -11,7 +11,7 @@ import RewriteBanner from "/snippets/rewrite-banner.mdx";
 
 Oxygen has a built-in SQL modeling layer that understands dbt project conventions. You can define, compile, and execute layered SQL models directly against any database already connected in `config.yml` — with no separate dbt CLI or Python environment required.
 
-Models live alongside your agents, procedures, and apps in the same workspace. Like everything else in Oxygen, they are version-controlled YAML + SQL files that can be edited in the IDE, validated with `oxy validate`, and deployed through the standard Git workflow.
+Models live alongside your agents, automations, and apps in the same workspace. Like everything else in Oxygen, they are version-controlled YAML + SQL files that can be edited in the IDE, validated with `oxy validate`, and deployed through the standard Git workflow.
 
 ## Project Layout
 
@@ -24,13 +24,13 @@ your-workspace/
 │   └── my_project/         # one folder per project
 │       ├── dbt_project.yml
 │       ├── profiles.yml    # or use ~/.dbt/profiles.yml
-│       ├── oxy.yml         # required — maps targets to Oxy databases
+│       ├── oxy.yml         # required — maps targets to Oxygen databases
 │       ├── models/
 │       │   ├── staging/
 │       │   └── marts/
 │       └── seeds/
 ├── agents/
-└── procedures/
+└── automations/
 ```
 
 Oxygen auto-discovers every subdirectory of `modeling/` that contains a `dbt_project.yml`.
@@ -62,7 +62,7 @@ my_project:
   outputs:
     dev:
       type: duckdb
-      path: ':memory:'   # ignored at runtime — Oxy uses the mapped database path
+      path: ':memory:'   # ignored at runtime — Oxygen uses the mapped database path
       threads: 4
     prod:
       type: postgres

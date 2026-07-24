@@ -1,31 +1,85 @@
 ---
 title: Architecture
-description: How Oxygen Cloud fits together at a glance
+description: The core components of Oxygen and how they fit together
 type: concept
 audience: end-user
 tier: standard
 ---
 
-Oxygen Cloud has three surfaces a user interacts with:
+Oxygen is built in three layers. **Data Infrastructure** gets your data in and
+shapes it. The **World Model** turns that data into a formula-first model of your
+business — every KPI defined as an equation over its drivers. **Agentic
+Intelligence** reasons over that model to answer questions and drive outcomes. On
+top of it all, teams ship **applications** and reach them through a few
+consistent surfaces.
+
+## Core Components
+
+<CardGroup cols={3}>
+  <Card title="Data Infrastructure" icon="database" href="/guide/build/data-infrastructure">
+    Airhouse, Airlayer, and Airform — the engines that land your data, model it,
+    and compile it into the queries agents run.
+  </Card>
+  <Card title="World Model" icon="diagram-project" href="/guide/build/world-model">
+    A formula-first model of your business: a semantic model, a metric tree, and
+    an entity graph that define every KPI as an equation over its drivers.
+  </Card>
+  <Card title="Agentic Intelligence" icon="robot" href="/guide/build/agents">
+    Agents that ground their reasoning in the World Model — generating and
+    running SQL, explaining changes, and surfacing what to do next.
+  </Card>
+</CardGroup>
+
+The **World Model** is the piece that sets Oxygen apart. Rather than a bottom-up
+digital twin of every object in your business, it models the business top-down —
+starting from the outcomes you care about and working down to the drivers you can
+move. It has three layers: the **Semantic Model** composes deterministic SQL from
+business-relevant measures and dimensions; the **Metric Tree** captures how those
+measures relate, so a top-line metric decomposes into its drivers; and the
+**Entity Graph** links measures to the real objects — stores, employees,
+customers — that produce them. [Explore the World Model →](/guide/build/world-model)
+
+## Building Applications
+
+The real payoff of the World Model is that it gives every application a **common
+interface to your data — one that preserves the business model.** It's not just
+that a metric's definition and SQL live in one place; the *relationships* around
+that metric are preserved too. Everything a metric means — why it dropped or
+climbed, which drivers and segments it came from, how it compares to its peers,
+and what actions move it — is captured in the model and reachable through the
+same API. Every app you build on top inherits that context instead of
+reconstructing it.
+
+<CardGroup cols={3}>
+  <Card title="JavaScript Applications" icon="js" href="/guide/build/sdk">
+    Code-first React + Vite apps built with the **Oxygen SDK** (`@oxy-hq/sdk`) —
+    a React provider and hooks that query your Oxygen backend in real time.
+  </Card>
+  <Card title="Automations" icon="diagram-subtask" href="/guide/build/automations">
+    Multi-step, replayable analytics workflows defined in `.automation.yml`.
+  </Card>
+  <Card title="Data Applications" icon="table-cells" href="/guide/build/data-apps">
+    Dashboards composed of SQL queries, charts, tables, and interactive
+    controls, defined in `.app.yml`.
+  </Card>
+</CardGroup>
+
+Everything above is configuration — version-controlled workspace files that
+Oxygen edits for you through the Builder agent, or that you edit by hand in the
+IDE.
+
+## Surfaces
+
+You reach all of this through three surfaces, backed by the same workspace:
 
 - **`app.oxygen-hq.com`** — the IDE, chat panel, dashboards, and admin UI.
-- **The REST API** — served by the same host under `app.oxygen-hq.com/api`,
-  with a curated, API-key-only automation surface at `/external/api`. It
-  powers automation and embedded integrations.
+- **The REST API** — served by the same host under `app.oxygen-hq.com/api`, with
+  a curated, API-key-only automation surface at `/external/api`. It powers
+  automation and embedded integrations.
   ([REST API →](/guide/reference/rest-api))
 - **The MCP server** — exposes Oxygen as a tool surface for MCP clients like
   Claude Desktop and Cursor, run from the `oxy mcp` CLI.
   ([MCP →](/guide/build/embed-extend/mcp))
 
-{/* TODO: Annotated diagram. */}
-
-Inside a workspace, Oxygen organizes work into:
-
-- **Agents** that answer questions
-- **Procedures** that automate multi-step workflows
-- **Data Apps** that render dashboards
-- A **Semantic Layer** that backs all of the above with shared models
-
-Authentication, billing, and team-management live in **Manage**.
-Configuration lives in workspace files that Oxygen edits for you
-through the Builder agent (you can also edit them by hand in the IDE).
+([Manage →](/guide/manage))
+Authentication, billing, and team management live in **Manage**.

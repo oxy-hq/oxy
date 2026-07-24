@@ -1,0 +1,120 @@
+---
+title: "How the pipeline works"
+sidebarTitle: "The pipeline"
+description: "The finite state machine behind every Oxygen agent — stages, back-edges, retries, and human-in-the-loop suspension"
+---
+
+Every agent is a **finite state machine**. The orchestrator holds exactly one
+state at a time and advances it each step. Crucially, the edges run *both ways*:
+when a stage produces something the next stage can't use, the agent routes
+**back** to an earlier stage and tries again — it never pushes a bad answer
+forward.
+
+## The stages
+
+<Steps>
+  <Step title="Clarifying">
+    Triage the question and discover the schema, forming a **grounded intent**.
+    The agent searches your catalog and discoverable automations; if the request
+    is ambiguous it can pause and ask you a follow-up (see
+    [Suspension](#human-in-the-loop-suspension)).
+  </Step>
+  <Step title="Specifying">
+    Ground the intent into a structured **spec** — the exact measure and
+    dimension paths, filters, and joins. When a semantic model is present the
+    agent tries to compile the spec directly here; if that succeeds, **Solving is
+    skipped entirely**.
+  </Step>
+  <Step title="Solving">
+    Generate concrete **SQL** from the spec (only reached when the semantic model
+    couldn't compile it directly). The agent can run a small preview to validate
+    joins and syntax before committing.
+  </Step>
+  <Step title="Executing">
+    Run the query against a configured connector and validate the **result**.
+    A failure here routes back — to Specifying on the semantic path, or to
+    Solving on the hand-written-SQL path.
+  </Step>
+  <Step title="Interpreting">
+    Turn the validated rows into a **natural-language answer** and, when useful,
+    a chart (line, bar, pie, or table).
+  </Step>
+</Steps>
+
+Two more states exist that you don't configure directly:
+
+- **Diagnosing** — entered whenever a stage errors. It inspects the failure and
+  chooses which earlier stage to route back to.
+- **Done** — the terminal state, carrying the final answer.
+
+## Back-edges: failing backward, not forward
+
+Each stage can hand control back to an earlier one instead of emitting a wrong
+result. When Executing gets an empty or malformed result, it doesn't fabricate
+an interpretation — it routes back to re-specify or re-solve. When Specifying
+can't find a measure the question needs, it can route back to Clarifying to ask
+for detail. This back-edge routing is what makes the pipeline self-correcting.
+
+## Retries
+
+Every stage has its own retry budget, set per-state in the agent config:
+
+```yaml
+states:
+  clarifying:
+    max_retries: 3
+  specifying:
+    max_retries: 10   # give disambiguation more attempts
+```
+
+Transient errors and rate-limit errors are tracked under **separate budgets**,
+so a burst of rate limits doesn't burn the retries reserved for real failures.
+Retry context carries the prior error and attempt count forward, so a re-attempt
+is informed rather than blind.
+
+## Per-stage model & reasoning overrides
+
+Because each stage does a different job, each one can run a different model and
+reasoning mode. Triage is cheap; SQL generation benefits from a stronger model;
+prose generation needs no reasoning at all:
+
+```yaml
+llm:
+  ref: claude-sonnet-4-6        # global default for every stage
+
+states:
+  clarifying:
+    model: claude-haiku-4-5     # cheap model for triage
+    thinking: adaptive
+  solving:
+    model: claude-opus-4-6      # stronger model for SQL
+    thinking:
+      budget_tokens: 10000
+  interpreting:
+    thinking: disabled           # prose needs no reasoning
+```
+
+Each stage accepts `model`, `thinking`, `instructions` (system-prompt additions
+for that stage only), and `max_retries`.
+
+## Human-in-the-loop suspension
+
+During **Clarifying**, an agent can **suspend** — pausing the run to ask you a
+clarifying question rather than guessing. The run's state is preserved; when you
+answer, the agent resumes from the stage that paused, with your answer injected,
+without re-running the earlier stages. An ambiguous request becomes a short
+conversation instead of a wrong answer.
+
+The same suspension mechanism lets an agent **delegate** to an
+[automation](/guide/build/automations) mid-run and resume with its output.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Context & affordances" icon="database" href="/guide/build/agents/provide-context">
+    How the context you provide changes what each stage can do
+  </Card>
+  <Card title="Agents overview" icon="robot" href="/guide/build/agents">
+    Configuration, kinds, and using an agent in chat
+  </Card>
+</CardGroup>

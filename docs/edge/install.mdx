@@ -11,7 +11,7 @@ Bring up one edge box at one site. It'll start streaming camera frames + posting
 
 - A Linux host (Ubuntu 22.04+ recommended) reachable by ssh
 - Docker installed (the install script will install it if missing, but only on Ubuntu/Debian)
-- Outbound network to your Oxy server (typically port 443 if Oxy is behind TLS, or via Tailscale)
+- Outbound network to your Oxygen server (typically port 443 if Oxygen is behind TLS, or via Tailscale)
 - At least one RTSP camera reachable from that host
 
 <Tip>
@@ -20,7 +20,7 @@ For air-gapped or strict-firewall environments, see the [TLS production runbook]
 
 ## Step 1 — Add the device in the UI
 
-1. Open your Oxy workspace → **Edge → List → Edge boxes** tab.
+1. Open your Oxygen workspace → **Edge → List → Edge boxes** tab.
 2. Click **Add device**.
 3. Pick the site this box belongs to, give it a hardware label (e.g. "kitchen-jetson-1"), and submit.
 4. Copy the **one-line install command** the wizard shows. It looks like:
@@ -60,7 +60,7 @@ If you've also added cameras to this box, the **Timeline** tab's camera dropdown
 ## What just happened (high level)
 
 ```
-your-box                    Oxy server
+your-box                    Oxygen server
 ─────────                   ──────────
 oxy-edge.service
   └─ docker compose up

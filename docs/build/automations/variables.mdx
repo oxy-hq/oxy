@@ -1,0 +1,141 @@
+---
+title: "Variables"
+description: "Parameterize an Automation with basic and typed (JSON Schema) variables"
+---
+
+It's often the case that you may want to parameterize an Automation — for
+example, if you are building an automated analysis and want it to be modular with
+respect to the date. This is enabled through the `variables` key.
+
+## Basic variables
+
+Simple variables can be defined as key-value pairs:
+
+```yaml
+variables:
+  brand: Underbelly
+  date: 2024-01-15
+```
+
+Variables can be referenced within task fields using Jinja syntax:
+
+```yaml
+tasks:
+  - name: analyze_brand
+    type: agent
+    agent_ref: default
+    prompt: |
+      Analyze performance for {{ brand }} on {{ date }}
+```
+
+## Typed variables with JSON Schema
+
+For better validation and documentation, you can define variables using JSON
+Schema:
+
+```yaml
+variables:
+  target_database:
+    type: string
+    description: Database to analyze
+    default: "analytics_db"
+
+  analysis_period:
+    type: string
+    description: Time period for analysis
+    default: "last_30_days"
+    enum:
+      - last_7_days
+      - last_30_days
+      - last_quarter
+      - custom
+
+  max_results:
+    type: integer
+    description: Maximum number of results
+    default: 100
+    minimum: 1
+    maximum: 1000
+
+  include_archived:
+    type: boolean
+    description: Include archived records
+    default: false
+```
+
+## Passing variables to tasks
+
+Variables can be passed to different task types:
+
+### Agent tasks
+
+```yaml
+tasks:
+  - name: analyze_sales
+    type: agent
+    agent_ref: analytics.agentic.yml
+    prompt: |
+      Analyze sales data for {{ analysis_period }}
+    variables:
+      database: "{{ target_database }}"
+      period: "{{ analysis_period }}"
+      limit: "{{ max_results }}"
+```
+
+### SQL tasks
+
+```yaml
+tasks:
+  - name: query_data
+    type: execute_sql
+    sql_file: sales_query.sql
+    database: local
+    variables:
+      table_name: "{{ target_table }}"
+      date_column: "{{ date_field }}"
+```
+
+### Semantic query tasks
+
+```yaml
+tasks:
+  - name: semantic_query
+    type: semantic_query
+    topic: sales
+    dimensions:
+      - orders.order_id
+    variables:
+      orders_table: "{{ orders_table }}"
+```
+
+## Global variables
+
+Variables can reference global semantics values:
+
+```yaml
+variables:
+  orders_table:
+    type: string
+    default: "orders"
+
+tasks:
+  - name: query_orders
+    type: semantic_query
+    topic: sales
+    variables:
+      table: "{{ orders_table }}"
+```
+
+See the [Semantic Model](/guide/build/semantic-model/simple-model) for more
+information.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Task types" icon="diagram-subtask" href="/guide/build/automations/task-types">
+    The tasks these variables feed into
+  </Card>
+  <Card title="Loops" icon="repeat" href="/guide/build/automations/loops">
+    Iterate over parameterized values
+  </Card>
+</CardGroup>

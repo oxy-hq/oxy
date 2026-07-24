@@ -1,13 +1,13 @@
 ---
 title: "Entities"
-description: "Define entities and relationships in your semantic layer"
+description: "Define entities and relationships in your semantic model"
 ---
 
 ## Overview
 
 **Entities** represent distinct objects or concepts in your data model (like customers, orders, or products). They enable automatic relationship discovery and intelligent joins between views.
 
-When you define entities consistently across views, the semantic layer automatically understands relationships and can join data seamlessly.
+When you define entities consistently across views, the semantic model automatically understands relationships and can join data seamlessly.
 
 ## Entity Types
 
@@ -134,7 +134,7 @@ entities:
       - line_item_id
 ```
 
-The semantic layer will automatically join these views on both `order_id` and `line_item_id`.
+The semantic model will automatically join these views on both `order_id` and `line_item_id`.
 
 ## How Entities Enable Joins
 
@@ -280,18 +280,18 @@ entities:
   <Card
     title="Views"
     icon="database"
-    href="/guide/build/semantic-layer/views"
+    href="/guide/build/semantic-model/views"
   >
     Learn about creating views
   </Card>
   <Card
     title="Dimensions"
     icon="grid"
-    href="/guide/build/semantic-layer/dimensions"
+    href="/guide/build/semantic-model/dimensions"
   >
     Define dimensions for your entities
   </Card>
-  <Card title="Overview" icon="book" href="/guide/build/semantic-layer">
-    Back to semantic layer overview
+  <Card title="Overview" icon="book" href="/guide/build/semantic-model/simple-model">
+    Back to semantic model overview
   </Card>
 </CardGroup>

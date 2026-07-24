@@ -1,25 +1,25 @@
 ---
-title: "Using the Semantic Layer"
-description: "How to use your semantic layer in agents, workflows, and routing agents"
+title: "Using the Semantic Model"
+description: "How to use your semantic model in agents, workflows, and routing agents"
 ---
 import RewriteBanner from "/snippets/rewrite-banner.mdx";
 
 <RewriteBanner />
 
 
-## Building the Semantic Layer
+## Building the Semantic Model
 
-Once you've defined your semantic layer with views, entities, dimensions, and measures, you need to build it before use:
+Once you've defined your semantic model with views, entities, dimensions, and measures, you need to build it before use:
 
 ```bash
 oxy build
 ```
 
-This command validates and compiles your semantic layer definitions, making them available to agents, workflows, and routing agents. Always run `oxy build` after creating or modifying semantic layer files to ensure your changes are picked up.
+This command validates and compiles your semantic model definitions, making them available to agents, workflows, and routing agents. Always run `oxy build` after creating or modifying semantic model files to ensure your changes are picked up.
 
 ## In Agents
 
-Add the `semantic_query` tool to your agent to enable it to query the semantic layer directly. The agent can then answer business questions using your defined metrics and dimensions.
+Add the `semantic_query` tool to your agent to enable it to query the semantic model directly. The agent can then answer business questions using your defined metrics and dimensions.
 
 ### Basic Setup
 
@@ -29,7 +29,7 @@ description: "Data analyst agent that can answer business questions"
 
 system_instructions: |
   You are a data analyst expert. Your task is to help users answer 
-  questions based on data using the semantic layer.
+  questions based on data using the semantic model.
 
   Use the semantic_query tool to query data. The tool gives you access
   to pre-defined business metrics and dimensions.
@@ -66,7 +66,7 @@ Once configured, your agent can handle queries like:
 - "Show me the top 5 products by sales this month"
 - "What's the average order value for each acquisition channel?"
 
-The agent will use the semantic layer to understand available dimensions and measures, then construct appropriate queries.
+The agent will use the semantic model to understand available dimensions and measures, then construct appropriate queries.
 
 ### Multiple Topics
 
@@ -92,7 +92,7 @@ tools:
 
 ## In Workflows
 
-Use the `semantic_query` task type in workflows to execute structured queries against your semantic layer. This is ideal for automated reporting, data pipelines, and scheduled analytics.
+Use the `semantic_query` task type in workflows to execute structured queries against your semantic model. This is ideal for automated reporting, data pipelines, and scheduled analytics.
 
 ### Basic Workflow Task
 
@@ -314,7 +314,7 @@ system_instructions: |
   - Multi-step processes
 
 routes:
-  # Semantic layer topics
+  # Semantic model topics
   - "semantics/topics/sales.topic.yml"
   - "semantics/topics/marketing.topic.yml"
   - "semantics/topics/finance.topic.yml"
@@ -375,17 +375,17 @@ reasoning:
   <Card
     title="Topics"
     icon="folder"
-    href="/guide/build/semantic-layer/topics"
+    href="/guide/build/semantic-model/topics"
   >
     Organize views into topics
   </Card>
   <Card title="Agents" icon="robot" href="/guide/build/agents">
     Learn more about agents
   </Card>
-  <Card title="Workflows" icon="sitemap" href="/guide/build/procedures">
+  <Card title="Workflows" icon="sitemap" href="/guide/build/automations">
     Learn more about workflows
   </Card>
-  <Card title="Overview" icon="book" href="/guide/build/semantic-layer">
-    Back to semantic layer overview
+  <Card title="Overview" icon="book" href="/guide/build/semantic-model/simple-model">
+    Back to semantic model overview
   </Card>
 </CardGroup>

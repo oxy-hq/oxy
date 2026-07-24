@@ -1,0 +1,117 @@
+---
+title: "Oxygen Functions"
+description: "Server-side TypeScript handlers that ship inside your Oxygen app and run on Oxygen's managed runtime"
+---
+
+**Oxygen Functions** are TypeScript handlers that ship *inside* your
+[SDK app](/guide/build/sdk) and run **server-side** on Oxygen's managed V8
+isolate runtime, with direct access to your project's data plane. Reach for them
+whenever the browser shouldn't do the work itself:
+
+- a parameterized or privileged warehouse query,
+- a **warehouse write** (insert / upsert / exec),
+- kicking off an [Airway ELT](/guide/build/data-infrastructure) run,
+- an outbound API call to a third-party service.
+
+No separate backend to stand up — a function is versioned and deployed with your
+frontend by `oxy publish`.
+
+<Note>
+An Oxygen Function is a bundled TypeScript handler — **not** a YAML
+[Automation](/guide/build/automations) task or a Data App `task`. It runs with
+the app's project-level access, not the invoking visitor's.
+</Note>
+
+## Authoring a function
+
+A function is a file at `functions/<name>.ts` that exports a default
+`async (req, ctx) => Response`, declared in the app's `oxy-app.json`:
+
+```ts functions/daily-rollup.ts
+export default async function (req, ctx) {
+  const { rows } = await ctx.query(
+    "SELECT date, SUM(amount) AS revenue FROM orders GROUP BY 1"
+  );
+  await ctx.warehouse.upsert("daily_revenue", rows);
+  ctx.log(`rolled up ${rows.length} days`);
+  return Response.json({ ok: true, days: rows.length });
+}
+```
+
+```json oxy-app.json
+{
+  "schemaVersion": 2,
+  "slug": "store-pulse",
+  "functions": {
+    "daily-rollup": { "route": true, "timeoutSeconds": 30 },
+    "stripe-sync":  { "schedule": "0 * * * *", "timezone": "UTC" }
+  }
+}
+```
+
+- **`req`** is `{ body: string }` — the raw POST body. `Response` /
+  `Response.json(...)` are polyfilled by the runtime.
+- **`ctx`** is the data plane:
+  - `ctx.query` / `ctx.queryStream` — read-only, row-capped SQL
+  - `ctx.semantic.query` — a [semantic-model](/guide/build/semantic-model/simple-model) query
+  - `ctx.warehouse.{insert, exec, upsert}` — writes, allowlisted to project databases
+  - `ctx.airway.run` — kick off an ELT pipeline
+  - `ctx.fetch` — outbound HTTP, SSRF-allowlisted, HTTPS-only, size/time-capped
+  - `ctx.env` — per-app secrets
+  - `ctx.user`, `ctx.log`
+
+## Invocation modes
+
+A function can be reached three ways, each with its own identity and default
+timeout (a ceiling; max 300s):
+
+| Mode | Declared as | Identity | Default timeout |
+| --- | --- | --- | --- |
+| **Route** | `"route": true` | the visitor | 10s |
+| **Schedule** | `"schedule": "<cron>"` | system | 60s |
+| **Airway step** | used as an Airway transform | system | 300s |
+
+The route endpoint (`POST /customer-apps/<org>/<slug>/fn/<name>`) is **POST-only**
+(405 otherwise), rate-limited per `(user, app, function)`, and every invocation
+is audited.
+
+## Calling a route function from React
+
+Use the `useFunction` hook to invoke a `route` function imperatively — e.g. from
+a button:
+
+```tsx
+import { useFunction } from "@oxy-hq/sdk";
+
+function RefreshButton() {
+  const rollup = useFunction("daily-rollup");
+  return (
+    <button disabled={rollup.isLoading} onClick={() => rollup.invoke({ full: true })}>
+      {rollup.isLoading ? "Refreshing…" : "Refresh"}
+    </button>
+  );
+}
+```
+
+- `invoke(body?, { idempotencyKey? })` returns the function's JSON response.
+- `rollup.data` holds the last successful result; `rollup.error` the last error.
+- Concurrent identical invokes are **deduplicated** into one request.
+
+## Caching
+
+Results are **not cached by default** — functions are often side-effectful. A
+read-only function can opt into a server result cache by adding
+`"cache": { "ttlSeconds": N }` to its manifest entry; the cache is keyed per
+`(build, user, body)`, invalidated by the next publish, and bypassed with
+`?refresh`.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Hooks & components" icon="code" href="/guide/build/sdk/hooks">
+    The rest of the SDK surface
+  </Card>
+  <Card title="SDK overview" icon="cube" href="/guide/build/sdk">
+    Scaffold, wire up, and deploy an app
+  </Card>
+</CardGroup>

@@ -1,0 +1,188 @@
+---
+title: "World Model Interface"
+sidebarTitle: "World Model"
+tag: "Alpha"
+description: "Traverse, explain, size, and simulate your World Model as a graph of navigable nodes"
+---
+
+<Note>
+**Alpha.** The metric-tree analyses below (traverse, root-cause, opportunity,
+predict) are available today through the `MetricTreeClient`. The higher-level
+**node interface** — the `expand` / `drill` / `explain` / `size` / `simulate`
+paradigm, the interactive components, and **actions** — is a design preview and
+may change. Actions are not yet built.
+</Note>
+
+The [World Model](/guide/build/world-model) isn't just a set of numbers — it's a
+graph: metrics connected to the drivers that move them, the entities that produce
+them, and (soon) the actions that change them. The **World Model Interface**
+exposes that graph to your app so you can build experiences that let people
+*navigate* their business, not just read a dashboard.
+
+## The node paradigm
+
+Everything in the World Model is a **node**, and every node speaks the same five
+verbs. Learn them once and they compose across the entire surface:
+
+| Verb | What it does | Returns |
+| --- | --- | --- |
+| **expand** | Reveal one hop of relationships — a metric's drivers and components. | more nodes |
+| **drill** | Narrow into a segment or entity instance (one store, one region). | a scoped node |
+| **explain** | Root-cause a period-over-period move: why it dropped or climbed. | a driver/segment breakdown |
+| **size** | Compare a node to its peers and size the gap. | ranked opportunities |
+| **simulate** <Tooltip tip="Alpha">alpha</Tooltip> | Pull a lever and watch the delta propagate through the drivers. | a projected delta |
+
+Render a node, let the user click a verb, get more nodes back, recurse. That's the
+whole interaction model — a metric card whose drivers expand into more cards,
+each of which can be drilled, explained, sized, or simulated.
+
+## Get the interface
+
+A single hook — `useWorldModel` — returns the whole interface, scoped to the
+project. Everything else hangs off it: you grab a **node** and the node speaks the
+verbs.
+
+```tsx
+import { useWorldModel } from "@oxy-hq/sdk";
+
+const world = useWorldModel();
+
+// The graph, rooted anywhere you like.
+const tree = await world.tree("orders.net_revenue");
+// tree.nodes: MetricNode[]  — id, label, measure, is_composite, expr
+// tree.edges: MetricEdge[]  — from, to, kind: "component" | "driver",
+//                             direction, strength, confidence, coefficient, form
+
+// Or focus a single node and expand it lazily — ideal for click-to-open UIs
+// where you don't want the whole tree up front.
+const revenue = world.metric("orders.net_revenue");
+// revenue.node       — the measure itself (label, expr, value)
+// revenue.expand()   → child nodes (components + drivers), fetched on demand
+// revenue.drivers    → driver edges, ranked by influence (sensitivity)
+```
+
+`world.metric(id)` is the one object you carry around — every verb below is a
+method on it.
+
+## Explain a move
+
+**explain** decomposes a period-over-period change, recursively splitting the
+metric by its components and dimensions until the move concentrates — so you can
+show *where* a number came from, not just that it changed.
+
+```tsx
+const profit = world.metric("financials.operating_profit");
+
+const rca = await profit.explain({
+  time_dimension: "financials.month",
+  current_period: ["2026-06-01", "2026-06-30"],
+  previous_period: ["2026-05-01", "2026-05-31"],
+});
+
+// rca.nodes              — the breakdown tree (each node: split, delta, root_fraction)
+// rca.driver_attribution — how much each driver contributed
+// rca.warnings           — Simpson's paradox, opposing offsets, non-additive splits
+```
+
+## Size the opportunity
+
+**size** finds underperforming segments and quantifies the upside of closing the
+gap to their peers — "match the best" across a dimension.
+
+```tsx
+const revenue = world.metric("orders.net_revenue");
+
+const opp = await revenue.size({
+  time_dimension: "orders.order_date",
+  period: ["2026-06-01", "2026-06-30"],
+});
+
+for (const dim of opp.dimensions) {
+  console.log(dim.dimension, "+", dim.total_upside);      // e.g. "region + $840k"
+  for (const seg of dim.segments) {
+    console.log(seg.segment, "gap", seg.gap, "upside", seg.upside);
+  }
+}
+```
+
+## Simulate an action <Tooltip tip="Alpha">alpha</Tooltip>
+
+This is the frontier. An **action** is a lever a human can pull — *hire*, *raise
+prices*, *open a store*. Actions live in a catalog and declare only the leaf
+measure they *directly* move; everything downstream is already described by the
+[metric tree's](/guide/build/world-model/metric-tree) drivers, so the SDK
+propagates the effect for you — carrying the nonlinearity in the drivers.
+
+```tsx
+// Actions applicable to a node (from the catalog's `applicable_actions` /
+// `influenced_by` pointers).
+const sales = world.metric("stores.net_sales");
+
+// Simulate one lever at a specific entity instance, and read the projected
+// delta after it flows through the drivers.
+const result = await sales.actions.hire.simulate({
+  at: { store_id: "san_mateo" },
+  magnitude: 1,          // hire 1 server
+  horizon: "12w",
+});
+
+// result.impacts: PredictImpact[]
+//   employees_per_shift  +0.071
+//   service_score        +0.005   (linear-log driver)
+//   net_sales            +$920/mo (piecewise driver — saturates past CSAT 4.8)
+```
+
+Because the nonlinearity lives in the driver, not the action, the *same* hire
+produces a different lift depending on where each store sits on its curve —
+which is exactly what makes **size** + **simulate** compose into a ranked
+recommendation:
+
+> Hire 2 servers at San Mateo → +0.14 CSAT (4.62 → 4.76) → **+$28k/mo**.
+> Diminishing returns past a 3rd hire.
+
+The knots of a piecewise driver are inspectable metadata, so the interface can
+*say why* the returns diminish rather than emit an opaque number.
+
+## Make everything clickable
+
+The verbs above are designed to nest, so an interactive component only needs one
+callback: hand it the node the user clicked and let them choose what to do next.
+
+```tsx
+import { MetricTreeView } from "@oxy-hq/sdk";
+
+<MetricTreeView
+  root="orders.net_revenue"
+  onSelect={(node) => {
+    // node.expand()  → drivers as child cards
+    // node.drill({ region: "west" })  → the same metric, scoped
+    // node.explain({ period })        → inline root cause
+    // node.size({ period })           → peer comparison
+    setFocus(node);
+  }}
+/>
+```
+
+A dashboard built this way starts at a single top-line metric and lets the user
+walk the whole business from it — expand into drivers, drill into a region,
+explain a drop, size the gap, and (soon) simulate the fix — every object a live
+handle rather than a static number.
+
+## Available today
+
+The analyses this interface is built on ship now via `MetricTreeClient`
+(`getTree`, `getSensitivity`, `predict`, `explain`, `findOpportunities`) — see
+[Hooks & components](/guide/build/sdk/hooks#metric-tree-analyses). The node
+paradigm, interactive components, and actions on this page are the proposed
+shape of the higher-level interface.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="The Metric Tree" icon="diagram-project" href="/guide/build/world-model/metric-tree">
+    Component vs. driver edges, forms, and promotion
+  </Card>
+  <Card title="Hooks & components" icon="code" href="/guide/build/sdk/hooks">
+    The stable SDK surface `MetricTreeClient` sits in
+  </Card>
+</CardGroup>

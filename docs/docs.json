@@ -1,56 +1,115 @@
 {
-  "theme": "willow",
-  "name": "Oxygen",
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Oxy",
   "colors": {
     "primary": "#030712",
     "light": "#ffffff",
     "dark": "#000000"
   },
   "favicon": "favicon.svg",
+  "redirects": [
+    {
+      "source": "/guide/:slug*",
+      "destination": "/:slug*"
+    }
+  ],
+  "logo": {
+    "light": "/images/Lightmode.svg",
+    "dark": "/images/Darkmode.svg",
+    "href": "https://www.oxygen-hq.com/"
+  },
+  "background": {
+    "decoration": "windows",
+    "color": {
+      "light": "#f9fafb",
+      "dark": "#030712"
+    }
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/oxy-hq/oxy"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/oxy_ai",
+      "github": "https://github.com/oxy-hq",
+      "linkedin": "https://www.linkedin.com/company/oxy-hq"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Start",
+        "tab": "Docs",
         "groups": [
           {
             "group": "Get started",
             "pages": [
               "start/index",
-              "start/what-is-oxygen",
               "start/architecture",
               "start/quickstart",
               "start/install-cli",
-              "start/build-with-chat",
               "start/first-project",
-              "start/first-agent",
-              "start/connect-your-data",
-              "start/ai-prompts"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Build",
-        "groups": [
-          {
-            "group": "Ask data questions",
-            "pages": [
-              "build/ask-data-questions/index"
+              "reference/yaml/config"
             ]
           },
           {
-            "group": "Agents",
+            "group": "Data Infrastructure",
+            "pages": [
+              "build/data-infrastructure/index",
+              "build/data-infrastructure/airhouse",
+              "build/data-infrastructure/airlayer",
+              "build/data-infrastructure/airform"
+            ]
+          },
+          {
+            "group": "World Model",
+            "pages": [
+              "build/world-model/index",
+              {
+                "group": "Semantic Model",
+                "pages": [
+                  "build/semantic-model/simple-model",
+                  "build/semantic-model/views",
+                  "build/semantic-model/entities",
+                  "build/semantic-model/dimensions",
+                  "build/semantic-model/measures",
+                  "build/semantic-model/topics",
+                  "build/semantic-model/use-in-agents",
+                  "build/semantic-model/modeling"
+                ]
+              },
+              "build/world-model/metric-tree"
+            ]
+          },
+          {
+            "group": "Agentic Intelligence",
             "pages": [
               "build/agents/index",
-              "build/agents/agentic",
-              "build/agents/routing",
-              "build/agents/provide-context"
+              "build/agents/pipeline",
+              "build/agents/provide-context",
+              "build/test-evaluate/index",
+              "build/test-evaluate/testing"
             ]
           },
           {
-            "group": "Procedures",
+            "group": "SDK",
             "pages": [
-              "build/procedures/index"
+              "build/sdk/index",
+              "build/sdk/hooks",
+              "build/sdk/world-model",
+              "build/sdk/functions"
+            ]
+          },
+          {
+            "group": "Automations",
+            "pages": [
+              "build/automations/index",
+              "build/automations/task-types",
+              "build/automations/loops",
+              "build/automations/variables"
             ]
           },
           {
@@ -61,63 +120,47 @@
             ]
           },
           {
-            "group": "Semantic Layer",
+            "group": "Integrations",
             "pages": [
-              "build/semantic-layer/index",
-              "build/semantic-layer/simple-model",
-              "build/semantic-layer/views",
-              "build/semantic-layer/entities",
-              "build/semantic-layer/dimensions",
-              "build/semantic-layer/measures",
-              "build/semantic-layer/topics",
-              "build/semantic-layer/use-in-agents",
-              "build/semantic-layer/modeling"
-            ]
-          },
-          {
-            "group": "Connect data",
-            "pages": [
-              "build/connect-data/index",
-              "build/connect-data/bigquery",
-              "build/connect-data/snowflake",
-              "build/connect-data/postgres",
-              "build/connect-data/redshift",
-              "build/connect-data/clickhouse",
-              "build/connect-data/duckdb",
-              "build/connect-data/motherduck",
-              "build/connect-data/mysql",
-              "build/connect-data/looker",
-              "build/connect-data/domo",
-              "build/connect-data/sync-schema",
-              "build/connect-data/query-limits"
-            ]
-          },
-          {
-            "group": "Connect models",
-            "pages": [
-              "build/connect-models/openai",
-              "build/connect-models/anthropic",
-              "build/connect-models/gemini",
-              "build/connect-models/gateways"
-            ]
-          },
-          {
-            "group": "Embed & extend",
-            "pages": [
-              "build/embed-extend/mcp",
-              "build/embed-extend/slack",
-              "build/embed-extend/a2a",
-              "build/embed-extend/v0",
-              "build/embed-extend/lovable",
-              "build/embed-extend/lovable-starter-prompt",
-              "build/embed-extend/oxy-proxy"
-            ]
-          },
-          {
-            "group": "Test & evaluate",
-            "pages": [
-              "build/test-evaluate/index",
-              "build/test-evaluate/testing"
+              {
+                "group": "Databases",
+                "pages": [
+                  "build/connect-data/index",
+                  "build/connect-data/bigquery",
+                  "build/connect-data/snowflake",
+                  "build/connect-data/postgres",
+                  "build/connect-data/redshift",
+                  "build/connect-data/clickhouse",
+                  "build/connect-data/duckdb",
+                  "build/connect-data/motherduck",
+                  "build/connect-data/mysql",
+                  "build/connect-data/looker",
+                  "build/connect-data/domo",
+                  "build/connect-data/sync-schema",
+                  "build/connect-data/query-limits"
+                ]
+              },
+              {
+                "group": "Models",
+                "pages": [
+                  "build/connect-models/openai",
+                  "build/connect-models/anthropic",
+                  "build/connect-models/gemini",
+                  "build/connect-models/gateways"
+                ]
+              },
+              {
+                "group": "External Systems",
+                "pages": [
+                  "build/embed-extend/mcp",
+                  "build/embed-extend/slack",
+                  "build/embed-extend/a2a",
+                  "build/embed-extend/v0",
+                  "build/embed-extend/lovable",
+                  "build/embed-extend/lovable-starter-prompt",
+                  "build/embed-extend/oxy-proxy"
+                ]
+              }
             ]
           },
           {
@@ -128,17 +171,6 @@
               "edge/runbook"
             ]
           },
-          {
-            "group": "More",
-            "pages": [
-              "build/context-graph"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Manage",
-        "groups": [
           {
             "group": "Manage",
             "pages": [
@@ -182,23 +214,11 @@
             "pages": [
               "manage/enterprise/index"
             ]
-          }
-        ]
-      },
-      {
-        "tab": "Reference",
-        "groups": [
+          },
           {
             "group": "Reference",
             "pages": [
               "reference/index"
-            ]
-          },
-          {
-            "group": "YAML schemas",
-            "pages": [
-              "reference/yaml/index",
-              "reference/yaml/config"
             ]
           },
           {
@@ -207,17 +227,6 @@
               "reference/rest-api/index"
             ]
           },
-          {
-            "group": "MCP tools",
-            "pages": [
-              "reference/mcp-tools/index"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Resources",
-        "groups": [
           {
             "group": "Resources",
             "pages": [
@@ -232,12 +241,6 @@
             "pages": [
               "resources/troubleshooting/index",
               "resources/troubleshooting/debugging"
-            ]
-          },
-          {
-            "group": "Recipes",
-            "pages": [
-              "resources/recipes/index"
             ]
           }
         ]

@@ -1,89 +1,96 @@
 ---
-title: Providing additional context
+title: "Context & affordances"
+sidebarTitle: "Context & affordances"
+description: "Every context type an Oxygen agent can be given, and the affordance each one grants"
 ---
 
-<Note>
-  To learn more about different context types, check out our dedicated [context
-  section](/guide/build/agents/provide-context).
-</Note>
+An Oxygen agent is **context-first**: what it can do is determined by the context
+you give it. Each entry in the `context:` block is a glob (relative to the
+`.agentic.yml` file) that pulls in a set of files, and each *kind* of file grants
+the agent a specific **affordance** — a capability it unlocks while reasoning.
 
-Now that you have something rudimentary working, you'll want to augment your
-agent with richer context. We suggest doing this in one of two ways:
+```yaml
+# analytics.agentic.yml
+context:
+  - ./semantics/**/*.view.yml       # semantic model
+  - ./semantics/**/*.topic.yml      # topics
+  - ./example_sql/*.sql             # example / verified queries
+  - ./docs/*.md                     # domain documentation
+  - ./workflows/**/*.automation.yml # discoverable automations
+```
 
-1. Adding queries.
-2. Adding semantic models.
+The `context:` block is a list of **glob patterns**, not named objects — the
+agent classifies each matched file by its extension and wires up the matching
+affordance automatically.
 
-# Adding queries as context
+## The affordances
 
-The cleanest way to add queries as context is to create a dedicated directory
-for your queries, then use a wild-card (`*.sql`) to slurp them all up into a
-`context` object, as follows:
+| Context type | File pattern | Affordance it grants |
+| --- | --- | --- |
+| **Semantic model** | `*.view.yml`, `*.topic.yml` | The agent resolves questions against defined **measures** and **dimensions** and lets the semantic engine compile SQL and resolve joins — so it can skip hand-writing SQL. Raw-schema tools are hidden to keep it grounded. |
+| **Example queries** | `*.sql` (plain) | Injected into the SQL-generation stage as style examples, teaching the agent your codebase's SQL conventions. |
+| **Verified queries** | `*.sql` (marked verified) | Discoverable and run **as-is** when a question matches — bypassing SQL generation and earning a **Verified** badge. |
+| **Domain docs** | `*.md` | Injected as business context, giving the agent your terminology and metric definitions. |
+| **Automations** | `*.automation.yml` | Made discoverable so the agent can find and **delegate** to a trusted, pre-built [automation](/guide/build/automations). |
+
+## Semantic model — the primary affordance
+
+Pointing an agent at your [semantic model](/guide/build/semantic-model/simple-model)
+is the highest-leverage context you can add. With it, the agent:
+
+- **Resolves by name.** It searches your catalog for the measures and dimensions
+  a question needs, instead of guessing at raw columns.
+- **Compiles deterministically.** When the request maps cleanly onto defined
+  measures, the semantic engine compiles the SQL directly — the SQL-generation
+  stage is skipped, and joins and fan-out are handled for you.
+- **Stays grounded.** When a semantic model is present, the agent's raw
+  `list_tables` / `describe_table` tools are withheld so it doesn't drift from
+  your definitions.
+
+This is why an agent is only as good as the [World
+Model](/guide/build/world-model) beneath it: richer semantic context means more
+questions the agent can answer correctly and deterministically.
 
 ```yaml
 context:
-  - name: queries
-    type: file
-    src:
-      - "*.sql"
+  - ./semantics/**/*.view.yml
+  - ./semantics/**/*.topic.yml
 ```
 
-We suggest adding a comment at the top of each query explaining what the query
-is for, so the LLM has this context. The resulting queries can then be injected
-into your `system_instructions` using Jinja, as follows:
+## Example vs. verified queries
 
-```yaml
-system_instructions: |
-  You are a data analyst. Write and execute SQL to answer the given question.
+Both come from `*.sql` files, but they grant different affordances:
 
-  {{ context.schema_information }}
+- **Example queries** shape *how* the agent writes SQL — they're shown as
+  reference so generated SQL matches your house style. Add a comment at the top of
+  each file explaining what it's for, so the model has that context.
+- **Verified queries** are trusted answers. When a question matches one, the
+  agent runs it **exactly as written** and skips generation entirely — the answer
+  carries a **Verified** badge. Use these for business-critical questions that
+  must return the same query every time.
 
-  # Queries
-  {{ context.queries }}
-```
+## Domain docs
 
-# Adding semantic models as context
+Plain-Markdown files under your `context:` globs are injected as domain context,
+so the agent inherits your business vocabulary — what "active customer" means,
+how a fiscal quarter is defined, which segment names are canonical. This mostly
+shapes the **Clarify** and **Interpret** stages, where the agent is mapping human
+language to metrics and back.
 
-Sometimes you don't need a full set of queries, but simply some snippets of SQL
-that represent metric calculations, dimension calculations, etc. -- something
-minimal to bridge business logic to query logic.
+## Automations
 
-In these situations, building a semantic model is a good choice. Each semantic
-model has three required fields: `measures`, `dimensions`, and `entities`.
-`measures` are special, in that they require a `sql` field to run. The other
-objects only require a `name` field, though a few other fields (of note:
-`sample` (an array of sample data), `description` (a plaintext description of
-the column), `synonyms` (an array of synonyms for the column)). We suggest
-using the column name as `name`.
+Point an agent at `*.automation.yml` files and it can **discover** them and
+delegate a matching request to a pre-built [automation](/guide/build/automations)
+instead of solving from scratch — useful when a trusted multi-step pipeline
+already answers a class of questions.
 
-A sample semantic model is shown below:
+## Next steps
 
-```yaml
-entities:
-  - name: content_id
-    description: content_id
-    sample: [1, 2, 3, 4]
-
-dimensions:
-  - name: month
-    sample:
-      - "2024-08"
-  - name: property_grouping
-    synonyms:
-      - "property_grouping"
-    sample:
-      - "Fruit"
-      - "Vegetable"
-
-measures:
-  - name: count_content_id
-    sql: sum(distinct content_id)
-```
-
-You can learn more about semantic models in our dedicated [semantic models
-section](learn-about-oxy/semantic-model).
-
-At this point, your agent should be generally good to go, and you have the
-basic tools required to improve the agent when you encounter issues. To start
-familiarizing yourself with how to iterate on your agent more robustly, check
-out the next step of our guide, [how to test your
-agent](how-to-test-your-agent).
+<CardGroup cols={2}>
+  <Card title="How the pipeline works" icon="diagram-project" href="/guide/build/agents/pipeline">
+    See which stage each affordance affects
+  </Card>
+  <Card title="Build a semantic model" icon="cube" href="/guide/build/semantic-model/simple-model">
+    The context that matters most
+  </Card>
+</CardGroup>

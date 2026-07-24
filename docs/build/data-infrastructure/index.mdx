@@ -1,0 +1,43 @@
+---
+title: "Data Infrastructure"
+sidebarTitle: "Overview"
+description: "The engines that get your data in and shape it — Airhouse, Airlayer, and Airform"
+---
+
+Data Infrastructure is the foundation of Oxygen: it gets your data in, shapes it,
+and compiles it into the queries your [World Model](/guide/build/world-model) and
+agents run. Three engines do the work, each open where it makes sense to be.
+
+<CardGroup cols={3}>
+  <Card title="Airhouse" icon="warehouse" href="/guide/build/data-infrastructure/airhouse">
+    The managed warehouse and connector. Workspaces mint short-lived,
+    ephemeral credentials from a service account — there's no long-lived key to
+    rotate.
+  </Card>
+  <Card title="Airlayer" icon="layer-group" href="/guide/build/data-infrastructure/airlayer">
+    The **core of the World Model** — an in-process semantic engine that compiles
+    YAML schemas into dialect-specific SQL. Open source.
+  </Card>
+  <Card title="Airform" icon="diagram-project" href="/guide/build/data-infrastructure/airform">
+    dbt-style modeling — version-controlled SQL transforms that land clean,
+    tested tables for the semantic model to build on. Open source.
+  </Card>
+</CardGroup>
+
+## How they fit together
+
+<Steps>
+  <Step title="Land">
+    Data arrives in **[Airhouse](/guide/build/data-infrastructure/airhouse)** (or
+    your own warehouse).
+  </Step>
+  <Step title="Shape">
+    **[Airform](/guide/build/data-infrastructure/airform)** models raw tables into
+    clean, tested ones.
+  </Step>
+  <Step title="Compile">
+    **[Airlayer](/guide/build/data-infrastructure/airlayer)** compiles your
+    semantic definitions over those tables into correct SQL — the foundation the
+    [World Model](/guide/build/world-model) reasons over.
+  </Step>
+</Steps>

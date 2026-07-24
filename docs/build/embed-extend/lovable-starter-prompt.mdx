@@ -357,14 +357,14 @@ export async function fetchMonthlyMetrics(
   appPath: string = "apps/monthly_metrics_starter.app.yml",
 ): Promise<MonthlyMetric[]> {
   try {
-    console.log("[Oxy] Loading app data...");
+    console.log("[Oxygen] Loading app data...");
     await sdk.loadAppData(appPath);
 
-    console.log("[Oxy] Querying table...");
+    console.log("[Oxygen] Querying table...");
     const result = await sdk.query("SELECT * FROM monthly_values");
 
-    console.log("[Oxy] Columns:", result.columns);
-    console.log("[Oxy] Number of rows:", result.rows?.length);
+    console.log("[Oxygen] Columns:", result.columns);
+    console.log("[Oxygen] Number of rows:", result.rows?.length);
 
     // Log every row safely (BigInt-safe)
     result.rows.forEach((row: any[], i: number) => {
@@ -382,7 +382,7 @@ export async function fetchMonthlyMetrics(
         } else val = String(cell);
         return `col[${j}](${t}): ${val}`;
       });
-      console.log(`[Oxy] Row ${i}: ${cellInfo.join(" | ")}`);
+      console.log(`[Oxygen] Row ${i}: ${cellInfo.join(" | ")}`);
     });
 
     const metrics: MonthlyMetric[] = result.rows.map((row: any[]) => {
@@ -423,7 +423,7 @@ export async function fetchMonthlyMetrics(
         } else if (typeof rawValue === "object") {
           // Could be a DuckDB decimal or other structured type
           console.log(
-            `  [Oxy] col[${i}] object keys:`,
+            `  [Oxygen] col[${i}] object keys:`,
             Object.keys(rawValue),
             safeStringify(rawValue),
           );
@@ -445,7 +445,7 @@ export async function fetchMonthlyMetrics(
 
     return metrics;
   } catch (error) {
-    console.error("[Oxy] Error:", error);
+    console.error("[Oxygen] Error:", error);
     throw error;
   }
 }
@@ -484,7 +484,7 @@ export function ConnectionError({ error, onRetry }: ConnectionErrorProps) {
           </div>
           <div>
             <h2 className="text-xl font-semibold text-foreground">Connection Error</h2>
-            <p className="text-muted-foreground">Unable to connect to Oxy backend</p>
+            <p className="text-muted-foreground">Unable to connect to Oxygen backend</p>
           </div>
         </div>
 

@@ -1,72 +1,187 @@
 ---
 title: Agents
-description: Saved, named AI assistants that reason about your data
+sidebarTitle: Overview
+description: Multi-step agents defined in .agentic.yml that ground questions in your World Model
 type: concept
 audience: end-user
 tier: standard
 ---
 
-An **Agent** in Oxygen is a saved, named AI assistant that can answer
-questions about your data — writing SQL, executing it, and explaining
-the result.
+An **Agent** in Oxygen is a multi-step reasoning agent, defined in a
+`.agentic.yml` file. Unlike a single LLM call, an agent runs a fixed
+**pipeline** — a finite state machine — that grounds a natural-language question
+in your [World Model](/guide/build/world-model), generates and runs SQL,
+validates the result, and explains it back in plain language.
 
-{/* TODO: Hero screenshot — chat panel with an agent answering a question. */}
+## Context-first, not prompt-first
 
-You build agents in the IDE: open **Objects → Agents**, click **+ New
-Agent**, give it a name, and Oxygen generates a starter agent
-connected to your default database. From there you refine the system
-instructions and choose which tools it has access to (SQL execution,
-semantic-layer queries, etc.).
+An Oxygen agent is defined less by its prompt than by its **context**. You point
+an agent at a set of files — semantic views, example queries, domain docs,
+verified queries, automations — and each kind of context grants the agent a
+specific **affordance**: a capability it can use while reasoning.
 
-There are two flavors:
+- Give it your **semantic model** (`.view.yml` / `.topic.yml`) and the agent can
+  resolve measures and dimensions by name and compile SQL deterministically —
+  instead of guessing at columns.
+- Give it **verified queries** (`.sql`) and it can run a trusted, pre-approved
+  query as-is when a question matches.
+- Give it **domain docs** (`.md`) and it inherits your business terminology.
+- Give it **automations** (`.automation.yml`) and it can discover and delegate to
+  them.
 
-- **Classic agents** — a single LLM call with tools. Best for focused
-  Q&A.
-- **Agentic agents** — a multi-step reasoning pipeline (FSM-based) that
-  clarifies, plans, generates SQL, executes, and interprets results.
-  Best for open-ended exploration.
-  ([Build an agentic agent →](/guide/build/agents/agentic))
+The agent's behavior — which tools it can call, which shortcuts it can take — is
+a direct function of the context you provide. This is why an agent is only as
+good as the [World Model](/guide/build/world-model) beneath it. See
+[Context & affordances](/guide/build/agents/provide-context) for the full map.
 
-If your project has a `_routing` agent, it becomes the default entry
-point for chat questions and routes to other agents based on the
-question. ([Routing agents →](/guide/build/agents/routing))
+## The pipeline
 
-## What an agent contains
+Every agent moves through the same stages. It doesn't invent its own control
+flow — it advances through a state machine, and when a check fails it loops back
+to an earlier stage rather than pushing a bad answer forward.
 
-- A **model** to call (e.g. `openai-4.1`).
-- **System instructions** that tell the LLM how to behave.
-- **Context** files (schemas, sample SQL, semantic models) injected
-  into the prompt.
-- **Tools** like `execute_sql` that let the agent take action.
-- Optional **variables** with JSON-Schema validation, used to template
-  the system instructions.
+<Steps>
+  <Step title="Clarify">
+    Triage the question and resolve the metrics and dimensions it refers to
+    against your semantic model — asking a follow-up question if the request is
+    ambiguous.
+  </Step>
+  <Step title="Specify">
+    Turn the intent into a concrete query spec: measures, dimensions, filters,
+    and the joins between them. If the semantic model can compile the spec
+    directly, the next stage is skipped.
+  </Step>
+  <Step title="Solve">
+    Generate SQL from the spec. Skipped when the semantic model already compiled
+    the query — no hand-written SQL needed.
+  </Step>
+  <Step title="Execute">
+    Run the query against a configured database and validate the shape of the
+    result.
+  </Step>
+  <Step title="Interpret">
+    Turn raw rows into a natural-language answer and, when useful, a chart.
+  </Step>
+</Steps>
 
-See [Provide context](/guide/build/agents/provide-context) for how to feed
-schema information and semantic models into an agent.
+For the full state machine — how stages loop back on failure, retry, and pause
+for human input — see [How the pipeline works](/guide/build/agents/pipeline).
 
-## You can also write this in YAML
+There are two built-in kinds of agent that share this pipeline: an **analytics
+agent** (answers business questions from your semantic model) and an **app
+builder agent** (generates an `.app.yml` [Data App](/guide/build/data-apps) from
+a request).
 
-Every agent is stored as a `.agent.yml` file in your workspace. If you
-prefer to edit YAML directly:
+## A minimal agent
 
-```yaml my-agent.agent.yml
-model: openai-4.1
-system_instructions: |
-  You are a sales analyst. Answer questions using the orders table.
-tools:
-  - name: execute_sql
-    type: execute_sql
-    database: warehouse
+The smallest agent that runs needs a database to query, a model to reason with,
+and the semantic context to ground in:
+
+```yaml
+# analytics.agentic.yml
+databases:
+  - warehouse            # a connector defined in config.yml
+
+llm:
+  ref: claude-sonnet-4-6 # a named model from config.yml
+
+context:
+  - ./semantics/**/*     # your .view.yml and .topic.yml files
 ```
 
-Full schema reference: [.agent.yml →](/guide/reference/yaml/config)
-{/* TODO: Replace target with /reference/yaml/agent once that page is generated. */}
+The file stem is the agent's ID — `analytics.agentic.yml` is referenced as
+`analytics`.
+
+## Configuration
+
+| Field | Purpose |
+| --- | --- |
+| `databases` | Connector names from `config.yml` the agent can query. |
+| `llm` | Model configuration — usually a `ref` to a named model in `config.yml`. |
+| `context` | Globs, relative to the file, that ground the agent and grant affordances: `*.view.yml` / `*.topic.yml` (semantic model), `*.sql` (example or verified queries), `*.md` (domain docs), `*.automation.yml` (discoverable automations). See [Context & affordances](/guide/build/agents/provide-context). |
+| `instructions` | A system prompt injected across stages — persona, domain conventions, terminology. |
+| `states` | Per-stage overrides (see below). |
+| `thinking` | Reasoning mode: `adaptive`, `disabled`, or an explicit token budget. Never `thinking: false` — use `thinking: disabled`. |
+
+### Per-stage overrides
+
+Each stage — `clarifying`, `specifying`, `solving`, `executing`,
+`interpreting` — can be tuned independently. Use a cheap model for triage and a
+stronger one for SQL, cap retries, or disable reasoning where it isn't needed:
+
+```yaml
+llm:
+  ref: claude-sonnet-4-6
+  extended_thinking:        # activated by the UI "extended thinking" toggle
+    model: claude-opus-4-6
+    thinking: adaptive
+
+states:
+  specifying:
+    max_retries: 10         # give disambiguation more attempts
+  interpreting:
+    thinking: disabled       # prose generation needs no reasoning
+```
+
+See [How the pipeline works](/guide/build/agents/pipeline) for what each stage
+does and every override it accepts.
+
+## Using an agent in chat
+
+**Ask** mode is the fastest way to put an agent to work — no YAML, no terminal.
+
+1. From the home page at [app.oxygen-hq.com](https://app.oxygen-hq.com), set the
+   chat panel mode toggle to **Ask**, then type your question in plain language.
+2. Submitting creates a **Thread** — a conversation you can return to and keep
+   refining.
+3. The selected agent runs its pipeline: it resolves the relevant tables and
+   [semantic model](/guide/build/semantic-model/simple-model) definitions,
+   generates a query, and runs it.
+4. Results stream back inline. Every answer that ran SQL includes an
+   `execute_sql` artifact, so you can see the exact query the agent ran and open
+   it in the SQL IDE.
+
+### Verified queries
+
+When a question matches a **Verified Query** — a plain `.sql` file in the
+agent's context — the agent runs that query **as-is** instead of generating new
+SQL, and the answer carries a **Verified** badge. This keeps trusted,
+business-critical questions consistent every time they're asked.
+
+### Pick the right agent
+
+Each Thread runs against a selected agent. Switch agents from the chat panel to
+change which data, instructions, and context are in scope. To shape how an agent
+answers, give it [more context](/guide/build/agents/provide-context) and tune its
+instructions from the IDE.
+
+## When to use which file
+
+<CardGroup cols={1}>
+  <Card title=".agentic.yml — Agent" icon="robot">
+    Multi-step reasoning grounded in the semantic model. Routing between
+    specialized behaviors is handled *inside* the pipeline — there is no separate
+    routing-agent file. **Use this for conversational data Q&A.**
+  </Card>
+  <Card title=".automation.yml — Automation" icon="diagram-subtask" href="/guide/build/automations">
+    A deterministic, fixed sequence of steps with no LLM decision-making between
+    them. **Use this for repeatable pipelines.**
+  </Card>
+</CardGroup>
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Build your first agent" href="/guide/start/first-agent" />
-  <Card title="Provide context" href="/guide/build/agents/provide-context" />
-  <Card title="Agentic agents" href="/guide/build/agents/agentic" />
-  <Card title="Test agents" href="/guide/build/test-evaluate" />
+  <Card title="How the pipeline works" icon="diagram-project" href="/guide/build/agents/pipeline">
+    The FSM in depth — stages, back-edges, retries, and suspension
+  </Card>
+  <Card title="Context & affordances" icon="database" href="/guide/build/agents/provide-context">
+    Every context type and the capability it grants
+  </Card>
+  <Card title="World Model" icon="globe" href="/guide/build/world-model">
+    The semantic model, metric tree, and entity graph agents reason over
+  </Card>
+  <Card title="Data Apps" icon="table-cells" href="/guide/build/data-apps">
+    What the app builder agent generates
+  </Card>
 </CardGroup>

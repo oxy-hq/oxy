@@ -34,7 +34,7 @@ When something in the fleet is misbehaving, work through the section that matche
    curl -v https://oxy.example.com/api/health
    ```
 
-   You should get a 200. If it hangs or returns SSL errors, the host can't reach Oxy — fix the firewall/DNS/cert path first.
+   You should get a 200. If it hangs or returns SSL errors, the host can't reach Oxygen — fix the firewall/DNS/cert path first.
 
 4. **Auth.** If you see `bearer rejected` or `jwt rejected` in the worker logs:
    - The device identity may be stale (e.g. you re-added the box without removing the old one). Run **Remove device** in the UI, then **Add device** again — the install command will include a fresh secret.
@@ -95,7 +95,7 @@ When something in the fleet is misbehaving, work through the section that matche
 2. **Default channel is set for this workspace.** Same Slack settings page — the per-workspace default channel must be configured. Without it, alerts are silently dropped (this is documented behavior — picking an arbitrary channel for the operator would be worse).
 3. **Test the wiring.** Edge → List → Edge boxes → **Test Slack** button. If the test message lands in Slack, the wiring works and the silence is about transitions specifically.
 4. **Cooldown.** The same camera won't generate a second alert within 30 minutes of the previous one. If you're testing by repeatedly toggling, you'll only see the first transition.
-5. **Startup grace.** The first 5 minutes after an Oxy server restart suppress alerts (otherwise every camera would alert because we lost the previous tick's state).
+5. **Startup grace.** The first 5 minutes after an Oxygen server restart suppress alerts (otherwise every camera would alert because we lost the previous tick's state).
 
 ## 5. Cohort change isn't reflected in the next rollout
 

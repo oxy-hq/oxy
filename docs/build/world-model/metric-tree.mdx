@@ -1,0 +1,139 @@
+---
+title: "Metric Tree"
+description: "How measures compose — decomposing a top-line metric into the drivers that explain it"
+---
+
+A single measure is a fact. The **Metric Tree** captures how measures *relate*,
+so a top-line metric — ARR, labor cost %, contribution margin — decomposes into
+the driver metrics that explain it. It's the layer of the [World
+Model](/guide/build/world-model) that turns "what happened" into "why," and it's
+built entirely from your [semantic model](/guide/build/semantic-model/simple-model)
+definitions — there's no separate file to maintain.
+
+## How measures compose
+
+Measures connect through two kinds of edges.
+
+### Component edges
+
+When one measure's expression references another with `{{view.measure}}`, that
+reference *is* an edge. `arr` depends on `net_mrr`, which depends on `total_mrr`
+and `churned_mrr` — a tree the engine reads straight from the formulas. The
+operator in front of each reference (`+`, `-`, `*`, `/`) tells it whether the
+relationship is additive or multiplicative.
+
+```yaml
+measures:
+  - name: net_mrr
+    type: number
+    expr: "{{revenue.total_mrr}} - {{revenue.churned_mrr}}"
+  - name: arr
+    type: number
+    expr: "{{revenue.net_mrr}} * 12"
+```
+
+### Driver edges
+
+Component edges are arithmetic. **Driver edges** — declared with `drivers:` —
+encode a *business* relationship: which metrics push a target up or down, how
+strongly, and how confident you are. They can be purely qualitative, or carry a
+quantitative `coefficient` and functional `form`.
+
+```yaml
+measures:
+  - name: arr
+    type: number
+    expr: "{{revenue.net_mrr}} * 12"
+    drivers:
+      - measure: revenue.churn_rate
+        direction: negative
+        strength: strong
+        confidence: high
+        coefficient: -120000.0
+        form: linear
+        lag: 30
+        description: "Each 1% increase in churn reduces ARR by ~$120K"
+      - measure: revenue.arpu
+        coefficient: 0.6
+        form: log-log        # elasticity: +1% ARPU → +0.6% ARR
+        description: "ARPU expansion drives ARR growth"
+```
+
+A driver's `form` sets the shape of the relationship: `linear` (constant
+marginal effect), `log-log` (elasticity — percent for percent), `log-linear`
+(diminishing returns), or `linear-log` (accelerating returns).
+
+## Promotion up the hierarchy
+
+Because the [entity graph](/guide/build/semantic-model/entities) defines a
+`parent:` hierarchy (sale → store → company → market), a measure defined once at
+the sale grain automatically **promotes** upward: `markets.net_sales` is derived
+by rolling up `sales.net_sales`, never redefined. The tree holds not just *how*
+metrics compose, but at *every level of the business* they apply.
+
+## Explore it in the IDE
+
+The Metric Tree is a tab in the Semantic Layer IDE. It renders your measures as
+an interactive graph, laid out top-down:
+
+- **Composite** nodes (the metrics built from others) are highlighted; **driver**
+  nodes are tinted amber; leaf inputs are muted.
+- **Component edges** are drawn solid; **driver edges** are dashed and animated,
+  fainter when confidence is low.
+- Click any measure to select it — the graph dims unrelated edges and a side
+  panel shows the measure's definition and its **ranked drivers**, sorted by
+  influence.
+
+## What you can do with it
+
+Because the tree knows how every metric is built, it powers four operations over
+your metrics:
+
+<CardGroup cols={2}>
+  <Card title="Sensitivity" icon="ranking-star">
+    Rank the drivers of any measure by how much they move it — the effective
+    coefficient compounded along each path.
+  </Card>
+  <Card title="Predict" icon="wand-magic-sparkles">
+    What-if propagation: change a driver by some delta and see the estimated
+    impact ripple up to the top-line metric.
+  </Card>
+  <Card title="Explain (RCA)" icon="magnifying-glass">
+    Decompose a metric's period-over-period change across its drivers and the
+    segments that concentrate it — with warnings for Simpson's paradox and
+    offsetting effects. Anomalies surface in the Insights Inbox with an
+    AI-authored root cause. **Available today.**
+  </Card>
+  <Card title="Opportunity" icon="arrow-trend-up">
+    Size the gap between each segment and its benchmark, and propagate the top
+    opportunity through the tree. *On the roadmap.*
+  </Card>
+</CardGroup>
+
+For example, an `explain` on `labor_cost_pct` for a location might read:
+
+```text
+Labor cost: 37.5%  (13% lower than average)
+
+Root cause
+  revenue          +25% vs average
+  labor            +50% vs average
+  employees        ~ average
+  overtime hours   +100% vs average
+
+Recommendation:  investigate overtime cost at the San Mateo location
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Measures" icon="calculator" href="/guide/build/semantic-model/measures">
+    Define the measures — and their drivers — that the tree composes
+  </Card>
+  <Card title="Entities & relationships" icon="diagram-project" href="/guide/build/semantic-model/entities">
+    The hierarchy measures promote across
+  </Card>
+  <Card title="World Model" icon="sitemap" href="/guide/build/world-model">
+    How the metric tree fits with the semantic model and entity graph
+  </Card>
+</CardGroup>

@@ -1,0 +1,93 @@
+---
+title: "Loops"
+description: "Iterate over a set of values with the loop_sequential task type"
+---
+
+## `type: loop_sequential`
+
+Runs a set of nested `tasks` once for each value in `values`.
+
+| Component | Description                                                                 | Type     |
+| --------- | --------------------------------------------------------------------------- | -------- |
+| values    | Values to iterate over for each `task` in the current task's `tasks` array. | required |
+| tasks     | Defines the tasks to execute for each `value`.                              | required |
+
+`values` are accessed within the `tasks` of the `loop_sequential` task as
+`<name>.value`, where `<name>` is the name of the task. A sample partial config
+is shown below:
+
+```yaml
+tasks:
+  - name: loop_through_animals
+    type: loop_sequential
+    values: ["whale", "dolphin", "shark"]
+    tasks:
+      - name: get_number_of_animals
+        type: agent
+        agent_ref: default
+        prompt: |
+          Get the number of {{ loop_through_animals.value }}s in the ocean.
+```
+
+## Seeding `values` with query results
+
+The `values` can be seeded with the output from a previous `execute_sql` step,
+as follows:
+
+```yaml
+  - name: get_all_animals
+    type: execute_sql
+    sql_file: outputs/cache/get_all_animals.sql
+    database: local
+
+  # Loop over every animal
+  - name: loop_through_animals
+    type: loop_sequential
+    values: "{{ get_all_animals.animal_name }}"  # `animal_name` is the column name to loop over
+    tasks:
+      ...
+```
+
+## Formatting loop outputs
+
+Loops are often combined with the [`type: formatter`](/guide/build/automations/task-types#type-formatter)
+task, which can loop through the resulting outputs and form them into a single
+string. The output from a `loop_sequential` is an array of dictionaries for each
+`value`, where the keys for each element of each dictionary are named according
+to the task's `name` field. These can be accessed with Jinja by looping through
+the `{{ <loop_name> }}` variable (`{{ loop_through_animals }}` above).
+
+An example of this behavior is shown below:
+
+```yaml
+- name: format_animal_report
+  type: formatter
+  template: |
+    {% for animal in loop_through_animals %}
+    {{ animal.get_number_of_animals }}
+    {% endfor %}
+```
+
+## Concurrency
+
+Concurrency can be added to the loop by using the `concurrency` key, with the
+value specifying the number of concurrent threads to use.
+
+```yaml
+- name: loop_through_animals
+  type: loop_sequential
+  concurrency: 5
+  values: ...
+  tasks: ...
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Task types" icon="diagram-subtask" href="/guide/build/automations/task-types">
+    The tasks you run inside a loop
+  </Card>
+  <Card title="Variables" icon="brackets-curly" href="/guide/build/automations/variables">
+    Parameterize an Automation
+  </Card>
+</CardGroup>

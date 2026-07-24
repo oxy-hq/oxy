@@ -1,65 +1,86 @@
 ---
 title: Quickstart
-description: From sign-up to your first answer in 5 minutes
+description: Build an Oxygen project locally, push it to GitHub, and deploy it to Oxygen Cloud
 ---
 
-## Overview
-
-Sign up for Oxygen Cloud, connect a data source, and ask your first
-question — all from the web app. No install, no terminal.
+Oxygen is **code-first** — your project is a git repo, and git is the source of
+truth. The fastest way to build is locally with the `oxy` CLI and the Oxygen skill
+for Claude Code, then deploy by connecting your repo to Oxygen Cloud.
 
 <Steps>
-  <Step title="Create a workspace">
-    Go to [app.oxygen-hq.com](https://app.oxygen-hq.com) and sign in. Choose
-    **Create workspace** and give it a name (e.g. *Acme Analytics*).
+  <Step title="Install the Oxygen CLI">
+    The install script downloads the right binary for your OS and drops it on
+    your `PATH`:
 
-    {/* TODO: Screenshot — onboarding wizard step 1. */}
+    ```bash
+    bash <(curl -sSfL https://get.oxy.tech)
+    ```
+
+    Full details and first commands: [Install the CLI →](/guide/start/install-cli).
   </Step>
 
-  <Step title="Add an LLM key">
-    Open **Manage → Secrets** and paste your OpenAI or Anthropic API
-    key. Oxygen needs this to run the agents you'll build.
+  <Step title="Install the Oxygen skill for Claude Code">
+    The Oxygen skill teaches Claude Code how to scaffold Oxygen files — your semantic
+    model, agents, automations, and data apps — correctly:
 
-    The home page shows a green check next to "LLM key" once the key
-    is set.
+    ```bash
+    /plugin marketplace add oxy-hq/skills
+    /plugin install oxy-skills@oxy-hq
+    ```
   </Step>
 
-  <Step title="Connect your data">
-    From **Manage → Workspace → Connections**, click **+ Add
-    connection** and pick your warehouse: BigQuery, Snowflake,
-    Postgres, ClickHouse, Redshift, MotherDuck, MySQL, or DuckDB.
-    Paste the credentials Oxygen asks for and click **Test**.
+  <Step title="Build a working version locally">
+    With the CLI and the skill in place, build your project: connect a data
+    source, define your [semantic model](/guide/build/semantic-model/simple-model),
+    compose your [World Model](/guide/build/world-model), and add an
+    [agent](/guide/build/agents). Preview it locally with `oxy start --local`
+    until it answers questions the way you want.
 
-    Need help picking a connector? See
-    [Connect your data →](/guide/start/connect-your-data).
+    See [Connect your data →](/guide/build/connect-data) and
+    [Your first project →](/guide/start/first-project).
+  </Step>
+
+  <Step title="Push to GitHub">
+    Commit your project and push it to a GitHub repository. Because Oxygen is
+    code-first, this repo *is* your project — Oxygen Cloud deploys from it.
+  </Step>
+
+  <Step title="Sign up and connect your repo">
+    Go to [app.oxygen-hq.com](https://app.oxygen-hq.com), sign up, and create a
+    workspace. Connect the GitHub repo you just pushed and Oxygen imports your
+    project.
+
+    See [GitHub integration →](/guide/manage/workspaces/github-integration).
+  </Step>
+
+  <Step title="Re-add your secrets in the cloud">
+    Secrets never live in git, so re-add them in the workspace after connecting:
+
+    - **LLM key** — **Manage → Secrets**. Paste your OpenAI or Anthropic key so
+      the agents can run. ([Secrets →](/guide/manage/secrets))
+    - **Data connections** — **Manage → Workspace → Connections**. Re-enter the
+      warehouse credentials your project references and click **Test**.
+      ([Connect your data →](/guide/build/connect-data))
+
+    The home page shows a green check next to "LLM key" once it's set.
   </Step>
 
   <Step title="Ask your first question">
-    Open the chat panel on the home page, pick the default agent, and
-    type a question about your data — for example:
+    Open the chat panel on the home page, pick your agent, and ask a question
+    about your data — for example:
 
     > How many orders did we get last week?
 
-    Oxygen will generate the SQL, run it, and stream the answer back
-    with the chart and the underlying query.
-
-    {/* TODO: Screenshot — chat panel with an answered question. */}
-  </Step>
-
-  <Step title="Save and share">
-    Click **Share** on any answer to copy a link. Pin useful threads
-    to your workspace sidebar, or turn one into a saved
-    [agent](/guide/build/agents),
-    [procedure](/guide/build/procedures), or
-    [data app](/guide/build/data-apps).
+    Oxygen generates the SQL, runs it, and streams the answer back with the chart
+    and the underlying query.
   </Step>
 </Steps>
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Build with chat first" href="/guide/start/build-with-chat" />
-  <Card title="Build your first agent" href="/guide/start/first-agent" />
-  <Card title="Connect your data" href="/guide/start/connect-your-data" />
-  <Card title="AI prompts for your editor" href="/guide/start/ai-prompts" />
+  <Card title="The World Model" href="/guide/build/world-model" />
+  <Card title="Build an agent" href="/guide/build/agents" />
+  <Card title="Connect your data" href="/guide/build/connect-data" />
+  <Card title="The SDK" href="/guide/build/sdk" />
 </CardGroup>

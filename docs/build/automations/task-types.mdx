@@ -1,0 +1,151 @@
+---
+title: "Task types"
+description: "The task types an Automation can run — agent, execute_sql, formatter, and sub-automations"
+---
+
+Every task declares a `type` that selects the tool it runs. This page covers the
+core task types; iteration lives on the [Loops](/guide/build/automations/loops)
+page.
+
+## `type: agent`
+
+Runs an [agent](/guide/build/agents) with a prompt.
+
+| Component          | Description                                                                                                                                                                       | Type                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| agent_ref          | The agent to use within the `agents` directory, referenced by the agent's `name`.                                                                                                 | required for `type: agent` |
+| prompt             | The input prompt passed to the agent for this task.                                                                                                                               | required for `type: agent` |
+| consistency_run    | Number of times to run the agent and select the most consistent output. Must be > 1 to enable.                                                                                    | optional (default: 1)      |
+| consistency_prompt | Custom evaluation prompt for consistency checking. Overrides Automation-level prompt. Supports Jinja templating with variables: `submission_1`, `submission_2`, `task_description`. | optional                   |
+
+### Agent task consistency runs
+
+You can enable consistency checking on agent tasks by setting `consistency_run`
+to a value greater than 1. This runs the agent multiple times with the same
+prompt and selects the most consistent output:
+
+```yaml
+# Automation-level consistency prompt (applies to all agent tasks)
+consistency_prompt: |
+  Your custom evaluation prompt here...
+  Use {{ submission_1 }}, {{ submission_2 }}, and {{ task_description }}
+
+tasks:
+  - name: calculate_revenue
+    type: agent
+    agent_ref: default
+    prompt: "What was our total revenue last quarter?"
+    consistency_run: 5 # Run 5 times and pick the most consistent result
+
+  - name: analyze_trends
+    type: agent
+    agent_ref: default
+    prompt: "What are the key sales trends?"
+    consistency_run: 3
+    # Task-level prompt overrides Automation-level prompt
+    consistency_prompt: |
+      Compare these trend analyses focusing on directional consistency:
+      Submission 1: {{ submission_1 }}
+      Submission 2: {{ submission_2 }}
+      Are they factually consistent? Answer A or B.
+```
+
+This is particularly useful for:
+
+- Critical calculations where consistency is important
+- Data analysis tasks that may have slight variations in output
+- Queries involving complex logic where you want to verify the agent's reasoning
+
+**Consistency prompt configuration:**
+
+- **Automation-level**: Add `consistency_prompt` at the root to apply to all agent tasks
+- **Task-level**: Add `consistency_prompt` to a specific task to override the Automation prompt
+- **Default**: If not specified, uses the built-in evaluation prompt optimized for data analysis (view the [default prompt source](https://github.com/oxy-hq/oxygen-internal/blob/main/crates/core/src/config/constants.rs#L52-L199))
+
+**Available template variables:**
+
+- `{{ submission_1 }}` - First output
+- `{{ submission_2 }}` - Second output
+- `{{ task_description }}` - The task prompt
+
+**Note:** Custom prompts completely replace the default. To adapt the default for your domain, copy the [source](https://github.com/oxy-hq/oxygen-internal/blob/main/crates/core/src/config/constants.rs#L52-L199) and modify the specific rules you need.
+
+See the [Testing](/guide/build/test-evaluate/testing#consistency-runs-in-workflow-agent-tasks) documentation for more details on consistency checking.
+
+## `type: execute_sql`
+
+Executes a SQL query either referenced by filename or provided inline.
+
+| Component | Description                                             | Type                          |
+| --------- | ------------------------------------------------------- | ----------------------------- |
+| sql_file  | The sql file within the `data` directory to execute     | required (or use `sql_query`) |
+| sql_query | Inline SQL query to execute (alternative to `sql_file`) | required (or use `sql_file`)  |
+| database  | The name of the `database` to execute the query against | required                      |
+
+You can use either `sql_file` to reference a SQL file, or `sql_query` to provide
+the SQL inline.
+**Note:** These options are mutually exclusive—only one should be used at a time.
+Specifying both in a single task is not allowed.
+
+```yaml
+# Using sql_file
+- name: query_with_file
+  type: execute_sql
+  sql_file: my_query.sql
+  database: local
+
+# Using sql_query inline
+- name: query_inline
+  type: execute_sql
+  sql_query: |
+    SELECT * FROM users
+    WHERE created_at > '2024-01-01'
+  database: local
+```
+
+## `type: formatter`
+
+Formats the provided `template` using the outputs of other `tasks`, then passes
+the rendered template as output.
+
+| Component | Description                                       | Type     |
+| --------- | ------------------------------------------------- | -------- |
+| template  | The template to be rendered and passed as output. | required |
+
+## `type: workflow`
+
+Runs another Automation as a sub-step.
+
+| Component | Description                                                                          | Type     |
+| --------- | ------------------------------------------------------------------------------------ | -------- |
+| src       | Path to the Automation yml file to execute. Relative to the root of the oxy directory. | required |
+| variables | Variables that are passed through, overriding the sub-Automation's variables.          | optional |
+
+Use this to break up complex Automations into smaller, easily testable chunks.
+The `variables` key allows parameterization by overriding the sub-Automation's
+Automation-level variables. This is particularly useful when embedding an
+Automation task into a loop:
+
+```yaml
+- name: loop_brands
+  type: loop_sequential
+  values: ["brand1", "brand2"]
+  concurrency: 10
+  tasks:
+    - name: brand_stats
+      type: workflow
+      src: brand_stats.automation.yml
+      variables:
+        brand_rollup: "{{ loop_brands.value }}"
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Loops" icon="repeat" href="/guide/build/automations/loops">
+    Iterate over values with `loop_sequential`
+  </Card>
+  <Card title="Variables" icon="brackets-curly" href="/guide/build/automations/variables">
+    Parameterize tasks with typed inputs
+  </Card>
+</CardGroup>

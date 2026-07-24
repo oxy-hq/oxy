@@ -1,0 +1,140 @@
+---
+title: "Overview"
+description: "Oxygen's semantic model — business measures and dimensions compiled to correct SQL by airlayer"
+---
+
+The **semantic model** is where you define your business's metrics once, in
+version-controlled YAML, and let Oxygen compile them into correct SQL on demand.
+It is the vocabulary layer of the [World Model](/guide/build/world-model): the
+place `net_sales`, `labor_cost_pct`, and `active_customers` are given a single,
+authoritative definition that agents, apps, and automations all share.
+
+Under the hood the semantic model is powered by
+[**airlayer**](https://github.com/oxy-hq/airlayer), Oxygen's open-source semantic
+engine. airlayer reads your definitions and compiles them into
+**deterministic, dialect-specific SQL** — resolving joins automatically from
+your entity graph and neutralizing fan-out — so a measure means the same thing
+everywhere and no agent has to hand-write (or hallucinate) the query behind it.
+
+## Why a semantic model
+
+Ask two people to compute "revenue" straight from the warehouse and you'll often
+get two different queries — different joins, different filters, different grain.
+The semantic model removes that ambiguity:
+
+- **Define once, reuse everywhere.** A measure is written a single time and
+  referenced by name from agents, data apps, automations, and the metric tree.
+- **Deterministic SQL.** Given the same request, airlayer always emits the same
+  SQL. There's no LLM in the compilation path, so results are reproducible.
+- **Automatic joins.** Entity declarations tell airlayer how views relate, so it
+  builds the join path for you — and protects against fan-out double-counting.
+- **Dialect-aware.** The same definitions compile to BigQuery, Snowflake,
+  Postgres, DuckDB, and more, so business logic isn't pinned to one warehouse.
+
+## Views (`.view.yml`)
+
+A **view** is the core building block. Each `.view.yml` file maps one table (or
+SQL query) into business concepts — **entities**, **dimensions**, and
+**measures**:
+
+```yaml orders.view.yml
+name: orders
+description: "Order-level facts"
+table: public.orders
+datasource: warehouse
+
+entities:
+  - name: order_id
+    type: primary
+    key: order_id
+
+dimensions:
+  - name: status
+    type: string
+    expr: status
+  - name: ordered_at
+    type: datetime
+    expr: created_at
+
+measures:
+  - name: order_count
+    type: count
+    description: "Number of orders"
+  - name: total_revenue
+    type: sum
+    expr: amount
+    description: "Total order value"
+```
+
+Query it and airlayer compiles deterministic SQL for your dialect — resolving
+the aggregation, applying filters, and joining any related views automatically.
+
+The three building blocks each have their own page:
+
+<CardGroup cols={3}>
+  <Card title="Entities" icon="diagram-project" href="/guide/build/semantic-model/entities">
+    Keys and relationships that drive automatic joins
+  </Card>
+  <Card title="Dimensions" icon="table-columns" href="/guide/build/semantic-model/dimensions">
+    Attributes to slice and filter by
+  </Card>
+  <Card title="Measures" icon="calculator" href="/guide/build/semantic-model/measures">
+    Business metrics with aggregation rules
+  </Card>
+</CardGroup>
+
+## Measures reference measures
+
+Measures can be defined in terms of other measures with the `{{view.measure}}`
+syntax. airlayer resolves the reference to the underlying aggregate at compile
+time, and the reference becomes an edge in the [metric tree](/guide/build/world-model/metric-tree):
+
+```yaml
+measures:
+  - name: gross_margin
+    type: number
+    expr: "{{orders.total_revenue}} - {{orders.total_cost}}"
+```
+
+## Topics (`.topic.yml`)
+
+A **topic** groups related views and curates the measures and dimensions an
+agent should reach for when answering a class of questions. Topics are how you
+point an agent at a slice of the semantic model without exposing every view at
+once. See [Topics](/guide/build/semantic-model/topics).
+
+## How it fits together
+
+<Steps>
+  <Step title="Define views">
+    Model each table as a `.view.yml` with entities, dimensions, and measures.
+  </Step>
+  <Step title="Relate them with entities">
+    Declare primary/foreign keys so airlayer can resolve joins across views.
+  </Step>
+  <Step title="Group with topics">
+    Bundle views into `.topic.yml` files that scope what an agent can query.
+  </Step>
+  <Step title="Compose the World Model">
+    Reference measures from measures to build the
+    [metric tree](/guide/build/world-model/metric-tree), then put the model to
+    work in [agents](/guide/build/semantic-model/use-in-agents).
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build a view" icon="layer-group" href="/guide/build/semantic-model/views">
+    The full `.view.yml` reference
+  </Card>
+  <Card title="Use in agents" icon="robot" href="/guide/build/semantic-model/use-in-agents">
+    Ground an agent in the semantic model
+  </Card>
+  <Card title="The Metric Tree" icon="diagram-project" href="/guide/build/world-model/metric-tree">
+    Compose measures into a driver graph
+  </Card>
+  <Card title="The World Model" icon="globe" href="/guide/build/world-model">
+    Where the semantic model fits in the bigger picture
+  </Card>
+</CardGroup>

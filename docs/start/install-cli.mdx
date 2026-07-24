@@ -1,5 +1,5 @@
 ---
-title: Install the Oxy CLI
+title: Install the Oxygen CLI
 sidebarTitle: Install the CLI
 description: Install the optional oxy command-line tool and run your first commands
 ---
@@ -10,9 +10,15 @@ data, and start asking questions. There is nothing to install to use the
 product.
 
 The **`oxy` CLI** is an optional companion for developers who want to work
-with an Oxy project from the terminal — scaffolding a project, running
+with an Oxygen project from the terminal — scaffolding a project, running
 automations, validating config, and previewing it locally. You do **not** need
 it to use Oxygen.
+
+The CLI is the **preferred way to test local changes before they ship to
+production.** Because Oxygen is code-first, you run your project on your machine
+with `oxy start --local`, iterate until your semantic model, agents, and apps
+behave the way you want, and only then commit and push — so what reaches your
+production deployment is already verified.
 
 <Note>
 The CLI is for local development workflows. If you just want to ask questions of
@@ -55,7 +61,7 @@ oxy --version
 Upgrade to the latest release in place:
 
 ```bash
-oxy update
+oxy self-update
 ```
 
 ## Basic commands
@@ -65,18 +71,18 @@ any subcommand. The commands you'll reach for most:
 
 | Command | What it does |
 | --- | --- |
-| `oxy init` | Scaffold a new Oxy project in the current directory |
+| `oxy init` | Scaffold a new Oxygen project in the current directory |
 | `oxy validate` | Check `config.yml`, automations, and agents for errors |
 | `oxy run <file>` | Run an automation (`.automation.yml`) or a `.sql` file |
-| `oxy start` | Start Oxy locally with PostgreSQL in Docker (recommended) |
-| `oxy serve` | Start the Oxy web server (requires `OXY_DATABASE_URL`) |
+| `oxy start` | Start Oxygen locally with PostgreSQL in Docker (recommended) |
+| `oxy serve` | Start the Oxygen web server (requires `OXY_DATABASE_URL`) |
 | `oxy build` | Build vector embeddings and sync integrations |
-| `oxy mcp stdio` | Start an MCP server so editors (Cursor, Claude Desktop) can use Oxy as a tool |
-| `oxy update` | Update the CLI to the latest release |
+| `oxy mcp stdio` | Start an MCP server so editors (Cursor, Claude Desktop) can use Oxygen as a tool |
+| `oxy self-update` | Update the CLI to the latest release |
 
 ### Create a project
 
-Scaffold a new Oxy project in the current directory:
+Scaffold a new Oxygen project in the current directory:
 
 ```bash
 oxy init
@@ -101,7 +107,7 @@ oxy run my_report.automation.yml
 
 ### Preview locally
 
-`oxy start` brings up a local PostgreSQL container and the Oxy web server so you
+`oxy start` brings up a local PostgreSQL container and the Oxygen web server so you
 can preview your project in the browser. It needs a Docker-compatible container
 engine (Docker Engine, Docker Desktop, Rancher Desktop, Colima, Podman, …):
 
@@ -109,13 +115,35 @@ engine (Docker Engine, Docker Desktop, Rancher Desktop, Colima, Podman, …):
 oxy start
 ```
 
-Use `oxy serve` instead if you're supplying your own database via
-`OXY_DATABASE_URL`, and `oxy status` to check what's running.
+For most local development, add `--local` — it runs a single workspace rooted at
+the current directory with guest authentication (no orgs, no login), so you can
+iterate on your project without any cloud setup:
 
-### Expose Oxy to your editor over MCP
+```bash
+oxy start --local
+```
+
+<Note>
+`--local` disables authentication entirely. Don't expose a `--local` instance on
+a non-loopback interface without a reverse proxy that restricts access.
+</Note>
+
+Add `--enterprise` to turn on the fuller feature set (observability, analytics,
+and the surfaces the SDK talks to). The flags combine — `oxy start --local
+--enterprise` is the usual way to run the SDK against a project on disk:
+
+```bash
+oxy start --local --enterprise
+```
+
+Use `oxy serve` instead if you're supplying your own database via
+`OXY_DATABASE_URL`, `oxy start --clean` for a fresh slate, and `oxy status` to
+check what's running.
+
+### Expose Oxygen to your editor over MCP
 
 Start an MCP server so MCP-compatible tools can query your project. This is the
-usual way to wire Oxy into Cursor or Claude Desktop:
+usual way to wire Oxygen into Cursor or Claude Desktop:
 
 ```bash
 oxy mcp stdio --project /path/to/your/project
@@ -130,6 +158,6 @@ See [MCP →](/guide/build/embed-extend/mcp) for editor configuration.
     Sign up and ask your first question in the web app
   </Card>
   <Card title="Connect to your editor with MCP" icon="plug" href="/guide/build/embed-extend/mcp">
-    Use Oxy as a tool in Cursor and Claude Desktop
+    Use Oxygen as a tool in Cursor and Claude Desktop
   </Card>
 </CardGroup>

@@ -9,7 +9,7 @@ import RewriteBanner from "/snippets/rewrite-banner.mdx";
 
 # Looker Integration
 
-Oxygen integrates with [Looker](https://cloud.google.com/looker) to enable agents and procedures to query Looker explores directly. The integration supports metadata synchronization, LLM-powered query generation, and procedure automation.
+Oxygen integrates with [Looker](https://cloud.google.com/looker) to enable agents and automations to query Looker explores directly. The integration supports metadata synchronization, LLM-powered query generation, and automation support.
 
 ## Prerequisites
 
@@ -154,9 +154,9 @@ Looker uses its own filter syntax, **not** SQL expressions. When writing overlay
 | String matching     | `"value"`, `"%partial%"`                          |
 | Numeric comparisons | `">=100"`, `"[10,20]"`                            |
 
-## Using Looker in Procedures
+## Using Looker in Automations
 
-Add a Looker query task to your procedure:
+Add a Looker query task to your automation:
 
 ```yaml
 tasks:

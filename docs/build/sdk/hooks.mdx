@@ -1,0 +1,131 @@
+---
+title: "Hooks & components"
+description: "The React hooks and components the Oxygen SDK exposes for reading data, running agents, and rendering results"
+---
+
+Every hook and component below must be used inside an
+[`<OxyAppProvider>`](/guide/build/sdk/index#first-query) — the provider resolves
+the app's identity and shares a credentialed fetcher. Hooks fail loudly if called
+outside it.
+
+## Reading data
+
+### `useQuery`
+
+Run inline SQL against the project's warehouse and get typed rows back.
+`SELECT` / `WITH` only, capped at 10,000 rows.
+
+```tsx
+const { rows, columns, loading, error, refetch } = useQuery(
+  { sql: "SELECT status, COUNT(*) AS n FROM orders WHERE region = {{ params.region | sqlquote }} GROUP BY 1" },
+  { params: { region: "west" }, enabled: true }
+);
+```
+
+- **`params`** interpolate into the SQL with the `{{ params.X | sqlquote }}`
+  syntax — quoted safely on the client before the request is sent.
+- **`enabled: false`** defers the request until required inputs (e.g. a
+  user-picked filter) are available.
+- The query re-runs whenever `sql` or the enabled `params` change.
+
+### `useSemanticQuery`
+
+Query the [semantic model](/guide/build/semantic-model/simple-model) by name
+instead of writing SQL. The server compiles it through airlayer and executes it
+on the same connector path as `useQuery`, so the result shape matches.
+
+```tsx
+const { rows, truncated, loading, error } = useSemanticQuery({
+  topic: "sales",
+  dimensions: ["orders.status"],
+  measures: ["orders.total_revenue"],
+  filters: [{ field: "orders.status", op: "equals", value: "active" }],
+  limit: 100,
+});
+```
+
+`truncated` is `true` when the result hit the server row cap. Pass
+`{ debug: true }` as the second argument to also get the compiled `sql` back
+while developing.
+
+## Running agents
+
+### `useAgentRun`
+
+Start an [analytics agent](/guide/build/agents) run and stream its events over
+SSE. Use this when you want to build your own chat or results UI.
+
+```tsx
+const run = useAgentRun({ agentId: "analytics" });
+
+// run.state: "idle" | "running" | "needs_clarification" | "done" | "failed"
+run.ask("How many orders did we get last week?");
+run.cancel(); // idempotent — stops the stream and the server-side run
+
+run.artifacts; // SQL artifacts extracted from the stream, ready to render
+run.events;    // raw event stream for advanced consumers
+```
+
+The agent supports [human-in-the-loop](/guide/build/agents) suspension: when
+`state` is `needs_clarification`, call `ask()` again to answer and resume.
+
+### `useProcedureRun` <Tooltip tip="Beta">beta</Tooltip>
+
+Start a long-running [automation](/guide/build/automations), poll its progress,
+and cancel it. Runs survive server restarts.
+
+```tsx
+const proc = useProcedureRun({ procedureId: "weekly_report" });
+
+proc.run({ week: "2026-07-06" });
+proc.progress; // { step, percent } while running
+proc.result;   // { summary, outputs } when done
+proc.cancel();
+```
+
+## Rendering components
+
+### `<OxyChat>`
+
+A drop-in chat UI over `useAgentRun` — the fastest way to embed conversational
+analytics in your app.
+
+```tsx
+<OxyChat agentId="analytics" />
+```
+
+### `<OxyAnswer>`
+
+Renders an agent answer: markdown plus SQL artifacts and a link back to the full
+thread. Link URL schemes are allowlisted (it rejects `javascript:` and similar),
+so it's safe to render model output.
+
+```tsx
+<OxyAnswer artifacts={run.artifacts} />
+```
+
+## Errors
+
+`OxyApiError` is the structured `{ message, code? }` envelope the server returns.
+Hook `error` values are normal `Error` objects you can render directly; check for
+`OxyApiError` when you want to branch on `code`.
+
+## Metric-tree analyses
+
+For programmatic access to the [metric tree](/guide/build/world-model/metric-tree)
+and anomaly inbox, the package root also exports `MetricTreeClient` and
+`AnomaliesClient` (plus their result types — `ExplainResult`,
+`SensitivityResult`, `OpportunityResult`, `Anomaly`, and more). These call the
+same endpoints the World Model graph uses, so you can build custom
+root-cause and sensitivity views.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Oxygen Functions" icon="server" href="/guide/build/sdk/functions">
+    Run server-side handlers with `useFunction`
+  </Card>
+  <Card title="The semantic model" icon="layer-group" href="/guide/build/semantic-model/simple-model">
+    Define the measures `useSemanticQuery` reads
+  </Card>
+</CardGroup>

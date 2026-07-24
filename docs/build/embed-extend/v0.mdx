@@ -89,8 +89,8 @@ You can see a complete example in [crates/app/demo_project/v0.agent.yml](../../.
 # Required: v0 API key
 export V0_API_KEY="your-v0-api-key-here"
 
-# Optional: Oxy API URL (defaults to http://127.0.0.1:3000/api)
-# Only needed if your Oxy web app runs on a different host/port
+# Optional: Oxygen API URL (defaults to http://127.0.0.1:3000/api)
+# Only needed if your Oxygen web app runs on a different host/port
 # Important: Use 127.0.0.1, not localhost (v0 blocks URLs without dots)
 export OXY_API_URL="http://127.0.0.1:3000/api"
 ```
@@ -209,7 +209,7 @@ When prompting v0, always mention using the Oxygen SDK:
 Create a dashboard to visualize weekly sales trends.
 Use the following data: [tables...]
 
-Make sure to use Oxy SDK to query the data.
+Make sure to use Oxygen SDK to query the data.
 ```
 
 ## Troubleshooting
@@ -295,7 +295,7 @@ system_instructions: |
   When creating data apps:
   1. First use execute_sql with persist flag to prepare data
   2. Format table schemas clearly for v0
-  3. Prompt v0 to use Oxy SDK for data queries
+  3. Prompt v0 to use Oxygen SDK for data queries
   4. Return the app URL to the user
 ```
 

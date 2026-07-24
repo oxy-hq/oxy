@@ -1,0 +1,35 @@
+---
+title: "Airform"
+description: "dbt-style, version-controlled SQL modeling for Oxygen"
+---
+
+**Airform** handles the transform step: dbt-style, version-controlled SQL models
+that turn raw tables into clean, tested ones. It lives alongside your agents,
+automations, and semantic model in the same workspace, and is validated and
+deployed through the standard Git flow — so the tables your
+[semantic model](/guide/build/semantic-model/simple-model) builds on are modeled
+deterministically, not assembled ad hoc.
+
+## Why model with Airform
+
+- **Version-controlled transforms.** Your models are code, reviewed and deployed
+  through the same Git flow as the rest of your project.
+- **Tested tables.** Transforms land clean, tested tables, so the semantic model
+  compiles over a dependable foundation.
+- **One workspace.** Modeling sits next to agents, automations, and the semantic
+  model — no separate tool to context-switch into.
+
+<Card title="airform on GitHub" icon="github" href="https://github.com/oxy-hq/airform">
+  dbt-style modeling for Oxygen. Open source.
+</Card>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="The semantic model" icon="cube" href="/guide/build/semantic-model/simple-model">
+    Build measures over the tables Airform lands
+  </Card>
+  <Card title="Airhouse" icon="warehouse" href="/guide/build/data-infrastructure/airhouse">
+    Where your data lands
+  </Card>
+</CardGroup>

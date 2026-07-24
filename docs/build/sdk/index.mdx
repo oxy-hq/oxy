@@ -1,0 +1,137 @@
+---
+title: "SDK"
+sidebarTitle: "Overview"
+description: "Build code-first React applications on top of your Oxygen project with the Oxygen SDK"
+---
+
+The **Oxygen SDK** (`@oxy-hq/sdk`) lets you build **custom applications** — real
+React + Vite apps — that read from your Oxygen project: raw SQL, the
+[semantic model](/guide/build/semantic-model/simple-model),
+[agents](/guide/build/agents), and [automations](/guide/build/automations). You
+write a normal frontend; a small set of hooks and drop-in components handle
+authentication, querying, and streaming for you.
+
+<Note>
+This is the code-first **Customer Apps** platform (React bundles shipped with
+`oxy publish`) — distinct from YAML [Data Apps](/guide/build/data-apps)
+(`.app.yml` dashboards). Reach for the SDK when you want full control over the
+UI; reach for Data Apps when a declarative dashboard is enough.
+</Note>
+
+## Install
+
+```bash
+pnpm add @oxy-hq/sdk @oxy-hq/vite-plugin
+```
+
+`react` (^19) is a peer dependency. `@oxy-hq/vite-plugin` wires the served base
+path, copies `oxy-app.json` into the build, and injects the dev identity shim —
+drop it into `vite.config.ts`:
+
+```ts vite.config.ts
+import oxyApp from "@oxy-hq/vite-plugin";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+export default defineConfig({ plugins: [react(), oxyApp()] });
+```
+
+### Scaffold a new app
+
+The fastest way to start is `create-oxy-app`, which copies a curated template
+(Vite + React with the SDK already wired up):
+
+```bash
+pnpm dlx create-oxy-app my-app
+cd my-app
+pnpm install
+pnpm dev
+```
+
+## First query
+
+Wrap your tree in `<OxyAppProvider>` (it resolves the app's identity), then read
+data with hooks:
+
+```tsx src/App.tsx
+import { OxyAppProvider, useQuery, OxyChat } from "@oxy-hq/sdk";
+
+function Dashboard() {
+  const { rows, loading, error } = useQuery({
+    sql: "SELECT store, SUM(weekly_sales) AS sales FROM sales GROUP BY 1 ORDER BY 2 DESC LIMIT 5",
+  });
+  if (loading) return <p>Loading…</p>;
+  if (error) return <p>{error.message}</p>;
+  return (
+    <>
+      <table>
+        {rows.map((r) => (
+          <tr key={r.store}>
+            <td>{r.store}</td>
+            <td>{r.sales}</td>
+          </tr>
+        ))}
+      </table>
+      <OxyChat agentId="analytics" />
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <OxyAppProvider fallback={<p>Loading…</p>}>
+      <Dashboard />
+    </OxyAppProvider>
+  );
+}
+```
+
+To run the backend the SDK talks to during local development, start Oxygen with the
+enterprise surface enabled:
+
+```bash
+oxy start --local --enterprise
+```
+
+## Identity (`oxy-app.json`)
+
+Every app ships an identity-only manifest at its project root (next to
+`vite.config.ts`, **not** under `public/`):
+
+```json oxy-app.json
+{ "schemaVersion": 2, "slug": "store-pulse", "orgSlug": "acme", "name": "Store Pulse" }
+```
+
+When Oxygen serves the bundle it injects the authoritative identity as
+`window.__OXY_APP__`; `OxyAppProvider` reads the injection first and the manifest
+second.
+
+## Authentication
+
+There is **no API key in the bundle**. Requests are authorized by the viewer's
+Oxygen session (a same-origin cookie) or, in cross-origin local dev, a bearer
+token the dev proxy attaches. A bundle can never read data its viewer couldn't
+already read — access is always scoped to project membership.
+
+## Deploy
+
+Build the bundle and ship it to Oxygen with a one-way deploy:
+
+```bash
+pnpm build
+oxy publish
+```
+
+Oxygen serves published apps as launcher cards on the home page and under
+`/customer-apps/<org>/<app>/`.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Hooks & components" icon="code" href="/guide/build/sdk/hooks">
+    `useQuery`, `useSemanticQuery`, `useAgentRun`, `OxyChat`, and more
+  </Card>
+  <Card title="Oxygen Functions" icon="server" href="/guide/build/sdk/functions">
+    Server-side handlers for work the browser shouldn't do
+  </Card>
+</CardGroup>
