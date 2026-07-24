@@ -1,0 +1,17 @@
+{
+  "//": "Typecheck the preact email templates. `jsxImportSource: preact` points JSX at preact's automatic runtime — matching how oxy's esbuild bundles them into the function (esbuild reads jsxImportSource from the nearest tsconfig, per file). No DOM lib: preact's own JSX types are self-contained. Authors just write JSX; this file is the only wiring.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": []
+  },
+  "include": ["."]
+}

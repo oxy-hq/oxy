@@ -90,6 +90,17 @@ fn collect_template_files(
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
+        // Templates ship `_gitignore`, never a literal `.gitignore`. npm drops
+        // dotfiles from published packages — and worse, reads a `.gitignore`
+        // inside the package as an exclusion list — so a literal one would
+        // leave every scaffolded app with no ignore file at all. Both copy
+        // paths restore the real name; keep this in sync with the rename in
+        // `sdk/create-oxy-app/src/cli.ts`.
+        let name = if name == "_gitignore" {
+            ".gitignore"
+        } else {
+            name
+        };
         let rel = if rel_prefix.is_empty() {
             name.to_string()
         } else {
@@ -200,6 +211,29 @@ mod tests {
             assert!(
                 !p.ends_with(".yml.example") && !p.ends_with(".yaml.example"),
                 "example workflow leaked into scaffold output: {p}",
+            );
+        }
+    }
+
+    // Templates store the ignore file as `_gitignore` so it survives npm
+    // publish; every scaffold path must hand back a real `.gitignore`, or the
+    // generated app happily commits node_modules/ and out/.
+    #[test]
+    fn render_template_files_restores_gitignore_name() {
+        let sub = Substitutions {
+            app_slug: "x",
+            app_display_name: "X",
+            app_base_path: "/customer-apps/acme/x/",
+        };
+        for template in ["vite", "functions", "dashboard", "single-store"] {
+            let files = render_template_files(template, &sub).expect("template present");
+            assert!(
+                files.iter().any(|(p, _)| p == ".gitignore"),
+                "{template}: scaffold output has no .gitignore",
+            );
+            assert!(
+                !files.iter().any(|(p, _)| p.contains("_gitignore")),
+                "{template}: raw _gitignore leaked into scaffold output",
             );
         }
     }

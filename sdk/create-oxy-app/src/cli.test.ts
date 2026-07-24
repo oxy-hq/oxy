@@ -19,6 +19,13 @@ describe("parseArgs", () => {
     });
   });
 
+  test("--template functions (the opt-in server-side template)", () => {
+    expect(parseArgs(["my-app", "--template", "functions"])).toMatchObject({
+      name: "my-app",
+      template: "functions"
+    });
+  });
+
   test("-t <id> short form", () => {
     expect(parseArgs(["x", "-t", "dashboard"]).template).toBe("dashboard");
   });

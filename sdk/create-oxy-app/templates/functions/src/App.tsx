@@ -1,20 +1,20 @@
-// {{APP_DISPLAY_NAME}} — scaffolded by `create-oxy-app`.
+// {{APP_DISPLAY_NAME}} — scaffolded by `create-oxy-app --template functions`.
 //
-// A standard Oxy custom app: a Vite + React bundle that Oxy serves at
-// `/customer-apps/<org>/{{APP_SLUG}}/` and that talks to your project through
-// `@oxy-hq/sdk`. Two data surfaces are wired up below:
+// A standard Oxy custom app, plus a server-side **Oxy Function**. Oxy serves
+// this bundle at `/customer-apps/<org>/{{APP_SLUG}}/`; `@oxy-hq/sdk` talks to
+// your project from it. Three surfaces are wired up below:
 //
 //   1. `useQuery`         — raw SQL against the project's warehouse
 //   2. `useSemanticQuery` — measures + dimensions from a semantic topic
+//   3. `useFunction`      — invoke `functions/notify.ts`, which runs on Oxy's
+//                           isolate runtime and sends email
 //
 // Auth rides the session cookie: Oxy only serves this bundle after a
-// membership check, so `/api/*` calls from here are already authenticated —
-// there is no token to manage in the frontend.
-//
-// To make it yours: swap `STARTER_SQL` for a real query, and point `TOPIC` at
-// one of your project's `.topic.yml` topics.
+// membership check, so `/api/*` calls from here are already authenticated.
 
-import { useQuery, useSemanticQuery } from "@oxy-hq/sdk";
+import { useFunction, useQuery, useSemanticQuery } from "@oxy-hq/sdk";
+import { useState } from "react";
+import { Button, fieldClass } from "./chrome/Button";
 import { KpiTile } from "./chrome/KpiTile";
 import { Panel } from "./chrome/Panel";
 import { Pill } from "./chrome/Pill";
@@ -37,8 +37,7 @@ const STARTER_SQL = `
 `;
 
 // A topic from your project's semantic layer (a `.topic.yml` file), plus one
-// dimension and one measure it exposes. Member paths are `topic.member`. The
-// panel below explains itself until these point at something real.
+// dimension and one measure it exposes. Member paths are `topic.member`.
 const TOPIC = "your_topic";
 const DIMENSION = "your_dimension";
 const MEASURE = "your_measure";
@@ -46,6 +45,12 @@ const MEASURE = "your_measure";
 interface StarterRow {
   dataset: string;
   records: number;
+}
+
+interface NotifyResult {
+  ok: boolean;
+  messageId: string;
+  sentTo: string;
 }
 
 const fmtInt = (n: number) => n.toLocaleString();
@@ -65,9 +70,19 @@ function Loading({ label = "Loading…" }: { label?: string }) {
   );
 }
 
-// A muted explanatory footnote — the "how do I change this" prose lives here.
 function Note({ children }: { children: React.ReactNode }) {
   return <p className='text-[11px] text-muted-foreground leading-relaxed'>{children}</p>;
+}
+
+function ErrorBlock({ title, message }: { title: string; message: string }) {
+  return (
+    <div className='flex flex-col gap-1 border border-status-error/40 bg-status-error/5 p-2'>
+      <div className='font-mono text-[11px] text-status-error'>{title}</div>
+      <div className='max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground'>
+        {message}
+      </div>
+    </div>
+  );
 }
 
 export function App() {
@@ -86,17 +101,14 @@ export function App() {
         }
       />
 
-      {/* Flex-wrap rather than a grid: each card is `grow basis-[24rem]`, so
-          cards reflow to 3/2/1 per row by width AND grow to fill whatever row
-          they land on — a lone card stretches full width instead of leaving a
-          gap. */}
       <main className='relative flex min-h-0 flex-1 flex-wrap content-start gap-2.5 overflow-auto p-2.5'>
         <div className='basis-full flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border border-border bg-card px-3 py-2'>
           <div className='text-[11px] text-muted-foreground'>
-            A standard Oxy custom app. Edit <code>src/App.tsx</code> to make it yours.
+            A standard Oxy custom app with a server-side function. Edit{" "}
+            <code>src/App.tsx</code> and <code>functions/notify.ts</code> to make it yours.
           </div>
           <div className='font-mono text-[10px] text-muted-foreground uppercase tracking-wider'>
-            useQuery · useSemanticQuery
+            useQuery · useSemanticQuery · useFunction
           </div>
         </div>
 
@@ -112,13 +124,14 @@ export function App() {
 
         <StarterQueryPanel query={starter} />
         <SemanticPanel />
+        <NotifyCard />
 
         <Panel title='Next steps' className='basis-full'>
           <Note>
             Replace <code>STARTER_SQL</code> with a query against your warehouse, point{" "}
-            <code>TOPIC</code> at one of your semantic topics, then ship it with{" "}
-            <code>oxy publish</code>. Re-skin everything by editing the tokens in{" "}
-            <code>src/index.css</code>.
+            <code>TOPIC</code> at one of your semantic topics, edit the email in{" "}
+            <code>emails/Welcome.tsx</code> (preview it with <code>pnpm email:dev</code>), then
+            ship it all with <code>oxy publish</code>.
           </Note>
         </Panel>
       </main>
@@ -138,12 +151,7 @@ function StarterQueryPanel({ query }: { query: ReturnType<typeof useQuery<Starte
       {query.loading ? (
         <Loading />
       ) : query.error ? (
-        <div className='flex flex-col gap-1 border border-status-error/40 bg-status-error/5 p-2'>
-          <div className='font-mono text-[11px] text-status-error'>Query failed</div>
-          <div className='max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground'>
-            {query.error.message}
-          </div>
-        </div>
+        <ErrorBlock title='Query failed' message={query.error.message} />
       ) : (
         <table className='w-full border-collapse font-mono text-[11px]'>
           <thead>
@@ -163,19 +171,14 @@ function StarterQueryPanel({ query }: { query: ReturnType<typeof useQuery<Starte
         </table>
       )}
       <Note>
-        The SQL runs against your project's warehouse and is defined in{" "}
-        <code>src/App.tsx</code>. These rows are literals so the scaffold renders with no tables
-        set up — swap <code>STARTER_SQL</code> for a real query.
+        These rows are literals so the scaffold renders with no tables set up — swap{" "}
+        <code>STARTER_SQL</code> for a real query.
       </Note>
     </Panel>
   );
 }
 
 // ── useSemanticQuery · the semantic layer ───────────────────────────────────
-//
-// The same shape as useQuery, but the measures come from your `.view.yml` /
-// `.topic.yml` files instead of SQL in this file. When the data team refactors
-// the SQL behind a measure, this panel follows with no edit here.
 
 function SemanticPanel() {
   const semantic = useSemanticQuery<Record<string, unknown>>({
@@ -186,8 +189,8 @@ function SemanticPanel() {
   });
 
   const columns = semantic.rows.length > 0 ? Object.keys(semantic.rows[0]) : [];
-  // Until TOPIC points at a real topic this errors — that is expected on a
-  // fresh scaffold, so present it as an instruction rather than a failure.
+  // Until TOPIC points at a real topic this errors — expected on a fresh
+  // scaffold, so present it as an instruction rather than a failure.
   const unconfigured = Boolean(semantic.error) || semantic.rows.length === 0;
 
   return (
@@ -206,7 +209,7 @@ function SemanticPanel() {
         <Note>
           Point <code>TOPIC</code>, <code>DIMENSION</code> and <code>MEASURE</code> in{" "}
           <code>src/App.tsx</code> at a topic your project defines (a <code>.topic.yml</code>{" "}
-          file) and this panel fills in. Member paths are <code>topic.member</code>.
+          file) and this panel fills in.
         </Note>
       ) : (
         <table className='w-full border-collapse font-mono text-[11px]'>
@@ -221,8 +224,6 @@ function SemanticPanel() {
           </thead>
           <tbody>
             {semantic.rows.map((row, i) => (
-              // Semantic rows have no natural id; index is stable for a
-              // rendered result set.
               // biome-ignore lint/suspicious/noArrayIndexKey: no stable row id
               <tr key={i} className={BODY_ROW}>
                 {columns.map((c) => (
@@ -235,6 +236,78 @@ function SemanticPanel() {
           </tbody>
         </table>
       )}
+    </Panel>
+  );
+}
+
+// ── useFunction · a server-side handler ─────────────────────────────────────
+//
+// `useFunction(name)` returns an imperative `invoke(body?)` that POSTs to the
+// function's route. The handler in functions/notify.ts runs on Oxy's isolate
+// with a data-plane `ctx` — it can reach your warehouse, secrets, storage and
+// email without any of that touching the browser.
+
+function NotifyCard() {
+  const fn = useFunction<NotifyResult>("notify");
+  const [name, setName] = useState("");
+
+  return (
+    <Panel
+      title='Server-side function · useFunction'
+      right={<span className='font-mono text-[10px] normal-case'>notify</span>}
+      className='grow basis-[24rem]'
+    >
+      <Note>
+        Runs <code>functions/notify.ts</code> on Oxy's isolate runtime, which renders{" "}
+        <code>emails/Welcome.tsx</code> and sends it with <code>ctx.email.send</code>. The
+        recipient is <em>you</em> — derived server-side from <code>ctx.user.email</code>, never
+        from the browser.
+      </Note>
+
+      <form
+        className='flex flex-wrap items-center gap-2'
+        onSubmit={(e) => {
+          e.preventDefault();
+          // invoke() rejects on error; the hook also exposes fn.error, so
+          // swallow the rejection to avoid an unhandled promise.
+          if (!fn.isLoading) fn.invoke({ name: name.trim() }).catch(() => {});
+        }}
+      >
+        <label
+          htmlFor='notify-name'
+          className='font-mono text-[10px] text-muted-foreground uppercase tracking-wider'
+        >
+          Name
+        </label>
+        <input
+          id='notify-name'
+          type='text'
+          placeholder='Ada'
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className={`${fieldClass} min-w-[8rem] flex-1`}
+        />
+        <Button variant='primary' type='submit' disabled={fn.isLoading}>
+          {fn.isLoading ? "Sending…" : "Email me"}
+        </Button>
+      </form>
+
+      {fn.error && (
+        <ErrorBlock title='Function failed' message={fn.error.message.split("\n")[0]} />
+      )}
+
+      {fn.data && !fn.error && (
+        <div className='flex items-center gap-2 border border-status-success/40 bg-status-success/10 px-2.5 py-1.5 font-mono text-[11px] text-foreground'>
+          <span className='size-1.5 shrink-0 rounded-full bg-status-success' />
+          <span className='flex-1 truncate'>Sent to {fn.data.sentTo}</span>
+        </div>
+      )}
+
+      <Note>
+        A real send needs a verified SES sender. On a dev server set{" "}
+        <code>OXY_APP_EMAIL_LOCAL_TEST=1</code> to preview in the browser instead, or run{" "}
+        <code>pnpm email:dev</code> to render the template on its own.
+      </Note>
     </Panel>
   );
 }

@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+.env
+.env.local
+
+# tsc / vite build state
+*.tsbuildinfo
+
+# foreign lockfiles — this kit is pnpm; commit pnpm-lock.yaml, not these
+package-lock.json
+yarn.lock

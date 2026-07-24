@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="{{APP_DISPLAY_NAME}}">
+  <!-- App glyph: an "O" (Oxygen) ring on the brand gradient. Square and
+       full-bleed — the HQ home renders it at 24px beside the app name, and the
+       icon rail uses the same mark. Referenced from oxy-app.json's `icon`.
+       Replace this with your own mark. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3550ff"/>
+      <stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="url(#bg)"/>
+  <circle cx="64" cy="64" r="30" fill="none" stroke="#0a0a0a" stroke-opacity="0.35" stroke-width="14"/>
+  <circle cx="64" cy="64" r="30" fill="none" stroke="#ffffff" stroke-width="11" stroke-linecap="round"/>
+  <circle cx="64" cy="30" r="7" fill="#ffffff"/>
+</svg>

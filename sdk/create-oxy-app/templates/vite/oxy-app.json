@@ -2,9 +2,6 @@
   "schemaVersion": 2,
   "slug": "{{APP_SLUG}}",
   "name": "{{APP_DISPLAY_NAME}}",
-  "functions": {
-    "notify": {
-      "email": { "send": true }
-    }
-  }
+  "icon": "icon.svg",
+  "art": "card.svg"
 }

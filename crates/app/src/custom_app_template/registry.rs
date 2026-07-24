@@ -20,6 +20,13 @@ static VITE_TEMPLATE: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../../sdk/create-oxy-app/templates/vite");
 
 #[cfg(target_os = "windows")]
+static FUNCTIONS_TEMPLATE: Dir<'static> =
+    include_dir!("D:\\a\\oxy\\oxy\\sdk\\create-oxy-app\\templates\\functions");
+#[cfg(not(target_os = "windows"))]
+static FUNCTIONS_TEMPLATE: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/../../sdk/create-oxy-app/templates/functions");
+
+#[cfg(target_os = "windows")]
 static DASHBOARD_TEMPLATE: Dir<'static> =
     include_dir!("D:\\a\\oxy\\oxy\\sdk\\create-oxy-app\\templates\\dashboard");
 #[cfg(not(target_os = "windows"))]
@@ -53,7 +60,12 @@ pub fn templates() -> &'static BTreeMap<String, Template> {
     static REGISTRY: OnceLock<BTreeMap<String, Template>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         let mut map = BTreeMap::new();
-        for dir in [&VITE_TEMPLATE, &DASHBOARD_TEMPLATE, &SINGLE_STORE_TEMPLATE] {
+        for dir in [
+            &VITE_TEMPLATE,
+            &FUNCTIONS_TEMPLATE,
+            &DASHBOARD_TEMPLATE,
+            &SINGLE_STORE_TEMPLATE,
+        ] {
             match load_meta(dir) {
                 Ok(meta) => {
                     let id = meta.id.clone();
@@ -93,6 +105,32 @@ mod tests {
         let t = get_template("vite").expect("vite must always be registered");
         assert_eq!(t.meta.id, "vite");
         assert!(!t.meta.name.is_empty());
+    }
+
+    // The opt-in template that carries the server-side Oxy Function + email
+    // demo. `vite` deliberately ships no `functions/` — scaffolding a backend
+    // is an explicit choice, not the default.
+    #[test]
+    fn registry_loads_functions_template() {
+        let t = get_template("functions").expect("functions must be registered");
+        assert_eq!(t.meta.id, "functions");
+        assert!(!t.meta.name.is_empty());
+    }
+
+    // The default template must stay backend-free: no `functions/` handlers and
+    // no `emails/` templates. This is the guardrail for the whole point of the
+    // `vite` template — a clean custom app, not a backend project.
+    #[test]
+    fn vite_template_ships_no_backend() {
+        let t = get_template("vite").expect("vite must always be registered");
+        assert!(
+            t.dir.get_dir("functions").is_none(),
+            "vite template must not ship server-side functions"
+        );
+        assert!(
+            t.dir.get_dir("emails").is_none(),
+            "vite template must not ship email templates"
+        );
     }
 
     // Dashboard + single-store templates have placeholder template.json

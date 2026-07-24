@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" height="400" role="img" aria-label="{{APP_DISPLAY_NAME}} preview">
+  <!-- The launcher-card image (the app's `art`). The HQ home renders it
+       full-width at h-40 (object-cover), so the composition stays roughly
+       centered. Ship a real screenshot here when the app has a look of its
+       own; this stands in and stays crisp at any size. -->
+  <defs>
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3550ff"/>
+      <stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="400" fill="#0a0a0a"/>
+
+  <!-- Topbar -->
+  <rect x="0" y="0" width="800" height="38" fill="#141416"/>
+  <rect x="0" y="37" width="800" height="1" fill="#ffffff" fill-opacity="0.145"/>
+  <text x="18" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#ededed" letter-spacing="2">OXYGEN</text>
+  <text x="92" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#a1a1aa">{{APP_SLUG}}</text>
+  <circle cx="770" cy="19" r="3.5" fill="#22c55e"/>
+  <text x="726" y="23" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#a1a1aa">live</text>
+
+  <!-- KPI row -->
+  <g>
+    <rect x="14" y="52" width="253" height="64" fill="#1a1a1a" stroke="#ffffff" stroke-opacity="0.145"/>
+    <rect x="27" y="66" width="52" height="6" fill="#3f3f46"/>
+    <rect x="27" y="84" width="92" height="16" fill="#ededed"/>
+
+    <rect x="277" y="52" width="253" height="64" fill="#1a1a1a" stroke="#ffffff" stroke-opacity="0.145"/>
+    <rect x="290" y="66" width="44" height="6" fill="#3f3f46"/>
+    <rect x="290" y="84" width="70" height="16" fill="url(#acc)"/>
+
+    <rect x="540" y="52" width="246" height="64" fill="#1a1a1a" stroke="#ffffff" stroke-opacity="0.145"/>
+    <rect x="553" y="66" width="58" height="6" fill="#3f3f46"/>
+    <rect x="553" y="84" width="104" height="16" fill="#ededed"/>
+  </g>
+
+  <!-- Left panel: a table -->
+  <rect x="14" y="128" width="470" height="258" fill="#1a1a1a" stroke="#ffffff" stroke-opacity="0.145"/>
+  <rect x="27" y="142" width="120" height="7" fill="#3f3f46"/>
+  <rect x="27" y="160" width="444" height="1" fill="#ffffff" fill-opacity="0.145"/>
+  <g>
+    <rect x="27" y="176" width="150" height="6" fill="#52525b"/><rect x="404" y="175" width="67" height="8" fill="#a1a1aa"/>
+    <rect x="27" y="202" width="130" height="6" fill="#52525b"/><rect x="411" y="201" width="60" height="8" fill="#60a5fa"/>
+    <rect x="27" y="228" width="160" height="6" fill="#52525b"/><rect x="401" y="227" width="70" height="8" fill="#a1a1aa"/>
+    <rect x="27" y="254" width="120" height="6" fill="#52525b"/><rect x="414" y="253" width="57" height="8" fill="#a1a1aa"/>
+    <rect x="27" y="280" width="145" height="6" fill="#52525b"/><rect x="407" y="279" width="64" height="8" fill="#60a5fa"/>
+    <rect x="27" y="306" width="135" height="6" fill="#52525b"/><rect x="409" y="305" width="62" height="8" fill="#a1a1aa"/>
+    <rect x="27" y="332" width="155" height="6" fill="#52525b"/><rect x="403" y="331" width="68" height="8" fill="#a1a1aa"/>
+  </g>
+
+  <!-- Right panel: a bar chart -->
+  <rect x="498" y="128" width="288" height="258" fill="#1a1a1a" stroke="#ffffff" stroke-opacity="0.145"/>
+  <rect x="511" y="142" width="100" height="7" fill="#3f3f46"/>
+  <rect x="511" y="160" width="262" height="1" fill="#ffffff" fill-opacity="0.145"/>
+  <g fill="url(#acc)">
+    <rect x="522" y="300" width="26" height="66"/>
+    <rect x="558" y="262" width="26" height="104"/>
+    <rect x="594" y="284" width="26" height="82"/>
+    <rect x="630" y="222" width="26" height="144"/>
+    <rect x="666" y="250" width="26" height="116"/>
+    <rect x="702" y="196" width="26" height="170"/>
+    <rect x="738" y="238" width="26" height="128"/>
+  </g>
+  <rect x="511" y="366" width="262" height="1" fill="#ffffff" fill-opacity="0.145"/>
+</svg>

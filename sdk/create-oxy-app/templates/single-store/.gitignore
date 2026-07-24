@@ -1,8 +1,0 @@
-node_modules/
-out/
-dist/
-.env
-.env.local
-
-# tsc / vite build state
-*.tsbuildinfo

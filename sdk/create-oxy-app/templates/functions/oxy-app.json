@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 2,
+  "slug": "{{APP_SLUG}}",
+  "name": "{{APP_DISPLAY_NAME}}",
+  "icon": "icon.svg",
+  "art": "card.svg",
+  "functions": {
+    "notify": {
+      "route": true,
+      "timeoutSeconds": 30,
+      "email": { "send": true }
+    }
+  }
+}

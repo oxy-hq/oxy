@@ -1,5 +1,5 @@
 {
   "id": "vite",
-  "name": "Blank Vite",
-  "description": "Empty starter — one useQuery hello-world. Bring your own SQL."
+  "name": "Standard app",
+  "description": "The default Oxy custom app — Vite + React + Tailwind, wired to your project with useQuery and useSemanticQuery. Bring your own SQL."
 }

@@ -63,12 +63,17 @@ Usage:
 
 Options:
   -t, --template <id>   Template to use (default: vite).
-                        Available: vite, single-store, dashboard.
+                        Available:
+                          vite          a standard custom app (frontend only)
+                          functions     …plus a server-side Oxy Function + email
+                          single-store  parameter selector + summary + activity
+                          dashboard     KPI strip + chart + leaderboard
   -h, --help            Show this help.
 
 Examples:
   pnpm dlx create-oxy-app store-pulse
   pnpm dlx create-oxy-app sales-dashboard --template dashboard
+  pnpm dlx create-oxy-app notifier --template functions
 `);
 }
 
@@ -171,11 +176,9 @@ Done. Next steps:
   cd ${args.name}
   pnpm install
   pnpm dev          # Vite dev server at http://localhost:5173
-  pnpm run screenshot   # capture public/card.png for the HQ launcher card
-                        # (then set "art": "card.png" in oxy-app.json)
 
-Then register the app via the admin UI (Customer apps → Add new).
-The Link flow will pick up oxy-app.json automatically.
+Ship it with \`oxy publish\`, or register it via the admin UI
+(Custom apps → Add new) — the Link flow picks up oxy-app.json automatically.
 `);
 }
 

@@ -1,0 +1,5 @@
+{
+  "id": "functions",
+  "name": "App + server functions",
+  "description": "The standard app plus an Oxy Function and an email template — server-side handlers that run on Oxy's runtime with data-plane access."
+}
