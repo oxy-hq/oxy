@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.111] - 2026-07-23
+
+### 🚀 Features
+
+- *(customer-apps)* Asset store (ctx.storage), email attachments, and per-app roles (#2768)
+
+### 🚜 Refactor
+
+- Rename "customer apps" → "custom apps" (unify the two names) (#2774)
+
 ## [0.5.110] - 2026-07-23
 
 ### 🚜 Refactor
@@ -11,12 +21,13 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Upgrade dependencies (apache-arrow, elkjs, testing-library) (#2766)
+- Release 0.5.110 (#2767)
 
 ## [0.5.109] - 2026-07-23
 
 ### 🚀 Features
 
-- Universalize the custom-app shell (sdk 2.5.0) (#2687)
+- Universalize the customer-app shell (sdk 2.5.0) (#2687)
 
 ### 🐛 Bug Fixes
 
@@ -76,7 +87,7 @@ All notable changes to this project will be documented in this file.
 - *(partner)* Partner distribution platform + oxy proxy local-dev (#2710)
 - *(cameras)* Route dashboard reads to the analytics DP pool (#2733)
 - *(authz)* [**breaking**] Unify authorization behind one model (enforcing) (#2730)
-- *(seed)* Deploy an example custom app and test the seed against a real DB (#2734)
+- *(seed)* Deploy an example customer app and test the seed against a real DB (#2734)
 
 ### 🐛 Bug Fixes
 
@@ -260,7 +271,7 @@ All notable changes to this project will be documented in this file.
 
 ### 🚀 Features
 
-- Add Oxy Functions — edge-style TypeScript handlers in custom apps (#2521)
+- Add Oxy Functions — edge-style TypeScript handlers in customer apps (#2521)
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -305,7 +316,7 @@ All notable changes to this project will be documented in this file.
 ### 🚀 Features
 
 - *(automation)* Add `http_request` workflow task type (#2643)
-- Sdk streamline custom-app launcher-card screenshots (#2654)
+- Sdk streamline customer-app launcher-card screenshots (#2654)
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -776,13 +787,13 @@ All notable changes to this project will be documented in this file.
 
 - Clickhouse source for airway ELT pipeline (#2422)
 - QuickBooks Online ELT source + OAuth Connect (#2432)
-- Subdomain dispatch (zero-config) + dual-url admin UI for v0 custom apps (#2442)
+- Subdomain dispatch (zero-config) + dual-url admin UI for v0 customer apps (#2442)
 - Standalone worker fleet + internal jobs admin (#2409)
 
 ### 🐛 Bug Fixes
 
-- Silence spurious manifest error for v0 custom apps (#2441)
-- Surface real connector error on custom-app query 500s (#2447)
+- Silence spurious manifest error for v0 customer apps (#2441)
+- Surface real connector error on customer-app query 500s (#2447)
 
 ### 💼 Other
 
@@ -830,7 +841,7 @@ All notable changes to this project will be documented in this file.
 
 - *(api)* Admin app URL is relative; drop OXY_CUSTOMER_APPS_BASE_URL
 - *(web)* ResolveBundleUrl explicitly clears a stray port
-- *(web)* Default channel to draft for unpublished custom apps
+- *(web)* Default channel to draft for unpublished customer apps
 
 ### 🚜 Refactor
 
