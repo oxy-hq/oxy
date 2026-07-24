@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { cx } from "./cx";
 
 /** Rail-top workspace identity: the org/code-first logo when present, the
  *  name initial otherwise. Pure branding — switching workspaces is the host
@@ -11,7 +12,14 @@ export function WorkspaceTile({ name, logoUrl }: { name: string; logoUrl?: strin
   const showLogo = !!logoUrl && failedUrl !== logoUrl;
 
   return (
-    <span data-testid='rail-workspace' title={name} className='oxy-shell-scope oxy-workspace-tile'>
+    <span
+      data-testid='rail-workspace'
+      title={name}
+      // The tile's fill backs the letter fallback; a real logo (often a
+      // transparent PNG) sits on its own, so the fill would show through as a
+      // grey square. The `--logo` modifier drops it — see shell.css.
+      className={cx("oxy-shell-scope oxy-workspace-tile", showLogo && "oxy-workspace-tile--logo")}
+    >
       {showLogo ? (
         <img
           src={logoUrl}

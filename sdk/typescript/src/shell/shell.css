@@ -30,6 +30,7 @@
   --oxy-shell-primary-fg: var(--primary-foreground, #fafafa);
   --oxy-shell-accent: var(--accent, #f5f5f5);
   --oxy-shell-border: var(--border, #d4d4d8);
+  --oxy-shell-border-strong: var(--border-strong, rgba(161, 161, 170, 0.5));
   --oxy-shell-ring: var(--ring, #a1a1a1);
   --oxy-shell-success: var(--success, #22c55e);
   --oxy-shell-destructive: var(--destructive, #e7000b);
@@ -56,6 +57,7 @@
   --oxy-shell-primary-fg: var(--primary-foreground, #0a0a0a);
   --oxy-shell-accent: var(--accent, #262626);
   --oxy-shell-border: var(--border, rgba(255, 255, 255, 0.145));
+  --oxy-shell-border-strong: var(--border-strong, #3f3f46);
   --oxy-shell-ring: var(--ring, #525252);
   --oxy-shell-success: var(--success, #22c55e);
   --oxy-shell-destructive: var(--destructive, #ff6467);
@@ -209,16 +211,29 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
 }
 
-.oxy-rail__item--active {
+.oxy-rail__item--active,
+.oxy-rail__item--active:hover {
   opacity: 1;
-  background: var(--oxy-shell-sidebar-accent);
+  /* Selected = an opaque --muted chip outlined in --border-strong, the same
+     neutral pair the product uses for selected cards. Both tokens step away
+     from the rail in either theme (#e4e4e7 on #fafafa, #27272a on #000), and
+     the outline is what separates selected from a plain hover fill — the
+     half-transparent sidebar-accent this replaced was nearly invisible over
+     the near-white light rail. Deliberately no edge bar: an inset shadow bows
+     around the tile's corners and reads as a parenthesis, and a colored one
+     would be the only brand hue in otherwise neutral chrome. The ring is an
+     inset shadow rather than a border so the tile stays 2rem without relying
+     on the host app's box-sizing. */
+  background: var(--oxy-shell-muted);
   color: var(--oxy-shell-sidebar-accent-fg);
+  box-shadow: inset 0 0 0 1px var(--oxy-shell-border-strong);
 }
 
-.oxy-rail__item--active:hover {
-  /* Matches the original ghost Button: hover:bg-accent applies even on the
-     active item. */
-  background: var(--oxy-shell-accent);
+/* Focus ring still wins over the selected outline. */
+.oxy-rail__item--active:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px var(--oxy-shell-border-strong),
+    0 0 0 3px color-mix(in srgb, var(--oxy-shell-ring) 50%, transparent);
 }
 
 .oxy-rail__item svg {
@@ -257,7 +272,14 @@
   justify-content: center;
   overflow: hidden;
   border-radius: calc(var(--oxy-shell-radius) - 2px);
+  /* Fill backs the letter fallback. A real logo (often a transparent PNG)
+     sits on its own — the `--logo` modifier drops the fill so it doesn't show
+     through as a grey square behind the mark. */
   background: color-mix(in srgb, var(--oxy-shell-primary) 10%, transparent);
+}
+
+.oxy-workspace-tile--logo {
+  background: transparent;
 }
 
 .oxy-workspace-tile__img {

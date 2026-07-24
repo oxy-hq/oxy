@@ -25,7 +25,17 @@ export type RailItem = {
 const itemClasses = (active?: boolean) =>
   cn(
     "flex h-8 w-8 items-center justify-center rounded-md",
-    active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "opacity-60 hover:opacity-100"
+    // Active: the app's monochrome "selected" recipe — an opaque --muted chip
+    // outlined in --border-strong (same pair the settings cards use). Both
+    // tokens step away from the rail in either theme (#e4e4e7 on #fafafa,
+    // #27272a on #000), and the outline is what separates selected from a
+    // plain hover fill. Deliberately no accent bar: an inset box-shadow bows
+    // around the tile's rounded corners and reads as a parenthesis, and a
+    // colored one would be the only brand hue in otherwise neutral chrome.
+    // `hover:` is pinned so the ghost Button's hover fill can't wash it out.
+    active
+      ? "border border-border-strong bg-muted text-sidebar-accent-foreground hover:bg-muted"
+      : "opacity-60 hover:opacity-100"
   );
 
 function RailEntry({ item }: { item: RailItem }) {

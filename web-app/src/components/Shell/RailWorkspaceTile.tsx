@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { workspaceLogoUrl } from "@/components/Shell/logoUrl";
+import { cn } from "@/libs/shadcn/utils";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 
@@ -18,7 +19,12 @@ export function RailWorkspaceTile() {
     <span
       data-testid='rail-workspace'
       title={name}
-      className='flex h-8 w-8 items-center justify-center overflow-hidden rounded-md bg-primary/10'
+      // The tint backs the letter fallback; a real logo (often a transparent
+      // PNG) sits on its own, so the fill would show through as a grey square.
+      className={cn(
+        "flex h-8 w-8 items-center justify-center overflow-hidden rounded-md",
+        !showLogo && "bg-primary/10"
+      )}
     >
       {showLogo && workspace ? (
         <img
