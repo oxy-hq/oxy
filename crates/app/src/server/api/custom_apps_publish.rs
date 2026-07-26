@@ -130,6 +130,13 @@ pub struct PublishResult {
     /// of one that was already in the system — surfaces accidental
     /// re-registration vs. intentional re-publish.
     pub is_new_app: bool,
+    /// Non-fatal problems the operator should see even though the publish
+    /// succeeded — e.g. a function shipped but its cron schedule failed to
+    /// register, so it silently won't fire. Omitted from the JSON when empty, so
+    /// this is an additive wire change: existing clients that don't read it are
+    /// unaffected.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -185,14 +192,58 @@ fn is_safe_relative_path(path: &std::path::Path) -> bool {
             .any(|c| matches!(c, std::path::Component::ParentDir))
 }
 
+/// Decompression ceilings. The request body is capped at 64 MiB **compressed**
+/// (`router/global.rs`), but gzip ratios turn that into tens of GB decompressed,
+/// so without these a single publish — reachable by any org Admin or partner
+/// since publish stopped being staff-only — can OOM the serve process and take
+/// down every tenant on the replica. Generous for a real JS/CSS/asset bundle.
+const MAX_DECOMPRESSED_BYTES: u64 = 256 * 1024 * 1024; // total across the bundle
+const MAX_ENTRY_BYTES: u64 = 64 * 1024 * 1024; // any single file
+const MAX_FILES: usize = 20_000;
+
+/// Parse the bundle's `oxy-app.json` if it ships one. A present-but-unparseable
+/// manifest is a hard error rather than a silent `None`: it is the canonical
+/// manifest `oxy publish` uploads, so dropping it strips the whole `functions`
+/// block and publishes a function-less app. Absent → `Ok(None)` (the caller
+/// falls back to the explicit multipart `manifest` field).
+fn parse_embedded_manifest(
+    files: &[(String, Vec<u8>)],
+) -> Result<Option<serde_json::Value>, PublishError> {
+    files
+        .iter()
+        .find(|(p, _)| p == "oxy-app.json")
+        .map(|(_, b)| {
+            serde_json::from_slice::<serde_json::Value>(b).map_err(|e| {
+                PublishError::BadTarball(format!(
+                    "oxy-app.json in the bundle is not valid JSON: {e}"
+                ))
+            })
+        })
+        .transpose()
+}
+
 /// Decompress a gzipped tar into `(relative_path, bytes)` pairs, rejecting
-/// absolute paths and `..` traversal. Directories are skipped.
+/// absolute paths and `..` traversal. Directories are skipped. Bounded in total
+/// bytes, per-entry bytes, and file count so a decompression bomb can't OOM the
+/// process (see the limit constants above).
 pub fn unpack_tar_gz(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, PublishError> {
+    unpack_tar_gz_bounded(bytes, MAX_DECOMPRESSED_BYTES, MAX_ENTRY_BYTES, MAX_FILES)
+}
+
+/// The enforcement core, parameterized on its limits so the bomb-rejection paths
+/// are testable without allocating the production-sized ceilings.
+fn unpack_tar_gz_bounded(
+    bytes: &[u8],
+    max_total: u64,
+    max_entry: u64,
+    max_files: usize,
+) -> Result<Vec<(String, Vec<u8>)>, PublishError> {
     let mut archive = Archive::new(GzDecoder::new(bytes));
     let entries = archive
         .entries()
         .map_err(|e| PublishError::BadTarball(e.to_string()))?;
     let mut out = Vec::new();
+    let mut total_bytes: u64 = 0;
     for entry in entries {
         let mut entry = entry.map_err(|e| PublishError::BadTarball(e.to_string()))?;
         let path = entry
@@ -211,10 +262,29 @@ pub fn unpack_tar_gz(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, PublishErro
         if rel.is_empty() {
             continue;
         }
+        if out.len() >= max_files {
+            return Err(PublishError::BadTarball(format!(
+                "bundle exceeds the {max_files}-file limit"
+            )));
+        }
+        // `.take(cap + 1)` bounds the read itself — a header can lie about size,
+        // so we never trust it and never let one entry allocate unbounded.
         let mut buf = Vec::new();
         entry
+            .take(max_entry + 1)
             .read_to_end(&mut buf)
             .map_err(|e| PublishError::BadTarball(e.to_string()))?;
+        if buf.len() as u64 > max_entry {
+            return Err(PublishError::BadTarball(format!(
+                "file '{rel}' exceeds the per-file {max_entry}-byte limit"
+            )));
+        }
+        total_bytes = total_bytes.saturating_add(buf.len() as u64);
+        if total_bytes > max_total {
+            return Err(PublishError::BadTarball(format!(
+                "bundle exceeds the {max_total}-byte decompressed limit"
+            )));
+        }
         out.push((rel, buf));
     }
     if !out.iter().any(|(p, _)| p == "index.html") {
@@ -368,15 +438,79 @@ async fn find_app(
 /// that to print "Registered new app" vs "Published new version of …"
 /// so engineers spot accidental re-registration and intentional updates
 /// without scanning the diff.
+/// How to undo the app-row mutation `upsert_app` made, if a later step fails
+/// before the build is durable. The row is mutated up front (a brand-new app
+/// needs its id minted, and an existing one is repointed at the new
+/// project/branch), so a failure in `put_build` must not leave a live app
+/// pointing at a different workspace while it still serves the OLD bytes —
+/// `window.__OXY_APP__.projectId` is read from this row, so that silently
+/// redirects a working bundle at another tenant's data plane.
+enum AppMutationRollback {
+    /// Newly created — undo by deleting the row.
+    Created,
+    /// Pre-existing — undo by restoring the values from before this publish.
+    Updated {
+        project_id: Uuid,
+        branch: String,
+        name: String,
+        last_synced_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    },
+}
+
+impl AppMutationRollback {
+    async fn apply(self, db: &DatabaseConnection, app_id: Uuid) {
+        match self {
+            AppMutationRollback::Created => {
+                if let Err(e) = apps::Entity::delete_by_id(app_id).exec(db).await {
+                    tracing::warn!(
+                        "publish rollback: could not delete newly-created app {app_id}: {e}"
+                    );
+                }
+            }
+            AppMutationRollback::Updated {
+                project_id,
+                branch,
+                name,
+                last_synced_at,
+            } => {
+                let active = apps::ActiveModel {
+                    id: ActiveValue::Set(app_id),
+                    project_id: ActiveValue::Set(project_id),
+                    branch: ActiveValue::Set(branch),
+                    name: ActiveValue::Set(name),
+                    // Restore too, so a rolled-back row doesn't claim a sync that
+                    // never durably happened.
+                    last_synced_at: ActiveValue::Set(last_synced_at),
+                    updated_at: ActiveValue::Set(Utc::now().fixed_offset()),
+                    ..Default::default()
+                };
+                if let Err(e) = active.update(db).await {
+                    tracing::warn!(
+                        "publish rollback: could not restore prior state for app {app_id}: {e}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 async fn upsert_app(
     db: &DatabaseConnection,
     org: &organizations::Model,
     input: &PublishInput,
-) -> Result<(Uuid, bool), PublishError> {
+) -> Result<(Uuid, bool, AppMutationRollback), PublishError> {
     let now = Utc::now().fixed_offset();
     let existing = find_app(db, org.id, &input.app_slug).await?;
     if let Some(row) = existing {
         let id = row.id;
+        // Snapshot the fields this update overwrites, so a later failure can
+        // restore them rather than stranding the app on a half-publish.
+        let prior = AppMutationRollback::Updated {
+            project_id: row.project_id,
+            branch: row.branch.clone(),
+            name: row.name.clone(),
+            last_synced_at: row.last_synced_at,
+        };
         let mut active: apps::ActiveModel = row.into();
         active.project_id = ActiveValue::Set(input.project_id);
         if let Some(b) = &input.branch {
@@ -391,7 +525,7 @@ async fn upsert_app(
             .update(db)
             .await
             .map_err(|e| PublishError::Db(e.to_string()))?;
-        return Ok((id, false));
+        return Ok((id, false, prior));
     }
 
     let id = Uuid::new_v4();
@@ -430,7 +564,7 @@ async fn upsert_app(
         .insert(db)
         .await
         .map_err(|e| PublishError::Db(e.to_string()))?;
-    Ok((id, true))
+    Ok((id, true, AppMutationRollback::Created))
 }
 
 fn humanize_slug(slug: &str) -> String {
@@ -540,7 +674,8 @@ async fn register_function_schedules(
     app_id: Uuid,
     workspace_id: Uuid,
     specs: &[(String, serde_json::Value)],
-) {
+) -> Vec<String> {
+    let mut warnings: Vec<String> = Vec::new();
     let existing = agentic_pipeline::scheduler::list_schedules(db, workspace_id)
         .await
         .unwrap_or_default();
@@ -589,6 +724,10 @@ async fn register_function_schedules(
         };
         if let Err(e) = result {
             tracing::warn!("publish: failed to register schedule for {app_id}/{name}: {e}");
+            warnings.push(format!(
+                "function '{name}' was published but its schedule could not be registered ({e}); \
+                 it will not fire on its cron until the next successful publish"
+            ));
         }
     }
     // Reconcile: retire this app's function schedules whose function no longer
@@ -609,8 +748,14 @@ async fn register_function_schedules(
                 "publish: failed to retire stale schedule {}: {e}",
                 s.target_ref
             );
+            warnings.push(format!(
+                "a stale schedule for '{}' could not be retired ({e}); it may keep firing against \
+                 a function that no longer exists",
+                s.target_ref
+            ));
         }
     }
+    warnings
 }
 
 /// Point the channel(s) at the new build. Draft always; published +
@@ -674,6 +819,30 @@ async fn gate_promotion(db: &DatabaseConnection, build_pk: Uuid) -> Result<(), P
 /// Delete builds beyond `KEEP_BUILDS`, never touching the rows the two
 /// channel pointers currently reference. Best-effort on the S3 side.
 async fn gc_builds(db: &DatabaseConnection, app_id: Uuid, protect: &[Uuid]) {
+    // Always protect the builds the live channels point at, regardless of what
+    // the caller passed. GC that reaps the currently-served build is a silent
+    // outage: the app 404s (`custom_apps_serve/sources.rs`) with no publish
+    // having touched the live channel. Read the pointers here so the guarantee
+    // can't be lost by a caller forgetting to thread them through.
+    let mut protect: Vec<Uuid> = protect.to_vec();
+    match apps::Entity::find_by_id(app_id).one(db).await {
+        Ok(Some(app)) => {
+            protect.extend(app.published_build_id);
+            protect.extend(app.draft_build_id);
+        }
+        Ok(None) => {
+            tracing::warn!(
+                "gc_builds: app {app_id} not found; skipping GC so a live build can't be reaped"
+            );
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(
+                "gc_builds: could not load channel pointers for app {app_id} ({e}); skipping GC"
+            );
+            return;
+        }
+    }
     let builds = match app_builds::Entity::find()
         .filter(app_builds::Column::AppId.eq(app_id))
         .order_by_desc(app_builds::Column::CreatedAt)
@@ -700,7 +869,7 @@ async fn gc_builds(db: &DatabaseConnection, app_id: Uuid, protect: &[Uuid]) {
     }
 }
 
-pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError> {
+pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishError> {
     let db = oxy::database::client::establish_connection()
         .await
         .map_err(|e| PublishError::Db(e.to_string()))?;
@@ -719,7 +888,16 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
     };
     authorize_publish(&db, &org, &input).await?;
 
-    let files = unpack_tar_gz(&input.tarball)?;
+    // Decompress off the async runtime: even bounded at 256 MiB, the inflate +
+    // allocation is CPU-bound and would tie up a Tokio worker for the duration
+    // (a crafted body that expands to the full budget parks a worker). `take`
+    // moves the bytes into the blocking task — `tarball` isn't used afterwards.
+    let tarball = std::mem::take(&mut input.tarball);
+    let files = tokio::task::spawn_blocking(move || unpack_tar_gz(&tarball))
+        .await
+        .map_err(|e| {
+            PublishError::BadTarball(format!("bundle decompression task failed: {e}"))
+        })??;
     // Fast deploy validation (design doc §8, gate 1): catch the known
     // blank-screen causes (missing head, baked-vs-registered base-path
     // mismatch) as an actionable 422 BEFORE storing the build.
@@ -733,14 +911,27 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
     // resolver (debug endpoint) reads it from the DB, not a local file.
     // Falls back to an explicit `manifest` multipart field if the bundle
     // didn't ship one.
-    let manifest_json = files
-        .iter()
-        .find(|(p, _)| p == "oxy-app.json")
-        .and_then(|(_, b)| serde_json::from_slice::<serde_json::Value>(b).ok())
-        .or_else(|| input.manifest.clone());
+    //
+    // A present-but-unparseable oxy-app.json is a hard error, NOT a silent
+    // fall-through: `oxy-app.json` is the canonical manifest `oxy publish` ships,
+    // so swallowing its parse error strips the whole `functions` block and
+    // publishes a function-less app with a 200 — then `useFunction` 404s and the
+    // author is misdiagnosed. (The multipart `manifest` field is hardened the
+    // same way in the handler.)
+    let manifest_json = parse_embedded_manifest(&files)?.or_else(|| input.manifest.clone());
 
-    let (app_id, is_new_app) = upsert_app(&db, &org, &input).await?;
-    let s3_prefix = store::put_build(app_id, &input.build_id, files).await?;
+    let (app_id, is_new_app, rollback) = upsert_app(&db, &org, &input).await?;
+    // Bytes must land before the row mutation is allowed to stand. If `put_build`
+    // fails (guaranteed on a multi-replica deploy with no bucket configured — it
+    // refuses outright), undo the app-row change so a live app is never left
+    // repointed at a different workspace while still serving the old build.
+    let s3_prefix = match store::put_build(app_id, &input.build_id, files).await {
+        Ok(prefix) => prefix,
+        Err(e) => {
+            rollback.apply(&db, app_id).await;
+            return Err(e.into());
+        }
+    };
     // Capture the function specs + build prefix before `record_build` consumes
     // `manifest_json` and `s3_prefix`.
     let fn_specs = function_specs(manifest_json.as_ref());
@@ -754,6 +945,7 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
             if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {
                 tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
             }
+            rollback.apply(&db, app_id).await;
             return Err(e);
         }
     };
@@ -767,6 +959,7 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
         if let Ok(Some(row)) = app_builds::Entity::find_by_id(build_pk).one(&db).await {
             let _ = row.delete(&db).await;
         }
+        rollback.apply(&db, app_id).await;
         return Err(e);
     }
     if let Err(e) = set_pointers(&db, app_id, build_pk, input.promote).await {
@@ -776,6 +969,7 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
         if let Ok(Some(row)) = app_builds::Entity::find_by_id(build_pk).one(&db).await {
             let _ = row.delete(&db).await;
         }
+        rollback.apply(&db, app_id).await;
         return Err(e);
     }
     // Schedules track the LIVE build, so (re)register + reconcile function
@@ -783,9 +977,11 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
     // start firing background runs — and after `set_pointers` so a fire resolves
     // the just-set `published_build_id`. Best-effort: a schedule failure never
     // fails the publish (functions stay route-invocable).
-    if input.promote {
-        register_function_schedules(&db, app_id, input.project_id, &fn_specs).await;
-    }
+    let warnings = if input.promote {
+        register_function_schedules(&db, app_id, input.project_id, &fn_specs).await
+    } else {
+        Vec::new()
+    };
     gc_builds(&db, app_id, &[build_pk]).await;
 
     if let Some(bytes) = index_bytes {
@@ -799,6 +995,7 @@ pub async fn publish(input: PublishInput) -> Result<PublishResult, PublishError>
         channel: if input.promote { "published" } else { "draft" }.to_string(),
         org_slug: org.slug.clone(),
         is_new_app,
+        warnings,
     })
 }
 
@@ -850,14 +1047,33 @@ pub async fn publish_handler(
                 );
             }
             "manifest" => {
-                let raw = field.text().await.unwrap_or_default();
+                let raw = field
+                    .text()
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("manifest read: {e}")))?;
                 if !raw.trim().is_empty() {
-                    manifest = serde_json::from_str(&raw).ok();
+                    // A present-but-unparseable manifest is a hard 400, not a
+                    // silent drop. Degrading to `None` strips the bundle's whole
+                    // `functions` block and publishes a function-less app with a
+                    // 200 — then `useFunction` 404s and the author is misdiagnosed
+                    // as never having declared the function.
+                    manifest = Some(serde_json::from_str(&raw).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("manifest field is not valid JSON: {e}"),
+                        )
+                    })?);
                 }
             }
             field_name => {
                 let key = field_name.to_string();
-                let val = field.text().await.unwrap_or_default();
+                // Propagate a field read error rather than silently coercing it to
+                // "" — an empty `promote` degrades a `--promote` publish to draft
+                // with no signal.
+                let val = field
+                    .text()
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("field '{key}' read: {e}")))?;
                 match key.as_str() {
                     // `org` accepts either a slug or a UUID — auto-detected
                     // by `OrgRef::from_str_auto` below. `org_id` is the
@@ -982,6 +1198,77 @@ mod tests {
         let gz = make_tar_gz(&[("assets/app.js", b"x")]);
         let err = unpack_tar_gz(&gz).unwrap_err();
         assert!(matches!(err, PublishError::BadTarball(_)));
+    }
+
+    #[test]
+    fn unpack_rejects_oversized_single_entry() {
+        // 20 bytes with a 10-byte per-entry cap → rejected, and the read is
+        // bounded by `.take(cap+1)` so a lying header can't OOM us first.
+        let gz = make_tar_gz(&[("index.html", &[b'a'; 20])]);
+        let err = unpack_tar_gz_bounded(&gz, 1_000, 10, 100).unwrap_err();
+        assert!(
+            matches!(&err, PublishError::BadTarball(m) if m.contains("per-file")),
+            "expected per-file limit error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn unpack_rejects_oversized_total() {
+        // Each file is under the per-entry cap, but together they blow the total.
+        let gz = make_tar_gz(&[
+            ("index.html", &[b'a'; 8]),
+            ("a.js", &[b'b'; 8]),
+            ("b.js", &[b'c'; 8]),
+        ]);
+        let err = unpack_tar_gz_bounded(&gz, 20, 100, 100).unwrap_err();
+        assert!(
+            matches!(&err, PublishError::BadTarball(m) if m.contains("decompressed limit")),
+            "expected total-bytes limit error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn unpack_rejects_too_many_files() {
+        let gz = make_tar_gz(&[("index.html", b"x"), ("a.js", b"x"), ("b.js", b"x")]);
+        let err = unpack_tar_gz_bounded(&gz, 1_000, 100, 2).unwrap_err();
+        assert!(
+            matches!(&err, PublishError::BadTarball(m) if m.contains("file limit")),
+            "expected file-count limit error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn embedded_manifest_present_but_malformed_is_rejected() {
+        // The canonical `oxy publish` path: a malformed oxy-app.json must 4xx,
+        // not silently strip the functions block and publish function-less.
+        let files = vec![("oxy-app.json".to_string(), b"{ not: json".to_vec())];
+        let err = parse_embedded_manifest(&files).unwrap_err();
+        assert!(
+            matches!(&err, PublishError::BadTarball(m) if m.contains("oxy-app.json")),
+            "expected a BadTarball naming oxy-app.json, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn embedded_manifest_absent_falls_through() {
+        let files = vec![("index.html".to_string(), b"<html>".to_vec())];
+        assert!(parse_embedded_manifest(&files).unwrap().is_none());
+    }
+
+    #[test]
+    fn embedded_manifest_valid_parses() {
+        let files = vec![(
+            "oxy-app.json".to_string(),
+            br#"{"slug":"x","functions":{}}"#.to_vec(),
+        )];
+        assert!(parse_embedded_manifest(&files).unwrap().is_some());
+    }
+
+    #[test]
+    fn unpack_accepts_a_normal_bundle_within_limits() {
+        let gz = make_tar_gz(&[("index.html", b"<html>"), ("app.js", b"x")]);
+        let files = unpack_tar_gz_bounded(&gz, 1_000, 100, 100).expect("within limits");
+        assert_eq!(files.len(), 2);
     }
 
     #[test]
