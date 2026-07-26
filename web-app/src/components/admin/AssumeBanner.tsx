@@ -22,7 +22,7 @@ function remaining(seconds: number): string {
  * you INTO the tenant, which is where the damage would be done.
  */
 export function AssumeBanner() {
-  const { session, home } = useActingSession();
+  const { session, isStaff } = useActingSession();
   const end = useEndAssume();
 
   if (!session) return null;
@@ -33,8 +33,12 @@ export function AssumeBanner() {
   // Whichever console you came from is closed for the duration — naming the right
   // one matters, because a partner has never seen /admin and telling them it is
   // closed would be gibberish.
-  const closed = home === "/admin/tenants" ? "admin is closed" : "your partner console is closed";
-  const back = home === "/admin/tenants" ? "Stop & return to admin" : "Stop & return to console";
+  const closed = isStaff ? "admin is closed" : "your partner console is closed";
+  // Label stays console-level on purpose. `useEndAssume` lands on `returnTo` —
+  // the exact admin page an entry point recorded, otherwise the console — and
+  // both are "admin" for staff, so one label covers every case without the banner
+  // having to guess what kind of page it is sending them back to.
+  const back = isStaff ? "Stop & return to admin" : "Stop & return to console";
 
   // Fixed, not in flow: `.root` is a fixed flex container, so an in-flow banner
   // would collapse the app's width. Its height is reserved via `body.is-acting`

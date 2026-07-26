@@ -27,6 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/
 import { cn } from "@/libs/shadcn/utils";
 import type { CustomApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../../resolveBundleUrl";
+import { ActAsOrgButton } from "./ActAsOrgButton";
 
 export type DetailTab = "preview" | "info" | "activity" | "settings";
 export type Device = "mobile" | "tablet" | "desktop";
@@ -285,6 +286,10 @@ export const DetailToolbar = ({
             <TooltipContent>{dossierOpen ? "Hide details" : "Show details"}</TooltipContent>
           </Tooltip>
         )}
+
+        {/* Sits beside Open because they answer the same question — "let me look
+            at the real thing" — and differ only in whose data comes back. */}
+        <ActAsOrgButton app={app} />
 
         <Tooltip>
           <TooltipTrigger asChild>

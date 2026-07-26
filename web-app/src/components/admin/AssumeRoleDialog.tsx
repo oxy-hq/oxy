@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { useStartAssume } from "@/hooks/api/adminAssume";
+import { useActingSession } from "@/hooks/api/adminAssume/useActingSession";
 
 /**
  * Start an assume-role session. The friction here is the feature: an operator
@@ -34,6 +35,9 @@ export function AssumeRoleDialog({
 }) {
   const [reason, setReason] = useState("");
   const start = useStartAssume();
+  // Acting closes whichever console you came from. Naming the wrong one is worse
+  // than naming none — a partner has never seen /admin.
+  const { isStaff } = useActingSession();
 
   const submit = () =>
     start.mutate(
@@ -56,9 +60,10 @@ export function AssumeRoleDialog({
             Act as {org.name}
           </DialogTitle>
           <DialogDescription>
-            You'll get Owner-level access to this organization for <b>60 minutes</b>. A banner will
-            show while it's active, and both the start and the end are written to the audit log
-            under <b>your</b> identity.
+            You'll get Owner-level access to this organization for <b>60 minutes</b>. The session
+            can't be extended — start a new one if you need longer. A banner will show while it's
+            active, and both the start and the end are written to the audit log under <b>your</b>{" "}
+            identity.
           </DialogDescription>
         </DialogHeader>
 
@@ -79,9 +84,15 @@ export function AssumeRoleDialog({
           </p>
         </div>
 
-        <div className='rounded-md border bg-muted/40 p-2.5 text-muted-foreground text-xs'>
-          Billing, admin-promotion and secrets stay blocked while acting as a tenant — and if this
-          org has locked Oxy staff out of its apps, that lockdown still holds.
+        <div className='space-y-1.5 rounded-md border bg-muted/40 p-2.5 text-muted-foreground text-xs'>
+          <p>
+            <b>{isStaff ? "Admin closes" : "Your partner console closes"}</b> while you're acting —
+            acting as a tenant is a mode, not a badge. You'll come back to it when you stop.
+          </p>
+          <p>
+            Billing, admin-promotion and secrets stay blocked while acting as a tenant — and if this
+            org has locked Oxy staff out of its apps, that lockdown still holds.
+          </p>
         </div>
 
         <DialogFooter>

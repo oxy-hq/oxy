@@ -1,5 +1,6 @@
 import { useCurrentAssume } from "@/hooks/api/adminAssume";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
+import { peekAssumeReturnTo } from "@/libs/utils/assumeDestination";
 import type { AssumeSession } from "@/types/adminAssume";
 
 /**
@@ -27,8 +28,16 @@ export function useActingSession(): {
   session: AssumeSession | undefined;
   isActing: boolean;
   landing: string | null;
+  /** Whether this is Oxy staff — decides which console the mode closes. */
+  isStaff: boolean;
   /** Where "stop acting" should return them: their own console. */
   home: string;
+  /**
+   * Where "stop acting" should return them *for this session*: the exact page
+   * they left, when they entered from one (see `assumeDestination`), otherwise
+   * `home`. Always a same-origin path.
+   */
+  returnTo: string;
 } {
   const { data: user } = useCurrentUser();
   const isStaff = !!(user?.is_owner || user?.is_app_admin);
@@ -38,12 +47,15 @@ export function useActingSession(): {
   const { data: sessions } = useCurrentAssume(isStaff || isPartner);
 
   const session = isStaff || isPartner ? sessions?.[0] : undefined;
+  // Staff came from admin; a partner came from their console. Returning someone
+  // to a surface they can't reach would just 403 them at the door.
+  const home = isStaff ? "/admin/tenants" : "/partners";
   return {
     session,
     isActing: !!session,
     landing: session ? landingFor(session) : null,
-    // Staff came from admin; a partner came from their console. Returning someone
-    // to a surface they can't reach would just 403 them at the door.
-    home: isStaff ? "/admin/tenants" : "/partners"
+    isStaff,
+    home,
+    returnTo: peekAssumeReturnTo(session?.org_id) ?? home
   };
 }
