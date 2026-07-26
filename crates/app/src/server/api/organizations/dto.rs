@@ -82,6 +82,10 @@ pub struct InvitationSummary {
     pub status: String,
     pub expires_at: String,
     pub created_at: String,
+    /// Past `expires_at` — the link no longer works and the row is waiting to
+    /// be revoked or superseded. Listed rather than filtered out: hiding these
+    /// is what left admins with a row they could neither see nor clear.
+    pub is_expired: bool,
 }
 
 /// Pending invitation addressed to the authenticated user, enriched with the

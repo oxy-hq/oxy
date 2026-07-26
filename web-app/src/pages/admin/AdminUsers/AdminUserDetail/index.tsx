@@ -3,6 +3,7 @@ import {
   CalendarDays,
   FolderOpen,
   Loader2,
+  MailWarning,
   ShieldCheck,
   Trash2,
   User
@@ -31,6 +32,7 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import {
   useAdminUserDetail,
   useRemoveUserFromOrg,
+  useRevokeUserInvitation,
   useSetUserStatus,
   useUpdateUserOrgRole
 } from "@/hooks/api/adminTenants/useAdminUsers";
@@ -81,6 +83,7 @@ export default function AdminUserDetail({
   const setStatus = useSetUserStatus();
   const updateRole = useUpdateUserOrgRole();
   const removeFromOrg = useRemoveUserFromOrg();
+  const revokeInvitation = useRevokeUserInvitation();
 
   if (isLoading || !detail) {
     return (
@@ -91,6 +94,7 @@ export default function AdminUserDetail({
   }
 
   const isDeleted = detail.status === "deleted";
+  const expiredInviteCount = detail.invitations.filter((inv) => inv.is_expired).length;
 
   const handleDeactivate = () => {
     setStatus.mutate(
@@ -258,6 +262,74 @@ export default function AdminUserDetail({
           </AdminLinkedList>
         )}
       </section>
+
+      {/* Invitations sit between memberships and workspaces because they are
+          the "offered but not taken up" case — the first thing to check when
+          the membership list above is empty and someone can't get in. */}
+      {detail.invitations.length > 0 && (
+        <section id='user-section-invitations' className='scroll-mt-4 space-y-3'>
+          <AdminSectionLabel
+            trailing={
+              <span className='tabular-nums'>
+                {expiredInviteCount > 0
+                  ? `${expiredInviteCount.toLocaleString()} expired · ${detail.invitations.length.toLocaleString()} total`
+                  : `${detail.invitations.length.toLocaleString()} total`}
+              </span>
+            }
+          >
+            Invitations
+          </AdminSectionLabel>
+          <AdminLinkedList>
+            {detail.invitations.map((inv) => (
+              <AdminLinkedRow
+                key={inv.id}
+                to={ROUTES.ADMIN.ORG_DETAIL(inv.org_id)}
+                icon={MailWarning}
+                primary={inv.org_name}
+                secondary={`/${inv.org_slug} · ${inv.role} · invited ${new Date(
+                  inv.created_at
+                ).toLocaleDateString()}`}
+                trailing={
+                  <div
+                    className='flex items-center gap-2'
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    <span
+                      className={
+                        inv.is_expired
+                          ? "text-amber-600 text-xs dark:text-amber-500"
+                          : "text-muted-foreground text-xs"
+                      }
+                    >
+                      {inv.is_expired ? "Expired" : "Pending"}{" "}
+                      {new Date(inv.expires_at).toLocaleDateString()}
+                    </span>
+                    <Button
+                      variant='ghost'
+                      size='icon'
+                      className='size-7 text-muted-foreground hover:text-destructive'
+                      disabled={revokeInvitation.isPending}
+                      onClick={() =>
+                        revokeInvitation.mutate({
+                          userId: detail.id,
+                          invitationId: inv.id,
+                          orgId: inv.org_id
+                        })
+                      }
+                      aria-label={`Revoke invitation to ${inv.org_name}`}
+                    >
+                      <Trash2 className='size-3.5' />
+                    </Button>
+                  </div>
+                }
+              />
+            ))}
+          </AdminLinkedList>
+        </section>
+      )}
 
       <section id='user-section-workspaces' className='scroll-mt-4 space-y-3'>
         <AdminSectionLabel

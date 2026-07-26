@@ -1,4 +1,4 @@
-import { Copy, Loader2, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { Copy, Loader2, RotateCw, Search, Trash2, UserPlus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
@@ -11,7 +11,12 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/shadcn/table";
-import { useOrgInvitations, useOrgMembers, useRevokeInvitation } from "@/hooks/api/organizations";
+import {
+  useCreateInvitation,
+  useOrgInvitations,
+  useOrgMembers,
+  useRevokeInvitation
+} from "@/hooks/api/organizations";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import type { Organization, OrgRole } from "@/types/organization";
 import TableWrapper from "../../../../components/TableWrapper";
@@ -31,13 +36,18 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
   const { data: members, isPending, isError } = useOrgMembers(orgId);
   const { data: invitations } = useOrgInvitations(orgId);
   const revokeInvitation = useRevokeInvitation();
+  const createInvitation = useCreateInvitation();
   const [search, setSearch] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const canManage = viewerRole === "owner" || viewerRole === "admin";
   const ownerCount = members?.filter((m) => m.role === "owner").length ?? 0;
   const adminCount = members?.filter((m) => m.role === "admin").length ?? 0;
+  // Expired invites are included deliberately — they're the ones that need
+  // clearing, and they used to be filtered out server-side, leaving an admin
+  // blocked by a row no screen would show them.
   const pendingInvitations = invitations?.filter((inv) => inv.status === "pending") ?? [];
+  const expiredCount = pendingInvitations.filter((inv) => inv.is_expired).length;
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -53,6 +63,20 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
       toast.success("Invitation revoked");
     } catch {
       toast.error("Failed to revoke invitation");
+    }
+  };
+
+  /**
+   * Re-send a lapsed invitation. No dedicated endpoint needed: creating an
+   * invite supersedes the expired row for the same address, so this issues a
+   * fresh token and email and clears the stale row in one call.
+   */
+  const handleResend = async (email: string, role: OrgRole) => {
+    try {
+      await createInvitation.mutateAsync({ orgId, email, role });
+      toast.success(`Invitation resent to ${email}`);
+    } catch {
+      toast.error("Failed to resend invitation");
     }
   };
 
@@ -180,7 +204,14 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
 
       {canManage && pendingInvitations.length > 0 && (
         <div className='space-y-3'>
-          <h3 className='font-medium'>Pending Invitations</h3>
+          <h3 className='font-medium'>
+            Pending Invitations
+            {expiredCount > 0 ? (
+              <span className='ml-2 font-normal text-amber-600 text-xs dark:text-amber-500'>
+                {expiredCount} expired
+              </span>
+            ) : null}
+          </h3>
           <div className='divide-y divide-border rounded-lg border border-border'>
             {pendingInvitations.map((inv) => (
               <div key={inv.id} className='flex items-center gap-3 px-4 py-3'>
@@ -188,26 +219,51 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
                   <div className='truncate text-sm'>{inv.email}</div>
                   <div className='text-muted-foreground text-xs capitalize'>{inv.role}</div>
                 </div>
-                <div className='text-muted-foreground text-xs'>
-                  Expires {new Date(inv.expires_at).toLocaleDateString()}
-                </div>
+                {inv.is_expired ? (
+                  <div className='text-amber-600 text-xs dark:text-amber-500'>
+                    Expired {new Date(inv.expires_at).toLocaleDateString()}
+                  </div>
+                ) : (
+                  <div className='text-muted-foreground text-xs'>
+                    Expires {new Date(inv.expires_at).toLocaleDateString()}
+                  </div>
+                )}
+                {/* An expired token can't be accepted, so copying its link would
+                    hand out a dead URL. Offer a fresh invite instead. */}
+                {inv.is_expired ? (
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    disabled={createInvitation.isPending}
+                    onClick={() => handleResend(inv.email, inv.role)}
+                    title='Send a new invitation'
+                  >
+                    <RotateCw className='h-4 w-4 text-muted-foreground' />
+                  </Button>
+                ) : (
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    onClick={async () => {
+                      const inviteUrl = `${window.location.origin}/invite/${inv.token}`;
+                      try {
+                        await navigator.clipboard.writeText(inviteUrl);
+                        toast.success("Invite link copied");
+                      } catch {
+                        toast.error("Failed to copy invite link");
+                      }
+                    }}
+                    title='Copy invite link'
+                  >
+                    <Copy className='h-4 w-4 text-muted-foreground' />
+                  </Button>
+                )}
                 <Button
                   variant='ghost'
                   size='icon'
-                  onClick={async () => {
-                    const inviteUrl = `${window.location.origin}/invite/${inv.token}`;
-                    try {
-                      await navigator.clipboard.writeText(inviteUrl);
-                      toast.success("Invite link copied");
-                    } catch {
-                      toast.error("Failed to copy invite link");
-                    }
-                  }}
-                  title='Copy invite link'
+                  onClick={() => handleRevoke(inv.id)}
+                  title='Revoke invitation'
                 >
-                  <Copy className='h-4 w-4 text-muted-foreground' />
-                </Button>
-                <Button variant='ghost' size='icon' onClick={() => handleRevoke(inv.id)}>
                   <Trash2 className='h-4 w-4 text-muted-foreground' />
                 </Button>
               </div>

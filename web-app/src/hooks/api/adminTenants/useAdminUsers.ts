@@ -88,3 +88,23 @@ export const useRemoveUserFromOrg = () => {
     onError: (err) => toast.error(errMessage(err, "Failed to remove from organization"))
   });
 };
+
+export const useRevokeUserInvitation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      userId,
+      invitationId
+    }: {
+      userId: string;
+      invitationId: string;
+      orgId: string;
+    }) => AdminUsersService.revokeInvitation(userId, invitationId),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: queryKeys.adminUsers.detail(vars.userId) });
+      qc.invalidateQueries({ queryKey: queryKeys.adminOrgs.detail(vars.orgId) });
+      toast.success("Invitation revoked");
+    },
+    onError: (err) => toast.error(errMessage(err, "Failed to revoke invitation"))
+  });
+};

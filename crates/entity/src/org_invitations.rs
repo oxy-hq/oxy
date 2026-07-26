@@ -1,3 +1,4 @@
+use sea_orm::Condition;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -67,6 +68,45 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Users,
+}
+
+impl Model {
+    /// Past its `expires_at`, regardless of what `status` says.
+    pub fn is_expired(&self, now: DateTimeWithTimeZone) -> bool {
+        self.expires_at <= now
+    }
+
+    /// Usable: can still be accepted. See [`live_pending`] for the query-side
+    /// form of the same rule.
+    pub fn is_live(&self, now: DateTimeWithTimeZone) -> bool {
+        self.status == InviteStatus::Pending && !self.is_expired(now)
+    }
+}
+
+/// **The** definition of "this invitation can still be accepted": `pending`
+/// *and* not past `expires_at`. Every read path must use this.
+///
+/// Expiry is derived from `expires_at`, never from `status` — nothing
+/// transitions a row to [`InviteStatus::Expired`], so a lapsed invite stays
+/// `pending` forever. When call sites each wrote their own filter, that gap
+/// bit hard: the create path checked `status='pending'` alone (so a lapsed
+/// invite blocked its own replacement with a 409, permanently) while the list
+/// path also required `expires_at > now()` (so the offending row was invisible
+/// to the admin who could have revoked it). Same row, opposite conclusions,
+/// no way out of it in the product. Keep the two facts welded together here.
+pub fn live_pending(now: DateTimeWithTimeZone) -> Condition {
+    Condition::all()
+        .add(Column::Status.eq(InviteStatus::Pending))
+        .add(Column::ExpiresAt.gt(now))
+}
+
+/// The complement of [`live_pending`] within `pending`: rows that are still
+/// marked pending but can no longer be accepted. These are inert to every
+/// path except the one that supersedes them on the next invite.
+pub fn expired_pending(now: DateTimeWithTimeZone) -> Condition {
+    Condition::all()
+        .add(Column::Status.eq(InviteStatus::Pending))
+        .add(Column::ExpiresAt.lte(now))
 }
 
 impl Related<super::organizations::Entity> for Entity {

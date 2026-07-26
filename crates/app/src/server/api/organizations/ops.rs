@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use axum::http::StatusCode;
 use chrono::Utc;
 use email_address::EmailAddress;
+use entity::org_invitations;
 use entity::org_members;
 use entity::org_members::OrgRole;
 use entity::organizations;
@@ -10,8 +11,11 @@ use entity::prelude::*;
 use entity::workspaces;
 use handlebars::Handlebars;
 use once_cell::sync::Lazy;
+use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::sea_query::Expr;
-use sea_orm::{ColumnTrait, EntityTrait, FromQueryResult, QueryFilter, QuerySelect};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QuerySelect,
+};
 use uuid::Uuid;
 
 use oxy_shared::errors::OxyError;
@@ -75,6 +79,57 @@ pub(crate) fn normalize_invite_email(raw: &str) -> Result<String, StatusCode> {
         return Err(StatusCode::BAD_REQUEST);
     }
     Ok(normalized)
+}
+
+/// The invitation for `(org, email)` that is still usable, if any.
+///
+/// Only a *live* invite blocks a new one: re-inviting someone who already
+/// holds a working link should be a no-op rather than mint a second token.
+/// An expired one must not block — [`supersede_expired_invitations`] clears
+/// it instead. Shared by the single, bulk, and partner-console invite paths
+/// so they can't drift apart.
+pub(crate) async fn find_live_invitation<C: ConnectionTrait>(
+    conn: &C,
+    org_id: Uuid,
+    email: &str,
+    now: DateTimeWithTimeZone,
+) -> Result<Option<org_invitations::Model>, StatusCode> {
+    OrgInvitations::find()
+        .filter(org_invitations::Column::OrgId.eq(org_id))
+        .filter(org_invitations::Column::Email.eq(email))
+        .filter(org_invitations::live_pending(now))
+        .one(conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check existing invitation: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+}
+
+/// Delete the lapsed `pending` rows for `(org, email)`, returning how many
+/// went. Call immediately before inserting the replacement, in the same
+/// transaction: the new invite supersedes them, and leaving them behind is
+/// what used to make the email permanently un-invitable.
+///
+/// Deleting rather than marking them expired also retires the old token, so a
+/// stale link 404s instead of resolving to a row that then refuses it.
+pub(crate) async fn supersede_expired_invitations<C: ConnectionTrait>(
+    conn: &C,
+    org_id: Uuid,
+    email: &str,
+    now: DateTimeWithTimeZone,
+) -> Result<u64, StatusCode> {
+    let result = OrgInvitations::delete_many()
+        .filter(org_invitations::Column::OrgId.eq(org_id))
+        .filter(org_invitations::Column::Email.eq(email))
+        .filter(org_invitations::expired_pending(now))
+        .exec(conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to supersede expired invitations: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(result.rows_affected)
 }
 
 #[derive(FromQueryResult)]

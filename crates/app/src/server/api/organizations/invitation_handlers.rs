@@ -78,24 +78,35 @@ pub async fn create_invitation(
         }
     }
 
-    // Reject duplicate pending invitations for the same email.
-    let existing = OrgInvitations::find()
-        .filter(org_invitations::Column::OrgId.eq(ctx.org.id))
-        .filter(org_invitations::Column::Email.eq(&invited_email))
-        .filter(org_invitations::Column::Status.eq(InviteStatus::Pending))
-        .one(&db)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check existing invitation: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    if existing.is_some() {
+    let now = Utc::now().fixed_offset();
+
+    // Only a *live* invitation blocks a new one. An expired one is superseded
+    // below instead of rejecting forever — see `org_invitations::live_pending`.
+    //
+    // Advisory, not a guarantee: under READ COMMITTED two concurrent invites to
+    // the same address can both pass this check and both insert. Running it
+    // inside the transaction below would not change that — only a partial
+    // unique index on `(org_id, lower(email)) WHERE status='pending'` would.
+    // The race is benign (two live tokens; whichever is accepted first wins and
+    // the other lapses), so it is left open rather than papered over here.
+    if find_live_invitation(&db, ctx.org.id, &invited_email, now)
+        .await?
+        .is_some()
+    {
         return Err(StatusCode::CONFLICT);
     }
 
-    let now = Utc::now().fixed_offset();
     let token = Uuid::new_v4().to_string();
     let expires_at = (Utc::now() + chrono::Duration::days(7)).fixed_offset();
+
+    // Supersede + insert atomically: a crash between the two would otherwise
+    // drop the old invite without minting its replacement.
+    let txn = db.begin().await.map_err(|e| {
+        tracing::error!("Failed to begin transaction: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let superseded = supersede_expired_invitations(&txn, ctx.org.id, &invited_email, now).await?;
 
     let invitation = org_invitations::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
@@ -108,8 +119,13 @@ pub async fn create_invitation(
         expires_at: ActiveValue::Set(expires_at),
         created_at: ActiveValue::Set(now),
     };
-    let invitation = invitation.insert(&db).await.map_err(|e| {
+    let invitation = invitation.insert(&txn).await.map_err(|e| {
         tracing::error!("Failed to insert invitation: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    txn.commit().await.map_err(|e| {
+        tracing::error!("Failed to commit transaction: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -132,7 +148,12 @@ pub async fn create_invitation(
                 serde_json::json!(null),
                 serde_json::json!({ "role": invited_role.as_str() }),
             )
-            .metadata(serde_json::json!({ "via_global_override": ctx.is_global_override })),
+            .metadata(serde_json::json!({
+                "via_global_override": ctx.is_global_override,
+                // Non-zero means this invite replaced a lapsed one, which is
+                // also why the recipient's older link stopped resolving.
+                "superseded_expired": superseded,
+            })),
     )
     .await;
 
@@ -260,20 +281,15 @@ pub async fn create_bulk_invitations(
             }
         }
 
-        // Reject duplicate pending invitations for the same email.
-        let existing = OrgInvitations::find()
-            .filter(org_invitations::Column::OrgId.eq(ctx.org.id))
-            .filter(org_invitations::Column::Email.eq(&email))
-            .filter(org_invitations::Column::Status.eq(InviteStatus::Pending))
-            .one(&txn)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to check existing invitation: {e}");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-        if existing.is_some() {
+        // Only a live invitation blocks; a lapsed one is superseded. Same rule
+        // as the single-invite path, via the same helpers.
+        if find_live_invitation(&txn, ctx.org.id, &email, now)
+            .await?
+            .is_some()
+        {
             return Err(StatusCode::CONFLICT);
         }
+        supersede_expired_invitations(&txn, ctx.org.id, &email, now).await?;
 
         let invitation = org_invitations::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),
@@ -365,10 +381,14 @@ pub async fn list_invitations(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Every outstanding invitation, expired ones included, flagged so the UI
+    // can offer Revoke on a row the admin would otherwise never see. Filtering
+    // on `expires_at` here is what made the lockout unrecoverable in-product.
+    let now = Utc::now().fixed_offset();
     let invitations = OrgInvitations::find()
         .filter(org_invitations::Column::OrgId.eq(ctx.org.id))
         .filter(org_invitations::Column::Status.eq(InviteStatus::Pending))
-        .filter(org_invitations::Column::ExpiresAt.gt(Utc::now().fixed_offset()))
+        .order_by_desc(org_invitations::Column::CreatedAt)
         .all(&db)
         .await
         .map_err(|e| {
@@ -380,12 +400,13 @@ pub async fn list_invitations(
         .into_iter()
         .map(|inv| InvitationSummary {
             id: inv.id,
-            email: inv.email,
+            email: inv.email.clone(),
             role: inv.role.as_str().to_string(),
-            token: inv.token,
+            token: inv.token.clone(),
             status: inv.status.as_str().to_string(),
             expires_at: inv.expires_at.to_rfc3339(),
             created_at: inv.created_at.to_rfc3339(),
+            is_expired: inv.is_expired(now),
         })
         .collect();
 
@@ -439,8 +460,7 @@ pub async fn list_my_invitations(
     let email_lower = user.email.to_lowercase();
     let invitations = OrgInvitations::find()
         .filter(org_invitations::Column::Email.eq(email_lower))
-        .filter(org_invitations::Column::Status.eq(InviteStatus::Pending))
-        .filter(org_invitations::Column::ExpiresAt.gt(Utc::now().fixed_offset()))
+        .filter(org_invitations::live_pending(Utc::now().fixed_offset()))
         // Most-recently-sent invites appear first; stable order across refetches
         // avoids the list jittering between renders when users have several.
         .order_by_desc(org_invitations::Column::CreatedAt)
@@ -532,11 +552,9 @@ pub async fn accept_invitation(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Check status and expiration.
-    if invitation.status != InviteStatus::Pending {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    if invitation.expires_at < Utc::now() {
+    // Check status and expiration — same rule as `live_pending`, applied to a
+    // row already fetched by token.
+    if !invitation.is_live(Utc::now().fixed_offset()) {
         return Err(StatusCode::BAD_REQUEST);
     }
 

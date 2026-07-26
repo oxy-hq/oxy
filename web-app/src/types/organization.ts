@@ -40,6 +40,13 @@ export interface OrgInvitation {
   status: "pending" | "accepted" | "expired";
   expires_at: string;
   created_at: string;
+  /**
+   * Past `expires_at`: the link no longer works and the row is waiting to be
+   * revoked or superseded by a fresh invite. Don't infer this from `status` —
+   * nothing transitions a row to `"expired"`, so a lapsed invite reports
+   * `"pending"` forever. The server derives this from `expires_at`.
+   */
+  is_expired: boolean;
 }
 
 export interface MyInvitation {

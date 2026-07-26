@@ -11,12 +11,13 @@ use std::str::FromStr;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use chrono::Utc;
+use entity::org_invitations::InviteStatus;
 use entity::org_members::OrgRole;
 use entity::users::UserStatus;
-use entity::{app_admins, org_members, organizations, users, workspace_members};
+use entity::{app_admins, org_invitations, org_members, organizations, users, workspace_members};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
@@ -40,6 +41,10 @@ pub(crate) fn router() -> Router<AppState> {
         .route(
             "/users/{user_id}/org-memberships/{org_id}",
             patch(update_role).delete(remove_from_org),
+        )
+        .route(
+            "/users/{user_id}/invitations/{invitation_id}",
+            delete(revoke_user_invitation),
         )
 }
 
@@ -85,6 +90,10 @@ pub struct AdminUserDetail {
     pub is_app_admin: bool,
     pub org_memberships: Vec<UserOrgMembership>,
     pub workspace_memberships: Vec<UserWorkspaceMembership>,
+    /// Outstanding invitations addressed to this user's email — access they
+    /// have been offered but not taken up. Answers "why can't they get in?"
+    /// when the membership list is empty.
+    pub invitations: Vec<UserInvitation>,
     /// Partners this user operates (drives the "Operates" section of the pane).
     pub partners: Vec<UserPartnerRef>,
 }
@@ -104,6 +113,24 @@ pub struct UserWorkspaceMembership {
     pub workspace_name: String,
     pub role: String,
     pub joined_at: String,
+}
+
+/// An outstanding invitation, matched to the user by **email** rather than by
+/// user id — invitations predate the account and may never get one. Most
+/// people stuck behind a lapsed invite have no `users` row at all, so this
+/// section shows what a membership list structurally can't.
+#[derive(Serialize)]
+pub struct UserInvitation {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub org_slug: String,
+    pub org_name: String,
+    pub role: String,
+    pub created_at: String,
+    pub expires_at: String,
+    /// Derived from `expires_at`, never from `status` — nothing transitions a
+    /// row to `expired`, so a lapsed invite still reports itself as pending.
+    pub is_expired: bool,
 }
 
 #[derive(Deserialize)]
@@ -283,6 +310,9 @@ pub async fn get_user_detail(
     let workspace_memberships = load_user_workspace_memberships(&db, user.id)
         .await
         .map_err(internal)?;
+    let invitations = load_user_invitations(&db, &user.email)
+        .await
+        .map_err(internal)?;
     let partners = lookup_partner_admins_in(&db, &[user.id])
         .await
         .map_err(internal)?
@@ -301,6 +331,7 @@ pub async fn get_user_detail(
         is_app_admin,
         org_memberships,
         workspace_memberships,
+        invitations,
         partners,
     }))
 }
@@ -498,6 +529,98 @@ pub async fn remove_from_org(
         target_id = %user_id,
         org_id = %org_id,
         action = "remove_from_org",
+        "admin tenant action"
+    );
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Outstanding (`pending`) invitations for `email`, expired ones included.
+///
+/// Expired rows are the point of this list, not noise to filter: they are
+/// invisible to the tenant's own settings screen until it fetches them too,
+/// and they're what blocks a re-invite.
+async fn load_user_invitations(
+    db: &sea_orm::DatabaseConnection,
+    email: &str,
+) -> Result<Vec<UserInvitation>, sea_orm::DbErr> {
+    let now = Utc::now().fixed_offset();
+    let invitations = org_invitations::Entity::find()
+        .filter(org_invitations::Column::Email.eq(email.to_ascii_lowercase()))
+        .filter(org_invitations::Column::Status.eq(InviteStatus::Pending))
+        .order_by_desc(org_invitations::Column::CreatedAt)
+        .all(db)
+        .await?;
+    if invitations.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let org_ids: Vec<Uuid> = invitations.iter().map(|i| i.org_id).collect();
+    let orgs = organizations::Entity::find()
+        .filter(organizations::Column::Id.is_in(org_ids))
+        .all(db)
+        .await?;
+    let org_map: HashMap<Uuid, organizations::Model> =
+        orgs.into_iter().map(|o| (o.id, o)).collect();
+
+    Ok(invitations
+        .into_iter()
+        .map(|inv| {
+            let org = org_map.get(&inv.org_id);
+            UserInvitation {
+                id: inv.id,
+                org_id: inv.org_id,
+                org_slug: org.map(|o| o.slug.clone()).unwrap_or_default(),
+                org_name: org.map(|o| o.name.clone()).unwrap_or_default(),
+                role: inv.role.as_str().to_string(),
+                created_at: inv.created_at.to_rfc3339(),
+                expires_at: inv.expires_at.to_rfc3339(),
+                is_expired: inv.is_expired(now),
+            }
+        })
+        .collect())
+}
+
+/// DELETE /admin/users/{user_id}/invitations/{invitation_id}
+///
+/// Admin-scoped on purpose. Staff do not pass `OrgAdmin` on the tenant's own
+/// `/orgs/{id}/invitations/{id}` route without a live assume session, so the
+/// operator console needs its own door — the same reason `add_to_org` and
+/// `remove_from_org` exist here rather than reusing the org routes.
+pub async fn revoke_user_invitation(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    Path((user_id, invitation_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, StatusCode> {
+    let db = establish_connection().await.map_err(internal)?;
+
+    let user = users::Entity::find_by_id(user_id)
+        .one(&db)
+        .await
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let invitation = org_invitations::Entity::find_by_id(invitation_id)
+        .one(&db)
+        .await
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // The path names a user, so refuse to act on an invitation belonging to a
+    // different address — a mistyped id must 404, not revoke someone else's.
+    if !invitation.email.eq_ignore_ascii_case(user.email.trim()) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let org_id = invitation.org_id;
+    let target_email = invitation.email.clone();
+    let active: org_invitations::ActiveModel = invitation.into();
+    active.delete(&db).await.map_err(internal)?;
+
+    tracing::info!(
+        admin_email = %actor.email,
+        target_id = %user_id,
+        target_email = %target_email,
+        org_id = %org_id,
+        action = "revoke_invitation",
         "admin tenant action"
     );
     Ok(StatusCode::NO_CONTENT)

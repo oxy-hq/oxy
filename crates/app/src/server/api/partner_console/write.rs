@@ -28,6 +28,9 @@ use super::{db, internal, require_org_scope};
 use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::api::middlewares::partner_authz::PartnerCapability;
 use crate::server::api::middlewares::partner_context::PartnerActor;
+use crate::server::api::organizations::{
+    find_live_invitation, normalize_invite_email, supersede_expired_invitations,
+};
 
 /// Parse a target role and reject `Owner` — the partner guardrail. Returns the
 /// role or `403`.
@@ -39,12 +42,15 @@ fn partner_assignable_role(raw: &str) -> Result<OrgRole, StatusCode> {
     Ok(role)
 }
 
+/// Normalize + validate an invitee address.
+///
+/// Delegates to the org-side normalizer rather than keeping a local
+/// `contains('@')` check: both paths write to the same table and now share the
+/// same dedupe helpers, so a looser validator here would mint invitations for
+/// addresses the org paths reject — and the stored form has to match, since the
+/// dedupe compares emails by equality on the normalized value.
 fn normalize_email(raw: &str) -> Result<String, StatusCode> {
-    let e = raw.trim().to_ascii_lowercase();
-    if e.is_empty() || !e.contains('@') {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    Ok(e)
+    normalize_invite_email(raw)
 }
 
 #[derive(Deserialize)]
@@ -93,21 +99,25 @@ pub async fn invite_member(
         return Err(StatusCode::CONFLICT);
     }
 
-    // Reject a duplicate pending invitation.
-    if OrgInvitations::find()
-        .filter(org_invitations::Column::OrgId.eq(org_id))
-        .filter(org_invitations::Column::Email.eq(&email))
-        .filter(org_invitations::Column::Status.eq(InviteStatus::Pending))
-        .one(&db)
+    let now = Utc::now().fixed_offset();
+
+    // Reject only a *live* duplicate. A lapsed invitation is superseded below,
+    // never a permanent block — same rule as the org-side invite paths, via the
+    // same helpers so this third call site can't drift from them.
+    if find_live_invitation(&db, org_id, &email, now)
         .await
-        .map_err(internal("invitation dedup"))?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .is_some()
     {
         return Err(StatusCode::CONFLICT);
     }
 
-    let now = Utc::now().fixed_offset();
     let token = Uuid::new_v4().to_string();
+
+    let txn = db.begin().await.map_err(internal("begin invite txn"))?;
+    supersede_expired_invitations(&txn, org_id, &email, now)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let invitation = org_invitations::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         org_id: ActiveValue::Set(org_id),
@@ -119,9 +129,10 @@ pub async fn invite_member(
         expires_at: ActiveValue::Set((Utc::now() + chrono::Duration::days(7)).fixed_offset()),
         created_at: ActiveValue::Set(now),
     }
-    .insert(&db)
+    .insert(&txn)
     .await
     .map_err(internal("insert invitation"))?;
+    txn.commit().await.map_err(internal("commit invite txn"))?;
 
     audit::record_best_effort(
         &db,

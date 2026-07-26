@@ -216,6 +216,25 @@ export interface AdminUserDetail extends AdminUserRow {
   email_verified: boolean;
   org_memberships: AdminUserOrgMembership[];
   workspace_memberships: AdminUserWorkspaceMembership[];
+  /** Outstanding invitations addressed to this email — access offered, not taken up. */
+  invitations: AdminUserInvitation[];
+}
+
+/**
+ * Matched to the user by email, not user id: an invitation predates the account
+ * and may never get one. Most people stuck behind a lapsed invite have no user
+ * row at all — for those, the org's own detail page is the place they show up.
+ */
+export interface AdminUserInvitation {
+  id: string;
+  org_id: string;
+  org_slug: string;
+  org_name: string;
+  role: string;
+  created_at: string;
+  expires_at: string;
+  /** Derived server-side from `expires_at` — a lapsed invite still reads as "pending". */
+  is_expired: boolean;
 }
 
 export interface AdminUserOrgMembership {
@@ -265,6 +284,14 @@ export const AdminUsersService = {
 
   async removeFromOrg(userId: string, orgId: string): Promise<void> {
     await apiClient.delete(`/admin/users/${userId}/org-memberships/${orgId}`);
+  },
+
+  /**
+   * Admin-scoped on purpose: staff don't pass the tenant's own `OrgAdmin` guard
+   * without a live assume session, so the console needs its own route.
+   */
+  async revokeInvitation(userId: string, invitationId: string): Promise<void> {
+    await apiClient.delete(`/admin/users/${userId}/invitations/${invitationId}`);
   }
 };
 
