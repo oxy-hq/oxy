@@ -135,6 +135,7 @@ async fn run_explain(params: Value, runner: Arc<dyn MetricTreeRunner>) -> Result
             time_dimension,
             (cur_start, cur_end),
             (prev_start, prev_end),
+            vec![],
             config,
         )
         .await

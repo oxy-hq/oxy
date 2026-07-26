@@ -56,6 +56,15 @@ async fn upsert_one(
         serde_json::to_value(&entry.filters).ok()
     };
 
+    // Dominant (nearest) seasonal cycle from the monitor config. Snapshotted so
+    // the explain path can align its comparison window to the same phase one
+    // cycle back without re-reading the workspace config at request time.
+    let seasonal_period = entry
+        .effective_seasonality()
+        .into_iter()
+        .min()
+        .map(|p| p as i32);
+
     let existing = AnomaliesEntity::find()
         .filter(metric_anomalies::Column::WorkspaceId.eq(workspace_id))
         .filter(metric_anomalies::Column::Measure.eq(entry.measure.clone()))
@@ -88,6 +97,7 @@ async fn upsert_one(
         active.status = Set(preserved_status);
         active.dimension_key = Set(dim_key);
         active.filters = Set(filters_json);
+        active.seasonal_period = Set(seasonal_period);
         active.updated_at = Set(now.into());
         active.update(db).await?;
     } else {
@@ -109,6 +119,7 @@ async fn upsert_one(
             label: Set(entry.label.clone()),
             dimension_key: Set(dim_key),
             filters: Set(filters_json),
+            seasonal_period: Set(seasonal_period),
             // Lazy: populated on first /explain call.
             explain_cache: Set(None),
             explain_cached_at: Set(None),

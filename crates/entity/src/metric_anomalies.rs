@@ -44,6 +44,11 @@ pub struct Model {
     /// Wall-clock when [`Self::explain_cache`] was written. Lets callers
     /// reason about freshness without inspecting the cached payload.
     pub explain_cached_at: Option<DateTimeWithTimeZone>,
+    /// Dominant seasonal cycle length (in units of [`Self::granularity`]) from
+    /// the monitor's detection config, snapshotted at scan time. Drives the
+    /// same-phase comparison window when explaining this anomaly. `None` for
+    /// rows detected before this column existed.
+    pub seasonal_period: Option<i32>,
     pub detected_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

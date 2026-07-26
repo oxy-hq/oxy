@@ -131,6 +131,7 @@ mod m20260715_000002_oidc_used_jti;
 mod m20260715_000003_publish_token_nullable_creator;
 mod m20260716_000001_app_build_validation_status;
 mod m20260722_000001_app_visibility_and_members;
+mod m20260723_000001_metric_anomalies_seasonal_period;
 
 pub struct Migrator;
 
@@ -263,6 +264,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260715_000003_publish_token_nullable_creator::Migration),
             Box::new(m20260716_000001_app_build_validation_status::Migration),
             Box::new(m20260722_000001_app_visibility_and_members::Migration),
+            Box::new(m20260723_000001_metric_anomalies_seasonal_period::Migration),
         ]
     }
 }

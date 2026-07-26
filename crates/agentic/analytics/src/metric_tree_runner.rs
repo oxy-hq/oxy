@@ -45,12 +45,18 @@ pub trait MetricTreeRunner: Send + Sync {
 
     /// Period-over-period root cause analysis. The implementor builds the
     /// `QueryExecutor` and runs `airlayer::explain` inside `spawn_blocking`.
+    ///
+    /// `filters` are base equals-filters applied to every query the explain
+    /// issues — used to scope a per-segment anomaly (e.g. one restaurant) so
+    /// the totals and decomposition reflect that segment rather than the
+    /// chain-wide aggregate. Pass an empty vec for an unscoped explain.
     async fn run_explain(
         &self,
         target: String,
         time_dimension: String,
         current_period: (String, String),
         previous_period: (String, String),
+        filters: Vec<QueryFilter>,
         config: ExplainConfig,
     ) -> Result<ExplainResult, MetricTreeRunnerError>;
 

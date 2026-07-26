@@ -731,6 +731,7 @@ async fn list_anomalies_returns_empty_for_null_store() {
             _: String,
             _: (String, String),
             _: (String, String),
+            _: Vec<airlayer::engine::query::QueryFilter>,
             _: ExplainConfig,
         ) -> Result<ExplainResult, MetricTreeRunnerError> {
             Err(MetricTreeRunnerError::Op("test stub".into()))
@@ -862,6 +863,7 @@ async fn detect_anomalies_returns_message_when_insufficient_data() {
             _: String,
             _: (String, String),
             _: (String, String),
+            _: Vec<airlayer::engine::query::QueryFilter>,
             _: ExplainConfig,
         ) -> Result<ExplainResult, MetricTreeRunnerError> {
             Err(MetricTreeRunnerError::Op("stub".into()))

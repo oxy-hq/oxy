@@ -18,6 +18,49 @@ pub struct AnomalyRecord {
     pub z_score: f64,
     pub severity: String,
     pub status: String,
+    /// Dominant seasonal cycle length (in units of `granularity`) from the
+    /// monitor's detection config, snapshotted at scan time. Drives the
+    /// same-phase comparison window in root-cause explains. `None` for rows
+    /// detected before the column existed — callers fall back to the
+    /// granularity default via [`crate::anomaly_period::resolve_seasonal_period`].
+    pub seasonal_period: Option<i32>,
+    /// The monitor filters this anomaly was detected under, as a JSON array of
+    /// `{member, values}` (e.g. the per-restaurant `group_by` value). Used to
+    /// scope root-cause explains to the anomaly's segment. `None`/empty for
+    /// chain-wide monitors. See [`segment_query_filters`].
+    pub filters: Option<Value>,
+}
+
+/// Convert an anomaly row's persisted monitor filters (a JSON array of
+/// `{member, values}`) into airlayer equals-filters, used to scope a
+/// root-cause explain to the anomaly's segment. Malformed / empty input
+/// yields no filters (an unscoped, chain-wide explain).
+pub fn segment_query_filters(filters: &Option<Value>) -> Vec<airlayer::engine::query::QueryFilter> {
+    use airlayer::engine::query::{FilterOperator, QueryFilter};
+    let Some(Value::Array(arr)) = filters else {
+        return vec![];
+    };
+    arr.iter()
+        .filter_map(|f| {
+            let member = f.get("member")?.as_str()?.to_string();
+            let values = f
+                .get("values")?
+                .as_array()?
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>();
+            if values.is_empty() {
+                return None;
+            }
+            Some(QueryFilter {
+                member: Some(member),
+                operator: Some(FilterOperator::Equals),
+                values,
+                and: None,
+                or: None,
+            })
+        })
+        .collect()
 }
 
 #[derive(Debug, Default, Clone)]

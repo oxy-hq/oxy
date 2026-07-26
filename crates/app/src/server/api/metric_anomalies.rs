@@ -451,19 +451,26 @@ pub async fn explain_anomaly(
         return Ok(Json(cached.clone()));
     }
 
-    // Build the explain request from the anomaly's fields. Periods mirror
-    // the UI: current = anomaly bucket; previous = same-cycle prior
-    // (7 days back for daily/weekly, 1 month for monthly). Keeps the
-    // server-side comparison aligned with the detector's seasonality.
+    // Build the explain request from the anomaly's fields. Current = the
+    // anomaly bucket; previous = the same phase one seasonal cycle earlier,
+    // derived from the monitor's persisted seasonality (falling back to the
+    // granularity default for pre-column rows). Aligning to the seasonal
+    // period — not a hardcoded offset — is what keeps a daily/weekly-seasonal
+    // anomaly compared against the same weekday rather than the weekend.
     let current = row.period_start.date_naive();
-    let previous = match row.granularity.as_str() {
-        "month" => current
-            .checked_sub_months(chrono::Months::new(1))
-            .unwrap_or(current),
-        _ => current - chrono::Duration::days(7),
-    };
+    let periods = agentic_analytics::anomaly_period::resolve_seasonal_period(
+        row.seasonal_period,
+        &row.granularity,
+    );
+    let previous =
+        agentic_analytics::anomaly_period::shift_date_back(current, &row.granularity, periods);
     let current_str = current.format("%Y-%m-%d").to_string();
     let previous_str = previous.format("%Y-%m-%d").to_string();
+
+    // Scope the explain to the anomaly's segment (e.g. the specific restaurant
+    // a `group_by` monitor flagged) so the totals and decomposition reflect
+    // that segment, not the chain-wide aggregate.
+    let filters = agentic_analytics::anomaly_store::segment_query_filters(&row.filters);
 
     use agentic_analytics::MetricTreeRunner as _;
     let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role);
@@ -476,6 +483,7 @@ pub async fn explain_anomaly(
             row.time_dimension.clone(),
             (current_str.clone(), current_str),
             (previous_str.clone(), previous_str),
+            filters,
             config,
         )
         .await

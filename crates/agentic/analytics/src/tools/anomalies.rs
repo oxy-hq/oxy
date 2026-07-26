@@ -139,8 +139,13 @@ async fn explain_anomaly(params: Value, ctx: &AnomalyToolContext<'_>) -> Result<
         .ok_or_else(|| ToolError::Execution(format!("anomaly {id} not found")))?;
 
     let current_period = (record.period_start.clone(), record.period_end.clone());
-    let previous_period = shift_period_back(&record.period_start, &record.period_end)
+    let previous_period = previous_period_for(&record)
         .ok_or_else(|| ToolError::Execution("could not compute comparison period".to_string()))?;
+
+    // Scope the explain to the anomaly's segment (e.g. the specific restaurant
+    // a `group_by` monitor flagged) so the totals and decomposition reflect
+    // that segment, not the chain-wide aggregate.
+    let filters = crate::anomaly_store::segment_query_filters(&record.filters);
 
     let explain_result = ctx
         .runner
@@ -149,6 +154,7 @@ async fn explain_anomaly(params: Value, ctx: &AnomalyToolContext<'_>) -> Result<
             record.time_dimension.clone(),
             current_period,
             previous_period,
+            filters,
             Default::default(),
         )
         .await
@@ -189,16 +195,24 @@ fn record_to_json(r: &AnomalyRecord) -> Value {
         "z_score": r.z_score,
         "severity": r.severity,
         "status": r.status,
+        "seasonal_period": r.seasonal_period,
     })
 }
 
-/// Shift (period_start, period_end) back by the same duration.
-fn shift_period_back(start: &str, end: &str) -> Option<(String, String)> {
+/// Comparison window for `record`'s root-cause explain: the same-phase bucket
+/// one seasonal cycle back, derived from the monitor's persisted seasonality
+/// (falling back to the granularity default). Shifting by the seasonal period
+/// — not one adjacent bucket — is what keeps a daily anomaly compared against
+/// the same weekday rather than the weekend.
+fn previous_period_for(record: &AnomalyRecord) -> Option<(String, String)> {
     use chrono::{DateTime, FixedOffset};
-    let s: DateTime<FixedOffset> = start.parse().ok()?;
-    let e: DateTime<FixedOffset> = end.parse().ok()?;
-    let duration = e.signed_duration_since(s);
-    let prev_start = s - duration;
-    let prev_end = s - chrono::Duration::seconds(1);
+    let s: DateTime<FixedOffset> = record.period_start.parse().ok()?;
+    let e: DateTime<FixedOffset> = record.period_end.parse().ok()?;
+    let (prev_start, prev_end) = crate::anomaly_period::previous_seasonal_range(
+        s,
+        e,
+        &record.granularity,
+        record.seasonal_period,
+    );
     Some((prev_start.to_rfc3339(), prev_end.to_rfc3339()))
 }

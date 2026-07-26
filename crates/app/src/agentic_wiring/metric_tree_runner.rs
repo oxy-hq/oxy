@@ -24,7 +24,7 @@ use airlayer::engine::metric_tree::MetricTree;
 use airlayer::engine::metric_tree_ops::{
     self, ExplainConfig, ExplainResult, OpportunityResult, QueryExecutor,
 };
-use airlayer::engine::query::QueryRequest;
+use airlayer::engine::query::{QueryFilter, QueryRequest};
 use async_trait::async_trait;
 use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::workspace::manager::WorkspaceManager;
@@ -110,6 +110,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         time_dimension: String,
         current_period: (String, String),
         previous_period: (String, String),
+        filters: Vec<QueryFilter>,
         config: ExplainConfig,
     ) -> Result<ExplainResult, MetricTreeRunnerError> {
         let inputs = self.snapshot_for_blocking().await?;
@@ -117,7 +118,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         let target_for_log = target.clone();
         // QueryExecutor isn't Send, so build + consume entirely inside
         // spawn_blocking. All inputs (engine, databases, workspace_manager,
-        // tokio handle, the period tuples) are Send.
+        // tokio handle, the period tuples, the base filters) are Send.
         let result = tokio::task::spawn_blocking(move || {
             let RunInputs {
                 layer,
@@ -131,12 +132,15 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 preagg_cache,
                 preagg_renewal_threshold_secs,
             } = inputs;
-            // Strip dim-split candidates that aren't useful before passing
-            // the layer to airlayer's explain. See [`prune_dims_for_explain`]
-            // for the policy.
-            let pruned = prune_dims_for_explain(layer);
+            // Members pinned by the base filter (the monitor's group_by /
+            // segment) carry no signal as split candidates once we scope to
+            // them — exclude them along with the time dimension, numeric,
+            // seasonal, and row-key dims. See [`prune_dims_for_explain`].
+            let exclude_members: Vec<String> =
+                filters.iter().filter_map(|f| f.member.clone()).collect();
+            let pruned = prune_dims_for_explain(layer, &exclude_members, &time_dimension);
             let tree = MetricTree::build(&pruned);
-            let executor = build_query_executor(
+            let inner = build_query_executor(
                 &target,
                 engine,
                 databases,
@@ -148,6 +152,20 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 preagg_cache,
                 preagg_renewal_threshold_secs,
             );
+            // Scope every query the explain issues to the anomaly's segment by
+            // appending the base filters before delegating to the executor.
+            // airlayer's `explain` has no base-filter hook, so we inject here;
+            // the result cache keys on compiled SQL, so scoped queries never
+            // collide with unscoped ones.
+            let executor: Box<QueryExecutor> = if filters.is_empty() {
+                inner
+            } else {
+                Box::new(move |request: &QueryRequest| {
+                    let mut scoped = request.clone();
+                    scoped.filters.extend(filters.iter().cloned());
+                    inner(&scoped)
+                })
+            };
             metric_tree_ops::explain(
                 &tree,
                 &pruned,
@@ -734,32 +752,111 @@ pub fn make_runner(
 }
 
 /// Strip dimensions from every view that are bad split candidates for
-/// airlayer's `explain`. Currently drops:
+/// airlayer's `explain`. Drops:
 ///
 /// - **All `Number`-typed dimensions.** Most numeric dims in real schemas
 ///   are either foreign keys (high cardinality → one breakdown row per
 ///   entity → minutes-long queries on warehouses without bucketing) or
 ///   continuous values (price, amount) that need bucketing to be
 ///   meaningful split candidates. Either way, surfacing them as raw
-///   GROUP BY columns produces noisy results at high cost. Numeric
-///   measures are unaffected — this only touches the dim list airlayer
-///   uses for `evaluate_candidates`.
+///   GROUP BY columns produces noisy results at high cost.
+/// - **`exclude_members` and the `time_dimension`.** The monitor's
+///   `group_by` / segment members are pinned by the base filter, so
+///   splitting on them yields a single value (no signal); the time
+///   dimension is the axis being compared, not a driver.
+/// - **Time-derived dims** (`day_of_week`, `month`, `week`, …). Comparing
+///   the same phase one seasonal cycle back, these are constant across the
+///   two periods — attributing the change to "it's a Wednesday" is the
+///   seasonality artifact this pruning exists to suppress.
+/// - **High-cardinality row-key dims** (`*_key`, `*_id`, `id`). A per-row
+///   key (e.g. `labor_day_key`) never matches across periods, so it always
+///   "explains" 100% trivially.
 ///
-/// Strings + booleans pass through unchanged. The metric tree itself is
-/// rebuilt against the pruned layer so component / driver edges stay
-/// intact.
+/// Remaining strings + booleans (department, cost category, shift …) pass
+/// through. The metric tree is rebuilt against the pruned layer so component
+/// / driver edges stay intact.
 ///
-/// This is a temporary workaround until airlayer either:
-/// 1. exposes a `cardinality_cap` / `splittable` flag per dim, or
-/// 2. profiles dim cardinality at compile time and self-excludes high-N
-///    candidates from `evaluate_candidates`.
-fn prune_dims_for_explain(mut layer: SemanticLayer) -> SemanticLayer {
+/// This is a workaround until airlayer exposes per-dim cardinality /
+/// `splittable` metadata and a base-filter hook.
+fn prune_dims_for_explain(
+    mut layer: SemanticLayer,
+    exclude_members: &[String],
+    time_dimension: &str,
+) -> SemanticLayer {
     use airlayer::schema::models::DimensionType;
     for view in &mut layer.views {
-        view.dimensions
-            .retain(|d| !matches!(d.dimension_type, DimensionType::Number));
+        let view_name = view.name.clone();
+        // Collect what we drop so a "why isn't dimension X in the
+        // decomposition?" question is answerable from logs rather than by
+        // re-deriving the heuristic. The pruning is otherwise silent.
+        let mut dropped: Vec<&'static str> = Vec::new();
+        let mut dropped_names: Vec<String> = Vec::new();
+        view.dimensions.retain(|d| {
+            let reason = if matches!(d.dimension_type, DimensionType::Number) {
+                Some("numeric")
+            } else {
+                let fq = format!("{view_name}.{}", d.name);
+                if fq == time_dimension {
+                    Some("time_dimension")
+                } else if exclude_members.iter().any(|m| m == &fq) {
+                    Some("segment_filter")
+                } else if is_seasonal_or_key_dim(&d.name) {
+                    Some("seasonal_or_key")
+                } else {
+                    None
+                }
+            };
+            match reason {
+                Some(r) => {
+                    dropped.push(r);
+                    dropped_names.push(d.name.clone());
+                    false
+                }
+                None => true,
+            }
+        });
+        if !dropped_names.is_empty() {
+            tracing::debug!(
+                target: "metric_tree.explain",
+                view = %view_name,
+                dropped = ?dropped_names,
+                reasons = ?dropped,
+                "pruned dimensions from explain candidates"
+            );
+        }
     }
     layer
+}
+
+/// True for dimensions that are meaningless period-over-period split
+/// candidates: calendar-part dims (constant across a same-phase comparison)
+/// and per-row key dims (never match across periods).
+fn is_seasonal_or_key_dim(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    const TIME_PARTS: &[&str] = &[
+        "day_of_week",
+        "dayofweek",
+        "dow",
+        "weekday",
+        "day_of_month",
+        "day_of_year",
+        "week_of_year",
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "hour",
+        "minute",
+        "second",
+        "date",
+        "datetime",
+        "timestamp",
+    ];
+    if TIME_PARTS.contains(&n.as_str()) {
+        return true;
+    }
+    n == "id" || n == "key" || n.ends_with("_id") || n.ends_with("_key")
 }
 
 /// Convert a pre-aggregation DuckDB result to the column-keyed row maps that
@@ -797,6 +894,35 @@ fn execute_preagg_and_convert(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn seasonal_and_key_dims_are_pruned() {
+        // Calendar-part dims (constant across a same-phase comparison).
+        for d in [
+            "day_of_week",
+            "DayOfWeek",
+            "month",
+            "week",
+            "quarter",
+            "date",
+        ] {
+            assert!(is_seasonal_or_key_dim(d), "{d} should be pruned");
+        }
+        // Per-row key dims (never match across periods).
+        for d in ["labor_day_key", "id", "restaurant_id", "menu_item_key"] {
+            assert!(is_seasonal_or_key_dim(d), "{d} should be pruned");
+        }
+        // Real business dims survive.
+        for d in [
+            "department",
+            "cost_category",
+            "shift",
+            "region",
+            "menu_category",
+        ] {
+            assert!(!is_seasonal_or_key_dim(d), "{d} should be kept");
+        }
+    }
 
     #[test]
     fn execute_preagg_and_convert_returns_maps() {

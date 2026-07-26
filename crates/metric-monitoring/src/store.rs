@@ -92,6 +92,8 @@ fn to_record(m: &metric_anomalies::Model) -> AnomalyRecord {
         z_score: m.z_score,
         severity: m.severity.clone(),
         status: m.status.clone(),
+        seasonal_period: m.seasonal_period,
+        filters: m.filters.clone(),
     }
 }
 
@@ -167,6 +169,9 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
             .collect();
 
         let seasonal = seasonal_periods(granularity);
+        // Nearest seasonal cycle, snapshotted onto the row so explain aligns
+        // its comparison window to the same phase one cycle back.
+        let seasonal_period = seasonal.iter().copied().min().map(|p| p as i32);
         let max_period = seasonal.iter().copied().max().unwrap_or(7);
         // Mirror detect()'s formula exactly: (max_period*2).max(10) + test_window.
         // test_window is hardcoded to 1 below; keeping it consistent prevents
@@ -229,6 +234,7 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
                 a.z_score = Set(anomaly.z_score);
                 a.severity = Set(severity_str(anomaly.severity).to_string());
                 a.status = Set(preserved.to_string());
+                a.seasonal_period = Set(seasonal_period);
                 a.updated_at = Set(now.into());
                 a.update(self.db.as_ref())
                     .await
@@ -252,6 +258,7 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
                     label: Set(None),
                     dimension_key: Set(String::new()),
                     filters: Set(None),
+                    seasonal_period: Set(seasonal_period),
                     explain_cache: Set(None),
                     explain_cached_at: Set(None),
                     detected_at: Set(now.into()),

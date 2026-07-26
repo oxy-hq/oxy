@@ -6,6 +6,7 @@
 
 #[doc(hidden)]
 pub mod airlayer_compat;
+pub mod anomaly_period;
 pub mod anomaly_store;
 pub mod brief;
 mod catalog;

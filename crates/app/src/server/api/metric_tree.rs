@@ -222,6 +222,7 @@ pub async fn post_explain(
             req.time_dimension,
             (req.current_period.0, req.current_period.1),
             (req.previous_period.0, req.previous_period.1),
+            vec![],
             config,
         ),
     )
@@ -372,6 +373,7 @@ pub async fn post_distribution(
             req.time_dimension,
             (req.period.0.clone(), req.period.1.clone()),
             baseline,
+            vec![],
             config,
         ),
     )
