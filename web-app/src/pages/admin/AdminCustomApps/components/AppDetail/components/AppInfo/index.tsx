@@ -50,14 +50,16 @@ export const AppInfo = ({ app }: { app: CustomApp }) => {
   const dirOk = isRemote || data.bundle_dir_exists;
 
   return (
-    <div className='space-y-5 p-4'>
-      {/* Health readout — three LED chips the operator scans first. */}
-      <div className='grid grid-cols-3 gap-2'>
+    <div className='space-y-4 p-4 pt-0'>
+      {/* Health readout — the two things that can actually be broken. (A third
+          "Source" chip used to sit here; source_type is already a badge in the
+          toolbar and branch is a row below, so it was pure duplication paying
+          for a third of the width.) */}
+      <div className='grid grid-cols-2 gap-2'>
         <HealthChip
           label='Bundle'
           ok={dirOk}
           value={isRemote ? "remote" : dirOk ? "exists" : "missing"}
-          subtle={isRemote ? (data.upstream_url ?? "—") : (data.bundle_dir ?? "—")}
         />
         <HealthChip
           label='Manifest'
@@ -65,23 +67,12 @@ export const AppInfo = ({ app }: { app: CustomApp }) => {
           value={
             isRemote
               ? "external"
-              : data.manifest_source === "db_override"
-                ? "DB override"
-                : "bundled"
+              : !manifestOk
+                ? "error"
+                : data.manifest_source === "db_override"
+                  ? "DB override"
+                  : "bundled"
           }
-          subtle={
-            isRemote
-              ? "owned by upstream"
-              : manifestOk
-                ? "loaded"
-                : (data.manifest_error ?? "error")
-          }
-        />
-        <HealthChip
-          label='Source'
-          ok
-          value={data.app.source_type}
-          subtle={`${app.branch} branch`}
         />
       </div>
 
@@ -93,12 +84,19 @@ export const AppInfo = ({ app }: { app: CustomApp }) => {
         )}
       </Section>
 
-      {/* Identity */}
+      {/* Identity + what oxy resolved. Paths and ids wrap rather than truncate:
+          a half-shown bundle dir answers no question an operator has. */}
       <Section title='Identity'>
         <KV k='App ID' v={data.app.id} mono />
         <KV k='Project' v={app.project_id} mono />
         <KV k='Branch' v={app.branch} mono />
+        <KV k='Source' v={data.app.source_type} />
         <KV k='Status' v={data.app.status} />
+        {isRemote ? (
+          <KV k='Upstream' v={data.upstream_url ?? "—"} mono />
+        ) : (
+          <KV k='Bundle dir' v={data.bundle_dir ?? "—"} mono />
+        )}
       </Section>
 
       {/* Manifest error, if any — never for remote bundles (no oxy-side manifest). */}
@@ -116,37 +114,26 @@ export const AppInfo = ({ app }: { app: CustomApp }) => {
   );
 };
 
-/** A LED status chip: brand dot = healthy, destructive dot = broken. */
-const HealthChip = ({
-  label,
-  ok,
-  value,
-  subtle
-}: {
-  label: string;
-  ok: boolean;
-  value: string;
-  subtle?: string;
-}) => (
-  <div className='min-w-0 rounded-md border bg-card px-2.5 py-2'>
-    <div className='flex items-center gap-1.5'>
-      <span
-        aria-hidden
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          ok ? "bg-primary ring-2 ring-primary/25" : "bg-destructive"
-        )}
-      />
-      <span className='font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
-        {label}
-      </span>
-    </div>
-    <div className='mt-1 truncate font-medium text-xs'>{value}</div>
-    {subtle && (
-      <div className='truncate font-mono text-[10px] text-muted-foreground/80' title={subtle}>
-        {subtle}
-      </div>
-    )}
+/**
+ * A LED status chip: brand dot = healthy, destructive dot = broken. One line —
+ * label and reading share the row, so two chips fit a narrow column without
+ * either one truncating.
+ */
+const HealthChip = ({ label, ok, value }: { label: string; ok: boolean; value: string }) => (
+  <div className='flex min-w-0 items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5'>
+    <span
+      aria-hidden
+      className={cn(
+        "size-1.5 shrink-0 rounded-full",
+        ok ? "bg-primary ring-2 ring-primary/25" : "bg-destructive"
+      )}
+    />
+    <span className='shrink-0 font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
+      {label}
+    </span>
+    <span className='min-w-0 flex-1 truncate text-right font-medium text-xs' title={value}>
+      {value}
+    </span>
   </div>
 );
 
@@ -194,12 +181,16 @@ const Section = ({
   </div>
 );
 
+/**
+ * A label/value row. The label holds a fixed narrow column and the value starts
+ * right after it, wrapping — rather than the two being pushed to opposite edges
+ * with a lake of dead space between them and the value truncated anyway. That
+ * pairing is what made this panel demand width it never used.
+ */
 const KV = ({ k, v, mono }: { k: string; v: string; mono?: boolean }) => (
-  <div className='flex items-baseline justify-between gap-4 border-b py-1.5 text-sm last:border-0'>
-    <span className='shrink-0 text-muted-foreground'>{k}</span>
-    <span className={cn("min-w-0 truncate text-right", mono && "font-mono text-xs")} title={v}>
-      {v}
-    </span>
+  <div className='flex items-baseline gap-3 border-b py-1 text-sm last:border-0'>
+    <span className='w-20 shrink-0 text-muted-foreground text-xs'>{k}</span>
+    <span className={cn("min-w-0 flex-1 break-all", mono && "font-mono text-xs")}>{v}</span>
   </div>
 );
 

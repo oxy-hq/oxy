@@ -138,6 +138,7 @@ const AdminAudit = React.lazy(() => import("./pages/admin/AdminAudit"));
 const AdminAppAdmins = React.lazy(() => import("./pages/admin/AdminAppAdmins"));
 const AdminPublishTokens = React.lazy(() => import("./pages/admin/AdminPublishTokens"));
 const AdminCustomApps = React.lazy(() => import("./pages/admin/AdminCustomApps"));
+const AppDossierWindow = React.lazy(() => import("./pages/admin/AdminCustomApps/AppDossierWindow"));
 // Tenant-management admin surfaces (OXY_OWNER-only). Lazy-loaded alongside
 // the rest of admin since most users never visit /admin/* at all.
 const AdminTenants = React.lazy(() => import("./pages/admin/AdminTenants"));
@@ -481,6 +482,20 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             </ProtectedRoute>
           }
         >
+          {/* The custom-app detail dossier, popped out into its own window
+              (the `window` dock mode). Sits OUTSIDE `AdminLayout` on purpose:
+              it only ever renders in a ~560px popup, where the admin nav
+              chrome would be dead weight. The APIs it reads are app-admin
+              gated server-side. */}
+          <Route
+            path='admin/apps/:orgSlug/:appSlug/panel'
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AppDossierWindow />
+              </Suspense>
+            }
+          />
+
           {/* Admin queue (OXY_OWNER-gated server-side) — sits outside
               `OwnerRedirect` so owners can actually reach it. */}
           <Route

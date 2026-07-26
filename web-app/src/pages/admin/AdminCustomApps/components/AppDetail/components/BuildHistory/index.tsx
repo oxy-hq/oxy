@@ -139,7 +139,7 @@ export const BuildHistory = ({ appId }: { appId: string }) => {
   return (
     <div className='flex flex-col gap-4'>
       {/* Channel pointers at a glance */}
-      <div className='grid grid-cols-1 gap-2 sm:grid-cols-2'>
+      <div className='grid @lg:grid-cols-2 grid-cols-1 gap-2'>
         <ChannelCard
           label='Live'
           build={live}

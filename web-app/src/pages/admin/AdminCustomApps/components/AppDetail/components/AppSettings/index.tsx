@@ -48,7 +48,7 @@ export const AppSettings = ({ app }: { app: CustomApp }) => {
   };
 
   return (
-    <div className='space-y-4 p-4'>
+    <div className='space-y-3 p-4 pt-0'>
       <SettingRow
         title={isPublished ? "Published" : "Draft"}
         description={

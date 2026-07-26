@@ -22,7 +22,7 @@ import {
  * `custom_apps_activity` on the backend for the SQL.
  */
 export const Activity = ({ appId }: { appId: string }) => (
-  <div className='space-y-6 p-6'>
+  <div className='space-y-4 p-4 pt-0'>
     <SummaryCard appId={appId} />
     <VisitorsSection appId={appId} />
     <EventsSection appId={appId} />
@@ -34,7 +34,7 @@ const SummaryCard = ({ appId }: { appId: string }) => {
 
   if (isLoading) {
     return (
-      <div className='grid grid-cols-2 gap-3 md:grid-cols-4'>
+      <div className='grid @2xl:grid-cols-4 grid-cols-2 gap-3'>
         {Array.from({ length: 4 }).map((_, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
           <Skeleton key={i} className='h-20 w-full' />
@@ -44,7 +44,9 @@ const SummaryCard = ({ appId }: { appId: string }) => {
   }
 
   return (
-    <div className='grid grid-cols-2 gap-3 md:grid-cols-4'>
+    // Stat columns key off the dossier panel's width, not the viewport's — the
+    // panel can be 400px wide on a 1440px screen, where four columns is soup.
+    <div className='grid @2xl:grid-cols-4 grid-cols-2 gap-3'>
       <Stat
         label='Last viewed'
         value={data?.last_viewed_at ? relativeTime(data.last_viewed_at) : "never"}

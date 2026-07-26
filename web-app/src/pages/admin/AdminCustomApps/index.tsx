@@ -1,7 +1,6 @@
 import { isAxiosError } from "axios";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useAdminApps } from "@/hooks/api/customApps/useCustomApps";
 import { cn } from "@/libs/shadcn/utils";
 import AdminPublishTokens from "@/pages/admin/AdminPublishTokens";
 import type { CustomApp } from "@/types/apps";
@@ -10,6 +9,7 @@ import { AppsTable } from "./components/AppsTable";
 import { CreateCustomAppDialog } from "./components/CreateCustomAppDialog";
 import { FleetStrip } from "./components/FleetStrip";
 import { AccessPane } from "./components/OxyAccessPanes/AccessPane";
+import { useAdminAppRegistry } from "./useAdminAppRegistry";
 
 /**
  * Admin console for custom apps. Three tabs share the page shell via `?view=`:
@@ -97,27 +97,13 @@ const AdminTabs = ({ active }: { active: View }) => (
  * server-side querying only if the registry ever grows into the thousands.
  */
 const AppsPane = () => {
-  const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useAdminApps(100);
-  const apps = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ orgSlug?: string; appSlug?: string }>();
   const [createOpen, setCreateOpen] = useState(false);
-
-  // Walk the remaining pages automatically so the table sees every app.
-  useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  const selectedKey = useMemo(() => {
-    if (!params.orgSlug || !params.appSlug) return null;
-    return `${params.orgSlug}/${params.appSlug}`;
-  }, [params.orgSlug, params.appSlug]);
-
-  const selected = useMemo(
-    () => apps.find((a) => `${a.org_slug}/${a.slug}` === selectedKey) ?? null,
-    [apps, selectedKey]
+  const { apps, selected, selectedKey, isLoading, isLoadingMore, error } = useAdminAppRegistry(
+    params.orgSlug,
+    params.appSlug
   );
 
   // If the URL referenced an app that no longer exists, drop the phantom
@@ -154,7 +140,7 @@ const AppsPane = () => {
         <AppsTable
           apps={apps}
           isLoading={isLoading}
-          isLoadingMore={isFetchingNextPage}
+          isLoadingMore={isLoadingMore}
           onSelect={openDetail}
           onCreate={() => setCreateOpen(true)}
         />

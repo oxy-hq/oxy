@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -9,24 +10,26 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { CustomAppsService } from "@/services/api/customApps";
 import type { CustomApp } from "@/types/apps";
-import { Activity } from "./components/Activity";
-import { AppInfo } from "./components/AppInfo";
-import { AppSettings } from "./components/AppSettings";
-import { BuildHistory } from "./components/BuildHistory";
 import { type ChannelView, DetailToolbar, type Device } from "./components/DetailToolbar";
-import { Functions } from "./components/Functions";
+import { DockControls, DossierBody, DossierHeader } from "./components/Dossier";
 import { LivePreview } from "./components/LivePreview";
+import { DOCK_STORAGE_KEY, type DockMode, dossierWindowPath, reviveDockMode } from "./dock";
+import { useDossierWindow } from "./useDossierWindow";
+import { usePersistentState } from "./usePersistentState";
 
 /**
  * The stage: a live app preview beside a scrolling "dossier" (status & manifest,
- * builds, activity, settings) — everything about one app on one surface, no
- * sub-tabs.
+ * builds, functions, activity, settings) — everything about one app on one
+ * surface, no sub-tabs.
  *
- * The dossier is collapsible so the preview can go full-bleed, and it adapts to
- * width: on a wide viewport it's a resizable side column; below `lg` it folds
- * into an overlay `Sheet` so the toolbar controls never get squeezed off the
- * row (the resized-Chrome bug this pass fixes). One toolbar button drives both
- * modes.
+ * The dossier is dockable, DevTools-style, because a fixed side column spends
+ * the operator's scarcest resource (horizontal space on a laptop) on the
+ * content least able to use it — manifest JSON, bundle paths, build rows. So:
+ * dock right, dock bottom for the full stage width, or pop out into a real
+ * second window. The choice persists per operator.
+ *
+ * Below `lg` none of that applies — the dossier folds into an overlay `Sheet`
+ * so the toolbar controls never get squeezed off the row.
  *
  * Preview state (device + channel + reload nonce) lives here so the toolbar can
  * drive it and re-selecting a different app keeps the operator's choices.
@@ -46,14 +49,47 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
   const [channelBusy, setChannelBusy] = useState(false);
   const [nonce, setNonce] = useState(0);
 
-  // Wide = resizable side column; narrow = overlay Sheet. Two bits of state so
-  // the pinned side panel and the drawer keep independent defaults (side panel
-  // open by default; drawer closed until asked for).
+  // Wide = docked panel; narrow = overlay Sheet. Two bits of state so the
+  // docked panel and the drawer keep independent defaults (panel open by
+  // default; drawer closed until asked for).
   const isWide = useMediaQuery("(min-width: 1024px)");
   const [dossierPinned, setDossierPinned] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const dossierShown = isWide ? dossierPinned : sheetOpen;
   const toggleDossier = () => (isWide ? setDossierPinned((o) => !o) : setSheetOpen((o) => !o));
+
+  const [dock, setDock] = usePersistentState<DockMode>(DOCK_STORAGE_KEY, "right", reviveDockMode);
+  // A persisted `window` must NOT auto-open on load: a popup with no user
+  // gesture is blocked, which would both toast an error and clobber the saved
+  // preference. So window mode only actually pops out once the operator picks it
+  // (a real gesture, tracked here); a persisted `window` renders inline as a
+  // right dock until then, with the stored choice left intact so one click on
+  // the control re-opens it.
+  const [windowActivated, setWindowActivated] = useState(false);
+  const effectiveDock: DockMode = dock === "window" && !windowActivated ? "right" : dock;
+  const poppedOut = isWide && dossierPinned && dock === "window" && windowActivated;
+  const handleDockChange = useCallback(
+    (next: DockMode) => {
+      // Selecting `window` from the control IS the gesture that lets the popup
+      // open; record it so the open effect is allowed to run this time.
+      if (next === "window") setWindowActivated(true);
+      setDock(next);
+    },
+    [setDock]
+  );
+  // Closing the popped-out window (or having a user-initiated open blocked) must
+  // land somewhere visible, not on an invisible dossier the operator can't get
+  // back — and reset the gesture so it doesn't try to reopen on its own.
+  const fallBackToSideColumn = useCallback(() => {
+    setWindowActivated(false);
+    setDock("right");
+  }, [setDock]);
+  const focusDossierWindow = useDossierWindow({
+    active: poppedOut,
+    url: dossierWindowPath(app.org_slug, app.slug),
+    name: "oxy-app-dossier",
+    onDismiss: fallBackToSideColumn
+  });
 
   // Best-effort cookie cleanup. If staff toggle Draft and then close the
   // admin tab, don't let the preview-draft cookie follow them to a later
@@ -91,6 +127,20 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
     </div>
   );
 
+  const dossier = (
+    <div className='flex h-full min-h-0 flex-col'>
+      <DossierHeader
+        dock={effectiveDock}
+        onDockChange={handleDockChange}
+        onClose={() => setDossierPinned(false)}
+      />
+      <DossierBody app={app} />
+    </div>
+  );
+
+  const isDockedPanel = isWide && dossierPinned && effectiveDock !== "window";
+  const bottom = effectiveDock === "bottom";
+
   return (
     <div className='flex h-full min-h-0 flex-col bg-background'>
       <DetailToolbar
@@ -109,16 +159,20 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
       />
 
       <div className='min-h-0 flex-1'>
-        {isWide && dossierPinned ? (
-          <ResizablePanelGroup direction='horizontal' className='h-full min-h-0'>
-            <ResizablePanel defaultSize={58} minSize={32}>
+        {isDockedPanel ? (
+          // Keyed by direction: react-resizable-panels sizes against a fixed
+          // axis, so flipping horizontal↔vertical needs a fresh group.
+          <ResizablePanelGroup
+            key={effectiveDock}
+            direction={bottom ? "vertical" : "horizontal"}
+            className='h-full min-h-0'
+          >
+            <ResizablePanel defaultSize={bottom ? 55 : 58} minSize={bottom ? 20 : 32}>
               {preview}
             </ResizablePanel>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={42} minSize={26}>
-              <div className='h-full min-h-0 overflow-auto'>
-                <DossierColumn app={app} />
-              </div>
+            <ResizablePanel defaultSize={bottom ? 45 : 42} minSize={bottom ? 20 : 26}>
+              {dossier}
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
@@ -126,57 +180,31 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
         )}
       </div>
 
+      {/* Popped out: the preview owns the whole stage, and this strip keeps the
+          dock switcher reachable — otherwise the only way back to a docked
+          panel would be to close the window we just opened. */}
+      {poppedOut && (
+        <div className='flex h-9 shrink-0 items-center gap-2 border-t bg-background px-2'>
+          <span className='ml-1 min-w-0 flex-1 truncate text-muted-foreground text-xs'>
+            Details are open in a separate window.
+          </span>
+          <Button variant='ghost' size='sm' className='h-7' onClick={() => focusDossierWindow()}>
+            Focus window
+          </Button>
+          <DockControls value={effectiveDock} onChange={handleDockChange} />
+        </div>
+      )}
+
       {!isWide && (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetContent side='right' className='w-full gap-0 overflow-y-auto p-0 sm:max-w-md'>
-            <SheetHeader className='sticky top-0 z-10 border-b bg-background px-4 py-3'>
+          <SheetContent side='right' className='flex w-full flex-col gap-0 p-0 sm:max-w-md'>
+            <SheetHeader className='shrink-0 border-b px-4 py-3'>
               <SheetTitle className='text-sm'>Status &amp; details</SheetTitle>
             </SheetHeader>
-            <DossierColumn app={app} />
+            <DossierBody app={app} />
           </SheetContent>
         </Sheet>
       )}
     </div>
   );
 };
-
-/** The stacked dossier sections, shared by the wide side column and the narrow
- *  overlay sheet so the two can't drift. */
-const DossierColumn = ({ app }: { app: CustomApp }) => (
-  <>
-    <DossierSection title='Status & manifest'>
-      <AppInfo app={app} />
-    </DossierSection>
-    <DossierSection title='Build history'>
-      <div className='p-4'>
-        <BuildHistory appId={app.id} />
-      </div>
-    </DossierSection>
-    <DossierSection title='Functions'>
-      <div className='p-4'>
-        <Functions appId={app.id} />
-      </div>
-    </DossierSection>
-    <DossierSection title='Activity'>
-      <Activity appId={app.id} />
-    </DossierSection>
-    <DossierSection title='Settings'>
-      <AppSettings app={app} />
-    </DossierSection>
-  </>
-);
-
-/**
- * A titled block in the dossier column. A sticky, monospace-eyebrow header
- * keeps the operator oriented while scrolling through the stacked sections.
- */
-const DossierSection = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <section className='border-border/60 border-b last:border-b-0'>
-    <div className='sticky top-0 z-10 flex items-center border-border/60 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80'>
-      <span className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.16em]'>
-        {title}
-      </span>
-    </div>
-    {children}
-  </section>
-);
