@@ -10,6 +10,9 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use super::env_url;
+pub use super::env_url::ResolvedEnv;
+
 const MANIFEST_FILE: &str = "oxy-app.json";
 
 /// Parsed `oxy-app.json`. Unknown fields are ignored (forward-compat).
@@ -134,17 +137,45 @@ pub fn resolve_target(
     env: Option<&str>,
     target_flag: Option<&str>,
 ) -> Option<String> {
+    resolve_env(manifest, env, target_flag).map(|r| r.target)
+}
+
+/// [`resolve_target`] plus the org slug the value carried, if any.
+///
+/// Precedence is unchanged — `--target` → manifest `environments.<env>` →
+/// built-in default for `<env>` — with one purely **additive** step: an `--env`
+/// that no name resolves is tried as a URL, so you can paste the address bar
+/// (`--env https://poke-house.oxygen-hq.com`) instead of memorising env names.
+/// Every named value keeps working exactly as before, and a name always wins
+/// over the URL reading.
+///
+/// `--target` stays verbatim (it is the explicit escape hatch, including for
+/// deployments served under a path); its org slug is still mined so
+/// `--target https://<org>.oxygen-hq.com` knows which org it is pointing at.
+pub fn resolve_env(
+    manifest: Option<&OxyAppManifest>,
+    env: Option<&str>,
+    target_flag: Option<&str>,
+) -> Option<ResolvedEnv> {
     if let Some(t) = target_flag.filter(|s| !s.trim().is_empty()) {
-        return Some(t.trim_end_matches('/').to_string());
+        let org_slug = env_url::parse_env_url(t).and_then(|r| r.org_slug);
+        return Some(ResolvedEnv::new(t.trim(), org_slug));
     }
     let env = env?;
     if let Some(spec) = manifest
         .and_then(|m| m.environments.as_ref())
         .and_then(|envs| envs.get(env))
     {
-        return Some(spec.target.trim_end_matches('/').to_string());
+        return Some(ResolvedEnv::new(spec.target.as_str(), None));
     }
-    default_target(env).map(|s| s.trim_end_matches('/').to_string())
+    if let Some(t) = default_target(env) {
+        return Some(ResolvedEnv::new(t, None));
+    }
+    // Not a known name: read it as a URL. This is the only new branch, and it
+    // runs only where the old code returned `None`.
+    env_url::looks_like_url(env)
+        .then(|| env_url::parse_env_url(env))
+        .flatten()
 }
 
 #[cfg(test)]
@@ -195,6 +226,54 @@ mod tests {
         );
         // unknown env, no manifest, no flag → None
         assert_eq!(resolve_target(None, Some("bogus"), None), None);
+    }
+
+    #[test]
+    fn env_accepts_a_url_and_keeps_every_name_working() {
+        // Additive: a URL resolves where a name used to return None…
+        let r = resolve_env(None, Some("https://app.oxygen-hq.com/threads/x"), None).unwrap();
+        assert_eq!(r.target, "https://app.oxygen-hq.com");
+        assert_eq!(r.org_slug, None);
+        // …an org URL yields both the product target and the org slug…
+        let r = resolve_env(None, Some("https://poke-house.oxygen-hq.com"), None).unwrap();
+        assert_eq!(r.target, "https://app.oxygen-hq.com");
+        assert_eq!(r.org_slug.as_deref(), Some("poke-house"));
+        // …and the named envs are untouched.
+        assert_eq!(
+            resolve_target(None, Some("production"), None).as_deref(),
+            Some("https://app.oxygen-hq.com")
+        );
+    }
+
+    #[test]
+    fn a_manifest_env_name_still_wins_over_url_parsing() {
+        // A manifest key that happens to look like a URL must resolve from the
+        // manifest, not by parsing — names always win.
+        let m: OxyAppManifest = serde_json::from_value(serde_json::json!({
+            "slug": "x",
+            "environments": { "app.oxygen-hq.com": { "target": "https://pinned.example.com" } }
+        }))
+        .unwrap();
+        assert_eq!(
+            resolve_target(Some(&m), Some("app.oxygen-hq.com"), None).as_deref(),
+            Some("https://pinned.example.com")
+        );
+    }
+
+    #[test]
+    fn target_flag_stays_verbatim_but_reports_its_org() {
+        // Verbatim: the path is preserved (a deployment served under a path is
+        // exactly why `--target` exists).
+        let r = resolve_env(None, Some("production"), Some("https://host.example/oxy")).unwrap();
+        assert_eq!(r.target, "https://host.example/oxy");
+        let r = resolve_env(None, None, Some("https://poke-house.oxygen-hq.com")).unwrap();
+        assert_eq!(r.target, "https://poke-house.oxygen-hq.com");
+        assert_eq!(r.org_slug.as_deref(), Some("poke-house"));
+    }
+
+    #[test]
+    fn a_bare_unknown_env_name_still_resolves_to_nothing() {
+        assert_eq!(resolve_env(None, Some("bogus"), None), None);
     }
 
     #[test]

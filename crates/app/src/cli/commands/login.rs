@@ -23,22 +23,41 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
-use super::app_manifest::{OxyAppManifest, resolve_target};
+use super::app_manifest::{OxyAppManifest, ResolvedEnv, resolve_env, resolve_target};
 
 #[derive(Parser, Debug)]
 pub struct LoginArgs {
     /// Environment(s) to authenticate against. Repeat the flag or use a
     /// comma-separated list to log into several at once
     /// (`--env dev --env staging`, or `--env dev,staging,production`).
-    /// Each env resolves a target URL via oxy-app.json `environments` or
-    /// the built-in defaults; the browser opens once per env in
-    /// sequence. Default: `production`.
-    #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',')]
+    /// Each env resolves a target URL via oxy-app.json `environments`, the
+    /// built-in defaults, or — when the value is a URL — the URL itself
+    /// (`--env https://app.oxygen-hq.com`, `--env https://poke-house.oxygen-hq.com`).
+    /// The browser opens once per env in sequence. Default: `production`.
+    #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', value_name = "NAME|URL")]
     env: Vec<String>,
     /// Explicit oxy base URL; overrides `--env`. Only meaningful when a
     /// single env is given (or when `--env` is omitted altogether).
     #[arg(long)]
     target: Option<String>,
+    /// After logging in, immediately start an assume-role session for this
+    /// organization (slug, org UUID, or an org URL). Requires `--reason`.
+    /// The session lasts 60 minutes and is NOT renewable; end it with
+    /// `oxy assume end`. Single-env only. Pass a bare `--assume` (no value) to
+    /// act as the org an `--env` URL already names, e.g.
+    /// `oxy login --env https://poke-house.oxygen-hq.com --assume -r "triage"`.
+    #[arg(
+        long,
+        value_name = "SLUG|UUID|URL",
+        num_args = 0..=1,
+        default_missing_value = "",
+        requires = "reason"
+    )]
+    assume: Option<String>,
+    /// Why you are acting as the org — recorded in the impersonation log.
+    /// Only valid with `--assume`.
+    #[arg(long, short = 'r', requires = "assume")]
+    reason: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -148,17 +167,24 @@ pub async fn handle_login_command(args: LoginArgs) -> Result<(), OxyError> {
             "--target is only valid when logging into a single env".into(),
         ));
     }
+    // Same reasoning for `--assume`: one session names one org on one
+    // deployment, so a multi-env login has no single answer.
+    if envs.len() > 1 && args.assume.is_some() {
+        return Err(OxyError::ConfigurationError(
+            "--assume is only valid when logging into a single env".into(),
+        ));
+    }
 
     // Resolve every target up-front so we fail fast on a typo before
     // popping any browser windows.
-    let targets: Vec<(String, String)> = envs
+    let targets: Vec<(String, ResolvedEnv)> = envs
         .iter()
         .map(|env| {
-            resolve_target(manifest.as_ref(), Some(env), args.target.as_deref())
+            resolve_env(manifest.as_ref(), Some(env), args.target.as_deref())
                 .map(|t| (env.clone(), t))
                 .ok_or_else(|| {
                     OxyError::ConfigurationError(format!(
-                        "could not resolve a target for --env {env}. Pass --target <url> or add it to oxy-app.json environments."
+                        "could not resolve a target for --env {env}. Pass a URL (--env https://app.oxygen-hq.com), --target <url>, or add it to oxy-app.json environments."
                     ))
                 })
         })
@@ -184,12 +210,16 @@ pub async fn handle_login_command(args: LoginArgs) -> Result<(), OxyError> {
     // and surface at the end so a multi-env run isn't all-or-nothing
     // (e.g. dev OAuth might be configured differently than prod).
     let mut failures: Vec<(String, String)> = Vec::new();
-    for (env, target) in &targets {
+    let mut tokens: Vec<String> = Vec::new();
+    for (env, resolved) in &targets {
         if targets.len() > 1 {
-            println!("{}", format!("──── {env} ({target}) ────").secondary());
+            println!(
+                "{}",
+                format!("──── {env} ({}) ────", resolved.target).secondary()
+            );
         }
-        match login_one(target).await {
-            Ok(()) => {}
+        match login_one(&resolved.target).await {
+            Ok(token) => tokens.push(token),
             Err(e) => failures.push((env.clone(), e.to_string())),
         }
     }
@@ -206,14 +236,34 @@ pub async fn handle_login_command(args: LoginArgs) -> Result<(), OxyError> {
             targets.len()
         )));
     }
+
+    // `--assume` is the one-shot "log in and act as". Guarded to a single env
+    // above, so exactly one target/token is in hand here.
+    if let Some(org_arg) = args.assume.as_deref()
+        && let (Some((_, resolved)), Some(token)) = (targets.first(), tokens.first())
+    {
+        let reason = args.reason.as_deref().unwrap_or_default();
+        // A bare `--assume` inherits the org the `--env` URL named (parity with
+        // `oxy assume start`); an explicit value wins. `None` here (bare form,
+        // but the URL named no org) lets `start_session` give the same
+        // "which org?" error as the standalone command.
+        let org = if org_arg.trim().is_empty() {
+            resolved.org_slug.as_deref()
+        } else {
+            Some(org_arg)
+        };
+        let conn = super::assume::Connection::from_parts(&resolved.target, token)?;
+        return super::assume::start_session(&conn, org, reason).await;
+    }
     Ok(())
 }
 
 /// Run the loopback login flow against a single target and persist the
 /// token + reported email/admin status. Extracted from the original
 /// handler so it can be called in a loop without duplicating the
-/// 60-odd lines of browser/auth dance.
-async fn login_one(target: &str) -> Result<(), OxyError> {
+/// 60-odd lines of browser/auth dance. Returns the captured token so
+/// `--assume` can act immediately without re-reading the store.
+async fn login_one(target: &str) -> Result<String, OxyError> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| OxyError::RuntimeError(format!("could not bind loopback port: {e}")))?;
@@ -261,7 +311,7 @@ async fn login_one(target: &str) -> Result<(), OxyError> {
                 .error()
         );
     }
-    Ok(())
+    Ok(token)
 }
 
 pub async fn handle_logout_command(args: LogoutArgs) -> Result<(), OxyError> {

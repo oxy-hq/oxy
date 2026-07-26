@@ -150,15 +150,30 @@ fn build_fields_map(fields: &[String], typed: &[String]) -> Result<Map<String, V
     Ok(map)
 }
 
-fn resolve_token(args: &ApiArgs, target: &str) -> Result<String, OxyError> {
-    env_var(&args.token_env)
+/// Bearer for `target`: `OXY_TOKEN` (or `token_env`) first, then the
+/// `oxy login` cache for that host. Shared by every CLI command that calls the
+/// oxy HTTP API, so there is one auth story and one error message.
+pub(super) fn resolve_bearer(target: &str, token_env: &str, env: &str) -> Result<String, OxyError> {
+    env_var(token_env)
         .or_else(|| login::load_token(target))
         .ok_or_else(|| {
             OxyError::ConfigurationError(format!(
-                "not authenticated for {target}. Run `oxy login --env {}` (or set {}).",
-                args.env, args.token_env
+                "not authenticated for {target}. Run `oxy login --env {env}` (or set {token_env})."
             ))
         })
+}
+
+/// The CLI's HTTP client. One place to keep timeouts (and any future proxy /
+/// TLS settings) consistent across commands.
+pub(super) fn http_client() -> Result<reqwest::Client, OxyError> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| OxyError::RuntimeError(format!("http client init: {e}")))
+}
+
+fn resolve_token(args: &ApiArgs, target: &str) -> Result<String, OxyError> {
+    resolve_bearer(target, &args.token_env, &args.env)
 }
 
 pub async fn handle_api_command(args: ApiArgs) -> Result<(), OxyError> {
@@ -207,10 +222,7 @@ pub async fn handle_api_command(args: ApiArgs) -> Result<(), OxyError> {
     let method = reqwest::Method::from_bytes(method.as_bytes())
         .map_err(|e| OxyError::RuntimeError(format!("invalid method: {e}")))?;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| OxyError::RuntimeError(format!("http client init: {e}")))?;
+    let client = http_client()?;
 
     let mut req = client.request(method, &url).bearer_auth(&token);
     // Default to JSON when sending a body; a `-H content-type:` overrides it.

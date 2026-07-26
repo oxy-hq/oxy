@@ -4,9 +4,12 @@ mod airway;
 mod api;
 mod app_manifest;
 mod apps;
+mod assume;
+mod assume_org;
 mod cameras;
 pub mod clean;
 mod compile;
+mod env_url;
 pub mod export_chart;
 mod init;
 mod init_ci;
@@ -344,6 +347,14 @@ enum SubCommand {
     Login(login::LoginArgs),
     /// Clear the cached `oxy login` token for a target.
     Logout(login::LogoutArgs),
+    /// Act as an organization (assume-role) from the terminal.
+    ///
+    /// Start / show / end the same explicit, audited session the admin UI
+    /// uses (`/api/assume`). Oxy staff may act as any org; a partner only as
+    /// an assigned client. Bounded to 60 minutes and NOT renewable, and it
+    /// closes the `/admin/*` staff surface while live — `oxy assume end`
+    /// restores it.
+    Assume(assume::AssumeArgs),
     /// Run a local outbound proxy so a custom app in `pnpm dev` hits a cloud
     /// Oxy's real data. Reuses the `oxy login --env` token; defaults to port
     /// 3000 (a drop-in for a local `oxy serve`). Guardrails: tracking events
@@ -592,6 +603,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Login(_) => "login",
             SubCommand::Proxy(_) => "proxy",
             SubCommand::Logout(_) => "logout",
+            SubCommand::Assume(_) => "assume",
         };
 
         sentry_config::add_breadcrumb(
@@ -981,6 +993,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Proxy(proxy_args)) => {
             proxy::handle_proxy_command(proxy_args).await?;
+        }
+
+        Some(SubCommand::Assume(assume_args)) => {
+            assume::handle_assume_command(assume_args).await?;
         }
 
         None => {
