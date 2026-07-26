@@ -273,7 +273,8 @@ async fn check_single_view_freshness(
 fn staleness_days(value: &Value) -> Option<i64> {
     let date = if let Some(s) = value.as_str() {
         chrono::NaiveDate::parse_from_str(s.get(..10)?, "%Y-%m-%d").ok()?
-    } else if let Some(n) = value.as_f64() {
+    } else {
+        let n = value.as_f64()?;
         let n = n as i64;
         if !(19000101..=29991231).contains(&n) {
             return None;
@@ -283,8 +284,6 @@ fn staleness_days(value: &Value) -> Option<i64> {
             ((n / 100) % 100) as u32,
             (n % 100) as u32,
         )?
-    } else {
-        return None;
     };
     Some((chrono::Utc::now().date_naive() - date).num_days())
 }

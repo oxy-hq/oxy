@@ -204,13 +204,12 @@ impl DelegationResolver for AutomationDelegationResolver {
         // spec under `airway_spec`. Rebuild it before the sub-automation
         // routing below, which would otherwise try to load an on-disk
         // automation named "__airway__".
-        if workflow_ref == "__airway__" {
-            if let Some(spec) = context
+        if workflow_ref == "__airway__"
+            && let Some(spec) = context
                 .get("airway_spec")
                 .and_then(|v| serde_json::from_value::<TaskSpec>(v.clone()).ok())
-            {
-                return spec;
-            }
+        {
+            return spec;
         }
 
         let step_config = context.get("step_config");

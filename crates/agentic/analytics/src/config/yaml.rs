@@ -315,7 +315,7 @@ pub enum LlmVendor {
 }
 
 /// LLM configuration section.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema, Default)]
 pub struct LlmConfigYaml {
     /// Named model reference from the project's `config.yml`.
     ///
@@ -410,19 +410,4 @@ pub struct ExtendedThinkingConfigYaml {
     /// Thinking config override for extended thinking mode.
     #[serde(default)]
     pub thinking: Option<ThinkingConfigYaml>,
-}
-
-impl Default for LlmConfigYaml {
-    fn default() -> Self {
-        Self {
-            model_ref: None,
-            vendor: None,
-            model: None,
-            api_key: None,
-            base_url: None,
-            max_tokens: None,
-            thinking: None,
-            extended_thinking: None,
-        }
-    }
 }

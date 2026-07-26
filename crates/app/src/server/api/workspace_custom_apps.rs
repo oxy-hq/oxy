@@ -230,7 +230,7 @@ pub(crate) async fn published_app_summaries(
     // N+1) — the same resolver the admin list uses. See the
     // `oxy-app-visual-identity` skill.
     let manifests =
-        crate::server::api::custom_apps_manifest::resolve_manifests_batch(&db, &rows).await;
+        crate::server::api::custom_apps_manifest::resolve_manifests_batch(db, &rows).await;
     let mut out = Vec::with_capacity(rows.len());
     for app in rows {
         let Some(slug) = slugs.get(&app.org_id).cloned() else {
