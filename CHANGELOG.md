@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.113] - 2026-07-26
+
+### 🚀 Features
+
+- *(admin)* Quick-create org + onboard owner; onboarding org switcher (never blocked) (#2792)
+- Assume an org's role in one click from the admin app page (#2782)
+- Make admin app-detail dossier dockable and denser (#2783)
+- *(cli)* Oxy assume (assume-role) + --env accepts a pasted URL (#2791)
+
+### 🐛 Bug Fixes
+
+- *(create-oxy-app)* Scaffold a custom app, not a backend project (#2769)
+- *(custom-apps)* Close two publish P0s + three silent-publish P1s (#2790)
+- *(invitations)* A lapsed invite permanently blocks re-inviting that address (#2788)
+
+### 🚜 Refactor
+
+- *(project.yml)* Update project configuration for serena
+
+### 📚 Documentation
+
+- Restructure IA around World Model, Agentic Intelligence, and the SDK (#2736)
+- *(custom-apps)* Platform gap analysis + safe diagnosability/cache fixes (#2787)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(create-oxy-app)* Release 0.4.0 (#2781)
+- Cargo cliipy and fmt
+
 ## [0.5.112] - 2026-07-24
 
 ### 🚀 Features
@@ -20,6 +49,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - *(claude)* Allow kubectl without a per-call prompt (#2778)
+- Release 0.5.112 (#2775)
 
 ## [0.5.111] - 2026-07-24
 
