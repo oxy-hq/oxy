@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { isAxiosError } from "axios";
 import { toast } from "sonner";
 import {
+  type AdminCreateOrgBody,
   AdminOrgsService,
   type ListOrgsMetaQuery,
   type RenameOrgBody
@@ -17,6 +18,34 @@ function errMessage(err: unknown, fallback: string): string {
   if (err instanceof Error) return err.message;
   return fallback;
 }
+
+/** Create-org failures are status-only (no message body), so map the two the
+ *  handler returns to something a human can act on. */
+function createOrgError(err: unknown): string {
+  if (isAxiosError(err)) {
+    if (err.response?.status === 409) return "That slug is already taken.";
+    if (err.response?.status === 422)
+      return "Check the details — the slug may be reserved or the owner email invalid.";
+  }
+  return errMessage(err, "Failed to create organization");
+}
+
+export const useCreateAdminOrg = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AdminCreateOrgBody) => AdminOrgsService.create(body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: queryKeys.adminOrgs.all });
+      const { org, owner_email, owner_status } = data;
+      toast.success(
+        owner_status === "seeded"
+          ? `Created ${org.name}. ${owner_email} is now the owner.`
+          : `Created ${org.name}. Invited ${owner_email} to claim ownership.`
+      );
+    },
+    onError: (err) => toast.error(createOrgError(err))
+  });
+};
 
 export const useAdminOrgsList = (
   query: ListOrgsMetaQuery = {},

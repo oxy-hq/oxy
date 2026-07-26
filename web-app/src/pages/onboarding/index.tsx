@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Building2, MailPlus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CreateOrgDialog from "@/components/org/CreateOrgDialog";
 import JoinOrgDialog from "@/components/org/JoinOrgDialog";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/s
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useMyInvitations } from "@/hooks/api/organizations";
 import queryKeys from "@/hooks/api/queryKey";
+import { releaseBodyPointerLock } from "@/libs/utils/pointerEvents";
 import ROUTES from "@/libs/utils/routes";
 import type { Organization } from "@/types/organization";
 import OnboardingHeader from "./components/OnboardingHeader";
@@ -33,16 +34,30 @@ export default function OnboardingPage() {
 
   const { data: invites, isPending: invitesPending } = useMyInvitations();
 
+  // Clear any body pointer-events lock leaked by a dialog on the page we
+  // arrived from — otherwise this page (and its org switcher) mounts unclickable.
+  useEffect(() => {
+    releaseBodyPointerLock();
+  }, []);
+
   const handleCreated = (org: Organization) => {
     setCreateOpen(false);
-    // Fresh-org path: show invite members before workspace creation.
-    navigate(`${ROUTES.ORG(org.slug).ONBOARDING}?step=invite`, { replace: true });
+    // The dialog closes and we navigate away in the same tick; defer past
+    // Radix's close cleanup and clear the lock so the next page is interactive.
+    requestAnimationFrame(() => {
+      releaseBodyPointerLock();
+      // Fresh-org path: show invite members before workspace creation.
+      navigate(`${ROUTES.ORG(org.slug).ONBOARDING}?step=invite`, { replace: true });
+    });
   };
 
   const handleJoined = async (org: Organization) => {
     setJoinOpen(false);
     await queryClient.refetchQueries({ queryKey: queryKeys.org.list() });
-    navigate(ROUTES.ORG(org.slug).ROOT, { replace: true });
+    requestAnimationFrame(() => {
+      releaseBodyPointerLock();
+      navigate(ROUTES.ORG(org.slug).ROOT, { replace: true });
+    });
   };
 
   if (invitesPending) {

@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { useCreateClientOrg } from "@/hooks/api/partners";
+import { useCreateAdminOrg } from "@/hooks/api/adminTenants";
 
 const slugify = (s: string) =>
   s
@@ -24,20 +25,17 @@ const slugify = (s: string) =>
 const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 /**
- * Onboard a client — the thing a reseller channel is for, and the thing partners
- * previously had to open a support ticket to get.
- *
- * Requires `create_orgs`. Creating a client is safe to delegate in a way that
- * *attaching an existing org* is not: a brand-new org affects nobody else's
- * tenant. Attaching a live one stays with Oxy.
+ * Provision a tenant: create the organization and onboard its owner in one step.
+ * A known email is made Owner immediately; an unknown one is emailed an invite
+ * to claim ownership (the server decides which — the UI just names the owner).
  */
-export default function CreateClientDialog({ partnerId }: { partnerId: string }) {
+export default function CreateOrgDialog({ onCreated }: { onCreated?: (orgId: string) => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
-  const create = useCreateClientOrg(partnerId);
+  const create = useCreateAdminOrg();
 
   const reset = () => {
     setName("");
@@ -46,17 +44,17 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
     setSlugTouched(false);
   };
 
+  const canSubmit =
+    !!name.trim() && !!slug.trim() && isValidEmail(ownerEmail.trim()) && !create.isPending;
+
   const submit = () =>
     create.mutate(
+      { name: name.trim(), slug: slug.trim(), owner_email: ownerEmail.trim() },
       {
-        name: name.trim(),
-        slug: slug.trim(),
-        ...(ownerEmail.trim() ? { owner_email: ownerEmail.trim() } : {})
-      },
-      {
-        onSuccess: () => {
+        onSuccess: (data) => {
           setOpen(false);
           reset();
+          onCreated?.(data.org.id);
         }
       }
     );
@@ -70,21 +68,24 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
       }}
     >
       <DialogTrigger asChild>
-        <Button size='sm'>New client</Button>
+        <Button size='sm' className='gap-1.5' data-testid='admin-create-org'>
+          <Plus className='size-4' />
+          New org
+        </Button>
       </DialogTrigger>
       <DialogContent className='max-w-md'>
         <DialogHeader>
-          <DialogTitle>Onboard a client</DialogTitle>
+          <DialogTitle>Create organization</DialogTitle>
           <DialogDescription>
-            Creates the organization and puts it under your management, in one step.
+            Creates the organization and onboards its owner in one step.
           </DialogDescription>
         </DialogHeader>
 
         <div className='space-y-3'>
           <div className='space-y-1'>
-            <Label htmlFor='client-name'>Organization name</Label>
+            <Label htmlFor='admin-org-name'>Organization name</Label>
             <Input
-              id='client-name'
+              id='admin-org-name'
               value={name}
               placeholder='Northwind Traders'
               onChange={(e) => {
@@ -94,9 +95,9 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
             />
           </div>
           <div className='space-y-1'>
-            <Label htmlFor='client-slug'>Slug</Label>
+            <Label htmlFor='admin-org-slug'>Slug</Label>
             <Input
-              id='client-slug'
+              id='admin-org-slug'
               value={slug}
               placeholder='northwind'
               onChange={(e) => {
@@ -106,18 +107,17 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
             />
           </div>
           <div className='space-y-1'>
-            <Label htmlFor='client-owner'>First owner (optional)</Label>
+            <Label htmlFor='admin-org-owner'>Owner email</Label>
             <Input
-              id='client-owner'
+              id='admin-org-owner'
               type='email'
               value={ownerEmail}
               placeholder='owner@northwind.com'
               onChange={(e) => setOwnerEmail(e.target.value)}
             />
             <p className='text-muted-foreground text-xs'>
-              The client owns their organization from day one — you administer it, you don&apos;t
-              own it. If they already have an Oxy account they become owner now; otherwise we email
-              them an invite to claim ownership.
+              If they already have an Oxy account they become owner now. Otherwise we email them an
+              invite to claim ownership.
             </p>
           </div>
         </div>
@@ -126,16 +126,8 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
           <Button variant='ghost' onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button
-            disabled={
-              !name.trim() ||
-              !slug.trim() ||
-              (!!ownerEmail.trim() && !isValidEmail(ownerEmail.trim())) ||
-              create.isPending
-            }
-            onClick={submit}
-          >
-            Create client
+          <Button disabled={!canSubmit} onClick={submit}>
+            Create organization
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -2,6 +2,7 @@ import { Home } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import OrgSwitcher from "@/components/org/OrgSwitcher";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
@@ -18,11 +19,13 @@ import { useBuilderActivity } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import {
   clearOnboardingStateForStorageKey,
-  initOnboardingStateForStorageKey
+  initOnboardingStateForStorageKey,
+  markOnboardingDismissedForStorageKey
 } from "@/libs/utils/onboardingStorage";
 import ROUTES from "@/libs/utils/routes";
 import { AnalyticsService, type HumanInputQuestion, type UiBlock } from "@/services/api/analytics";
 import { type OnboardingResetRequest, OnboardingService } from "@/services/api/onboarding";
+import CancelSetupButton from "./CancelSetupButton";
 import OnboardingRightRail from "./OnboardingRightRail";
 import OnboardingThread from "./OnboardingThread";
 import { getPreviousStep, useOnboardingOrchestrator, wantsSecondApp } from "./orchestrator";
@@ -1052,6 +1055,10 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
     <div className='flex h-full flex-col'>
       {/* Header */}
       <div className='flex items-center gap-2 border-border border-b px-4 py-2'>
+        {/* Escape hatch: the rail is hidden on this surface and Home bounces an
+            incomplete workspace back here, so the org switcher is the only way
+            to reach another org or create a new one from setup. */}
+        <OrgSwitcher />
         <div className='h-2 w-2 rounded-full bg-primary' />
         <span className='font-medium text-sm'>Oxygen Setup</span>
         <span className='flex-1 text-muted-foreground text-xs'>Setting up your workspace</span>
@@ -1082,11 +1089,23 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
             Start over
           </button>
         )}
+        {step !== "complete" && (
+          <CancelSetupButton workspaceId={projectId} onBeforeDelete={handleStopBuild} />
+        )}
         <button
           type='button'
-          onClick={() => navigate(ROUTES.ROOT)}
+          onClick={() => {
+            // Mark setup deferred so Home doesn't immediately bounce back into
+            // the wizard (the missing-credential check drives that redirect).
+            // The workspace still surfaces a "finish setup" row on Home and the
+            // wizard stays reachable — same mechanism as the in-thread Skip.
+            if (orchestrator.state.storageKey) {
+              markOnboardingDismissedForStorageKey(orchestrator.state.storageKey);
+            }
+            navigate(ROUTES.ROOT);
+          }}
           aria-label='Go home'
-          title='Go home — onboarding state is saved and you can resume later'
+          title='Go home — setup is saved; finish it from Home later'
           className='inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground'
         >
           <Home className='h-3.5 w-3.5' />
@@ -1260,6 +1279,8 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
   return (
     <div className='flex h-full flex-col'>
       <div className='flex items-center gap-2 border-border border-b px-4 py-2'>
+        {/* Escape hatch — see BlankOnboardingPage header. */}
+        <OrgSwitcher />
         <div className='h-2 w-2 rounded-full bg-primary' />
         <span className='font-medium text-sm'>Oxygen Setup</span>
         <span className='flex-1 text-muted-foreground text-xs'>{headerSubtitle}</span>
@@ -1272,11 +1293,21 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
             Start over
           </button>
         )}
+        {step !== "complete" && <CancelSetupButton workspaceId={projectId} />}
         <button
           type='button'
-          onClick={() => navigate(ROUTES.ROOT)}
+          onClick={() => {
+            // Mark setup deferred so Home doesn't immediately bounce back into
+            // the wizard (the missing-credential check drives that redirect).
+            // The workspace still surfaces a "finish setup" row on Home and the
+            // wizard stays reachable — same mechanism as the in-thread Skip.
+            if (orchestrator.state.storageKey) {
+              markOnboardingDismissedForStorageKey(orchestrator.state.storageKey);
+            }
+            navigate(ROUTES.ROOT);
+          }}
           aria-label='Go home'
-          title='Go home — onboarding state is saved and you can resume later'
+          title='Go home — setup is saved; finish it from Home later'
           className='inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground'
         >
           <Home className='h-3.5 w-3.5' />

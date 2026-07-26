@@ -69,7 +69,7 @@ pub(crate) fn is_reserved_slug(slug: &str) -> bool {
 /// Trims, lowercases, and validates an invitee email. Returns the normalized
 /// form on success or `BAD_REQUEST` for empty / malformed input. Centralizing
 /// here keeps the single-invite and bulk-invite paths in sync.
-pub(super) fn normalize_invite_email(raw: &str) -> Result<String, StatusCode> {
+pub(crate) fn normalize_invite_email(raw: &str) -> Result<String, StatusCode> {
     let normalized = raw.trim().to_lowercase();
     if normalized.is_empty() || !EmailAddress::is_valid(&normalized) {
         return Err(StatusCode::BAD_REQUEST);

@@ -69,6 +69,24 @@ export interface RenameOrgBody {
   slug?: string;
 }
 
+export interface AdminCreateOrgBody {
+  name: string;
+  /** Optional; the server derives it from `name` when omitted. */
+  slug?: string;
+  owner_email: string;
+}
+
+/** `seeded` = the email was an existing user, added as Owner now. `invited` =
+ *  an Owner-role invitation was created and emailed. */
+export type AdminOrgOwnerStatus = "seeded" | "invited";
+
+export interface AdminCreateOrgResponse {
+  org: AdminOrgMeta;
+  owner_status: AdminOrgOwnerStatus;
+  /** Echo of the normalized owner email, for the success message. */
+  owner_email: string;
+}
+
 // Org bare subdomain (`<org-slug>.<zone>`) — Oxy-staff control.
 export interface AdminOrgSubdomainWorkspace {
   id: string;
@@ -97,6 +115,12 @@ export interface SetAdminOrgSubdomainBody {
 export const AdminOrgsService = {
   async list(query: ListOrgsMetaQuery = {}): Promise<AdminOrgMeta[]> {
     const res = await apiClient.get<AdminOrgMeta[]>("/admin/orgs-meta", { params: query });
+    return res.data;
+  },
+
+  /** Create an org and onboard its owner in one step (POST /admin/orgs). */
+  async create(body: AdminCreateOrgBody): Promise<AdminCreateOrgResponse> {
+    const res = await apiClient.post<AdminCreateOrgResponse>("/admin/orgs", body);
     return res.data;
   },
 

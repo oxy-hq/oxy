@@ -194,15 +194,17 @@ export const useCreateClientOrg = (partnerId: string) => {
       qc.invalidateQueries({ queryKey: queryKeys.partner.orgs(partnerId) });
       qc.invalidateQueries({ queryKey: queryKeys.partner.mine() });
       toast.success(
-        created.owner_pending
-          ? `${created.org.name} created — invite the owner from Members`
-          : `${created.org.name} created`
+        created.owner_status === "invited"
+          ? `${created.org.name} created — invite sent to the owner`
+          : created.owner_status === "seeded"
+            ? `${created.org.name} created — owner added`
+            : `${created.org.name} created`
       );
     },
     onError: (e: unknown) => {
       const code = status(e);
       if (code === 409) return toast.error("That slug is taken");
-      if (code === 422) return toast.error("That slug is reserved");
+      if (code === 422) return toast.error("That slug is reserved, or the owner email is invalid");
       if (code === 403) return toast.error("Your role does not allow onboarding clients");
       toast.error("Failed to create the client");
     }

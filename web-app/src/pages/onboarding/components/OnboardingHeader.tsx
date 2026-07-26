@@ -1,5 +1,6 @@
 import { ChevronLeft, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import OrgSwitcher from "@/components/org/OrgSwitcher";
 import { Button } from "@/components/ui/shadcn/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrgs } from "@/hooks/api/organizations";
@@ -46,26 +47,32 @@ export default function OnboardingHeader() {
           <span className='truncate text-sm'>Oxygen</span>
         </div>
       )}
-      {currentUser?.email && (
-        <div className='group relative'>
-          <div className='flex cursor-pointer flex-col items-end text-right leading-tight'>
-            <span className='text-muted-foreground text-xs'>Logged in as</span>
-            <span className='truncate font-normal text-sm'>{currentUser.email}</span>
+      <div className='flex items-center gap-4'>
+        {/* A multi-org owner can jump to an existing org mid-onboarding — the
+            rail (and its switcher) is hidden here, so it lives in the header.
+            Renders nothing when the user has no org yet. */}
+        <OrgSwitcher />
+        {currentUser?.email && (
+          <div className='group relative'>
+            <div className='flex cursor-pointer flex-col items-end text-right leading-tight'>
+              <span className='text-muted-foreground text-xs'>Logged in as</span>
+              <span className='truncate font-normal text-sm'>{currentUser.email}</span>
+            </div>
+            <div className='pointer-events-none absolute top-full right-0 z-10 pt-2 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100'>
+              <Button
+                variant='ghost'
+                size='sm'
+                onClick={logout}
+                aria-label='Log out'
+                className='gap-1.5 shadow-sm'
+              >
+                <LogOut className='size-3.5' />
+                Log out
+              </Button>
+            </div>
           </div>
-          <div className='pointer-events-none absolute top-full right-0 z-10 pt-2 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100'>
-            <Button
-              variant='ghost'
-              size='sm'
-              onClick={logout}
-              aria-label='Log out'
-              className='gap-1.5 shadow-sm'
-            >
-              <LogOut className='size-3.5' />
-              Log out
-            </Button>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

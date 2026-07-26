@@ -74,7 +74,12 @@ export interface GrantPartnershipInput {
   partner_admin_email?: string;
 }
 
-/** Least privilege: members / apps / audit on; data, onboarding, billing, secrets off. */
+/**
+ * Default ceiling for a new partnership. members / apps / audit / onboarding on;
+ * data, billing, secrets off. `create_orgs` (onboard clients) is on because
+ * that's the point of a reseller channel — staff can still toggle it off here
+ * before granting. Mirrors the backend `sane_default`.
+ */
 export const DEFAULT_PARTNER_CEILING: AdminPartnerCapabilities = {
   manage_members: true,
   manage_apps: true,
@@ -82,7 +87,7 @@ export const DEFAULT_PARTNER_CEILING: AdminPartnerCapabilities = {
   view_audit: true,
   manage_billing: false,
   manage_secrets: false,
-  create_orgs: false,
+  create_orgs: true,
   manage_org_settings: false
 };
 

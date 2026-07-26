@@ -73,6 +73,23 @@ cases:
 
       - wait_for: "selector:text=Invite your team"
 
+      # Regression (2026-07-25): the onboarding header's org switcher must be
+      # clickable right after the create-org dialog closed — proving no Radix
+      # `pointer-events: none` body lock leaked onto this page. If the page were
+      # locked, this click wouldn't register and the wait_for below would time
+      # out. (The switcher renders here because the just-created org makes the
+      # org list non-empty.)
+      - act: |
+          In the onboarding header, browser_click
+          [data-testid=onboarding-org-switcher]. A dropdown opens listing the
+          organization(s) with a "New organization" item at the bottom.
+
+      - wait_for: "selector:text=New organization"
+
+      - act: |
+          browser_press_key Escape to close the org switcher dropdown so it
+          doesn't overlap the invite-step controls.
+
       - act: |
           On the invite step, click [data-testid=onboarding-skip-invite-button]
           to bypass invitations. The page advances to the workspace step.

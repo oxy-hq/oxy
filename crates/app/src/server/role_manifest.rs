@@ -1271,6 +1271,13 @@ mod tests {
                 "{method} admin org-subdomain must be FleetOk (Postgres-only)"
             );
         }
+        // Create org + onboard owner is a pure Postgres write (org + billing +
+        // owner membership/invitation) — no workspace FS, so it stays FleetOk.
+        assert_eq!(
+            classify("POST", "/api/admin/orgs"),
+            RouteRole::FleetOk,
+            "POST admin create-org must be FleetOk (Postgres-only)"
+        );
     }
 
     #[test]

@@ -1,23 +1,30 @@
-//! `/api/admin/orgs/*` — OXY_OWNER-only meta surface for organizations.
+//! `/api/admin/orgs/*` — staff meta surface for organizations.
 //!
 //! Adds to the existing `/admin/orgs` listing endpoint (defined in
-//! `admin::billing`) the bits the admin UI needs to operate on a single
-//! organization: detail view, rename, transfer ownership, and delete.
+//! `admin::billing`) the bits the admin UI needs to provision and operate on a
+//! single organization: create (+ onboard its owner), detail view, rename,
+//! transfer ownership, and delete.
 //!
-//! All endpoints sit behind `oxy_owner_guard_middleware` (mounted in
-//! `router::global`), so handlers assume the caller is already allow-listed.
+//! These routes are merged into `admin::staff_surface`, which sits behind the
+//! **permissive** outer guard (`oxy_owner_or_app_admin_guard_middleware`) plus
+//! `block_admin_while_acting` — so they are reachable by Global Owners **and**
+//! Global Admins (Oxy ops), matching the `adminOrAppAdmin` Tenants UI that
+//! fronts them. Only `billing`/`app_admins` escalate to owner-strict. Handlers
+//! therefore assume a staff caller, not necessarily an OXY_OWNER.
 
 use std::collections::HashMap;
 
 use axum::extract::{Path, Query};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use chrono::Utc;
+use entity::org_invitations::InviteStatus;
 use entity::org_members::OrgRole;
 use entity::workspaces::WorkspaceStatus;
-use entity::{org_members, organizations, users, workspaces};
+use entity::{org_billing, org_invitations, org_members, organizations, users, workspaces};
 use oxy::database::client::establish_connection;
+use oxy::database::filters::UserQueryFilterExt;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseBackend, EntityTrait, FromQueryResult,
@@ -30,6 +37,7 @@ use crate::server::router::AppState;
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
+        .route("/orgs", post(create_org))
         .route("/orgs-meta", get(list_orgs_meta))
         .route("/orgs/{org_id}/detail", get(get_org_detail))
         .route(
@@ -43,6 +51,247 @@ pub(crate) fn router() -> Router<AppState> {
             "/orgs/{org_id}/transfer-ownership",
             post(transfer_ownership),
         )
+}
+
+// ---------------------------------------------------------------------------
+// Create org + onboard owner  (POST /admin/orgs)
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct AdminCreateOrgBody {
+    /// Display name; also the slug source when `slug` is omitted.
+    pub name: String,
+    /// Optional explicit slug; derived from `name` when omitted/blank.
+    pub slug: Option<String>,
+    /// Email of the org owner to onboard.
+    pub owner_email: String,
+}
+
+#[derive(Serialize)]
+pub struct AdminCreateOrgResponse {
+    pub org: AdminOrgMeta,
+    /// `"seeded"` — the email was an existing user, added as Owner immediately.
+    /// `"invited"` — an Owner-role invitation was created and emailed.
+    pub owner_status: String,
+    /// Echo of the (normalized) owner email so the UI can phrase the toast.
+    pub owner_email: String,
+}
+
+/// The two ways to onboard an owner. Kept as a pure decision so the seed-vs-invite
+/// policy is unit-testable without Postgres (mirrors `plan_owner_transfer`).
+#[derive(Debug, PartialEq, Eq)]
+enum OwnerSeed {
+    /// The email already belongs to a user — add them as Owner directly.
+    SeedMember { user_id: Uuid },
+    /// No account yet — create an Owner-role invitation and email it.
+    InviteOwner { email: String },
+}
+
+fn plan_owner_seeding(existing_user_id: Option<Uuid>, email: &str) -> OwnerSeed {
+    match existing_user_id {
+        Some(user_id) => OwnerSeed::SeedMember { user_id },
+        None => OwnerSeed::InviteOwner {
+            email: email.to_string(),
+        },
+    }
+}
+
+/// POST /admin/orgs — create an organization and onboard its owner in one step.
+///
+/// If `owner_email` is a known user they are seeded as `Owner`; otherwise an
+/// `Owner`-role invitation is created and emailed (7-day expiry). The org is
+/// created billing-`Incomplete` (admin provisions the subscription separately).
+/// Reachable by Global Owner or Global Admin (see module docs).
+pub async fn create_org(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    headers: HeaderMap,
+    Json(body): Json<AdminCreateOrgBody>,
+) -> Result<Json<AdminCreateOrgResponse>, StatusCode> {
+    use crate::server::api::organizations::{
+        is_reserved_slug, normalize_invite_email, send_invitation_email, slugify_name,
+    };
+
+    let name = body.name.trim().to_string();
+    if name.is_empty() {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    // Explicit slug wins; otherwise derive from the name.
+    let slug_source = body
+        .slug
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(name.as_str());
+    let slug = slugify_name(slug_source);
+    if slug.is_empty() || is_reserved_slug(&slug) {
+        // Empty → unusable; reserved → would shadow a top-level route. Both are
+        // 422 (unprocessable), distinct from a real slug-taken 409 below.
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    // Normalize + format-check the owner email (shared with the invite path). A
+    // malformed email is a 422 (well-formed request, unprocessable field) — the
+    // same shape as the reserved-slug case above, and what the client maps.
+    let owner_email =
+        normalize_invite_email(&body.owner_email).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+
+    let db = establish_connection().await.map_err(internal)?;
+
+    // Best-effort slug uniqueness pre-check; the DB UNIQUE constraint is the
+    // real guard against races (handled on insert below).
+    if organizations::Entity::find()
+        .filter(organizations::Column::Slug.eq(&slug))
+        .one(&db)
+        .await
+        .map_err(internal)?
+        .is_some()
+    {
+        return Err(StatusCode::CONFLICT);
+    }
+
+    // Resolve the owner email to an existing LIVE user (read-only, pre-txn). Only
+    // an active account is seeded as Owner; a deleted/suspended match falls
+    // through to the invite path rather than handing the org to an inactive account.
+    let existing_user = users::Entity::find()
+        .filter_active_by_email(&owner_email)
+        .one(&db)
+        .await
+        .map_err(internal)?;
+    let plan = plan_owner_seeding(existing_user.map(|u| u.id), &owner_email);
+
+    let now = Utc::now().fixed_offset();
+    let org_id = Uuid::new_v4();
+    let tx = db.begin().await.map_err(internal)?;
+
+    let org = organizations::ActiveModel {
+        id: Set(org_id),
+        name: Set(name.clone()),
+        slug: Set(slug),
+        logo: ActiveValue::NotSet,
+        logo_content_type: ActiveValue::NotSet,
+        created_at: Set(now),
+        updated_at: Set(now),
+    }
+    .insert(&tx)
+    .await
+    .map_err(map_insert_conflict)?;
+
+    // Eager-insert the org_billing row so `SubscriptionGuard` always finds one
+    // (the same invariant every create-org path upholds). Starts `Incomplete`.
+    org_billing::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        org_id: Set(org_id),
+        status: Set(org_billing::BillingStatus::Incomplete),
+        seats_paid: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(&tx)
+    .await
+    .map_err(internal)?;
+
+    // Onboard the owner: seed an existing user, or stage an Owner invitation.
+    let mut pending_invite: Option<(String, String)> = None;
+    let owner_status = match &plan {
+        OwnerSeed::SeedMember { user_id } => {
+            org_members::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                org_id: Set(org_id),
+                user_id: Set(*user_id),
+                role: Set(OrgRole::Owner),
+                created_at: Set(now),
+                updated_at: Set(now),
+            }
+            .insert(&tx)
+            .await
+            .map_err(internal)?;
+            "seeded"
+        }
+        OwnerSeed::InviteOwner { email } => {
+            let token = Uuid::new_v4().to_string();
+            org_invitations::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                org_id: Set(org_id),
+                email: Set(email.clone()),
+                role: Set(OrgRole::Owner),
+                invited_by: Set(actor.id),
+                token: Set(token.clone()),
+                status: Set(InviteStatus::Pending),
+                expires_at: Set((Utc::now() + chrono::Duration::days(7)).fixed_offset()),
+                created_at: Set(now),
+            }
+            .insert(&tx)
+            .await
+            .map_err(internal)?;
+            pending_invite = Some((email.clone(), token));
+            "invited"
+        }
+    };
+
+    tx.commit().await.map_err(internal)?;
+
+    // Post-commit: email the Owner invitation in the background (the row +
+    // token are already the source of truth, so a send failure never fails
+    // the request). Seeded owners get no email by design.
+    if let Some((to_email, token)) = pending_invite {
+        let base_url = crate::server::api::auth::extract_base_url_from_headers(&headers);
+        let inviter_name = actor.name.clone();
+        let inviter_email = actor.email.clone();
+        let org_name = name.clone();
+        tokio::spawn(async move {
+            if let Err(e) = send_invitation_email(
+                &to_email,
+                &token,
+                &base_url,
+                &inviter_name,
+                &inviter_email,
+                &org_name,
+            )
+            .await
+            {
+                tracing::error!("admin create_org: owner invitation email failed: {e}");
+            }
+        });
+    }
+
+    tracing::info!(
+        admin_email = %actor.email,
+        target_id = %org.id,
+        action = "create_org",
+        owner_status,
+        "admin tenant action"
+    );
+
+    let seeded = matches!(plan, OwnerSeed::SeedMember { .. });
+    Ok(Json(AdminCreateOrgResponse {
+        org: AdminOrgMeta {
+            id: org.id,
+            name: org.name,
+            slug: org.slug,
+            created_at: org.created_at.to_rfc3339(),
+            // A fresh org has one member iff we seeded an existing owner.
+            member_count: if seeded { 1 } else { 0 },
+            workspace_count: 0,
+            // `owner_email` on the meta row reflects the Owner *member*; an
+            // invited (not-yet-accepted) owner isn't a member yet.
+            owner_email: seeded.then(|| owner_email.clone()),
+            partner: None,
+            is_partner: false,
+        },
+        owner_status: owner_status.to_string(),
+        owner_email,
+    }))
+}
+
+/// Map an org-insert DbErr to a status: slug collisions caught at the DB UNIQUE
+/// constraint become 409; everything else is a 500 via `internal`.
+fn map_insert_conflict(e: sea_orm::DbErr) -> StatusCode {
+    let msg = e.to_string();
+    if msg.contains("unique") || msg.contains("duplicate") {
+        tracing::warn!("admin create_org slug conflict (DB-level): {e}");
+        return StatusCode::CONFLICT;
+    }
+    internal(e)
 }
 
 /// Every org that holds a partner grant. Small (a handful of partners), so one
@@ -813,5 +1062,26 @@ mod tests {
             .filter(|(_, r)| matches!(r, OrgRole::Owner))
             .count();
         assert_eq!(owner_count, 1);
+    }
+
+    #[test]
+    fn seeding_adds_existing_user_as_owner() {
+        let uid = Uuid::new_v4();
+        assert_eq!(
+            plan_owner_seeding(Some(uid), "owner@example.com"),
+            OwnerSeed::SeedMember { user_id: uid },
+            "a known user is seeded directly as Owner"
+        );
+    }
+
+    #[test]
+    fn seeding_invites_unknown_email_as_owner() {
+        assert_eq!(
+            plan_owner_seeding(None, "new@example.com"),
+            OwnerSeed::InviteOwner {
+                email: "new@example.com".to_string()
+            },
+            "an unknown email gets an Owner-role invitation"
+        );
     }
 }

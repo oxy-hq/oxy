@@ -23,8 +23,9 @@ export interface ChildOrg {
 /** Result of partner-initiated onboarding (`POST /partners/:id/orgs`). */
 export interface CreatedOrg {
   org: ChildOrg;
-  /** The named owner had no Oxy account yet — invite them through Members. */
-  owner_pending: boolean;
+  /** How the first owner was onboarded: `seeded` (existing user added as Owner),
+   *  `invited` (unknown email emailed an Owner invite), or `none` (no email given). */
+  owner_status: "seeded" | "invited" | "none";
 }
 
 /** A workspace in a client org, from `GET /partners/:id/orgs/:orgId/workspaces`. */

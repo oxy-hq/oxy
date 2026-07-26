@@ -25,7 +25,13 @@ export default function AdminTenantsCockpit() {
       data-testid='admin-tenants-cockpit'
       className='flex h-[calc(100vh-3.5rem)] min-h-0 flex-col'
     >
-      <TenantHeader type={type} onTypeChange={setType} view={view} onViewChange={setView} />
+      <TenantHeader
+        type={type}
+        onTypeChange={setType}
+        view={view}
+        onViewChange={setView}
+        onCreatedOrg={setId}
+      />
 
       {view === "map" ? (
         <main className='min-h-0 flex-1 overflow-auto'>

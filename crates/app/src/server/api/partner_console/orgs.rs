@@ -17,11 +17,13 @@
 
 use axum::Json;
 use axum::extract::Path;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use chrono::Utc;
+use entity::org_invitations::{self, InviteStatus};
 use entity::org_members::{self, OrgRole};
 use entity::prelude::{Apps, OrgMembers, Organizations, Users};
-use entity::{organizations, partner_orgs, users};
+use entity::{organizations, partner_orgs};
+use oxy::database::filters::UserQueryFilterExt;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
@@ -34,7 +36,9 @@ use super::{ChildOrg, db, internal, require_org_scope};
 use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::api::middlewares::partner_authz::PartnerCapability;
 use crate::server::api::middlewares::partner_context::PartnerActor;
-use crate::server::api::organizations::{is_reserved_slug, slugify_name};
+use crate::server::api::organizations::{
+    is_reserved_slug, normalize_invite_email, send_invitation_email, slugify_name,
+};
 
 #[derive(Deserialize)]
 pub struct CreateOrgBody {
@@ -48,21 +52,24 @@ pub struct CreateOrgBody {
 #[derive(Serialize)]
 pub struct CreatedOrg {
     pub org: ChildOrg,
-    /// True when `owner_email` matched no existing user, so nobody was seeded.
-    /// The partner should invite them through the normal members flow.
-    pub owner_pending: bool,
+    /// How the first owner was onboarded:
+    /// - `"seeded"` — the email was an existing user, added as Owner now.
+    /// - `"invited"` — an unknown email got an Owner-role invitation emailed.
+    /// - `"none"` — no owner email was given; the org has no owner yet.
+    pub owner_status: String,
 }
 
 /// `POST /partners/{partner_org_id}/orgs` — create + attach a client org.
 pub async fn create_org(
     PartnerActor(scope): PartnerActor,
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    headers: HeaderMap,
     Json(body): Json<CreateOrgBody>,
 ) -> Result<Json<CreatedOrg>, StatusCode> {
     // Capability only — there is no target org to scope against yet. This is the
-    // one partner write that isn't gated on an existing assignment, which is
-    // exactly why `create_orgs` is a ceiling flag that defaults OFF: it mints
-    // billable tenants.
+    // one partner write that isn't gated on an existing assignment. `create_orgs`
+    // is a per-partner ceiling flag (staff can revoke it) that mints billable
+    // tenants; it's granted by default to new partnerships (see `sane_default`).
     if !crate::server::authz::partner_allows(&scope, None, PartnerCapability::CreateOrgs) {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -83,17 +90,26 @@ pub async fn create_org(
 
     let db = db().await?;
 
-    // Resolve the first owner BEFORE opening the txn. An unknown email is not an
-    // error — the org is still created, and the partner invites them after.
-    let owner = match body.owner_email.as_deref().map(str::trim) {
-        Some(e) if !e.is_empty() => Users::find()
-            .filter(users::Column::Email.eq(e.to_ascii_lowercase()))
+    // Normalize + format-check the owner email (shared with the invite path), then
+    // resolve it to an existing LIVE user BEFORE opening the txn. An unknown (or
+    // inactive) email is not an error — the org is still created and we email the
+    // owner an invite. A malformed email is a 422, matching the reserved-slug case.
+    let owner_email: Option<String> = match body.owner_email.as_deref().map(str::trim) {
+        Some(e) if !e.is_empty() => {
+            Some(normalize_invite_email(e).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?)
+        }
+        _ => None,
+    };
+    let existing_owner = match &owner_email {
+        // Only an active account is seeded as Owner; a deleted/suspended match
+        // falls through to the invite path below.
+        Some(email) => Users::find()
+            .filter_active_by_email(email)
             .one(&db)
             .await
             .map_err(internal("load owner"))?,
-        _ => None,
+        None => None,
     };
-    let owner_pending = body.owner_email.is_some() && owner.is_none();
 
     let now = Utc::now().fixed_offset();
     let org_id = Uuid::new_v4();
@@ -111,10 +127,12 @@ pub async fn create_org(
     }
     .insert(&txn)
     .await
-    // The DB UNIQUE on slug is the real guard; a duplicate is a 409, not a 500.
-    .map_err(|_| StatusCode::CONFLICT)?;
+    .map_err(map_slug_conflict)?;
 
-    if let Some(u) = &owner {
+    // Onboard the first owner: seed an existing user immediately, or stage an
+    // Owner-role invitation for an unknown email (emailed after commit).
+    let mut pending_invite: Option<(String, String)> = None;
+    let owner_status = if let Some(u) = &existing_owner {
         org_members::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),
             org_id: ActiveValue::Set(org_id),
@@ -126,7 +144,28 @@ pub async fn create_org(
         .insert(&txn)
         .await
         .map_err(internal("seed owner"))?;
-    }
+        "seeded"
+    } else if let Some(email) = &owner_email {
+        let token = Uuid::new_v4().to_string();
+        org_invitations::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            org_id: ActiveValue::Set(org_id),
+            email: ActiveValue::Set(email.clone()),
+            role: ActiveValue::Set(OrgRole::Owner),
+            invited_by: ActiveValue::Set(actor.id),
+            token: ActiveValue::Set(token.clone()),
+            status: ActiveValue::Set(InviteStatus::Pending),
+            expires_at: ActiveValue::Set((Utc::now() + chrono::Duration::days(7)).fixed_offset()),
+            created_at: ActiveValue::Set(now),
+        }
+        .insert(&txn)
+        .await
+        .map_err(internal("create owner invitation"))?;
+        pending_invite = Some((email.clone(), token));
+        "invited"
+    } else {
+        "none"
+    };
 
     // The SubscriptionGuard expects this row to exist for every org. Today a
     // partner-created org bills for itself, exactly like any other — who pays is
@@ -164,8 +203,8 @@ pub async fn create_org(
             .target("organization", org_id.to_string(), name.clone())
             .metadata(serde_json::json!({
                 "slug": slug,
-                "owner_email": body.owner_email,
-                "owner_seeded": owner.is_some(),
+                "owner_email": owner_email,
+                "owner_status": owner_status,
             })),
     )
     .await
@@ -173,16 +212,53 @@ pub async fn create_org(
 
     txn.commit().await.map_err(internal("commit create org"))?;
 
+    // Post-commit: email the Owner invitation for an unknown owner. The row +
+    // token are already committed, so a send failure never fails the request.
+    if let Some((to_email, token)) = pending_invite {
+        let base_url = crate::server::api::auth::extract_base_url_from_headers(&headers);
+        let inviter_name = actor.name.clone();
+        let inviter_email = actor.email.clone();
+        let org_name = name.clone();
+        tokio::spawn(async move {
+            if let Err(e) = send_invitation_email(
+                &to_email,
+                &token,
+                &base_url,
+                &inviter_name,
+                &inviter_email,
+                &org_name,
+            )
+            .await
+            {
+                tracing::error!("partner create_org: owner invitation email failed: {e}");
+            }
+        });
+    }
+
     Ok(Json(CreatedOrg {
         org: ChildOrg {
             org_id,
             name,
             slug,
-            member_count: usize::from(owner.is_some()),
+            member_count: usize::from(existing_owner.is_some()),
             app_count: 0,
         },
-        owner_pending,
+        owner_status: owner_status.to_string(),
     }))
+}
+
+/// Map an org-insert DbErr: a slug UNIQUE violation is a 409, anything else
+/// (connection drop, serialization failure) is a real 500 — never surface an
+/// unrelated DB error to the partner as "slug taken". Mirrors the admin
+/// handler's `map_insert_conflict`.
+fn map_slug_conflict(e: sea_orm::DbErr) -> StatusCode {
+    let msg = e.to_string();
+    if msg.contains("unique") || msg.contains("duplicate") {
+        tracing::warn!("partner create_org slug conflict (DB-level): {e}");
+        return StatusCode::CONFLICT;
+    }
+    tracing::error!("partner_console: insert org: {e}");
+    StatusCode::INTERNAL_SERVER_ERROR
 }
 
 #[derive(Deserialize)]

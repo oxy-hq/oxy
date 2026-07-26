@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/
 import { Separator } from "@/components/ui/shadcn/separator";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
+import { releaseBodyPointerLock } from "@/libs/utils/pointerEvents";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
@@ -51,7 +52,7 @@ export function WorkspaceSwitcherPopover({ children }: Props) {
     // Defer opening the dialog past the close animation and explicitly clear
     // the lock so the manage page is interactive when it mounts.
     requestAnimationFrame(() => {
-      document.body.style.removeProperty("pointer-events");
+      releaseBodyPointerLock();
       openManageDialog();
     });
   };

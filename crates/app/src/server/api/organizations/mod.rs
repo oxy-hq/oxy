@@ -16,5 +16,7 @@ mod org_handlers;
 
 pub use invitation_handlers::*;
 pub use member_handlers::*;
-pub(crate) use ops::{is_reserved_slug, send_invitation_email, slugify_name};
+pub(crate) use ops::{
+    is_reserved_slug, normalize_invite_email, send_invitation_email, slugify_name,
+};
 pub use org_handlers::*;

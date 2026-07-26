@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useOrgs } from "@/hooks/api/organizations";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
+import { releaseBodyPointerLock } from "@/libs/utils/pointerEvents";
 import ROUTES from "@/libs/utils/routes";
 import OnboardingHeader from "../components/OnboardingHeader";
 import InviteStep from "./components/InviteStep";
@@ -44,6 +45,12 @@ export default function OrgOnboardingPage() {
 
   const initialStep: Step = searchParams.get("step") === "invite" ? "invite" : "workspace";
   const [step, setStep] = useState<Step>(initialStep);
+
+  // We arrive here right after the create-org dialog closes; clear any leaked
+  // body pointer-events lock so the wizard (and its org switcher) is clickable.
+  useEffect(() => {
+    releaseBodyPointerLock();
+  }, []);
 
   const { data: workspaces, isPending } = useAllWorkspaces(orgId);
 

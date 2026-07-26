@@ -38,8 +38,11 @@ pub struct CapabilitiesInput {
 }
 
 impl CapabilitiesInput {
-    /// members / apps / audit on; the data plane, onboarding, billing and secrets
-    /// off — least privilege.
+    /// members / apps / audit / onboarding on; the data plane, billing and
+    /// secrets off. `create_orgs` (onboard clients) is on by default because a
+    /// reseller channel whose partners can't onboard customers is a support
+    /// queue, not a channel — staff can still revoke it per-partner. Billing and
+    /// secrets stay owner-only and off (see `require_owner_for_sensitive_caps`).
     pub fn sane_default() -> Self {
         Self {
             manage_members: true,
@@ -48,7 +51,7 @@ impl CapabilitiesInput {
             view_audit: true,
             manage_billing: false,
             manage_secrets: false,
-            create_orgs: false,
+            create_orgs: true,
             manage_org_settings: false,
         }
     }
