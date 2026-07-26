@@ -646,7 +646,11 @@ pub async fn handle_function_request(
 ) -> Response {
     // §11.10 — POST-only, before any gate/runtime work.
     if method != Method::POST {
-        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+        return json_error(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "MethodNotAllowed",
+            "functions are invoked with POST",
+        );
     }
 
     let outcome = match authenticate_and_authorize(&headers, org_slug, app_slug).await {
@@ -659,12 +663,20 @@ pub async fn handle_function_request(
         Ok(db) => db,
         Err(e) => {
             error!("db connection failed: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "DatabaseUnavailable",
+                "could not reach the database; retry shortly",
+            );
         }
     };
 
     let Some(build_id) = app.published_build_id.or(app.draft_build_id) else {
-        return StatusCode::NOT_FOUND.into_response();
+        return json_error(
+            StatusCode::NOT_FOUND,
+            "AppNotPublished",
+            "this app has no published or draft build; run `oxy publish` first",
+        );
     };
 
     let Some(func_row) = (match AppFunctions::find()
@@ -676,10 +688,21 @@ pub async fn handle_function_request(
         Ok(row) => row,
         Err(e) => {
             error!("app_functions lookup failed: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "FunctionLookupFailed",
+                "could not read the function registry; retry shortly",
+            );
         }
     }) else {
-        return StatusCode::NOT_FOUND.into_response();
+        return json_error(
+            StatusCode::NOT_FOUND,
+            "FunctionNotFound",
+            &format!(
+                "no function named '{function_name}' in the live build; check the \
+                 `functions` entry in oxy-app.json and re-publish"
+            ),
+        );
     };
 
     let manifest: FunctionManifestEntry = func_row
@@ -692,7 +715,14 @@ pub async fn handle_function_request(
     // surface active" at publish time, so a missing/true `route` here means
     // this row is route-invocable.
     if manifest.route == Some(false) {
-        return StatusCode::NOT_FOUND.into_response();
+        return json_error(
+            StatusCode::NOT_FOUND,
+            "FunctionRouteDisabled",
+            &format!(
+                "function '{function_name}' exists but declares `route: false` — it is \
+                 only invocable as a schedule or Airway step"
+            ),
+        );
     }
 
     // Caller-supplied idempotency key (route mode): enables exactly-once, with
@@ -744,20 +774,41 @@ pub async fn handle_function_request(
         Ok(b) => b,
         Err(e) => {
             error!("app_builds lookup failed: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "BuildLookupFailed",
+                "could not read the app build record; retry shortly",
+            );
         }
     }) else {
-        return StatusCode::NOT_FOUND.into_response();
+        return json_error(
+            StatusCode::NOT_FOUND,
+            "BuildNotFound",
+            "the build this app points at no longer exists; re-publish the app",
+        );
     };
 
     let artifact_rel = format!("functions/{function_name}.js");
     let artifact =
         match custom_apps_build_store::get_object(app.id, &build.build_id, &artifact_rel).await {
             Ok(Some(bytes)) => bytes,
-            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+            Ok(None) => {
+                return json_error(
+                    StatusCode::NOT_FOUND,
+                    "FunctionArtifactMissing",
+                    &format!(
+                        "'{artifact_rel}' is absent from the build store for this build; \
+                         re-publish the app"
+                    ),
+                );
+            }
             Err(e) => {
                 error!("build store fetch failed: {e}");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                return json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "BuildStoreUnavailable",
+                    "could not fetch the function artifact from the build store; retry shortly",
+                );
             }
         };
     let artifact_js = String::from_utf8_lossy(&artifact).into_owned();

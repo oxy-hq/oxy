@@ -161,7 +161,18 @@ pub async fn run_query(
                 .any(|kv| kv == "refresh" || kv.starts_with("refresh="))
         })
         .unwrap_or(false);
-    if !refresh && let Some(body) = super::result_cache::get(project_id, "query", db_name, &req.sql)
+    // `untyped` selects a different execution path (`execute_query_full_untyped`
+    // returns every cell as text), so the two produce different bodies for the
+    // same SQL. They must never share a cache entry or whichever caller writes
+    // first wins and the other reads the wrong cell types. Namespace by the flag,
+    // exactly as `semantic_query` does for its `?debug=1` shape.
+    let cache_ns = if req.untyped {
+        "query-untyped"
+    } else {
+        "query"
+    };
+    if !refresh
+        && let Some(body) = super::result_cache::get(project_id, cache_ns, db_name, &req.sql)
     {
         return (
             [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -202,7 +213,7 @@ pub async fn run_query(
                 }
             };
             let arc = std::sync::Arc::new(bytes);
-            super::result_cache::put(project_id, "query", db_name, &req.sql, arc.clone());
+            super::result_cache::put(project_id, cache_ns, db_name, &req.sql, arc.clone());
             (
                 [(axum::http::header::CONTENT_TYPE, "application/json")],
                 (*arc).clone(),

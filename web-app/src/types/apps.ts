@@ -35,10 +35,13 @@ export interface CustomApp {
    */
   url: string;
   /**
-   * Subdomain URL for v0 sources when this cluster has
-   * `OXY_CUSTOMER_APPS_SUBDOMAIN_SUFFIX` configured, e.g.
+   * Subdomain URL for v0 sources, e.g.
    * `https://mars--command-center.customer-apps-dev.oxygen-hq.com/`.
-   * `null` otherwise — admin UI shows whichever URLs are present.
+   *
+   * There is no env var for this — the server auto-derives the zone from
+   * `OXY_API_URL` (admin host `app{-env}` → `customer-apps{-env}`).
+   * `null` when that derivation fails (unset `OXY_API_URL`, `localhost`, or
+   * a custom-branded host) — admin UI shows whichever URLs are present.
    */
   url_subdomain: string | null;
   /** Manifest-derived app glyph URL (`<url><manifest.icon>`), or absent when the

@@ -104,9 +104,16 @@ pub struct AppResponse {
     /// Canonical pretty URL `<base>/customer-apps/<org_slug>/<app_slug>/`.
     /// Always set; works for every source_type.
     pub url: String,
-    /// Subdomain URL for v0 sources when this cluster has
-    /// `OXY_CUSTOMER_APPS_SUBDOMAIN_SUFFIX` configured, e.g.
+    /// Subdomain URL for v0 sources, e.g.
     /// `https://mars--command-center.customer-apps-dev.oxygen-hq.com/`.
+    ///
+    /// There is **no** env var for this. The zone is auto-derived from
+    /// `OXY_API_URL` by `custom_apps_host_dispatch::custom_apps_zone`,
+    /// mapping the admin host's `app{-env}` first label to
+    /// `customer-apps{-env}`. `None` when `OXY_API_URL` is unset/malformed,
+    /// the admin host has no `.` (e.g. `localhost`), or its first label
+    /// doesn't start with `app` (custom-branded host).
+    ///
     /// `None` otherwise — the admin UI shows whichever URLs are present
     /// and hides the row when both are unavailable for the current source.
     pub url_subdomain: Option<String>,

@@ -29,9 +29,16 @@
 //! ## Per-request DB load
 //!
 //! A Next.js bundle triggers 30–100 asset requests per page load, each
-//! routed through this handler. Membership lookups are cached in process
-//! with a 60-second TTL so the steady-state cost per asset is one user
-//! lookup + one app lookup + a HashMap read, instead of three DB queries.
+//! routed through this handler. The user lookup, the membership check and
+//! the platform-standing check are cached in process with a 60-second TTL.
+//!
+//! What is **not** cached, and therefore costs one indexed query per asset:
+//! the org-by-slug lookup, the app-by-(org_id, slug) lookup, and — on the S3
+//! source path — the `app_builds` row read in `sources.rs`. So steady state
+//! is **three** DB round-trips per asset plus a bundle-cache read, not one.
+//! Read that before adding a fourth: at 100 assets/page it is already 300
+//! queries per page load. Asset *bytes* are served from the LRU in
+//! `custom_apps_bundle_cache` and do not hit S3.
 
 use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode, Uri, header};

@@ -147,5 +147,27 @@ mod tests {
                 .map(|v| v.as_slice()),
             Some(&b"S"[..])
         );
+
+        // The typed vs `untyped` split relies on this too: `/query` writes under
+        // "query", `?untyped` under "query-untyped", so the same SQL on the same
+        // project can't cross-read the other's cell types (see projects/query.rs).
+        put(
+            p,
+            "query-untyped",
+            "",
+            "SPEC",
+            std::sync::Arc::new(b"U".to_vec()),
+        );
+        assert_eq!(
+            get(p, "query", "", "SPEC").as_deref().map(|v| v.as_slice()),
+            Some(&b"Q"[..]),
+            "an untyped entry must not clobber the typed one"
+        );
+        assert_eq!(
+            get(p, "query-untyped", "", "SPEC")
+                .as_deref()
+                .map(|v| v.as_slice()),
+            Some(&b"U"[..])
+        );
     }
 }
