@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.114] - 2026-07-27
+
+### 🚀 Features
+
+- Workspace smoke test as a health-monitoring dimension (#2704)
+
+### 🐛 Bug Fixes
+
+- Make anomaly explain seasonality- and segment-aware (#2770)
+- Compile semantic queries from the boundary, not the working copy (#2795)
+
+### 🚜 Refactor
+
+- *(custom-apps)* Invert the projects::query seam behind a trait (#2789)
+
+### 🧪 Testing
+
+- *(custom-apps)* Pin the surface's module boundary with a source-scan test (#2784)
+
 ## [0.5.113] - 2026-07-26
 
 ### 🚀 Features
@@ -30,6 +49,7 @@ All notable changes to this project will be documented in this file.
 
 - *(create-oxy-app)* Release 0.4.0 (#2781)
 - Cargo cliipy and fmt
+- Release 0.5.113 (#2780)
 
 ## [0.5.112] - 2026-07-24
 
