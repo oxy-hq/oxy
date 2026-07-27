@@ -7,16 +7,17 @@ pub(crate) mod eval_pass;
 pub(crate) mod evaluator;
 pub(crate) mod queries;
 pub(crate) mod reconcile;
+pub(crate) mod smoke;
 
 use axum::{
     Json, Router,
-    extract::Path,
+    extract::{Path, Query},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::server::router::AppState;
 use evaluator::WorkspaceSignals;
@@ -70,6 +71,16 @@ pub(crate) struct WorkspaceHealthRow {
     signals: serde_json::Value,
     /// Per-check reconciliation drift detail from the stored payload.
     reconciliation: serde_json::Value,
+    /// Per-probe smoke-test detail from the stored payload. These verdicts can
+    /// be older than `checked_at` — the smoke test runs on its own slower
+    /// cadence, and `last_smoke_at` says when they were actually produced.
+    smoke: serde_json::Value,
+    /// Which smoke probe kinds are enabled (`[{ kind, enabled }]`), so the UI
+    /// can render a disabled probe as "not enabled" instead of omitting it.
+    /// Empty when the workspace's smoke test is disabled or the row predates it.
+    smoke_probes: serde_json::Value,
+    /// When the smoke probes last ran. `None` when no smoke test is configured.
+    last_smoke_at: Option<chrono::DateTime<chrono::FixedOffset>>,
     /// When the status last transitioned, from the persisted eval-pass state
     /// (`workspace_health_state.changed_at`). `None` when no eval pass has
     /// recorded this workspace yet — the rollup is computed live, but the
@@ -134,7 +145,7 @@ pub(crate) async fn health_rollup(
         })
         .collect();
     // Worst-first: Unhealthy > Degraded > Healthy.
-    workspaces.sort_by(|a, b| status_rank(&b.status).cmp(&status_rank(&a.status)));
+    workspaces.sort_by_key(|w| std::cmp::Reverse(status_rank(&w.status)));
     Ok(workspaces)
 }
 
@@ -146,23 +157,40 @@ struct TriggerEvalResponse {
     run_id: String,
 }
 
+/// `?smoke=true` runs the workspace's smoke probes on this pass even if their
+/// (default 6h) cadence has not elapsed — the Health tab's "Run smoke test"
+/// button. Absent → false, the plain "Re-evaluate" trigger, which re-reads the
+/// passive Postgres signals and reuses the last smoke verdicts.
+///
+/// It forces the *clock*, not the *config*: a workspace with
+/// `smoke_test: { enabled: false }` runs no probes either way, so the button
+/// can't bill an opted-out workspace for warehouse queries and agent tokens.
+#[derive(Deserialize, Default)]
+struct TriggerEvalParams {
+    #[serde(default)]
+    smoke: bool,
+}
+
 /// Enqueue an on-demand health eval for a single workspace and return its
 /// `run_id` (HTTP 202). The eval (Postgres signals + reconciliation + Slack on a
-/// transition) is a `TaskScope::Global` `health_eval_workspace` task drained by
-/// the worker fleet — not run inline — so a slow Toast reconciliation can't tie
-/// up the request and the run survives an instance restart. The client polls the
-/// workspace-health read until `checked_at` advances past the trigger.
+/// transition, plus the smoke probes when `?smoke=true`) is a `TaskScope::Global`
+/// `health_eval_workspace` task drained by the worker fleet — not run inline — so
+/// a slow Toast reconciliation or a cold warehouse can't tie up the request and
+/// the run survives an instance restart. The client polls the workspace-health
+/// read until `checked_at` advances past the trigger.
 ///
 /// `FleetOk` in `role_manifest.rs`: this handler only enqueues (a plain Postgres
 /// insert), so it serves on any replica. The workspace-context build +
 /// working-copy `reconcile.yml` fallthrough happen in the fleet executor that
 /// drains the task — which lands on an FS-owning node on its own — so route
-/// classification does not need to pin the request to the ide.
+/// classification does not need to pin the request to the ide. The query param
+/// does not change that: it rides in the task payload, not the request path.
 async fn trigger_workspace_health_eval(
     Path(workspace_id): Path<uuid::Uuid>,
+    Query(params): Query<TriggerEvalParams>,
 ) -> Result<Response, Response> {
     let db = connect().await?;
-    let run_id = agentic_pipeline::scheduler::enqueue_health_eval(&db, workspace_id)
+    let run_id = agentic_pipeline::scheduler::enqueue_health_eval(&db, workspace_id, params.smoke)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e).into_response())?;
     Ok((StatusCode::ACCEPTED, Json(TriggerEvalResponse { run_id })).into_response())
@@ -178,6 +206,8 @@ struct PayloadParts {
     dimensions: serde_json::Value,
     signals: serde_json::Value,
     reconciliation: serde_json::Value,
+    smoke: serde_json::Value,
+    smoke_probes: serde_json::Value,
 }
 
 fn payload_parts(
@@ -200,6 +230,8 @@ fn payload_parts(
             dimensions: p.get("dimensions").cloned().unwrap_or_else(empty_arr),
             signals: p.get("signals").cloned().unwrap_or(serde_json::Value::Null),
             reconciliation: p.get("reconciliation").cloned().unwrap_or_else(empty_arr),
+            smoke: p.get("smoke").cloned().unwrap_or_else(empty_arr),
+            smoke_probes: p.get("smoke_probes").cloned().unwrap_or_else(empty_arr),
         },
         None => PayloadParts {
             status: status_col,
@@ -207,6 +239,8 @@ fn payload_parts(
             dimensions: empty_arr(),
             signals: serde_json::Value::Null,
             reconciliation: empty_arr(),
+            smoke: empty_arr(),
+            smoke_probes: empty_arr(),
         },
     }
 }
@@ -218,6 +252,7 @@ fn row_from_state(
 ) -> WorkspaceHealthRow {
     let changed_at = r.changed_at;
     let checked_at = r.updated_at;
+    let last_smoke_at = r.last_smoke_at;
     let workspace_id = r.workspace_id;
     let parts = payload_parts(r.payload, r.status, r.reasons);
     WorkspaceHealthRow {
@@ -229,6 +264,9 @@ fn row_from_state(
         dimensions: parts.dimensions,
         signals: parts.signals,
         reconciliation: parts.reconciliation,
+        smoke: parts.smoke,
+        smoke_probes: parts.smoke_probes,
+        last_smoke_at,
         changed_at: Some(changed_at),
         checked_at: Some(checked_at),
     }
@@ -260,6 +298,25 @@ mod tests {
         assert!(parts.dimensions.as_array().unwrap().is_empty());
         assert!(parts.signals.is_null());
         assert!(parts.reconciliation.as_array().unwrap().is_empty());
+        assert!(parts.smoke.as_array().unwrap().is_empty());
+        assert!(parts.smoke_probes.as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn payload_without_smoke_keys_reads_as_no_checks() {
+        // Rows written before the smoke dimension existed have neither `smoke`
+        // nor `smoke_probes`; they must read as "no smoke data", not fail to
+        // deserialize.
+        let payload = serde_json::json!({
+            "status": "healthy",
+            "reasons": [],
+            "dimensions": [],
+            "signals": null,
+            "reconciliation": []
+        });
+        let parts = payload_parts(Some(payload), "healthy".to_string(), serde_json::json!([]));
+        assert!(parts.smoke.as_array().unwrap().is_empty());
+        assert!(parts.smoke_probes.as_array().unwrap().is_empty());
     }
 
     #[test]
@@ -270,12 +327,16 @@ mod tests {
             "reasons": ["x drifts 3.0% from source"],
             "dimensions": [],
             "signals": null,
-            "reconciliation": [{ "check": "x", "status": "degraded" }]
+            "reconciliation": [{ "check": "x", "status": "degraded" }],
+            "smoke": [{ "check": "connection:bq", "status": "healthy" }],
+            "smoke_probes": [{ "kind": "connection", "enabled": true }]
         });
         let parts = payload_parts(Some(payload), "healthy".to_string(), serde_json::json!([]));
         // Payload status wins over the column.
         assert_eq!(parts.status, "degraded");
         assert_eq!(parts.reasons[0], "x drifts 3.0% from source");
         assert_eq!(parts.reconciliation.as_array().unwrap().len(), 1);
+        assert_eq!(parts.smoke.as_array().unwrap().len(), 1);
+        assert_eq!(parts.smoke_probes.as_array().unwrap().len(), 1);
     }
 }

@@ -22,6 +22,17 @@ cases:
     tags: [ide, critical]
     steps:
       - act: "In the IDE file tree on the left, click 'test.sql' (root). URL changes to /ide/files/<base64>; Monaco loads the file."
+
+      # The editor is a child route of /ide (Files/index.tsx renders an
+      # <Outlet />), so no Monaco exists until the file route mounts. Without
+      # this gate the next step could click and type into a page that has no
+      # editor yet — the keystrokes go nowhere, the file never becomes
+      # `modified`, and the save button never renders. That failure is
+      # invisible to `assert: save button is not visible` (which passes when
+      # the button never appeared at all), so it surfaced only as a confusing
+      # judge verdict on the content claim. Same gate `ide-compile-error` uses.
+      - wait_for: "selector:.monaco-editor"
+
       - act: |
           Append '-- agentic test edit' to the open file:
           1. browser_click selector ".monaco-editor" to focus. (Page has
@@ -30,6 +41,15 @@ cases:
           2. browser_press_key "Meta+End" then "Enter".
           3. browser_keyboard_type (NOT browser_type — Monaco's hidden
              textarea breaks selector-based focus) text "-- agentic test edit".
+
+      # `ide-save-button` renders only while fileState === "modified"
+      # (Files/Editor/components/EditorHeader/index.tsx), so waiting for it to
+      # APPEAR proves the keystrokes actually landed and dirtied the file. This
+      # turns a silent "typing was lost" into a fast, named failure here rather
+      # than a downstream judge verdict, and stops the save assertion below
+      # from passing vacuously against a file that was never edited.
+      - wait_for: "selector:[data-testid=ide-save-button]"
+
       - act: "browser_press_key 'Meta+s'. Wait for [data-testid=ide-save-button] to disappear."
     expect:
       - assert: "save button is not visible"

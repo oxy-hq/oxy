@@ -15,13 +15,15 @@ import { AdminEmptyState } from "../../../components/AdminEmptyState";
 import { AdminSectionLabel } from "../../../components/AdminSectionLabel";
 import { AdminStatusPill } from "../../../components/AdminStatusPill";
 import { workspaceHealthTone } from "../../../components/workspaceHealthTone";
+import { SmokeTestSection } from "./SmokeTestSection";
 
 const DIMENSION_LABELS: Record<WorkspaceHealthDimensionKey, string> = {
   job_liveness: "Jobs",
   pipeline: "Pipeline",
   correctness: "Correctness",
   queue: "Queue",
-  reconciliation: "Reconciliation"
+  reconciliation: "Reconciliation",
+  smoke_test: "Smoke test"
 };
 
 /** Numeric signal counts, in display order. Airway flags are rendered separately. */
@@ -67,7 +69,7 @@ export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: str
             variant='outline'
             size='sm'
             className='gap-1.5'
-            onClick={() => triggerEval.mutate(workspaceId)}
+            onClick={() => triggerEval.mutate({ workspaceId })}
             disabled={triggerEval.isPending}
           >
             <RefreshCw className={triggerEval.isPending ? "size-3.5 animate-spin" : "size-3.5"} />
@@ -161,6 +163,19 @@ export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: str
                 ))}
               </ul>
             </section>
+          ) : null}
+
+          {health.smoke.length > 0 || health.smoke_probes.length > 0 ? (
+            <SmokeTestSection
+              checks={health.smoke}
+              probes={health.smoke_probes}
+              lastRunAt={health.last_smoke_at}
+              // Both buttons drive the same eval pass; only this one forces the
+              // probes past their cadence, so they share `isPending` and neither
+              // can be double-fired while the other is in flight.
+              onRun={() => triggerEval.mutate({ workspaceId, smoke: true })}
+              isRunning={triggerEval.isPending}
+            />
           ) : null}
         </div>
       )}

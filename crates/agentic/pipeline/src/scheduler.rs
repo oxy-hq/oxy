@@ -795,7 +795,10 @@ pub async fn tick_health_schedules(db: &DatabaseConnection) -> usize {
                 continue;
             }
         };
-        match start_health_eval_run(db, workspace_id, Some(&s.id)).await {
+        // A scheduled fire never forces the probes: the smoke cadence is the
+        // workspace's own, and overriding it here would bill every workspace the
+        // agent-probe token cost on every eval pass.
+        match start_health_eval_run(db, workspace_id, Some(&s.id), false).await {
             Ok(run_id) => {
                 fired += 1;
                 record_fire_success(db, &s.id, &run_id).await;
@@ -858,6 +861,7 @@ async fn start_health_eval_run(
     db: &DatabaseConnection,
     workspace_id: uuid::Uuid,
     schedule_id: Option<&str>,
+    force_smoke: bool,
 ) -> Result<String, String> {
     use agentic_core::delegation::TaskSpec;
     use agentic_runtime::crud::{TaskScope, enqueue_task};
@@ -893,9 +897,16 @@ async fn start_health_eval_run(
         .map_err(|e| e.to_string())?,
     }
 
+    // `force_smoke` rides in the payload rather than a separate task kind: the
+    // work is the same eval pass, and the executor is the only thing that needs
+    // to know the probes were asked for out of cadence. Absent → false, so a task
+    // enqueued by an older instance mid-deploy still deserializes.
     let spec = TaskSpec::Custom {
         kind: "health_eval_workspace".into(),
-        payload: serde_json::json!({ "workspace_id": workspace_id.to_string() }),
+        payload: serde_json::json!({
+            "workspace_id": workspace_id.to_string(),
+            "force_smoke": force_smoke,
+        }),
     };
     enqueue_task(db, &run_id, &run_id, None, &spec, None, TaskScope::Global)
         .await
@@ -914,9 +925,15 @@ async fn start_health_eval_run(
 /// `schedule_id` when one exists so manual runs surface under the job's run
 /// history alongside scheduled fires; before the workspace's first compile there
 /// is no row to attribute to and the run is inserted unattributed.
+///
+/// `force_smoke` asks the eval to run the workspace's smoke probes even if their
+/// (default 6h) cadence has not elapsed — the admin Health tab's "Run smoke test"
+/// button. It cannot switch the probes *on*: a workspace with
+/// `smoke_test: { enabled: false }` still runs none.
 pub async fn enqueue_health_eval(
     db: &DatabaseConnection,
     workspace_id: uuid::Uuid,
+    force_smoke: bool,
 ) -> Result<String, String> {
     let schedule_id = schedule::Entity::find()
         .filter(schedule::Column::TargetKind.eq("health_eval"))
@@ -926,7 +943,7 @@ pub async fn enqueue_health_eval(
         .await
         .map_err(|e| e.to_string())?
         .map(|r| r.id);
-    start_health_eval_run(db, workspace_id, schedule_id.as_deref()).await
+    start_health_eval_run(db, workspace_id, schedule_id.as_deref(), force_smoke).await
 }
 
 /// User-facing name for the per-workspace health-eval schedule row (shown in the

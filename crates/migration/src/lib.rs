@@ -124,6 +124,7 @@ mod m20260701_000001_add_workspace_id_to_backfill_checkpoints;
 mod m20260702_000001_create_app_publish_tokens;
 mod m20260702_000001_create_backfill_ranges;
 mod m20260707_000001_app_builds_add_git_source;
+mod m20260710_000001_health_state_add_last_smoke_at;
 mod m20260712_000001_add_message_thread_indexes;
 mod m20260713_000001_partner_platform;
 mod m20260715_000001_app_publishing_auth;
@@ -257,6 +258,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260702_000001_create_app_publish_tokens::Migration),
             Box::new(m20260702_000001_create_backfill_ranges::Migration),
             Box::new(m20260707_000001_app_builds_add_git_source::Migration),
+            Box::new(m20260710_000001_health_state_add_last_smoke_at::Migration),
             Box::new(m20260712_000001_add_message_thread_indexes::Migration),
             Box::new(m20260713_000001_partner_platform::Migration),
             Box::new(m20260715_000001_app_publishing_auth::Migration),

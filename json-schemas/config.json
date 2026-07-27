@@ -113,6 +113,41 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "AppProbeTarget": {
+      "description": "One named app to run, and the control values to run it with.",
+      "type": "object",
+      "required": [
+        "app"
+      ],
+      "properties": {
+        "app": {
+          "description": "Workspace-relative path (`apps/sales.app.yml`) or bare file name (`sales.app.yml`).",
+          "type": "string"
+        },
+        "variables": {
+          "description": "Control values for this app, exactly as its Controls would supply them. Absent → the app's own defaults, which is what the `apps: true` sweep uses.\n\nValues keep their YAML type (`limit: 5` stays a number), because that is what an app's own Controls hand its tasks.",
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "AppsProbeConfig": {
+      "description": "How the app probe picks its targets. Same `bool | [targets]` shape as [`SemanticProbeConfig`], with `variables` per app rather than shared across all of them — two apps rarely want the same control values.\n\n```yaml apps: true                # run every task of every .app.yml apps:                     # run only these apps - app: apps/sales.app.yml variables: region: us-east - app: apps/inventory.app.yml ```",
+      "anyOf": [
+        {
+          "description": "`apps: true|false` — run every app, or none.",
+          "type": "boolean"
+        },
+        {
+          "description": "`apps: [ { app: … }, … ]` — run only the named apps.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AppProbeTarget"
+          }
+        }
+      ]
+    },
     "BuilderAgentConfig": {
       "description": "Configuration for the built-in builder copilot agent.\n\nExample: `builder_agent: { model: \"claude-sonnet-4-6\" }`",
       "anyOf": [
@@ -1040,6 +1075,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "smoke_test": {
+          "description": "Active end-to-end probes of the workspace's own artifacts, run on their own slower cadence inside the eval pass.\n\nAbsent → [`SmokeTestConfig::default`]: the smoke test still runs, but only the zero-scan `connections` probe, so every workspace gets free credential-expiry detection without opting in. To turn it off entirely, write `smoke_test: { enabled: false }`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SmokeTestConfig"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -1992,6 +2038,43 @@
       },
       "additionalProperties": true
     },
+    "SemanticProbeConfig": {
+      "description": "How the semantic probe picks its targets: sweep everything, or probe a list of named topics.\n\n```yaml semantic: true            # every topic, measure auto-picked from its base view semantic:                 # only these topics - topic: fruit_business measures:             # omit to auto-pick one, as the sweep does - fruits.total_count - fruits.avg_price - topic: orders ```\n\nNaming topics is the cheaper mode and the one to reach for on a real warehouse: the sweep's cost scales with *every* topic's data volume, while a named list is a bill you chose. Explicit `measures` also pin the probe to columns you know are small, instead of whatever the base view lists first.\n\n`apps` takes the same `bool | [targets]` shape — see [`AppsProbeConfig`].",
+      "anyOf": [
+        {
+          "description": "`semantic: true|false` — sweep every topic, or run nothing.",
+          "type": "boolean"
+        },
+        {
+          "description": "`semantic: [ { topic: … }, … ]` — probe only the named topics.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SemanticProbeTarget"
+          }
+        }
+      ]
+    },
+    "SemanticProbeTarget": {
+      "description": "One named topic to probe, and which of its measures to probe it with.",
+      "type": "object",
+      "required": [
+        "topic"
+      ],
+      "properties": {
+        "measures": {
+          "description": "Fully-qualified `view.measure` references to query. Empty → the same auto-pick the sweep uses (first measure on the base view).\n\nAll of a topic's measures go into **one** query rather than one query each: it is a single warehouse round-trip instead of N, and it exercises the topic's join graph and fan-out protection, which per-measure queries never would. The trade is attribution — the verdict names the topic, and the failing measure shows up in the error text.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "topic": {
+          "description": "The topic's `name`, as declared in its `.topic.yml`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "SingleOrVec_for_InstanceType": {
       "description": "A type which can be serialized as a single item, or multiple items.\n\nIn some contexts, a `Single` may be semantically distinct from a `Vec` containing only item.",
       "anyOf": [
@@ -2019,6 +2102,101 @@
           }
         }
       ]
+    },
+    "SmokeAgentProbe": {
+      "description": "The agent round-trip probe: which agent to ask, and what to ask it.",
+      "type": "object",
+      "required": [
+        "agent_ref",
+        "prompt"
+      ],
+      "properties": {
+        "agent_ref": {
+          "description": "Workspace-relative path to the agent config, e.g. `agents/analytics.agentic.yml`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Label for this probe's verdict. Absent → the `agent_ref`.\n\nWorth setting once you ask one agent several questions: the verdict's check id is `agent:<label>`, so same-`agent_ref` probes would otherwise be told apart only by the `#2` suffix `resolved_agents` appends.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "description": "The question to ask. Any non-error answer passes — the probe checks that the pipeline, the LLM key, and SQL generation all work, not that the answer is correct.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SmokeTestConfig": {
+      "description": "Which probes the workspace smoke test runs, and how often.\n\n**Only `connections` defaults on**, and the whole block defaults on when absent — every workspace gets a cheap credential check for free. The other three are opt-in because they are not cheap, and the reason is not obvious from their descriptions:\n\n* `connections` — `SELECT 1`. Scans zero bytes, so it is free on a bytes-billed warehouse (BigQuery on-demand, Athena). Caveat: on Snowflake it *resumes* a suspended warehouse, which bills a 60-second minimum. At the 6h default that is four wake-ups a day. * `semantic` — one measure query per topic. `SUM(x)` over an unpartitioned fact table reads the whole column; a `LIMIT` cannot shrink an aggregate's scan. Cost scales with your *data volume*, not your topic count, and on a bytes-billed warehouse it is by far the most expensive probe here. * `apps` — every task of every `.app.yml`; a superset of `semantic`. * `agent` — a real LLM round-trip, plus whatever SQL the agent decides to run.",
+      "type": "object",
+      "properties": {
+        "agent": {
+          "description": "Ask an agentic agent a fixed question and assert it answers. Absent → the probe is skipped. Costs tokens on every smoke run.\n\nSingular back-compat spelling for a single probe; prefer `agents:`. Both may be set, and [`SmokeTestConfig::resolved_agents`] runs the union.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SmokeAgentProbe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agents": {
+          "description": "Ask several agents, or the same agent several questions. Each entry is a separate probe with its own verdict; every one costs tokens on every smoke run.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SmokeAgentProbe"
+          }
+        },
+        "apps": {
+          "description": "Run every task of every `.app.yml`. Defaults false — an app can fan out into many warehouse queries.\n\n`apps: true` runs every app; an `{ include: [...] }` block runs only the apps it names. See [`AppsProbeConfig`].",
+          "default": false,
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppsProbeConfig"
+            }
+          ]
+        },
+        "connections": {
+          "description": "`SELECT 1` against every database in `databases:`. Defaults **true** — the one probe cheap enough to run unasked.",
+          "default": true,
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "When false, no probes run and the dimension reads Healthy.",
+          "default": true,
+          "type": "boolean"
+        },
+        "interval": {
+          "description": "Smoke cadence as a humantime duration (e.g. `\"6h\"`, `\"1d\"`). Absent → 6h. Clamped to `[10m, 7d]`; unparseable falls back to the default. Because the smoke run is gated inside an eval pass, a cadence below the `health_check` interval simply means \"every pass\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_targets": {
+          "description": "Per-probe-kind cap on how many targets to exercise. Absent → 25.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "semantic": {
+          "description": "One trivial measure query per `.topic.yml`, end to end through the semantic layer to the warehouse. Defaults **false**: it reads the full measure column on every run, so enabling it against a large unpartitioned fact table is a real recurring warehouse bill.\n\n`semantic: true` sweeps every topic with an auto-picked measure; a `{ topics: [...] }` block probes only what it names. See [`SemanticProbeConfig`].",
+          "default": false,
+          "allOf": [
+            {
+              "$ref": "#/definitions/SemanticProbeConfig"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

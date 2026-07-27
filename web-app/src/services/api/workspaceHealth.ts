@@ -7,7 +7,8 @@ export type WorkspaceHealthDimensionKey =
   | "pipeline"
   | "correctness"
   | "queue"
-  | "reconciliation";
+  | "reconciliation"
+  | "smoke_test";
 
 export interface WorkspaceHealthDimension {
   dimension: WorkspaceHealthDimensionKey;
@@ -38,6 +39,37 @@ export interface WorkspaceHealthReconciliationCheck {
   reason: string | null;
 }
 
+/** Which probe produced a smoke check. */
+export type WorkspaceHealthSmokeProbeKind = "connection" | "semantic" | "app" | "agent";
+
+/**
+ * Whether a probe kind is turned on for the workspace. Sent so the tab can
+ * distinguish a *disabled* probe (render "not enabled") from an *enabled* one
+ * that produced no verdicts because it found no targets or hasn't run yet — both
+ * are otherwise just an absence of checks.
+ */
+export interface WorkspaceHealthSmokeProbe {
+  kind: WorkspaceHealthSmokeProbeKind;
+  enabled: boolean;
+}
+
+/**
+ * One smoke-probe outcome. A `healthy` check that still carries a `reason` is a
+ * note, not a problem — the backend uses those to record targets skipped by the
+ * `max_targets` cap, so a truncated sweep never reads as full coverage.
+ */
+export interface WorkspaceHealthSmokeCheck {
+  /** Stable id, `"<kind>:<target>"` — e.g. `"connection:bigquery"`. */
+  check: string;
+  kind: WorkspaceHealthSmokeProbeKind;
+  /** What was probed: a database name, topic, app file, or agent ref. */
+  target: string;
+  status: WorkspaceHealthStatus;
+  reason: string | null;
+  /** Probe wall time; 0 for checks that never ran a probe (cap notes). */
+  duration_ms: number;
+}
+
 export interface WorkspaceHealthSignals {
   failed_runs: number;
   timed_out_runs: number;
@@ -66,6 +98,20 @@ export interface WorkspaceHealthEntry {
   signals: WorkspaceHealthSignals | null;
   /** Per-check reconciliation drift detail; empty when the workspace has no `reconcile.yml`. */
   reconciliation: WorkspaceHealthReconciliationCheck[];
+  /** Per-probe smoke-test detail; empty when the workspace configures no `health_check.smoke_test`. */
+  smoke: WorkspaceHealthSmokeCheck[];
+  /**
+   * Enabled/disabled state of every smoke probe kind. Empty when the smoke test
+   * is disabled entirely, or on rows written before this field existed. When
+   * present it always lists all four kinds, so the tab can name a disabled one.
+   */
+  smoke_probes: WorkspaceHealthSmokeProbe[];
+  /**
+   * ISO timestamp of when the smoke probes last ran; null when no smoke test is
+   * configured. The probes run on their own slower cadence, so these checks are
+   * usually older than `checked_at` — render this, not `checked_at`, beside them.
+   */
+  last_smoke_at: string | null;
   /** ISO timestamp of the last status transition; null until the first eval pass records it. */
   changed_at: string | null;
   /** ISO timestamp of the last eval-pass sweep ("last checked"), refreshed every pass even when status is unchanged; null until the first pass records it. */
@@ -90,9 +136,20 @@ export const WorkspaceHealthService = {
     const response = await apiClient.get<WorkspaceHealthResponse>("/admin/workspace-health");
     return response.data;
   },
-  async trigger(workspaceId: string): Promise<TriggerEvalResponse> {
+  /**
+   * Enqueue an eval pass for one workspace. `smoke: true` additionally forces the
+   * workspace's smoke probes to run on this pass even if their (default 6h)
+   * cadence has not elapsed — the "Run smoke test" button. Without it the pass
+   * refreshes the passive Postgres signals and reuses the last smoke verdicts.
+   *
+   * It forces the cadence, not the config: a workspace with
+   * `smoke_test: { enabled: false }` runs no probes either way.
+   */
+  async trigger(workspaceId: string, smoke = false): Promise<TriggerEvalResponse> {
     const response = await apiClient.post<TriggerEvalResponse>(
-      `/admin/workspace-health/${workspaceId}/eval`
+      `/admin/workspace-health/${workspaceId}/eval`,
+      null,
+      { params: smoke ? { smoke: true } : undefined }
     );
     return response.data;
   }

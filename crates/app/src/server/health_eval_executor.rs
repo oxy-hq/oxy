@@ -41,6 +41,13 @@ impl TaskExecutor for HealthEvalTaskExecutor {
             .ok_or_else(|| "health_eval payload missing string workspace_id".to_string())?
             .parse()
             .map_err(|e| format!("bad workspace_id: {e}"))?;
+        // Absent → false: a scheduled fire, and any task enqueued by an older
+        // instance mid-deploy, keeps the workspace's own smoke cadence. Only the
+        // operator-triggered "Run smoke test" sets it.
+        let force_smoke = payload
+            .get("force_smoke")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         let (event_tx, event_rx) = mpsc::channel(16);
         let (outcome_tx, outcome_rx) = mpsc::channel(4);
@@ -48,7 +55,7 @@ impl TaskExecutor for HealthEvalTaskExecutor {
         let db = self.db.clone();
 
         tokio::spawn(async move {
-            run_health_eval_task(db, workspace_id, event_tx, outcome_tx).await;
+            run_health_eval_task(db, workspace_id, force_smoke, event_tx, outcome_tx).await;
         });
 
         Ok(ExecutingTask {
@@ -63,19 +70,20 @@ impl TaskExecutor for HealthEvalTaskExecutor {
 async fn run_health_eval_task(
     db: DatabaseConnection,
     workspace_id: uuid::Uuid,
+    force_smoke: bool,
     event_tx: mpsc::Sender<(String, serde_json::Value)>,
     outcome_tx: mpsc::Sender<TaskOutcome>,
 ) {
     let _ = event_tx
         .send((
             "health_eval_started".into(),
-            serde_json::json!({ "workspace_id": workspace_id }),
+            serde_json::json!({ "workspace_id": workspace_id, "force_smoke": force_smoke }),
         ))
         .await;
     // Guard against a panic inside the eval: if the future unwinds we still owe
     // the runtime a terminal outcome, otherwise dropping `outcome_tx` with
     // nothing sent leaves the run stuck `running` forever with no terminal event.
-    let result = std::panic::AssertUnwindSafe(run_eval_pass_single(&db, workspace_id))
+    let result = std::panic::AssertUnwindSafe(run_eval_pass_single(&db, workspace_id, force_smoke))
         .catch_unwind()
         .await;
     let outcome = match result {

@@ -269,7 +269,11 @@ pub async fn run_now(
         let schedule_id_bg = schedule.id.clone();
         tokio::spawn(async move {
             use crate::server::api::admin::workspace_health::eval_pass::run_eval_pass_single;
-            match run_eval_pass_single(&db, workspace_id).await {
+            // `force_smoke: false` — this is a manual fire of the *scheduled*
+            // health check, so it honours the workspace's smoke cadence like any
+            // other fire. Forcing the probes out of cadence is the Health tab's
+            // dedicated "Run smoke test" button.
+            match run_eval_pass_single(&db, workspace_id, false).await {
                 Ok(summary) => {
                     if let Err(e) = update_run_done(&db, &run_id_bg, &summary, None).await {
                         tracing::error!(error = %e, run_id = %run_id_bg, "failed to mark health run done");

@@ -1,0 +1,26 @@
+//! Warehouse connectivity probe: `SELECT 1` against one configured database.
+//!
+//! This is the same call chain the "Test connection" button in the database
+//! settings UI uses (`server::api::database::test_database_connection`), minus
+//! the SSE surface and the temp-secret dance — `build_connector_for` picks the
+//! right connector for the warehouse type and surfaces the real error.
+
+use std::sync::Arc;
+
+use super::ProbeFailure;
+use crate::agentic_wiring::project_ctx::OxyProjectContext;
+
+pub(crate) async fn ping(ctx: &Arc<OxyProjectContext>, db_name: &str) -> Result<(), ProbeFailure> {
+    // A connector we can't even build is a config/secret problem on our side,
+    // not a broken warehouse — we learned nothing about the database itself.
+    let connector = ctx
+        .build_connector_for(db_name)
+        .await
+        .map_err(|e| ProbeFailure::Unavailable(format!("could not build connector: {e}")))?;
+
+    connector
+        .execute_query("SELECT 1", 1)
+        .await
+        .map(|_| ())
+        .map_err(|e| ProbeFailure::Broken(format!("SELECT 1 failed: {e}")))
+}

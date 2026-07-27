@@ -1104,15 +1104,88 @@ pub(crate) async fn build_workspace_ctx(
     build_cloud_project_ctx(workspace_id, &path, db).await
 }
 
+/// Deserialize a compiled `config.yml` and stamp the workspace path onto it.
+///
+/// `workspace_path` is `#[serde(skip)]` on `Config`, so a config that came from
+/// Postgres carries none — every downstream file resolver (`resolve_file`, the
+/// DuckDB dataset dir, a BigQuery `key_path`) would resolve against an empty
+/// path. The request middleware stamps it for exactly this reason; so do we.
+///
+/// A config that won't deserialize (schema drift against an old revision) yields
+/// `None` and the caller falls through to the working copy, matching the
+/// middleware's precedence rather than failing the whole context build.
+fn config_from_compiled(
+    workspace_id: uuid::Uuid,
+    json: serde_json::Value,
+    path: &str,
+) -> Option<oxy::config::model::Config> {
+    match serde_json::from_value::<oxy::config::model::Config>(json) {
+        Ok(mut cfg) => {
+            cfg.workspace_path = std::path::PathBuf::from(path);
+            Some(cfg)
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "recovery",
+                %workspace_id,
+                error = ?e,
+                "compiled config deserialise failed; falling through to FS"
+            );
+            None
+        }
+    }
+}
+
 async fn build_cloud_project_ctx(
     workspace_id: uuid::Uuid,
     path: &str,
     db: &DatabaseConnection,
 ) -> Option<Arc<OxyProjectContext>> {
-    let mut builder = match WorkspaceBuilder::new(workspace_id)
-        .with_workspace_path_and_fallback_config(path)
-        .await
-    {
+    // Resolve the config the same way the request middleware does: the promoted
+    // compiled revision first, the working copy only on a miss.
+    //
+    // This is not just a cache — the two sources are not the same config. The
+    // compile worker *injects* fields the on-disk `config.yml` never has, most
+    // importantly the DuckDB `s3_mirror` block (`oxy-compile::duckdb_mirror`).
+    // A context built from the FS therefore builds a `Local` DuckDB connector
+    // pointed at a working copy that a stateless replica doesn't have, while
+    // every request path — reading the compiled config — builds the S3-mirror
+    // connector and succeeds. Background work (run recovery, reconciliation, the
+    // health smoke probes) must see the same databases, with the same shape, as
+    // the queries it is meant to be checking; otherwise the smoke test reports a
+    // dead connection for a warehouse the product is happily querying.
+    //
+    // Branch is `None` (the promoted revision) to match the workspace root path
+    // this context is built against — the same pairing `resolve_smoke_settings`
+    // already uses.
+    let compiled_config =
+        match crate::server::api::compiled_reader::resolve_workspace_config(workspace_id, None)
+            .await
+        {
+            Ok(Some(json)) => config_from_compiled(workspace_id, json, path),
+            Ok(None) => None,
+            Err(e) => {
+                tracing::warn!(
+                    target: "recovery",
+                    %workspace_id,
+                    error = ?e,
+                    "compiled config lookup failed; falling through to FS"
+                );
+                None
+            }
+        };
+
+    let builder_init = match compiled_config {
+        Some(cfg) => {
+            WorkspaceBuilder::new(workspace_id).with_workspace_path_and_compiled_config(path, cfg)
+        }
+        None => {
+            WorkspaceBuilder::new(workspace_id)
+                .with_workspace_path_and_fallback_config(path)
+                .await
+        }
+    };
+    let mut builder = match builder_init {
         Ok(b) => b,
         Err(e) => {
             tracing::warn!(
@@ -1345,5 +1418,74 @@ async fn bootstrap_monitor_schedules(
                 "bootstrap: failed to create monitor_scan schedule"
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxy::config::model::{DatabaseType, DuckDBOptions};
+
+    /// The compiled config is not just a cached `config.yml` — the compile worker
+    /// injects an `s3_mirror` block that the on-disk file never has. Background
+    /// contexts (run recovery, reconciliation, the health smoke probes) must see
+    /// it, or they build a `Local` DuckDB connector against a working copy a
+    /// stateless replica doesn't have, and report a dead connection for a
+    /// warehouse every request path is querying happily over S3.
+    #[test]
+    fn compiled_config_keeps_the_s3_mirror_the_working_copy_never_has() {
+        // Shaped like a real promoted revision: the working copy's `config.yml`
+        // for this workspace has the `dataset` but NO `s3_mirror` — the compile
+        // worker adds that on the way into Postgres.
+        let json = serde_json::json!({
+            "defaults": null,
+            "builder_agent": null,
+            "models": [],
+            "databases": [{
+                "name": "local",
+                "type": "duckdb",
+                "dataset": ".db/",
+                "s3_mirror": {
+                    "bucket": "oxy-compile-blobs",
+                    "region": "us-east-1",
+                    "tables": [
+                        { "table": "orders", "key": "ws/local/orders.csv", "format": "csv" }
+                    ]
+                }
+            }],
+        });
+        let ws = uuid::Uuid::new_v4();
+
+        let cfg = config_from_compiled(ws, json, "/state/workspaces/abc")
+            .expect("a well-formed compiled config must deserialise");
+
+        let db = cfg.databases.first().expect("one database");
+        let DatabaseType::DuckDB(duck) = &db.database_type else {
+            panic!("expected a duckdb database, got {:?}", db.database_type);
+        };
+        let mirror = duck
+            .s3_mirror
+            .as_ref()
+            .expect("the compiler-injected s3_mirror must survive into the context");
+        assert_eq!(mirror.bucket, "oxy-compile-blobs");
+        // The local dataset path is still carried — a node WITH the working copy
+        // uses it; only the stateless roles take the mirror arm.
+        assert!(matches!(duck.options, DuckDBOptions::Local { .. }));
+
+        // `workspace_path` is `#[serde(skip)]`, so a config from Postgres arrives
+        // with none. Unstamped, every file resolver (the DuckDB dataset dir, a
+        // BigQuery key_path) would resolve against an empty path.
+        assert_eq!(
+            cfg.workspace_path,
+            std::path::PathBuf::from("/state/workspaces/abc")
+        );
+    }
+
+    /// Schema drift against an old revision must fall through to the working copy
+    /// rather than fail the whole context build — the middleware's precedence.
+    #[test]
+    fn an_undeserialisable_compiled_config_falls_through_to_the_working_copy() {
+        let json = serde_json::json!({ "databases": "not-an-array" });
+        assert!(config_from_compiled(uuid::Uuid::new_v4(), json, "/state/ws").is_none());
     }
 }

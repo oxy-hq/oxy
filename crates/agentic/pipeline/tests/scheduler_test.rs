@@ -759,7 +759,7 @@ async fn manual_health_eval_enqueues_global_custom_task() {
         .unwrap();
     let schedule_id = health_rows_for(&db, ws).await[0].id.clone();
 
-    let run_id = enqueue_health_eval(&db, ws).await.unwrap();
+    let run_id = enqueue_health_eval(&db, ws, false).await.unwrap();
     assert!(
         !run_id.is_empty(),
         "returns the enqueued run id for polling"
@@ -801,7 +801,7 @@ async fn manual_health_eval_without_schedule_row_still_enqueues() {
     let Some(db) = test_db().await else { return };
     let ws = uuid::Uuid::new_v4();
 
-    let run_id = enqueue_health_eval(&db, ws).await.unwrap();
+    let run_id = enqueue_health_eval(&db, ws, false).await.unwrap();
     assert!(!run_id.is_empty());
 
     let tasks = health_tasks_for(&db, ws).await;

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::admin::workspace_health::reconcile::DriftVerdict;
+use crate::server::api::admin::workspace_health::smoke::SmokeVerdict;
 
 /// Workspace status. Declaration order matters: `Ord` makes
 /// `Unhealthy > Degraded > Healthy`, so the worst dimension is `.max()`.
@@ -31,6 +32,7 @@ pub enum HealthDimension {
     Correctness,
     Queue,
     Reconciliation,
+    SmokeTest,
 }
 
 /// Raw per-workspace signal counts gathered from Postgres. Pure input —
@@ -47,6 +49,11 @@ pub struct WorkspaceSignals {
     pub open_medium_anomalies: i64,
     pub dead_letter_count: i64,
     pub reconciliation: Vec<DriftVerdict>,
+    /// Smoke-probe verdicts. Unlike the other signals these are not gathered
+    /// every pass — the smoke test runs on its own slower cadence, and passes in
+    /// between reuse the previous run's verdicts (see `eval_pass`). Empty when no
+    /// smoke test is configured.
+    pub smoke: Vec<SmokeVerdict>,
 }
 
 impl WorkspaceSignals {
@@ -65,6 +72,7 @@ impl WorkspaceSignals {
             open_medium_anomalies: 0,
             dead_letter_count: 0,
             reconciliation: Vec::new(),
+            smoke: Vec::new(),
         }
     }
 }
@@ -154,6 +162,7 @@ pub fn evaluate(s: &WorkspaceSignals, t: &HealthThresholds) -> WorkspaceHealth {
         eval_correctness(s),
         eval_queue(s),
         eval_reconciliation(s),
+        eval_smoke_test(s),
     ];
     let status = dimensions
         .iter()
@@ -256,6 +265,41 @@ fn eval_reconciliation(s: &WorkspaceSignals) -> DimensionResult {
     }
 }
 
+/// Worst smoke verdict drives the dimension. Empty (no smoke test configured, or
+/// it is disabled) reads clear, exactly like the other dimensions with no
+/// signals. Healthy verdicts that carry a reason — the `max_targets` cap notes —
+/// are informational and never move the dimension.
+///
+/// When more than one probe is unhappy the reason names the worst one and counts
+/// the rest, so a workspace with eight broken topics doesn't hide seven of them
+/// behind a single line.
+fn eval_smoke_test(s: &WorkspaceSignals) -> DimensionResult {
+    let Some(worst) = s.smoke.iter().max_by_key(|v| v.status) else {
+        return clear(HealthDimension::SmokeTest);
+    };
+    if worst.status == HealthStatus::Healthy {
+        return clear(HealthDimension::SmokeTest);
+    }
+    let failing = s
+        .smoke
+        .iter()
+        .filter(|v| v.status != HealthStatus::Healthy)
+        .count();
+    let base = worst
+        .reason
+        .clone()
+        .unwrap_or_else(|| "probe failed".to_string());
+    let reason = match failing {
+        1 => format!("{}: {base}", worst.check),
+        n => format!("{}: {base} (+{} more failing probe(s))", worst.check, n - 1),
+    };
+    DimensionResult {
+        dimension: HealthDimension::SmokeTest,
+        status: worst.status,
+        reason: Some(reason),
+    }
+}
+
 fn clear(dimension: HealthDimension) -> DimensionResult {
     DimensionResult {
         dimension,
@@ -297,6 +341,7 @@ mod tests {
             open_medium_anomalies: 0,
             dead_letter_count: 0,
             reconciliation: Vec::new(),
+            smoke: Vec::new(),
         }
     }
 
@@ -434,12 +479,105 @@ mod tests {
     }
 
     #[test]
+    fn no_smoke_test_configured_reads_clear() {
+        let h = evaluate(&base(), &HealthThresholds::default());
+        let dim = h
+            .dimensions
+            .iter()
+            .find(|d| d.dimension == HealthDimension::SmokeTest)
+            .expect("the smoke dimension is always present");
+        assert_eq!(dim.status, HealthStatus::Healthy);
+        assert!(dim.reason.is_none());
+    }
+
+    #[test]
+    fn a_broken_probe_makes_the_workspace_unhealthy() {
+        use crate::server::api::admin::workspace_health::smoke::{SmokeProbeKind, failed, passed};
+        let mut s = base();
+        s.smoke = vec![
+            passed(SmokeProbeKind::Connection, "bigquery", 12),
+            failed(
+                SmokeProbeKind::Semantic,
+                "orders",
+                "measure 'orders.net' failed: column not found".into(),
+                40,
+            ),
+        ];
+        let h = evaluate(&s, &HealthThresholds::default());
+        assert_eq!(h.status, HealthStatus::Unhealthy);
+        assert!(h.reasons.iter().any(|r| r.contains("semantic:orders")));
+        assert!(h.reasons.iter().any(|r| r.contains("column not found")));
+    }
+
+    #[test]
+    fn a_timed_out_probe_is_degraded_not_unhealthy() {
+        use crate::server::api::admin::workspace_health::smoke::{SmokeProbeKind, timed_out};
+        let mut s = base();
+        s.smoke = vec![timed_out(
+            SmokeProbeKind::Connection,
+            "snowflake",
+            std::time::Duration::from_secs(30),
+            30_000,
+        )];
+        assert_eq!(
+            evaluate(&s, &HealthThresholds::default()).status,
+            HealthStatus::Degraded
+        );
+    }
+
+    #[test]
+    fn cap_notes_are_healthy_and_never_move_the_dimension() {
+        // A workspace with more topics than `max_targets` is large, not sick.
+        use crate::server::api::admin::workspace_health::smoke::{SmokeProbeKind, note, passed};
+        let mut s = base();
+        s.smoke = vec![
+            passed(SmokeProbeKind::Semantic, "orders", 30),
+            note(
+                SmokeProbeKind::Semantic,
+                "topics",
+                "probed 25 of 30 topics; skipped 5 (max_targets=25)".into(),
+            ),
+        ];
+        let h = evaluate(&s, &HealthThresholds::default());
+        assert_eq!(h.status, HealthStatus::Healthy);
+        assert!(h.reasons.is_empty());
+    }
+
+    #[test]
+    fn worst_probe_leads_and_the_rest_are_counted() {
+        use crate::server::api::admin::workspace_health::smoke::{
+            SmokeProbeKind, failed, timed_out,
+        };
+        let mut s = base();
+        s.smoke = vec![
+            timed_out(
+                SmokeProbeKind::App,
+                "a.app.yml",
+                std::time::Duration::from_secs(30),
+                30_000,
+            ),
+            failed(SmokeProbeKind::Agent, "analytics", "no LLM key".into(), 5),
+            failed(SmokeProbeKind::Semantic, "orders", "boom".into(), 5),
+        ];
+        let h = evaluate(&s, &HealthThresholds::default());
+        assert_eq!(h.status, HealthStatus::Unhealthy);
+        let reason = h
+            .reasons
+            .iter()
+            .find(|r| r.contains("+2 more"))
+            .expect("the other two failing probes must be counted, not hidden");
+        // Worst-first: an Unhealthy probe leads, not the Degraded timeout.
+        assert!(reason.starts_with("agent:") || reason.starts_with("semantic:"));
+    }
+
+    #[test]
     fn empty_signals_are_healthy() {
         let ws = Uuid::new_v4();
         let s = WorkspaceSignals::empty(ws);
         assert_eq!(s.workspace_id, ws);
         assert_eq!(s.total_runs, 0);
         assert!(s.reconciliation.is_empty());
+        assert!(s.smoke.is_empty());
         assert_eq!(
             evaluate(&s, &HealthThresholds::default()).status,
             HealthStatus::Healthy

@@ -21,6 +21,11 @@ pub struct Model {
     /// written by the sweep and returned verbatim by the read endpoint. `None`
     /// until the first sweep records this workspace.
     pub payload: Option<Json>,
+    /// When the workspace smoke test last actually ran. The smoke probes are on
+    /// their own slower cadence than the eval pass, so most passes read this,
+    /// decide the interval hasn't elapsed, and reuse the cached verdicts from
+    /// `payload`. `None` until the first smoke run (or when smoke is disabled).
+    pub last_smoke_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

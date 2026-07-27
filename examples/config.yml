@@ -197,6 +197,60 @@ defaults:
 builder_agent:
   model: claude-sonnet-4-6
 
+# ── Workspace health monitoring ────────────────────────────────────────────
+# Drives the admin "Workspace health" tab. `interval` is how often the passive
+# rollup (job liveness, pipeline, anomalies, queue, reconciliation) is
+# recomputed. `smoke_test` runs ACTIVE probes of this workspace's own artifacts
+# on its own slower cadence — every probe is a real round-trip, so it defaults
+# far slower than the rollup.
+#
+# This example turns on all four probes to show the full surface. In practice
+# only `connections` is on by default (a zero-scan `SELECT 1`); the rest are
+# opt-in because they cost real warehouse bytes or LLM tokens on every run:
+#   - semantic: reads each measure's full column (a LIMIT can't shrink an
+#     aggregate scan), so cost tracks your data volume, not topic count
+#   - apps:     runs every task of every .app.yml — a superset of `semantic`
+#   - agents:   a real LLM round-trip plus whatever SQL the agent writes
+#
+# `semantic` and `apps` share one shape: either a bool (sweep everything) or a
+# list naming exactly what to probe. On a real warehouse, prefer the list — a
+# sweep's cost scales with every topic's data volume, while a named list is a
+# bill you chose. This example project is tiny, so it sweeps.
+health_check:
+  interval: 10m # passive rollup cadence, clamped to [10m, 24h]
+  smoke_test:
+    enabled: true
+    interval: 6h # probe cadence, clamped to [10m, 7d]
+    connections: true # SELECT 1 against every database above
+    semantic: true # one measure query per .topic.yml
+    apps: true # run every task of every .app.yml
+    max_targets: 25 # per-probe cap; skipped targets are reported, never silent
+    agents: # each entry is a separate end-to-end probe, with its own verdict
+      - agent_ref: _analytics.agentic.yml
+        prompt: How many fruits are in the catalog?
+      - agent_ref: _analytics.agentic.yml
+        name: fruit prices # names the verdict; without it this would show as "#2"
+        prompt: What is the average price of a fruit?
+#
+# The narrower, cheaper shape — probe only what you name. Both blocks are lists
+# of targets, each carrying its own settings:
+#
+#   smoke_test:
+#     semantic:
+#       - topic: fruit_business
+#         measures: # omit to auto-pick one, as the sweep does
+#           - fruits.total_count # pin to columns you know are small
+#           - fruits.avg_price # all of a topic's measures ride in ONE query
+#       - topic: orders
+#     apps:
+#       - app: apps/fruits.app.yml # bare file name or workspace-relative path
+#         variables: # per-app control values, as its Controls would supply
+#           region: us-east
+#       - app: apps/inventory.app.yml
+#
+# A topic or app named here that doesn't exist is reported Unhealthy, not
+# skipped: you asserted it should be probed, so a rename must not read as OK.
+
 mcp:
   tools:
     - semantics/topics/fruit_business.topic.yml
