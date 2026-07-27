@@ -3,10 +3,13 @@
 // Anomaly inbox
 export type {
   Anomaly,
+  AnomalyFilter,
   AnomalySeverity,
   AnomalyStatus,
+  ExplainOptions,
   ListAnomaliesOptions,
   ListAnomaliesResponse,
+  ScanFailure,
   ScanOptions,
   ScanResponse
 } from "./anomalies";

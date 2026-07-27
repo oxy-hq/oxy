@@ -336,15 +336,26 @@ pub(super) fn build_external_workspace_routes(
             "/world-model/llm/messages",
             post(world_model::proxy_llm_messages),
         )
-        // Anomaly monitoring: list and update status — used by standalone apps
-        // (e.g. world-model-app) that can't reach the internal /api surface.
-        // Nested with an explicit Extension layer because both handlers extract
+        // Anomaly monitoring: list, scan, update status, explain — used by
+        // standalone apps (e.g. world-model-app) that can't reach the internal
+        // /api surface. Mirrors `build_metric_anomaly_routes` exactly, so the
+        // TypeScript SDK's `client.anomalies.*` (list/scan/updateStatus/explain)
+        // works against `/external/api` as well as `/api`.
+        //
+        // Nested with an explicit Extension layer because every handler extracts
         // Arc<AgenticState> for db access (same pattern as build_metric_anomaly_routes).
+        //
+        // `/scan` and `/{id}/explain` are long-running (a scan waits up to 55 s
+        // before returning `pending: true`; an uncached explain runs a 20-30 s
+        // recursive search) but bounded by the same `timeout_middleware` the rest
+        // of this surface carries — no separate budget needed.
         .nest("/semantic/anomalies", {
             use axum::Extension;
             Router::new()
                 .route("/", get(metric_anomalies::list_anomalies))
+                .route("/scan", post(metric_anomalies::run_scan))
                 .route("/{id}/status", post(metric_anomalies::update_status))
+                .route("/{id}/explain", post(metric_anomalies::explain_anomaly))
                 .layer(Extension(agentic_state.clone()))
         })
         // Agentic analytics: POST /analytics/runs, the SSE events stream,
@@ -795,5 +806,134 @@ mod tests {
                  mounting it elsewhere bypasses workspace_middleware + auth_middleware"
             );
         }
+    }
+
+    /// The external API surface must expose the FULL anomaly inbox — list,
+    /// scan, status, explain — not just the read half. Standalone custom apps
+    /// can't reach `/api`, so a missing verb here means the TypeScript SDK's
+    /// `client.anomalies.scan()` / `.explain()` 404 against `/external/api`
+    /// while the same calls work in the IDE.
+    #[tokio::test]
+    async fn external_surface_exposes_full_anomaly_inbox() {
+        let state = test_app_state();
+        let router = build_external_workspace_routes(test_agentic_state()).with_state(state);
+
+        let anomaly_id = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+
+        // `POST /{id}/status` was already mounted externally BEFORE this change
+        // and is known to work in production, so whatever a bare test router
+        // returns for it ("routed fine, failed later on absent workspace
+        // context") is the reference for a correctly-resolving route.
+        let baseline = status_for(
+            router.clone(),
+            "POST",
+            &format!("/semantic/anomalies/{anomaly_id}/status"),
+        )
+        .await;
+        assert!(
+            !baseline.is_success() && baseline != StatusCode::NOT_FOUND,
+            "baseline POST /semantic/anomalies/{{id}}/status returned {baseline}; this test \
+             assumes a bare router routes the request and then fails on missing context"
+        );
+
+        let cases: &[(&str, String)] = &[
+            ("GET", "/semantic/anomalies".to_string()),
+            ("POST", "/semantic/anomalies/scan".to_string()),
+            ("POST", format!("/semantic/anomalies/{anomaly_id}/status")),
+            ("POST", format!("/semantic/anomalies/{anomaly_id}/explain")),
+        ];
+        for (method, path) in cases {
+            let status = status_for(router.clone(), method, path).await;
+            assert_ne!(
+                status,
+                StatusCode::NOT_FOUND,
+                "{method} {path} must be mounted on the external API surface (got {status}); \
+                 custom apps reach anomalies only through /external/api"
+            );
+            assert_ne!(
+                status,
+                StatusCode::METHOD_NOT_ALLOWED,
+                "{method} {path} is mounted on the external API surface under a DIFFERENT \
+                 verb (got {status}); the SDK calls it with {method}"
+            );
+            // Equality with the baseline is what rules out a *silently broken*
+            // mount: a route that resolves but whose role extractor stopped
+            // resolving would diverge here (401/403) while still passing the
+            // 404/405 checks above.
+            assert_eq!(
+                status, baseline,
+                "{method} {path} returned {status} but the already-proven \
+                 POST /semantic/anomalies/{{id}}/status returned {baseline}. These handlers all \
+                 take the same EffectiveWorkspaceRole extractor, so a divergence means this \
+                 route resolves differently — check the extractor stack, not just the mount."
+            );
+        }
+    }
+
+    /// Drift guard: the external anomaly mount mirrors
+    /// `build_metric_anomaly_routes` verb-for-verb. Adding a route to the
+    /// internal builder without mirroring it here silently leaves custom apps
+    /// a version behind, so compare the two route sets from the source.
+    #[test]
+    fn external_anomaly_routes_mirror_internal_builder() {
+        let src = include_str!("workspace.rs");
+
+        // Route paths registered inside a named fn/nest body, normalised so
+        // `{anomaly_id}` and `{id}` compare equal (axum extracts positionally).
+        fn routes_in(body: &str) -> std::collections::BTreeSet<String> {
+            let mut out = std::collections::BTreeSet::new();
+            let mut rest = body;
+            while let Some(idx) = rest.find(".route(") {
+                rest = &rest[idx + ".route(".len()..];
+                let Some(open) = rest.find('"') else { break };
+                let after = &rest[open + 1..];
+                let Some(close) = after.find('"') else { break };
+                let path = &after[..close];
+                // Normalise the param NAME away; only the shape matters.
+                let normalised: Vec<&str> = path
+                    .split('/')
+                    .map(|seg| if seg.starts_with('{') { "{p}" } else { seg })
+                    .collect();
+                out.insert(normalised.join("/"));
+                rest = &after[close..];
+            }
+            out
+        }
+
+        fn body_after<'a>(src: &'a str, marker: &str) -> &'a str {
+            let start = src
+                .find(marker)
+                .unwrap_or_else(|| panic!("{marker} present"));
+            let body = &src[start..];
+            let end = body.find("\n}\n").unwrap_or(body.len());
+            &body[..end]
+        }
+
+        let internal = routes_in(body_after(src, "fn build_metric_anomaly_routes"));
+
+        // The external mount is an inline `.nest("/semantic/anomalies", { .. })`
+        // block; slice from the nest to the end of the builder.
+        let external_builder = body_after(src, "fn build_external_workspace_routes");
+        let nest_start = external_builder
+            .find(r#".nest("/semantic/anomalies""#)
+            .expect("external anomalies nest present");
+        let nest_body = &external_builder[nest_start..];
+        let nest_end = nest_body.find("})").unwrap_or(nest_body.len());
+        let external = routes_in(&nest_body[..nest_end]);
+
+        assert!(
+            !internal.is_empty() && internal.len() >= 4,
+            "parser found only {} internal anomaly routes — the builder shape changed",
+            internal.len()
+        );
+        assert_eq!(
+            internal,
+            external,
+            "build_metric_anomaly_routes and the external /semantic/anomalies nest have \
+             drifted. Every anomaly route must exist on BOTH surfaces — custom apps reach \
+             anomalies only through /external/api. Internal-only: {:?}; external-only: {:?}",
+            internal.difference(&external).collect::<Vec<_>>(),
+            external.difference(&internal).collect::<Vec<_>>(),
+        );
     }
 }

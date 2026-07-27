@@ -5,6 +5,39 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-07-27
+
+Completes the anomaly inbox for standalone custom apps. `scan()` and
+`explain()` were already in the SDK but 404'd against `/external/api` —
+the surface a bundle served from its own origin has to use — because only
+the read half of the inbox was mounted there. Both verbs are now exposed,
+so `client.anomalies.*` behaves the same from a custom app as from the IDE.
+
+### Added
+
+- **`explain(id, { refresh: true })`** — busts the cached `ExplainResult`
+  and recomputes. The server already accepted `?refresh=true`; the option
+  was simply unreachable from the SDK.
+- **`ScanResponse.pending` and `ScanResponse.failures`** — a scan that
+  outruns the 55 s synchronous window (or is debounced within 60 s of a
+  previous one) returns `pending: true` with **all counts zeroed**. Those
+  zeros are not a "nothing found" result; check `pending` before reading
+  them, then refetch with `list()`. `failures` carries per-monitor errors.
+- **`Anomaly.dimension_key` / `Anomaly.filters`** — the segment a row
+  belongs to. Already on the wire, previously absent from the type, so
+  per-segment anomalies couldn't be told apart from chain-wide ones.
+- **Exported types** `AnomalyFilter`, `ScanFailure`, `ExplainOptions`.
+
+### Changed
+
+- **`Anomaly.filters`, `ScanResponse.pending` and `ScanResponse.failures`
+  are required-nullable, not optional.** The server serializes all three
+  unconditionally, so the previous `?` overstated absence — `filters` is
+  `null` for a chain-wide monitor and `failures` is `[]` on a clean scan,
+  but neither is ever missing. Reading code gets strictly better types;
+  code that **constructs** these objects (test fixtures, mocks) must now
+  supply the fields.
+
 ## [2.6.0] - 2026-07-23
 
 Adds a custom-app **asset store**, **email attachments**, and a
