@@ -14,7 +14,8 @@ Authentication (who you are) is `oxy-auth`. This is authorization (what you may 
   Short version: policy-as-data is an explicit non-goal (design §2), and that is the
   requirement that pays for an engine. Adopt one when policy must be authored by someone
   outside this repo — not to compute `contains`.
-- **Design:** `internal-docs/2026-07-16-authorization-unification-design.md`.
+- **Design:** the model + rejected-engines rationale are captured in this guide and
+  `src/lib.rs`; the original unification design doc's history is in git.
 
 ## The one boundary that matters: model vs facts
 

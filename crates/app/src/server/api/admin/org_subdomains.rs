@@ -3,7 +3,7 @@
 //! (OXY_OWNER or app_admins). The subdomain label IS the org slug — not
 //! configurable. Customers can't toggle this (it serves a live public
 //! surface); they see read-only status via `/api/{workspace_id}/org-subdomain`.
-//! See `internal-docs/2026-06-22-org-subdomain-routing-design.md`.
+//! See `internal-docs/org-subdomain-infra.md`.
 
 use axum::extract::Path;
 use axum::http::StatusCode;

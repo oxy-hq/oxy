@@ -7,7 +7,7 @@
 //! synthetic-operator override is rejected), so neither Oxy staff nor the partner
 //! can flip it on the client's behalf.
 //!
-//! See `internal-docs/2026-07-16-partner-platform-design.md`.
+//! See `internal-docs/partner-platform.md`.
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};

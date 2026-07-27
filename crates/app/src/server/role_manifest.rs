@@ -570,7 +570,7 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
     // OXY_IDE_UPSTREAM). The isolate and the JS artifact (S3 build-store) are
     // themselves fleet-safe — only the FS-bound config/semantic reads force this;
     // lifting them onto the compile boundary would make this FleetOk (see the §4
-    // fleet note in `2026-06-12-customer-apps-functions-design.md`). Static bundle
+    // fleet note in `internal-docs/customer-apps-functions.md`). Static bundle
     // assets under `/customer-apps/<org>/<slug>/...` stay FleetOk (served from
     // S3): the 5-segment `.../fn/{name}` pattern matches ONLY the execution entry
     // point, never asset serving.
@@ -1256,7 +1256,7 @@ mod tests {
         // Both org-subdomain surfaces are Postgres-only (read workspace→org,
         // upsert the `org_subdomains` row) — no workspace FS — so they serve
         // from any replica, like `oxy-access`. See
-        // `internal-docs/2026-06-22-org-subdomain-routing-design.md`.
+        // `internal-docs/org-subdomain-infra.md`.
         let id = "d9830be4-c6a4";
         // Customer read-only status (workspace-scoped).
         assert_eq!(

@@ -2,7 +2,7 @@
 //!
 //! Granting a partnership means: *this existing org may now administer other
 //! orgs.* There is no separate partner entity to create — the partner IS the org
-//! (see `internal-docs/2026-07-16-partner-platform-design.md` §2), so its name,
+//! (see `internal-docs/partner-platform.md` §2), so its name,
 //! slug and people all come from the org that already exists.
 //!
 //! The whole grant is ONE transaction — grant row, ceiling, first client

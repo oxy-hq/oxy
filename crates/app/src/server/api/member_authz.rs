@@ -4,7 +4,7 @@
 //! invariants are unit-testable without a DB. The transactional **last-owner
 //! count** stays in the handlers (it needs row locks); everything here is pure.
 //!
-//! Full model + citations: `internal-docs/2026-07-16-partner-platform-design.md`.
+//! Full model + citations: `internal-docs/partner-platform.md`.
 //!
 //! The load-bearing invariants encoded here:
 //!   1. Owner is sovereign & protected — only an Owner may touch an Owner/Admin.

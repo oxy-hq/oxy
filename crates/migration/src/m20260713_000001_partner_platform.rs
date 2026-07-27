@@ -32,7 +32,7 @@ use sea_orm_migration::prelude::*;
 /// `develop_apps`, or `audit_events` before `seq`), which the new code then 500s
 /// on. So `up()` first DROPs the partner/audit/assume tables; the partner tier
 /// never shipped, so there is no production data at risk. Design:
-/// `internal-docs/2026-07-16-partner-platform-design.md`.
+/// `internal-docs/partner-platform.md`.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 

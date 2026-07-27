@@ -2,7 +2,8 @@
 //! do what, so the answer is not re-derived at ~170 call sites. Authentication (who you
 //! are) lives in `oxy-auth`; this is authorization (what you may do).
 //!
-//! Design: `internal-docs/2026-07-16-authorization-unification-design.md`.
+//! Design & rejected-engines rationale: this crate's `CLAUDE.md` (the original
+//! unification design doc was distilled there; its history is in git).
 //!
 //! ## The model
 //!

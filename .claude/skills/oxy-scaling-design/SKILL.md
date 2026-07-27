@@ -9,8 +9,8 @@ description: Use when the user asks about Oxy's multi-instance scaling, the spli
 
 **Read these first when grounding a decision:**
 - `internal-docs/multi-instance-fleet.md` — how the fleet works today (roles, the stateful-vs-HA matrix, route classification, the `super_read_only` guard, graceful degradation, code map). **The primary reference.**
-- `internal-docs/2026-06-16-ephemeral-workspace-environments-design.md` — the forward implementation plan (the crate/binary split that makes "FS in a stateless service" a compile error).
-- `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md` — the original phase ledger + the rejected-alternatives list.
+- `internal-docs/ephemeral-workspace-environments.md` — the forward implementation plan (the crate/binary split that makes "FS in a stateless service" a compile error).
+- `internal-docs/multi-instance-fleet.md` — the original phase ledger + the rejected-alternatives list.
 - `internal-docs/compile-boundary.md` — operator runbook.
 
 ## What is built (the current reality)
@@ -60,8 +60,8 @@ description: Use when the user asks about Oxy's multi-instance scaling, the spli
 ## Refs
 
 - Fleet guide (primary): `internal-docs/multi-instance-fleet.md`
-- Forward plan: `internal-docs/2026-06-16-ephemeral-workspace-environments-design.md`
-- Phase ledger + rejected alternatives: `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md`
+- Forward plan: `internal-docs/ephemeral-workspace-environments.md`
+- Phase ledger + rejected alternatives: `internal-docs/multi-instance-fleet.md`
 - Operator runbook: `internal-docs/compile-boundary.md`
-- Worker fleet dev guide: `internal-docs/worker-fleet.md`; scope survey: `internal-docs/2026-05-28-worker-fleet-scope-survey.md`
+- Worker fleet dev guide: `internal-docs/worker-fleet.md`; scope survey: `internal-docs/worker-fleet.md`
 - Backend architecture rules: `internal-docs/backend-architecture.md`

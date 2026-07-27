@@ -1,13 +1,13 @@
 //! `POST /customer-apps/<org>/<slug>/fn/<name>` — Oxy Functions route
 //! invocation.
 //!
-//! See `internal-docs/2026-06-12-customer-apps-functions-design.md`. This
+//! See `internal-docs/customer-apps-functions.md`. This
 //! handler covers the **route** invocation mode (§2); schedule and Airway
 //! triggers reuse [`crate::server::api::custom_apps_functions::runtime::run`]
 //! from their own call sites and are not wired here.
 //!
 //! **Three run concepts, easy to conflate** (see the "Run concepts" section of
-//! `internal-docs/2026-07-10-oxy-function-jobs-design.md`): the **V8 isolate
+//! `internal-docs/customer-apps-functions.md`): the **V8 isolate
 //! run** (`runtime::run`) is the raw JS execution; an **invocation**
 //! (`app_function_invocations`, `mode`) is the audit row for *every* run —
 //! including a plain request-time **route** call; a **job** (`agentic_runs`,

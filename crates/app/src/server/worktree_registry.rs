@@ -1,6 +1,6 @@
 //! Worktree lifecycle registry — the first concrete step of the plan-2
 //! "ephemeral workspace environment" broker (design:
-//! `internal-docs/2026-06-16-ephemeral-workspace-environments-design.md`,
+//! `internal-docs/ephemeral-workspace-environments.md`,
 //! Stage 3a), brought forward to today's single-`ide` topology.
 //!
 //! ## Why

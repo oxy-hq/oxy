@@ -23,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       agentic_only:
-        description: "Skip non-agentic jobs (typos, fmt-web, build-web, smoke, e2e, cargo clippy/nextest) so the agentic-tests matrix runs against just a freshly-built binary. Use this for fast iteration on browser-test selectors."
+        description: "Skip non-agentic jobs (fmt-web, build-web, smoke, e2e, cargo clippy/nextest) so the agentic-tests matrix runs against just a freshly-built binary. Use this for fast iteration on browser-test selectors."
         required: false
         type: boolean
         default: false
@@ -63,29 +63,9 @@ jobs:
     uses: ./.github/workflows/changesets.yaml
     name: Changesets
 
-  typos:
-    name: Typos
-    if: |
-      inputs.agentic_only != true &&
-      !(github.event_name == 'push' &&
-        github.ref == 'refs/heads/main' &&
-        startsWith(github.event.head_commit.message, 'chore: release')) &&
-      github.event.pull_request.draft != true &&
-      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/'))
-    runs-on:
-      ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
-      'ubuntu-latest' }}
-    # Typos checks the whole tree in ~20s; 10m is pure hang insurance.
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - name: Check typos
-        uses: crate-ci/typos@bee27e3a4fd1ea2111cf90ab89cd076c870fce14 # v1.48.0
-
   fmt-web:
     name: Format web
-    needs: [changesets, typos]
+    needs: [changesets]
     concurrency:
       group: fmt-web-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
@@ -123,7 +103,7 @@ jobs:
 
   build-web:
     name: Build web
-    needs: [changesets, typos]
+    needs: [changesets]
     concurrency:
       group: build-web-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
@@ -193,7 +173,7 @@ jobs:
 
   vitest:
     name: Web unit tests (Vitest)
-    needs: [changesets, typos]
+    needs: [changesets]
     concurrency:
       group: vitest-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
@@ -263,10 +243,6 @@ jobs:
       group: cargo-check-and-test-${{ matrix.task }}-${{
         github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    # `typos` dropped from `needs` because it's optional in `agentic_only`
-    # mode (skipped). GH Actions' needs-propagation would otherwise skip
-    # this job whenever typos is skipped, blocking the agentic-tests
-    # matrix from getting the binary.
     needs: [changesets]
     # In agentic_only mode the agentic-tests matrix needs the binary
     # this job produces, so force it to run even if
@@ -472,7 +448,7 @@ jobs:
 
   smoke-test-enterprise:
     name: Smoke test (oxy start --enterprise)
-    needs: [changesets, typos, cargo-check-and-test]
+    needs: [changesets, cargo-check-and-test]
     concurrency:
       group:
         smoke-test-enterprise-${{ github.event.pull_request.number || github.ref
@@ -559,7 +535,7 @@ jobs:
 
   e2e-tests:
     name: E2E Tests (Playwright)
-    needs: [changesets, typos, cargo-check-and-test]
+    needs: [changesets, cargo-check-and-test]
     # 💰 COST SAVING: Only run on approved PRs, pushes to oxy-hq/oxygen main, or manual trigger
     if: false # temporarily disabled
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}

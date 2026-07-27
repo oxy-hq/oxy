@@ -2,7 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// One row per Oxy Functions invocation (route, schedule, or airway).
-/// See `internal-docs/2026-06-12-customer-apps-functions-design.md` §11.12.
+/// See `internal-docs/customer-apps-functions.md` §11.12.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_function_invocations")]
 pub struct Model {

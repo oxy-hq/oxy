@@ -1,5 +1,5 @@
 //! Publish authorization — the three gates (design
-//! `internal-docs/2026-07-16-partner-platform-design.md` §7).
+//! `internal-docs/partner-platform.md` §7).
 //!
 //! A publish of app `A` into org `X` is allowed only if all three hold, and they
 //! are checked **at publish time** (not just at credential mint) so revoking

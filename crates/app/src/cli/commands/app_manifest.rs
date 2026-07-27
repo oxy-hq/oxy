@@ -26,7 +26,7 @@ pub struct OxyAppManifest {
     pub environments: Option<HashMap<String, EnvSpec>>,
     /// Optional Oxy Functions shipped in the bundle's `functions/` dir,
     /// keyed by function name. See
-    /// `internal-docs/2026-06-12-customer-apps-functions-design.md`.
+    /// `internal-docs/customer-apps-functions.md`.
     pub functions: Option<HashMap<String, FunctionSpec>>,
 }
 

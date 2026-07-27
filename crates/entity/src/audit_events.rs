@@ -2,7 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// One append-only audit event for a privileged/admin action. See
-/// `internal-docs/2026-07-16-partner-platform-design.md` §6.
+/// `internal-docs/partner-platform.md` §6.
 ///
 /// No SeaORM relations by design: an audit event must outlive the rows it
 /// references (deleting an org/user must not touch its history), so scope ids

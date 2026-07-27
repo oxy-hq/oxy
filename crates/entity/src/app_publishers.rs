@@ -10,7 +10,7 @@
 //! account-resurrection defence. `environment` is required so the client can gate
 //! the publish job behind required-reviewers.
 //!
-//! See `internal-docs/2026-07-16-partner-platform-design.md`.
+//! See `internal-docs/partner-platform.md`.
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};

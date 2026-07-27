@@ -137,7 +137,7 @@ async fn readyz(
     // outage should drop us out of the LB. Fix by exposing a "connection
     // healthy" signal from `PostgresTaskRouter` and watching it here.
     // Tracked alongside the scope-survey items in
-    // `internal-docs/2026-05-28-worker-fleet-scope-survey.md`.
+    // `internal-docs/worker-fleet.md`.
     (
         code,
         Json(json!({

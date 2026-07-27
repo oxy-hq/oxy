@@ -23,7 +23,7 @@ const NO_DEFAULT = "__none__";
  * Lives in the org detail Settings tab. The subdomain label is the org slug
  * (not editable); staff toggle it on/off and choose the default project.
  * Customers can't toggle this — they see read-only status in their own
- * settings. See internal-docs/2026-06-22-org-subdomain-routing-design.md.
+ * settings. See internal-docs/org-subdomain-infra.md.
  */
 export function OrgSubdomainSettings({ orgId }: { orgId: string }) {
   const { data, isLoading } = useAdminOrgSubdomain(orgId);

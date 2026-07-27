@@ -62,4 +62,4 @@ nearly everything (`oxy`, agentic-http/pipeline, integrations). Keep it thin:
 - The file/function size limits bite hardest here — this crate holds the workspace's worst
   god files (`world_model_graph.rs`, `role_manifest.rs`, `admin/apps/handlers.rs`,
   `project_ctx.rs`, `workspaces.rs`). Prefer a new module over growing one; see
-  `internal-docs/2026-07-12-oxy-app-decomposition-plan.md`.
+  `internal-docs/domain-boundaries.md`.

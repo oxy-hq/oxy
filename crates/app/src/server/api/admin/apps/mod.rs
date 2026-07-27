@@ -36,7 +36,7 @@ pub(crate) fn router() -> Router<AppState> {
         // section: list the app's functions + config, one function's recent
         // invocation history, and a job run's status + logs. The write —
         // triggering a run — is the `runs` route below.
-        // See internal-docs/2026-07-10-oxy-function-jobs-design.md.
+        // See internal-docs/customer-apps-functions.md.
         .route("/apps/{id}/functions", get(functions::list_functions))
         .route(
             "/apps/{id}/functions/{name}/invocations",

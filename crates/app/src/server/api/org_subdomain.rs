@@ -6,7 +6,7 @@
 //! (`/api/admin/orgs/{org_id}/subdomain`) — a customer must not be able to
 //! flip a live public surface on/off (it would break shared branded URLs and
 //! `…/a/<slug>` app links). See
-//! `internal-docs/2026-06-22-org-subdomain-routing-design.md`.
+//! `internal-docs/org-subdomain-infra.md`.
 
 use axum::Json;
 use axum::extract::Path;

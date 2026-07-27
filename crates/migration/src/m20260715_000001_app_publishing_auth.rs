@@ -1,7 +1,7 @@
 use sea_orm_migration::prelude::*;
 
 /// App publishing authorization (design:
-/// `internal-docs/2026-07-16-partner-platform-design.md`).
+/// `internal-docs/partner-platform.md`).
 ///
 /// Three schema changes, all additive so the existing staff CI publish flow keeps
 /// working:

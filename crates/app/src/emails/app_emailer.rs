@@ -5,7 +5,7 @@
 //! Recipients may be arbitrary external addresses, bounded by a per-send
 //! recipient cap. In local/dev the email is logged instead of sent.
 //!
-//! Design: `internal-docs/2026-07-20-customer-app-email-send-design.md`.
+//! Design: `internal-docs/customer-apps-functions.md`.
 
 use aws_sdk_sesv2::types::{
     Attachment, AttachmentContentDisposition, Body, Content, Destination, EmailContent,

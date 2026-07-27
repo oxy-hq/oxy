@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// `app_builds` row, so it versions and rolls back with its build via the
 /// existing channel pointers (no per-function channel state needed).
 ///
-/// See `internal-docs/2026-06-12-customer-apps-functions-design.md`.
+/// See `internal-docs/customer-apps-functions.md`.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_functions")]
 pub struct Model {

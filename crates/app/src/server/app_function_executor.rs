@@ -4,7 +4,7 @@
 //! `PipelineTaskExecutor` delegates the `app_function` kind here. The actual run
 //! is `custom_apps_functions::run_scheduled_function` (org-owner identity,
 //! `mode="schedule"` invocation record). See
-//! `internal-docs/2026-07-07-scheduled-oxy-functions-design.md`.
+//! `internal-docs/customer-apps-functions.md`.
 
 use agentic_core::delegation::{TaskAssignment, TaskOutcome, TaskSpec};
 use agentic_runtime::worker::{ExecutingTask, TaskExecutor};

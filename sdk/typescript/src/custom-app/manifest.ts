@@ -18,7 +18,7 @@ import { getOxyAppLogger } from "./logger";
 
 /**
  * Declaration of a single Oxy Function shipped in the bundle's
- * `functions/` dir. See `internal-docs/2026-06-12-customer-apps-functions-design.md`.
+ * `functions/` dir. See `internal-docs/customer-apps-functions.md`.
  *
  * All fields optional except that at least one invocation surface
  * (`route`, `schedule`, or `airwayStep`) must be active. Absent =

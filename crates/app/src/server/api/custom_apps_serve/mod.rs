@@ -112,7 +112,7 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
 
     // Oxy Functions route invocation: `POST .../fn/<name>`. Dispatched
     // before `serve_pretty`'s static-bundle logic — see
-    // internal-docs/2026-06-12-customer-apps-functions-design.md §11.10.
+    // internal-docs/customer-apps-functions.md §11.10.
     if let Some(function_name) = rest.strip_prefix("fn/") {
         if function_name.is_empty() || function_name.contains('/') {
             return StatusCode::NOT_FOUND.into_response();

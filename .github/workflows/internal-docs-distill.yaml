@@ -1,0 +1,142 @@
+# Distill Internal Docs
+#
+# Biweekly curation of `internal-docs/` by Claude, opened as ONE PR for human
+# review (never auto-merged). Automates the manual pass that keeps the folder a
+# lean set of evergreen "platform implementation" references instead of an
+# accreting pile of dated design docs:
+#
+#   - Dated design/plan docs (`YYYY-MM-DD-*.md`) are EPHEMERAL. Their durable
+#     facts get distilled into an undated living reference; the dated file is
+#     then removed (git history preserves it).
+#   - Undated living references are health-checked for stale claims (renamed
+#     concepts, dead links, superseded backends) and pruned.
+#   - The README index is kept accurate.
+#
+# The canonical policy lives in `internal-docs/README.md` ("Maintenance policy")
+# so there is one source of truth; the prompt below summarizes it and adds the
+# guardrails an unattended bot needs (age threshold + never-delete exceptions),
+# so a recent, in-flight, or formally-authored doc is never auto-deleted.
+#
+# Safety rails mirror the other scheduled Claude workflows in this repo: SHA-
+# pinned actions, a GitHub App token, a scoped tool allowlist (no bare Bash with
+# secrets), a per-job timeout, and an agent told to stay on its branch.
+
+name: Distill Internal Docs
+
+on:
+  schedule:
+    # 1st and 15th at 08:00 UTC (15:00 Vietnam) — twice a month, ~biweekly.
+    # (GitHub cron has no native "every 2 weeks"; 1,15 is the standard idiom.)
+    - cron: "0 8 1,15 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: internal-docs-distill-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  distill:
+    if: ${{ github.repository == 'oxy-hq/oxygen-internal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure git
+        run: |
+          USER_ID=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Distill internal-docs
+        uses: anthropics/claude-code-action@12531344451323133b0493233c759991ac61da12 # v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: >-
+            --max-turns 60 --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git
+            add:*),Bash(git rm:*),Bash(git checkout:*),Bash(git commit:*),Bash(git
+            push:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh pr
+            create:*),Bash(gh pr list:*),Bash(date:*),Bash(ls:*),Bash(find:*),Bash(wc:*)"
+          prompt: |
+            You are the biweekly maintainer of `internal-docs/` in
+            oxy-hq/oxygen-internal. Goal: keep this folder a LEAN set of evergreen
+            "platform implementation" references — not an accreting pile of dated
+            design docs. Follow the "Maintenance policy" section of
+            `internal-docs/README.md` as the source of truth; the rules below
+            summarize it and add the guardrails you need to run unattended.
+
+            ## Model of the folder
+
+            - LIVING references are UNDATED files (e.g. `customer-apps.md`,
+              `worker-fleet.md`, `observability-analytics.md`). These persist and
+              hold the durable "what we built and why, invariants, gotchas."
+            - DATED docs (`YYYY-MM-DD-*.md` / `.html`) are EPHEMERAL point-in-time
+              design docs and implementation plans. Once their subsystem ships,
+              their durable facts belong in a living reference and the dated file
+              should go (git history preserves it).
+
+            ## What to do this run
+
+            1. Read `internal-docs/README.md` and list the folder
+               (`ls internal-docs` and `find internal-docs -maxdepth 2 -name '*.md'`).
+            2. HEALTH-CHECK the living (undated) references: fix stale claims
+               (renamed concepts, dead links, superseded backends/decisions),
+               prune lines that merely restate code or duplicate another doc.
+               Keep them terse. A net-negative diff is a good outcome.
+            3. For each DATED doc, decide: is its durable content already captured
+               in a living reference? If not and the subsystem has shipped,
+               distill a TERSE version into the right living reference (or, only
+               if a subsystem has no living home at all, create one undated doc).
+            4. DELETE a dated doc with `git rm` ONLY when ALL of these hold:
+               (a) its durable facts are now in a living reference,
+               (b) it is clearly shipped or superseded (not an open proposal),
+               (c) it is at least 30 days old (check the date in the filename +
+                   `git log -1 --format=%as -- <file>`), and
+               (d) it is NOT a formal authored artifact (`.tex` / `.pdf`, or a
+                   standalone `.html` briefing).
+               If any condition is unclear, KEEP the file and list it under
+               "Kept — needs human judgment" in the PR body. When in doubt, keep.
+            5. NEVER delete: anything modified on the current branch this cycle,
+               open proposals under `internal-docs/proposals/`, formal papers
+               (`.tex`/`.pdf`), or config colocated here (`slack/*.yml`,
+               `tailscale-acl.json`).
+            6. Keep `internal-docs/README.md` accurate: every living reference
+               appears in the index with a one-line "use this when"; dated docs
+               are NOT indexed. Preserve the "Maintenance policy" section.
+            7. Do NOT duplicate what `product-context.md`, `CLAUDE.md`, or the code
+               already state. Every kept line must be something an agent could not
+               retrieve in a minute by grepping the codebase.
+
+            ## Open the PR
+
+            1. `git diff --stat` — if nothing changed, stop; the folder is current.
+            2. Otherwise: `git checkout -b distill-internal-docs/$(date +%Y-%m-%d)`,
+               stage, commit as `docs: biweekly internal-docs distillation`, and
+               `git push -u origin HEAD`.
+            3. Open ONE PR against `main` with `gh pr create`. In the body,
+               summarize: living docs updated, durable facts folded in + from which
+               dated docs, dated docs deleted, and a "Kept — needs human judgment"
+               list for anything you chose not to delete. Never merge; a human
+               reviews. Stay on your branch — never push to `main`.

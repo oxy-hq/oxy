@@ -1,7 +1,7 @@
 //! Partner authorization — "may this user administer this client org, and with
 //! what permissions?"
 //!
-//! Model: `internal-docs/2026-07-16-partner-platform-design.md`.
+//! Model: `internal-docs/partner-platform.md`.
 //!
 //! ## The shape
 //!

@@ -152,6 +152,21 @@ PRs that violate the right-hand column should be challenged through the matching
   (mirrored by `README.md`); `.github/CODEOWNERS` gates these. Any docs PR that deletes a
   landing page or touches >~50 files must confirm "positioning carried over verbatim".
 
+## Internal engineering docs (`internal-docs/`)
+
+`internal-docs/` holds the **living platform-implementation references and operator
+runbooks** — the durable "how a subsystem works and why" that you can't cheaply grep from
+code. **Consult the matching doc before working on a subsystem, and fold any non-obvious
+durable fact back into it when you ship.** [`internal-docs/README.md`](internal-docs/README.md)
+is the categorized index (customer-apps, worker-fleet/scaling, observability, anomaly-
+monitoring, admin-surfaces, partner-platform, compile-boundary, …).
+
+- **Prefer an existing living doc** over a new file; create one only when a subsystem has
+  no home. Undated filenames are the durable references; **dated `YYYY-MM-DD-*.md` files are
+  ephemeral** design/plan snapshots and get distilled + pruned by a biweekly workflow
+  (`.github/workflows/internal-docs-distill.yaml`) — don't treat them as the lasting home.
+- The full curation contract is `internal-docs/README.md` → **Maintenance policy**.
+
 ## Common Pitfalls
 
 - No `--release` for local/CI. No `println!` in library code (use `tracing`).

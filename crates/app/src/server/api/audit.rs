@@ -1,5 +1,5 @@
 //! Audit emission + read-scope queries for the append-only `audit_events`
-//! stream. See `internal-docs/2026-07-16-partner-platform-design.md`
+//! stream. See `internal-docs/partner-platform.md`
 //! §6.
 //!
 //! Callers build an [`AuditEntry`] at each privileged mutation and pass it to

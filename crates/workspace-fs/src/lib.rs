@@ -1,7 +1,7 @@
 //! The `WorkspaceFs` port — the seam between the stateless serving plane and the
 //! filesystem-owning workspace environment.
 //!
-//! Design: `internal-docs/2026-06-16-ephemeral-workspace-environments-design.md`
+//! Design: `internal-docs/ephemeral-workspace-environments.md`
 //!
 //! This crate holds ONLY the contract (the trait + its data types), so **both**
 //! planes can depend on it:

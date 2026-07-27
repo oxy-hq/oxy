@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// is why a consultancy can use Oxy for its own business *and* manage clients
 /// without maintaining two disconnected identities.
 ///
-/// See `internal-docs/2026-07-16-partner-platform-design.md`.
+/// See `internal-docs/partner-platform.md`.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "partner_grants")]
 pub struct Model {

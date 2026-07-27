@@ -1,6 +1,6 @@
 //! V8-isolate execution for Oxy Functions.
 //!
-//! See `internal-docs/2026-06-12-customer-apps-functions-design.md` §4 and
+//! See `internal-docs/customer-apps-functions.md` §4 and
 //! §11. Given a bundled function artifact (esbuild ESM output) and a `ctx`
 //! payload, run `export default async (req, ctx) => Response` to completion
 //! and return the resulting status/body.

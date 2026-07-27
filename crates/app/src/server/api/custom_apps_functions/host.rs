@@ -1,7 +1,7 @@
 //! Host-side data plane for Oxy Functions — the Rust implementation of the
 //! `ctx.query` / `ctx.fetch` calls the isolate makes over the broker channel.
 //!
-//! See `internal-docs/2026-06-12-customer-apps-functions-design.md` §11.5
+//! See `internal-docs/customer-apps-functions.md` §11.5
 //! (query cap), §11.9 (fetch size cap), §11.3 (warehouse write scope —
 //! per-function fail-closed `destinations` allowlist).
 

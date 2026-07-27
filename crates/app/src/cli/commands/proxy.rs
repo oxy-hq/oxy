@@ -1,5 +1,5 @@
 //! `oxy proxy` — local custom-app dev against a cloud Oxy (design doc
-//! `internal-docs/2026-07-16-partner-platform-design.md`).
+//! `internal-docs/partner-platform.md`).
 //!
 //! An **outbound** sidecar: it does not serve the app (your dev server does).
 //! It listens on `--port` (default **3000**, where a local `oxy serve` would be,

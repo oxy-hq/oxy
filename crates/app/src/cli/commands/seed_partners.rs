@@ -4,7 +4,7 @@
 //! flag); silently skipped on a non-local DB.
 //!
 //! The seed IS the design's demo (see
-//! `internal-docs/2026-07-16-partner-platform-design.md`). It proves two things
+//! `internal-docs/partner-platform.md`). It proves two things
 //! the old seed structurally could not:
 //!
 //! 1. **A partner is a real org.** Acme Consulting has its own owner, its own

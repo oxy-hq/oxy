@@ -8,7 +8,7 @@
 //! read `app_functions` (the per-build registry), `app_function_invocations`
 //! (the invocation audit), and — for a job run — `agentic_runs` +
 //! `agentic_run_events` (the `function_log` lines Slice A persists).
-//! See internal-docs/2026-07-10-oxy-function-jobs-design.md.
+//! See internal-docs/customer-apps-functions.md.
 
 use axum::Json;
 use axum::extract::Path;

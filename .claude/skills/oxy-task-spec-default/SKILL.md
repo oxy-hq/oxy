@@ -5,7 +5,7 @@ description: Use when adding or modifying code in `crates/app/src/server/` or HT
 
 # Default long-running work to TaskSpec on the worker fleet
 
-Per Oxy's scaling design (`internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md`, refinement H):
+Per Oxy's scaling design (`internal-docs/multi-instance-fleet.md`, refinement H):
 
 > If a feature has any of {long-running compute, periodic schedule, durability requirement, multi-step pipeline}, it should be a TaskSpec on the worker fleet, not a `tokio::spawn` in an HTTP handler.
 
@@ -53,7 +53,7 @@ In all other cases, prefer TaskSpec.
 
 ## Refs
 
-- Design doc: `internal-docs/2026-05-31-scaling-oxy-multi-instance-architecture.md` (refinement H)
-- Scope survey of current violations: `internal-docs/2026-05-28-worker-fleet-scope-survey.md`
+- Design doc: `internal-docs/multi-instance-fleet.md` (refinement H)
+- Scope survey of current violations: `internal-docs/worker-fleet.md`
 - Worker fleet guide: `internal-docs/worker-fleet.md`
 - Backend architecture rules: `internal-docs/backend-architecture.md`
