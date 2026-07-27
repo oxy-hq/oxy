@@ -327,8 +327,14 @@ impl LlmProvider for AnthropicProvider {
             return Err(LlmError::Auth(text));
         }
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            // Capture the provider's `Retry-After` hint before consuming the
+            // body — the solver prefers it over blind exponential backoff.
+            let retry_after = parse_retry_after(response.headers());
             let text = response.text().await.unwrap_or_default();
-            return Err(LlmError::RateLimit(text));
+            return Err(LlmError::RateLimit {
+                message: text,
+                retry_after,
+            });
         }
         // 5xx are server-side and usually transient — retry on the backoff path.
         if status.is_server_error() {

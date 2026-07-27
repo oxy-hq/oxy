@@ -101,9 +101,14 @@ impl ModelConfigBuilder {
             .name
             .clone()
             .unwrap_or_else(|| "anthropic-model".to_string());
+        // A model added without an explicit `model_ref` must not silently fall
+        // back to a retiring id. `claude-3-opus-20240229` (Claude 3) is on
+        // Anthropic's deprecation path and may 404 once sunset; default to the
+        // current platform top-tier instead. Kept in sync with
+        // `agentic_llm::constants::DEFAULT_MODEL`.
         let model_ref = anthropic_config
             .model_ref
-            .unwrap_or_else(|| "claude-3-opus-20240229".to_string());
+            .unwrap_or_else(|| "claude-opus-4-8".to_string());
         let key_var = name.to_uppercase() + "_API_KEY";
 
         Self::create_secret(

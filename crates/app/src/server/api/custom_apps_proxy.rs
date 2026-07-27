@@ -37,7 +37,8 @@
 //! the Vercel project's env. The bundle's server components then send it
 //! as a bearer to oxy's `/api/projects/.../query`.
 
-use std::sync::OnceLock;
+use std::net::SocketAddr;
+use std::sync::{Arc, OnceLock};
 
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header, header::HeaderName};
@@ -163,9 +164,57 @@ fn client() -> &'static Client {
             .connect_timeout(std::time::Duration::from_secs(10))
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .redirect(reqwest::redirect::Policy::none())
+            // `is_safe_upstream` only inspects the configured URL string, so a
+            // public hostname whose A record resolves to `169.254.169.254`/`10.x`/
+            // `127.x` (DNS rebinding) would otherwise sail through. Validate every
+            // resolved IP at connect time — the same second-layer defense the
+            // `ctx.fetch` sibling uses (`custom_apps_functions/host.rs`).
+            .dns_resolver(Arc::new(PublicOnlyDnsResolver))
             .build()
             .expect("reqwest client init")
     })
+}
+
+/// Partition resolved socket addresses into the ones safe to connect to,
+/// dropping any that point at a non-public IP. Factored out so the rebinding
+/// decision is unit-testable without real DNS. Returns `Err` with a diagnostic
+/// when *every* resolved address is filtered out (the rebinding case). Mirrors
+/// the sibling in `custom_apps_functions/host.rs` — keep them in sync.
+fn keep_public_addrs(host: &str, resolved: Vec<SocketAddr>) -> Result<Vec<SocketAddr>, String> {
+    let safe: Vec<SocketAddr> = resolved
+        .into_iter()
+        .filter(|addr| is_public_ip(&addr.ip()))
+        .collect();
+    if safe.is_empty() {
+        return Err(format!("'{host}' resolves only to non-public addresses"));
+    }
+    Ok(safe)
+}
+
+/// Second-layer SSRF defense for the custom-app proxy: a custom reqwest DNS
+/// resolver that drops every resolved address pointing at a non-public IP,
+/// closing the DNS-rebinding vector `is_safe_upstream` can't see. Validation
+/// happens at resolution (connect) time, so there is no resolve-then-reconnect
+/// TOCTOU window.
+#[derive(Debug)]
+struct PublicOnlyDnsResolver;
+
+impl reqwest::dns::Resolve for PublicOnlyDnsResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let host = name.as_str().to_owned();
+            // Port 0: reqwest overrides it with the URL's port; we only care
+            // about the resolved IPs here.
+            let resolved: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0u16))
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?
+                .collect();
+            let safe = keep_public_addrs(&host, resolved)
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+            let addrs: reqwest::dns::Addrs = Box::new(safe.into_iter());
+            Ok(addrs)
+        })
+    }
 }
 
 fn build_upstream_url(
@@ -339,6 +388,15 @@ fn set_str(headers: &mut reqwest::header::HeaderMap, name: &'static str, value: 
 ///     `TE: trailers`. Block both spellings — `Trailer` is rare in
 ///     practice but listing it is free.
 fn is_outbound_drop(name: &str) -> bool {
+    // Drop any client-supplied `x-oxy-*` identity header before we re-inject the
+    // trusted values in `build_outbound_headers`. Without this, a forged inbound
+    // `x-oxy-user-email` survives whenever `set_str` early-returns on an empty
+    // trusted value (e.g. a caller with an empty `identity.user_email`), leaking
+    // the spoofed identity to the upstream / Oxy Function. `HeaderName::as_str()`
+    // is always lowercase, so a lowercase prefix match is exhaustive.
+    if name.starts_with("x-oxy-") {
+        return true;
+    }
     matches!(
         name,
         "cookie"
@@ -451,6 +509,31 @@ mod tests {
         assert!(is_outbound_drop("connection"));
         assert!(!is_outbound_drop("user-agent"));
         assert!(!is_outbound_drop("accept"));
+    }
+
+    #[test]
+    fn outbound_drops_client_supplied_oxy_identity() {
+        // Forged inbound identity headers must never survive to the upstream —
+        // `build_outbound_headers` re-injects the trusted values afterwards.
+        assert!(is_outbound_drop("x-oxy-user-email"));
+        assert!(is_outbound_drop("x-oxy-user-id"));
+        assert!(is_outbound_drop("x-oxy-org-slug"));
+        assert!(is_outbound_drop("x-oxy-anything-new"));
+    }
+
+    #[test]
+    fn keep_public_addrs_drops_rebinding_targets() {
+        let public: SocketAddr = "8.8.8.8:0".parse().unwrap();
+        let metadata: SocketAddr = "169.254.169.254:0".parse().unwrap();
+        let rfc1918: SocketAddr = "10.0.0.5:0".parse().unwrap();
+        let loopback: SocketAddr = "127.0.0.1:0".parse().unwrap();
+
+        // A mix keeps only the public address.
+        let kept = keep_public_addrs("evil.example", vec![metadata, public, rfc1918]).unwrap();
+        assert_eq!(kept, vec![public]);
+
+        // All-internal resolution is refused outright (the rebinding case).
+        assert!(keep_public_addrs("evil.example", vec![metadata, loopback]).is_err());
     }
 
     #[test]

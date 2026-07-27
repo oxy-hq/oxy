@@ -8,7 +8,9 @@ use serde_json::{Value, json};
 
 use agentic_core::tools::ToolDef;
 
-use super::constants::{OPENAI_BASE_URL, build_llm_http_client, send_error_to_llm};
+use super::constants::{
+    OPENAI_BASE_URL, build_llm_http_client, parse_retry_after, send_error_to_llm,
+};
 use super::sse::{ApiError, pop_sse_event, sse_data, sse_event_type};
 use super::{
     Chunk, ContentBlock, LlmError, LlmProvider, ReasoningEffort, ResponseSchema, StopReason,
@@ -287,8 +289,12 @@ impl LlmProvider for OpenAiProvider {
             return Err(LlmError::Auth(text));
         }
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = parse_retry_after(response.headers());
             let text = response.text().await.unwrap_or_default();
-            return Err(LlmError::RateLimit(text));
+            return Err(LlmError::RateLimit {
+                message: text,
+                retry_after,
+            });
         }
         // 5xx are server-side and usually transient — retry on the backoff path.
         if status.is_server_error() {

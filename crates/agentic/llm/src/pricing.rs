@@ -128,4 +128,17 @@ mod tests {
         let variant = cost_for_call("claude-sonnet-4-6-20251022", 1000, 1000, 0, 0);
         assert_eq!(canon, variant);
     }
+
+    #[test]
+    fn default_model_is_priced() {
+        // The platform default must always resolve to a rate — otherwise every
+        // fall-through run (LlmClient::new, empty model_ref) silently reports a
+        // "cost unavailable". Guards against the default drifting to an id this
+        // table doesn't know.
+        assert!(
+            rates_for(crate::DEFAULT_MODEL).is_some(),
+            "DEFAULT_MODEL {} has no pricing entry",
+            crate::DEFAULT_MODEL
+        );
+    }
 }

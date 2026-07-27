@@ -10,8 +10,14 @@ pub enum LlmError {
     Transient(String),
     /// Authentication failure (bad or missing API key).
     Auth(String),
-    /// Rate limit exceeded (HTTP 429). Retrying after a backoff delay may succeed.
-    RateLimit(String),
+    /// Rate limit exceeded (HTTP 429). Retrying after a backoff delay may
+    /// succeed. `retry_after` carries the provider's `Retry-After` hint
+    /// (delta-seconds form) when present, so the solver can honor the
+    /// provider's requested delay instead of a blind exponential backoff.
+    RateLimit {
+        message: String,
+        retry_after: Option<std::time::Duration>,
+    },
     /// Response could not be parsed.
     Parse(String),
     /// The model produced thinking/reasoning but no text output — likely
@@ -66,7 +72,9 @@ impl std::fmt::Display for LlmError {
             LlmError::Http(msg) => write!(f, "HTTP error: {msg}"),
             LlmError::Transient(msg) => write!(f, "transient error: {msg}"),
             LlmError::Auth(msg) => write!(f, "auth error: {msg}"),
-            LlmError::RateLimit(msg) => write!(f, "rate limit exceeded: {msg}"),
+            LlmError::RateLimit { message, .. } => {
+                write!(f, "rate limit exceeded: {message}")
+            }
             LlmError::Parse(msg) => write!(f, "parse error: {msg}"),
             LlmError::EmptyResponse { reason } => {
                 write!(f, "empty response from model: {reason}")

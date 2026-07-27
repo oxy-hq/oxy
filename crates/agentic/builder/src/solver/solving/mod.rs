@@ -517,7 +517,10 @@ impl BuilderSolver {
                     },
                 ))
             }
-            Err(LlmError::RateLimit(msg)) => {
+            Err(LlmError::RateLimit {
+                message: msg,
+                retry_after,
+            }) => {
                 let current_attempt = run_ctx
                     .retry_ctx
                     .as_ref()
@@ -551,11 +554,17 @@ impl BuilderSolver {
                         },
                     ))
                 } else {
-                    let delay_secs =
-                        RATE_LIMIT_BACKOFF_BASE_SECS * (1u64 << current_attempt).min(64);
+                    let computed = RATE_LIMIT_BACKOFF_BASE_SECS * (1u64 << current_attempt).min(64);
+                    // Prefer the provider's `Retry-After` hint over blind
+                    // exponential backoff, clamped so a hostile/absurd header
+                    // can't stall the run.
+                    let delay_secs = retry_after
+                        .map(|d| d.as_secs().clamp(1, 300))
+                        .unwrap_or(computed);
                     tracing::warn!(
                         attempt = current_attempt + 1,
                         delay_secs,
+                        honored_retry_after = retry_after.is_some(),
                         "builder rate limited — backing off before retry"
                     );
                     tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;

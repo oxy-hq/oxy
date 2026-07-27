@@ -58,6 +58,17 @@ pub(super) fn build_llm_http_client() -> reqwest::Client {
         })
 }
 
+/// Parse a `Retry-After` response header into a [`Duration`].
+///
+/// Only the delta-seconds form (`Retry-After: 30`) is honored — the HTTP-date
+/// form is rare for 429s and, when absent or unparseable, the caller falls back
+/// to its computed exponential backoff, so returning `None` is always safe.
+pub(super) fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    let raw = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
+    let secs: u64 = raw.trim().parse().ok()?;
+    Some(Duration::from_secs(secs))
+}
+
 /// Classify a reqwest transport error from `.send()` into an [`LlmError`].
 ///
 /// Connection failures and timeouts are transient — worth a bounded retry —
@@ -68,5 +79,38 @@ pub(super) fn send_error_to_llm(err: reqwest::Error) -> LlmError {
         LlmError::Transient(err.to_string())
     } else {
         LlmError::Http(err.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers_with_retry_after(value: &str) -> reqwest::header::HeaderMap {
+        let mut h = reqwest::header::HeaderMap::new();
+        h.insert(
+            reqwest::header::RETRY_AFTER,
+            reqwest::header::HeaderValue::from_str(value).unwrap(),
+        );
+        h
+    }
+
+    #[test]
+    fn parses_delta_seconds() {
+        let h = headers_with_retry_after("30");
+        assert_eq!(parse_retry_after(&h), Some(Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn ignores_http_date_form() {
+        // The rare HTTP-date form is not honored — falls back to computed backoff.
+        let h = headers_with_retry_after("Wed, 21 Oct 2026 07:28:00 GMT");
+        assert_eq!(parse_retry_after(&h), None);
+    }
+
+    #[test]
+    fn none_when_header_absent() {
+        let h = reqwest::header::HeaderMap::new();
+        assert_eq!(parse_retry_after(&h), None);
     }
 }

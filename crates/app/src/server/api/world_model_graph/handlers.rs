@@ -603,23 +603,7 @@ pub async fn post_world_model_filter_counts(
     Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>,
     (StatusCode, extract::Json<ErrorResponse>),
 > {
-    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
-    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: e.to_string(),
-            }),
-        )
-    })?;
-    let promotions = Promotions::build(&layer.views).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: e.to_string(),
-            }),
-        )
-    })?;
+    let (layer, promotions) = load_layer_and_promotions(&workspace_manager, &layer_cache).await?;
 
     // World-model config supplies per-entity display fields used to render sample
     // labels on descendant cards (mirrors the instance-detail handler).
@@ -1615,23 +1599,7 @@ pub async fn get_world_model_instance_detail(
     Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>,
     (StatusCode, extract::Json<ErrorResponse>),
 > {
-    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
-    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: e.to_string(),
-            }),
-        )
-    })?;
-    let promotions = Promotions::build(&layer.views).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: e.to_string(),
-            }),
-        )
-    })?;
+    let (layer, promotions) = load_layer_and_promotions(&workspace_manager, &layer_cache).await?;
 
     let view = primary_view_of(&layer, &q.entity).ok_or_else(|| {
         (

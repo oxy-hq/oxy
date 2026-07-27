@@ -14,6 +14,40 @@ use crate::server::api::data::{build_connector, run_with_connector};
 
 use super::types::*;
 
+/// Load the semantic layer and build its promotion closure — the preamble the
+/// world-model handlers otherwise repeat verbatim (`semantics_scan_path →
+/// get_or_load → Promotions::build`). Returns the transport error tuple ready to
+/// `?`-propagate from a handler so the load path lives in one place.
+pub(super) async fn load_layer_and_promotions(
+    workspace_manager: &WorkspaceManager,
+    layer_cache: &crate::server::api::middlewares::workspace_context::SemanticLayerCacheCtx,
+) -> Result<
+    (std::sync::Arc<airlayer::SemanticLayer>, Promotions),
+    (
+        axum::http::StatusCode,
+        axum::extract::Json<crate::server::api::semantic::ErrorResponse>,
+    ),
+> {
+    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
+    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            axum::extract::Json(crate::server::api::semantic::ErrorResponse {
+                message: e.to_string(),
+            }),
+        )
+    })?;
+    let promotions = Promotions::build(&layer.views).map_err(|e| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            axum::extract::Json(crate::server::api::semantic::ErrorResponse {
+                message: e.to_string(),
+            }),
+        )
+    })?;
+    Ok((layer, promotions))
+}
+
 // ── World Model — SQL helpers ─────────────────────────────────────────────────
 
 /// Find the view where `entity_name` is declared as Primary.

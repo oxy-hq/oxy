@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use entity::org_invitations::{self, InviteStatus};
 use entity::org_members::{self, OrgRole};
-use entity::prelude::{OrgInvitations, OrgMembers, Organizations, Users};
+use entity::prelude::{OrgMembers, Organizations, Users};
 use entity::users;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{

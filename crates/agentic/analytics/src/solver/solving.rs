@@ -389,7 +389,10 @@ impl AnalyticsSolver {
                     },
                 ));
             }
-            Err(crate::llm::LlmError::RateLimit(msg)) => {
+            Err(crate::llm::LlmError::RateLimit {
+                message: msg,
+                retry_after,
+            }) => {
                 let current_attempt = retry_ctx.map_or(0, |ctx| ctx.rate_limit_attempt);
                 if current_attempt >= MAX_RATE_LIMIT_RETRIES {
                     let summary = format!(
@@ -419,10 +422,19 @@ impl AnalyticsSolver {
                         },
                     ));
                 }
-                let delay_secs = RATE_LIMIT_BACKOFF_BASE_SECS * (1u64 << current_attempt).min(64);
+                let computed = RATE_LIMIT_BACKOFF_BASE_SECS * (1u64 << current_attempt).min(64);
+                // Prefer the provider's `Retry-After` hint over blind
+                // exponential backoff — under sustained throttling it stops us
+                // burning the retry budget too fast (or waiting longer than the
+                // provider asked). Clamped so a hostile/absurd header can't
+                // stall the run.
+                let delay_secs = retry_after
+                    .map(|d| d.as_secs().clamp(1, 300))
+                    .unwrap_or(computed);
                 tracing::warn!(
                     attempt = current_attempt + 1,
                     delay_secs,
+                    honored_retry_after = retry_after.is_some(),
                     "analytics rate limited — backing off before retry"
                 );
                 tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;

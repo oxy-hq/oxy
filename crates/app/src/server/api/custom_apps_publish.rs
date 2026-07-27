@@ -245,7 +245,7 @@ fn unpack_tar_gz_bounded(
     let mut out = Vec::new();
     let mut total_bytes: u64 = 0;
     for entry in entries {
-        let mut entry = entry.map_err(|e| PublishError::BadTarball(e.to_string()))?;
+        let entry = entry.map_err(|e| PublishError::BadTarball(e.to_string()))?;
         let path = entry
             .path()
             .map_err(|e| PublishError::BadTarball(e.to_string()))?;

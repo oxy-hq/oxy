@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::sync::{LazyLock, Mutex};
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -186,8 +189,13 @@ pub struct ExecutionCostResponse {
 }
 
 /// Approximate USD price per **million** tokens `(input, output)` for known
-/// model families. Unknown models price at `(0, 0)` — callers should surface a
-/// "price unknown" marker rather than a fabricated dollar figure.
+/// model families. Unknown models price at `(0, 0)` — but a silent `$0` reads
+/// as "free" on the cost dashboard and hides real spend, so the unknown case is
+/// logged (`warn!`, once per model id) to make the under-report observable.
+/// Newer families that share a family name (`claude-opus-5`, `claude-sonnet-5`,
+/// …) already resolve via the substring match; genuinely new ids (e.g.
+/// `gpt-5.x`, `claude-fable-5`) fall through until priced here — deliberately
+/// not fabricated.
 pub fn model_price_per_mtok(model: &str) -> (f64, f64) {
     let m = model.to_ascii_lowercase();
     if m.contains("opus") {
@@ -201,7 +209,36 @@ pub fn model_price_per_mtok(model: &str) -> (f64, f64) {
     } else if m.contains("4o") || m.contains("gpt-4") {
         (2.50, 10.0)
     } else {
+        warn_unpriced_model_once(model);
         (0.0, 0.0)
+    }
+}
+
+/// Model ids already warned about by [`warn_unpriced_model_once`]. Bounded by
+/// the count of distinct unpriced models a process sees — a handful at most.
+static UNPRICED_MODELS_WARNED: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Records `model` as unpriced, returning `true` only the first time (per
+/// process) it is seen. This is the gate that stops the "no pricing entry"
+/// `warn!` from re-firing: `model_price_per_mtok` runs on every cost-dashboard
+/// request, so without it an unpriced model would log a warning on every refresh.
+fn record_unpriced_model(model: &str) -> bool {
+    // On a poisoned lock, fall back to `true` (warn) rather than go silent.
+    UNPRICED_MODELS_WARNED
+        .lock()
+        .map(|mut seen| seen.insert(model.to_string()))
+        .unwrap_or(true)
+}
+
+/// Warn — at most once per process, per model id — that `model` has no pricing
+/// entry and its spend will under-report as `$0`.
+fn warn_unpriced_model_once(model: &str) {
+    if record_unpriced_model(model) {
+        tracing::warn!(
+            model,
+            "no pricing entry for model — run cost will under-report as $0; add it to model_price_per_mtok"
+        );
     }
 }
 
@@ -272,4 +309,49 @@ pub struct ExecutionListResponse {
     pub total: u64,
     pub limit: usize,
     pub offset: usize,
+}
+
+#[cfg(test)]
+mod pricing_tests {
+    use super::*;
+
+    #[test]
+    fn current_claude_families_are_priced() {
+        // Family-name substring keeps the current generation (opus/sonnet/haiku,
+        // any version suffix) priced rather than silently $0.
+        for (model, expected_in) in [
+            ("claude-opus-4-8", 15.0),
+            ("claude-sonnet-4-6", 3.0),
+            ("claude-sonnet-5", 3.0),
+            ("claude-haiku-4-5-20251001", 0.80),
+        ] {
+            let (input, _) = model_price_per_mtok(model);
+            assert_eq!(input, expected_in, "unexpected input price for {model}");
+        }
+    }
+
+    #[test]
+    fn unknown_model_prices_zero() {
+        // Documents the deliberate gap: genuinely-new ids fall through to $0
+        // (logged as a warning) until priced, rather than a fabricated figure.
+        assert_eq!(model_price_per_mtok("gpt-5.4"), (0.0, 0.0));
+        assert_eq!(model_cost_usd("gpt-5.4", 1_000_000, 1_000_000), 0.0);
+    }
+
+    #[test]
+    fn unpriced_model_warns_once_per_id() {
+        // Unique ids so parallel tests sharing the process-global set can't
+        // interfere. The first sighting of an unpriced id warns; repeats are
+        // deduped; a distinct id warns again on its own first sighting.
+        let model = "test-unpriced-alpha-9f3c";
+        assert!(record_unpriced_model(model), "first sighting should warn");
+        assert!(!record_unpriced_model(model), "repeat sighting is deduped");
+        assert!(
+            !record_unpriced_model(model),
+            "still deduped on further calls"
+        );
+
+        let other = "test-unpriced-beta-9f3c";
+        assert!(record_unpriced_model(other), "a distinct id warns once");
+    }
 }
