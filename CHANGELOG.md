@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.115] - 2026-07-27
+
+### 🚀 Features
+
+- *(cameras)* Evidence clips — edge congestion detector + server persistence (+ ByteTrack) (#2796)
+- *(api)* Expose anomaly scan + explain on the external API surface (#2798)
+
+### 🐛 Bug Fixes
+
+- *(fleet)* Pin /semantic/world-model routes IdeOnly (#2806)
+
+### 📚 Documentation
+
+- Warehouse decision record + internal-docs distillation & biweekly upkeep workflow (#2793)
+- Medallion architecture + video-analytics data schema designs (#2752)
+- Update product-context.md from recent changelogs (#2802)
+
+### ⚙️ Miscellaneous Tasks
+
+- Weekly health review — 2026-07-27 (#2800)
+
 ## [0.5.114] - 2026-07-27
 
 ### 🚀 Features
@@ -20,6 +41,10 @@ All notable changes to this project will be documented in this file.
 ### 🧪 Testing
 
 - *(custom-apps)* Pin the surface's module boundary with a source-scan test (#2784)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.114 (#2794)
 
 ## [0.5.113] - 2026-07-26
 
