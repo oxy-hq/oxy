@@ -469,6 +469,53 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/world-model/events",
         role: RouteRole::IdeOnly,
     },
+    // ── World-model entity graph + instance drill-down → ide singleton ───────
+    // Unlike the sibling `/world-model/{cameras,weather,…}` reads (Postgres +
+    // S3, genuinely FleetOk) and unlike `/semantic` / `/semantic/topic` (which
+    // resolve their scan dir through the compile boundary via
+    // `resolve_query_scan_source` / `resolve_semantic_source`), the
+    // `world_model_graph` handlers scan the workspace working copy DIRECTLY —
+    // `config_manager.semantics_scan_path()` / `.workspace_path()`. On a
+    // stateless serve replica that path (`/workspace/oxy_data/workspaces/{id}`)
+    // does not exist, so every call 500s with "Failed to load semantic layer:
+    // No such file or directory" (oxygen-internal, 2026-07-27). Pin to the ide
+    // singleton (which owns the working copy); the serve fleet self-proxies via
+    // `OXY_IDE_UPSTREAM`. These were previously mis-listed as FleetOk on the
+    // false premise that they read the compile boundary.
+    //
+    // HA follow-up: migrate these handlers onto `resolve_query_scan_source`
+    // (like `execute_semantic_query`) so the World Model Graph can serve off any
+    // replica and survive an ide restart, then move them back to FleetOk.
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/semantic/world-model",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/semantic/world-model/instances",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/semantic/world-model/filter-instances",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/semantic/world-model/filter-counts",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/semantic/world-model/instance-detail",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "*",
+        path_pattern: "/api/{workspace_id}/semantic/world-model/measure-breakdown",
+        role: RouteRole::IdeOnly,
+    },
     // ── Agentic run/exec surface → ide singleton (ephemeral-env tier 1) ──────
     // An analytics run delegates to automation subruns enqueued `TaskScope::
     // Scoped`, so a subrun's `execute_sql` runs IN-PROCESS on whichever node
@@ -1225,11 +1272,42 @@ mod tests {
             classify("GET", "/api/d9830be4-c6a4/blocks"),
             RouteRole::FleetOk
         );
-        // Non-SSE world-model reads are FleetOk (only /world-model/events isn't).
+        // The Postgres+S3 `/world-model/*` reads are FleetOk (only
+        // /world-model/events isn't).
         assert_eq!(
             classify("GET", "/api/d9830be4-c6a4/world-model/cameras"),
             RouteRole::FleetOk
         );
+        // But `/semantic/world-model*` scan the workspace working copy directly
+        // (config_manager.semantics_scan_path), so they're IdeOnly — a serve
+        // replica has no working copy and 500s ("Failed to load semantic
+        // layer"). Regression guard for oxygen-internal 2026-07-27.
+        for (method, path) in [
+            ("GET", "/api/d9830be4-c6a4/semantic/world-model"),
+            ("GET", "/api/d9830be4-c6a4/semantic/world-model/instances"),
+            (
+                "GET",
+                "/api/d9830be4-c6a4/semantic/world-model/filter-instances",
+            ),
+            (
+                "POST",
+                "/api/d9830be4-c6a4/semantic/world-model/filter-counts",
+            ),
+            (
+                "GET",
+                "/api/d9830be4-c6a4/semantic/world-model/instance-detail",
+            ),
+            (
+                "GET",
+                "/api/d9830be4-c6a4/semantic/world-model/measure-breakdown",
+            ),
+        ] {
+            assert_eq!(
+                classify(method, path),
+                RouteRole::IdeOnly,
+                "{method} {path} must be IdeOnly (reads the workspace working copy)"
+            );
+        }
         // Customer-apps batch mutations touch only Postgres + the S3 build
         // store (never the workspace FS), so — like their per-app siblings —
         // they classify FleetOk by default and serve from any replica.
@@ -1887,16 +1965,10 @@ mod tests {
         "/semantic/metric-tree/opportunity",
         "/semantic/metric-tree/time-dimensions",
         "/semantic/metric-tree/distribution",
-        // world-model entity graph + instance drill-down. Reads the semantic
-        // layer (same scan mechanism as `/semantic`) plus `.world-model.yml`,
-        // which is served from the compile boundary (`world_model_configs`), so
-        // these are fleet-safe — no working-copy dependency a replica lacks.
-        "/semantic/world-model",
-        "/semantic/world-model/instances",
-        "/semantic/world-model/filter-instances",
-        "/semantic/world-model/filter-counts",
-        "/semantic/world-model/instance-detail",
-        "/semantic/world-model/measure-breakdown",
+        // NB: `/semantic/world-model*` are NOT here — the world_model_graph
+        // handlers scan the workspace working copy directly, so they're pinned
+        // IdeOnly in IDE_ONLY_PATTERNS (see the note there). Only the Postgres+S3
+        // `/world-model/*` reads below stay FleetOk.
         // world-model (Postgres + S3, read-through cached)
         "/world-model/cameras",
         "/world-model/weather/{layer}/{z}/{x}/{y}",
