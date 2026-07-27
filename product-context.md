@@ -30,7 +30,7 @@ Deployment modes — almost every bug report depends on which one:
 - **Oxygen Factory** = the Developer Portal / IDE, reached from the icon rail (renamed Studio → Oxygen Builder → Oxygen Core → **Oxygen Factory**). Same `/ide` surface, just the rail label.
 - **Agentic Agent** (`.agentic.yml`) = Oxy's multi-step FSM agent (two kinds: **analytics** and **app builder**), distinct from the single-shot sense of "agent."
 - **Builder Agent** = the file-editing copilot (chat **Build** mode) — distinct from the *app builder* agentic agent.
-- **Custom Apps Platform** (code-first React+Vite bundles, shipped with `oxy publish`) is **not** the same thing as YAML **Data Apps** (`.app.yml` dashboards).
+- **Custom Apps Platform** (code-first React+Vite bundles, shipped with `oxy publish`) is **not** the same thing as YAML **Data Apps** (`.app.yml` dashboards). User-facing copy now says **"custom app"**, but code, routes, and the `<org>--<slug>.customer-apps.oxygen-hq.com` host still say **"customer app"** / `customer-apps`. Local dev against live cloud data runs through an `oxy proxy` sidecar (like `vercel dev`): analytics events are dropped and side-effecting function/agent calls are held unless explicitly confirmed.
 - **Oxy Functions** = server-side TypeScript handlers bundled *inside* a Custom App (declared in `oxy-app.json`, versioned and shipped with the frontend by `oxy publish`) that run on Oxy's managed runtime with data-plane access — **not** a YAML Automation task or Data App `task`. A function runs as an HTTP route (`useFunction` hook), a cron job on the durable task queue, or an Airway transform step; writing back to Oxy Secrets via `ctx.secrets.set` requires the `secrets.write` capability, and sending email via `ctx.email.send` (AWS SES under the hood; the **platform** controls the `from` address, the function sets `replyTo` only) requires the `email.send` capability. Email templates are **preact** components rendered to HTML by `@oxy-hq/sdk/email`'s `render(Component, props)` — React Email / react-dom can't run in the Functions isolate (node:stream / Web Streams).
 - Four similarly-named third-party engines that are easy to confuse: **airlayer** (semantic layer), **Airform** (dbt-style modeling), **Airway** (ELT), **Airhouse** (a warehouse + connector).
 - **Verified Query** = a plain `.sql` file the analytics agent runs *as-is* when it matches the question (bypassing LLM SQL generation); surfaces a **Verified** badge.
@@ -43,6 +43,7 @@ Deployment modes — almost every bug report depends on which one:
 Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Global Owner** (`OXY_OWNER` env allow-list → `is_owner`) — Oxy staff; reaches everything, incl. the Billing queue and Global-admin management.
 - **Global Admin** (`app_admins` table, seeded by `OXY_GLOBAL_ADMINS`; legacy `OXY_APP_ADMINS` still accepted → `is_app_admin`) — Oxy ops; reaches most of admin + every custom app, but **not** Billing or Global-admin management.
+- **Partner** (capability-gated, **not** an org membership) — a distributor tier between Oxy staff and tenants: owns a set of downstream orgs and, only for those, manages members (with an owner-seizure guardrail) and publishes/unpublishes their custom apps from a dedicated partner console. Scoped to exactly its grants — **no** general platform reach; every action lands in an append-only per-org audit log.
 - **Org Owner / Admin / Member** (`role` in `org_members`) — tenant-internal only, **no** platform reach. Workspace role derives via `EffectiveWorkspaceRole`.
 
 ---
@@ -51,7 +52,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 
 - **Home / HQ launcher** (`/`, `/home`) — apps-first landing (org-branded **HQ**, a grid of **custom-app cards**). **Ask Oxygen** (⌘K) opens a resizable right-side **drawer** that compacts the page beside it (not a floating overlay); "Full view" promotes to `/threads/:id`. Chrome is a **universal top bar** plus an **icon rail** (Home · **Chat** · Apps), no left sidebar; the rail's **Chat** entry was formerly "Threads".
 - **Thread** (`/threads/:id`) — conversation; messages carry free-text plus structured artifacts (the `execute_sql` artifact shows the SQL the agent ran).
-- **Workflows** (`/workflows/:id`) — a Procedure as a node diagram (node border color = step status).
+- **Workflows** (`/workflows/:id`) — a Procedure as a node diagram.
 - **Apps** (`/apps/:id`) — a Data App; auto-runs on load; Controls inject Jinja values and re-run dependent tasks; results cached by parameter hash (`?refresh` forces re-run).
 - **Developer Portal / IDE** (`/ide`) — Monaco editor; sidebar tabs **Files / Objects / Database (SQL IDE) / Modeling / Pipelines / Observability**. Git flow: protected `main` auto-redirects edits to a new branch; `oxy serve --readonly` makes all writes 405.
 - **Orchestrator Dashboard** — Overview / Jobs / Runs across workflows, ELT, and agents.
@@ -70,7 +71,7 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Airhouse** — first-class connector with **ephemeral** credentials (workspaces mint short-lived creds from a service account; no rotation surface).
 - **Metric Tree & Anomaly Monitoring** — a `.monitor.yml` defines monitors that watch a measure over time (per-segment via `filters`/`group_by`); detected anomalies land in the **Insights Inbox** with AI root-cause, and the analytics agent can list/run/explain them in chat. The **Metric Tree** (a Semantic Layer IDE tab consolidating the semantic explorer) decomposes a top-line metric into driver metrics. Scans exclude the current *incomplete* period, so a partial day/week never reads as a false drop.
 - **Authentication** — magic-link only (passwordless, AWS SES); legacy password auth removed.
-- **Design system** — Light default (Light / Dark / System). Use semantic tokens, not raw hex; **emerald is reserved for workflow-node success only**.
+- **Design system** — use semantic tokens, not raw hex; **emerald is reserved for workflow-node success only**.
 
 ---
 
@@ -86,7 +87,8 @@ Oxy separates **platform-level** "Global …" roles from **per-org** roles.
 - **Multi-tenant scoping is a correctness invariant**: orchestrator and pre-aggregation endpoints must filter by `workspace_id`, and secret lookups must filter by project, or runs/secrets leak across tenants.
 - **Mode-dependent LLM-key check** — the home readiness check reads env-var secrets in local mode (e.g. `OPENAI_API_KEY` in `.env`) but the workspace secrets store in cloud mode, and only for the *selected agent's* provider; getting this wrong shows a false "LLM key not set" and disables the chat panel.
 - **Git subdirectory workspaces** — tooling walks up to the real `.git`; branch switching must re-resolve the in-repo subdirectory inside the worktree, or `config.yml` is reported "not found."
-- **Test these combinations after pipeline/LLM changes** — agentic analytics under `oxy serve --local` (history of server-side errors) and **Azure OpenAI** (routes through the OSS path; history of agentic incompatibilities).
+- **Freshness-aware analytics** — the analytics agent knows each source's loaded-through date (from a view's `meta:` freshness contract, probeable mid-query via `check_data_freshness`) and answers "data covers through <date>" rather than reporting an unloaded recent range as a real zero. Distinct from the monitor-scan incomplete-period rule above.
+- **Test after pipeline/LLM changes** — **Azure OpenAI** routes through the OSS path (history of agentic incompatibilities).
 - **`oxy run` works with no database** (run history/checkpoints fall back to no-op storage) — code that assumes a real storage backend must check runtime mode.
 - **Input that must be sanitized/allowlisted** — DuckDB config SQL (S3 secrets, schema names, paths) escaped against single-quote injection; the Slack re-post handler allowlists block kinds (`section` / `context` / `divider` / `header` / `image`) and drops interactive types; the `http_request` automation task is HTTPS-only and blocks localhost / cloud-metadata / private-IP egress unless a per-task `allow_hosts` allowlist opts in.
 - **Custom-app subdomains rely on a server-side session cookie, separate from main-site client login state** — logout must clear that cookie server-side (not just client-side), and every OAuth provider (not just magic-link) must preserve the return-to-app destination, or the subdomain and main site disagree on whether you're signed in.
