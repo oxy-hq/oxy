@@ -356,6 +356,97 @@ fn semantic_err(status: StatusCode, message: String) -> (StatusCode, extract::Js
     (status, extract::Json(ErrorResponse { message }))
 }
 
+/// Where a semantic **query** (compile / execute) reads the layer from.
+///
+/// The query-shaped counterpart to [`resolve_semantic_source`], which does the
+/// same for a single-file read. `_guard` owns the materialised tempdir — hold it
+/// until compilation finishes or the scan root is deleted out from under it.
+struct QueryScanSource {
+    scan_path: std::path::PathBuf,
+    _guard: Option<MaterialisedScan>,
+}
+
+/// The workspace has no compiled semantic layer and this node has no working
+/// copy to fall back to.
+struct ScanUnavailable {
+    workspace_id: Uuid,
+}
+
+impl ScanUnavailable {
+    fn message(&self) -> String {
+        format!(
+            "workspace {} has no compiled semantic layer available on this stateless \
+             replica; a (re)compile has been enqueued — retry shortly",
+            self.workspace_id
+        )
+    }
+}
+
+/// Resolve the scan root for a semantic query — compile boundary first, working
+/// copy second.
+///
+/// Both of this module's query handlers used to read `semantics_scan_path()`
+/// unconditionally, which is the workspace working copy. A stateless `serve`
+/// replica has no working copy, and scanning a directory that isn't there
+/// produced an EMPTY semantic layer rather than an error — surfacing as
+/// `Topic 'x' not found. Available: []`, i.e. a modelling mistake for what is
+/// really a missing directory. Both routes are (correctly) classified `FleetOk`
+/// in `role_manifest`, so they must serve from Postgres like their siblings:
+/// `projects::semantic_query` (custom-app data plane) and
+/// `resolve_semantic_source` (single-file IDE reads) already do exactly this.
+///
+/// Branch semantics come for free: `workspace_middleware` pins the request to
+/// one revision via `compiled_reader::resolve_request_revision`, which yields
+/// `None` for a non-default branch on a node that HAS a working copy. The IDE
+/// previewing uncommitted edits on a feature branch therefore still reads the
+/// FS, exactly as before.
+async fn resolve_query_scan_source(
+    workspace_manager: &WorkspaceManager,
+) -> Result<QueryScanSource, ScanUnavailable> {
+    let workspace_id = workspace_manager.workspace_id;
+    let materialised = match semantic_scan::materialise_semantic_scan(workspace_id).await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(
+                workspace_id = %workspace_id,
+                error = ?e,
+                "semantic query: materialise failed; falling through to FS"
+            );
+            None
+        }
+    };
+
+    if let Some(scan) = materialised {
+        return Ok(QueryScanSource {
+            scan_path: scan.scan_path.clone(),
+            _guard: Some(scan),
+        });
+    }
+
+    // Stateless-fleet guard, mirroring `projects::semantic_query`: refuse the FS
+    // fallback on a node that has no working copy and enqueue a deduped compile
+    // so the next request succeeds without operator action. Note
+    // `materialise_semantic_scan` downgrades real DB errors to `None`, so this
+    // also covers a transient DB failure — a retry is the right answer there too.
+    if crate::server::role_manifest::current_process_role()
+        == crate::server::role_manifest::Role::Serve
+    {
+        if let Ok(db) = oxy::database::client::establish_connection().await {
+            crate::server::api::middlewares::workspace_context::enqueue_lazy_compile(
+                &db,
+                workspace_id,
+            )
+            .await;
+        }
+        return Err(ScanUnavailable { workspace_id });
+    }
+
+    Ok(QueryScanSource {
+        scan_path: workspace_manager.config_manager.semantics_scan_path(),
+        _guard: None,
+    })
+}
+
 // ── Preagg status ─────────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize, Serialize, Clone)]
@@ -606,7 +697,13 @@ pub async fn compile_semantic_query(
     extract::Json(query): extract::Json<SemanticQueryConfig>,
 ) -> Result<extract::Json<SemanticQueryCompileResponse>, (StatusCode, extract::Json<ErrorResponse>)>
 {
-    let scan_path = workspace_manager.config_manager.semantics_scan_path();
+    // Compile boundary first — this route is FleetOk and must not depend on a
+    // working copy. `source` owns the materialised tempdir; keep it alive until
+    // the blocking compile below has finished reading from it.
+    let source = resolve_query_scan_source(&workspace_manager)
+        .await
+        .map_err(|e| semantic_err(StatusCode::SERVICE_UNAVAILABLE, e.message()))?;
+    let scan_path = source.scan_path.clone();
     let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
@@ -697,7 +794,12 @@ pub async fn execute_semantic_query(
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SemanticQueryExecuteRequest>,
 ) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<SqlErrorResponse>)> {
-    let scan_path = workspace_manager.config_manager.semantics_scan_path();
+    // Compile boundary first — see `resolve_query_scan_source`. `source` owns the
+    // materialised tempdir and must outlive the blocking compile below.
+    let source = resolve_query_scan_source(&workspace_manager)
+        .await
+        .map_err(|e| sql_error_503(e.message()))?;
+    let scan_path = source.scan_path.clone();
     let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
@@ -866,6 +968,23 @@ fn preagg_json_to_response(value: serde_json::Value) -> SemanticQueryResponse {
 fn sql_error_400(message: String) -> (StatusCode, extract::Json<SqlErrorResponse>) {
     (
         StatusCode::BAD_REQUEST,
+        extract::Json(SqlErrorResponse {
+            message,
+            code: None,
+            detail: None,
+            hint: None,
+            position: None,
+            sql: None,
+        }),
+    )
+}
+
+/// Retryable: the compiled semantic layer isn't available on this replica yet.
+/// Distinct from 400 (the caller's query is wrong) and 500 (we broke) — the
+/// caller should retry rather than change anything.
+fn sql_error_503(message: String) -> (StatusCode, extract::Json<SqlErrorResponse>) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
         extract::Json(SqlErrorResponse {
             message,
             code: None,

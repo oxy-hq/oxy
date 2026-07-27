@@ -255,6 +255,17 @@ fn collect_semantic_paths(root: &Path, out: &mut Vec<PathBuf>) {
 /// leniency), which is exactly how the automation path used to disagree with
 /// analytics. Funnel directory loads through here instead.
 pub fn load_layer_from_dir(root: &Path) -> Result<airlayer::SemanticLayer, SemanticError> {
+    // An unreadable ROOT is an infrastructure fault, not "this project models
+    // nothing". `collect_semantic_paths` deliberately swallows `read_dir`
+    // failures so an unreadable *subdirectory* can't sink the whole walk — but
+    // applied to the root that turns "the workspace isn't on this disk" into an
+    // empty layer, and callers then report it as a modelling mistake
+    // (`Topic 'x' not found. Available: []`), sending people to audit YAML that
+    // was never read. Check the root explicitly so that failure names itself.
+    std::fs::read_dir(root).map_err(|source| SemanticError::Io {
+        path: root.display().to_string(),
+        source,
+    })?;
     let mut paths = Vec::new();
     collect_semantic_paths(root, &mut paths);
     // Deterministic order so engine construction is reproducible.
@@ -588,6 +599,42 @@ mod tests {
         // The real failure was at engine construction — assert it builds clean.
         airlayer::SemanticEngine::from_semantic_layer(layer, airlayer::DatasourceDialectMap::new())
             .expect("engine builds without a duplicate-view-name error");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Regression: a scan root that isn't on this disk must ERROR, not return
+    /// an empty layer. Returning empty made a stateless replica with no working
+    /// copy report `Topic 'x' not found. Available: []` — a modelling error for
+    /// what is actually a missing directory, which is unactionable for the user
+    /// and undiagnosable from the response.
+    #[test]
+    fn missing_scan_root_errors_instead_of_yielding_empty_layer() {
+        let missing = std::env::temp_dir().join(format!("alc_missing_{}", std::process::id()));
+        std::fs::remove_dir_all(&missing).ok();
+
+        let err = load_layer_from_dir(&missing).expect_err("a missing scan root must not succeed");
+        assert!(
+            matches!(err, SemanticError::Io { .. }),
+            "expected an Io error naming the unreadable root, got: {err}"
+        );
+        assert!(
+            err.to_string().contains(&missing.display().to_string()),
+            "the error must name the path that could not be read: {err}"
+        );
+    }
+
+    /// The counter-case: a root that DOES exist but models nothing is a legitimate
+    /// empty layer, not an error. A workspace may ship zero `.view.yml` files.
+    #[test]
+    fn present_but_empty_scan_root_yields_empty_layer() {
+        let dir = std::env::temp_dir().join(format!("alc_empty_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let layer =
+            load_layer_from_dir(&dir).expect("an existing root with no semantic files is Ok");
+        assert!(layer.views.is_empty(), "no views were defined");
+        assert!(layer.topics.is_none(), "no topics were defined");
 
         std::fs::remove_dir_all(&dir).ok();
     }
