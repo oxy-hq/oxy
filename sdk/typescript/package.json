@@ -109,11 +109,11 @@
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.65.0",
     "echarts": "^6.1.0",
-    "eslint": "^10.7.0",
+    "eslint": "^10.8.0",
     "preact": "^10.29.7",
     "preact-render-to-string": "^6.7.0",
     "react": "^19.2.8",
-    "tsdown": "^0.22.13",
+    "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
