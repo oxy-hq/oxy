@@ -643,6 +643,7 @@ pub async fn handle_function_request(
     headers: HeaderMap,
     body: axum::body::Bytes,
     refresh: bool,
+    query_exec: std::sync::Arc<dyn runtime::FunctionQueryExecutor>,
 ) -> Response {
     // §11.10 — POST-only, before any gate/runtime work.
     if method != Method::POST {
@@ -848,6 +849,7 @@ pub async fn handle_function_request(
     #[cfg(feature = "custom-app-functions")]
     let (status_str, error_msg, body_text) = run_with_runtime(RunArgs {
         db: &db,
+        query_exec,
         app: &app,
         artifact_js,
         body: body.to_vec(),
@@ -870,7 +872,7 @@ pub async fn handle_function_request(
 
     #[cfg(not(feature = "custom-app-functions"))]
     let (status_str, error_msg, body_text) = {
-        let _ = (&artifact_js, &body, timeout);
+        let _ = (&artifact_js, &body, timeout, &query_exec);
         (
             "error",
             Some("custom-app-functions feature not enabled".to_string()),
@@ -974,6 +976,7 @@ pub(crate) async fn run_scheduled_function(
     input: Vec<u8>,
     cancel: tokio_util::sync::CancellationToken,
     events: Option<RunEventSink>,
+    query_exec: std::sync::Arc<dyn runtime::FunctionQueryExecutor>,
 ) -> Result<String, String> {
     let app = entity::apps::Entity::find_by_id(app_id)
         .one(db)
@@ -1053,6 +1056,7 @@ pub(crate) async fn run_scheduled_function(
 
     let (status_str, error_msg, body_text) = run_with_runtime(RunArgs {
         db,
+        query_exec,
         app: &app,
         artifact_js,
         body: input,
@@ -1159,6 +1163,9 @@ pub struct LogLine {
 #[cfg(feature = "custom-app-functions")]
 struct RunArgs<'a> {
     db: &'a sea_orm::DatabaseConnection,
+    /// Runs `ctx.query`/`ctx.queryStream`; injected at the composition root so
+    /// the runtime depends on the trait, not on `projects::query`.
+    query_exec: std::sync::Arc<dyn runtime::FunctionQueryExecutor>,
     app: &'a entity::apps::Model,
     artifact_js: String,
     body: Vec<u8>,
@@ -1224,6 +1231,7 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
     };
     let host = host::into_arc(host::ProjectFunctionHost::new(
         proj_ctx,
+        args.query_exec.clone(),
         args.db.clone(),
         args.write_destinations.clone(),
         args.app.project_id,

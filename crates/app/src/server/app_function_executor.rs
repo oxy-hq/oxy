@@ -92,6 +92,13 @@ impl TaskExecutor for AppFunctionTaskExecutor {
                 // Stream the run's log lines onto the run's event log so a
                 // scheduled/manual function's output is persisted + observable.
                 Some(event_tx.clone()),
+                // The worker's own composition root: hand the runtime the shared
+                // data-plane query executor as a trait object, so the function
+                // module never imports `projects::query`.
+                std::sync::Arc::new(crate::server::api::projects::query::DataPlaneQueryExecutor)
+                    as std::sync::Arc<
+                        dyn crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor,
+                    >,
             )
             .await
             {

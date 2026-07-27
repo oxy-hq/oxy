@@ -89,6 +89,39 @@ pub enum RuntimeError {
     Internal(String),
 }
 
+/// Function-scoped row cap for `ctx.query` (design doc §11.5): 10x the UI
+/// `MAX_ROWS` cap, since ETL functions legitimately need more rows than a
+/// rendered table. Genuinely large scans use `ctx.queryStream` instead.
+pub const FUNCTION_MAX_ROWS: usize = 100_000;
+
+/// Row cap for `ctx.queryStream` (design doc §11.5): a higher ceiling than
+/// `FUNCTION_MAX_ROWS` for genuinely large scans. The MVP implementation
+/// fetches up to this many rows in one shot and yields them to the isolate
+/// in client-side batches; a true warehouse-cursor implementation is future
+/// work.
+pub const FUNCTION_STREAM_MAX_ROWS: usize = 1_000_000;
+
+/// Runs a function's read-only SQL against a warehouse `connector`, capped at
+/// `max_rows` rows, returning the rows as JSON objects.
+///
+/// The runtime owns this contract; the production implementation
+/// (`projects::query::DataPlaneQueryExecutor`) lives in the shared data plane
+/// so the read-only gate and outer-LIMIT wrap stay shared with the `/query`
+/// endpoint, and is injected at the composition root (the serve router and the
+/// scheduled-function worker). Depending on this trait rather than importing
+/// `projects::query` is what lets the custom-apps boundary test
+/// (`tests/custom_apps_boundary.rs`) drop that seam — and lets a test drive the
+/// runtime with a fake executor.
+#[async_trait::async_trait]
+pub trait FunctionQueryExecutor: Send + Sync {
+    async fn execute(
+        &self,
+        connector: Arc<dyn agentic_connector::DatabaseConnector>,
+        sql: &str,
+        max_rows: usize,
+    ) -> Result<Vec<serde_json::Value>, String>;
+}
+
 /// Host-side data plane the isolate calls back into. Implemented in
 /// `mod.rs` against the resolved project context (connectors) + an HTTP
 /// client. `Send + Sync` so the broker loop can `Arc`-clone it per call.

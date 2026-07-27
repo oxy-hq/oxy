@@ -301,18 +301,6 @@ async fn run_sql_query(
 
 // ── LIMIT wrapper ─────────────────────────────────────────────────────────────
 
-/// Function-scoped row cap for `ctx.query` (design doc §11.5): 10x the UI
-/// `MAX_ROWS` cap, since ETL functions legitimately need more rows than a
-/// rendered table. Genuinely large scans use `ctx.queryStream` instead.
-pub(crate) const FUNCTION_MAX_ROWS: usize = 100_000;
-
-/// Row cap for `ctx.queryStream` (design doc §11.5): a higher ceiling than
-/// `FUNCTION_MAX_ROWS` for genuinely large scans. The MVP implementation
-/// fetches up to this many rows in one shot and yields them to the isolate
-/// in client-side batches (see `ctx.queryStream` in `custom_apps_functions`);
-/// a true warehouse-cursor implementation is future work.
-pub(crate) const FUNCTION_STREAM_MAX_ROWS: usize = 1_000_000;
-
 /// Execute read-only SQL for an Oxy Function's `ctx.query`, returning the
 /// rows as JSON objects capped at `max_rows`. Shares the read-only gate and
 /// outer-LIMIT wrap with the custom-app `/query` endpoint so the safety
@@ -345,6 +333,31 @@ pub(crate) async fn execute_function_query(
         .await
         .map(|(objects, _truncated)| objects)
         .map_err(|e| format!("failed to convert query results: {e}"))
+}
+
+/// Production
+/// [`FunctionQueryExecutor`](crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor)
+/// — delegates to [`execute_function_query`] so the read-only gate and
+/// outer-LIMIT wrap stay shared with the custom-app `/query` endpoint.
+///
+/// Stateless: constructed at the composition root (the serve router / the
+/// scheduled-function worker) and handed to the function runtime as a trait
+/// object, so the runtime never imports this module. See
+/// `custom_apps_functions::runtime::FunctionQueryExecutor`.
+pub struct DataPlaneQueryExecutor;
+
+#[async_trait::async_trait]
+impl crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor
+    for DataPlaneQueryExecutor
+{
+    async fn execute(
+        &self,
+        connector: Arc<dyn DatabaseConnector>,
+        sql: &str,
+        max_rows: usize,
+    ) -> Result<Vec<JsonValue>, String> {
+        execute_function_query(connector, sql, max_rows).await
+    }
 }
 
 /// Wrap `sql` in `SELECT * FROM (...) AS oxy_proxy_query LIMIT {max_rows}`.

@@ -20,11 +20,10 @@ use uuid::Uuid;
 use oxy::service::secret_manager::SecretManagerService;
 
 use crate::agentic_wiring::OxyProjectContext;
-use crate::server::api::projects::query::{
-    FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, execute_function_query,
-};
 
-use super::runtime::FunctionHost;
+use super::runtime::{
+    FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost, FunctionQueryExecutor,
+};
 
 /// Outbound fetch response size cap (design doc §11.9).
 const FETCH_MAX_BYTES: u64 = 10 * 1024 * 1024;
@@ -38,6 +37,9 @@ const FETCH_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// context (for SQL connectors) and a shared HTTP client (for `ctx.fetch`).
 pub struct ProjectFunctionHost {
     proj_ctx: OxyProjectContext,
+    /// Runs `ctx.query` / `ctx.queryStream` SQL. Injected at the composition
+    /// root so the runtime depends on the trait, not on `projects::query`.
+    query_exec: Arc<dyn FunctionQueryExecutor>,
     db: DatabaseConnection,
     http: reqwest::Client,
     /// §11.3 allowlist — database names `ctx.warehouse.*` may write to. Empty →
@@ -70,6 +72,7 @@ impl ProjectFunctionHost {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         proj_ctx: OxyProjectContext,
+        query_exec: Arc<dyn FunctionQueryExecutor>,
         db: DatabaseConnection,
         write_destinations: Vec<String>,
         project_id: Uuid,
@@ -83,6 +86,7 @@ impl ProjectFunctionHost {
     ) -> Self {
         Self {
             proj_ctx,
+            query_exec,
             db,
             write_destinations,
             project_id,
@@ -146,7 +150,8 @@ impl FunctionHost for ProjectFunctionHost {
     async fn query(&self, sql: String) -> Result<serde_json::Value, String> {
         let db_name = self.default_database()?;
         let connector = self.connect(&db_name).await?;
-        let (rows, truncated) = query_with_truncation(connector, &sql, FUNCTION_MAX_ROWS).await?;
+        let (rows, truncated) =
+            query_with_truncation(&self.query_exec, connector, &sql, FUNCTION_MAX_ROWS).await?;
         let result = serde_json::json!({ "rows": rows, "truncated": truncated });
         enforce_result_byte_cap(&result)?;
         Ok(result)
@@ -157,7 +162,8 @@ impl FunctionHost for ProjectFunctionHost {
         let connector = self.connect(&db_name).await?;
         let rows = with_db_timeout(
             "query_stream",
-            execute_function_query(connector, &sql, FUNCTION_STREAM_MAX_ROWS),
+            self.query_exec
+                .execute(connector, &sql, FUNCTION_STREAM_MAX_ROWS),
         )
         .await?;
         Ok(serde_json::Value::Array(rows))
@@ -255,7 +261,8 @@ impl FunctionHost for ProjectFunctionHost {
         };
 
         let connector = self.connect(&database_name).await?;
-        let (rows, truncated) = query_with_truncation(connector, &sql, FUNCTION_MAX_ROWS).await?;
+        let (rows, truncated) =
+            query_with_truncation(&self.query_exec, connector, &sql, FUNCTION_MAX_ROWS).await?;
         let result = serde_json::json!({ "rows": rows, "truncated": truncated });
         enforce_result_byte_cap(&result)?;
         Ok(result)
@@ -657,21 +664,18 @@ fn enforce_result_byte_cap(result: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Run `execute_function_query` with a one-row overfetch so `truncated` is
+/// Run the injected query executor with a one-row overfetch so `truncated` is
 /// reported correctly: a result of exactly `max_rows` rows is NOT truncated,
-/// but `execute_function_query(.., max_rows)` alone can't distinguish "exactly
+/// but `exec.execute(.., max_rows)` alone can't distinguish "exactly
 /// `max_rows` rows exist" from "there were more and the LIMIT cut it off".
 /// Fetching `max_rows + 1` and trimming the extra row resolves the ambiguity.
 async fn query_with_truncation(
+    exec: &Arc<dyn FunctionQueryExecutor>,
     connector: Arc<dyn DatabaseConnector>,
     sql: &str,
     max_rows: usize,
 ) -> Result<(Vec<serde_json::Value>, bool), String> {
-    let mut rows = with_db_timeout(
-        "query",
-        execute_function_query(connector, sql, max_rows + 1),
-    )
-    .await?;
+    let mut rows = with_db_timeout("query", exec.execute(connector, sql, max_rows + 1)).await?;
     let truncated = rows.len() > max_rows;
     rows.truncate(max_rows);
     Ok((rows, truncated))

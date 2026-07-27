@@ -55,6 +55,7 @@ use uuid::Uuid;
 
 use super::custom_apps_auth::user_can_access_app;
 use super::custom_apps_cache::{cached_user, set_cached_user};
+use super::custom_apps_functions::runtime::FunctionQueryExecutor;
 
 mod headers;
 mod rewrite;
@@ -130,6 +131,22 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
                     .any(|kv| kv == "refresh" || kv.starts_with("refresh="))
             })
             .unwrap_or(false);
+        // The function query executor is injected at the serve router (an
+        // Extension layer) so this runtime never imports `projects::query`.
+        // Absent only if the router wiring regressed — fail closed.
+        let query_exec = match parts
+            .extensions
+            .get::<std::sync::Arc<dyn FunctionQueryExecutor>>()
+            .cloned()
+        {
+            Some(exec) => exec,
+            None => {
+                tracing::error!(
+                    "custom-app function invoked but no FunctionQueryExecutor is wired into the serve router"
+                );
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
         return super::custom_apps_functions::handle_function_request(
             first,
             app_slug,
@@ -138,6 +155,7 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
             headers,
             body_bytes,
             refresh,
+            query_exec,
         )
         .await;
     }

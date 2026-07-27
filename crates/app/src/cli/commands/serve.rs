@@ -1,4 +1,6 @@
 use crate::cli::ServeArgs;
+use crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor;
+use crate::server::api::projects::query::DataPlaneQueryExecutor;
 use crate::server::serve_mode::ServeMode;
 use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, AutomationMigrator};
 use agentic_runtime::migration::RuntimeMigrator;
@@ -630,7 +632,12 @@ async fn create_web_application(
             any(custom_apps_serve::serve_dispatch).layer(
                 ServiceBuilder::new()
                     .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
-                    .layer(CompressionLayer::new()),
+                    .layer(CompressionLayer::new())
+                    // Inject the function query executor (the shared data plane)
+                    // so `custom_apps_functions` runs `ctx.query` through the
+                    // trait without importing `projects::query`.
+                    .layer(axum::Extension(std::sync::Arc::new(DataPlaneQueryExecutor)
+                        as std::sync::Arc<dyn FunctionQueryExecutor>)),
             ),
         )
         .merge(

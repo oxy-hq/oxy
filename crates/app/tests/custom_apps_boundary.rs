@@ -21,9 +21,9 @@
 //! Each [`ALLOWED_SEAMS`] entry is a real dependency the surface has *today*, with the
 //! reason it's tolerated. The list going UP means new coupling crept in (justify it or
 //! don't add it). The list going DOWN — deleting a seam once its last import is gone — is
-//! measurable progress toward making the surface extractable. The two heaviest seams
-//! (`agentic_wiring::OxyProjectContext` and `server::api::projects`) are the named targets
-//! to invert behind traits; when they're gone, a real Functions crate becomes feasible.
+//! measurable progress toward making the surface extractable. The heaviest remaining seam,
+//! `agentic_wiring::OxyProjectContext`, is the next target to invert behind a trait
+//! (`server::api::projects` already was); when it's gone, a real Functions crate becomes feasible.
 //!
 //! To keep the list honest in both directions, [`no_unused_seams`] fails if an allowlisted
 //! seam has no importer left — you cannot narrow the coupling and leave the entry behind.
@@ -49,14 +49,15 @@ struct Seam {
 const ALLOWED_SEAMS: &[Seam] = &[
     Seam {
         prefix: "crate::agentic_wiring",
-        why: "OxyProjectContext — the pipeline adapter (a ~1.8k god-file). HEAVIEST seam; \
-               the prime target to invert behind a trait before a Functions crate is feasible.",
+        why: "OxyProjectContext — the pipeline adapter (a ~1.8k god-file). HEAVIEST remaining \
+               seam; the prime target to invert behind a trait before a Functions crate is feasible.",
     },
-    Seam {
-        prefix: "crate::server::api::projects",
-        why: "the shared data-plane SQL path (execute_function_query). Second-heaviest; \
-               the other target to invert behind a trait.",
-    },
+    // REMOVED 2026-07-25: `crate::server::api::projects` (the data-plane SQL path). The
+    // function runtime's `ctx.query`/`ctx.queryStream` now runs through the runtime-owned
+    // `FunctionQueryExecutor` trait, with the production impl
+    // (`projects::query::DataPlaneQueryExecutor`) injected at the composition root (the serve
+    // router + the scheduled-function worker). The runtime no longer imports `projects`.
+    // This deletion IS the decoupling migration — do not re-add without a real new dependency.
     Seam {
         prefix: "crate::server::api::middlewares",
         why: "partner_authz (partner_for_org / resolve_scope) — the partner-tier authorization \
