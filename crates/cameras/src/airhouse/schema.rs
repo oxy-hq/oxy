@@ -23,7 +23,17 @@ CREATE TABLE IF NOT EXISTS oxy_cam_events (
     track_id      VARCHAR     NOT NULL,
     dwell_seconds FLOAT,
     confidence    FLOAT,
+    /* NOTE: on event_type='congestion' rows these two carry zone-level meaning
+       (edge congestion.py): confidence = peak head-count in the zone,
+       dwell_seconds = seconds the backup had sustained at flag time. The
+       congestion_windows rollup reads them that way. */
     frame_uri     VARCHAR     DEFAULT '',
+    /* S3 key (bucket-relative) for an archived clip of this event's
+       window. Populated on `congestion` events when the edge archived
+       the backed-up window (empty/NULL otherwise, incl. every
+       enter/exit/dwell/line_cross row). Bucket is deployment-wide
+       config; we persist only the key, like the compliance table. */
+    evidence_s3_key VARCHAR   DEFAULT '',
     received_at   TIMESTAMPTZ DEFAULT current_timestamp
 )
 "#;
@@ -122,6 +132,15 @@ ALTER TABLE oxy_cam_compliance_reports
     ADD COLUMN IF NOT EXISTS evidence_s3_key VARCHAR DEFAULT ''
 "#;
 
+/// Backfill `evidence_s3_key` on `oxy_cam_events` for tenants
+/// provisioned before congestion evidence clips. New tenants get it
+/// from [`CREATE_EVENTS_TABLE`]; this keeps old tenants on the same
+/// shape so the congestion event's key has a column to land in.
+pub const ALTER_EVENTS_ADD_EVIDENCE_KEY: &str = r#"
+ALTER TABLE oxy_cam_events
+    ADD COLUMN IF NOT EXISTS evidence_s3_key VARCHAR DEFAULT ''
+"#;
+
 /// Backfill `detections_json` on tenants provisioned before P3
 /// (Option C). New tenants get the column from the CREATE; this
 /// keeps old tenants on the same shape.
@@ -158,6 +177,7 @@ pub const ALL_DDL: &[&str] = &[
     ALTER_COMPLIANCE_ADD_DETECTIONS,
     ALTER_COMPLIANCE_ADD_AGREEMENT,
     ALTER_COMPLIANCE_ADD_AGREEMENT_DETAIL,
+    ALTER_EVENTS_ADD_EVIDENCE_KEY,
 ];
 
 /// Run the camera-fleet DDL inside a tenant. Idempotent; safe to call

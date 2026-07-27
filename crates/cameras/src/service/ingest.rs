@@ -38,6 +38,11 @@ pub struct EventPayload {
     pub dwell_seconds: Option<f32>,
     pub confidence: Option<f32>,
     pub frame_uri: Option<String>,
+    /// S3 key for an archived clip of this event's window. Only the edge's
+    /// `congestion` events carry it; `#[serde(default)]` so every other event
+    /// kind (which omits the field) still deserializes to `None`.
+    #[serde(default)]
+    pub evidence_s3_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,7 +100,7 @@ fn build_events_insert(events: &[EventPayload]) -> String {
     let mut sql = String::from(
         "INSERT INTO oxy_cam_events \
          (event_id, ts, camera_id, event_type, zone_id, line_id, track_id, \
-          dwell_seconds, confidence, frame_uri) VALUES ",
+          dwell_seconds, confidence, frame_uri, evidence_s3_key) VALUES ",
     );
     for (i, e) in events.iter().enumerate() {
         if i > 0 {
@@ -103,7 +108,7 @@ fn build_events_insert(events: &[EventPayload]) -> String {
         }
         let _ = write!(
             sql,
-            "({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+            "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
             sql_str(&e.event_id.to_string()),
             sql_ts(e.ts),
             sql_str(&e.camera_id.to_string()),
@@ -114,6 +119,7 @@ fn build_events_insert(events: &[EventPayload]) -> String {
             sql_opt_f32(e.dwell_seconds),
             sql_opt_f32(e.confidence),
             sql_opt_str(e.frame_uri.as_deref()),
+            sql_opt_str(e.evidence_s3_key.as_deref()),
         );
     }
     sql
@@ -227,6 +233,7 @@ mod tests {
             dwell_seconds: None,
             confidence: None,
             frame_uri: None,
+            evidence_s3_key: None,
         }
     }
 

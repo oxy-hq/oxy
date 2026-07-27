@@ -59,7 +59,7 @@ _MTX_CLIP_TIMEOUT_S = 30.0
 _S3_PUT_TIMEOUT_S = 60.0
 
 
-async def upload_violation_clip(
+async def upload_window_clip(
     *,
     oxy_client: httpx.AsyncClient,
     report_id: str,
@@ -67,9 +67,13 @@ async def upload_violation_clip(
     segment_start: datetime,
     segment_end: datetime,
 ) -> str | None:
-    """Pull the dwell-window clip from MTX, fetch a presigned PUT
-    URL from Oxy, upload the bytes, and return the bucket-relative
-    key on success or None on any failure.
+    """Pull a time-window clip from MTX, fetch a presigned PUT URL
+    from Oxy, upload the bytes, and return the bucket-relative key
+    on success or None on any failure.
+
+    Used for both compliance-violation windows and congestion
+    windows — `report_id` is just the clip identifier that becomes
+    the S3 key stem; the caller decides what window to capture.
 
     `oxy_client` is the main control-plane httpx client — it
     already has the bearer/JWT auth wired, so we don't need a

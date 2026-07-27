@@ -568,6 +568,7 @@ mod tests {
             dwell_seconds: None,
             confidence: None,
             frame_uri: None,
+            evidence_s3_key: None,
         }
     }
 

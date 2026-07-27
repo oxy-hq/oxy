@@ -4,7 +4,7 @@ Lifted from `video-poc/inference-prototype/protocol_compliance_oxy.py` after
 tuning on real Protect footage:
 
   Per-frame (cheap, ~10 fps):
-    YOLO11n -> Ultralytics model.track(tracker='botsort.yaml') -> supervision
+    YOLO11n -> Ultralytics model.track(tracker='bytetrack.yaml') -> supervision
     PolygonZone / LineZone triggers -> camera_events (enter/exit/dwell/line_cross)
 
   On-trigger (expensive, sparse, ~$0.002 per call):
@@ -29,7 +29,7 @@ import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -41,8 +41,9 @@ import supervision as sv  # type: ignore[import-untyped]
 from ultralytics import YOLO  # type: ignore[import-untyped]
 
 from . import ppe_yolo
-from .clip_archive import upload_violation_clip
+from .clip_archive import upload_window_clip
 from .config import CameraConfig
+from .congestion import CONGESTION_CLIP_SEC, CongestionDetector, CongestionFlag
 from .log import log
 from .prompts import render_prompt
 
@@ -52,7 +53,14 @@ from .prompts import render_prompt
 # ---------------------------------------------------------------------------
 
 YOLO_MODEL              = os.environ.get("YOLO_MODEL", "yolo11n.pt")
-TRACKER                 = os.environ.get("TRACKER", "botsort.yaml")
+# ByteTrack, not BoT-SORT. Cameras are fixed, so BoT-SORT's camera-motion
+# compensation is wasted work and its ReID appearance model is extra cost per
+# frame — both matter on a CPU/edge box running several streams. ByteTrack is the
+# lighter association-only tracker and is what the fleet design specifies. Track
+# identity is best-effort anyway: the occupancy metric sums exit dwell_seconds,
+# so it's robust to id churn regardless of tracker (see the time-to-serve
+# investigation). Override with TRACKER=botsort.yaml if a camera ever pans.
+TRACKER                 = os.environ.get("TRACKER", "bytetrack.yaml")
 VLM_MODEL               = os.environ.get("VLM_MODEL", "claude-haiku-4-5-20251001")
 TRIGGER_DWELL_SEC       = float(os.environ.get("TRIGGER_DWELL_SEC", "4"))
 TRACK_COOLDOWN_SEC      = float(os.environ.get("TRACK_COOLDOWN_SEC", "300"))
@@ -179,6 +187,10 @@ class CameraReader:
         self._in_zone_prev: dict[str, set[int]] = defaultdict(set)
         # Per-camera global cooldown timestamp.
         self._last_global_vlm: datetime | None = None
+        # Sustained-occupancy detector → evidence clips on backed-up windows.
+        # Pure state machine (see congestion.py); we feed it the per-zone head
+        # count each frame and archive a clip when it flags.
+        self._congestion = CongestionDetector()
 
     # ----- public api -----
 
@@ -347,6 +359,14 @@ class CameraReader:
 
             self._in_zone_prev[zone_id] = present_now
 
+            # Sustained-occupancy (congestion) check on the zone head count.
+            # `len(present_now)` is the count of tracked ids in the zone this
+            # frame — tracker-derived, but a per-frame count is churn-robust (we
+            # don't rely on id continuity) and needs no appearance/identity.
+            flag = self._congestion.update(zone_id, len(present_now), ts)
+            if flag is not None:
+                self._trigger_congestion(flag, ts)
+
             # Dwell tick + on-trigger VLM check.
             for tid in present_now:
                 state = self._track_state[(zone_id, tid)]
@@ -378,7 +398,7 @@ class CameraReader:
         operator-drawn ones (e.g. for "what fraction of compliance
         signal comes from cameras that haven't been zoned yet").
 
-        Track ids come from botsort and persist as long as the person
+        Track ids come from the tracker and persist as long as the person
         stays in view. Walking out and back in mints a fresh id, so
         a returning person gets re-checked — that's intentional, the
         per-track cooldown is per-id, not per-human.
@@ -433,6 +453,56 @@ class CameraReader:
             self._maybe_trigger_vlm(
                 WHOLE_FRAME_ZONE_ID, tid, state, dwell, ts, frame
             )
+
+    # ----- congestion (sustained occupancy) -----
+
+    def _trigger_congestion(self, flag: CongestionFlag, ts: datetime) -> None:
+        """Worker-thread side: a zone just flagged a sustained backup. Hand off
+        to the main loop to pull + archive the clip and emit the event — same
+        shape as the VLM trigger, so the frame thread never blocks on network
+        I/O."""
+        segment_start = ts - timedelta(seconds=CONGESTION_CLIP_SEC)
+        log("info", "camera.congestion", camera=self.cfg.name, zone=flag.zone_id,
+            count=flag.count, sustained_s=round(flag.sustained_sec, 1))
+        asyncio.run_coroutine_threadsafe(
+            self._archive_and_emit_congestion(flag, segment_start, ts),
+            self.loop,
+        )
+
+    async def _archive_and_emit_congestion(
+        self, flag: CongestionFlag, segment_start: datetime, ts: datetime
+    ) -> None:
+        """Main-loop side: archive the congestion window (best-effort) and emit
+        a `congestion` event carrying the clip key. Never raises into the loop —
+        the event ships even if archival is off or fails."""
+        # One id for both the event and the clip key stem, so the archived clip
+        # (`{prefix}/{wid}/{date}/{event_id}.mp4`) is trivially correlated back
+        # to its congestion event.
+        event_id = str(uuid4())
+        key: str | None = None
+        if self._oxy_client is not None:
+            try:
+                key = await upload_window_clip(
+                    oxy_client=self._oxy_client,
+                    report_id=event_id,
+                    camera_id=str(self.cfg.id),
+                    segment_start=segment_start,
+                    segment_end=ts,
+                )
+            except Exception as exc:  # noqa: BLE001 — log + still emit the event
+                log("warn", "camera.congestion_archive_failed",
+                    camera=self.cfg.name, zone=flag.zone_id, error=str(exc))
+        # Zone-level event: no single track (track_id empty). The head count
+        # rides in `confidence` (the slot line_cross already reuses) and the
+        # sustained length in `dwell_seconds`.
+        event = self._event_dict(
+            "congestion", ts, event_id=event_id, track_id="", zone_id=flag.zone_id,
+            dwell_seconds=flag.sustained_sec, confidence=float(flag.count),
+            evidence_s3_key=key,
+        )
+        await self.queue.put({"kind": "event", "payload": event})
+        log("info", "camera.congestion_emitted", camera=self.cfg.name,
+            zone=flag.zone_id, archived=key is not None)
 
     def _maybe_trigger_vlm(
         self,
@@ -590,10 +660,10 @@ class CameraReader:
         # The server's `/control/clips/sign` route returns 503
         # when S3 isn't configured, so deployments without an
         # archive bucket trip the no-op branch quietly.
-        # Failures inside `upload_violation_clip` log + return
+        # Failures inside `upload_window_clip` log + return
         # None — the compliance report ships either way.
         if self._oxy_client is not None and _is_violation(parsed):
-            key = await upload_violation_clip(
+            key = await upload_window_clip(
                 oxy_client=self._oxy_client,
                 report_id=report_id,
                 camera_id=str(self.cfg.id),
@@ -626,6 +696,38 @@ class CameraReader:
 
     # ----- emit -----
 
+    def _event_dict(
+        self,
+        kind: str,
+        ts: datetime,
+        *,
+        track_id: str,
+        event_id: str | None = None,
+        zone_id: str | None = None,
+        line_id: str | None = None,
+        dwell_seconds: float | None = None,
+        confidence: float | None = None,
+        evidence_s3_key: str | None = None,
+    ) -> dict[str, Any]:
+        event = {
+            "event_id": event_id or str(uuid4()),
+            "ts": ts.isoformat(),
+            "camera_id": str(self.cfg.id),
+            "event_type": kind,
+            "zone_id": zone_id,
+            "line_id": line_id,
+            "track_id": track_id,
+            "dwell_seconds": dwell_seconds,
+            "confidence": confidence,
+            "frame_uri": None,
+        }
+        # Only present on congestion events. The server ignores unknown fields
+        # until the oxy_cam_events `evidence_s3_key` column lands (Phase 2), so
+        # this is forward-compatible and a no-op for the other event kinds.
+        if evidence_s3_key is not None:
+            event["evidence_s3_key"] = evidence_s3_key
+        return event
+
     def _emit_event(
         self,
         kind: str,
@@ -637,18 +739,15 @@ class CameraReader:
         dwell_seconds: float | None = None,
         confidence: float | None = None,
     ) -> None:
-        event = {
-            "event_id": str(uuid4()),
-            "ts": ts.isoformat(),
-            "camera_id": str(self.cfg.id),
-            "event_type": kind,
-            "zone_id": zone_id,
-            "line_id": line_id,
-            "track_id": track_id,
-            "dwell_seconds": dwell_seconds,
-            "confidence": confidence,
-            "frame_uri": None,
-        }
+        event = self._event_dict(
+            kind,
+            ts,
+            track_id=track_id,
+            zone_id=zone_id,
+            line_id=line_id,
+            dwell_seconds=dwell_seconds,
+            confidence=confidence,
+        )
         # Thread-safe handoff. The outbox-producer task on the main loop pulls
         # from this queue and routes by `kind`.
         asyncio.run_coroutine_threadsafe(
