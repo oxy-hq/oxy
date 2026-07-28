@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.116] - 2026-07-28
+
+### 🚀 Features
+
+- *(world-model)* Opportunity sizing — sized segments, recursive drill & drivers on measures (+ airlayer rate-based additive sizing #78) (#2715)
+
+### 🐛 Bug Fixes
+
+- *(edge)* Reach MediaMTX playback by service name, not 127.0.0.1 (#2810)
+- *(fleet)* Carry public host across the ide proxy hop (#2813)
+
+### 🚜 Refactor
+
+- *(cameras)* Move clip S3 env to OXY_CAMERAS_CLIPS_S3_* namespace (#2801)
+
 ## [0.5.115] - 2026-07-27
 
 ### 🚀 Features
@@ -22,6 +37,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Weekly health review — 2026-07-27 (#2800)
+- Release 0.5.115 (#2799)
 
 ## [0.5.114] - 2026-07-27
 
