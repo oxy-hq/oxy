@@ -130,7 +130,7 @@ async def upload_window_clip(
         if sign_resp.status_code == 503:
             # Server says S3 isn't configured. Quiet — operator
             # opted into "no archival" by not setting
-            # OXY_S3_BUCKET; we don't need a warning per
+            # OXY_CAMERAS_CLIPS_S3_BUCKET; we don't need a warning per
             # violation.
             log("debug", "clip_archive.disabled_server_side",
                 report_id=report_id)

@@ -4485,7 +4485,7 @@ async fn sign_clip_503s_when_s3_disabled() {
     // SAFETY: tests run single-threaded under nextest's default
     // and this test owns the env var.
     unsafe {
-        std::env::remove_var("OXY_S3_BUCKET");
+        std::env::remove_var("OXY_CAMERAS_CLIPS_S3_BUCKET");
     }
     let db = test_db().await;
     let (workspace_id, site_id) = seed_site(&db).await;
@@ -4519,7 +4519,7 @@ async fn sign_clip_503s_when_s3_disabled() {
 async fn get_clip_url_rejects_cross_workspace_key() {
     // SAFETY: see above.
     unsafe {
-        std::env::set_var("OXY_S3_BUCKET", "test-bucket");
+        std::env::set_var("OXY_CAMERAS_CLIPS_S3_BUCKET", "test-bucket");
     }
     let db = test_db().await;
     let (ws_a, _site_a) = seed_site(&db).await;
@@ -4544,7 +4544,7 @@ async fn get_clip_url_rejects_cross_workspace_key() {
         .await
         .unwrap();
     unsafe {
-        std::env::remove_var("OXY_S3_BUCKET");
+        std::env::remove_var("OXY_CAMERAS_CLIPS_S3_BUCKET");
     }
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }

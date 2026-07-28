@@ -40,7 +40,7 @@ pub struct CompliancePayload {
     /// Tier B #6 — bucket-relative S3 key for the archived
     /// dwell-window clip. Set by the worker once the upload
     /// succeeds; empty otherwise. The bucket itself is
-    /// deployment-wide config (`OXY_S3_BUCKET`), not stored
+    /// deployment-wide config (`OXY_CAMERAS_CLIPS_S3_BUCKET`), not stored
     /// per-row, so the deployment can re-front the bucket
     /// without rewriting rows.
     #[serde(default)]

@@ -209,7 +209,7 @@ export type ComplianceReport = {
   /**
    * Tier B #6 — bucket-relative S3 key for the archived
    * dwell-window clip. NULL when the worker didn't upload
-   * (no violation, OXY_S3_BUCKET unset, or upload failed).
+   * (no violation, OXY_CAMERAS_CLIPS_S3_BUCKET unset, or upload failed).
    * The UI surfaces a "View clip" affordance when set.
    */
   evidence_s3_key: string | null;

@@ -26,13 +26,18 @@
 //!
 //! ## Configuration
 //!
+//! These vars live under the camera-specific `OXY_CAMERAS_CLIPS_S3_*`
+//! namespace (both compliance and congestion evidence clips share this
+//! one bucket). The generic `OXY_S3_*` namespace is deliberately left
+//! free for any future workspace-wide S3 use so the two never collide.
+//!
 //! The server reads:
 //!
-//!   - `OXY_S3_BUCKET` — required; absence disables both the
+//!   - `OXY_CAMERAS_CLIPS_S3_BUCKET` — required; absence disables both the
 //!     mint and the playback endpoint (501).
-//!   - `OXY_S3_REGION` — defaults to `us-east-1`.
-//!   - `OXY_S3_KEY_PREFIX` — defaults to `compliance`.
-//!   - `OXY_S3_PRESIGN_TTL_SECONDS` — defaults to 300 (5 min).
+//!   - `OXY_CAMERAS_CLIPS_S3_REGION` — defaults to `us-east-1`.
+//!   - `OXY_CAMERAS_CLIPS_S3_KEY_PREFIX` — defaults to `compliance`.
+//!   - `OXY_CAMERAS_CLIPS_S3_PRESIGN_TTL_SECONDS` — defaults to 300 (5 min).
 //!     Workers can tolerate a couple of seconds of skew; bigger
 //!     values just widen the attacker's replay window for a URL
 //!     that's already bounded by `Content-Length`.
@@ -87,24 +92,27 @@ pub struct S3Config {
 }
 
 impl S3Config {
-    /// Resolve from env. `None` when `OXY_S3_BUCKET` is unset —
+    /// Resolve from env. `None` when `OXY_CAMERAS_CLIPS_S3_BUCKET` is unset —
     /// the deployment hasn't opted into clip archival.
     pub fn from_env() -> Option<Self> {
-        let bucket = std::env::var("OXY_S3_BUCKET").ok()?.trim().to_string();
+        let bucket = std::env::var("OXY_CAMERAS_CLIPS_S3_BUCKET")
+            .ok()?
+            .trim()
+            .to_string();
         if bucket.is_empty() {
             return None;
         }
-        let region = std::env::var("OXY_S3_REGION")
+        let region = std::env::var("OXY_CAMERAS_CLIPS_S3_REGION")
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "us-east-1".to_string());
-        let key_prefix = std::env::var("OXY_S3_KEY_PREFIX")
+        let key_prefix = std::env::var("OXY_CAMERAS_CLIPS_S3_KEY_PREFIX")
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "compliance".to_string());
-        let presign_ttl = std::env::var("OXY_S3_PRESIGN_TTL_SECONDS")
+        let presign_ttl = std::env::var("OXY_CAMERAS_CLIPS_S3_PRESIGN_TTL_SECONDS")
             .ok()
             .and_then(|s| s.trim().parse::<u64>().ok())
             .map(Duration::from_secs)
@@ -177,7 +185,7 @@ pub fn build_key(cfg: &S3Config, workspace_id: Uuid, report_id: Uuid, ts: DateTi
 /// the window.
 pub async fn mint_put_url(input: MintPutInput) -> ServiceResult<MintPutOutput> {
     let cfg = config().ok_or(ServiceError::Unavailable(
-        "OXY_S3_BUCKET is not configured; clip archival disabled",
+        "OXY_CAMERAS_CLIPS_S3_BUCKET is not configured; clip archival disabled",
     ))?;
     if input.content_length <= 0 {
         return Err(ServiceError::InvalidInput(
@@ -227,7 +235,7 @@ pub async fn mint_put_url(input: MintPutInput) -> ServiceResult<MintPutOutput> {
 /// us a foreign key.
 pub async fn mint_get_url(workspace_id: Uuid, key: &str) -> ServiceResult<MintGetOutput> {
     let cfg = config().ok_or(ServiceError::Unavailable(
-        "OXY_S3_BUCKET is not configured; clip playback disabled",
+        "OXY_CAMERAS_CLIPS_S3_BUCKET is not configured; clip playback disabled",
     ))?;
     let expected_prefix = format!("{}/{}/", cfg.key_prefix, workspace_id);
     if !key.starts_with(&expected_prefix) {
@@ -297,7 +305,7 @@ mod tests {
     fn from_env_returns_none_when_bucket_unset() {
         // SAFETY: tests run single-threaded under nextest's default.
         unsafe {
-            std::env::remove_var("OXY_S3_BUCKET");
+            std::env::remove_var("OXY_CAMERAS_CLIPS_S3_BUCKET");
         }
         assert!(S3Config::from_env().is_none());
     }
@@ -307,10 +315,10 @@ mod tests {
     fn from_env_picks_up_overrides() {
         // SAFETY: see above.
         unsafe {
-            std::env::set_var("OXY_S3_BUCKET", "my-bucket");
-            std::env::set_var("OXY_S3_REGION", "eu-west-2");
-            std::env::set_var("OXY_S3_KEY_PREFIX", "incidents");
-            std::env::set_var("OXY_S3_PRESIGN_TTL_SECONDS", "60");
+            std::env::set_var("OXY_CAMERAS_CLIPS_S3_BUCKET", "my-bucket");
+            std::env::set_var("OXY_CAMERAS_CLIPS_S3_REGION", "eu-west-2");
+            std::env::set_var("OXY_CAMERAS_CLIPS_S3_KEY_PREFIX", "incidents");
+            std::env::set_var("OXY_CAMERAS_CLIPS_S3_PRESIGN_TTL_SECONDS", "60");
         }
         let cfg = S3Config::from_env().expect("bucket set");
         assert_eq!(cfg.bucket, "my-bucket");
@@ -318,10 +326,10 @@ mod tests {
         assert_eq!(cfg.key_prefix, "incidents");
         assert_eq!(cfg.presign_ttl, Duration::from_secs(60));
         unsafe {
-            std::env::remove_var("OXY_S3_BUCKET");
-            std::env::remove_var("OXY_S3_REGION");
-            std::env::remove_var("OXY_S3_KEY_PREFIX");
-            std::env::remove_var("OXY_S3_PRESIGN_TTL_SECONDS");
+            std::env::remove_var("OXY_CAMERAS_CLIPS_S3_BUCKET");
+            std::env::remove_var("OXY_CAMERAS_CLIPS_S3_REGION");
+            std::env::remove_var("OXY_CAMERAS_CLIPS_S3_KEY_PREFIX");
+            std::env::remove_var("OXY_CAMERAS_CLIPS_S3_PRESIGN_TTL_SECONDS");
         }
     }
 }
