@@ -53,6 +53,10 @@ const HEADER_REQUIRED_ROLE: &str = "x-oxy-required-role";
 ///     the git working copy).
 const HEADER_UNAVAILABLE: &str = "x-oxy-unavailable";
 
+/// The caller-visible host, carried across the proxy hop because `Host` cannot
+/// be. See [`preserve_public_host`].
+const HEADER_FORWARDED_HOST: &str = "x-forwarded-host";
+
 /// The ide upstream base URL from `OXY_IDE_UPSTREAM`, e.g.
 /// `http://oxy-dev-oxy-app-ide:80`. `None` (unset/empty) → forwarding is off
 /// and the caller keeps the legacy `421` behaviour. This is the only knob:
@@ -150,6 +154,8 @@ pub async fn forward_to_ide_opt(upstream_base: &str, req: Request) -> Result<Res
     let mut out_headers = filter_request_headers(&parts.headers);
     // Loop guard marker — see HEADER_FORWARDED_BY.
     out_headers.insert(HEADER_FORWARDED_BY, HeaderValue::from_static("serve"));
+    // Carry the PUBLIC host across the hop — see `preserve_public_host`.
+    preserve_public_host(&parts.headers, &mut out_headers);
 
     let upstream = client()
         .request(method, &url)
@@ -273,6 +279,45 @@ fn filter_request_headers(headers: &HeaderMap) -> HeaderMap {
     out
 }
 
+/// Carry the caller-visible host across the hop as `X-Forwarded-Host`.
+///
+/// [`filter_request_headers`] must drop `Host` (reqwest sets the upstream's),
+/// which leaves the ide pod seeing the in-cluster Service name as its host —
+/// while `Origin` / `Referer` ride through untouched, because they are
+/// auth-relevant. Any upstream check that compares the two then compares a
+/// public origin against an internal host and fails.
+///
+/// That is not hypothetical: it 403'd every custom-app data call. The
+/// `check_custom_app_gates` origin allowlist (`is_self_origin`) reads exactly
+/// `x-forwarded-host` → `host`, so on the ide pod both candidates were gone and
+/// `POST /api/projects/{id}/query` + `/semantic-query` returned
+/// "origin not allowed" for every browser caller regardless of role — while
+/// their FleetOk siblings on the SAME gate chain (`/shell-context`,
+/// `/threads`) served locally, kept their `Host`, and passed. AWS ALB does not
+/// set `X-Forwarded-Host` (only `For` / `Proto` / `Port`), so nothing upstream
+/// of us supplies it either.
+///
+/// Prefer an inbound `X-Forwarded-Host` over `Host`: an edge that already
+/// rewrote the host is the authority on what the client asked for. Mirrors
+/// `custom_apps_proxy::…` , which has always done this.
+fn preserve_public_host(incoming: &HeaderMap, out: &mut HeaderMap) {
+    let public_host = incoming
+        .get(HEADER_FORWARDED_HOST)
+        .or_else(|| incoming.get(axum::http::header::HOST))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    // Empty should never happen (axum guarantees `Host` on HTTP/1.1 and
+    // synthesises one from `:authority` on HTTP/2). Setting an empty value
+    // would be worse than leaving it off — `is_self_origin` treats an empty
+    // host as "no match" either way, and a present-but-empty header would mask
+    // a real `Host` further up.
+    if let Ok(v) = HeaderValue::from_str(public_host)
+        && !public_host.is_empty()
+    {
+        out.insert(HEADER_FORWARDED_HOST, v);
+    }
+}
+
 fn is_hop_by_hop(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -334,6 +379,132 @@ mod tests {
         assert!(out.get(header::HOST).is_none());
         assert!(out.get(header::CONTENT_LENGTH).is_none());
         assert!(out.get(HEADER_FORWARDED_BY).is_none());
+    }
+
+    /// Build the header map as the ide pod actually receives it: filtered,
+    /// loop-marked, public host carried. Keep in sync with `forward_to_ide_opt`.
+    fn forwarded(inbound: &HeaderMap) -> HeaderMap {
+        let mut out = filter_request_headers(inbound);
+        out.insert(HEADER_FORWARDED_BY, HeaderValue::from_static("serve"));
+        preserve_public_host(inbound, &mut out);
+        out
+    }
+
+    /// A browser request as it reaches a serve replica behind the ALB.
+    fn browser_request() -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(header::HOST, HeaderValue::from_static("app.oxygen-hq.com"));
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://app.oxygen-hq.com"),
+        );
+        h.insert(
+            header::REFERER,
+            HeaderValue::from_static("https://app.oxygen-hq.com/customer-apps/acme/scout/"),
+        );
+        h.insert(header::COOKIE, HeaderValue::from_static("oxy_session=abc"));
+        h
+    }
+
+    /// THE regression: the origin allowlist must survive the hop.
+    ///
+    /// `Origin` rides through but `Host` cannot, so before `preserve_public_host`
+    /// the ide pod compared a public origin against an in-cluster Service name
+    /// and refused every browser-issued custom-app data call with 403 "origin not
+    /// allowed" — `/query` and `/semantic-query`, for every user, regardless of
+    /// role, while their FleetOk siblings on the same gate chain passed.
+    ///
+    /// Asserted through `is_allowed_origin` itself rather than by checking that
+    /// the header is merely present: the gate is the property that broke, and a
+    /// future rename of the header it reads should fail HERE.
+    #[test]
+    fn forwarded_request_still_passes_the_origin_allowlist() {
+        let inbound = browser_request();
+        assert!(
+            crate::server::router::is_allowed_origin(&inbound),
+            "precondition: the request is allowed at the serve replica"
+        );
+
+        let out = forwarded(&inbound);
+        assert!(
+            out.get(header::HOST).is_none(),
+            "Host still must not cross the hop — reqwest sets the upstream's"
+        );
+        assert!(
+            crate::server::router::is_allowed_origin(&out),
+            "origin allowlist must reach the same verdict on the ide pod; \
+             without X-Forwarded-Host this is the 403 that broke every \
+             custom-app query"
+        );
+    }
+
+    /// An edge that already rewrote the host is the authority on what the client
+    /// asked for, so an inbound `X-Forwarded-Host` wins over `Host`.
+    #[test]
+    fn inbound_forwarded_host_wins_over_host() {
+        let mut h = HeaderMap::new();
+        h.insert(header::HOST, HeaderValue::from_static("internal-lb:8080"));
+        h.insert(
+            HEADER_FORWARDED_HOST,
+            HeaderValue::from_static("app.oxygen-hq.com"),
+        );
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://app.oxygen-hq.com"),
+        );
+
+        let out = forwarded(&h);
+        assert_eq!(out.get(HEADER_FORWARDED_HOST).unwrap(), "app.oxygen-hq.com");
+        assert!(crate::server::router::is_allowed_origin(&out));
+    }
+
+    /// Org subdomains and custom-app subdomains are separate hosts; the
+    /// forwarded header must reflect the one the caller actually used, not a
+    /// canonical one, or the allowlist passes for the wrong site.
+    #[test]
+    fn public_host_is_the_callers_host_not_a_canonical_one() {
+        let mut h = HeaderMap::new();
+        h.insert(header::HOST, HeaderValue::from_static("acme.oxygen-hq.com"));
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://acme.oxygen-hq.com"),
+        );
+
+        let out = forwarded(&h);
+        assert_eq!(
+            out.get(HEADER_FORWARDED_HOST).unwrap(),
+            "acme.oxygen-hq.com"
+        );
+        assert!(crate::server::router::is_allowed_origin(&out));
+    }
+
+    /// A cross-site origin must still be refused after the hop. The fix carries
+    /// the host across; it must not become a blanket allow.
+    #[test]
+    fn foreign_origin_is_still_rejected_after_the_hop() {
+        let mut h = HeaderMap::new();
+        h.insert(header::HOST, HeaderValue::from_static("app.oxygen-hq.com"));
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://evil.example.com"),
+        );
+
+        let out = forwarded(&h);
+        assert!(
+            !crate::server::router::is_allowed_origin(&out),
+            "carrying the public host must not turn the allowlist into a pass-through"
+        );
+    }
+
+    /// No `Host` anywhere → no header rather than an empty one. An empty
+    /// `X-Forwarded-Host` would shadow a real `Host` at the upstream.
+    #[test]
+    fn absent_host_sets_no_forwarded_host() {
+        let mut h = HeaderMap::new();
+        h.insert(header::COOKIE, HeaderValue::from_static("oxy_session=abc"));
+
+        let out = forwarded(&h);
+        assert!(out.get(HEADER_FORWARDED_HOST).is_none());
     }
 
     #[test]
