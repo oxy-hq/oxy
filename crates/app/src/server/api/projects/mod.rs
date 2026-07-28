@@ -12,6 +12,9 @@
 pub mod agent_ask;
 pub mod agent_run_stream;
 pub mod automation_run;
+pub mod metric_tree;
 pub mod query;
 pub mod result_cache;
+pub mod semantic_boundary;
 pub mod semantic_query;
+pub mod world_model;

@@ -1,0 +1,172 @@
+# Display config for the World Model Graph.
+#
+# This file is presentation only — labels and which fields surface on each
+# node. The graph's edges come from the entity links declared in the views,
+# not from anything here, so adding or reordering entities cannot change the
+# decomposition the drill walks.
+#
+# The interesting node is `check`: it carries the full metric tree
+# (net_revenue -> entree + addon -> four category leaves) plus a profit twin
+# for every revenue measure, which is what lets the same decomposition be read
+# on two different measures.
+
+entities:
+  - id: check
+    label: Check
+    description: A single guest check — the grain the opportunity drill roots at, so every gap reads as dollars per check
+    display_field: check_id
+    dimensions:
+      - name: check_id
+        label: Check ID
+      - name: check_date
+        label: Business Date
+      - name: daypart
+        label: Daypart
+      - name: order_channel
+        label: Order channel
+      - name: table_section
+        label: Table section
+      - name: region
+        label: Region
+      - name: city
+        label: City
+      - name: location_name
+        label: Location
+    measures:
+      - name: total_checks
+        label: Checks
+      - name: net_revenue
+        label: Net Revenue
+      - name: entree_revenue
+        label: Entree Revenue
+      - name: addon_revenue
+        label: Add-on Revenue
+      # The four add-on leaves. These are what the drill ranks against each
+      # other once it descends into add-ons.
+      - name: sides_revenue
+        label: Sides Revenue
+      - name: beverages_revenue
+        label: Beverages Revenue
+      - name: appetizers_revenue
+        label: Appetizers Revenue
+      - name: desserts_revenue
+        label: Desserts Revenue
+      # Profit twins — same tree, one level down the P&L.
+      - name: gross_profit
+        label: Gross Profit
+      - name: addon_profit
+        label: Add-on Profit
+      - name: sides_profit
+        label: Sides Profit
+      - name: beverages_profit
+        label: Beverages Profit
+      - name: appetizers_profit
+        label: Appetizers Profit
+      - name: desserts_profit
+        label: Desserts Profit
+      - name: avg_check
+        label: Avg Check
+
+  - id: check_item
+    label: Check Line Item
+    description: One line on a check, carrying the menu attributes it was rung at — the dimensional route to the same decomposition
+    display_field: item_name
+    dimensions:
+      - name: item_name
+        label: Item
+      - name: category
+        label: Menu Category
+      - name: item_type
+        label: Entree or Add-on
+      - name: quantity
+        label: Quantity
+      - name: unit_price
+        label: Unit Price
+      - name: unit_cost
+        label: Unit Cost
+      - name: daypart
+        label: Daypart
+      - name: region
+        label: Region
+    measures:
+      - name: total_line_items
+        label: Line Items
+      - name: total_revenue
+        label: Revenue
+      - name: total_cogs
+        label: Food Cost
+      - name: item_gross_profit
+        label: Gross Profit
+      - name: units_sold
+        label: Units Sold
+
+  - id: menu_item
+    label: Menu Item
+    description: A sellable item with its unit economics — unit_cost here is what makes margin analysis possible at all
+    display_field: item_name
+    dimensions:
+      - name: menu_item_id
+        label: Menu Item ID
+      - name: item_name
+        label: Name
+      - name: category
+        label: Category
+      - name: item_type
+        label: Entree or Add-on
+      - name: unit_price
+        label: Menu Price
+      - name: unit_cost
+        label: Food Cost
+    measures:
+      # avg_* over a single menu item is that item's own value.
+      - name: avg_unit_price
+        label: Menu Price
+      - name: avg_unit_cost
+        label: Food Cost
+      - name: avg_unit_margin
+        label: Retained Margin
+      # Induced up from line items.
+      - name: total_revenue
+        label: Revenue
+      - name: units_sold
+        label: Units Sold
+
+  - id: location
+    label: Location
+    description: A restaurant in the fleet
+    display_field: location_name
+    dimensions:
+      - name: location_id
+        label: Location ID
+      - name: location_name
+        label: Name
+      - name: region
+        label: Region
+      - name: city
+        label: City
+    measures:
+      - name: total_locations
+        label: Locations
+      # Induced up from checks.
+      - name: net_revenue
+        label: Net Revenue
+      - name: total_checks
+        label: Checks
+      - name: avg_check
+        label: Avg Check
+
+  - id: server
+    label: Server
+    description: A member of the service staff — tenure_band is the usable segment axis; server_id is a 360-value identifier the engine skips as high-cardinality
+    display_field: server_name
+    dimensions:
+      - name: tenure_band
+        label: Server tenure
+    measures:
+      - name: total_servers
+        label: Servers
+
+# Deliberately no `menu_category` or `region` node. Both read like entities but
+# no view owns either as a primary — they are dimensions on check_items and
+# locations respectively. Declaring them here would put nodes on the graph that
+# nothing can join to.

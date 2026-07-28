@@ -43,6 +43,12 @@ entities:
     keys:
       - month
       - department
+  # Payroll is the largest fixed cost feeding operating profit — link it to the
+  # monthly P&L period so it joins the graph instead of floating free.
+  - name: financials_month
+    type: foreign
+    description: Monthly P&L period this payroll snapshot belongs to
+    key: month
 
 dimensions:
   - name: month

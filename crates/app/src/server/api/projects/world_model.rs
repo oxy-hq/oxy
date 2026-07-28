@@ -1,0 +1,128 @@
+//! `/api/projects/{project_id}/semantic/world-model*` — world-model graph
+//! + instances for customer-app bundles.
+//!
+//! Customer-app-gated variants of the IDE's workspace-scoped
+//! `/semantic/world-model*` handlers. They enter through the customer-app
+//! gate and load the semantic layer from the compile boundary (via
+//! [`super::semantic_boundary`]) so they run on the stateless serve fleet.
+//! The graph-assembly and instance-listing cores are shared with the
+//! workspace handlers in [`crate::server::api::world_model_graph`] — only
+//! the layer/path acquisition differs.
+
+use axum::extract::{Path, Query};
+use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::response::sse::{KeepAlive, Sse};
+use axum::response::{IntoResponse, Json, Response};
+use entity::workspace_members::WorkspaceRole;
+use oxy::utils::create_sse_stream;
+use uuid::Uuid;
+
+use crate::server::api::projects::semantic_boundary::{
+    cache_lookup, cache_store, enter_semantic_boundary, err, err_with_code, load_layer,
+    wants_refresh,
+};
+use crate::server::api::world_model_graph::{
+    WmInstancesQuery, WmMeasureBreakdownQuery, build_world_model_response, instances_core,
+    measure_breakdown_core,
+};
+
+/// `GET .../world-model` — the entity/measure graph (nodes + promotion/FK
+/// edges), with the `.world-model.yml` display config applied.
+pub async fn get_world_model(
+    Path(project_id): Path<Uuid>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
+    // Gate before cache read so a cached hit can't bypass authorization.
+    let boundary = match enter_semantic_boundary(&headers, project_id).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    if let Some(hit) = cache_lookup(project_id, "wm-graph", "", wants_refresh(uri.query())) {
+        return hit;
+    }
+    let layer = match load_layer(boundary.scan.path_buf()).await {
+        Ok(l) => l,
+        Err(resp) => return resp,
+    };
+    let workspace_path = boundary
+        .proj_ctx
+        .workspace_manager()
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+    match build_world_model_response(&layer, project_id, &workspace_path).await {
+        Ok(resp) => cache_store(project_id, "wm-graph", "", &resp),
+        Err(message) => err_with_code(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            message,
+            "world_model_failed",
+        ),
+    }
+}
+
+/// `GET .../world-model/instances` — bounded, searchable listing of an
+/// entity's instances (primary key + display label).
+pub async fn get_world_model_instances(
+    Path(project_id): Path<Uuid>,
+    Query(q): Query<WmInstancesQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let boundary = match enter_semantic_boundary(&headers, project_id).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let layer = match load_layer(boundary.scan.path_buf()).await {
+        Ok(l) => l,
+        Err(resp) => return resp,
+    };
+    let workspace_path = boundary
+        .proj_ctx
+        .workspace_manager()
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+    match instances_core(
+        boundary.proj_ctx.workspace_manager(),
+        boundary.app.user.id,
+        WorkspaceRole::Viewer,
+        &layer,
+        project_id,
+        &workspace_path,
+        boundary.scan.path_buf(),
+        &q,
+    )
+    .await
+    {
+        Ok(resp) => Json(resp).into_response(),
+        Err((status, body)) => (status, body).into_response(),
+    }
+}
+
+/// `GET .../world-model/measure-breakdown` — SSE driver-tree decomposition of
+/// one instance's measure (the per-instance RCA view). Streams
+/// `init → value* → done`.
+pub async fn get_measure_breakdown(
+    Path(project_id): Path<Uuid>,
+    Query(q): Query<WmMeasureBreakdownQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let boundary = match enter_semantic_boundary(&headers, project_id).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let layer = match load_layer(boundary.scan.path_buf()).await {
+        Ok(l) => l,
+        Err(resp) => return resp,
+    };
+    // `measure_breakdown_core` moves the WorkspaceManager into the streaming
+    // task, so hand it an owned clone; `layer` / `boundary` may drop once the
+    // synchronous setup returns the channel.
+    let wm = boundary.proj_ctx.workspace_manager().clone();
+    match measure_breakdown_core(wm, boundary.app.user.id, WorkspaceRole::Viewer, &layer, q).await {
+        Ok(rx) => Sse::new(create_sse_stream(rx))
+            .keep_alive(KeepAlive::default())
+            .into_response(),
+        Err((status, body)) => err(status, body.message),
+    }
+}

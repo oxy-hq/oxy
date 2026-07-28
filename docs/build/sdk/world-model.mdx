@@ -2,71 +2,87 @@
 title: "World Model Interface"
 sidebarTitle: "World Model"
 tag: "Alpha"
-description: "Traverse, explain, size, and simulate your World Model as a graph of navigable nodes"
+description: "Traverse, explain, and size your World Model from a React app as a graph of navigable nodes"
 ---
 
-<Note>
-**Alpha.** The metric-tree analyses below (traverse, root-cause, opportunity,
-predict) are available today through the `MetricTreeClient`. The higher-level
-**node interface** — the `expand` / `drill` / `explain` / `size` / `simulate`
-paradigm, the interactive components, and **actions** — is a design preview and
-may change. Actions are not yet built.
-</Note>
-
 The [World Model](/guide/build/world-model) isn't just a set of numbers — it's a
-graph: metrics connected to the drivers that move them, the entities that produce
-them, and (soon) the actions that change them. The **World Model Interface**
-exposes that graph to your app so you can build experiences that let people
-*navigate* their business, not just read a dashboard.
+graph: metrics connected to the drivers that move them, the components they're
+built from, and (soon) the actions that change them. The `@oxy-hq/sdk`
+**World Model interface** exposes that graph to a
+[customer app](/guide/build/embed-extend/v0) so you can build experiences that
+let people *navigate* their business, not just read a dashboard.
+
+<Note>
+**Alpha.** The node interface below — `useWorldModel()` and the
+`expand` / `drivers` / `explain` / `size` / `drill` verbs — ships today and is
+backed by the metric-tree analyses. It is a design preview and may still change.
+`drill` is intentionally limited (see [below](#drill-into-a-segment)); action
+simulation is **not yet built** (see [Simulate an action](#simulate-an-action)).
+</Note>
 
 ## The node paradigm
 
-Everything in the World Model is a **node**, and every node speaks the same five
-verbs. Learn them once and they compose across the entire surface:
+Everything in the World Model is a **node**, and every node speaks the same
+verbs. Learn them once and they compose across the whole surface: render a node,
+let the user pick a verb, get more nodes back, recurse.
 
 | Verb | What it does | Returns |
 | --- | --- | --- |
-| **expand** | Reveal one hop of relationships — a metric's drivers and components. | more nodes |
-| **drill** | Narrow into a segment or entity instance (one store, one region). | a scoped node |
-| **explain** | Root-cause a period-over-period move: why it dropped or climbed. | a driver/segment breakdown |
-| **size** | Compare a node to its peers and size the gap. | ranked opportunities |
-| **simulate** <Tooltip tip="Alpha">alpha</Tooltip> | Pull a lever and watch the delta propagate through the drivers. | a projected delta |
-
-Render a node, let the user click a verb, get more nodes back, recurse. That's the
-whole interaction model — a metric card whose drivers expand into more cards,
-each of which can be drilled, explained, sized, or simulated.
+| `expand` | Reveal one hop of relationships — a metric's components and drivers. | more nodes |
+| `drivers` | Rank the declared drivers of a metric by influence. | a sensitivity list |
+| `explain` | Root-cause a period-over-period move: why it dropped or climbed. | a driver/segment breakdown |
+| `size` | Compare a node to its peers and size the gap. | ranked opportunities |
+| `drill` <Tooltip tip="Alpha">alpha</Tooltip> | Narrow into a segment or entity instance. | a scoped node |
 
 ## Get the interface
 
 A single hook — `useWorldModel` — returns the whole interface, scoped to the
-project. Everything else hangs off it: you grab a **node** and the node speaks the
-verbs.
+customer app's project. It must run inside an `OxyAppProvider`. Everything else
+hangs off it: grab a **node** with `metric(id)` and the node speaks the verbs.
 
 ```tsx
 import { useWorldModel } from "@oxy-hq/sdk";
 
-const world = useWorldModel();
+function Explorer() {
+  const world = useWorldModel();
 
-// The graph, rooted anywhere you like.
-const tree = await world.tree("orders.net_revenue");
-// tree.nodes: MetricNode[]  — id, label, measure, is_composite, expr
-// tree.edges: MetricEdge[]  — from, to, kind: "component" | "driver",
-//                             direction, strength, confidence, coefficient, form
+  // The graph, rooted anywhere you like.
+  const tree = await world.tree("orders.net_revenue");
+  // tree.nodes: MetricNode[]  — id, label, measure, is_composite, expr
+  // tree.edges: MetricEdge[]  — from, to, kind: "component" | "driver",
+  //                             direction, strength, confidence, form
 
-// Or focus a single node and expand it lazily — ideal for click-to-open UIs
-// where you don't want the whole tree up front.
-const revenue = world.metric("orders.net_revenue");
-// revenue.node       — the measure itself (label, expr, value)
-// revenue.expand()   → child nodes (components + drivers), fetched on demand
-// revenue.drivers    → driver edges, ranked by influence (sensitivity)
+  // Or focus a single node and carry it around — every verb is a method on it.
+  const revenue = world.metric("orders.net_revenue");
+  const node = await revenue.node(); // the measure itself (label, expr, is_composite)
+}
 ```
 
-`world.metric(id)` is the one object you carry around — every verb below is a
-method on it.
+`world.metric(id)` returns a **handle**. Each verb is an `async` method on the
+handle, so you can nest them into a click-to-open UI.
+
+## Expand into components and drivers
+
+`expand` fetches one hop of the tree on demand — the metric's components and
+drivers — returning each child as a `{ node, edge, handle }` you can render and
+recurse into.
+
+```tsx
+const revenue = world.metric("orders.net_revenue");
+
+for (const child of await revenue.expand()) {
+  console.log(child.node.label, child.edge.kind); // "Gross Revenue" "component"
+  // child.handle.expand()  → recurse into the child's own drivers
+}
+
+// The declared drivers, ranked by influence (sensitivity).
+const { drivers } = await revenue.drivers();
+for (const d of drivers) console.log(d.measure, d.direction, d.strength);
+```
 
 ## Explain a move
 
-**explain** decomposes a period-over-period change, recursively splitting the
+`explain` decomposes a period-over-period change, recursively splitting the
 metric by its components and dimensions until the move concentrates — so you can
 show *where* a number came from, not just that it changed.
 
@@ -79,14 +95,16 @@ const rca = await profit.explain({
   previous_period: ["2026-05-01", "2026-05-31"],
 });
 
-// rca.nodes              — the breakdown tree (each node: split, delta, root_fraction)
-// rca.driver_attribution — how much each driver contributed
-// rca.warnings           — Simpson's paradox, opposing offsets, non-additive splits
+// rca.target_delta        — the top-line change
+// rca.coverage            — fraction of the move explained
+// rca.nodes               — the breakdown tree (each: split, delta, root_fraction)
+// rca.driver_attribution  — how much each driver contributed
+// rca.warnings            — Simpson's paradox, opposing offsets, non-additive splits
 ```
 
 ## Size the opportunity
 
-**size** finds underperforming segments and quantifies the upside of closing the
+`size` finds underperforming segments and quantifies the upside of closing the
 gap to their peers — "match the best" across a dimension.
 
 ```tsx
@@ -98,28 +116,63 @@ const opp = await revenue.size({
 });
 
 for (const dim of opp.dimensions) {
-  console.log(dim.dimension, "+", dim.total_upside);      // e.g. "region + $840k"
+  console.log(dim.dimension, "+", dim.total_upside); // e.g. "region + 840000"
   for (const seg of dim.segments) {
     console.log(seg.segment, "gap", seg.gap, "upside", seg.upside);
   }
 }
 ```
 
-## Simulate an action <Tooltip tip="Alpha">alpha</Tooltip>
+## Drill into a segment
 
-This is the frontier. An **action** is a lever a human can pull — *hire*, *raise
-prices*, *open a store*. Actions live in a catalog and declare only the leaf
-measure they *directly* move; everything downstream is already described by the
-[metric tree's](/guide/build/world-model/metric-tree) drivers, so the SDK
-propagates the effect for you — carrying the nonlinearity in the drivers.
+`drill` narrows a handle to a `dimension = value` segment and returns a new,
+scoped handle. Structural verbs (`node`, `expand`, `drivers`) are
+scope-invariant and keep working on it.
 
 ```tsx
-// Actions applicable to a node (from the catalog's `applicable_actions` /
-// `influenced_by` pointers).
+const west = world.metric("orders.net_revenue").drill({ region: "west" });
+await west.expand();       // ✅ same structure, scoped handle
+await west.explain({ ... }); // ⛔ throws — see below
+```
+
+<Warning>
+**`explain` and `size` on a drilled handle throw.** The metric-tree backend
+cannot yet scope those analyses to a segment, so rather than silently return
+population numbers for a scoped question, a drilled handle throws a
+`WorldModelScopeUnsupportedError` from `explain`/`size`. Catch it and fall back
+to the un-drilled node, or gate the buttons on `handle.scope`:
+
+```tsx
+import { WorldModelScopeUnsupportedError } from "@oxy-hq/sdk";
+
+try {
+  await west.size({ time_dimension: "orders.order_date", period });
+} catch (e) {
+  if (e instanceof WorldModelScopeUnsupportedError) {
+    // scoped sizing isn't available yet — size the population node instead
+  }
+}
+```
+</Warning>
+
+## Simulate an action
+
+<Warning>
+**Not built.** Actions are the frontier of the World Model and have no SDK
+surface yet — the sketch below is the proposed shape, not a working API. Nothing
+in this section is callable today.
+</Warning>
+
+An **action** is a lever a human can pull — *hire*, *raise prices*, *open a
+store*. Actions would live in a catalog and declare only the leaf measure they
+*directly* move; everything downstream is already described by the
+[metric tree's](/guide/build/world-model/metric-tree) drivers, so the SDK can
+propagate the effect for you — carrying the nonlinearity in the drivers.
+
+```tsx
+// Proposed — not implemented.
 const sales = world.metric("stores.net_sales");
 
-// Simulate one lever at a specific entity instance, and read the projected
-// delta after it flows through the drivers.
 const result = await sales.actions.hire.simulate({
   at: { store_id: "san_mateo" },
   magnitude: 1,          // hire 1 server
@@ -133,8 +186,8 @@ const result = await sales.actions.hire.simulate({
 ```
 
 Because the nonlinearity lives in the driver, not the action, the *same* hire
-produces a different lift depending on where each store sits on its curve —
-which is exactly what makes **size** + **simulate** compose into a ranked
+would produce a different lift depending on where each store sits on its curve —
+which is what makes **size** + **simulate** compose into a ranked
 recommendation:
 
 > Hire 2 servers at San Mateo → +0.14 CSAT (4.62 → 4.76) → **+$28k/mo**.
@@ -143,38 +196,44 @@ recommendation:
 The knots of a piecewise driver are inspectable metadata, so the interface can
 *say why* the returns diminish rather than emit an opaque number.
 
-## Make everything clickable
+## The entity-graph hook
 
-The verbs above are designed to nest, so an interactive component only needs one
-callback: hand it the node the user clicked and let them choose what to do next.
+`useWorldModel()` now names the **node interface** above. The hook that returns
+the raw semantic-layer entity graph — entities, their measures/dimensions, and
+how measures promote up the hierarchy — is now `useWorldModelGraph()`.
 
 ```tsx
-import { MetricTreeView } from "@oxy-hq/sdk";
+import { useWorldModelGraph } from "@oxy-hq/sdk";
 
-<MetricTreeView
-  root="orders.net_revenue"
-  onSelect={(node) => {
-    // node.expand()  → drivers as child cards
-    // node.drill({ region: "west" })  → the same metric, scoped
-    // node.explain({ period })        → inline root cause
-    // node.size({ period })           → peer comparison
-    setFocus(node);
-  }}
-/>
+const { data, loading, error } = useWorldModelGraph();
+// data.entities, data.edges  (the .world-model.yml display graph)
 ```
 
-A dashboard built this way starts at a single top-line metric and lets the user
-walk the whole business from it — expand into drivers, drill into a region,
-explain a drop, size the gap, and (soon) simulate the fix — every object a live
-handle rather than a static number.
+## What it's built on
 
-## Available today
+The node interface is a thin composition layer over the metric-tree analyses
+that already ship — it adds no new backend. If you want the underlying calls
+directly:
 
-The analyses this interface is built on ship now via `MetricTreeClient`
-(`getTree`, `getSensitivity`, `predict`, `explain`, `findOpportunities`) — see
-[Hooks & components](/guide/build/sdk/hooks#metric-tree-analyses). The node
-paradigm, interactive components, and actions on this page are the proposed
-shape of the higher-level interface.
+- **React hooks** — `useMetricTree`, `useSensitivity`, `usePredict`,
+  `useExplain`, `useOpportunity`, `useTimeDimensions` (same
+  `/semantic/metric-tree*` endpoints, request/response shapes matching the
+  server verbatim).
+- **Node client** — `MetricTreeClient` (`getTree`, `getSensitivity`, `predict`,
+  `explain`, `findOpportunities`) for API-key / server-side use — see
+  [Hooks & components](/guide/build/sdk/hooks#metric-tree-analyses).
+
+These are the same analyses that power the IDE's
+[opportunity sizing](/guide/build/world-model/opportunity-sizing) and metric
+tree.
+
+## Try it
+
+A runnable example lives in the SDK repo at
+`sdk/typescript/examples/world-model-demo.tsx` — an interactive explorer that
+starts at one top-line metric and walks the whole business from it (expand into
+drivers, explain a drop, size a gap), every object a live handle rather than a
+static number. Copy it into a bundle scaffolded with `pnpm dlx create-oxy-app`.
 
 ## Next steps
 
@@ -182,7 +241,13 @@ shape of the higher-level interface.
   <Card title="The Metric Tree" icon="diagram-project" href="/guide/build/world-model/metric-tree">
     Component vs. driver edges, forms, and promotion
   </Card>
+  <Card title="Opportunity sizing" icon="arrow-trend-up" href="/guide/build/world-model/opportunity-sizing">
+    How the graph sizes a gap and decomposes it into drivers
+  </Card>
   <Card title="Hooks & components" icon="code" href="/guide/build/sdk/hooks">
     The stable SDK surface `MetricTreeClient` sits in
+  </Card>
+  <Card title="World Model" icon="globe" href="/guide/build/world-model">
+    The semantic model, metric tree, and entity graph behind it
   </Card>
 </CardGroup>

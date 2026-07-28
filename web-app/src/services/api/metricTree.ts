@@ -1,6 +1,8 @@
 import { AxiosError } from "axios";
 import type {
   DistributionRequest,
+  DrillRequest,
+  DrillResponse,
   ExplainRequest,
   ExplainResult,
   MetricTree,
@@ -135,6 +137,19 @@ export class MetricTreeService {
         `/${projectId}/semantic/metric-tree/opportunity`,
         request,
         { params: branchName ? { branch: branchName } : {} }
+      );
+      return response.data;
+    } catch (error) {
+      rethrow(error);
+    }
+  }
+
+  /** Recursive opportunity decomposition for a measure over a period. */
+  static async drill(projectId: string, request: DrillRequest): Promise<DrillResponse> {
+    try {
+      const response = await apiClient.post<DrillResponse>(
+        `/${projectId}/semantic/metric-tree/drill`,
+        request
       );
       return response.data;
     } catch (error) {

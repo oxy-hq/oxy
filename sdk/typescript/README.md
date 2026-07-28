@@ -88,11 +88,61 @@ couldn't already read.
 | `<OxyAnswer … />` | Renders markdown + SQL artifacts + thread link. URL schemes are allowlisted (rejects `javascript:` etc.). |
 | `OxyApiError` | Structured `{ message, code? }` server-error envelope. |
 
-### Metric Tree
+### World Model & analysis hooks
 
-Additional exports for programmatic metric-tree analyses (`AnomaliesClient`,
-`MetricTreeClient` and all related types) are available from the package root
-— see [metricTree.ts](src/metricTree.ts) and [anomalies.ts](src/anomalies.ts).
+The same airlayer analyses the IDE's **World Model** and **Metric Tree** run,
+exposed as hooks so a bundle can do RCA, opportunity sizing, and driver
+exploration itself. Each fetches when enabled and its input is present; pass
+`null` for a request/id to keep a hook idle until the user makes a selection.
+
+| Export | What it does |
+| --- | --- |
+| `useWorldModel()` | The entity/measure graph — entities, their measures, and how measures promote across the hierarchy (edges). |
+| `useWorldModelInstances(entityId, { search?, limit? })` | Searchable listing of an entity's instances (primary key + display label). |
+| `useMetricTree({ root? })` | The metric tree (measures + component/driver edges), or the subtree at `root`. |
+| `useSensitivity(measureId)` | Ranked **drivers** of a measure — "what moves this?" |
+| `usePredict(changes)` | **What-if**: propagate hypothetical `(measure, delta)` changes upward (pure tree walk, no warehouse). |
+| `useExplain(request)` | **RCA**: period-over-period root-cause decomposition. |
+| `useOpportunity(request)` | Segment **opportunity sizing** — addressable upside vs a benchmark peer. |
+| `useDistribution(request)` | Single-period distribution against an auto-derived prior baseline. |
+| `useTimeDimensions()` | Valid time dimensions per view — the period axis for the ops above. |
+| `useMeasureBreakdown(entityId, key, measure)` | Per-instance **driver tree** (SSE) — node values fill in as they resolve. |
+
+```tsx
+import { OxyAppProvider, useExplain, useOpportunity } from "@oxy-hq/sdk";
+
+function RootCause() {
+  // Pass `null` instead of the request object to defer until the user picks a period.
+  const { data, loading, error } = useExplain({
+    target: "financials.operating_profit",
+    time_dimension: "financials.month",
+    current_period: ["2025-09-01", "2025-09-30"],
+    previous_period: ["2025-08-01", "2025-08-31"]
+  });
+  if (loading) return <p>Explaining…</p>;
+  if (error) return <p>{error.message}</p>;
+  return <p>Δ {data?.target_delta} — {((data?.coverage ?? 0) * 100).toFixed(0)}% explained</p>;
+}
+
+function Upside() {
+  const { data } = useOpportunity({
+    target: "orders.net_revenue",
+    time_dimension: "orders.order_date",
+    period: ["2025-04-01", "2025-06-30"]
+  });
+  return <>{data?.dimensions.map((d) => <p key={d.dimension}>{d.dimension}: +{d.total_upside}</p>)}</>;
+}
+```
+
+A fuller worked example (graph + opportunity + RCA + streaming driver tree) is
+in [examples/world-model-analysis.tsx](examples/world-model-analysis.tsx).
+
+### Metric Tree (client-class)
+
+For non-React / API-key callers, the programmatic `MetricTreeClient` and
+`AnomaliesClient` (and all related types) are available from the package root
+— see [metricTree.ts](src/metricTree.ts), [anomalies.ts](src/anomalies.ts), and
+[examples/metric-tree.ts](examples/metric-tree.ts).
 
 Hooks fail loudly if called outside `<OxyAppProvider>`. The default fetcher
 sends `credentials: "include"` so same-origin (served-by-oxy) calls carry the

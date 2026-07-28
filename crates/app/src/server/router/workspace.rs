@@ -175,6 +175,10 @@ pub(super) fn build_workspace_routes(
             post(metric_tree::post_opportunity),
         )
         .route(
+            "/semantic/metric-tree/drill",
+            post(metric_tree::post_opportunity_drill),
+        )
+        .route(
             "/semantic/metric-tree/time-dimensions",
             get(metric_tree::get_time_dimensions),
         )

@@ -143,7 +143,59 @@ tracing = { version = "0.1.44" }
 uuid = { version = "1.24", features = ["serde", "v4"] }
 aes-gcm = "0.10.3"
 aho-corasick = "1.1"
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "474f461a609c45554301a84aa37ffff8a68bb32c" }
+# Pinned to a main SHA carrying the whole opportunity-sizing line of work
+# (airlayer PRs #78–#81 plus the composite-rate-basis follow-up, all merged).
+# Together, these are what make the world-model Opportunities panel say
+# something true:
+#
+#  - Sum-like measures are sized on a per-unit rate via a declared count
+#    denominator (refusing outright when there isn't one), so a segment is never
+#    flagged as headroom merely for being small.
+#  - Segment discovery drops surrogate-id dimensions and follows foreign entities
+#    one hop, so the scan sees the joined view's real dimensions —
+#    stores.store_name / .region — not just the fact view's FKs.
+#  - `opportunity` takes a caller-supplied `scope` filter set, so the instance
+#    panel sizes "within this instance" instead of the whole population.
+#  - Each segment is gated on evidence: a Welch test on the rate gap, with a bar
+#    that answers for every comparison the scan makes (~100 once foreign entities
+#    are followed) rather than the segments of the dimension in hand, and that
+#    rises to offset the benchmark being the selected best of those same
+#    segments. A scan of ~20 dimensions can no longer mint a "lever" just by
+#    testing enough of them. Dimensions can also declare `segmentable: false`, so
+#    non-levers (gender, address lines, measure-backing numerics) are never
+#    ranked as upside at all.
+#
+# The gate is opt-in via `augment_layer_for_opportunity`, which MUST be called
+# after building the metric tree and before building the engine — see
+# server/api/metric_tree.rs, where the ordering is load-bearing and commented.
+# Without it, sizing silently reverts to reporting gaps it cannot demonstrate.
+#
+#  - Composites referencing a single foreign view isolate into per-view CTEs, so
+#    a finer-grain numerator can pair with a coarser-grain count in one query —
+#    the per-unit rate the opportunity drill decomposes. A `type: custom`
+#    composite root is sized on the same rate basis as its component children,
+#    so concentration reports each child's GAP share, not its SIZE share.
+#  - The evidence gate handles a filtered-sum numerator (a per-parent-unit rate),
+#    and its significance test can be asked to spend a smaller alpha budget than
+#    5% — both needed once the drill runs multi-level scans. A segment the gate
+#    could not evaluate is reported as such (`gated: false`).
+#  - opportunity_drill: recursively decomposes the top opportunity() gap through
+#    component edges and dimension partitions, inheriting the root's benchmark
+#    population unchanged at every level and gating each dimension split on
+#    significance at a Šidák-composed per-level alpha budget. It skips
+#    tautological splits, collapses aliased dimensions before counting the
+#    comparison family, gates for its whole candidate family, and applies
+#    hierarchy-aware pruning.
+#  - The drill installs its synthetic per-value measures through a shared
+#    Arc<RwLock<SemanticLayer>> (SharedLayer) with scoped locks, so a real SQL
+#    executor holding the same handle can compile them mid-recursion.
+#  - `augment_layer_for_opportunity` adds dispersion support for eligible
+#    composites (flattened STDDEV_SAMP), and `supports_rate_basis(layer, target)`
+#    is the single authoritative answer to "will the drill size this target on a
+#    per-unit rate" — replacing the two places oxy used to re-derive that
+#    predicate itself and get it wrong. The same answer is serialized per node as
+#    `MetricNode.drillable` so the UI can gate on it directly.
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "06ba5e56e8e2000b054c970745239873f65ec3c5" }
 # Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
 # Holt-Winters family (with auto model selection); augurs-mstl handles
 # multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.

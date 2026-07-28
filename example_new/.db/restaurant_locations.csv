@@ -1,0 +1,25 @@
+location_id,location_name,region,city
+1,Downtown Loop,midwest,Chicago
+2,River North,midwest,Chicago
+3,Wicker Park,midwest,Chicago
+4,Cherry Creek,midwest,Denver
+5,Country Club Plaza,midwest,Kansas City
+6,Mission District,west,San Francisco
+7,Hayes Valley,west,San Francisco
+8,Santa Monica,west,Los Angeles
+9,Silver Lake,west,Los Angeles
+10,Pearl District,west,Portland
+11,Capitol Hill,west,Seattle
+12,Scottsdale Quarter,west,Phoenix
+13,Back Bay,northeast,Boston
+14,Seaport,northeast,Boston
+15,West Village,northeast,New York
+16,Brooklyn Heights,northeast,New York
+17,Tribeca,northeast,New York
+18,Rittenhouse Square,northeast,Philadelphia
+19,Georgetown,northeast,Washington
+20,Buckhead,south,Atlanta
+21,South Congress,south,Austin
+22,Deep Ellum,south,Dallas
+23,Coconut Grove,south,Miami
+24,Music Row,south,Nashville

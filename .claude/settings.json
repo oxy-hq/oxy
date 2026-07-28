@@ -76,5 +76,8 @@
     "remember@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
     "context-mode@context-mode": true
+  },
+  "worktree": {
+    "bgIsolation": "none"
   }
 }

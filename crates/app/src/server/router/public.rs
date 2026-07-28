@@ -99,6 +99,57 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/projects/{project_id}/semantic-query",
             post(projects::semantic_query::run_semantic_query),
         )
+        // Metric-tree analysis ops for bundles — drivers / what-if / RCA /
+        // opportunity sizing. Same airlayer analyses as the IDE's workspace
+        // `/semantic/metric-tree*` routes, but gated for customer apps and
+        // loading the layer from the compile boundary (stateless-fleet safe).
+        // SDK exposes via `useMetricTree` / `useSensitivity` / `usePredict` /
+        // `useExplain` / `useOpportunity` / `useDistribution` /
+        // `useTimeDimensions`.
+        .route(
+            "/projects/{project_id}/semantic/metric-tree",
+            get(projects::metric_tree::get_metric_tree),
+        )
+        .route(
+            "/projects/{project_id}/semantic/metric-tree/{measure_id}/sensitivity",
+            get(projects::metric_tree::get_sensitivity),
+        )
+        .route(
+            "/projects/{project_id}/semantic/metric-tree/predict",
+            post(projects::metric_tree::post_predict),
+        )
+        .route(
+            "/projects/{project_id}/semantic/metric-tree/explain",
+            post(projects::metric_tree::post_explain),
+        )
+        .route(
+            "/projects/{project_id}/semantic/metric-tree/opportunity",
+            post(projects::metric_tree::post_opportunity),
+        )
+        .route(
+            "/projects/{project_id}/semantic/metric-tree/time-dimensions",
+            get(projects::metric_tree::get_time_dimensions),
+        )
+        .route(
+            "/projects/{project_id}/semantic/metric-tree/distribution",
+            post(projects::metric_tree::post_distribution),
+        )
+        // World-model graph + instances + per-instance driver-tree for
+        // bundles — the entity/measure map the IDE's World Model surface
+        // renders. SDK exposes via `useWorldModel` / `useWorldModelInstances`
+        // / `useMeasureBreakdown`.
+        .route(
+            "/projects/{project_id}/semantic/world-model",
+            get(projects::world_model::get_world_model),
+        )
+        .route(
+            "/projects/{project_id}/semantic/world-model/instances",
+            get(projects::world_model::get_world_model_instances),
+        )
+        .route(
+            "/projects/{project_id}/semantic/world-model/measure-breakdown",
+            get(projects::world_model::get_measure_breakdown),
+        )
         // Shell bootstrap for `@oxy-hq/sdk/shell` chrome inside bundles:
         // workspace/org identity + published-apps list + host-aware
         // product links. Pure Postgres reads behind the same gate chain →

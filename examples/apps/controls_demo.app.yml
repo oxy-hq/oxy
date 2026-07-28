@@ -179,7 +179,7 @@ display:
     name: start_date
     control_type: date
     label: From Date
-    default: "2024-01-01"
+    default: "2024-07-17"
 
   - type: control
     name: holidays_only

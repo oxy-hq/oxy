@@ -607,6 +607,44 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/projects/{project_id}/procedures/{procedure_id}/runs",
         role: RouteRole::IdeOnly,
     },
+    // Customer-app metric-tree + world-model endpoints that EXECUTE warehouse
+    // SQL. Each builds a WorkspaceManager via `build_project_context`
+    // (customer-app boundary), whose config resolves through the FS fallback
+    // (`load_config_with_fallback` → empty `databases: []` when there's no
+    // working copy), then runs SQL over `OxyProjectContext::build_connector_for`
+    // (`OxyMetricTreeRunner::{run_explain,run_opportunity}` /
+    // world-model `build_connector` → `run_with_connector`). On a serve replica
+    // the empty database list makes `resolve_database` error before the query —
+    // same failure mode as `/query` and `/semantic-query` above, so pin them to
+    // the ide. The PURE siblings (`/metric-tree`, `/…/sensitivity`,
+    // `/metric-tree/predict`, `/metric-tree/time-dimensions`, `/world-model`)
+    // only read the materialised compile-boundary layer and stay FleetOk.
+    // Pinned by `customer_app_metric_tree_query_routes_are_ide_only`.
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/projects/{project_id}/semantic/metric-tree/explain",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/projects/{project_id}/semantic/metric-tree/opportunity",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/projects/{project_id}/semantic/metric-tree/distribution",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/projects/{project_id}/semantic/world-model/measure-breakdown",
+        role: RouteRole::IdeOnly,
+    },
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/projects/{project_id}/semantic/world-model/instances",
+        role: RouteRole::IdeOnly,
+    },
     // ── Customer-Apps FUNCTION invocation (`POST /customer-apps/<org>/<slug>/fn/<name>`) ──
     // Oxy Functions execute IN-PROCESS on the isolate runtime, and their data
     // plane builds a WorkspaceManager from the working copy
@@ -1192,6 +1230,20 @@ mod tests {
     }
 
     #[test]
+    fn metric_tree_drill_is_fleet_ok() {
+        // The drill loads the semantic layer from the workspace FS scan path
+        // (`load_layer` -> `load_layer_sync` -> `semantics_scan_path()`), the
+        // same read the `/semantic` execute route does — and `/opportunity`
+        // goes through that same helper. No .git / state dir, so it stays
+        // FleetOk and must serve from any replica.
+        let ws = "d9830be4-c6a4";
+        assert_eq!(
+            classify("POST", &format!("/api/{ws}/semantic/metric-tree/drill")),
+            RouteRole::FleetOk
+        );
+    }
+
+    #[test]
     fn runtime_routes_are_ide_only() {
         // The DuckDB / local-execution subset isolated by
         // `is_workspace_runtime_route`. Every one must (a) classify as runtime
@@ -1680,6 +1732,49 @@ mod tests {
         }
     }
 
+    /// Customer-app metric-tree / world-model endpoints split by whether they
+    /// EXECUTE warehouse SQL. The SQL-executing ones build a connector from the
+    /// customer-app WorkspaceManager whose config resolves via the FS fallback
+    /// (empty `databases: []` on a serve replica with no working copy), so they
+    /// must be IdeOnly — same posture as `/query` / `/semantic-query`. The pure
+    /// ops only read the materialised compile-boundary layer and stay FleetOk.
+    #[test]
+    fn customer_app_metric_tree_query_routes_are_ide_only() {
+        let pid = "d9830be4-c6a4";
+        let sem = format!("/api/projects/{pid}/semantic");
+        let ide_only = [
+            ("POST", format!("{sem}/metric-tree/explain")),
+            ("POST", format!("{sem}/metric-tree/opportunity")),
+            ("POST", format!("{sem}/metric-tree/distribution")),
+            ("GET", format!("{sem}/world-model/measure-breakdown")),
+            ("GET", format!("{sem}/world-model/instances")),
+        ];
+        for (method, path) in &ide_only {
+            assert_eq!(
+                classify(method, path),
+                RouteRole::IdeOnly,
+                "SQL-executing customer-app route {method} {path} must be IdeOnly \
+                 (builds a connector from the FS-fallback config, empty on serve)"
+            );
+        }
+        // Pure ops read only the materialised layer → any replica can serve them.
+        let fleet_ok = [
+            ("GET", format!("{sem}/metric-tree")),
+            ("GET", format!("{sem}/metric-tree/revenue/sensitivity")),
+            ("POST", format!("{sem}/metric-tree/predict")),
+            ("GET", format!("{sem}/metric-tree/time-dimensions")),
+            ("GET", format!("{sem}/world-model")),
+        ];
+        for (method, path) in &fleet_ok {
+            assert_eq!(
+                classify(method, path),
+                RouteRole::FleetOk,
+                "pure customer-app route {method} {path} must stay FleetOk \
+                 (reads only the materialised compile-boundary layer)"
+            );
+        }
+    }
+
     /// Oxy Functions execute in-process from the working copy
     /// (`build_project_context` + `ctx.semantic` FS reads), so their invocation
     /// route must be IdeOnly — a serve replica forwards it to the ide. Static
@@ -1963,6 +2058,7 @@ mod tests {
         "/semantic/metric-tree/predict",
         "/semantic/metric-tree/explain",
         "/semantic/metric-tree/opportunity",
+        "/semantic/metric-tree/drill",
         "/semantic/metric-tree/time-dimensions",
         "/semantic/metric-tree/distribution",
         // NB: `/semantic/world-model*` are NOT here — the world_model_graph

@@ -19,6 +19,7 @@ export * from "./custom-app";
 // Metric-tree analyses
 export type {
   DimensionOpportunity,
+  DistributionRequest,
   DriverAttribution,
   DriverConfidence,
   DriverDirection,
@@ -43,6 +44,25 @@ export type {
   SensitivityDriver,
   SensitivityResult,
   SkippedDimension,
-  SplitKind
+  SplitKind,
+  TimeDimensionsResponse
 } from "./metricTree";
 export { MetricTreeClient } from "./metricTree";
+// World-model graph + instances + driver-tree
+export type {
+  AdditivityClass,
+  WmBreakdownEdge,
+  WmBreakdownNode,
+  WmEntityCount,
+  WmFilterCountsResponse,
+  WmInstance,
+  WmInstancesResponse,
+  WmMeasureBreakdown,
+  WmMeasureBreakdownEvent,
+  WorldModel,
+  WorldModelDimension,
+  WorldModelEdge,
+  WorldModelEntity,
+  WorldModelInducedMeasure,
+  WorldModelMeasure
+} from "./worldModel";

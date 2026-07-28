@@ -23,6 +23,8 @@ use crate::server::api::middlewares::workspace_context::{
     WorkspaceManagerExtractor,
 };
 use crate::server::api::semantic::{ErrorResponse, WorkspacePath};
+use entity::workspace_members::WorkspaceRole;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::utils::create_sse_stream;
 
 use super::query::*;
@@ -49,171 +51,195 @@ pub async fn get_world_model(
         )
     })?;
 
-    let promotions = Promotions::build(&layer.views).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: format!("Failed to build promotion closure: {e}"),
-            }),
-        )
-    })?;
+    let workspace_path = workspace_manager.config_manager.workspace_path();
+    build_world_model_response(&layer, layer_cache.workspace_id, workspace_path)
+        .await
+        .map(extract::Json)
+        .map_err(|message| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                extract::Json(ErrorResponse { message }),
+            )
+        })
+}
 
-    // Metric-tree component edges tell us which measures decompose: a measure
-    // `view.name` has a breakdown when it is the target (`to`) of a component
-    // edge. Built once and reused for every measure's `has_breakdown` flag.
-    let breakdownable: std::collections::HashSet<String> = {
-        use airlayer::engine::metric_tree::EdgeKind;
-        let tree = oxy_semantic::build_metric_tree(&layer);
-        tree.edges
-            .iter()
-            .filter(|e| e.kind == EdgeKind::Component)
-            .map(|e| e.to.clone())
-            .collect()
-    };
+/// The set of fully-qualified measure ids (`view.measure`) that decompose
+/// into a metric-tree driver breakdown — a measure has one when it is the
+/// target (`to`) of a component edge. Drives each measure's `has_breakdown`.
+fn breakdownable_measures(layer: &airlayer::SemanticLayer) -> std::collections::HashSet<String> {
+    use airlayer::engine::metric_tree::EdgeKind;
+    let tree = oxy_semantic::build_metric_tree(layer);
+    tree.edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Component)
+        .map(|e| e.to.clone())
+        .collect()
+}
 
-    let mut entities: Vec<WmEntity> = Vec::new();
-    let mut edges: Vec<WmEdge> = Vec::new();
+/// Build one entity node (and push its promotion / FK edges) for `view`'s
+/// primary entity. Returns `None` for a view with no primary entity.
+fn build_entity_node(
+    view: &airlayer::schema::models::View,
+    layer: &airlayer::SemanticLayer,
+    promotions: &Promotions,
+    breakdownable: &std::collections::HashSet<String>,
+    edges: &mut Vec<WmEdge>,
+) -> Option<WmEntity> {
+    let primary = view
+        .entities
+        .iter()
+        .find(|e| e.entity_type == EntityType::Primary)?;
+    let entity_name = &primary.name;
+    let depth = promotions.ancestry(entity_name).len();
 
-    for view in &layer.views {
-        let Some(primary) = view
-            .entities
-            .iter()
-            .find(|e| e.entity_type == EntityType::Primary)
-        else {
-            continue;
-        };
+    let dimensions: Vec<WmDimension> = view
+        .dimensions
+        .iter()
+        .map(|d| WmDimension {
+            name: d.name.clone(),
+            dim_type: format!("{:?}", d.dimension_type).to_lowercase(),
+            label: None,
+            description: d.description.clone(),
+        })
+        .collect();
 
-        let entity_name = &primary.name;
-        let depth = promotions.ancestry(entity_name).len();
-
-        let dimensions: Vec<WmDimension> = view
-            .dimensions
-            .iter()
-            .map(|d| WmDimension {
-                name: d.name.clone(),
-                dim_type: format!("{:?}", d.dimension_type).to_lowercase(),
-                label: None,
-                description: d.description.clone(),
-            })
-            .collect();
-
-        let own_measures: Vec<WmMeasure> = view
-            .measures
-            .as_ref()
-            .map(|ms| {
-                ms.iter()
-                    .filter(|m| !m.name.starts_with('_'))
-                    .map(|m| WmMeasure {
-                        name: m.name.clone(),
-                        measure_type: m.measure_type.clone(),
-                        additivity: m.measure_type.additivity_class(),
-                        label: None,
-                        description: m.description.clone(),
-                        expr: m.expr.clone(),
-                        has_breakdown: breakdownable.contains(&format!("{}.{}", view.name, m.name)),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let induced_measures: Vec<WmInducedMeasure> = promotions
-            .induced_for_view(&view.name)
-            .into_iter()
-            .filter(|im| !im.source_measure.starts_with('_'))
-            .map(|im| {
-                let source = layer
-                    .views
-                    .iter()
-                    .find(|v| v.name == im.source_view)
-                    .and_then(|v| v.measures.as_ref())
-                    .and_then(|ms| ms.iter().find(|m| m.name == im.source_measure));
-                WmInducedMeasure {
-                    name: im.source_measure.clone(),
-                    measure_type: source
-                        .map(|m| m.measure_type.clone())
-                        .unwrap_or(MeasureType::Custom),
-                    additivity: im.additivity,
+    let own_measures: Vec<WmMeasure> = view
+        .measures
+        .as_ref()
+        .map(|ms| {
+            ms.iter()
+                .filter(|m| !m.name.starts_with('_'))
+                .map(|m| WmMeasure {
+                    name: m.name.clone(),
+                    measure_type: m.measure_type.clone(),
+                    additivity: m.measure_type.additivity_class(),
                     label: None,
-                    description: source.and_then(|m| m.description.clone()),
-                    expr: source.and_then(|m| m.expr.clone()),
-                    promoted_from: im.source_view.clone(),
-                    path: im.path.clone(),
-                }
-            })
-            .collect();
+                    description: m.description.clone(),
+                    expr: m.expr.clone(),
+                    has_breakdown: breakdownable.contains(&format!("{}.{}", view.name, m.name)),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
-        if let Some(parent) = promotions.parent_of(entity_name) {
-            edges.push(WmEdge {
-                from: entity_name.clone(),
-                to: parent.to_string(),
-                functional: true,
-            });
-        }
-
-        // FK cross-reference edges: Foreign entity declarations signal a join
-        // relationship without a promotion hierarchy. Emit dashed edges so the
-        // graph shows these structural cross-links alongside solid parent edges.
-        for foreign in view
-            .entities
-            .iter()
-            .filter(|e| e.entity_type == EntityType::Foreign)
-        {
-            let fk_target = &foreign.name;
-            // Skip if already covered by the parent edge (avoids parallel edges).
-            if promotions.parent_of(entity_name) == Some(fk_target.as_str()) {
-                continue;
+    let induced_measures: Vec<WmInducedMeasure> = promotions
+        .induced_for_view(&view.name)
+        .into_iter()
+        .filter(|im| !im.source_measure.starts_with('_'))
+        .map(|im| {
+            let source = layer
+                .views
+                .iter()
+                .find(|v| v.name == im.source_view)
+                .and_then(|v| v.measures.as_ref())
+                .and_then(|ms| ms.iter().find(|m| m.name == im.source_measure));
+            WmInducedMeasure {
+                name: im.source_measure.clone(),
+                measure_type: source
+                    .map(|m| m.measure_type.clone())
+                    .unwrap_or(MeasureType::Custom),
+                additivity: im.additivity,
+                label: None,
+                description: source.and_then(|m| m.description.clone()),
+                expr: source.and_then(|m| m.expr.clone()),
+                promoted_from: im.source_view.clone(),
+                path: im.path.clone(),
             }
-            // Only draw an edge if the target is also a primary entity somewhere
-            // in the layer (otherwise there's no node to connect to).
-            let target_exists = layer.views.iter().any(|v| {
-                v.entities
-                    .iter()
-                    .any(|e| e.entity_type == EntityType::Primary && e.name == *fk_target)
-            });
-            if target_exists {
-                edges.push(WmEdge {
-                    from: entity_name.clone(),
-                    to: fk_target.clone(),
-                    functional: false,
-                });
-            }
-        }
+        })
+        .collect();
 
-        entities.push(WmEntity {
-            id: entity_name.clone(),
-            label: entity_name.clone(),
-            view: view.name.clone(),
-            description: view.description.clone(),
-            depth,
-            display_field: None,
-            dimensions,
-            own_measures,
-            induced_measures,
+    if let Some(parent) = promotions.parent_of(entity_name) {
+        edges.push(WmEdge {
+            from: entity_name.clone(),
+            to: parent.to_string(),
+            functional: true,
         });
     }
 
-    // Apply .world-model.yml display config if present (filter + label overrides).
-    // Compile boundary first (serve replicas have no working copy), FS fallback.
-    let workspace_path = workspace_manager.config_manager.workspace_path();
-    match crate::server::api::world_model_config::WorldModelConfig::resolve(
-        layer_cache.workspace_id,
-        workspace_path,
-    )
-    .await
+    // FK cross-reference edges: Foreign entity declarations signal a join
+    // relationship without a promotion hierarchy. Emit dashed edges so the
+    // graph shows these structural cross-links alongside solid parent edges.
+    for foreign in view
+        .entities
+        .iter()
+        .filter(|e| e.entity_type == EntityType::Foreign)
     {
-        Ok(Some(cfg)) => apply_world_model_config(&mut entities, &mut edges, &cfg),
-        Ok(None) => {}
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                extract::Json(ErrorResponse { message: e }),
-            ));
+        let fk_target = &foreign.name;
+        // Skip if already covered by the parent edge (avoids parallel edges).
+        if promotions.parent_of(entity_name) == Some(fk_target.as_str()) {
+            continue;
+        }
+        // Only draw an edge if the target is also a primary entity somewhere
+        // in the layer (otherwise there's no node to connect to).
+        let target_exists = layer.views.iter().any(|v| {
+            v.entities
+                .iter()
+                .any(|e| e.entity_type == EntityType::Primary && e.name == *fk_target)
+        });
+        if target_exists {
+            edges.push(WmEdge {
+                from: entity_name.clone(),
+                to: fk_target.clone(),
+                functional: false,
+            });
         }
     }
 
-    entities.sort_by_key(|e| e.depth);
+    Some(WmEntity {
+        id: entity_name.clone(),
+        label: entity_name.clone(),
+        view: view.name.clone(),
+        description: view.description.clone(),
+        depth,
+        display_field: None,
+        dimensions,
+        own_measures,
+        induced_measures,
+    })
+}
 
-    Ok(extract::Json(WorldModelResponse { entities, edges }))
+/// Assemble the world-model graph (entity nodes + promotion/FK edges) from a
+/// parsed semantic layer, apply the `.world-model.yml` display config, and
+/// sort by depth.
+///
+/// Shared by the workspace-scoped [`get_world_model`] handler and the
+/// customer-app gate handler
+/// ([`crate::server::api::projects::world_model`]) — they differ only in how
+/// the layer and workspace path are obtained (FS scan-path cache vs. the
+/// compile-boundary materialised tempdir).
+pub(crate) async fn build_world_model_response(
+    layer: &airlayer::SemanticLayer,
+    workspace_id: uuid::Uuid,
+    workspace_path: &std::path::Path,
+) -> Result<WorldModelResponse, String> {
+    let promotions = Promotions::build(&layer.views)
+        .map_err(|e| format!("Failed to build promotion closure: {e}"))?;
+    let breakdownable = breakdownable_measures(layer);
+
+    let mut entities: Vec<WmEntity> = Vec::new();
+    let mut edges: Vec<WmEdge> = Vec::new();
+    for view in &layer.views {
+        if let Some(entity) =
+            build_entity_node(view, layer, &promotions, &breakdownable, &mut edges)
+        {
+            entities.push(entity);
+        }
+    }
+
+    // Apply .world-model.yml display config if present (filter + label
+    // overrides). Compile boundary first (serve replicas have no working
+    // copy), FS fallback — see `WorldModelConfig::resolve`.
+    if let Some(cfg) = crate::server::api::world_model_config::WorldModelConfig::resolve(
+        workspace_id,
+        workspace_path,
+    )
+    .await?
+    {
+        apply_world_model_config(&mut entities, &mut edges, &cfg);
+    }
+
+    entities.sort_by_key(|e| e.depth);
+    Ok(WorldModelResponse { entities, edges })
 }
 
 /// `GET /{workspace_id}/semantic/world-model/instances`
@@ -226,24 +252,54 @@ pub async fn get_world_model_instances(
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     axum::extract::Query(q): axum::extract::Query<WmInstancesQuery>,
 ) -> Result<extract::Json<WmInstancesResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    // Not cached: this is a bounded `SELECT <pk,label> … LIMIT n` scan, cheap
-    // enough that caching it isn't worth the staleness risk. A cache keyed on
-    // `workspace_id` alone would not invalidate on an out-of-band working-copy
-    // change (e.g. `git pull`), serving a previous revision's instances until
-    // the TTL lapsed. `is_search` still gates the overflow probe below.
-    let is_search = q.search.as_deref().is_some_and(|s| !s.is_empty());
-
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
-    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: format!("Failed to load layer: {e}"),
-            }),
-        )
-    })?;
+    let layer = layer_cache
+        .get_or_load(semantics_path.clone())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                extract::Json(ErrorResponse {
+                    message: format!("Failed to load layer: {e}"),
+                }),
+            )
+        })?;
+    let workspace_path = workspace_manager.config_manager.workspace_path();
+    instances_core(
+        &workspace_manager,
+        user.id,
+        role,
+        &layer,
+        workspace_id,
+        workspace_path,
+        semantics_path,
+        &q,
+    )
+    .await
+    .map(extract::Json)
+}
 
-    let view = primary_view_of(&layer, &q.entity).ok_or_else(|| {
+/// Core of the world-model instance listing — shared by the workspace
+/// [`get_world_model_instances`] handler and the customer-app gate handler
+/// ([`crate::server::api::projects::world_model`]). Compiles a bounded
+/// `SELECT <pk,label> … LIMIT n` scan over the entity's primary view and runs
+/// it through the agentic connector; not cached (a bounded scan, and a
+/// workspace-keyed cache wouldn't invalidate on an out-of-band working-copy
+/// change). `layer` is borrowed; `scan_path` / `workspace_path` come from the
+/// caller — the FS scan path for the IDE, the compile-boundary tempdir for the
+/// gate.
+pub(crate) async fn instances_core(
+    workspace_manager: &WorkspaceManager,
+    user_id: uuid::Uuid,
+    role: WorkspaceRole,
+    layer: &airlayer::SemanticLayer,
+    workspace_id: uuid::Uuid,
+    workspace_path: &std::path::Path,
+    scan_path: std::path::PathBuf,
+    q: &WmInstancesQuery,
+) -> Result<WmInstancesResponse, (StatusCode, extract::Json<ErrorResponse>)> {
+    let is_search = q.search.as_deref().is_some_and(|s| !s.is_empty());
+    let view = primary_view_of(layer, &q.entity).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
             extract::Json(ErrorResponse {
@@ -278,7 +334,7 @@ pub async fn get_world_model_instances(
     // Compile boundary first (serve replicas have no working copy), FS fallback.
     let display_field = crate::server::api::world_model_config::WorldModelConfig::resolve(
         workspace_id,
-        workspace_manager.config_manager.workspace_path(),
+        workspace_path,
     )
     .await
     .ok()
@@ -289,7 +345,7 @@ pub async fn get_world_model_instances(
 
     // Build the semantic query: PK dimension(s) + optional display label dimension.
     // resolve_and_compile handles table aliasing, dialect, and database routing.
-    let scan_path = workspace_manager.config_manager.semantics_scan_path();
+    // `scan_path` is caller-supplied (FS or compile-boundary tempdir).
     let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
@@ -345,7 +401,7 @@ pub async fn get_world_model_instances(
         offset: None,
     };
 
-    let layer_clone = (*layer).clone();
+    let layer_clone = layer.clone();
     let (base_sql, database_name) = tokio::task::spawn_blocking(move || {
         resolve_and_compile(
             &scan_path,
@@ -386,7 +442,7 @@ pub async fn get_world_model_instances(
         result_format: None,
         untyped: false,
     };
-    let rows = match run_via_agentic_connector(&workspace_manager, user.id, role, &payload).await {
+    let rows = match run_via_agentic_connector(workspace_manager, user_id, role, &payload).await {
         Ok(SemanticQueryResponse::Json(r)) => r,
         _ => vec![],
     };
@@ -420,7 +476,7 @@ pub async fn get_world_model_instances(
         has_more,
         items,
     };
-    Ok(extract::Json(response))
+    Ok(response)
 }
 
 /// `GET /{workspace_id}/semantic/world-model/filter-instances`
@@ -1581,8 +1637,6 @@ pub async fn post_world_model_filter_counts(
     Ok(Sse::new(create_sse_stream(rx)).keep_alive(KeepAlive::default()))
 }
 
-// ── World Model: instance measure breakdown (driver tree) ───────────────────
-
 /// `GET /{workspace_id}/semantic/world-model/instance-detail`
 ///
 /// Streams `WmInstanceDetailEvent` via SSE so the panel renders progressively:
@@ -1912,11 +1966,19 @@ pub async fn get_world_model_instance_detail(
 
     // Induced measures — group by source_view so each source gets ONE value
     // query (all its measures as columns) + ONE count query.
+    // Each induced group is ONE value query (its measures as columns) plus a
+    // separate count query for the fiber size. A `custom` measure is a cross-view
+    // composite; airlayer only isolates a single composite's per-view CTEs
+    // correctly, so bundling one with any other measure — or with the count —
+    // trips the fan-out guard and fails the whole batch, exactly as the
+    // own-measure path guards against above. So each custom induced measure gets
+    // its own value query, the plain measures batch into one, and the count is
+    // always a standalone query, never bundled with a composite.
     struct InducedGroup {
-        source_view_name: String,
-        // (name, measure_type, label) — count is the last query column, not listed here.
+        // (name, measure_type, label) — value columns only; count is separate.
         measures: Vec<(String, String, Option<String>)>,
-        cfg: SemanticQueryConfig,
+        value_cfg: SemanticQueryConfig,
+        count_cfg: SemanticQueryConfig,
     }
     let mut induced_by_source: std::collections::HashMap<
         String,
@@ -1951,69 +2013,101 @@ pub async fn get_world_model_instance_detail(
                 ));
         }
     }
-    let induced_groups: Vec<InducedGroup> = induced_by_source
-        .into_iter()
-        .filter_map(|(source_view_name, measures)| {
-            let sv = layer.views.iter().find(|v| v.name == source_view_name)?;
-            let mut all_measure_refs: Vec<String> = measures
+    let mk_induced_cfg = |refs: Vec<String>| SemanticQueryConfig {
+        topic: None,
+        dimensions: vec![],
+        measures: refs,
+        time_dimensions: vec![],
+        filters: pk_filters.clone(),
+        orders: vec![],
+        limit: Some(1),
+        offset: None,
+    };
+    let mut induced_groups: Vec<InducedGroup> = Vec::new();
+    for (source_view_name, measures) in induced_by_source {
+        let Some(sv) = layer.views.iter().find(|v| v.name == source_view_name) else {
+            continue;
+        };
+        // One count query per source — its fiber is shared by all the source's
+        // measures, and keeping it standalone avoids bundling it with a composite.
+        let count_cfg = mk_induced_cfg(vec![count_measure_ref(sv)]);
+        // Composites each go in their own value query; plain measures batch into one.
+        let (customs, simple): (Vec<_>, Vec<_>) = measures
+            .into_iter()
+            .partition(|(_, ty, _)| ty.as_str() == "custom");
+        if !simple.is_empty() {
+            let refs = simple
                 .iter()
                 .map(|(n, _, _)| format!("{}.{}", source_view_name, n))
                 .collect();
-            all_measure_refs.push(count_measure_ref(sv));
-            Some(InducedGroup {
-                cfg: SemanticQueryConfig {
-                    topic: None,
-                    dimensions: vec![],
-                    measures: all_measure_refs,
-                    time_dimensions: vec![],
-                    filters: pk_filters.clone(),
-                    orders: vec![],
-                    limit: Some(1),
-                    offset: None,
-                },
-                source_view_name,
-                measures,
-            })
-        })
-        .collect();
+            induced_groups.push(InducedGroup {
+                value_cfg: mk_induced_cfg(refs),
+                count_cfg: count_cfg.clone(),
+                measures: simple,
+            });
+        }
+        for c in customs {
+            let refs = vec![format!("{}.{}", source_view_name, c.0)];
+            induced_groups.push(InducedGroup {
+                value_cfg: mk_induced_cfg(refs),
+                count_cfg: count_cfg.clone(),
+                measures: vec![c],
+            });
+        }
+    }
 
     let (child_sample_cfgs, child_count_cfgs): (Vec<_>, Vec<_>) = child_cfgs
         .iter()
         .map(|cc| (cc.sample.clone(), cc.count.clone()))
         .unzip();
-    let induced_cfgs: Vec<SemanticQueryConfig> =
-        induced_groups.iter().map(|g| g.cfg.clone()).collect();
+    let induced_value_cfgs: Vec<SemanticQueryConfig> =
+        induced_groups.iter().map(|g| g.value_cfg.clone()).collect();
+    let induced_count_cfgs: Vec<SemanticQueryConfig> =
+        induced_groups.iter().map(|g| g.count_cfg.clone()).collect();
     let own_cfgs: Vec<SemanticQueryConfig> = own_groups.iter().map(|g| g.cfg.clone()).collect();
 
     // --- Phase 1: compile ALL SQL configs (except parent which needs FK from attrs) ---
     let layer_clone = (*layer).clone();
     let dbs_clone = databases.clone();
     type SqlOpt = Option<String>;
-    let phase1: Option<(SqlOpt, Vec<SqlOpt>, Vec<SqlOpt>, Vec<SqlOpt>, Vec<SqlOpt>)> =
-        tokio::task::spawn_blocking(move || {
-            let dialects = airlayer::DatasourceDialectMap::from_config_databases(&dbs_clone);
-            let engine = airlayer::SemanticEngine::from_semantic_layer(layer_clone, dialects)
-                .map_err(|e| agentic_semantic::SemanticError::Runtime(e.to_string()))?;
-            let c = |cfg: &SemanticQueryConfig| {
-                let result = agentic_semantic::compile_with_engine(&engine, cfg);
-                if let Err(ref e) = result {
-                    tracing::warn!(error = %e, "instance-detail SQL compilation failed");
-                }
-                result.ok()
-            };
-            Ok::<_, agentic_semantic::SemanticError>((
-                c(&attrs_cfg),
-                child_sample_cfgs.iter().map(&c).collect(),
-                child_count_cfgs.iter().map(&c).collect(),
-                own_cfgs.iter().map(&c).collect(),
-                induced_cfgs.iter().map(c).collect(),
-            ))
-        })
-        .await
-        .ok()
-        .and_then(|r| r.ok());
-    let (attrs_sql, child_sample_sqls, child_count_sqls, own_group_sqls, induced_sqls) =
-        phase1.unwrap_or_default();
+    let phase1: Option<(
+        SqlOpt,
+        Vec<SqlOpt>,
+        Vec<SqlOpt>,
+        Vec<SqlOpt>,
+        Vec<SqlOpt>,
+        Vec<SqlOpt>,
+    )> = tokio::task::spawn_blocking(move || {
+        let dialects = airlayer::DatasourceDialectMap::from_config_databases(&dbs_clone);
+        let engine = airlayer::SemanticEngine::from_semantic_layer(layer_clone, dialects)
+            .map_err(|e| agentic_semantic::SemanticError::Runtime(e.to_string()))?;
+        let c = |cfg: &SemanticQueryConfig| {
+            let result = agentic_semantic::compile_with_engine(&engine, cfg);
+            if let Err(ref e) = result {
+                tracing::warn!(error = %e, "instance-detail SQL compilation failed");
+            }
+            result.ok()
+        };
+        Ok::<_, agentic_semantic::SemanticError>((
+            c(&attrs_cfg),
+            child_sample_cfgs.iter().map(&c).collect(),
+            child_count_cfgs.iter().map(&c).collect(),
+            own_cfgs.iter().map(&c).collect(),
+            induced_value_cfgs.iter().map(&c).collect(),
+            induced_count_cfgs.iter().map(c).collect(),
+        ))
+    })
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+    let (
+        attrs_sql,
+        child_sample_sqls,
+        child_count_sqls,
+        own_group_sqls,
+        induced_value_sqls,
+        induced_count_sqls,
+    ) = phase1.unwrap_or_default();
 
     // --- Stream results: three concurrent tasks via tokio::join! ---
     //
@@ -2279,15 +2373,45 @@ pub async fn get_world_model_instance_detail(
                         (GroupTag::Own(idx), rows)
                     }));
                 }
-                for (idx, sql_opt) in induced_sqls.into_iter().enumerate() {
+                for (idx, (val_sql, cnt_sql)) in induced_value_sqls
+                    .into_iter()
+                    .zip(induced_count_sqls)
+                    .enumerate()
+                {
                     let c = connector_c.clone();
+                    let c2 = connector_c.clone();
                     let wm = wm_c.clone();
+                    let wm2 = wm_c.clone();
                     futs.push(Box::pin(async move {
-                        let rows = match sql_opt {
-                            Some(ref sql) => run_with_connector(&c, sql, &wm).await,
-                            None => vec![],
-                        };
-                        (GroupTag::Induced(idx), rows)
+                        // Value query and its fiber-count query run concurrently; the
+                        // count is appended as the trailing column so the induced
+                        // consumer below reads it exactly like the old batched shape.
+                        let (val_rows, cnt_rows) = tokio::join!(
+                            async move {
+                                match val_sql {
+                                    Some(ref sql) => run_with_connector(&c, sql, &wm).await,
+                                    None => vec![],
+                                }
+                            },
+                            async move {
+                                match cnt_sql {
+                                    Some(ref sql) => run_with_connector(&c2, sql, &wm2).await,
+                                    None => vec![],
+                                }
+                            },
+                        );
+                        let mut row = val_rows.into_iter().next().unwrap_or_default();
+                        // Only append the count when the value query produced a row;
+                        // an empty row means the value query failed → all measures "—".
+                        if !row.is_empty() {
+                            let count = cnt_rows
+                                .into_iter()
+                                .next()
+                                .and_then(|r| r.into_iter().next())
+                                .unwrap_or_default();
+                            row.push(count);
+                        }
+                        (GroupTag::Induced(idx), vec![row])
                     }));
                 }
 
@@ -2359,24 +2483,45 @@ pub async fn get_world_model_measure_breakdown(
     Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>,
     (StatusCode, extract::Json<ErrorResponse>),
 > {
-    let err500 = |e: String| {
+    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
+    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse { message: e }),
+            extract::Json(ErrorResponse {
+                message: e.to_string(),
+            }),
         )
-    };
-    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
-    let layer = layer_cache
-        .get_or_load(semantics_path)
+    })?;
+    let rx = measure_breakdown_core(workspace_manager, user.id, role, &layer, q)
         .await
-        .map_err(|e| err500(e.to_string()))?;
+        .map_err(|(s, e)| (s, extract::Json(e)))?;
+    Ok(Sse::new(create_sse_stream(rx)).keep_alive(KeepAlive::default()))
+}
 
-    let view = primary_view_of(&layer, &q.entity).ok_or_else(|| {
+/// Core of the world-model measure-breakdown (driver-tree) stream — shared by
+/// the workspace [`get_world_model_measure_breakdown`] handler and the
+/// customer-app gate handler ([`crate::server::api::projects::world_model`]).
+///
+/// Builds the breakdown structure, plans + compiles the per-view value
+/// queries, then spawns a task that streams `Init → Value* → Done` on the
+/// returned channel. `workspace_manager` is moved into the spawned task;
+/// `layer` is borrowed (cloned only where the blocking compile needs an owned
+/// copy). The terminal `Done` is always emitted once every value query
+/// resolves. Errors are the transport-agnostic `(StatusCode, ErrorResponse)`
+/// tuple so each caller wraps the body its own way.
+pub(crate) async fn measure_breakdown_core(
+    workspace_manager: WorkspaceManager,
+    user_id: uuid::Uuid,
+    role: WorkspaceRole,
+    layer: &airlayer::SemanticLayer,
+    q: WmMeasureBreakdownQuery,
+) -> Result<tokio::sync::mpsc::Receiver<WmMeasureBreakdownEvent>, (StatusCode, ErrorResponse)> {
+    let view = primary_view_of(layer, &q.entity).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            extract::Json(ErrorResponse {
+            ErrorResponse {
                 message: format!("Entity '{}' not found", q.entity),
-            }),
+            },
         )
     })?;
     let primary_view = view.name.clone();
@@ -2388,13 +2533,13 @@ pub async fn get_world_model_measure_breakdown(
         .unwrap_or_default();
     let root_id = format!("{}.{}", primary_view, q.measure);
 
-    let tree = oxy_semantic::build_metric_tree(&layer);
+    let tree = oxy_semantic::build_metric_tree(layer);
     let (nodes, edges) = breakdown_structure(&tree, &root_id).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            extract::Json(ErrorResponse {
+            ErrorResponse {
                 message: format!("Measure '{root_id}' not found in metric tree"),
-            }),
+            },
         )
     })?;
 
@@ -2402,7 +2547,7 @@ pub async fn get_world_model_measure_breakdown(
         serde_json::from_str::<Vec<String>>(&q.key).unwrap_or_else(|_| vec![q.key.clone()]);
 
     let plan = breakdown_value_plan(
-        &layer,
+        layer,
         &nodes,
         &q.entity,
         &key_values,
@@ -2411,7 +2556,7 @@ pub async fn get_world_model_measure_breakdown(
     );
 
     // Compile all view-group SQLs up front (pure, blocking).
-    let layer_clone = (*layer).clone();
+    let layer_clone = layer.clone();
     let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
@@ -2444,9 +2589,16 @@ pub async fn get_world_model_measure_breakdown(
     .await
     .unwrap_or_else(|_| vec![None; plan.groups.len()]);
 
-    let connector = build_connector(&workspace_manager, user.id, role, &datasource)
+    let connector = build_connector(&workspace_manager, user_id, role, &datasource)
         .await
-        .map_err(|e| err500(e.to_string()))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorResponse {
+                    message: e.to_string(),
+                },
+            )
+        })?;
 
     let (tx, rx) = tokio::sync::mpsc::channel::<WmMeasureBreakdownEvent>(64);
     let group_node_ids: Vec<Vec<String>> =
@@ -2505,5 +2657,5 @@ pub async fn get_world_model_measure_breakdown(
         tx.send(WmMeasureBreakdownEvent::Done).await.ok();
     });
 
-    Ok(Sse::new(create_sse_stream(rx)).keep_alive(KeepAlive::default()))
+    Ok(rx)
 }

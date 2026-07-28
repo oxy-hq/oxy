@@ -256,6 +256,11 @@ export function useResolvedManifest(): ResolvedCustomAppManifest {
  * this only when you need the fetcher or identity without requiring
  * the manifest to be ready (e.g. inside `useQuery`, or the shell
  * chrome, which must never block the app on the manifest load).
+ *
+ * Exported for sibling hook modules (`metric-tree-hooks`,
+ * `world-model-hooks`) that need the same credentialed fetcher +
+ * project scope without re-deriving the context wiring. Not part of
+ * the public bundle API — bundle authors use the concrete hooks.
  */
 export function useOxyApp(): {
   projectId: string | undefined;

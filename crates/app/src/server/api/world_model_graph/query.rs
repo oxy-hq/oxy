@@ -1800,6 +1800,61 @@ fn instance_filter_for_view(
     ))
 }
 
+/// An instance scope as airlayer `QueryFilter`s, for callers that drive the
+/// engine directly rather than through a `SemanticQueryConfig` (the metric-tree
+/// ops).
+///
+/// Pins the entity's **own** view by primary key — `cities.city = 'Amsterdam'` —
+/// and leaves the join to airlayer, exactly as the per-instance measure queries
+/// do. That is what makes it work for a measure declared several hops away:
+/// `orders` has no `city` key of its own, but the join graph resolves
+/// `orders → stores → cities`, and every hop is many-to-one so nothing fans out.
+///
+/// Deliberately *not* [`instance_filter_for_view`], which pins the *target* view
+/// through a direct foreign key. That is the right rule for a breakdown, which
+/// values one view at a time and can mark an unreachable view unvalued. Here it
+/// would refuse every measure more than one hop from the entity — which is most
+/// of what a city or region instance lists.
+///
+/// `key` is the instance key as the world-model API spells it: a JSON array for
+/// a composite key, else a bare scalar. `None` means the entity has no primary
+/// view to pin.
+pub(crate) fn instance_scope_filters(
+    layer: &airlayer::SemanticLayer,
+    entity: &str,
+    key: &str,
+) -> Option<Vec<airlayer::engine::query::QueryFilter>> {
+    use agentic_semantic::config::SemanticFilterType;
+
+    let primary = primary_view_of(layer, entity)?;
+    let pk_cols = entity_keys_in_view(primary, entity, true);
+    let key_values: Vec<String> =
+        serde_json::from_str::<Vec<String>>(key).unwrap_or_else(|_| vec![key.to_string()]);
+
+    build_pk_filters(&primary.name, &pk_cols, &key_values)
+        .into_iter()
+        .map(|f| {
+            // Only Eq is reachable — build_pk_filters emits nothing else — but
+            // translate rather than assume, so a new filter kind there fails
+            // loudly here instead of silently widening the scope to everything.
+            let SemanticFilterType::Eq(scalar) = f.filter_type else {
+                return None;
+            };
+            let value = match scalar.value {
+                serde_json::Value::String(s) => s,
+                other => other.to_string(),
+            };
+            Some(airlayer::engine::query::QueryFilter {
+                member: Some(f.field),
+                operator: Some(airlayer::engine::query::FilterOperator::Equals),
+                values: vec![value],
+                and: None,
+                or: None,
+            })
+        })
+        .collect()
+}
+
 /// In-memory valuation plan for a breakdown: one `SemanticQueryConfig` per view
 /// group (measures = that view's subtree nodes, in node order), plus the node ids
 /// that have no join path to the instance (streamed unvalued).
@@ -1892,6 +1947,9 @@ mod breakdown_tests {
             measure_type: "number".into(),
             is_composite: composite,
             expr: None,
+            // Irrelevant to these tests — they exercise breakdown/edge
+            // resolution, not drill eligibility.
+            drillable: false,
         }
     }
 
@@ -1951,6 +2009,87 @@ mod breakdown_tests {
         let f = build_pk_filters("store", &cols, &["s1".to_string()]);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].field, "store.store_id");
+    }
+
+    /// A fact view (`orders`) joined many-to-one to a dimension view (`stores`),
+    /// which in turn rolls up to `cities` — so `city` sits two hops from the
+    /// measure, the shape instance scoping must handle.
+    fn star_layer() -> airlayer::SemanticLayer {
+        let orders: airlayer::View = serde_json::from_value(serde_json::json!({
+            "name": "orders",
+            "table": "orders",
+            "entities": [
+                {"name": "order", "type": "primary", "key": "order_id"},
+                {"name": "retail_store", "type": "foreign", "key": "store_id"},
+            ],
+            "dimensions": [
+                {"name": "order_id", "type": "number", "expr": "id"},
+                {"name": "store_id", "type": "number", "expr": "store_id"},
+            ],
+        }))
+        .expect("valid view");
+        let stores: airlayer::View = serde_json::from_value(serde_json::json!({
+            "name": "stores",
+            "table": "stores",
+            "entities": [
+                {"name": "retail_store", "type": "primary", "key": "store_id"},
+                {"name": "city", "type": "foreign", "key": "city"},
+            ],
+            "dimensions": [
+                {"name": "store_id", "type": "number", "expr": "store_id"},
+                {"name": "store_name", "type": "string", "expr": "store_name"},
+                {"name": "city", "type": "string", "expr": "city"},
+            ],
+        }))
+        .expect("valid view");
+        let cities: airlayer::View = serde_json::from_value(serde_json::json!({
+            "name": "cities",
+            "table": "cities",
+            "entities": [{"name": "city", "type": "primary", "key": "city"}],
+            "dimensions": [{"name": "city", "type": "string", "expr": "city"}],
+        }))
+        .expect("valid view");
+        // `customers` is unrelated — nothing joins it to `retail_store`.
+        let customers: airlayer::View = serde_json::from_value(serde_json::json!({
+            "name": "customers",
+            "table": "customers",
+            "entities": [{"name": "customer", "type": "primary", "key": "customer_id"}],
+            "dimensions": [{"name": "customer_id", "type": "number", "expr": "id"}],
+        }))
+        .expect("valid view");
+        airlayer::SemanticLayer::new(vec![orders, stores, cities, customers], None)
+    }
+
+    #[test]
+    fn instance_scope_filters_pin_the_entity_own_view_by_pk() {
+        let f = instance_scope_filters(&star_layer(), "retail_store", "7")
+            .expect("retail_store has a primary view");
+        assert_eq!(f.len(), 1);
+        // Pin the entity's own view and let airlayer resolve the join from
+        // whatever view the measure lives on — the same shape the per-instance
+        // measure queries use. Pinning the *target* view through a direct FK
+        // instead would refuse any measure more than one hop out.
+        assert_eq!(f[0].member.as_deref(), Some("stores.store_id"));
+        assert_eq!(f[0].values, vec!["7".to_string()]);
+    }
+
+    #[test]
+    fn instance_scope_filters_pin_an_entity_several_hops_from_the_measure() {
+        // Regression: a `city` instance sizing a measure declared on `orders`.
+        // `orders` has no `city` key — the path is orders → stores → cities — so
+        // an FK-on-the-target-view rule refuses it, 500ing every city panel.
+        let f = instance_scope_filters(&star_layer(), "city", "Amsterdam")
+            .expect("city has a primary view");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].member.as_deref(), Some("cities.city"));
+        assert_eq!(f[0].values, vec!["Amsterdam".to_string()]);
+    }
+
+    #[test]
+    fn instance_scope_filters_refuse_an_unknown_entity() {
+        // Nothing to pin — the caller must refuse rather than silently scan the
+        // population under an instance header.
+        assert!(instance_scope_filters(&star_layer(), "not_an_entity", "7").is_none());
     }
 
     fn bnode(measure: &str, composite: bool) -> WmBreakdownNode {

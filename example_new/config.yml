@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/config.json
+
+# Standalone restaurant demo project.
+#
+# Deliberately isolated from `examples/`: nothing in CI, the Playwright specs,
+# or `demo_project/` (the shipped onboarding template) points here, so this can
+# be reshaped freely without breaking the fruit fixture everything else asserts
+# against. See scripts/gen_restaurant_data.py for what the data is shaped to
+# demonstrate.
+
+defaults:
+  database: local
+
+models:
+  - vendor: anthropic
+    name: claude-sonnet-4-6
+    model_ref: claude-sonnet-4-6
+    key_var: ANTHROPIC_API_KEY
+
+databases:
+  - name: local
+    type: duckdb
+    dataset: .db/
+
+builder_agent:
+  model: claude-sonnet-4-6
+
+# Rollups are written as Parquet, which DuckDB autoloads an extension for —
+# unavailable in network-restricted environments, where every rebuild fails on
+# the heartbeat and buries real errors in the log. The fixture is 104,000
+# checks (446,726 line items) and queries fine unaggregated, so the worker is
+# off, as in demo_project.
+pre_aggregations:
+  refresh_worker:
+    enabled: false

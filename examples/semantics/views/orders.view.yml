@@ -103,18 +103,34 @@ dimensions:
   type: string
   description: Current status of the order
   expr: status
+- name: channel
+  type: string
+  description: |
+    Sales channel the order came through (in_store / online / mobile_app /
+    phone). Deliberately left segmentable: this is the one dimension on an
+    order that names something a human owns and can go change, which makes it
+    the honest answer to "where is this store's upside?" — unlike order_status,
+    which is an outcome, or the shipping address lines, which are nobody's job.
+  expr: channel
 - name: total_amount
   type: number
   description: Total order amount
   expr: total_amount
+  # Backs gross_revenue. Grouping the measure by its own column is circular.
+  segmentable: false
 - name: shipping_cost
   type: number
   description: Cost of shipping
   expr: shipping_cost
+  # Backs total_shipping_costs; continuous, so it only ever blows the
+  # cardinality cap.
+  segmentable: false
 - name: tax_amount
   type: number
   description: Tax amount for the order
   expr: tax_amount
+  # Backs total_tax_collected; continuous.
+  segmentable: false
 measures:
 - name: total_orders
   type: count
@@ -126,6 +142,16 @@ measures:
     order_items.total_revenue rather than a denormalized column, so this
     decomposes down to line-item revenue in the World Model breakdown view.
   expr: "{{order_items.total_revenue}}"
+- name: gross_revenue
+  type: sum
+  description: |
+    Gross order revenue ($) — a straight SUM of each order's total_amount.
+    Unlike total_order_value (a custom that decomposes to line items), this is
+    an atomic sum on the orders grain with total_orders as its natural row-count
+    denominator, so opportunity sizing normalizes it into revenue-per-order and
+    sizes per-segment upside (e.g. by order_status) instead of comparing raw
+    per-segment totals.
+  expr: total_amount
 - name: avg_order_value
   type: average
   description: Average order value

@@ -13,87 +13,10 @@ import type {
   WorldModelMeasure
 } from "@/types/worldModel";
 import { measureSymbol, measureSymbolColor } from "../worldModelLayout";
+import { formatMeasureValue, Row, SectionHeader, SectionSpinner } from "./panelPrimitives";
 import { WorldModelDriverTreeLive } from "./WorldModelDriverTree";
-
-/** Format a measure value for display: trim trailing float noise, cap decimals. */
-function formatMeasureValue(raw: string): string {
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return raw;
-  if (Number.isInteger(n)) return n.toLocaleString();
-  // Round to 4 significant decimal places, strip trailing zeros
-  const formatted = n.toPrecision(7).replace(/\.?0+$/, "");
-  return Number(formatted).toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
-
-// ── Shared primitives ─────────────────────────────────────────────────────────
-
-function SectionSpinner() {
-  return (
-    <div className='flex items-center gap-2 py-2 font-mono text-[10px] text-muted-foreground'>
-      <svg
-        className='size-3 animate-spin'
-        viewBox='0 0 24 24'
-        fill='none'
-        stroke='currentColor'
-        strokeWidth={2.5}
-      >
-        <path d='M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83' />
-      </svg>
-      loading…
-    </div>
-  );
-}
-
-function SectionHeader({
-  title,
-  subtitle,
-  color = "default"
-}: {
-  title: string;
-  subtitle?: string;
-  color?: "default" | "green" | "violet";
-}) {
-  return (
-    <div className='flex items-baseline justify-between gap-2'>
-      <span
-        className={cn(
-          "text-[9.5px] uppercase tracking-wider",
-          color === "green" && "text-success",
-          color === "violet" && "text-[color:var(--vis-purple)]",
-          color === "default" && "text-foreground"
-        )}
-      >
-        {title}
-      </span>
-      {subtitle && (
-        <span className='shrink-0 truncate text-[9.5px] text-muted-foreground'>{subtitle}</span>
-      )}
-    </div>
-  );
-}
-
-function Row({
-  children,
-  onClick,
-  className
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 items-center gap-2 border border-border bg-background/40 px-2 py-1.5 font-mono text-xs",
-        onClick && "cursor-pointer transition-colors hover:border-info/60",
-        className
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </div>
-  );
-}
+import { WorldModelInstanceOpportunity } from "./WorldModelInstanceOpportunity";
+import { WorldModelMeasureAnalysis } from "./WorldModelMeasureAnalysis";
 
 function EntityLink({
   entity,
@@ -553,6 +476,7 @@ function MeasureBody({
   promotedFrom,
   measure,
   entity,
+  model,
   onSelect
 }: {
   entityId: string;
@@ -561,6 +485,7 @@ function MeasureBody({
   promotedFrom?: string;
   measure: WorldModelMeasure | WorldModelInducedMeasure | undefined;
   entity: WorldModelEntity | undefined;
+  model: WorldModel;
   onSelect: (s: WmSelection) => void;
 }) {
   const additivity = measure?.additivity ?? "passthrough";
@@ -675,6 +600,16 @@ function MeasureBody({
           <EntityLink entity={entity} onSelect={onSelect} />
         </section>
       )}
+
+      <WorldModelMeasureAnalysis
+        measureName={measureName}
+        induced={induced}
+        promotedFrom={promotedFrom}
+        entityView={entity?.view}
+        additivity={additivity}
+        model={model}
+        onSelect={onSelect}
+      />
     </div>
   );
 }
@@ -803,7 +738,10 @@ function ComputedMeasureRow({
   measure: m,
   def,
   entityId,
+  entityView,
   keyValue,
+  model,
+  onSelect,
   expandedEntityId,
   breakdownMeasure,
   onToggle
@@ -811,7 +749,10 @@ function ComputedMeasureRow({
   measure: WmComputedMeasure;
   def: WorldModelMeasure | WorldModelInducedMeasure | undefined;
   entityId: string;
+  entityView: string | undefined;
   keyValue: string;
+  model: WorldModel;
+  onSelect: (s: WmSelection) => void;
   expandedEntityId?: string | null;
   breakdownMeasure?: string | null;
   onToggle?: (measure: string | null) => void;
@@ -821,8 +762,18 @@ function ComputedMeasureRow({
   const expanded = entityId === expandedEntityId && m.name === breakdownMeasure;
   const isNonAdditive = def?.additivity === "non_additive";
   const hasBreakdown = def?.has_breakdown === true;
+  // An induced measure is promoted to this grain from another view; opportunity
+  // sizing must address it on that declaring view, so surface the promotion.
+  const induced = !!def && "promoted_from" in def;
+  const promotedFrom = induced ? (def as WorldModelInducedMeasure).promoted_from : undefined;
   const exprStr =
     def?.expr ?? (m.measure_type === "count" || m.measure_type === "count_distinct" ? "1" : "·");
+  // An empty fiber means this instance has no underlying rows for the measure,
+  // so there is nothing here to size — hide the opportunities/segment-spread
+  // toggle rather than offer a population benchmark against data this instance
+  // doesn't have. `value === null` is the still-loading skeleton (fiber_count is
+  // seeded 0 then), so only suppress once the measure has actually resolved.
+  const hasData = m.value !== null && m.fiber_count > 0;
 
   return (
     <div className='flex flex-col border border-border bg-background/40 px-2 py-1.5'>
@@ -880,6 +831,18 @@ function ComputedMeasureRow({
         <div className='mt-2 border-border/60 border-t pt-2'>
           <WorldModelDriverTreeLive entityId={entityId} keyValue={keyValue} measure={m.name} />
         </div>
+      )}
+      {def && hasData && (
+        <WorldModelInstanceOpportunity
+          measureName={m.name}
+          induced={induced}
+          promotedFrom={promotedFrom}
+          entityView={entityView}
+          additivity={def.additivity}
+          instance={{ entity: entityId, key: keyValue }}
+          model={model}
+          onSelect={onSelect}
+        />
       )}
     </div>
   );
@@ -1069,7 +1032,10 @@ function InstanceBody({
                     measure={m}
                     def={def}
                     entityId={entityId}
+                    entityView={entity?.view}
                     keyValue={keyValue}
+                    model={model}
+                    onSelect={onSelect}
                     expandedEntityId={expandedEntityId}
                     breakdownMeasure={breakdownMeasure}
                     onToggle={(measure) => onExpandMeasure?.(entityId, keyValue, label, measure)}
@@ -1184,6 +1150,7 @@ export function WorldModelDetailPanel({
             promotedFrom={selection.promotedFrom}
             measure={measure}
             entity={entity}
+            model={model}
             onSelect={onSelect}
           />
         );

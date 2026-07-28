@@ -45,6 +45,18 @@ entities:
       - channel
       - region
       - device
+  # Funnel activity shares the region domain and is driven by the day×channel
+  # marketing spend — cross-link both so the funnel entity joins the graph.
+  - name: region
+    type: foreign
+    description: Region the funnel activity occurred in
+    key: region
+  - name: spend_event
+    type: foreign
+    description: The day × channel marketing spend behind this funnel activity
+    keys:
+      - event_date
+      - channel
 
 dimensions:
   - name: event_date

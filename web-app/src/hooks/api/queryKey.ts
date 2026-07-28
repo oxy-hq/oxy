@@ -738,6 +738,57 @@ const metricTreeKeys = {
       timeDimension,
       period[0],
       period[1]
+    ] as const,
+  /** Segment opportunity sizing — per-dimension upside of lifting each segment
+   *  to its benchmark peer. Keyed by request payload so the world-model panel
+   *  reuses the result when a measure is reselected.
+   *
+   *  `instance` is part of the key, not decoration: a scoped scan answers a
+   *  question about one instance, so sharing a cache entry across instances
+   *  would serve one store's upside under another store's name. `null` (the
+   *  population-level scan) keys separately from any instance, as it must. */
+  opportunity: (
+    projectId: string,
+    target: string,
+    timeDimension: string,
+    period: readonly [string, string],
+    instance: { entity: string; key: string } | null
+  ) =>
+    [
+      ...metricTreeKeys.all,
+      "opportunity",
+      projectId,
+      target,
+      timeDimension,
+      period[0],
+      period[1],
+      instance?.entity ?? null,
+      instance?.key ?? null
+    ] as const,
+  /** Recursive opportunity decomposition — same instance-scoping rationale as
+   *  `opportunity`: a scoped drill answers a question about one instance, so
+   *  it must key separately from the population-level scan (and from any
+   *  other instance). */
+  drill: (
+    projectId: string,
+    target: string,
+    timeDimension: string,
+    period: readonly [string, string],
+    instance: { entity: string; key: string } | null,
+    root: { dimension: string; segment: string } | null
+  ) =>
+    [
+      ...metricTreeKeys.all,
+      "drill",
+      projectId,
+      target,
+      timeDimension,
+      period[0],
+      period[1],
+      instance?.entity ?? null,
+      instance?.key ?? null,
+      root?.dimension ?? null,
+      root?.segment ?? null
     ] as const
 };
 

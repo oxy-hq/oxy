@@ -149,6 +149,8 @@ entities:
         label: Order Date
       - name: order_status
         label: Status
+      - name: channel
+        label: Channel
       - name: total_amount
         label: Total Amount
       - name: shipping_cost
@@ -258,7 +260,7 @@ entities:
 
   - id: region
     label: Region
-    description: Geographic region the business operates in — the top of the store location hierarchy. Store footprint, rent, and staffing promote up into their region.
+    description: Geographic region the business operates in — the top of the store location hierarchy. Store footprint, rent, and staffing promote up from stores; order revenue promotes up from orders placed at those stores.
     display_field: region
     dimensions:
       - name: region
@@ -280,10 +282,27 @@ entities:
         label: Avg Rent
       - name: rent_per_square_foot
         label: Rent / sq ft
+      # Order revenue promoted up the order → retail_store → city → region chain
+      # (orders declares retail_store as a foreign entity on store_id). Every row
+      # is dated by order_date, so it's period-sizable: gross_revenue is an
+      # additive sum with total_orders as its natural row-count denominator, so
+      # the Opportunities panel sizes per-order upside across region/city/store.
+      # total_order_value is the same total expressed as the line-item composite,
+      # so it decomposes down to order_items in the breakdown view.
+      - name: total_orders
+        label: Orders
+      - name: gross_revenue
+        label: Revenue
+      - name: total_order_value
+        label: Line-Item Revenue
+      - name: avg_order_value
+        label: Avg Order Value
+      - name: net_revenue
+        label: Net Revenue
 
   - id: city
     label: City
-    description: City containing one or more stores — the middle of the store location hierarchy. Belongs to exactly one region; store measures promote up into their city.
+    description: City containing one or more stores — the middle of the store location hierarchy. Belongs to exactly one region; store footprint and order revenue promote up into their city.
     display_field: city
     dimensions:
       - name: city
@@ -307,10 +326,21 @@ entities:
         label: Avg Rent
       - name: rent_per_square_foot
         label: Rent / sq ft
+      # Order revenue promoted up from orders placed at this city's stores.
+      - name: total_orders
+        label: Orders
+      - name: gross_revenue
+        label: Revenue
+      - name: total_order_value
+        label: Line-Item Revenue
+      - name: avg_order_value
+        label: Avg Order Value
+      - name: net_revenue
+        label: Net Revenue
 
   - id: retail_store
     label: Store
-    description: Physical retail store — location, floor area, rent, and staffing, grouped by region.
+    description: Physical retail store — location, floor area, rent, and staffing, grouped by region. Orders placed at this store (orders.store_id) promote order revenue up onto the store, city, and region nodes.
     display_field: store_name
     dimensions:
       - name: store_id
@@ -330,8 +360,9 @@ entities:
       - name: staff_count
         label: Staff
     measures:
-      # A store is a leaf row; the sums/averages over a single store read as
-      # that store's own footprint, rent, and staffing.
+      # A store is a leaf row; the footprint/rent/staffing sums over a single
+      # store read as that store's own values. Order revenue is induced from the
+      # orders placed at this store (orders.store_id), aggregated to the store.
       - name: total_square_feet
         label: Floor Area
       - name: total_monthly_rent
@@ -340,6 +371,16 @@ entities:
         label: Staff
       - name: rent_per_square_foot
         label: Rent / sq ft
+      - name: total_orders
+        label: Orders
+      - name: gross_revenue
+        label: Revenue
+      - name: total_order_value
+        label: Line-Item Revenue
+      - name: avg_order_value
+        label: Avg Order Value
+      - name: net_revenue
+        label: Net Revenue
 
   # ── Finance & operations side ────────────────────────────────────────────
   # These entities are monthly/daily rollups that live on the cost/revenue
@@ -363,6 +404,8 @@ entities:
         label: Net Revenue
       - name: operating_profit
         label: Operating Profit
+      - name: annualized_operating_profit
+        label: Annualized Operating Profit
       - name: operating_margin
         label: Operating Margin
       - name: payroll
@@ -475,3 +518,81 @@ entities:
         label: Cost per Click
       - name: click_through_rate
         label: Click-Through Rate
+
+  - id: subscription_month
+    label: Subscription MRR
+    description: >-
+      Monthly recurring-revenue movements by plan, segment, and region. Carries
+      the four MRR flows (new / expansion / contraction / churn), the ending MRR
+      base, and ARR = MRR × 12. The canonical test bed for the metric tree's
+      sign and multiplicative propagation — raising churn correctly lowers net
+      new MRR, and ARR is unquantifiable without a period.
+    display_field: month
+    dimensions:
+      - name: month
+        label: Month
+      - name: plan
+        label: Plan
+      - name: segment
+        label: Segment
+      - name: region
+        label: Region
+    measures:
+      # Movement flows — additive over time and over the dimensions.
+      - name: starting_mrr
+        label: Starting MRR
+      - name: new_mrr
+        label: New MRR
+      - name: expansion_mrr
+        label: Expansion MRR
+      - name: contraction_mrr
+        label: Contraction MRR
+      - name: churned_mrr
+        label: Churned MRR
+      - name: total_mrr
+        label: MRR (ending base)
+      # Four-term subtraction composite and constant-multiplier composite.
+      - name: net_new_mrr
+        label: Net New MRR
+      - name: arr
+        label: ARR (MRR × 12)
+      # Per-unit rates — segment-spread compares these across segments.
+      - name: gross_churn_rate
+        label: Gross Churn Rate
+      - name: expansion_rate
+        label: Expansion Rate
+      - name: net_revenue_retention
+        label: Net Revenue Retention
+      - name: logo_churn_rate
+        label: Logo Churn Rate
+
+  - id: sale
+    label: Regional Sales
+    description: >-
+      Per-sale revenue by region and channel, at transactional grain (one row
+      per sale). The showcase for volume-aware opportunity sizing: Revenue is an
+      additive sum with a real row-count denominator (total_sales), so the
+      panel sizes each region/channel on revenue-per-sale and reports the upside
+      of lifting a below-benchmark segment to its peer rate across its own
+      volume. US has the lowest revenue-per-sale and the most sales, so it is
+      the biggest lever — the case a raw total-to-total comparison misses.
+      Regions use the canonical us/eu/apac/latam domain, so sales join the region
+      entity and this node links into the graph.
+    display_field: region
+    dimensions:
+      - name: sale_date
+        label: Sale Date
+      - name: region
+        label: Region
+      - name: channel
+        label: Channel
+    measures:
+      # Additive sums with total_sales as the row-count denominator → sized on a
+      # per-sale rate by the Opportunities panel.
+      - name: total_revenue
+        label: Revenue
+      - name: total_units
+        label: Units
+      # Per-sale rate — shown as the segment-spread diagnostic.
+      - name: avg_sale_value
+        label: Avg Sale Value

@@ -57,6 +57,11 @@ nd = "nd"
 # "Nd" is the "N days" time-window shorthand in ClickHouse query examples
 # (e.g. `WHERE ts >= now - Nd`); typos misreads the fragment as "And".
 Nd = "Nd"
+# "opps" — the `dim_opps` local binding for the per-dimension opportunity list
+# in airlayer's metric-tree engine (`dim_opps.push(DimensionOpportunity { .. })`),
+# quoted verbatim in the opportunity-sizing design doc. typos reads the
+# identifier fragment as a misspelling of "oops".
+opps = "opps"
 
 [type.md]
 extend-ignore-re = [

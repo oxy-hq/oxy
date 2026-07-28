@@ -65,6 +65,17 @@ export {
   _resetCustomAppManifestCacheForTest,
   loadCustomAppManifest
 } from "./manifest";
+// Metric-tree analysis hooks (drivers / what-if / RCA / opportunity sizing)
+export type { MetricTreeHookResult, UseMetricTreeOpts } from "./metric-tree-hooks";
+export {
+  useDistribution,
+  useExplain,
+  useMetricTree,
+  useOpportunity,
+  usePredict,
+  useSensitivity,
+  useTimeDimensions
+} from "./metric-tree-hooks";
 export type {
   AgentArtifact,
   AgentRunEvent,
@@ -109,3 +120,26 @@ export {
   useSemanticQuery,
   useTrackEvent
 } from "./react";
+// World-model hooks (graph / instances / driver-tree)
+export { readJsonSseStream } from "./sse";
+export type {
+  UseMeasureBreakdownResult,
+  UseWorldModelGraphResult,
+  UseWorldModelInstancesOpts,
+  UseWorldModelInstancesResult
+} from "./world-model-hooks";
+export {
+  useMeasureBreakdown,
+  useWorldModelGraph,
+  useWorldModelInstances
+} from "./world-model-hooks";
+// World Model node interface (the `expand` / `drill` / `explain` / `size` paradigm)
+export type {
+  ExpandedNode,
+  ExplainOpts,
+  MetricHandle,
+  MetricScope,
+  SizeOpts,
+  WorldModelApi
+} from "./world-node";
+export { createWorldModel, useWorldModel, WorldModelScopeUnsupportedError } from "./world-node";

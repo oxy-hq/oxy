@@ -26,10 +26,17 @@ dimensions:
   type: string
   description: First line of address
   expr: address_line_1
+  # A street address is one order per value — never a lever, and wide enough
+  # to blow the cardinality cap after paying for the aggregate.
+  segmentable: false
 - name: address_line_2
   type: string
   description: Second line of address
   expr: address_line_2
+  # Apartment/floor line. Segments cleanly into a handful of values, which
+  # is exactly why it slipped past the cardinality cap and got ranked as a
+  # revenue lever. Nobody can act on it.
+  segmentable: false
 - name: city
   type: string
   description: City name
@@ -42,6 +49,9 @@ dimensions:
   type: string
   description: Postal or ZIP code
   expr: postal_code
+  # Geography at a grain nobody owns; city/state carry the actionable
+  # version.
+  segmentable: false
 - name: country
   type: string
   description: Country name
@@ -50,6 +60,8 @@ dimensions:
   type: boolean
   description: Whether this is the default shipping address
   expr: is_default
+  # A flag about the address record, not about the order.
+  segmentable: false
 measures:
 - name: total_addresses
   type: count

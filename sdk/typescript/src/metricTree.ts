@@ -211,11 +211,36 @@ export interface OpportunityResult {
   target: string;
   period: [string, string];
   overall_value: number;
-  /** "value_share" (additive) or "equal" (ratios). */
+  /**
+   * "rows" (rate-based additive sizing — the only basis that yields a sized
+   * upside figure), "value_share" (additive) or "equal" (ratios).
+   */
   weight_basis: string;
   dimensions: DimensionOpportunity[];
   skipped_dimensions: SkippedDimension[];
   downstream: PredictImpact[];
+}
+
+// ── Distribution ─────────────────────────────────────────────────────────────
+
+/**
+ * Single-period structural decomposition. The server auto-derives the
+ * baseline as the equal-length window immediately before `period`, then
+ * returns an {@link ExplainResult}-shaped payload (so the same renderers
+ * work). Ignore the delta fields when rendering a pure distribution.
+ */
+export interface DistributionRequest {
+  target: string;
+  time_dimension: string;
+  /** `[start, end]` inclusive date strings. */
+  period: [string, string];
+}
+
+// ── Time dimensions ──────────────────────────────────────────────────────────
+
+export interface TimeDimensionsResponse {
+  /** view name → fully-qualified time-dimension ids (`view.dim`). */
+  by_view: Record<string, string[]>;
 }
 
 // ── Client ───────────────────────────────────────────────────────────────────

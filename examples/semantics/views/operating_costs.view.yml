@@ -54,6 +54,12 @@ entities:
       - cost_date
       - category
       - region
+  # Operating costs share the us/eu/apac/latam region domain — link to region so
+  # the cost entity joins the graph.
+  - name: region
+    type: foreign
+    description: Region the operating cost was incurred in
+    key: region
 
 dimensions:
   - name: cost_date

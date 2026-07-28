@@ -45,6 +45,13 @@ pub struct OxyMetricTreeRunner {
     role: WorkspaceRole,
     preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: u64,
+    /// When set, the semantic layer is parsed from this directory instead
+    /// of `config_manager.semantics_scan_path()`. Customer-app requests run
+    /// on the stateless serve fleet, where the workspace FS scan path does
+    /// not exist — they materialise the compiled layer from the compile
+    /// boundary into a tempdir and point the runner at it. The caller MUST
+    /// keep the tempdir guard alive for the duration of the run.
+    scan_path_override: Option<PathBuf>,
 }
 
 impl OxyMetricTreeRunner {
@@ -55,6 +62,7 @@ impl OxyMetricTreeRunner {
             role,
             preagg_cache: None,
             preagg_renewal_threshold_secs: 120,
+            scan_path_override: None,
         }
     }
 
@@ -66,6 +74,28 @@ impl OxyMetricTreeRunner {
         self.preagg_cache = cache;
         self.preagg_renewal_threshold_secs = renewal_threshold_secs;
         self
+    }
+
+    /// Parse the semantic layer from `scan_path` instead of the workspace FS
+    /// scan path — the compile-boundary path for the stateless serve fleet.
+    /// The `scan_path` must remain valid for the lifetime of every run (hold
+    /// the `MaterialisedScan` tempdir guard in the caller).
+    pub fn with_scan_path(mut self, scan_path: PathBuf) -> Self {
+        self.scan_path_override = Some(scan_path);
+        self
+    }
+
+    /// The directory the semantic layer is parsed from: the override when set
+    /// (compile boundary), else the workspace FS scan path.
+    fn effective_scan_path(&self) -> PathBuf {
+        match &self.scan_path_override {
+            Some(p) => p.clone(),
+            None => self
+                .workspace_manager
+                .config_manager
+                .semantics_scan_path()
+                .to_path_buf(),
+        }
     }
 
     /// Load the workspace's semantic layer from disk. Same scan path the
@@ -97,7 +127,9 @@ impl OxyMetricTreeRunner {
 #[async_trait]
 impl MetricTreeRunner for OxyMetricTreeRunner {
     async fn load_layer(&self) -> Result<SemanticLayer, MetricTreeRunnerError> {
-        Self::load_layer_sync(&self.workspace_manager)
+        let scan_path = self.effective_scan_path();
+        oxy_airlayer_compat::load_layer_from_dir(&scan_path)
+            .map_err(|e| MetricTreeRunnerError::LayerLoad(e.to_string()))
     }
 
     async fn list_databases(&self) -> Vec<DatabaseConfig> {
@@ -453,6 +485,10 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 &target,
                 &time_dimension,
                 (period.0.as_str(), period.1.as_str()),
+                // The agent asks a population-level question ("where is the
+                // upside in this measure?"); it has no instance in focus to
+                // narrow to.
+                &[],
                 &*executor,
             )
             .map_err(|e| MetricTreeRunnerError::Op(e.to_string()))
@@ -485,11 +521,7 @@ impl OxyMetricTreeRunner {
         let dialects = airlayer::DatasourceDialectMap::from_config_databases(&databases);
         let engine = airlayer::SemanticEngine::from_semantic_layer(layer.clone(), dialects)
             .map_err(|e| MetricTreeRunnerError::ExecutorBuild(e.to_string()))?;
-        let scan_path = self
-            .workspace_manager
-            .config_manager
-            .semantics_scan_path()
-            .to_path_buf();
+        let scan_path = self.effective_scan_path();
         Ok(RunInputs {
             layer,
             databases,
@@ -547,6 +579,184 @@ pub fn build_query_executor(
     // it so log lines can be correlated across the recursive search.
     let query_seq = std::sync::atomic::AtomicUsize::new(0);
     Box::new(move |request: &QueryRequest| {
+        let compiled = engine.compile_query(request)?;
+        // airlayer emits parameterized SQL ($1, $2, …) + a separate params
+        // vector. The agentic-connector executor takes a raw SQL string, so
+        // inline the params the same way `resolve_and_compile` does.
+        let sql = oxy_shared::substitute_params(&compiled.sql, &compiled.params);
+        let database = resolve_database(&engine, request, &databases)?;
+        let seq = query_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let total_start = std::time::Instant::now();
+
+        // Result-cache hit? Save the round-trip + warehouse work entirely.
+        let result_key = (database.clone(), sql.clone());
+        if let Some(cached) = result_cache.lock().unwrap().get(&result_key).cloned() {
+            tracing::info!(
+                target: "metric_tree.explain",
+                seq,
+                database = %database,
+                result_cache_hit = true,
+                row_count = cached.len(),
+                total_ms = total_start.elapsed().as_millis() as u64,
+                "query (cached)"
+            );
+            return Ok(cached);
+        }
+
+        // Preagg path: if a covering rollup exists in the local Parquet manifest,
+        // serve from DuckDB instead of the warehouse. Any failure falls through
+        // silently to the warehouse path below.
+        if let Some(ref preagg) = preagg_cache
+            && let Some(agentic_semantic::compile::CompiledQuery::Preaggregation {
+                preagg_sql,
+                parquet_path,
+                ..
+            }) = agentic_semantic::compile::try_resolve_local_parquet(
+                &scan_path,
+                request,
+                preagg,
+                preagg_renewal_threshold_secs,
+                &sql,
+                &database,
+            )
+        {
+            match execute_preagg_and_convert(&preagg_sql, &parquet_path) {
+                Ok(rows) => {
+                    tracing::info!(
+                        target: "metric_tree.explain",
+                        seq,
+                        database = %database,
+                        preagg = true,
+                        row_count = rows.len(),
+                        total_ms = total_start.elapsed().as_millis() as u64,
+                        "query (preagg)"
+                    );
+                    result_cache
+                        .lock()
+                        .unwrap()
+                        .insert(result_key, rows.clone());
+                    return Ok(rows);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "metric_tree.explain",
+                        seq,
+                        %e,
+                        "preagg execute failed, falling back to warehouse"
+                    );
+                }
+            }
+        }
+
+        // Pop an idle connector from the pool, or build a fresh one.
+        // Threads that find the pool empty build in parallel — concurrent
+        // first-batch queries each pay the build cost once, not N times.
+        let pooled = pool
+            .lock()
+            .unwrap()
+            .get_mut(&database)
+            .and_then(|v| v.pop());
+        let (connector, pool_hit) = if let Some(c) = pooled {
+            (c, true)
+        } else {
+            let build_start = std::time::Instant::now();
+            let ctx = OxyProjectContext::new(workspace_manager.clone())
+                .with_subject(user_id)
+                .with_role(role.clone());
+            let built = handle
+                .block_on(ctx.build_connector_for(&database))
+                .map_err(|e| EngineError::QueryError(e.to_string()))?;
+            tracing::info!(
+                target: "metric_tree.explain",
+                seq,
+                database = %database,
+                build_ms = build_start.elapsed().as_millis() as u64,
+                "connector built (pool miss)"
+            );
+            (built, false)
+        };
+
+        let exec_start = std::time::Instant::now();
+        let stream = handle
+            .block_on(connector.execute_query_full(&sql))
+            .map_err(|e| EngineError::QueryError(format!("{e:?}")))?;
+        let exec_ms = exec_start.elapsed().as_millis() as u64;
+        let decode_start = std::time::Instant::now();
+        let rows = handle
+            .block_on(crate::server::api::typed_stream::typed_stream_to_json_array(stream))
+            .map_err(|e| EngineError::QueryError(format!("{e:?}")))?;
+        let decode_ms = decode_start.elapsed().as_millis() as u64;
+        let row_count = rows.len();
+        let result = rows_to_maps(rows);
+        result_cache
+            .lock()
+            .unwrap()
+            .insert(result_key, result.clone());
+
+        // Return the connector to the pool so the next parallel call can reuse it.
+        pool.lock()
+            .unwrap()
+            .entry(database.clone())
+            .or_default()
+            .push(connector);
+
+        tracing::info!(
+            target: "metric_tree.explain",
+            seq,
+            database = %database,
+            pool_hit,
+            measures = ?request.measures,
+            dimensions = ?request.dimensions,
+            row_count,
+            exec_ms,
+            decode_ms,
+            total_ms = total_start.elapsed().as_millis() as u64,
+            sql_len = sql.len(),
+            "query"
+        );
+        Ok(result)
+    })
+}
+
+/// Like [`build_query_executor`], but rebuilds the engine from a SHARED layer on
+/// every query instead of capturing one fixed engine. The opportunity drill
+/// installs synthetic per-value measures into this same `Arc<RwLock<SemanticLayer>>`
+/// mid-recursion (under a brief write lock it always releases before calling the
+/// executor), so each query must compile against the CURRENT layer — a frozen
+/// engine snapshot would reject a measure it never saw. Per-query rebuild is
+/// acceptable: the drill runs on-expand only and issues a bounded number of
+/// queries (max_depth × candidates), and results are still cached below.
+#[allow(clippy::too_many_arguments)]
+pub fn build_drill_query_executor(
+    shared_layer: metric_tree_ops::SharedLayer,
+    dialects: airlayer::DatasourceDialectMap,
+    databases: Vec<DatabaseConfig>,
+    workspace_manager: WorkspaceManager,
+    user_id: Uuid,
+    role: WorkspaceRole,
+    handle: tokio::runtime::Handle,
+    scan_path: PathBuf,
+    preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
+    preagg_renewal_threshold_secs: u64,
+) -> Box<QueryExecutor> {
+    use agentic_connector::DatabaseConnector;
+    let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+
+    // Same per-run result cache + query counter as build_query_executor.
+    let result_cache: std::sync::Mutex<
+        std::collections::HashMap<(String, String), Vec<Map<String, Value>>>,
+    > = std::sync::Mutex::new(std::collections::HashMap::new());
+    let query_seq = std::sync::atomic::AtomicUsize::new(0);
+    Box::new(move |request: &QueryRequest| {
+        // Rebuild the engine from the CURRENT shared layer (read guard dropped
+        // immediately after building — the executor holds no layer lock while it
+        // runs SQL, and the drill holds none while it calls the executor).
+        let engine = {
+            let layer = shared_layer.read().expect("shared layer poisoned");
+            airlayer::SemanticEngine::from_semantic_layer(layer.clone(), dialects.clone())
+                .map_err(|e| EngineError::QueryError(e.to_string()))?
+        };
         let compiled = engine.compile_query(request)?;
         // airlayer emits parameterized SQL ($1, $2, …) + a separate params
         // vector. The agentic-connector executor takes a raw SQL string, so

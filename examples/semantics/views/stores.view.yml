@@ -4,6 +4,14 @@ description: |
   staffing. Region values (us / eu / apac / latam) align with operating_costs
   and the marketing views, so the store entity clusters with the cost side of
   the world model. Backed by a parquet fixture (stores.parquet).
+
+  Shape is deliberate and load-bearing: 4 regions → 3 cities each → 2 stores
+  each = 24 stores. Every level branches, so a drill scoped to one city still
+  has a real split to make; and every dimension stays under airlayer's
+  MAX_DIMENSION_CARDINALITY of 25, so store_name (24 values) survives as a
+  global lever instead of being dropped as high-cardinality. Regenerate with
+  examples/scripts/gen_stores_data.py, which owns that shape and refuses to
+  write a fixture that violates it.
 datasource: local
 table: stores.parquet
 
@@ -81,10 +89,16 @@ dimensions:
   type: number
   description: Retail floor area in square feet
   expr: square_feet
+  # Continuous store attribute — no repeated values to compare, so it costs
+  # an aggregate and is then discarded.
+  segmentable: false
 - name: monthly_rent
   type: number
   description: Monthly rent for the store ($)
   expr: monthly_rent
+  # Continuous store attribute; same as square_feet. (staff_count stays a
+  # lever: it is discrete and you can act on it.)
+  segmentable: false
 - name: staff_count
   type: number
   description: Number of staff working at the store

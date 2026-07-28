@@ -82,27 +82,20 @@ export function WorldModelGraph({
   onSelectChildInstance,
   onBrowseSamples
 }: WorldModelGraphProps) {
-  // Unconnected entities are always hidden — the graph only shows entities
-  // that participate in at least one relationship.
-  const filteredModel = useMemo<WorldModel>(() => {
-    const connected = new Set<string>();
-    for (const e of model.edges) {
-      connected.add(e.from);
-      connected.add(e.to);
-    }
-    return { ...model, entities: model.entities.filter((n) => connected.has(n.id)) };
-  }, [model]);
+  // Entity visibility is driven entirely by `.world-model.yml` (applied
+  // server-side); the graph renders every entity the backend returns, including
+  // ones with no relationships.
 
   // Topology-only layout trigger — selection changes don't re-run ELK.
   const { nodes: rawNodes, edges: layoutEdges } = useMemo(
-    () => worldModelToFlow(filteredModel, null),
-    [filteredModel]
+    () => worldModelToFlow(model, null),
+    [model]
   );
 
   // Selection-aware overlay — instant, no ELK call.
   const { nodes: selectionNodes, edges } = useMemo(
-    () => worldModelToFlow(filteredModel, selection),
-    [filteredModel, selection]
+    () => worldModelToFlow(model, selection),
+    [model, selection]
   );
 
   const selectionDataMap = useMemo(
@@ -122,10 +115,7 @@ export function WorldModelGraph({
     instanceKey,
     breakdownMeasure
   );
-  const viewToEntityIds = useMemo(
-    () => buildViewToEntityIds(filteredModel.entities),
-    [filteredModel]
-  );
+  const viewToEntityIds = useMemo(() => buildViewToEntityIds(model.entities), [model]);
   const contributorsByEntity = useMemo(
     () => groupBreakdownContributorsByEntity(breakdown ?? null, viewToEntityIds),
     [breakdown, viewToEntityIds]
@@ -152,7 +142,7 @@ export function WorldModelGraph({
   const sizeMap = useMemo(
     () =>
       buildLayoutSizeMap(
-        filteredModel.entities.map((e) => e.id),
+        model.entities.map((e) => e.id),
         {
           expandedEntityId,
           expandedRowCount,
@@ -164,7 +154,7 @@ export function WorldModelGraph({
         }
       ),
     [
-      filteredModel,
+      model,
       expandedEntityId,
       expandedRowCount,
       filterSeedEntityId,
@@ -392,9 +382,12 @@ export function WorldModelGraph({
 
   if (model.entities.length === 0) {
     return (
-      <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
-        No relationships found. Add <code className='mx-1 font-mono text-xs'>parent:</code> or
-        foreign entity declarations to your .view.yml files.
+      <div className='flex h-full flex-col items-center justify-center gap-1 text-muted-foreground text-sm'>
+        <p>No entities to show.</p>
+        <p className='text-xs'>
+          Define entities in your .view.yml files (and list them in .world-model.yml) to see them
+          here.
+        </p>
       </div>
     );
   }
@@ -405,18 +398,13 @@ export function WorldModelGraph({
           them (instance select / measure expand), so the change reads as the
           neighbors making room rather than a jump. Scoped to this graph. */}
       <style>{`.wm-graph .react-flow__node { transition: transform 300ms cubic-bezier(0.22, 0.61, 0.36, 1); }`}</style>
-      {filteredModel.entities.length === 0 ? (
-        <div className='flex h-full flex-col items-center justify-center gap-1 text-muted-foreground text-sm'>
-          <p>All entities are unconnected.</p>
-          <p className='text-xs'>Add a relationship to see them in the graph.</p>
-        </div>
-      ) : displayNodes === null ? (
+      {displayNodes === null ? (
         <div className='flex h-full items-center justify-center text-muted-foreground text-xs'>
           Laying out…
         </div>
       ) : (
         <ReactFlow
-          key={`${filteredModel.entities.length}-${edges.length}`}
+          key={`${model.entities.length}-${edges.length}`}
           nodes={displayNodes}
           edges={finalEdges}
           nodeTypes={nodeTypes}

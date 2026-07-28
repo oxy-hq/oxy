@@ -22,7 +22,9 @@ use airlayer::engine::metric_tree_ops::{ExplainConfig, ExplainResult, Opportunit
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
-use crate::agentic_wiring::metric_tree_runner::{OxyMetricTreeRunner, build_query_executor};
+use crate::agentic_wiring::metric_tree_runner::{
+    OxyMetricTreeRunner, build_drill_query_executor, build_query_executor,
+};
 use crate::server::api::middlewares::workspace_context::{
     EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerExtractor,
 };
@@ -174,7 +176,7 @@ pub struct ExplainConfigOverride {
     pub coverage_threshold: Option<f64>,
 }
 
-fn explain_config(over: Option<ExplainConfigOverride>) -> ExplainConfig {
+pub(crate) fn explain_config(over: Option<ExplainConfigOverride>) -> ExplainConfig {
     let mut config = ExplainConfig::default();
     if let Some(o) = over {
         if let Some(d) = o.deep {
@@ -244,6 +246,95 @@ pub struct OpportunityRequest {
     pub time_dimension: String,
     /// `[start, end]` inclusive date strings.
     pub period: (String, String),
+    /// Narrow the scan to one world-model instance. `None` sizes across the
+    /// whole population.
+    pub instance: Option<OpportunityInstance>,
+}
+
+/// A world-model instance to scope a scan to, addressed the way the rest of the
+/// world-model API addresses one: entity name plus instance key.
+#[derive(Debug, Deserialize)]
+pub struct OpportunityInstance {
+    pub entity: String,
+    /// JSON array for a composite key, else a bare scalar.
+    pub key: String,
+}
+
+/// Resolve an [`OpportunityRequest`]'s optional instance into the engine scope.
+///
+/// No instance → an empty scope, i.e. size the whole population.
+///
+/// An instance that cannot be resolved is an error rather than an ignored
+/// scope: silently sizing the population under a request that asked for one
+/// instance is how a panel ends up reporting company-wide numbers under an
+/// instance header.
+fn opportunity_scope(
+    layer: &airlayer::SemanticLayer,
+    req: &OpportunityRequest,
+) -> Result<Vec<airlayer::engine::query::QueryFilter>, MetricTreeError> {
+    let Some(instance) = req.instance.as_ref() else {
+        return Ok(Vec::new());
+    };
+    crate::server::api::world_model_graph::instance_scope_filters(
+        layer,
+        &instance.entity,
+        &instance.key,
+    )
+    .ok_or_else(|| {
+        MetricTreeError::NotFound(format!(
+            "cannot scope '{}' to '{}': no entity named '{}' in the semantic layer",
+            req.target, instance.key, instance.entity
+        ))
+    })
+}
+
+/// Airlayer's sizing result, plus the denominator that makes its rates legible.
+#[derive(Debug, Serialize)]
+pub struct OpportunityResponse {
+    #[serde(flatten)]
+    pub result: OpportunityResult,
+    /// The `count` measure whose value divides the target to form the per-unit
+    /// rates, as a `view.measure` id — set only in `weight_basis: "rows"` mode,
+    /// the only mode that forms rates.
+    ///
+    /// Without it a rate is an unlabelled number: the panel can only say
+    /// "533.9 vs 801.6", and a reader has no way to learn that means revenue per
+    /// order, nor *which* count it divided by. That last part is not pedantry —
+    /// the engine takes the FIRST declared `count` measure, so a view declaring
+    /// a filtered one (`completed_orders`) silently rates against a different
+    /// denominator than a reader would assume. Naming it is how a modeller can
+    /// notice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_denominator: Option<String>,
+}
+
+/// First `type: count` measure declared on `view_name`, as a `view.measure` id.
+///
+/// Mirrors airlayer's private `discover_count_measure` — same "first Count
+/// measure wins" rule, so the id we report is the one the engine actually
+/// divided by. Kept in sync by hand: if the crate ever surfaces the denominator
+/// on `OpportunityResult` itself, delete this and read it from there.
+fn count_measure_id(layer: &airlayer::SemanticLayer, view_name: &str) -> Option<String> {
+    let view = layer.views.iter().find(|v| v.name == view_name)?;
+    view.measures_list()
+        .iter()
+        .find(|m| m.measure_type == airlayer::schema::models::MeasureType::Count)
+        .map(|m| format!("{}.{}", view_name, m.name))
+}
+
+/// Whether `target` (a `view.measure` id) is something the drill sizes on a
+/// per-unit rate (`filtered_sum / count`).
+///
+/// airlayer no longer hard-gates rate mode to `type: sum` — an eligible additive
+/// composite (e.g. a `type: number | custom` root whose refs flatten to a single
+/// same-view additive expression) is rate-sized too. `supports_rate_basis` is
+/// airlayer's own authoritative answer to this question; call it rather than
+/// re-deriving eligibility from `measure_type` alone, which is how this handler
+/// used to accept only `type: sum` and silently omit `rate_denominator` for an
+/// accepted composite. Mirrors that rule handler-side, since `DrillResult` does
+/// not surface the weight basis the way `OpportunityResult` does.
+fn target_supports_rate_basis(layer: &airlayer::SemanticLayer, target: &str) -> bool {
+    airlayer::engine::metric_tree_ops::supports_rate_basis(layer, target)
 }
 
 /// `POST .../semantic/metric-tree/opportunity` — segment opportunity sizing.
@@ -253,9 +344,32 @@ pub async fn post_opportunity(
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     preagg_ctx: PreaggCacheCtx,
     Json(req): Json<OpportunityRequest>,
-) -> Result<Json<OpportunityResult>, MetricTreeError> {
-    let layer = load_layer(&workspace_manager)?;
+) -> Result<Json<OpportunityResponse>, MetricTreeError> {
+    let mut layer = load_layer(&workspace_manager)?;
+    // Order is load-bearing. The tree is built from the clean layer: the
+    // dispersion measure below is a pass-through, and pass-throughs read as
+    // composite nodes, so a tree built after it would sprout an internal
+    // `__opp_stddev__…` node into the world-model graph. The engine, by
+    // contrast, must be built from the augmented layer — it resolves measure
+    // names against its own copy, and would reject a measure it had never seen.
     let tree = oxy_semantic::build_metric_tree(&layer);
+    airlayer::engine::metric_tree_ops::augment_layer_for_opportunity(&mut layer, &req.target);
+    let scope = opportunity_scope(&layer, &req)?;
+    // Resolved here because `layer` and `req` are both moved into the blocking
+    // task below. Read from the augmented layer deliberately, but this is not
+    // shadow-proof: `augment_layer_for_opportunity` also installs a
+    // `MeasureType::Count` companion (`__opp_n__<measure>`) when the target
+    // carries `.filters`, and `count_measure_id` — like the engine's own
+    // `discover_count_measure` — takes the FIRST `Count` measure on the view.
+    // On a view with a natural `count` measure, that one is declared first and
+    // wins, so the synthetic companion never shows up here. On a view with NO
+    // natural count measure, the synthetic companion becomes the only `Count`
+    // found and gets reported as the denominator — naming a measure that
+    // doesn't exist on the layer the analyst actually sees.
+    let denominator = req
+        .target
+        .split_once('.')
+        .and_then(|(view, _)| count_measure_id(&layer, view));
     let databases = workspace_databases(&workspace_manager);
     let engine = build_engine(layer.clone(), &databases)?;
     let handle = tokio::runtime::Handle::current();
@@ -285,6 +399,7 @@ pub async fn post_opportunity(
             &req.target,
             &req.time_dimension,
             (req.period.0.as_str(), req.period.1.as_str()),
+            &scope,
             &executor,
         )
     })
@@ -292,7 +407,169 @@ pub async fn post_opportunity(
     .map_err(|e| MetricTreeError::Op(format!("opportunity task panicked: {e}")))?
     .map_err(|e| MetricTreeError::Op(e.to_string()))?;
 
-    Ok(Json(result))
+    // Only "rows" mode divides by the count to form rates; reporting a
+    // denominator for a scan that never used one would invite the reader to
+    // read `current_value` as a rate when it is a raw measure value.
+    let rate_denominator = (result.weight_basis == "rows")
+        .then_some(denominator)
+        .flatten();
+    Ok(Json(OpportunityResponse {
+        result,
+        rate_denominator,
+    }))
+}
+
+// ── Query-executing op: opportunity drill (recursive decomposition) ──────────
+
+#[derive(Debug, Deserialize)]
+pub struct DrillRequest {
+    pub target: String,
+    pub time_dimension: String,
+    /// `[start, end]` inclusive date strings.
+    pub period: (String, String),
+    /// Narrow the scan to one world-model instance. `None` drills across the
+    /// whole population.
+    pub instance: Option<OpportunityInstance>,
+    /// Optional overrides; defaults to airlayer's `DrillConfig::default()`
+    /// (max_depth 5, alpha = the single-scan significance budget).
+    pub max_depth: Option<usize>,
+    pub alpha: Option<f64>,
+    /// Root the drill at a specific row of the root scan instead of its
+    /// top-ranked one. The merged panel sends this when an analyst expands a
+    /// row that is not the engine's own pick.
+    pub root: Option<airlayer::engine::metric_tree_ops::DrillRoot>,
+}
+
+/// The drill tree, plus the denominator that makes its rates legible (same role
+/// as [`OpportunityResponse::rate_denominator`]). `result` is null when the root
+/// scan found nothing to drill (`Ok(None)`).
+#[derive(Debug, Serialize)]
+pub struct DrillResponse {
+    #[serde(flatten)]
+    pub result: Option<airlayer::engine::metric_tree_ops::DrillResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_denominator: Option<String>,
+}
+
+/// Resolve a [`DrillRequest`]'s optional instance into the engine scope.
+///
+/// Mirrors [`opportunity_scope`] against `DrillRequest`: no instance → an empty
+/// scope (drill the whole population); an instance that cannot be resolved is an
+/// error rather than a silently-ignored scope.
+fn opportunity_scope_from_drill(
+    layer: &airlayer::SemanticLayer,
+    req: &DrillRequest,
+) -> Result<Vec<airlayer::engine::query::QueryFilter>, MetricTreeError> {
+    let Some(instance) = req.instance.as_ref() else {
+        return Ok(Vec::new());
+    };
+    crate::server::api::world_model_graph::instance_scope_filters(
+        layer,
+        &instance.entity,
+        &instance.key,
+    )
+    .ok_or_else(|| {
+        MetricTreeError::NotFound(format!(
+            "cannot scope '{}' to '{}': no entity named '{}' in the semantic layer",
+            req.target, instance.key, instance.entity
+        ))
+    })
+}
+
+/// `POST .../semantic/metric-tree/drill` — recursive gap decomposition.
+///
+/// Mirrors [`post_opportunity`] with three deltas: the augmented layer is shared
+/// via `Arc<RwLock<>>`, the executor rebuilds its engine per query from that
+/// shared layer (so the drill's mid-recursion synthetic measures compile), and
+/// it calls `opportunity_drill` instead of `opportunity`.
+pub async fn post_opportunity_drill(
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    preagg_ctx: PreaggCacheCtx,
+    Json(req): Json<DrillRequest>,
+) -> Result<Json<DrillResponse>, MetricTreeError> {
+    let mut clean_layer = load_layer(&workspace_manager)?;
+    // Tree from the CLEAN layer (same reason as post_opportunity: augmentation
+    // adds pass-through measures that would sprout graph nodes).
+    let tree = oxy_semantic::build_metric_tree(&clean_layer);
+    // Augment the ROOT target before sharing — the drill's children augment
+    // themselves via dimension_candidates.
+    airlayer::engine::metric_tree_ops::augment_layer_for_opportunity(&mut clean_layer, &req.target);
+    // opportunity_scope + denominator read from the augmented layer, same as
+    // post_opportunity.
+    let scope = opportunity_scope_from_drill(&clean_layer, &req)?;
+    let denominator = req
+        .target
+        .split_once('.')
+        .and_then(|(view, _)| count_measure_id(&clean_layer, view));
+    // Read the target's rate-basis eligibility before the layer is moved into
+    // the Arc, so the response can gate the rate denominator on rows mode
+    // (sum, or an eligible additive composite).
+    let target_supports_rate_basis = target_supports_rate_basis(&clean_layer, &req.target);
+
+    let databases = workspace_databases(&workspace_manager);
+    let dialects = airlayer::DatasourceDialectMap::from_config_databases(&databases);
+    let shared: airlayer::engine::metric_tree_ops::SharedLayer =
+        std::sync::Arc::new(std::sync::RwLock::new(clean_layer));
+    let handle = tokio::runtime::Handle::current();
+    let scan_path = workspace_manager
+        .config_manager
+        .semantics_scan_path()
+        .to_path_buf();
+    let preagg_cache = preagg_ctx.cache;
+    let preagg_renewal_threshold_secs = preagg_ctx.renewal_threshold_secs.unwrap_or(120);
+    let default_config = airlayer::engine::metric_tree_ops::DrillConfig::default();
+    let config = airlayer::engine::metric_tree_ops::DrillConfig {
+        max_depth: req.max_depth.unwrap_or(default_config.max_depth),
+        alpha: req.alpha.unwrap_or(default_config.alpha),
+        root: req.root.clone(),
+    };
+
+    let shared_for_exec = shared.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let executor = build_drill_query_executor(
+            shared_for_exec,
+            dialects,
+            databases,
+            workspace_manager,
+            user.id,
+            role,
+            handle,
+            scan_path,
+            preagg_cache,
+            preagg_renewal_threshold_secs,
+        );
+        airlayer::engine::metric_tree_ops::opportunity_drill(
+            &tree,
+            &shared,
+            &req.target,
+            &req.time_dimension,
+            (req.period.0.as_str(), req.period.1.as_str()),
+            &scope,
+            &executor,
+            &config,
+        )
+    })
+    .await
+    .map_err(|e| MetricTreeError::Op(format!("drill task panicked: {e}")))?
+    .map_err(|e| MetricTreeError::Op(e.to_string()))?;
+
+    // A rate denominator only makes sense when the drill actually formed per-unit
+    // rates — i.e. rows mode, which airlayer gates to a `supports_rate_basis`
+    // target (a sum, or an eligible additive composite). `opportunity_drill`
+    // returns `Some` for any additive root (its dimensions are populated in
+    // value_share/equal mode too), so gating on `Some` alone would mislabel a raw
+    // value as a rate. Require BOTH a result and a rate-basis target, mirroring
+    // `post_opportunity`'s `weight_basis == "rows"` gate.
+    let rate_denominator = result
+        .as_ref()
+        .filter(|_| target_supports_rate_basis)
+        .and(denominator);
+    Ok(Json(DrillResponse {
+        result,
+        rate_denominator,
+    }))
 }
 
 // ── Discovery: time dimensions per view ─────────────────────────────────────
@@ -392,7 +669,7 @@ pub async fn post_distribution(
 /// Compute an `(start, end)` window of the same inclusive day-count as
 /// `period`, ending the day before `period.0`. Returns `None` if either
 /// bound is not a valid `YYYY-MM-DD` date.
-fn derive_baseline_period(start: &str, end: &str) -> Option<(String, String)> {
+pub(crate) fn derive_baseline_period(start: &str, end: &str) -> Option<(String, String)> {
     use chrono::{Duration, NaiveDate};
     let start = NaiveDate::parse_from_str(start, "%Y-%m-%d").ok()?;
     let end = NaiveDate::parse_from_str(end, "%Y-%m-%d").ok()?;
@@ -403,4 +680,208 @@ fn derive_baseline_period(start: &str, end: &str) -> Option<(String, String)> {
     let baseline_end = start - Duration::days(1);
     let baseline_start = baseline_end - Duration::days(duration_days);
     Some((baseline_start.to_string(), baseline_end.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Parsed from YAML rather than built field-by-field, so the fixture is
+    /// bound to the real view schema instead of a hand-rolled approximation.
+    fn layer(yaml: &str) -> airlayer::SemanticLayer {
+        serde_yaml::from_str(yaml).expect("fixture layer should parse")
+    }
+
+    #[test]
+    fn count_measure_id_names_the_denominator_rates_are_formed_against() {
+        let l = layer(
+            r#"
+views:
+  - name: orders
+    measures:
+      - name: gross_revenue
+        type: sum
+        expr: total_amount
+      - name: total_orders
+        type: count
+"#,
+        );
+
+        // The sum is skipped: only a `count` can serve as the volume denominator.
+        assert_eq!(
+            count_measure_id(&l, "orders").as_deref(),
+            Some("orders.total_orders")
+        );
+    }
+
+    #[test]
+    fn count_measure_id_takes_the_first_count_as_the_engine_does() {
+        // The engine divides by the FIRST declared count, so reporting any other
+        // would name a denominator it never used — the exact confusion this
+        // field exists to prevent.
+        let l = layer(
+            r#"
+views:
+  - name: orders
+    measures:
+      - name: completed_orders
+        type: count
+      - name: total_orders
+        type: count
+"#,
+        );
+
+        assert_eq!(
+            count_measure_id(&l, "orders").as_deref(),
+            Some("orders.completed_orders")
+        );
+    }
+
+    #[test]
+    fn count_measure_id_is_absent_when_a_view_declares_no_count() {
+        // Mirrors the engine refusing to size: no count, no rate, no denominator
+        // to name.
+        let l = layer(
+            r#"
+views:
+  - name: orders
+    measures:
+      - name: gross_revenue
+        type: sum
+        expr: total_amount
+"#,
+        );
+
+        assert_eq!(count_measure_id(&l, "orders"), None);
+        assert_eq!(count_measure_id(&l, "nonexistent_view"), None);
+    }
+
+    fn sized_result(weight_basis: &str) -> OpportunityResult {
+        OpportunityResult {
+            target: "orders.gross_revenue".into(),
+            period: ("2026-04-15".into(), "2026-07-13".into()),
+            overall_value: 640_000.0,
+            weight_basis: weight_basis.into(),
+            dimensions: vec![],
+            skipped_dimensions: vec![],
+            downstream: vec![],
+        }
+    }
+
+    #[test]
+    fn response_flattens_the_denominator_alongside_the_engine_result() {
+        // The client reads `rate_denominator` as a sibling of `weight_basis`; a
+        // nested `result` object would silently break every field of the panel.
+        let json = serde_json::to_value(OpportunityResponse {
+            result: sized_result("rows"),
+            rate_denominator: Some("orders.total_orders".into()),
+        })
+        .unwrap();
+
+        assert_eq!(json["weight_basis"], "rows");
+        assert_eq!(json["rate_denominator"], "orders.total_orders");
+        assert_eq!(json["target"], "orders.gross_revenue");
+        assert!(json.get("result").is_none(), "must not nest under `result`");
+    }
+
+    #[test]
+    fn response_omits_the_denominator_when_no_rate_was_formed() {
+        // In value_share/equal mode `current_value` is a raw measure value, not a
+        // rate. Naming a denominator would invite reading it as one.
+        let json = serde_json::to_value(OpportunityResponse {
+            result: sized_result("equal"),
+            rate_denominator: None,
+        })
+        .unwrap();
+
+        assert!(json.get("rate_denominator").is_none());
+    }
+
+    #[test]
+    fn drill_response_wire_format_is_stable() {
+        use airlayer::engine::metric_tree_ops::{
+            CandidateKind, DrillCandidate, DrillLevel, DrillResult, StopReason,
+        };
+        let resp = DrillResponse {
+            result: Some(DrillResult {
+                target: "orders.revenue".into(),
+                root_gap: 500.0,
+                root_upside: 276_000.0,
+                benchmark_filter: vec![],
+                levels: vec![DrillLevel {
+                    measure: "orders.revenue".into(),
+                    segment_filter: vec![],
+                    gap: 500.0,
+                    root_share: 1.0,
+                    candidates: vec![DrillCandidate {
+                        kind: CandidateKind::Dimension {
+                            dimension: "orders.category".into(),
+                            value: "sides".into(),
+                        },
+                        concentration: 0.9,
+                        gap: 450.0,
+                        gated: true,
+                    }],
+                    stop_reason: Some(StopReason::NoCandidates),
+                }],
+            }),
+            rate_denominator: Some("orders.total_orders".into()),
+        };
+        let j = serde_json::to_value(&resp).unwrap();
+        assert_eq!(j["rate_denominator"], "orders.total_orders");
+        assert_eq!(j["target"], "orders.revenue"); // flattened, not nested under "result"
+        let cand = &j["levels"][0]["candidates"][0];
+        assert_eq!(cand["kind"]["Dimension"]["dimension"], "orders.category"); // externally tagged
+        assert_eq!(cand["kind"]["Dimension"]["value"], "sides");
+        assert_eq!(cand["gated"], true);
+        assert_eq!(j["levels"][0]["stop_reason"], "NoCandidates"); // unit variant → string
+    }
+
+    #[test]
+    fn drill_request_accepts_an_optional_root() {
+        // Absent -> None: the top-pick path the panel uses before any row is expanded.
+        let without: DrillRequest = serde_json::from_value(serde_json::json!({
+            "target": "orders.revenue",
+            "time_dimension": "orders.created_at",
+            "period": ["2024-01-01", "2024-03-31"],
+        }))
+        .expect("root is optional");
+        assert!(without.root.is_none());
+
+        // Present -> the named row, verbatim.
+        let with: DrillRequest = serde_json::from_value(serde_json::json!({
+            "target": "orders.revenue",
+            "time_dimension": "orders.created_at",
+            "period": ["2024-01-01", "2024-03-31"],
+            "root": { "dimension": "orders.channel", "segment": "mobile_app" },
+        }))
+        .expect("root must deserialize");
+        let root = with.root.expect("root present");
+        assert_eq!(root.dimension, "orders.channel");
+        assert_eq!(root.segment, "mobile_app");
+    }
+
+    #[test]
+    fn drill_response_none_serializes_without_result_fields() {
+        // The frontend treats "no `levels` key" as nothing-to-drill. A None
+        // result must flatten to an object carrying NEITHER the DrillResult
+        // fields NOR rate_denominator, so the panel's empty-state branch fires.
+        let resp = DrillResponse {
+            result: None,
+            rate_denominator: None,
+        };
+        let j = serde_json::to_value(&resp).unwrap();
+        assert!(
+            j.get("levels").is_none(),
+            "None must not emit `levels`: {j}"
+        );
+        assert!(
+            j.get("target").is_none(),
+            "None must not emit `target`: {j}"
+        );
+        assert!(
+            j.get("rate_denominator").is_none(),
+            "a None denominator must be skipped: {j}"
+        );
+    }
 }

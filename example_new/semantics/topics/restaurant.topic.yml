@@ -1,0 +1,15 @@
+name: restaurant
+description: |
+  Restaurant chain performance: checks, line items, the menu, and the fleet.
+
+  Scoping the drill to this topic keeps the decomposition inside one coherent
+  domain. Start it at `checks.net_revenue` segmented on `locations.region` to walk
+  the intended path: revenue splits into entrees and add-ons, the gap lands
+  almost entirely in add-ons, and the add-on leaves rank one way on revenue and
+  another way on profit.
+views:
+  - checks
+  - check_items
+  - menu_items
+  - locations
+  - servers

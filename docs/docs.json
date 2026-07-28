@@ -81,7 +81,8 @@
                   "build/semantic-model/modeling"
                 ]
               },
-              "build/world-model/metric-tree"
+              "build/world-model/metric-tree",
+              "build/world-model/opportunity-sizing"
             ]
           },
           {

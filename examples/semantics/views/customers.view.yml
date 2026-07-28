@@ -32,10 +32,16 @@ dimensions:
   type: string
   description: Customer name
   expr: name
+  # One value per customer. Not a lever, and wide.
+  segmentable: false
 - name: gender
   type: string
   description: Customer gender
   expr: gender
+  # A protected attribute. There is no action behind a gender gap in order
+  # value, and framing one as 'addressable upside' is not a thing this
+  # product should say.
+  segmentable: false
 measures:
 - name: total_customers
   type: count

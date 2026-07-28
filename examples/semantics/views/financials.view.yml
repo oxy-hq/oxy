@@ -118,22 +118,35 @@ measures:
       Pre-aggregated inside the view's SQL so airlayer rolls it up
       additively when you query at quarter / year grain.
     expr: operating_profit
+    # Coefficients make this a fully sizable what-if: operating_profit is a
+    # linear sum, so ∂profit/∂input is exactly +1 / −1. A dollar less payroll is
+    # a dollar more profit; predict / what-if now returns a real number instead
+    # of an unquantified "moves it down".
     drivers:
       - measure: financials.net_revenue
-        direction: positive
-        strength: strong
-        confidence: high
-        description: Net revenue is the additive positive input.
+        coefficient: 1.0
+        form: linear
+        description: Net revenue is the additive positive input (∂profit/∂net_revenue = +1).
       - measure: financials.payroll
-        direction: negative
-        strength: strong
-        confidence: high
-        description: Payroll is the largest fixed-cost input.
+        coefficient: -1.0
+        form: linear
+        description: Payroll is the largest fixed-cost input (∂profit/∂payroll = −1).
       - measure: financials.total_op_cost
-        direction: negative
-        strength: moderate
-        confidence: high
-        description: Operating expenses (logistics, rent, fees, etc.) reduce profit.
+        coefficient: -1.0
+        form: linear
+        description: Operating expenses reduce profit dollar-for-dollar (∂profit/∂op_cost = −1).
+
+  # ── Constant-multiplier composite (retail counterpart to subscriptions.arr).
+  # Exercises multiplicative propagation on the retail tree: a $1 move in
+  # monthly operating_profit is $12 of annual run-rate, and predict cannot size
+  # it without current values. ──────────────────────────────────────────────
+  - name: annualized_operating_profit
+    type: custom
+    description: |
+      Operating profit projected to an annual run-rate (monthly × 12). A
+      constant-multiplier composite: the factor 12 is recovered from
+      parent/child, and predict reports it as "unquantifiable" without a period.
+    expr: "{{financials.operating_profit}} * 12"
 
   # ── Margin composite
   - name: operating_margin

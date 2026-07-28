@@ -1,0 +1,37 @@
+menu_item_id,item_name,category,item_type,unit_price,unit_cost,beverage_type
+101,Grilled Ribeye,entrees,entree,62.0,19.84,
+102,Roast Chicken,entrees,entree,41.0,13.12,
+103,Pan-Seared Salmon,entrees,entree,49.0,16.17,
+104,Short Rib Pappardelle,entrees,entree,44.0,13.64,
+105,Mushroom Risotto,entrees,entree,36.0,10.08,
+106,Smash Burger,entrees,entree,30.5,10.37,
+107,Fried Chicken Sandwich,entrees,entree,27.5,9.08,
+108,Cacio e Pepe,entrees,entree,31.5,8.19,
+109,Blackened Catfish,entrees,entree,38.5,13.09,
+110,Harvest Grain Bowl,entrees,entree,26.5,7.95,
+201,Truffle Fries,sides,add_on,16.0,8.32,
+202,Mac and Cheese,sides,add_on,14.5,8.12,
+203,Garlic Mashed Potatoes,sides,add_on,12.0,6.84,
+204,Charred Broccolini,sides,add_on,13.0,7.15,
+205,House Salad,sides,add_on,11.0,5.94,
+206,Cornbread,sides,add_on,9.5,5.32,
+207,Onion Rings,sides,add_on,12.0,6.6,
+301,Fountain Soda,beverages,add_on,7.0,0.63,non_alcoholic
+302,Iced Tea,beverages,add_on,6.5,0.52,non_alcoholic
+303,Draft Beer,beverages,add_on,13.0,2.86,alcoholic
+304,House Wine,beverages,add_on,20.5,4.92,alcoholic
+305,Cold Brew,beverages,add_on,8.5,1.19,non_alcoholic
+306,Sparkling Water,beverages,add_on,6.0,0.6,non_alcoholic
+307,Lemonade,beverages,add_on,7.5,0.82,non_alcoholic
+308,Old Fashioned,beverages,add_on,18.0,3.78,alcoholic
+309,Margarita,beverages,add_on,17.0,3.91,alcoholic
+310,Negroni,beverages,add_on,18.0,3.96,alcoholic
+401,Chocolate Torte,desserts,add_on,16.5,6.27,
+402,Key Lime Pie,desserts,add_on,14.5,5.37,
+403,Seasonal Sorbet,desserts,add_on,12.0,4.32,
+404,Sticky Toffee Pudding,desserts,add_on,15.5,6.2,
+501,Crispy Calamari,appetizers,add_on,26.0,10.92,
+502,Burrata and Tomato,appetizers,add_on,24.0,9.6,
+503,Wings,appetizers,add_on,22.0,9.02,
+504,Deviled Eggs,appetizers,add_on,16.5,5.94,
+505,Soup of the Day,appetizers,add_on,13.5,4.59,
