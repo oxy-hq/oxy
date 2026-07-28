@@ -30,6 +30,8 @@ the row just stays empty when archival didn't happen.
 """
 from __future__ import annotations
 
+import os
+import urllib.parse
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -38,9 +40,25 @@ import httpx
 from .log import log
 
 
-# MTX playback server. The worker is co-located with MediaMTX in
-# the same docker-compose so the loopback address is correct.
-_MTX_PLAYBACK_URL = "http://127.0.0.1:9996/get"
+def _default_playback_url() -> str:
+    """MediaMTX playback server, on the SAME host as the MTX API but the
+    playback port :9996 instead of the API's :9997.
+
+    The worker and MediaMTX run as SEPARATE docker-compose services, so
+    the old hardcoded 127.0.0.1 reached nothing from inside the worker
+    ("All connection attempts failed"). Track `MEDIAMTX_API_URL` (which
+    production overrides — see main.py) so playback follows the API host
+    automatically instead of needing a second override."""
+    api = os.environ.get("MEDIAMTX_API_URL", "http://mediamtx:9997").strip()
+    parsed = urllib.parse.urlparse(api)
+    host = parsed.hostname or "mediamtx"
+    scheme = parsed.scheme or "http"
+    return f"{scheme}://{host}:9996/get"
+
+
+# Explicit MEDIAMTX_PLAYBACK_URL wins (e.g. a non-default playback port);
+# otherwise derive it from the API host.
+_MTX_PLAYBACK_URL = os.environ.get("MEDIAMTX_PLAYBACK_URL", "").strip() or _default_playback_url()
 
 # Pad the dwell window by this many seconds on each side so the
 # clip shows context (operator can see the lead-up + the
@@ -130,7 +148,7 @@ async def upload_window_clip(
         if sign_resp.status_code == 503:
             # Server says S3 isn't configured. Quiet — operator
             # opted into "no archival" by not setting
-            # OXY_CAMERAS_CLIPS_S3_BUCKET; we don't need a warning per
+            # OXY_S3_BUCKET; we don't need a warning per
             # violation.
             log("debug", "clip_archive.disabled_server_side",
                 report_id=report_id)
