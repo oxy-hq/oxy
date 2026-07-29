@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.117] - 2026-07-29
+
+### 🚀 Features
+
+- *(monitors,reconcile)* Timezone-aware windows + freshness watermark (#2811)
+
+### 🐛 Bug Fixes
+
+- *(webhooks)* Resolve the Toast integration from the compile boundary (#2816)
+- *(git)* Never fall back to the host machine's git credentials (#2818)
+- *(health)* Re-alert while a workspace stays unhealthy, link to its Health tab (#2812)
+- *(workspaces)* Report an unmaterialised working copy as a transient 503 (#2814)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(skills)* Reconcile knowledge cards with skills@0c51d931 (#2815)
+
 ## [0.5.116] - 2026-07-28
 
 ### 🚀 Features
@@ -16,6 +33,10 @@ All notable changes to this project will be documented in this file.
 ### 🚜 Refactor
 
 - *(cameras)* Move clip S3 env to OXY_CAMERAS_CLIPS_S3_* namespace (#2801)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.116 (#2809)
 
 ## [0.5.115] - 2026-07-27
 
