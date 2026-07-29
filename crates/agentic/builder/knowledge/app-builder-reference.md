@@ -2,7 +2,7 @@
 source:
   - oxy-hq/skills/skills/oxy-app-builder/SKILL.md
   - oxy-hq/skills/skills/oxy-app-builder/QUICK-REFERENCE.md
-reconciled-at: 6aa77a42934ba5a0902d299679c0a7c0d0a85dda
+reconciled-at: 0c51d931c1f9c1900d4e92e3a55cfa053e50d94c
 note: |
   Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
   the verbatim YAML templates. Re-condense by hand when source material
@@ -15,6 +15,15 @@ note: |
 An Oxy data app is a `*.app.yml` file that pairs **tasks** (operations that
 produce tabular or text output) with **displays** (visualizations that render
 that output). Mental model: `task -> output -> display`.
+
+> **Two app models — don't confuse them.** This card covers the declarative
+> `*.app.yml` app (tasks + displays, rendered by `oxy serve --enterprise`). The
+> other model is a **custom-code (React/Vite) app** identified by an
+> **`oxy-app.json`** manifest at the app root and deployed with `oxy publish` —
+> see "## Custom-code apps (`oxy-app.json`)" at the end. `oxy-app.json` is the
+> deploy manifest for that path, **not** an alternative to `*.app.yml`; never
+> claim "there is no oxy-app.json." Build a `*.app.yml` for a dashboard; build
+> the custom-code path for bespoke UI beyond tables/charts/markdown.
 
 ## File shape
 
@@ -641,3 +650,45 @@ Failure-recovery loop (matches the pattern used by view smoke-tests):
 This step is non-negotiable for onboarding apps because the user has no
 chance to fix the file before opening it; for chat-builder edits, prefer
 running the smoke test whenever the warehouse tools are reachable.
+
+## Custom-code apps (`oxy-app.json`)
+
+Everything above is the declarative `*.app.yml` path (no manifest needed). The
+**custom-code** path is a React/TS/Vite front-end deployed with `oxy publish`;
+every publishable app is identified by an **`oxy-app.json`** manifest at its
+root. Build this path when the user wants bespoke UI beyond tables/charts/
+markdown, or says "publish", "deploy", "oxy-app.json", or points at a
+`module-designs`-style React app. For a plain dashboard, build a `*.app.yml`.
+
+**The manifest** (`oxy-app.json`, the single source of truth the CLI reads):
+required `schemaVersion` (currently `2`), `slug`, `orgSlug`, `name`, and
+`build.outDir` (normally `dist`); optional `description`, `status` (card
+subtitle line), `art` (card image), `icon`, and `ask`
+(`{ agent: <path to .agentic.yml>, suggestedQuestions: [...] }` wires the
+launcher ask box to an agent). `env` / `target` / `project` are **not** baked
+into the manifest — CI or CLI flags supply them (`OXY_TARGET`, `OXY_ORG`,
+`OXY_ENV`, `--project`).
+
+**Three load-bearing files** (missing any one breaks the publish, not local dev):
+
+1. `oxy-app.json` at the module root.
+2. `vite.config.ts` with `base: process.env.OXY_APP_BASE_PATH || "/"` (so
+   code-split chunks resolve under `/customer-apps/<org>/<app>/`; local
+   `pnpm dev`/`build` fall back to `/`) **and** a `copyOxyAssets()` plugin that
+   copies `oxy-app.json` + its referenced `icon`/`art` into `dist/` on
+   `closeBundle`. Load-bearing: `oxy publish` tars only the built dir, and the
+   server captures launcher-card metadata from the bundle's own `oxy-app.json`
+   (`app_builds.manifest_json`) — a manifest left only at the module root never
+   reaches the server.
+3. `pnpm-workspace.yaml` with `allowBuilds: { esbuild: true }` — pnpm 10+ blocks
+   dependency build scripts by default, and esbuild (transitive via Vite) needs
+   its postinstall or `vite build` fails with `ERR_PNPM_IGNORED_BUILDS`.
+
+**Publish flow:** run `oxy publish` from the module dir — it builds, tars
+`dist/`, and uploads the app as a **draft**; an Oxy admin promotes the draft to
+live in the admin UI (CI never publishes straight to the live channel). First
+publish auto-registers the app when `--project` is passed. `oxy publish`
+requires a recent CLI (module-designs pins `0.5.97`); older binaries (e.g.
+`0.5.54`) predate the subcommand — check `oxy publish --help` first. Reference
+implementations live in `module-designs/` (`DEPLOYMENT.md` + each module's
+`oxy-app.json`).
