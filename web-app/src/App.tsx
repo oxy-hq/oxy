@@ -11,6 +11,7 @@ import {
   useParams,
   useSearchParams
 } from "react-router-dom";
+import { Button } from "@/components/ui/shadcn/button";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import AirwayPage from "@/pages/airway";
@@ -173,7 +174,9 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
   // implicit workspace is addressed by the nil UUID.
   const wsId = isLocalMode ? LOCAL_WORKSPACE_ID : wsIdParam;
   // biome-ignore lint/style/noNonNullAssertion: local gets the constant, cloud gets the :wsId param
-  const { isPending, isError, error, data } = useWorkspace(wsId!);
+  const workspaceQuery = useWorkspace(wsId!);
+  const { isPending, isError, error, data, isMaterializing, materializingTimedOut, refetch } =
+    workspaceQuery;
   const { setWorkspace, workspace } = useCurrentWorkspace();
 
   const { setIsOpen: setBuilderDialogOpen } = useBuilderDialog();
@@ -233,7 +236,10 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
   // and let the caller see the empty layout. The cloud fallbacks below don't apply.
   React.useEffect(() => {
     if (!isPending && data?.workspace_error) {
-      toast.error(data.workspace_error);
+      // Stable id so a repeat REPLACES rather than stacks. The loop that made
+      // this spam is fixed above, but a workspace-load error is never worth
+      // more than one toast on screen.
+      toast.error(data.workspace_error, { id: "workspace-load-error" });
       if (isLocalMode) return;
       if (orgSlug) {
         navigate(ROUTES.ORG(orgSlug).ROOT, { replace: true });
@@ -244,11 +250,15 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
   }, [isPending, data?.workspace_error, orgSlug, navigate, isLocalMode]);
 
   useEffect(() => {
-    if (isError) {
+    // A workspace that never finished starting is a real, terminal condition,
+    // but not the generic load failure: redirecting to the org root would
+    // remount the shell, refetch, and land right back here. It gets its own
+    // surface below instead.
+    if (isError && !materializingTimedOut) {
       const msg =
         (error as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         "Failed to load workspace.";
-      toast.error(msg);
+      toast.error(msg, { id: "workspace-load-error" });
       if (isLocalMode) return;
       if (orgSlug) {
         navigate(ROUTES.ORG(orgSlug).ROOT, { replace: true });
@@ -256,12 +266,39 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
         navigate(ROUTES.ROOT, { replace: true });
       }
     }
-  }, [isError, error, navigate, orgSlug, isLocalMode]);
+  }, [isError, materializingTimedOut, error, navigate, orgSlug, isLocalMode]);
 
+  // Still coming up (pod restart / rolling update) — the query is retrying, so
+  // this resolves on its own. `isMaterializing` implies `isPending`; naming it
+  // lets us say what the wait is for instead of showing a bare spinner.
   if (isPending) {
     return (
-      <div className='flex h-full w-full items-center justify-center'>
+      <div className='flex h-full w-full flex-col items-center justify-center gap-3'>
         <Spinner />
+        {isMaterializing && (
+          <p className='text-muted-foreground text-sm'>Workspace is starting up…</p>
+        )}
+      </div>
+    );
+  }
+
+  // Retries exhausted. Say so plainly and offer a retry — spinning forever
+  // tells the user nothing and hides a real outage.
+  //
+  // Copy rule: describe what the USER sees, never why. "Pod", "volume",
+  // "deploy", "replica" are our vocabulary, not theirs — they name causes a
+  // user can neither verify nor act on. Matches `IdeUnavailablePanel`, which
+  // says "Oxygen Factory is restarting. It will resume shortly."
+  if (materializingTimedOut) {
+    return (
+      <div className='flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center'>
+        <p className='font-medium text-sm'>This workspace isn't ready yet</p>
+        <p className='max-w-md text-muted-foreground text-sm'>
+          It's taking longer than usual to open. It should be available shortly.
+        </p>
+        <Button variant='outline' size='sm' onClick={() => refetch()}>
+          Try again
+        </Button>
       </div>
     );
   }

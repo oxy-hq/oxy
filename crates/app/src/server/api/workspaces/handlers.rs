@@ -1,5 +1,6 @@
 use axum::extract::{Extension, Json, Path, Query, State};
 use axum::response::Json as ResponseJson;
+use axum::response::{IntoResponse, Response};
 use reqwest::StatusCode;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -432,7 +433,11 @@ pub async fn get_revision_info(
         (status = 200, description = "Workspace details retrieved successfully", body = WorkspaceDetailsResponse),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Workspace not found"),
-        (status = 500, description = "Internal server error")
+        (status = 500, description = "Internal server error"),
+        (status = 503, description = "Workspace working copy is not on disk yet \
+            (pod restart / rolling update). Transient — carries \
+            `x-oxy-unavailable: workspace-materializing` and `Retry-After`; \
+            retry rather than surfacing an error. Cloud only.")
     ),
     security(
         ("ApiKey" = [])
@@ -445,7 +450,7 @@ pub async fn get_workspace(
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Extension(project): Extension<entity::workspaces::Model>,
     Path(workspace_id): Path<Uuid>,
-) -> Result<ResponseJson<WorkspaceDetailsResponse>, StatusCode> {
+) -> Result<ResponseJson<WorkspaceDetailsResponse>, Response> {
     info!("Getting workspace details for ID: {}", workspace_id);
 
     let role_str = role.as_str().to_string();
@@ -475,7 +480,9 @@ pub async fn get_workspace(
         }
     }
 
-    let workspace_root = workspace_root(&project).await?;
+    let workspace_root = workspace_root(&project)
+        .await
+        .map_err(IntoResponse::into_response)?;
 
     let local_path_for_key = app_state
         .mode
@@ -483,15 +490,80 @@ pub async fn get_workspace(
         .then_some(workspace_root.as_path());
     let storage_key = compute_workspace_storage_key(workspace_id, local_path_for_key);
 
+    // A missing working copy is "not ready yet" only when THIS instance owns the
+    // workspace filesystem. On a stateless serve replica it means something
+    // else entirely — the ide is unreachable and we are serving the DOCUMENTED
+    // degrade (`role_manifest::degrades_when_ide_unreachable` lists `/details`
+    // precisely so a dead ide doesn't take the workspace page down). A replica
+    // has no PVC, so `exists()` is false there in normal operation; answering
+    // 503 would turn a benign degraded page into an unusable one.
+    let missing_copy_is_transient =
+        !app_state.mode.is_local() && crate::server::role_manifest::process_is_fs_writable();
+
     build_workspace_details_response(
         workspace_id,
         &project.name,
         &workspace_root,
         app_state.mode.is_local(),
+        missing_copy_is_transient,
         role_str,
         storage_key,
     )
     .await
+}
+
+/// How long the FE should wait before retrying a `workspace-materializing` 503.
+/// Matches `ide_proxy`'s ide-down `Retry-After` — same class of "come back in a
+/// moment", and a shared number is one fewer thing to reconcile.
+const MATERIALIZING_RETRY_AFTER_SECS: &str = "5";
+
+/// The working copy is not on disk on an instance that OWNS one (ide / all).
+/// That is a readiness state, not a failure: git is the source of truth, so the
+/// checkout is by definition re-clonable and the only honest answer is "not
+/// yet". Say so with `503` + `Retry-After` and let the caller back off.
+///
+/// Only reachable when `missing_copy_is_transient` — a serve replica with no
+/// PVC hits the same `exists()` check in NORMAL operation while degrading for a
+/// down ide, and must keep its flagged 200.
+///
+/// It previously returned `200` with a `workspace_error` string, which was
+/// wrong in three compounding ways during a rolling update:
+///   1. A `200` is invisible to every ide-down detector (they key on `502` +
+///      `x-oxy-required-role: ide`), so nothing throttled it.
+///   2. That `200` carries `x-oxy-served-by: ide`, so the FE's success
+///      interceptor fired `reportIdeReachable()` — the response that should
+///      raise the "unavailable" UI was retiring it instead.
+///   3. The FE toasted the string AND navigated away, which remounted the
+///      shell, refetched, and toasted again. That loop is the toast spam.
+///
+/// Deliberately NOT `502` and NOT `x-oxy-required-role: ide`: the ide is
+/// REACHABLE and serving its other routes fine, so borrowing the ide-down
+/// signal would conflate two states — and because `reportIdeReachable()` fires
+/// on any successful ide response, a concurrent healthy request would flap the
+/// banner off while this one was still raising it.
+fn workspace_materializing_response(workspace_root: &std::path::Path) -> Response {
+    tracing::info!(
+        path = %workspace_root.display(),
+        "workspace details: working copy not materialised yet — 503 (transient)"
+    );
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        [
+            (
+                crate::server::ide_proxy::HEADER_UNAVAILABLE,
+                "workspace-materializing",
+            ),
+            (
+                axum::http::header::RETRY_AFTER.as_str(),
+                MATERIALIZING_RETRY_AFTER_SECS,
+            ),
+        ],
+        ResponseJson(serde_json::json!({
+            "error": "Workspace is still starting up",
+            "code": "workspace_materializing",
+        })),
+    )
+        .into_response()
 }
 
 pub async fn build_workspace_details_response(
@@ -501,24 +573,49 @@ pub async fn build_workspace_details_response(
     // Set to true in local mode so the response reports `GitMode::None`
     // even when a `.git` folder exists on disk. Opposite polarity from
     // the router's `include_git_features` — matches `ServeMode::is_local`.
-    git_disabled: bool,
+    is_local: bool,
+    // Whether a MISSING working copy should be reported as transient (503) or
+    // as the flagged degrade (200). Deliberately a separate flag rather than
+    // derived from `is_local`: three distinct situations produce a missing
+    // directory and only one of them is transient.
+    //   - ide/all in cloud, volume not populated yet → TRANSIENT. Ours to own.
+    //   - serve replica in cloud → the ide is down and we are serving the
+    //     documented graceful degrade. Not ours, not transient.
+    //   - local mode → no upstream to restore from, so it is genuinely gone.
+    missing_copy_is_transient: bool,
     current_user_role: String,
     storage_key: String,
-) -> Result<ResponseJson<WorkspaceDetailsResponse>, StatusCode> {
+) -> Result<ResponseJson<WorkspaceDetailsResponse>, Response> {
     let now = chrono::Utc::now().to_string();
 
-    // Workspace directory doesn't exist on disk (e.g. deleted externally).
-    // Return a flagged response with safe defaults so the frontend can
-    // surface a toast instead of erroring.
     if !workspace_root.exists() {
+        if missing_copy_is_transient {
+            return Err(workspace_materializing_response(workspace_root));
+        }
+        // The 200 with safe defaults and git shown as unavailable. Whether it
+        // carries a user-visible message depends on who is asking:
+        //
+        //   - LOCAL: the directory really is gone and the path is the user's
+        //     own filesystem, so naming it is the actionable thing to say.
+        //   - CLOUD serve replica: this is the DOCUMENTED degrade for a down
+        //     ide, i.e. expected operation — not an error. A server-side path
+        //     is our vocabulary, not the user's; they can neither verify nor
+        //     act on it. And the FE toasts `workspace_error` AND redirects to
+        //     the org root, which would defeat the very degrade this path
+        //     exists to serve. `git_mode: None` already tells the UI that git
+        //     is unavailable, and the ide-unavailable banner (raised by the
+        //     other IdeOnly requests 502ing) explains why.
+        let workspace_error = is_local.then(|| {
+            format!(
+                "Workspace directory not found: {}",
+                workspace_root.display()
+            )
+        });
         return Ok(no_git_response(
             workspace_id,
             name,
             now,
-            Some(format!(
-                "Workspace directory not found: {}",
-                workspace_root.display()
-            )),
+            workspace_error,
             false,
             current_user_role,
             storage_key,
@@ -528,7 +625,7 @@ pub async fn build_workspace_details_response(
     // Local-mode servers disable all git features — routes are not
     // mounted, capabilities must match. Force None regardless of
     // what lives on disk.
-    if git_disabled {
+    if is_local {
         return Ok(no_git_response(
             workspace_id,
             name,

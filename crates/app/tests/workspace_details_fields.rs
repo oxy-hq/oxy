@@ -57,6 +57,7 @@ async fn git_enabled_workspace_reports_local_mode() {
         "test-workspace",
         tmp.path(),
         false,
+        true, // owns the fs; irrelevant here — the dir exists
         "owner".to_string(),
         workspace_id.to_string(),
     )
@@ -105,8 +106,17 @@ async fn git_enabled_workspace_reports_local_mode() {
     assert_eq!(branch.name, "main");
 }
 
+/// CLOUD: a missing working copy is a READINESS state, not a failure — git is
+/// the source of truth, so the checkout is always re-clonable.
+///
+/// This must not be a `200`. It used to be, and during a k8s rolling update
+/// that produced toast spam on the homepage: a `200` is invisible to the
+/// ide-down detectors (which key on `502` + `x-oxy-required-role: ide`), it
+/// carries `x-oxy-served-by: ide` so the FE's success interceptor RETIRED the
+/// unavailable banner, and the FE toasted the error string then navigated away
+/// — remounting the shell, refetching, and toasting again.
 #[tokio::test]
-async fn missing_workspace_directory_reports_workspace_error() {
+async fn missing_workspace_directory_in_cloud_is_a_transient_503() {
     let tmp = TempDir::new().expect("tempdir");
     let missing = tmp.path().join("does-not-exist");
     assert!(!missing.exists());
@@ -116,12 +126,105 @@ async fn missing_workspace_directory_reports_workspace_error() {
         workspace_id,
         "gone",
         &missing,
-        false,
+        false, // cloud
+        true,  // this instance owns the workspace fs (ide / all)
         "admin".to_string(),
         workspace_id.to_string(),
     )
     .await
-    .expect("builder returned error");
+    .expect_err("cloud must report a missing working copy as transient, not 200");
+
+    assert_eq!(
+        resp.status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        "503 + Retry-After is the honest answer for 'not ready yet'"
+    );
+    assert_eq!(
+        resp.headers()
+            .get("x-oxy-unavailable")
+            .expect("x-oxy-unavailable must be set so the FE can classify this"),
+        "workspace-materializing"
+    );
+    assert_eq!(
+        resp.headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .expect("Retry-After must be set — this is a back-off, not a dead end"),
+        "5"
+    );
+    // NOT the ide-down signal: the ide is reachable and serving its other
+    // routes. Borrowing `x-oxy-required-role: ide` would conflate the two, and
+    // a concurrent healthy ide response would flap the banner back off.
+    assert!(
+        resp.headers().get("x-oxy-required-role").is_none(),
+        "must not masquerade as the ide-unreachable 502"
+    );
+}
+
+/// SERVE REPLICA: a missing working copy is NORMAL here — a stateless replica
+/// has no PVC. `/details` is listed in
+/// `role_manifest::degrades_when_ide_unreachable` precisely so that when the ide
+/// is down, a replica serves this from its own handler and the workspace page
+/// still renders with git shown as unavailable.
+///
+/// So this must stay a flagged `200`, NOT the materializing 503. Answering 503
+/// here turns a benign degraded page into an unusable one: the shell would spin
+/// on a condition that lasts as long as the ide outage. Cloud mode alone does
+/// not make a missing directory transient — only owning the filesystem does.
+#[tokio::test]
+async fn missing_workspace_directory_on_a_serve_replica_still_degrades() {
+    let tmp = TempDir::new().expect("tempdir");
+    let missing = tmp.path().join("does-not-exist");
+
+    let workspace_id = Uuid::new_v4();
+    let resp = build_workspace_details_response(
+        workspace_id,
+        "degraded",
+        &missing,
+        false, // cloud
+        false, // stateless serve replica — owns no workspace filesystem
+        "admin".to_string(),
+        workspace_id.to_string(),
+    )
+    .await
+    .expect("a serve replica must degrade, not 503");
+
+    let body = resp.0;
+    assert_eq!(
+        body.git_mode,
+        GitMode::None,
+        "git correctly reported unavailable while the ide is down"
+    );
+    assert!(
+        body.workspace_error.is_none(),
+        "a replica degrade carries NO error string: it is expected operation, not \
+         a failure. The FE toasts `workspace_error` and redirects to the org root, \
+         which would defeat the degrade — and the message named a server-side \
+         filesystem path, which is our vocabulary and not something a user can act on"
+    );
+    assert!(!body.capabilities.can_commit);
+    assert!(!body.capabilities.can_push);
+}
+
+/// LOCAL: no upstream to restore from, so a missing directory really is gone.
+/// Keep the flagged `200` the FE renders as a toast.
+#[tokio::test]
+async fn missing_workspace_directory_in_local_reports_workspace_error() {
+    let tmp = TempDir::new().expect("tempdir");
+    let missing = tmp.path().join("does-not-exist");
+    assert!(!missing.exists());
+
+    let workspace_id = Uuid::new_v4();
+    let resp = build_workspace_details_response(
+        workspace_id,
+        "gone",
+        &missing,
+        true,  // is_local
+        false, // local: nothing to restore from, so it is genuinely gone
+        "admin".to_string(),
+        workspace_id.to_string(),
+    )
+    .await
+    .expect("local keeps the flagged 200");
 
     let body = resp.0;
     assert_eq!(body.id, workspace_id);
@@ -173,7 +276,8 @@ async fn local_mode_forces_git_mode_none_even_with_dot_git_present() {
         workspace_id,
         "local-workspace",
         tmp.path(),
-        true, // git_disabled
+        true,  // is_local
+        false, // local: a missing copy is never transient
         "owner".to_string(),
         local_storage_key.clone(),
     )

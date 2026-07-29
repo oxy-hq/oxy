@@ -34,6 +34,30 @@ export function isIdeUnavailableError(error: unknown): boolean {
   return headers?.["x-oxy-required-role"] === "ide";
 }
 
+/**
+ * True when `error` is the workspace-materializing `503`: the ide OWNS this
+ * workspace but its working copy is not on disk yet (pod restart / k8s rolling
+ * update, before the volume is populated).
+ *
+ * Deliberately NOT the ide-down signal above. The ide is reachable and serving
+ * its other routes — only this workspace isn't ready. Two consequences:
+ *   - it must not raise the global ide-down banner, and
+ *   - it must not be treated as a failure. It is a readiness state with a
+ *     `Retry-After`, so the caller retries and renders a loading state.
+ *
+ * Callers must ALSO keep this out of their generic `isError` path. It was
+ * previously a `200` carrying a `workspace_error` string, which the shell
+ * toasted and then navigated away from — remounting, refetching, and toasting
+ * again. That loop is the toast spam this exists to prevent.
+ */
+export function isWorkspaceMaterializingError(error: unknown): boolean {
+  if (!isAxiosError(error)) return false;
+  const res = error.response;
+  if (res?.status !== 503) return false;
+  const headers = res.headers as Record<string, string | undefined> | undefined;
+  return headers?.["x-oxy-unavailable"] === "workspace-materializing";
+}
+
 export interface IdeHealthState {
   /** The developer environment is currently unreachable. */
   unavailable: boolean;

@@ -51,7 +51,11 @@ const HEADER_REQUIRED_ROLE: &str = "x-oxy-required-role";
 ///     still works. Mirrors `role_manifest::is_workspace_runtime_route`.
 ///   - `workspace-editing`: file editing, git, and compile are paused (they need
 ///     the git working copy).
-const HEADER_UNAVAILABLE: &str = "x-oxy-unavailable";
+///   - `workspace-materializing`: the ide owns this workspace but its working
+///     copy is not on disk yet (pod restart / rolling update, before the volume
+///     is populated). Distinct from the two above because the ide is REACHABLE —
+///     see `workspaces::handlers`, which is the other producer of this header.
+pub(crate) const HEADER_UNAVAILABLE: &str = "x-oxy-unavailable";
 
 /// The caller-visible host, carried across the proxy hop because `Host` cannot
 /// be. See [`preserve_public_host`].

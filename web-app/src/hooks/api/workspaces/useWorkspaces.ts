@@ -3,12 +3,20 @@ import { WorkspaceService, type WorkspaceSummary } from "@/services/api/workspac
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { Workspace, WorkspaceBranchesResponse } from "@/types/workspace";
 import queryKeys from "../queryKey";
+import { deriveMaterializingState, shouldRetryWorkspaceQuery } from "./materializing";
 
 export const useWorkspace = (workspaceId: string) => {
-  return useQuery<Workspace>({
+  const query = useQuery<Workspace>({
     queryKey: queryKeys.workspaces.item(workspaceId),
-    queryFn: () => WorkspaceService.getWorkspace(workspaceId)
+    queryFn: () => WorkspaceService.getWorkspace(workspaceId),
+    // The working copy isn't on disk YET (pod restart / rolling update). That's
+    // a readiness state, not a failure — keep retrying instead of surfacing it,
+    // or the shell toasts and redirects on a condition that fixes itself.
+    retry: shouldRetryWorkspaceQuery,
+    retryDelay: 5_000
   });
+
+  return { ...query, ...deriveMaterializingState(query) };
 };
 
 export const useWorkspaceBranches = (workspaceId: string) => {
