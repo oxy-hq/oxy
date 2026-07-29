@@ -411,6 +411,55 @@ pub async fn resolve_workspace_config(
     load_config_value(&db, revision_id).await
 }
 
+/// [`resolve_workspace_config`] as a typed [`Config`], with `workspace_path`
+/// re-injected — it is `#[serde(skip)]`, so the JSON round-trip always leaves
+/// it empty and downstream resolvers depend on it.
+///
+/// The single place the compile-boundary config contract is decoded. Callers
+/// that need a `Config` (the workspace-context middleware, the public Toast
+/// webhook) go through here so a future `#[serde(skip)]` field only has to be
+/// re-injected once.
+///
+/// `None` means "fall through to the filesystem" and covers every miss: no
+/// promoted revision, non-default branch on a working-copy node,
+/// undeserialisable config, DB error. `caller` only labels the logs so a miss
+/// is attributable to the route that hit it.
+pub async fn resolve_workspace_config_typed(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+    workspace_path: &std::path::Path,
+    caller: &str,
+) -> Option<oxy::config::model::Config> {
+    let json = match resolve_workspace_config(workspace_id, branch_hint).await {
+        Ok(Some(json)) => json,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::warn!(
+                workspace_id = %workspace_id, caller, error = ?e,
+                "compiled config lookup failed; falling through to FS"
+            );
+            return None;
+        }
+    };
+    match serde_json::from_value::<oxy::config::model::Config>(json) {
+        Ok(mut config) => {
+            config.workspace_path = workspace_path.to_path_buf();
+            tracing::debug!(
+                workspace_id = %workspace_id, caller,
+                "config.yml served from compile boundary"
+            );
+            Some(config)
+        }
+        Err(e) => {
+            tracing::warn!(
+                workspace_id = %workspace_id, caller, error = ?e,
+                "compiled config deserialise failed; falling through to FS"
+            );
+            None
+        }
+    }
+}
+
 /// Load and merge the compiled config for a specific revision into the single
 /// top-level object `config.yml` deserialises from. Uses the SAME merge as the
 /// compile-time gate (`oxy_compile::merge_compiled_config`) so the shape the

@@ -11,9 +11,17 @@
 //! HMAC verification is gated on the workspace's `integrations:` config: when
 //! a `toast` integration is declared, its `webhook_secret_var` is resolved
 //! from workspace secrets and used to verify the `Toast-Webhook-Signature`
-//! header. When the integration is absent, the handler accepts well-formed
-//! payloads without verification (dev convenience). Production workspaces
-//! must configure the integration via Settings → Apps.
+//! header. When the integration is absent the handler fails closed (401)
+//! outside local mode, since an unauthenticated endpoint with no signing
+//! secret would let anyone forge ripples against a workspace UUID.
+//!
+//! That fail-closed branch makes the *config source* load-bearing: this route
+//! is `FleetOk`, so it runs on stateless `serve` replicas that hold no
+//! workspace working copy. It therefore resolves `config.yml` from the compile
+//! boundary (`workspace_compiled_configs`) first and only falls back to the FS
+//! — otherwise every production delivery reads as "integration not configured"
+//! and is rejected. Production workspaces must both configure the integration
+//! via Settings → Apps *and* have a promoted revision.
 
 use axum::body::Bytes;
 use axum::extract::{Query, State};
@@ -183,7 +191,11 @@ pub async fn toast_order_webhook(
 /// secret + restaurant_guid allowlist when configured; `None` when no
 /// `toast` integration exists. Errors only on DB / config / secrets
 /// failures.
-async fn load_toast_config(
+///
+/// `pub` for the `toast_webhook_compile_boundary` integration test, which
+/// drives it against a seeded compiled revision — the handler itself needs an
+/// `AppState` and a live axum stack to reach.
+pub async fn load_toast_config(
     project_id: Uuid,
 ) -> Result<Option<(String, Vec<String>)>, (StatusCode, String)> {
     let wm = build_workspace_manager(project_id).await?;
@@ -202,6 +214,11 @@ async fn load_toast_config(
 /// The Toast handler lives on the public router (no auth middleware), so
 /// it loads the workspace row + config manually rather than relying on
 /// the workspace-context middleware.
+///
+/// Config comes from the compile boundary when the workspace has a promoted
+/// revision, and only otherwise from `config.yml` on disk. Secrets always come
+/// from the workspace secret store (Postgres) with an env fallback, so a
+/// replica with no working copy can still verify a signature end-to-end.
 async fn build_workspace_manager(
     project_id: Uuid,
 ) -> Result<WorkspaceManager, (StatusCode, String)> {
@@ -224,29 +241,7 @@ async fn build_workspace_manager(
         })?
         .ok_or((StatusCode::NOT_FOUND, "workspace not found".to_string()))?;
 
-    // Local mode: the nil-UUID workspace row carries no `path` column — its
-    // directory is the server's resolved local workspace (the startup cwd),
-    // exactly as `local_context_middleware` resolves it for the authenticated
-    // routes. The cloud path reads `path` off the DB row.
-    let path = if project_id == LOCAL_WORKSPACE_ID {
-        resolve_local_workspace_path().map_err(|e| {
-            tracing::error!(workspace = %project_id, error = %e, "resolve local workspace path failed");
-            (
-                StatusCode::BAD_REQUEST,
-                "invalid workspace path".to_string(),
-            )
-        })?
-    } else {
-        effective_workspace_path(&workspace_row, None)
-            .await
-            .map_err(|e| {
-                tracing::error!(workspace = %project_id, error = %e, "resolve workspace path failed");
-                (
-                    StatusCode::BAD_REQUEST,
-                    "invalid workspace path".to_string(),
-                )
-            })?
-    };
+    let path = resolve_manager_path(project_id, &workspace_row).await?;
     let secrets =
         SecretsManager::from_database_with_env_fallback(SecretManagerService::new(project_id))
             .map_err(|e| {
@@ -256,16 +251,8 @@ async fn build_workspace_manager(
                     "secrets manager init failed".to_string(),
                 )
             })?;
-    let builder = WorkspaceBuilder::new(project_id)
-        .with_workspace_path_and_fallback_config(&path)
-        .await
-        .map_err(|e| {
-            tracing::error!(workspace = %project_id, error = %e, "workspace builder failed");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "workspace builder failed".to_string(),
-            )
-        })?
+    let builder = config_builder(project_id, &path)
+        .await?
         .with_secrets_manager(secrets);
     builder.build().await.map_err(|e| {
         tracing::error!(workspace = %project_id, error = %e, "workspace build failed");
@@ -274,6 +261,88 @@ async fn build_workspace_manager(
             "workspace build failed".to_string(),
         )
     })
+}
+
+/// Workspace directory for this request.
+///
+/// Local mode: the nil-UUID workspace row carries no `path` column — its
+/// directory is the server's resolved local workspace (the startup cwd),
+/// exactly as `local_context_middleware` resolves it for the authenticated
+/// routes. The cloud path reads `path` off the DB row.
+async fn resolve_manager_path(
+    project_id: Uuid,
+    workspace_row: &entity::workspaces::Model,
+) -> Result<std::path::PathBuf, (StatusCode, String)> {
+    let invalid = |e: oxy_shared::errors::OxyError| {
+        tracing::error!(workspace = %project_id, error = %e, "resolve workspace path failed");
+        (
+            StatusCode::BAD_REQUEST,
+            "invalid workspace path".to_string(),
+        )
+    };
+    if project_id == LOCAL_WORKSPACE_ID {
+        return resolve_local_workspace_path().map_err(invalid);
+    }
+    effective_workspace_path(workspace_row, None)
+        .await
+        .map_err(invalid)
+}
+
+/// `WorkspaceBuilder` carrying this workspace's `Config`.
+///
+/// The compile boundary is the *primary* source here, not an optimisation:
+/// this route is `RouteRole::FleetOk` (no `IDE_ONLY_PATTERNS` entry), so it
+/// runs on stateless `serve` replicas whose state dir holds no working copy at
+/// all, and an FS read there returns nothing. A public webhook carries no
+/// branch context, so the hint is `None`: read the promoted default-branch
+/// revision.
+async fn config_builder(
+    project_id: Uuid,
+    path: &std::path::Path,
+) -> Result<WorkspaceBuilder, (StatusCode, String)> {
+    let failed = |e: oxy_shared::errors::OxyError| {
+        tracing::error!(workspace = %project_id, error = %e, "workspace builder failed");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "workspace builder failed".to_string(),
+        )
+    };
+    if let Some(config) = crate::server::api::compiled_reader::resolve_workspace_config_typed(
+        project_id,
+        None,
+        path,
+        "toast_webhook",
+    )
+    .await
+    {
+        return WorkspaceBuilder::new(project_id)
+            .with_workspace_path_and_compiled_config(path, config)
+            .map_err(failed);
+    }
+
+    // No compiled revision. On the ide singleton (and in local mode) the
+    // working copy is right there and this reads the real `config.yml`. On a
+    // stateless replica the path doesn't exist and `build_with_fallback_config`
+    // silently substitutes an empty `Config` — which downstream is
+    // indistinguishable from "the user never configured the integration". Say
+    // which one it is, or the next person debugging a dead LIVE EVENTS panel
+    // reads a 401 that blames the customer's config.
+    if !tokio::fs::try_exists(path.join("config.yml"))
+        .await
+        .unwrap_or(false)
+    {
+        tracing::warn!(
+            workspace = %project_id,
+            path = %path.display(),
+            "toast webhook: no compiled config and no config.yml on this node — \
+             integrations will resolve as unconfigured. On a stateless serve replica \
+             this means the workspace has no promoted revision to read from.",
+        );
+    }
+    WorkspaceBuilder::new(project_id)
+        .with_workspace_path_and_fallback_config(path)
+        .await
+        .map_err(failed)
 }
 
 fn verify_hmac(headers: &HeaderMap, body: &[u8], secret: &str) -> Result<(), (StatusCode, String)> {

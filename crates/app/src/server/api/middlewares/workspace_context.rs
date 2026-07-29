@@ -969,44 +969,13 @@ async fn try_attach_workspace_manager(
     // contract every other compiled reader honours. On any miss (no promoted
     // revision, non-default branch, deserialise fails) we fall through to FS.
     let compiled_config: Option<oxy::config::model::Config> =
-        match crate::server::api::compiled_reader::resolve_workspace_config(
+        crate::server::api::compiled_reader::resolve_workspace_config_typed(
             workspace_id,
             branch_name,
+            &effective_path,
+            "workspace_context",
         )
-        .await
-        {
-            Ok(Some(json)) => {
-                match serde_json::from_value::<oxy::config::model::Config>(json) {
-                    Ok(mut cfg) => {
-                        // `workspace_path` is `#[serde(skip)]` on Config so we
-                        // populate it manually — downstream resolvers depend on it.
-                        cfg.workspace_path = effective_path.clone();
-                        tracing::debug!(
-                            workspace_id = %workspace_id,
-                            "workspace_context: config.yml served from compile boundary"
-                        );
-                        Some(cfg)
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            workspace_id = %workspace_id,
-                            error = ?e,
-                            "compiled config deserialise failed; falling through to FS"
-                        );
-                        None
-                    }
-                }
-            }
-            Ok(None) => None,
-            Err(e) => {
-                tracing::warn!(
-                    workspace_id = %workspace_id,
-                    error = ?e,
-                    "compiled config lookup failed; falling through to FS"
-                );
-                None
-            }
-        };
+        .await;
 
     // ── Stateless-fleet short-circuit ──────────────────────────────────────
     // A serve replica has no workspace working copy (emptyDir OXY_STATE_DIR,
