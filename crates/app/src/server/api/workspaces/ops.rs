@@ -8,7 +8,10 @@ use oxy::adapters::workspace::effective_workspace_path;
 use oxy::api_types::{
     BranchType, CommitEntry, ProjectBranch, RecentCommitsResponse, RevisionInfoResponse,
 };
-use oxy::github::{default_git_client, github_token_for_workspace};
+use oxy::github::{
+    default_git_client, github_token_for_workspace_as_user, require_github_token_for_workspace,
+    unlinked_remote_failure,
+};
 use oxy_git::{GitClient, cli::repo::find_git_root};
 use oxy_shared::errors::OxyError;
 
@@ -57,6 +60,7 @@ pub(super) async fn git_fetch(
     worktree: &std::path::Path,
     branch: &str,
     workspace: &entity::workspaces::Model,
+    user_id: Uuid,
 ) -> Result<String, OxyError> {
     let git = default_git_client();
     if !git.has_remote(worktree).await {
@@ -64,16 +68,26 @@ pub(super) async fn git_fetch(
             "No remote configured. Set GIT_REPOSITORY_URL to enable fetch.".to_string(),
         ));
     }
-    let token = github_token_for_workspace(workspace).await?;
-    git.fetch_remote_ref(worktree, branch, token.as_deref())
-        .await?;
-    Ok("Fetched latest from remote".to_string())
+    // Reads stay attemptable without a token: a public repo needs none, and a
+    // token-less run borrows nothing from the host (`oxy-git` resets
+    // `credential.helper`). Only the failure needs explaining — see
+    // `unlinked_remote_failure`.
+    let token = github_token_for_workspace_as_user(workspace, Some(user_id)).await?;
+    match git
+        .fetch_remote_ref(worktree, branch, token.as_deref())
+        .await
+    {
+        Ok(()) => Ok("Fetched latest from remote".to_string()),
+        Err(e) if token.is_none() => Err(unlinked_remote_failure(workspace, e)),
+        Err(e) => Err(e),
+    }
 }
 
 pub(super) async fn git_pull(
     worktree: &std::path::Path,
     branch: &str,
     workspace: &entity::workspaces::Model,
+    user_id: Uuid,
 ) -> Result<oxy_git::PullOutcome, OxyError> {
     let git = default_git_client();
     if !git.has_remote(worktree).await {
@@ -81,15 +95,23 @@ pub(super) async fn git_pull(
             "No remote configured. Set GIT_REPOSITORY_URL to enable pull.".to_string(),
         ));
     }
-    let token = github_token_for_workspace(workspace).await?;
-    git.pull_from_remote(worktree, branch, token.as_deref())
+    // Attemptable token-less for the same reason as `git_fetch`.
+    let token = github_token_for_workspace_as_user(workspace, Some(user_id)).await?;
+    match git
+        .pull_from_remote(worktree, branch, token.as_deref())
         .await
+    {
+        Ok(outcome) => Ok(outcome),
+        Err(e) if token.is_none() => Err(unlinked_remote_failure(workspace, e)),
+        Err(e) => Err(e),
+    }
 }
 
 pub(super) async fn git_push(
     worktree: &std::path::Path,
     message: &str,
     workspace: &entity::workspaces::Model,
+    user_id: Uuid,
 ) -> Result<String, OxyError> {
     let git = default_git_client();
     // Mid-rebase push either fatals on detached HEAD (`HEAD@<sha>` refspec)
@@ -103,8 +125,8 @@ pub(super) async fn git_push(
         git.commit_changes(worktree, message).await?;
     }
     if git.has_remote(worktree).await {
-        let token = github_token_for_workspace(workspace).await?;
-        git.push_to_remote(worktree, token.as_deref()).await?;
+        let token = require_github_token_for_workspace(workspace, Some(user_id)).await?;
+        git.push_to_remote(worktree, Some(&token)).await?;
         Ok("Changes pushed to remote".to_string())
     } else {
         Ok("Changes committed successfully".to_string())
@@ -114,6 +136,7 @@ pub(super) async fn git_push(
 pub(super) async fn git_force_push(
     worktree: &std::path::Path,
     workspace: &entity::workspaces::Model,
+    user_id: Uuid,
 ) -> Result<String, OxyError> {
     let git = default_git_client();
     if git.is_in_conflict(worktree).await {
@@ -122,8 +145,8 @@ pub(super) async fn git_force_push(
                 .into(),
         ));
     }
-    let token = github_token_for_workspace(workspace).await?;
-    git.force_push_to_remote(worktree, token.as_deref()).await?;
+    let token = require_github_token_for_workspace(workspace, Some(user_id)).await?;
+    git.force_push_to_remote(worktree, Some(&token)).await?;
     Ok("Force push successful".to_string())
 }
 
@@ -249,10 +272,17 @@ pub(super) async fn git_list_branches(
     root: &std::path::Path,
     workspace: Option<&entity::workspaces::Model>,
     workspace_id: Uuid,
+    user_id: Option<Uuid>,
 ) -> Vec<ProjectBranch> {
     let git = default_git_client();
+    // Best-effort: the remote half of the listing (a `fetch --prune` behind
+    // `list_branches_with_origin`) is skipped without a token, but local
+    // branches still list. Not `require_*` for that reason.
     let token = if let Some(ws) = workspace {
-        github_token_for_workspace(ws).await.ok().flatten()
+        github_token_for_workspace_as_user(ws, user_id)
+            .await
+            .ok()
+            .flatten()
     } else {
         None
     };
@@ -287,12 +317,19 @@ pub(super) async fn git_switch_branch(
     branch: &str,
     workspace: Option<&entity::workspaces::Model>,
     workspace_id: Uuid,
+    user_id: Option<Uuid>,
 ) -> Result<ProjectBranch, OxyError> {
     let git = default_git_client();
     git.ensure_initialized(root).await?;
 
+    // Best-effort: without a token this still switches to any branch that
+    // already exists locally; only materialising a remote-only branch needs
+    // the network.
     let token = if let Some(ws) = workspace {
-        github_token_for_workspace(ws).await.ok().flatten()
+        github_token_for_workspace_as_user(ws, user_id)
+            .await
+            .ok()
+            .flatten()
     } else {
         None
     };

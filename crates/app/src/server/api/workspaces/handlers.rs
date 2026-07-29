@@ -48,6 +48,7 @@ pub async fn detect_git_mode(workspace_root: &std::path::Path) -> GitMode {
 pub async fn pull_changes(
     _: WorkspaceEditor,
     State(app_state): State<AppState>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<BranchQuery>,
@@ -58,7 +59,7 @@ pub async fn pull_changes(
 
     // Probe on-disk state rather than stderr — `git pull --rebase` exits
     // non-zero on conflict but the message is locale- and version-sensitive.
-    match git_pull(worktree, &branch, &ws).await {
+    match git_pull(worktree, &branch, &ws, user.id).await {
         Ok(outcome) => {
             if git.is_in_conflict(worktree).await {
                 Ok(ResponseJson(PullChangesResponse {
@@ -127,6 +128,7 @@ pub async fn pull_changes(
 
 pub async fn fetch_changes(
     _: WorkspaceEditor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<BranchQuery>,
@@ -134,7 +136,7 @@ pub async fn fetch_changes(
     let worktree = wm.config_manager.workspace_path();
     let branch = resolve_branch(query.branch, worktree).await;
 
-    match git_fetch(worktree, &branch, &ws).await {
+    match git_fetch(worktree, &branch, &ws, user.id).await {
         Ok(message) => Ok(ResponseJson(ProjectResponse {
             success: true,
             message,
@@ -225,11 +227,12 @@ pub async fn unresolve_conflict_file(
 
 pub async fn force_push_branch(
     _: WorkspaceAdmin,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
-    match git_force_push(worktree, &ws).await {
+    match git_force_push(worktree, &ws, user.id).await {
         Ok(message) => Ok(ResponseJson(ProjectResponse {
             success: true,
             message,
@@ -381,6 +384,7 @@ pub async fn discard_all_changes(
 
 pub async fn push_changes(
     _: WorkspaceEditor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Json(request): Json<PushChangesRequest>,
@@ -390,7 +394,7 @@ pub async fn push_changes(
     // "Auto-commit" — a dirty working tree would get silently pushed.
     let commit_message = request.commit_message.unwrap_or_default();
 
-    match git_push(worktree, &commit_message, &ws).await {
+    match git_push(worktree, &commit_message, &ws, user.id).await {
         Ok(message) => Ok(ResponseJson(ProjectResponse {
             success: true,
             message,
@@ -628,13 +632,13 @@ pub async fn build_workspace_details_response(
     tag = "Workspaces"
 )]
 pub async fn get_workspace_branches(
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
 ) -> Result<ResponseJson<WorkspaceBranchesResponse>, StatusCode> {
     info!("Getting branches for workspace: {}", ws.id);
 
     let root = workspace_root(&ws).await?;
-    let branches = git_list_branches(&root, Some(&ws), ws.id).await;
+    let branches = git_list_branches(&root, Some(&ws), ws.id, Some(user.id)).await;
     info!("Found {} branches", branches.len());
     Ok(ResponseJson(WorkspaceBranchesResponse { branches }))
 }
@@ -663,7 +667,7 @@ pub async fn delete_branch(
 pub async fn switch_workspace_branch(
     _: WorkspaceEditor,
     State(app_state): State<AppState>,
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
     Json(request): Json<SwitchBranchRequest>,
 ) -> Result<ResponseJson<ProjectBranch>, StatusCode> {
@@ -676,7 +680,7 @@ pub async fn switch_workspace_branch(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let branch = git_switch_branch(&root, &request.branch, Some(&ws), ws.id)
+    let branch = git_switch_branch(&root, &request.branch, Some(&ws), ws.id, Some(user.id))
         .await
         .map_err(|e| {
             error!("{}", e);

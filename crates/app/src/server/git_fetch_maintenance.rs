@@ -112,14 +112,15 @@ async fn fetch_all_workspaces(db: &DatabaseConnection) {
         }
     };
 
-    let (mut ok, mut failed) = (0u32, 0u32);
+    let (mut ok, mut failed, mut unlinked) = (0u32, 0u32, 0u32);
     for ws in workspaces {
         // Sequential on purpose: these are network calls against (usually) the
         // same forge, and this is a background freshness sweep with no deadline.
         // Fanning out would add rate-limit pressure to buy latency nobody waits on.
         match fetch_one(&ws).await {
-            Ok(true) => ok += 1,
-            Ok(false) => {}
+            Ok(Outcome::Fetched) => ok += 1,
+            Ok(Outcome::Unlinked) => unlinked += 1,
+            Ok(Outcome::Nothing) => {}
             Err(e) => {
                 failed += 1;
                 // Debug, not warn: a workspace whose remote is unreachable or
@@ -130,36 +131,68 @@ async fn fetch_all_workspaces(db: &DatabaseConnection) {
             }
         }
     }
-    if ok > 0 || failed > 0 {
-        debug!(ok, failed, "git fetch maintenance: sweep complete");
+    if ok > 0 || failed > 0 || unlinked > 0 {
+        // `unlinked` is counted separately rather than folded into either
+        // bucket: it is neither a healthy fetch nor a broken remote, and it is
+        // the one outcome an operator can act on — those workspaces need a
+        // GitHub connection linked before their freshness badge means anything.
+        debug!(
+            ok,
+            failed, unlinked, "git fetch maintenance: sweep complete"
+        );
     }
 }
 
-/// Fetch one workspace's default branch. `Ok(false)` = nothing to do.
-async fn fetch_one(ws: &entity::workspaces::Model) -> Result<bool, oxy_shared::errors::OxyError> {
+/// What a single workspace's sweep did.
+enum Outcome {
+    /// `origin/<default branch>` was refreshed.
+    Fetched,
+    /// Nothing to do: no working copy on this node, not a repo, no remote.
+    Nothing,
+    /// A git remote is configured but no GitHub connection is linked, so there
+    /// is no token to fetch with. Distinct from `Nothing` because it is a
+    /// misconfiguration a human can fix, not a structural no-op.
+    Unlinked,
+}
+
+/// Fetch one workspace's default branch.
+async fn fetch_one(
+    ws: &entity::workspaces::Model,
+) -> Result<Outcome, oxy_shared::errors::OxyError> {
     let Some(path) = ws.path.as_deref() else {
-        return Ok(false);
+        return Ok(Outcome::Nothing);
     };
     let path = std::path::Path::new(path);
     // A replica may hold a row for a workspace it has never cloned.
     if !path.exists() {
-        return Ok(false);
+        return Ok(Outcome::Nothing);
     }
 
     let git = oxy::github::default_git_client();
     if !git.is_git_repo(path) || !git.has_remote(path).await {
-        return Ok(false);
+        return Ok(Outcome::Nothing);
     }
 
     let branch = git.get_default_branch(path).await;
     if branch.is_empty() {
-        return Ok(false);
+        return Ok(Outcome::Nothing);
     }
 
-    let token = oxy::github::github_token_for_workspace(ws).await?;
-    let fetch = git.fetch_remote_ref(path, &branch, token.as_deref());
+    // No requesting user here, so only the workspace's own `git_namespace_id`
+    // link can supply a token. Skip rather than fetch unauthenticated: git no
+    // longer falls back to the host's credential helper, so an unlinked
+    // workspace would fail every tick — a private repo can only 401, and a
+    // public one does not need the round trip.
+    let Some(token) = oxy::github::github_token_for_workspace(ws).await? else {
+        debug!(
+            workspace_id = %ws.id,
+            "git fetch maintenance: no linked git namespace; skipping"
+        );
+        return Ok(Outcome::Unlinked);
+    };
+    let fetch = git.fetch_remote_ref(path, &branch, Some(&token));
     match tokio::time::timeout(PER_WORKSPACE_TIMEOUT, fetch).await {
-        Ok(result) => result.map(|()| true),
+        Ok(result) => result.map(|()| Outcome::Fetched),
         Err(_) => Err(oxy_shared::errors::OxyError::RuntimeError(format!(
             "fetch timed out after {}s",
             PER_WORKSPACE_TIMEOUT.as_secs()
