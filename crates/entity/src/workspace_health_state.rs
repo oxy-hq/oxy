@@ -26,6 +26,21 @@ pub struct Model {
     /// decide the interval hasn't elapsed, and reuse the cached verdicts from
     /// `payload`. `None` until the first smoke run (or when smoke is disabled).
     pub last_smoke_at: Option<DateTimeWithTimeZone>,
+    /// When Slack was last paged about this workspace being unhealthy. Drives the
+    /// re-alert reminder, so it is distinct from `updated_at` (every pass) and
+    /// `changed_at` (every transition). Cleared when the workspace leaves
+    /// unhealthy, so the next outage always pages immediately.
+    pub last_alerted_at: Option<DateTimeWithTimeZone>,
+    /// The failing dimensions carried by that last alert, as a JSON array of
+    /// `{dimension, status}`. Compared against the current failure set so a
+    /// workspace that picks up a *new* (or worse) failure while already unhealthy
+    /// re-pages immediately instead of waiting out the reminder interval. `None`
+    /// when nothing has been alerted.
+    ///
+    /// Deliberately dimensions and not the reason strings from `reasons`: reason
+    /// text embeds live counts and percentages that move on nearly every pass, so
+    /// diffing it would re-page continuously and defeat the reminder interval.
+    pub alerted_failures: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

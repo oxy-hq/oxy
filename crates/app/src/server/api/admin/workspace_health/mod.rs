@@ -1,7 +1,9 @@
 //! Internal cross-tenant workspace health rollup.
 //!
 //! `evaluator` is pure (signal counts -> status); `queries` gathers signals
-//! from shared Postgres; `alert` diffs status transitions and pushes Slack.
+//! from shared Postgres; `alert` decides what is worth telling Slack — status
+//! transitions, plus a recurring reminder for as long as a workspace stays
+//! unhealthy — and pushes it.
 pub(crate) mod alert;
 pub(crate) mod eval_pass;
 pub(crate) mod evaluator;

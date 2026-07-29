@@ -24,7 +24,9 @@ impl HealthStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Declaration order is the display/compare order — `Ord` exists so a failure set
+/// can be stored sorted and diffed positionally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthDimension {
     JobLiveness,
@@ -146,12 +148,45 @@ pub struct DimensionResult {
     pub reason: Option<String>,
 }
 
+/// One failing dimension, reduced to the two things that identify the failure:
+/// *what* is broken and *how badly*.
+///
+/// This is deliberately not the reason string. Reason text embeds live counts and
+/// percentages (`"4/12 runs failed in window (33%)"`, `"3 dead-letter task(s)"`)
+/// that move between passes for a workspace that is continuously broken on the
+/// same dimension, so comparing text reads normal churn as a brand-new failure.
+/// Alerting diffs *this* instead — it only changes when a dimension starts
+/// failing or gets worse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DimensionFailure {
+    pub dimension: HealthDimension,
+    pub status: HealthStatus,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspaceHealth {
     pub workspace_id: Uuid,
     pub status: HealthStatus,
     pub dimensions: Vec<DimensionResult>,
     pub reasons: Vec<String>,
+}
+
+impl WorkspaceHealth {
+    /// The currently-failing dimensions, sorted by dimension so two evaluations
+    /// of the same failure set always compare equal.
+    pub fn failures(&self) -> Vec<DimensionFailure> {
+        let mut out: Vec<DimensionFailure> = self
+            .dimensions
+            .iter()
+            .filter(|d| d.status != HealthStatus::Healthy)
+            .map(|d| DimensionFailure {
+                dimension: d.dimension,
+                status: d.status,
+            })
+            .collect();
+        out.sort_unstable_by_key(|f| f.dimension);
+        out
+    }
 }
 
 /// Pure rollup: evaluate each dimension, take the worst as the workspace status.

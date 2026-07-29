@@ -1,7 +1,8 @@
 //! Cross-tenant workspace-health sweep — the periodic eval pass driven by the
 //! `health_eval` schedule. Gathers signals, evaluates each workspace, diffs the
-//! result against the last-known state, pushes Slack on transitions, and
-//! upserts `workspace_health_state`.
+//! result against the last-known state, pushes Slack on transitions (and on a
+//! cadence while a workspace stays unhealthy), and upserts
+//! `workspace_health_state`.
 
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Set, Statement};
@@ -9,9 +10,11 @@ use serde_json::json;
 use std::collections::HashMap;
 
 use super::SignalsRow;
-use super::alert::{AlertDecision, decide_transition, push_slack};
+use super::alert::{
+    AlertDecision, AlertInput, HealthAlert, decide_transition, push_slack, reminder_interval,
+};
 use super::evaluator::{
-    HealthStatus, HealthThresholds, WorkspaceHealth, WorkspaceSignals, evaluate,
+    DimensionFailure, HealthStatus, HealthThresholds, WorkspaceHealth, WorkspaceSignals, evaluate,
 };
 use super::queries::{WorkspaceLabel, gather_signals, gather_workspace_labels};
 use super::reconcile::{DriftVerdict, LiveReconcileRunner, ReconcileRunner};
@@ -48,11 +51,19 @@ fn apply_reconciliation(signals: &mut WorkspaceSignals, verdicts: Vec<DriftVerdi
 }
 
 /// The parts of the previous state row this pass needs: the status to diff
-/// against, and the smoke verdicts + stamp + config to decide whether the probes
-/// are due.
+/// against, when it last changed and was last alerted on, and the smoke verdicts
+/// + stamp + config to decide whether the probes are due.
 #[derive(Default)]
 struct PrevState {
     status: Option<HealthStatus>,
+    /// When the status last transitioned — the "unhealthy for 3h 20m" suffix on
+    /// reminder messages.
+    changed_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    /// When Slack was last paged about this workspace, and the failure set that
+    /// page carried. Together they decide whether a still-unhealthy workspace is
+    /// due for a reminder or has picked up a new failure.
+    last_alerted_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    alerted_failures: Option<Vec<DimensionFailure>>,
     last_smoke_at: Option<chrono::DateTime<chrono::FixedOffset>>,
     smoke: Vec<SmokeVerdict>,
     /// The smoke config the stored verdicts were produced under. `None` for a row
@@ -62,9 +73,10 @@ struct PrevState {
     smoke_config: Option<SmokeTestConfig>,
 }
 
-/// Evaluate one workspace's signals, push Slack on a status transition, and
-/// upsert state. Returns `true` if an alert/recovery was pushed. Shared by the
-/// fleet sweep and the single-workspace path so both behave identically.
+/// Evaluate one workspace's signals, push Slack on a status transition (or a
+/// re-alert while it stays unhealthy), and upsert state. Returns `true` if a
+/// message was pushed. Shared by the fleet sweep and the single-workspace path so
+/// both behave identically.
 async fn eval_and_persist(ctx: &EvalCtx<'_>, signals: &mut WorkspaceSignals) -> bool {
     let workspace_id = signals.workspace_id;
     let verdicts = ctx.reconcile.run_checks(workspace_id).await;
@@ -75,30 +87,100 @@ async fn eval_and_persist(ctx: &EvalCtx<'_>, signals: &mut WorkspaceSignals) -> 
     signals.smoke = smoke.verdicts.clone();
 
     let health = evaluate(signals, ctx.thresholds);
-    let decision = decide_transition(prev.status, health.status);
+    let failures = health.failures();
+    let decision = decide_transition(&AlertInput {
+        prev: prev.status,
+        next: health.status,
+        alerted_failures: prev.alerted_failures.as_deref(),
+        next_failures: &failures,
+        last_alerted_at: prev.last_alerted_at,
+        now: ctx.now,
+        reminder_after: reminder_interval(),
+    });
 
-    let mut alerted = false;
-    if decision != AlertDecision::Silent
-        && let Some((token, channel)) = ctx.slack
-    {
-        match push_slack(
-            ctx.slack_client,
-            token,
-            channel,
-            workspace_id,
-            ctx.labels.get(&workspace_id),
-            health.status,
-            &health.reasons,
-            decision,
-        )
-        .await
-        {
-            Ok(()) => alerted = true,
-            Err(e) => tracing::warn!(target: "health_eval", error = %e, "slack push failed"),
+    let alerted = notify(ctx, &health, &prev, decision).await;
+    upsert_state(
+        ctx.db,
+        &StateWrite {
+            health: &health,
+            signals,
+            prev_status: prev.status,
+            smoke: &smoke,
+            alert: next_alert_state(&health, &prev, alerted, ctx.now),
+        },
+    )
+    .await;
+    alerted
+}
+
+/// Push the decided message, if there is one and Slack is configured. Returns
+/// whether a message actually reached Slack — a failed push must not stamp
+/// `last_alerted_at`, or the reminder clock restarts on a message nobody saw.
+async fn notify(
+    ctx: &EvalCtx<'_>,
+    health: &WorkspaceHealth,
+    prev: &PrevState,
+    decision: AlertDecision,
+) -> bool {
+    if decision == AlertDecision::Silent {
+        return false;
+    }
+    let Some((token, channel)) = ctx.slack else {
+        return false;
+    };
+    let alert = HealthAlert {
+        workspace_id: health.workspace_id,
+        label: ctx.labels.get(&health.workspace_id),
+        status: health.status,
+        reasons: &health.reasons,
+        decision,
+        since: prev.changed_at,
+        now: ctx.now,
+    };
+    match push_slack(ctx.slack_client, token, channel, &alert).await {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!(target: "health_eval", error = %e, "slack push failed");
+            false
         }
     }
-    upsert_state(ctx.db, &health, signals, prev.status, &smoke).await;
-    alerted
+}
+
+/// What to persist about alerting after this pass.
+///
+/// Leaving unhealthy clears both fields, so the *next* outage pages immediately
+/// rather than inheriting a stale reminder clock. While unhealthy the values only
+/// advance on a message that actually went out; otherwise they carry forward
+/// untouched, which is what keeps the reminder measured from the last page rather
+/// than from the last eval pass (10 minutes apart — it would never fire).
+#[derive(Default)]
+struct AlertState {
+    last_alerted_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    /// The failing dimensions the message covered — not its reason text. Reason
+    /// strings carry counts that move every pass, so storing them would make the
+    /// next pass read normal churn as a new failure and page again.
+    failures: Option<Vec<DimensionFailure>>,
+}
+
+fn next_alert_state(
+    health: &WorkspaceHealth,
+    prev: &PrevState,
+    alerted: bool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> AlertState {
+    if health.status != HealthStatus::Unhealthy {
+        return AlertState::default();
+    }
+    if alerted {
+        return AlertState {
+            last_alerted_at: Some(now.fixed_offset()),
+            failures: Some(health.failures()),
+        };
+    }
+    AlertState {
+        last_alerted_at: prev.last_alerted_at,
+        failures: prev.alerted_failures.clone(),
+    }
 }
 
 /// The smoke half of an eval pass: the verdicts to roll up, when they were
@@ -246,6 +328,13 @@ async fn load_prev_state(db: &DatabaseConnection, ws: uuid::Uuid) -> PrevState {
     };
     PrevState {
         status,
+        changed_at: Some(row.changed_at),
+        last_alerted_at: row.last_alerted_at,
+        // A malformed or legacy value reads as "we don't know what we paged
+        // about", which is not an escalation — the reminder clock still governs.
+        alerted_failures: row
+            .alerted_failures
+            .and_then(|v| serde_json::from_value(v).ok()),
         last_smoke_at: row.last_smoke_at,
         smoke: cached_smoke_verdicts(row.payload.as_ref()),
         smoke_config: cached_smoke_config(row.payload.as_ref()),
@@ -273,17 +362,29 @@ fn cached_smoke_verdicts(payload: Option<&serde_json::Value>) -> Vec<SmokeVerdic
         .unwrap_or_default()
 }
 
+/// Everything one state-row write needs. Grouped so [`upsert_state`] stays a
+/// two-argument call as the row grows columns.
+struct StateWrite<'a> {
+    health: &'a WorkspaceHealth,
+    signals: &'a WorkspaceSignals,
+    /// Status recorded by the previous pass — decides whether `changed_at` moves.
+    prev_status: Option<HealthStatus>,
+    smoke: &'a SmokeOutcome,
+    alert: AlertState,
+}
+
 /// Upsert the state row. `status` / `reasons` / `updated_at` are always
 /// refreshed; `changed_at` is only bumped to now() when the status actually
 /// changed vs the prior value (so it records "since when" the workspace has
 /// held this status, not when the row was last touched).
-async fn upsert_state(
-    db: &DatabaseConnection,
-    health: &WorkspaceHealth,
-    signals: &WorkspaceSignals,
-    prev: Option<HealthStatus>,
-    smoke: &SmokeOutcome,
-) {
+async fn upsert_state(db: &DatabaseConnection, w: &StateWrite<'_>) {
+    let StateWrite {
+        health,
+        signals,
+        prev_status: prev,
+        smoke,
+        alert,
+    } = w;
     let ws = health.workspace_id;
     let status = health.status;
     let now = chrono::Utc::now().fixed_offset();
@@ -301,7 +402,7 @@ async fn upsert_state(
         "status": status.as_str(),
         "reasons": health.reasons,
         "dimensions": health.dimensions,
-        "signals": SignalsRow::from(signals),
+        "signals": SignalsRow::from(*signals),
         "reconciliation": signals.reconciliation,
         "smoke": signals.smoke,
         "smoke_probes": smoke.probes,
@@ -315,6 +416,8 @@ async fn upsert_state(
         updated_at: Set(now),
         payload: Set(Some(payload)),
         last_smoke_at: Set(smoke.last_smoke_at),
+        last_alerted_at: Set(alert.last_alerted_at),
+        alerted_failures: Set(alert.failures.as_ref().map(|f| json!(f))),
     };
     // On conflict, refresh status/reasons/payload/updated_at but NOT changed_at
     // — a re-eval with the same status must preserve the original transition time.
@@ -327,6 +430,8 @@ async fn upsert_state(
                     entity::workspace_health_state::Column::Payload,
                     entity::workspace_health_state::Column::UpdatedAt,
                     entity::workspace_health_state::Column::LastSmokeAt,
+                    entity::workspace_health_state::Column::LastAlertedAt,
+                    entity::workspace_health_state::Column::AlertedFailures,
                 ])
                 .to_owned(),
         )
@@ -341,7 +446,7 @@ async fn upsert_state(
     // there (prev == None and a fresh status is still a change → harmless reset
     // to the same now()). The targeted update keeps the steady-state path from
     // clobbering the transition time.
-    if prev != Some(status)
+    if *prev != Some(status)
         && let Err(e) = db
             .execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -367,6 +472,9 @@ fn ops_slack_target() -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::api::admin::workspace_health::evaluator::{
+        DimensionResult, HealthDimension,
+    };
     use crate::server::api::admin::workspace_health::reconcile::{
         VerdictMeta, unreachable_verdict,
     };
@@ -388,6 +496,123 @@ mod tests {
             .unwrap()
             .expect("a state row should be persisted for the idle workspace");
         assert_eq!(row.status, "healthy");
+    }
+
+    /// A rollup whose failing dimensions are `dims`, each with a reason string
+    /// carrying the kind of live count that drifts between passes.
+    fn health_of(
+        status: HealthStatus,
+        dims: &[(HealthDimension, HealthStatus)],
+    ) -> WorkspaceHealth {
+        let dimensions: Vec<DimensionResult> = dims
+            .iter()
+            .map(|(dimension, status)| DimensionResult {
+                dimension: *dimension,
+                status: *status,
+                reason: Some(format!("{dimension:?} is {}", status.as_str())),
+            })
+            .collect();
+        WorkspaceHealth {
+            workspace_id: uuid::Uuid::nil(),
+            status,
+            reasons: dimensions.iter().filter_map(|d| d.reason.clone()).collect(),
+            dimensions,
+        }
+    }
+
+    fn failures(dims: &[(HealthDimension, HealthStatus)]) -> Vec<DimensionFailure> {
+        dims.iter()
+            .map(|(dimension, status)| DimensionFailure {
+                dimension: *dimension,
+                status: *status,
+            })
+            .collect()
+    }
+
+    fn alerted_prev(hours_ago: i64, dims: &[(HealthDimension, HealthStatus)]) -> PrevState {
+        PrevState {
+            status: Some(HealthStatus::Unhealthy),
+            last_alerted_at: Some(
+                (chrono::Utc::now() - chrono::Duration::hours(hours_ago)).fixed_offset(),
+            ),
+            alerted_failures: Some(failures(dims)),
+            ..PrevState::default()
+        }
+    }
+
+    #[test]
+    fn a_silent_pass_carries_the_alert_clock_forward() {
+        // The reminder must be measured from the last page, not from the last eval
+        // pass — those are 10 minutes apart, so re-stamping here would mean the 6h
+        // reminder never comes due.
+        let broken = [(HealthDimension::JobLiveness, HealthStatus::Unhealthy)];
+        let prev = alerted_prev(2, &broken);
+        let next = next_alert_state(
+            &health_of(HealthStatus::Unhealthy, &broken),
+            &prev,
+            false,
+            chrono::Utc::now(),
+        );
+        assert_eq!(next.last_alerted_at, prev.last_alerted_at);
+        assert_eq!(next.failures, prev.alerted_failures);
+    }
+
+    #[test]
+    fn a_pushed_message_stamps_the_clock_and_the_failing_dimensions() {
+        let now = chrono::Utc::now();
+        let broken = [
+            (HealthDimension::JobLiveness, HealthStatus::Unhealthy),
+            (HealthDimension::Queue, HealthStatus::Unhealthy),
+        ];
+        let next = next_alert_state(
+            &health_of(HealthStatus::Unhealthy, &broken),
+            &alerted_prev(7, &broken[..1]),
+            true,
+            now,
+        );
+        assert_eq!(next.last_alerted_at, Some(now.fixed_offset()));
+        assert_eq!(next.failures, Some(failures(&broken)));
+    }
+
+    #[test]
+    fn what_we_persist_is_dimensions_not_reason_text() {
+        // The alert-storm regression, at the storage end: persisting reason
+        // strings would make the next pass compare against text that has already
+        // moved on ("3/10 runs failed (30%)" → "4/12 … (33%)") and page again.
+        let broken = [(HealthDimension::JobLiveness, HealthStatus::Unhealthy)];
+        let next = next_alert_state(
+            &health_of(HealthStatus::Unhealthy, &broken),
+            &alerted_prev(7, &broken),
+            true,
+            chrono::Utc::now(),
+        );
+        let stored = json!(next.failures.unwrap());
+        assert_eq!(
+            stored,
+            json!([{ "dimension": "job_liveness", "status": "unhealthy" }])
+        );
+        // And it round-trips back through the column into the same value.
+        let back: Vec<DimensionFailure> = serde_json::from_value(stored).unwrap();
+        assert_eq!(back, failures(&broken));
+    }
+
+    #[test]
+    fn leaving_unhealthy_clears_the_alert_clock() {
+        // So the next outage pages immediately instead of inheriting a clock that
+        // says "we already told them 20 minutes ago".
+        for status in [HealthStatus::Healthy, HealthStatus::Degraded] {
+            let next = next_alert_state(
+                &health_of(status, &[]),
+                &alerted_prev(
+                    1,
+                    &[(HealthDimension::JobLiveness, HealthStatus::Unhealthy)],
+                ),
+                false,
+                chrono::Utc::now(),
+            );
+            assert_eq!(next.last_alerted_at, None);
+            assert_eq!(next.failures, None);
+        }
     }
 
     fn empty_signals() -> WorkspaceSignals {
