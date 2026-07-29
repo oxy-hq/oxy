@@ -213,7 +213,19 @@ pub(super) fn build_workspace_routes(
         // Anomaly inbox — backed by oxy-metric-monitoring. Nested so the
         // `Extension<Arc<AgenticState>>` layer scopes only to these routes
         // (same pattern as `build_schedule_routes` below).
-        .route("/semantic/monitors", get(metric_anomalies::list_monitors))
+        //
+        // `/semantic/monitors` is merged rather than plainly routed because it
+        // also extracts `Arc<AgenticState>` (for the per-segment scan coverage
+        // it returns alongside the config) and so needs the same Extension
+        // layer. Merging a one-route sub-router keeps the layer scoped to it
+        // and preserves the exact path — nesting would also answer on
+        // `/semantic/monitors/`, which nothing calls.
+        .merge({
+            use axum::Extension;
+            Router::new()
+                .route("/semantic/monitors", get(metric_anomalies::list_monitors))
+                .layer(Extension(agentic_state.clone()))
+        })
         .nest(
             "/semantic/anomalies",
             build_metric_anomaly_routes(agentic_state.clone()),

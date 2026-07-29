@@ -5,6 +5,9 @@
 //!   (measure, time-dim, granularity) tuples.
 //! - [`detect`] — MSTL + AutoETS detector that flags anomalies in a tail
 //!   window of a single time-series.
+//! - [`gates`] — statistical trust checks around the detector: how much
+//!   history a series needs before it is scored at all, and which flags to
+//!   suppress because the fit that produced them is not credible.
 //! - [`service`] — orchestrator that loads the config, fetches each
 //!   series via a [`MetricTreeRunner`], runs the detector, and returns
 //!   a flat list of [`detect::DetectedAnomaly`] paired with the monitor
@@ -15,6 +18,7 @@
 
 pub mod config;
 pub mod detect;
+pub mod gates;
 pub mod persist;
 pub mod service;
 pub mod store;
@@ -22,9 +26,15 @@ pub mod tick;
 
 pub use config::{
     Direction, Granularity, LoadError as ConfigLoadError, MonitorConfig, MonitorEntry,
-    MonitorScheduleConfig, Sensitivity, default_config_path, load_from_file,
+    MonitorScheduleConfig, Sensitivity, WeekStart, default_config_path, load_from_file,
 };
-pub use detect::{DetectError, DetectInputs, DetectedAnomaly, Observation, Severity, detect};
-pub use persist::upsert_anomalies;
-pub use service::{MonitorOutcome, ScanError, ScanResult, scan_workspace};
+pub use detect::{
+    Continuation, DetectError, DetectInputs, DetectedAnomaly, Observation, Severity, detect,
+};
+pub use gates::min_history_buckets;
+pub use persist::{load_open_events, persist_scan, upsert_anomalies, upsert_coverage};
+pub use service::{
+    Coverage, MonitorOutcome, OpenEvents, ScanError, ScanResult, SegmentKey, SegmentScan,
+    scan_workspace,
+};
 pub use tick::{LastScanRegistry, TickError, TickOutcome, global_registry, tick_workspace};

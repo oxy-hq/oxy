@@ -195,7 +195,28 @@ aho-corasick = "1.1"
 #    per-unit rate" — replacing the two places oxy used to re-derive that
 #    predicate itself and get it wrong. The same answer is serialized per node as
 #    `MetricNode.drillable` so the UI can gate on it directly.
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "06ba5e56e8e2000b054c970745239873f65ec3c5" }
+#
+# Also carries the time-dimension timezone fix (PR #85): every site that emits
+# a time-dimension column — the SELECT/GROUP BY buckets, the date_range WHERE
+# bounds, the fan-out spine and the shift scan window — now routes through one
+# tz-aware helper. Before it, `QueryRequest.timezone` reached only the SELECT
+# bucket, so a filter-only query (granularity: None, which is every reconcile
+# health check) got a timezone that did nothing, and a fan-out query bucketed
+# rows on the local calendar while clipping them on the UTC one.
+#
+# And the follow-up that fix left open: that helper converted a time dimension
+# whenever the request carried a timezone, whatever its declared type. A DATE
+# column has no time-of-day and no UTC semantics, so converting it is wrong —
+# and on ClickHouse it is fatal, not merely wrong: `toTimeZone` accepts only
+# DateTime/DateTime64 and raises `Code: 43 ILLEGAL_TYPE_OF_ARGUMENT` on a Date
+# argument. Every monitor here that sets `timezone:` and buckets a `type: date`
+# business-date column (labor_daily, sales_daily, qb_cogs_by_store) failed its
+# scan outright. The conversion is now gated on `DimensionType::Datetime`, on
+# the same single helper, so the bucket and the bound still cannot disagree.
+#
+# 06ba5e5 (the pin before last) is an ancestor of this SHA, so nothing above is
+# lost by moving to it.
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "e8353dbe39d4d989b3569a037f45bbee8ae92322" }
 # Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
 # Holt-Winters family (with auto model selection); augurs-mstl handles
 # multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.

@@ -30,6 +30,7 @@ pub mod github_accounts;
 pub mod logs;
 pub mod messages;
 pub mod metric_anomalies;
+pub mod metric_monitor_coverage;
 pub mod org_billing;
 pub mod org_invitations;
 pub mod org_members;

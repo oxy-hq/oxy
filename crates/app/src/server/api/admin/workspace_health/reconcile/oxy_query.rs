@@ -5,39 +5,51 @@
 use agentic_core::result::CellValue;
 use airlayer::engine::query::{QueryRequest, TimeDimensionQuery};
 
+use super::ResolvedWindow;
+
 /// Clone the user's semantic query and OWN the time window: overwrite
-/// `time_dimensions` with the reconcile window bound to `time_dimension`. Any
-/// user-supplied `time_dimensions` is intentionally replaced — reconcile always
-/// controls the comparison period so both sides align.
-#[allow(dead_code)]
+/// `time_dimensions` with the reconcile window bound to `time_dimension`, and
+/// carry the window's timezone onto the request. Any user-supplied
+/// `time_dimensions` is intentionally replaced — reconcile always controls the
+/// comparison period so both sides align.
 pub(super) fn semantic_request(
     query: &QueryRequest,
     time_dimension: &str,
-    period: &[String; 2],
+    window: &ResolvedWindow,
 ) -> QueryRequest {
     let mut req = query.clone();
     req.time_dimensions = vec![TimeDimensionQuery {
         dimension: time_dimension.to_string(),
         granularity: None,
-        date_range: Some(vec![period[0].clone(), period[1].clone()]),
+        date_range: Some(window.dates.to_vec()),
     }];
+    // Leave UTC unset. It is equivalent to Some("UTC") in the SQL generator,
+    // but `None` is what every pre-timezone config produced and it also keeps
+    // pre-aggregation rollup matching on its existing path.
+    if window.timezone != "UTC" {
+        req.timezone = Some(window.timezone.clone());
+    }
     req
 }
 
 /// Render a reconcile SQL template, binding `start_date` / `end_date` from the
-/// resolved window. Values are rendered BARE — the SQL author quotes them.
-#[allow(dead_code)]
-pub(super) fn render_sql(sql: &str, period: &[String; 2]) -> Result<String, String> {
+/// resolved window plus the `timezone` they were resolved in, so an author can
+/// convert their column to the same calendar. Values are rendered BARE — the
+/// SQL author quotes them.
+pub(super) fn render_sql(sql: &str, window: &ResolvedWindow) -> Result<String, String> {
     minijinja::Environment::new()
         .render_str(
             sql,
-            minijinja::context! { start_date => period[0], end_date => period[1] },
+            minijinja::context! {
+                start_date => window.dates[0],
+                end_date => window.dates[1],
+                timezone => window.timezone,
+            },
         )
         .map_err(|e| format!("reconcile sql template render failed: {e}"))
 }
 
 /// Coerce the first cell of a SQL scalar result to `f64`.
-#[allow(dead_code)]
 pub(super) fn cell_to_f64(cell: &CellValue) -> Result<f64, String> {
     match cell {
         CellValue::Number(n) => Ok(*n),
@@ -53,8 +65,53 @@ pub(super) fn cell_to_f64(cell: &CellValue) -> Result<f64, String> {
 mod tests {
     use super::*;
 
-    fn period() -> [String; 2] {
-        ["2026-07-01".to_string(), "2026-07-01".to_string()]
+    fn period() -> ResolvedWindow {
+        ResolvedWindow {
+            dates: ["2026-07-01".to_string(), "2026-07-01".to_string()],
+            timezone: "UTC".to_string(),
+        }
+    }
+
+    fn period_tz(tz: &str) -> ResolvedWindow {
+        ResolvedWindow {
+            dates: ["2026-07-01".to_string(), "2026-07-01".to_string()],
+            timezone: tz.to_string(),
+        }
+    }
+
+    #[test]
+    fn semantic_request_sets_a_non_utc_timezone() {
+        let mut base = QueryRequest::new();
+        base.measures = vec!["sales.net".to_string()];
+        let req = semantic_request(
+            &base,
+            "sales.business_date",
+            &period_tz("America/Los_Angeles"),
+        );
+        assert_eq!(req.timezone.as_deref(), Some("America/Los_Angeles"));
+    }
+
+    #[test]
+    fn semantic_request_leaves_utc_unset() {
+        // Some("UTC") and None are equivalent in the SQL generator, but None is
+        // what every existing config produces — keep it byte-identical.
+        let mut base = QueryRequest::new();
+        base.measures = vec!["sales.net".to_string()];
+        let req = semantic_request(&base, "sales.business_date", &period());
+        assert_eq!(req.timezone, None);
+    }
+
+    #[test]
+    fn render_sql_binds_the_timezone() {
+        let out = render_sql(
+            "select v where d at time zone '{{ timezone }}' between '{{ start_date }}' and '{{ end_date }}'",
+            &period_tz("America/Los_Angeles"),
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            "select v where d at time zone 'America/Los_Angeles' between '2026-07-01' and '2026-07-01'"
+        );
     }
 
     #[test]

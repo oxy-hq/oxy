@@ -16,3 +16,4 @@ pub(crate) use compare::{
 };
 pub(crate) use config::{Grain, WeekStart, Window};
 pub(crate) use runner::{LiveReconcileRunner, ReconcileRunner};
+pub(crate) use window::ResolvedWindow;

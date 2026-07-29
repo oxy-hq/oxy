@@ -26,6 +26,7 @@ use airlayer::engine::metric_tree_ops::{
 };
 use airlayer::engine::query::{QueryFilter, QueryRequest};
 use async_trait::async_trait;
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime};
 use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use serde_json::{Map, Value};
@@ -45,6 +46,8 @@ pub struct OxyMetricTreeRunner {
     role: WorkspaceRole,
     preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: u64,
+    /// Memoized file-level `.monitor.yml` timezone, read on first use.
+    default_timezone: std::sync::OnceLock<Option<String>>,
     /// When set, the semantic layer is parsed from this directory instead
     /// of `config_manager.semantics_scan_path()`. Customer-app requests run
     /// on the stateless serve fleet, where the workspace FS scan path does
@@ -62,6 +65,7 @@ impl OxyMetricTreeRunner {
             role,
             preagg_cache: None,
             preagg_renewal_threshold_secs: 120,
+            default_timezone: std::sync::OnceLock::new(),
             scan_path_override: None,
         }
     }
@@ -74,6 +78,16 @@ impl OxyMetricTreeRunner {
         self.preagg_cache = cache;
         self.preagg_renewal_threshold_secs = renewal_threshold_secs;
         self
+    }
+
+    /// The workspace's default bucketing timezone. Read at most once per
+    /// runner. `None` means UTC.
+    fn default_timezone(&self) -> Option<String> {
+        self.default_timezone
+            .get_or_init(|| {
+                read_default_timezone(self.workspace_manager.config_manager.workspace_path())
+            })
+            .clone()
     }
 
     /// Parse the semantic layer from `scan_path` instead of the workspace FS
@@ -322,27 +336,35 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         granularity: String,
         period: (String, String),
         filters: Vec<airlayer::engine::query::QueryFilter>,
+        timezone: Option<String>,
     ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
-        use airlayer::engine::query::{OrderBy, QueryRequest, TimeDimensionQuery};
-        let inputs = self.snapshot_for_blocking().await?;
-        let dim_alias = format!("{time_dimension}.{granularity}");
-        let measure_alias = measure.replace('.', "__");
-        let dim_alias_for_extract = dim_alias.replace('.', "__");
-        let request = QueryRequest {
-            measures: vec![measure.clone()],
+        // `None` from the caller means "workspace default", not "UTC" — this is
+        // how the analytics agent's detect_anomalies tool inherits the same
+        // timezone the scheduled scans use.
+        let timezone = timezone.or_else(|| self.default_timezone());
+        // airlayer applies the `date_range` WHERE clause to the RAW,
+        // unconverted column while the SELECT buckets the timezone-*converted*
+        // one, so a non-UTC request clips or partially-sums its first and
+        // last local buckets. When converting, widen the requested range and
+        // trim the extra rows back off below — this is the single place every
+        // caller (scheduled scans and the chat `detect_anomalies` tool alike)
+        // gets the workaround for free. UTC requests have no conversion, so
+        // no clipping, and take the pre-existing unwidened path byte-for-byte.
+        // `build_time_series_query_request` is the one seam that decides both
+        // the request and the trim window, so it — not this function body —
+        // is what a regression here would have to touch.
+        let (request, trim_window) = build_time_series_query_request(
+            &measure,
+            &time_dimension,
+            &granularity,
             filters,
-            time_dimensions: vec![TimeDimensionQuery {
-                dimension: time_dimension.clone(),
-                granularity: Some(granularity.clone()),
-                date_range: Some(vec![period.0.clone(), period.1.clone()]),
-            }],
-            order: vec![OrderBy {
-                id: dim_alias.clone(),
-                desc: false,
-            }],
-            ..QueryRequest::new()
-        };
-        tokio::task::spawn_blocking(move || {
+            &period,
+            timezone.clone(),
+        );
+        let inputs = self.snapshot_for_blocking().await?;
+        let measure_alias = measure.replace('.', "__");
+        let dim_alias_for_extract = format!("{time_dimension}.{granularity}").replace('.', "__");
+        let rows = tokio::task::spawn_blocking(move || {
             let RunInputs {
                 databases,
                 engine,
@@ -364,7 +386,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 role,
                 handle,
                 scan_path,
-                preagg_cache,
+                preagg_for(&preagg_cache, timezone.as_deref()),
                 preagg_renewal_threshold_secs,
             );
             let rows =
@@ -394,7 +416,11 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
             Ok(out)
         })
         .await
-        .map_err(|e| MetricTreeRunnerError::Op(format!("time-series task panicked: {e}")))?
+        .map_err(|e| MetricTreeRunnerError::Op(format!("time-series task panicked: {e}")))??;
+        Ok(match trim_window {
+            Some((start, end)) => trim_to_window(rows, start, end),
+            None => rows,
+        })
     }
 
     async fn run_query_scalar(
@@ -534,6 +560,210 @@ impl OxyMetricTreeRunner {
             preagg_cache: self.preagg_cache.clone(),
             preagg_renewal_threshold_secs: self.preagg_renewal_threshold_secs,
         })
+    }
+}
+
+/// Withhold the pre-aggregation cache for non-UTC requests.
+///
+/// Rollups are built UTC-truncated, and airlayer's rollup match predicate
+/// considers granularity but not timezone — so a tz'd query could be served
+/// silently UTC-bucketed data. Passing `None` here makes the executor take the
+/// warehouse path, which is correct by construction. UTC monitors keep their
+/// rollups. (Timezone-aware rollups are an upstream airlayer change.)
+fn preagg_for(
+    cache: &Option<Arc<RwLock<RefreshKeyCache>>>,
+    timezone: Option<&str>,
+) -> Option<Arc<RwLock<RefreshKeyCache>>> {
+    match timezone {
+        Some(tz) if tz != "UTC" => None,
+        _ => cache.clone(),
+    }
+}
+
+/// Parse a `run_time_series` bucket label or period boundary into a calendar
+/// date. Labels come back as `YYYY-MM-DD` (daily granularity) or
+/// `YYYY-MM-DD HH:MM:SS` (sub-daily); period boundaries supplied by callers
+/// are usually plain dates but may be full ISO-8601/RFC3339 timestamps (the
+/// `detect_anomalies` tool passes through whatever the LLM sent). Try each
+/// representation in turn; `None` means the string matched none of them.
+fn parse_flexible_date(s: &str) -> Option<NaiveDate> {
+    if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return Some(d);
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Some(dt.date());
+    }
+    DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.date_naive())
+}
+
+/// Whether `run_time_series` needs to pad-and-trim for this request, and if
+/// so, the caller's original window (parsed) to trim back down to.
+///
+/// Returns `None` for a UTC-equivalent timezone (`None` or exactly `"UTC"`) —
+/// no conversion happens, so no padding or trimming is needed and the
+/// pre-existing UTC path stays byte-for-byte identical. Also returns `None`
+/// when either boundary of `period` fails to parse as a date: in that case
+/// widening would produce a garbled request, so the request is sent as-is and
+/// nothing is trimmed rather than risk corrupting or wrongly filtering it.
+fn non_utc_trim_window(
+    timezone: Option<&str>,
+    period: &(String, String),
+) -> Option<(NaiveDate, NaiveDate)> {
+    // Exact-match "UTC", mirroring `preagg_for`'s convention — timezone names
+    // come from `.monitor.yml`, validated at load time as parseable
+    // `chrono_tz::Tz` names, so this never sees case variants in practice.
+    match timezone {
+        None => return None,
+        Some("UTC") => return None,
+        Some(_) => {}
+    }
+    let (Some(start), Some(end)) = (
+        parse_flexible_date(&period.0),
+        parse_flexible_date(&period.1),
+    ) else {
+        // Widening would produce a garbled request, so the request is sent
+        // as-is and nothing is trimmed rather than risk corrupting or wrongly
+        // filtering it. Logged because this silently reinstates the original
+        // clipping bug for this one call — worth knowing about if anomaly
+        // detection on a non-UTC workspace starts looking off again.
+        tracing::debug!(
+            target: "metric_monitoring",
+            period = ?period,
+            "unparseable period boundary; skipping the timezone pad/trim"
+        );
+        return None;
+    };
+    Some((start, end))
+}
+
+/// Widen a parsed `[start, end]` window for the actual airlayer request, as
+/// plain `YYYY-MM-DD` strings. The pad is **asymmetric**.
+///
+/// As of the airlayer pin bumped in this change, `date_range` converts the
+/// column to `request.timezone` before comparing, so the filter and the bucket
+/// labels finally agree and this pad is a harmless **over-fetch** that
+/// [`trim_to_window`] discards. It is kept rather than deleted because it is
+/// the one thing standing between a future airlayer regression on that seam
+/// and silently clipped edge buckets; the sizing below is the reasoning for
+/// why one leading and two trailing days is the right amount of insurance.
+///
+/// Before that fix, `date_range` compared the RAW (unconverted) column
+/// against a plain date string, which the SQL engine reads as that date's
+/// midnight UTC — no time-of-day, no timezone shift. But the bucket labelled
+/// `end` covers *local* wall-clock time `[end 00:00, end+1 00:00)`, and
+/// converted to UTC that interval is offset by the zone's UTC delta `O`
+/// (`local = UTC + O`): it spans UTC instants `[end 00:00 − O, end+1 00:00 − O)`.
+///
+/// For a **west-of-UTC** zone (`O` negative — every Americas zone), that
+/// shifts the interval *later* in UTC, so its upper end can land after
+/// `end+1 00:00 UTC`: at the `UTC-12` extreme, up to `end+1 12:00 UTC`. A
+/// single trailing day of pad (`end+1`) is short by up to 12 hours — the
+/// review finding that set this sizing (an `America/Los_Angeles` request was
+/// missing the last 7 hours of its final bucket, the only bucket
+/// `detect_and_upsert`'s `test_window: 1` evaluates). Two trailing days
+/// covers every real IANA offset down to `UTC-12`.
+///
+/// The leading side stays a single day: the worst case there is the opposite
+/// extreme, `UTC+14`, whose earliest instant (`start 00:00 − 14h`) is only 14
+/// hours before `start 00:00 UTC` — well inside one day of pad. (In general,
+/// one leading day covers any `O <= 24`, which every real zone satisfies.)
+fn widened_date_range(start: NaiveDate, end: NaiveDate) -> (String, String) {
+    (
+        (start - Duration::days(1)).format("%Y-%m-%d").to_string(),
+        (end + Duration::days(2)).format("%Y-%m-%d").to_string(),
+    )
+}
+
+/// Trim `rows` back down to the caller's original `[start, end]` window,
+/// inclusive on both ends. A row whose label fails to parse is kept rather
+/// than dropped — a parse failure is a new, unrelated failure mode and must
+/// not silently look like "trimmed as padding."
+fn trim_to_window(
+    rows: Vec<(String, f64)>,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Vec<(String, f64)> {
+    rows.into_iter()
+        .filter(|(ts, _)| match parse_flexible_date(ts) {
+            Some(d) => d >= start && d <= end,
+            None => true,
+        })
+        .collect()
+}
+
+/// Resolve what `run_time_series` should send airlayer as its `date_range`,
+/// and the window (if any) to trim the response rows back down to
+/// afterward. Composes [`non_utc_trim_window`] and [`widened_date_range`]
+/// into the one decision [`build_time_series_query_request`] needs.
+fn time_series_request(
+    timezone: Option<&str>,
+    period: &(String, String),
+) -> ((String, String), Option<(NaiveDate, NaiveDate)>) {
+    let trim_window = non_utc_trim_window(timezone, period);
+    let request_period = match &trim_window {
+        Some((start, end)) => widened_date_range(*start, *end),
+        None => period.clone(),
+    };
+    (request_period, trim_window)
+}
+
+/// Build the `QueryRequest` `run_time_series` sends to airlayer, and the
+/// window (if any) to trim the response rows back down to afterward.
+///
+/// This is the **entire** seam between the timezone pad/trim decision and
+/// the request `run_time_series` actually issues: the `date_range` embedded
+/// here, via [`time_series_request`], is the only place that value is
+/// computed. A regression that reverts to sending `period` unwidened (or
+/// drops the trim window) has to change this function — and does change what
+/// [`build_time_series_query_request_widens_the_date_range_for_non_utc`] and
+/// its UTC/parse-failure counterparts below assert.
+fn build_time_series_query_request(
+    measure: &str,
+    time_dimension: &str,
+    granularity: &str,
+    filters: Vec<airlayer::engine::query::QueryFilter>,
+    period: &(String, String),
+    timezone: Option<String>,
+) -> (QueryRequest, Option<(NaiveDate, NaiveDate)>) {
+    use airlayer::engine::query::{OrderBy, TimeDimensionQuery};
+    let (request_period, trim_window) = time_series_request(timezone.as_deref(), period);
+    let dim_alias = format!("{time_dimension}.{granularity}");
+    let request = QueryRequest {
+        measures: vec![measure.to_string()],
+        filters,
+        time_dimensions: vec![TimeDimensionQuery {
+            dimension: time_dimension.to_string(),
+            granularity: Some(granularity.to_string()),
+            date_range: Some(vec![request_period.0, request_period.1]),
+        }],
+        order: vec![OrderBy {
+            id: dim_alias,
+            desc: false,
+        }],
+        timezone,
+        ..QueryRequest::new()
+    };
+    (request, trim_window)
+}
+
+/// File-level `timezone` from a workspace's `.monitor.yml`, or `None` when the
+/// file is absent or unreadable. Deliberately lossy: a malformed monitor config
+/// must not break unrelated metric-tree queries — the scan path reports the
+/// real parse error.
+fn read_default_timezone(workspace_root: &std::path::Path) -> Option<String> {
+    let path = oxy_metric_monitoring::default_config_path(workspace_root);
+    match oxy_metric_monitoring::load_from_file(&path) {
+        Ok(cfg) => cfg.timezone,
+        Err(e) => {
+            tracing::debug!(
+                target: "metric_monitoring",
+                error = %e,
+                "could not read a default timezone from .monitor.yml; using UTC"
+            );
+            None
+        }
     }
 }
 
@@ -1167,5 +1397,248 @@ mod tests {
             std::path::Path::new("/nonexistent/path.parquet"),
         );
         assert!(result.is_err(), "missing Parquet should return Err");
+    }
+
+    #[test]
+    fn default_timezone_reads_the_file_level_monitor_config() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".monitor.yml"),
+            "timezone: America/Los_Angeles\nmonitors:\n  - measure: a.b\n    time_dimension: a.t\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_default_timezone(dir.path()),
+            Some("America/Los_Angeles".to_string())
+        );
+    }
+
+    #[test]
+    fn default_timezone_is_none_without_a_monitor_config() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_default_timezone(dir.path()), None);
+    }
+
+    #[test]
+    fn default_timezone_is_none_when_the_config_is_unreadable() {
+        // A malformed .monitor.yml must not poison every metric-tree query —
+        // fall back to UTC and let the scan path surface the real error.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".monitor.yml"),
+            "timezone: [not, a, string]\n",
+        )
+        .unwrap();
+        assert_eq!(read_default_timezone(dir.path()), None);
+    }
+
+    #[test]
+    fn non_utc_trim_window_is_none_for_utc_equivalent_timezones() {
+        let period = ("2026-07-20".to_string(), "2026-07-24".to_string());
+        assert_eq!(
+            non_utc_trim_window(None, &period),
+            None,
+            "None means UTC default"
+        );
+        assert_eq!(
+            non_utc_trim_window(Some("UTC"), &period),
+            None,
+            "explicit UTC must not pad/trim"
+        );
+    }
+
+    #[test]
+    fn non_utc_trim_window_is_some_for_a_real_timezone() {
+        let period = ("2026-07-20".to_string(), "2026-07-24".to_string());
+        assert_eq!(
+            non_utc_trim_window(Some("America/Los_Angeles"), &period),
+            Some((
+                NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
+            ))
+        );
+    }
+
+    #[test]
+    fn non_utc_trim_window_is_none_when_a_boundary_fails_to_parse() {
+        // An unparseable boundary must not be silently widened/trimmed —
+        // fall back to sending the request as-is.
+        let period = ("not a date".to_string(), "2026-07-24".to_string());
+        assert_eq!(
+            non_utc_trim_window(Some("America/Los_Angeles"), &period),
+            None
+        );
+    }
+
+    #[test]
+    fn widened_date_range_pads_one_leading_day_and_two_trailing_days() {
+        // The trailing pad must be 2 days, not 1: a west-of-UTC zone's `end`
+        // bucket can run up to 12h past `end+1 00:00 UTC` (UTC-12 extreme),
+        // so a single trailing day is short. This is the exact shape of the
+        // review finding: an America/Los_Angeles request's last bucket was
+        // clipped because the old pad only reached `end+1`.
+        let (start, end) = widened_date_range(
+            NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
+        );
+        assert_eq!(start, "2026-07-19", "leading pad stays one day");
+        assert_eq!(end, "2026-07-26", "trailing pad must be two days");
+    }
+
+    #[test]
+    fn time_series_request_widens_for_non_utc_and_passes_through_for_utc() {
+        let period = ("2026-07-20".to_string(), "2026-07-24".to_string());
+
+        let (request_period, trim_window) =
+            time_series_request(Some("America/Los_Angeles"), &period);
+        assert_eq!(
+            request_period,
+            ("2026-07-19".to_string(), "2026-07-26".to_string()),
+            "non-UTC must widen -1 day / +2 days"
+        );
+        assert_eq!(
+            trim_window,
+            Some((
+                NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
+            ))
+        );
+
+        for tz in [None, Some("UTC")] {
+            let (request_period, trim_window) = time_series_request(tz, &period);
+            assert_eq!(
+                request_period, period,
+                "UTC-equivalent ({tz:?}) must not widen the range"
+            );
+            assert_eq!(
+                trim_window, None,
+                "UTC-equivalent ({tz:?}) must not trim anything"
+            );
+        }
+    }
+
+    #[test]
+    fn build_time_series_query_request_widens_the_date_range_for_non_utc() {
+        // The seam a wiring regression would have to break: the `date_range`
+        // actually embedded in the `QueryRequest` `run_time_series` sends to
+        // airlayer. Reverting to `Some(vec![period.0, period.1])` here — the
+        // exact regression the review finding warned about — fails this
+        // assertion.
+        let period = ("2026-07-20".to_string(), "2026-07-24".to_string());
+        let (request, trim_window) = build_time_series_query_request(
+            "orders.revenue",
+            "orders.created_at",
+            "day",
+            vec![],
+            &period,
+            Some("America/Los_Angeles".to_string()),
+        );
+        assert_eq!(
+            request.time_dimensions[0].date_range,
+            Some(vec!["2026-07-19".to_string(), "2026-07-26".to_string()]),
+            "the request's date_range must be the widened -1/+2 day range"
+        );
+        assert_eq!(request.timezone.as_deref(), Some("America/Los_Angeles"));
+        assert_eq!(
+            trim_window,
+            Some((
+                NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
+            ))
+        );
+    }
+
+    #[test]
+    fn build_time_series_query_request_is_unwidened_for_utc() {
+        let period = ("2026-07-20".to_string(), "2026-07-24".to_string());
+        for tz in [None, Some("UTC".to_string())] {
+            let (request, trim_window) = build_time_series_query_request(
+                "orders.revenue",
+                "orders.created_at",
+                "day",
+                vec![],
+                &period,
+                tz.clone(),
+            );
+            assert_eq!(
+                request.time_dimensions[0].date_range,
+                Some(vec![period.0.clone(), period.1.clone()]),
+                "UTC-equivalent ({tz:?}) must send the caller's range unwidened"
+            );
+            assert_eq!(trim_window, None, "UTC-equivalent ({tz:?}) must not trim");
+        }
+    }
+
+    #[test]
+    fn trim_to_window_drops_padded_edges_and_keeps_in_window_rows() {
+        let rows = vec![
+            ("2026-07-19".to_string(), 1.0), // padded lead
+            ("2026-07-20".to_string(), 2.0), // window start
+            ("2026-07-22".to_string(), 3.0), // interior
+            ("2026-07-24".to_string(), 4.0), // window end (inclusive)
+            ("2026-07-25".to_string(), 5.0), // padded trail
+        ];
+        let kept = trim_to_window(
+            rows,
+            NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
+        );
+        assert_eq!(
+            kept,
+            vec![
+                ("2026-07-20".to_string(), 2.0),
+                ("2026-07-22".to_string(), 3.0),
+                ("2026-07-24".to_string(), 4.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn trim_to_window_keeps_sub_daily_labels_at_the_inclusive_boundary() {
+        // A naive lexicographic `<=` against "2026-07-24" would wrongly drop
+        // "2026-07-24 00:00:00" (sub-daily granularity label); the parsed-date
+        // comparison must not.
+        let rows = vec![
+            ("2026-07-24 00:00:00".to_string(), 1.0),
+            ("2026-07-25 00:00:00".to_string(), 2.0), // padded trail, out of window
+        ];
+        let kept = trim_to_window(
+            rows,
+            NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
+        );
+        assert_eq!(kept, vec![("2026-07-24 00:00:00".to_string(), 1.0)]);
+    }
+
+    #[test]
+    fn trim_to_window_keeps_unparseable_labels_rather_than_dropping() {
+        let rows = vec![("garbage".to_string(), 42.0)];
+        let kept = trim_to_window(
+            rows.clone(),
+            NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 7, 24).unwrap(),
+        );
+        assert_eq!(kept, rows, "an unparseable label must be kept, not dropped");
+    }
+
+    #[test]
+    fn non_utc_timezone_bypasses_preagg() {
+        // Rollups are built UTC-truncated and preagg's match predicate ignores
+        // timezone entirely, so a tz'd monitor served from a rollup would get
+        // silently UTC-bucketed data. `preagg_for` must withhold the cache.
+        let cache = Some(Arc::new(RwLock::new(RefreshKeyCache::default())));
+
+        assert!(
+            preagg_for(&cache, None).is_some(),
+            "no timezone -> rollups still serve"
+        );
+        assert!(
+            preagg_for(&cache, Some("UTC")).is_some(),
+            "explicit UTC -> rollups still serve"
+        );
+        assert!(
+            preagg_for(&cache, Some("America/Los_Angeles")).is_none(),
+            "non-UTC -> must bypass the rollup path"
+        );
     }
 }

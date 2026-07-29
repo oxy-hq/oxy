@@ -4,7 +4,6 @@ import type {
   ListAnomaliesResponse,
   ListMonitorsResponse,
   MetricAnomaly,
-  MonitorEntry,
   ScanAnomaliesResponse
 } from "@/types/metricAnomalies";
 import type { ExplainResult } from "@/types/metricTree";
@@ -71,10 +70,12 @@ export class MetricAnomaliesService {
   /** List all entries from `.monitor.yml` for the workspace. Returns an
    *  empty array when no file is configured; returns an error when the
    *  file exists but fails to parse. */
-  static async listMonitors(projectId: string): Promise<MonitorEntry[]> {
+  static async listMonitors(projectId: string): Promise<ListMonitorsResponse> {
     try {
       const response = await apiClient.get<ListMonitorsResponse>(`/${projectId}/semantic/monitors`);
-      return response.data.monitors;
+      // `coverage` is absent from responses served before it shipped, and from
+      // workspaces that have never been scanned.
+      return { monitors: response.data.monitors ?? [], coverage: response.data.coverage ?? [] };
     } catch (error) {
       rethrow(error);
     }

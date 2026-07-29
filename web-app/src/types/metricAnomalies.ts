@@ -39,6 +39,13 @@ export interface MetricAnomaly {
   dimension_key: string;
   /** Raw filters identifying this anomaly's segment. Null for chain-wide monitors. */
   filters: AnomalyFilter[] | null;
+  /**
+   * Groups consecutive flagged buckets of one segment into a single event, so a
+   * surge spanning Mon/Wed/Thu reads as one problem rather than three. Rows stay
+   * per-bucket (explain reasons about a single bucket), so the collapsing
+   * happens here on read. Null for rows detected before events existed.
+   */
+  event_id: string | null;
   detected_at: string;
   updated_at: string;
 }
@@ -78,8 +85,44 @@ export interface MonitorEntry {
   seasonality: number[] | null;
   sensitivity: "low" | "medium" | "high";
   label?: string | null;
+  /**
+   * Dimension filters narrowing this entry to one segment. Two entries over the
+   * same measure/time-dimension/granularity are distinguished only by these, so
+   * anything mapping coverage rows back to an entry must use them.
+   */
+  filters?: AnomalyFilter[];
+  /**
+   * Fan-out dimension: the scanner discovers its values at scan time and files
+   * one coverage row per segment, each keyed by this entry's `filters` *plus*
+   * the discovered value.
+   */
+  group_by?: string | null;
+}
+
+/** Per-segment scan coverage. A `group_by` monitor fans out to one row per
+ *  segment, so a single `MonitorEntry` can map to many of these.
+ *
+ *  Exists because a monitor skipped for want of history produces neither an
+ *  anomaly nor a failure — without this the UI cannot tell "healthy, nothing
+ *  found" from "not scoring at all". */
+export interface MonitorCoverage {
+  id: string;
+  workspace_id: string;
+  measure: string;
+  time_dimension: string;
+  granularity: string;
+  /** Empty string for chain-wide monitors. */
+  dimension_key: string;
+  filters: Record<string, unknown>[] | null;
+  label: string | null;
+  /** Buckets the warehouse returned; zero-filled gaps are not counted. */
+  measured_buckets: number;
+  /** The statistical floor this segment must clear to be scored. */
+  required_buckets: number;
+  last_scanned_at: string;
 }
 
 export interface ListMonitorsResponse {
   monitors: MonitorEntry[];
+  coverage: MonitorCoverage[];
 }

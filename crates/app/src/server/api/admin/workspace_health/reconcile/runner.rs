@@ -20,7 +20,9 @@ use super::config::{ExternalSpec, Operand, OperandKind, ReconcileCheck, parse_re
 use super::oxy_query::{cell_to_f64, render_sql, semantic_request};
 use super::source::{ExternalRequest, ReconcileError, SourceCtx, source_for};
 use super::window::resolve_window;
-use super::{DriftVerdict, VerdictMeta, compare, error_verdict, unreachable_verdict};
+use super::{
+    DriftVerdict, ResolvedWindow, VerdictMeta, compare, error_verdict, unreachable_verdict,
+};
 use crate::server::api::compiled_reader::resolve_reconcile_config;
 use crate::server::router::recovery::build_workspace_ctx;
 use oxy::config::model::ToastAnalyticsIntegration;
@@ -176,7 +178,7 @@ impl LiveReconcileRunner {
     /// `windows[i]` is the resolved (calendar-snapped) window for check `i`.
     fn collect_external_slots<'a>(
         checks: &'a [ReconcileCheck],
-        windows: &[[String; 2]],
+        windows: &[ResolvedWindow],
     ) -> Vec<ExternalSlot<'a>> {
         let mut slots = Vec::new();
         for (i, check) in checks.iter().enumerate() {
@@ -189,7 +191,7 @@ impl LiveReconcileRunner {
                         check_index: i,
                         side,
                         spec,
-                        window: windows[i].clone(),
+                        window: windows[i].dates.clone(),
                     });
                 }
             }
@@ -205,7 +207,7 @@ impl LiveReconcileRunner {
         &self,
         workspace_id: uuid::Uuid,
         checks: &[ReconcileCheck],
-        windows: &[[String; 2]],
+        windows: &[ResolvedWindow],
         toast_integrations: &[(String, ToastAnalyticsIntegration)],
     ) -> HashMap<(usize, Side), Result<f64, ReconcileError>> {
         let slots = Self::collect_external_slots(checks, windows);
@@ -283,7 +285,7 @@ impl LiveReconcileRunner {
         workspace_id: uuid::Uuid,
         check_index: usize,
         check: &ReconcileCheck,
-        window: &[String; 2],
+        window: &ResolvedWindow,
         measure_runner: &Option<Arc<dyn MetricTreeRunner>>,
         externals: &HashMap<(usize, Side), Result<f64, ReconcileError>>,
     ) -> DriftVerdict {
@@ -339,7 +341,7 @@ impl LiveReconcileRunner {
         workspace_id: uuid::Uuid,
         key: (usize, Side),
         operand: &Operand,
-        window: &[String; 2],
+        window: &ResolvedWindow,
         measure_runner: &Option<Arc<dyn MetricTreeRunner>>,
         externals: &HashMap<(usize, Side), Result<f64, ReconcileError>>,
     ) -> Result<f64, OperandFailure> {
@@ -385,7 +387,7 @@ impl LiveReconcileRunner {
         workspace_id: uuid::Uuid,
         database: &str,
         sql: &str,
-        period: &[String; 2],
+        period: &ResolvedWindow,
     ) -> Result<f64, String> {
         let db = self
             .db
@@ -480,7 +482,7 @@ impl ReconcileRunner for LiveReconcileRunner {
 
         // Resolve each check's window once (shared by both operands), then
         // batch-fetch every external operand across all checks.
-        let windows: Vec<[String; 2]> = cfg
+        let windows: Vec<ResolvedWindow> = cfg
             .checks
             .iter()
             .map(|c| resolve_window(&c.window, self.now))
@@ -633,6 +635,8 @@ mod tests {
                 last: 1,
                 grain,
                 offset: 1,
+                freshness: None,
+                timezone: None,
                 week_start:
                     crate::server::api::admin::workspace_health::reconcile::WeekStart::Sunday,
             },

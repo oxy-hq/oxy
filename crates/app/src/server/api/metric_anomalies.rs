@@ -15,6 +15,7 @@ use axum::{
 };
 use chrono::{TimeZone, Utc};
 use entity::metric_anomalies::{self, Entity as AnomaliesEntity};
+use entity::metric_monitor_coverage::{self, Entity as CoverageEntity};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_metric_monitoring as monitoring;
 use sea_orm::ActiveValue::Set;
@@ -96,30 +97,67 @@ pub struct ListResponse {
 #[derive(Debug, Serialize)]
 pub struct ListMonitorsResponse {
     pub monitors: Vec<monitoring::config::MonitorEntry>,
+    /// One row per **scanned segment** (a `group_by` monitor fans out to many),
+    /// recording how much history it has against how much it needs.
+    ///
+    /// Without this the tab cannot distinguish a healthy monitor that found
+    /// nothing from one that is not being scored at all — both show an empty
+    /// inbox. Empty until the first scan after this shipped.
+    #[serde(default)]
+    pub coverage: Vec<entity::metric_monitor_coverage::Model>,
+}
+
+/// Per-segment scan coverage for a workspace.
+///
+/// A persisted-data read, so it stays `FleetOk` — unlike the `.monitor.yml`
+/// fallback in the caller, which is why the compiled fast path exists at all.
+///
+/// Never fails the request: coverage is advisory, and losing the monitor list
+/// over a status column would be a worse outcome than the ambiguity this column
+/// exists to remove.
+async fn load_coverage(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+) -> Vec<entity::metric_monitor_coverage::Model> {
+    CoverageEntity::find()
+        .filter(metric_monitor_coverage::Column::WorkspaceId.eq(workspace_id))
+        .order_by_asc(metric_monitor_coverage::Column::Measure)
+        .all(db)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                workspace_id = %workspace_id,
+                error = %e,
+                "list_monitors: coverage lookup failed; returning monitors without it"
+            );
+            Vec::new()
+        })
 }
 
 /// `GET /workspaces/{workspace_id}/semantic/monitors` — list every entry in
-/// `.monitor.yml`. Returns an empty list when the file is missing or empty.
-/// Returns 400 when the file exists but fails to parse.
+/// `.monitor.yml`, plus per-segment scan coverage. Returns an empty list when
+/// the file is missing or empty. Returns 400 when it exists but fails to parse.
 pub async fn list_monitors(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Extension(state): Extension<Arc<AgenticState>>,
 ) -> Result<Json<ListMonitorsResponse>, (StatusCode, String)> {
+    let workspace_id = workspace_manager.workspace_id;
+    let coverage = load_coverage(&state.db, workspace_id).await;
+
     // Compile-boundary fast path. When the workspace is promoted, hydrate the
     // MonitorConfig from `monitor_configs` and skip the .monitor.yml disk read.
-    if let Ok(Some(definition)) = crate::server::api::compiled_reader::resolve_monitor_config(
-        workspace_manager.workspace_id,
-        None,
-    )
-    .await
+    if let Ok(Some(definition)) =
+        crate::server::api::compiled_reader::resolve_monitor_config(workspace_id, None).await
     {
         match serde_json::from_value::<monitoring::config::MonitorConfig>(definition) {
             Ok(cfg) => {
                 return Ok(Json(ListMonitorsResponse {
                     monitors: cfg.monitors,
+                    coverage,
                 }));
             }
             Err(e) => tracing::warn!(
-                workspace_id = %workspace_manager.workspace_id,
+                workspace_id = %workspace_id,
                 error = ?e,
                 "list_monitors: compiled monitor config deserialise failed; falling through to FS"
             ),
@@ -132,6 +170,7 @@ pub async fn list_monitors(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     Ok(Json(ListMonitorsResponse {
         monitors: config.monitors,
+        coverage,
     }))
 }
 
@@ -343,10 +382,15 @@ pub async fn run_scan(
     tokio::spawn(async move {
         let _hold = _materialised_monitor_guard;
         let outcome = async {
-            let result = monitoring::scan_workspace(runner, &config_path, now, None)
+            // Events already on record, so a bucket continuing a reported
+            // slide is not made to re-clear its seasonal envelope alone.
+            let open_events = monitoring::load_open_events(&db_bg, workspace_id)
+                .await
+                .map_err(AnomalyError::Db)?;
+            let result = monitoring::scan_workspace(runner, &config_path, now, None, &open_events)
                 .await
                 .map_err(AnomalyError::Scan)?;
-            let persisted = monitoring::upsert_anomalies(&db_bg, workspace_id, &result)
+            let persisted = monitoring::persist_scan(&db_bg, workspace_id, &result)
                 .await
                 .map_err(AnomalyError::Db)?;
             Ok::<(monitoring::ScanResult, usize), AnomalyError>((result, persisted))

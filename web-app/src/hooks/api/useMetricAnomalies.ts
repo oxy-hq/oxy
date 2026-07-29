@@ -2,7 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { MetricAnomaliesService } from "@/services/api/metricAnomalies";
-import type { AnomalyStatus, MonitorEntry } from "@/types/metricAnomalies";
+import type {
+  AnomalyStatus,
+  ListMonitorsResponse,
+  MonitorCoverage,
+  MonitorEntry
+} from "@/types/metricAnomalies";
 import type { ExplainResult } from "@/types/metricTree";
 import queryKeys from "./queryKey";
 
@@ -124,18 +129,34 @@ export function useAnomalyExplain(anomalyId: string | null) {
   });
 }
 
-/** Monitor configurations from `.monitor.yml`. Fetched once per session
- *  (staleTime: Infinity — the file only changes on deploy/edit).
- *  Returns an empty array when no file is configured. */
-export function useMonitors() {
+/** Shared fetch behind {@link useMonitors} and {@link useMonitorCoverage}.
+ *
+ *  One endpoint, one cache entry, two selectors — React Query dedupes on the
+ *  shared key, so the tab does not fetch this twice.
+ *
+ *  The config half only changes on deploy/edit, but the coverage half moves
+ *  with every scan, so this is no longer `staleTime: Infinity`. */
+function useMonitorsQuery<T>(select: (data: ListMonitorsResponse) => T) {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
   return useQuery({
     queryKey: queryKeys.metricAnomalies.monitors(projectId),
     queryFn: () => MetricAnomaliesService.listMonitors(projectId),
-    staleTime: Infinity,
-    placeholderData: [] as MonitorEntry[]
+    staleTime: 60_000,
+    select
   });
+}
+
+/** Monitor configurations from `.monitor.yml`. Returns an empty array when no
+ *  file is configured. */
+export function useMonitors() {
+  return useMonitorsQuery((data) => data.monitors ?? ([] as MonitorEntry[]));
+}
+
+/** Per-segment scan coverage — which monitors are being scored and which are
+ *  still accumulating history. Empty until the workspace has been scanned. */
+export function useMonitorCoverage() {
+  return useMonitorsQuery((data) => data.coverage ?? ([] as MonitorCoverage[]));
 }
 
 /** Force-refresh the cached explain for an anomaly. Calls the same

@@ -44,6 +44,15 @@ pub struct Model {
     /// Wall-clock when [`Self::explain_cache`] was written. Lets callers
     /// reason about freshness without inspecting the cached payload.
     pub explain_cached_at: Option<DateTimeWithTimeZone>,
+    /// Groups consecutive flagged buckets of one segment into a single event,
+    /// so a labour surge spanning Mon/Wed/Thu reads as one problem rather than
+    /// three. Assigned at persist time by proximity + direction; `None` for
+    /// rows detected before events existed.
+    ///
+    /// Rows stay per-bucket on purpose — `explain_anomaly` reasons about a
+    /// single bucket against the same phase one cycle back, so merging rows
+    /// would make it describe only the first day of a range.
+    pub event_id: Option<Uuid>,
     /// Dominant seasonal cycle length (in units of [`Self::granularity`]) from
     /// the monitor's detection config, snapshotted at scan time. Drives the
     /// same-phase comparison window when explaining this anomaly. `None` for

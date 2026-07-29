@@ -1315,9 +1315,108 @@ async fn prune_orphaned_schedules(db: &DatabaseConnection, live_ids: &[uuid::Uui
     }
 }
 
+/// The timezone a workspace's `monitor_scan` schedule rows should fire in.
+///
+/// Only the FILE-level `.monitor.yml` timezone can apply: one schedule row
+/// drives every monitor at a given granularity, so a per-monitor override has
+/// nothing to attach to. Absent = UTC, preserving existing behavior.
+fn desired_schedule_timezone(cfg: &oxy_metric_monitoring::MonitorConfig) -> String {
+    cfg.timezone.clone().unwrap_or_else(|| "UTC".to_string())
+}
+
+/// Build the `ActiveModel` for a timezone reconcile: sets only `id` (primary
+/// key — never emitted in the `SET` clause), `timezone` and `next_run_at`,
+/// leaving every other column `NotSet`.
+///
+/// `agentic_schedules` has exactly one true writer today —
+/// `tick_monitor_schedules`'s CAS `UPDATE ... WHERE id = $2 AND
+/// next_run_at = $3` — and several replicas run the tick loop concurrently
+/// with no leader election precisely because that CAS makes it safe
+/// (`recovery.rs` docs above). Building this `ActiveModel` from
+/// `row.clone().into()` would set every column from a snapshot taken
+/// earlier in the boot/tick pass and emit a full-row, unguarded `UPDATE`,
+/// making this the first non-CAS writer on the table: a concurrent CAS fire
+/// on the same row between the snapshot read and this write would have its
+/// bookkeeping (`last_fired_at`, `last_run_id`, `missed_runs`,
+/// `last_missed_at`) silently reverted. A targeted two-column update can
+/// never race the CAS fire on any column it doesn't touch.
+fn timezone_reconcile_active_model(
+    row: &agentic_runtime::entity::schedule::Model,
+    timezone: &str,
+    next: chrono::DateTime<chrono::FixedOffset>,
+) -> agentic_runtime::entity::schedule::ActiveModel {
+    use agentic_runtime::entity::schedule;
+
+    schedule::ActiveModel {
+        id: sea_orm::ActiveValue::Set(row.id.clone()),
+        timezone: sea_orm::ActiveValue::Set(timezone.to_string()),
+        next_run_at: sea_orm::ActiveValue::Set(next),
+        ..Default::default()
+    }
+}
+
+/// Update the `timezone` (and recompute `next_run_at`) on any existing
+/// `monitor_scan` row whose timezone differs from `desired`.
+///
+/// Bootstrap is create-only, so without this reconcile every existing row
+/// would be stranded on its original timezone and a `timezone:` edit in
+/// `.monitor.yml` would silently never take effect. Cadence, the enabled
+/// flag and variables are left exactly as they are — see
+/// [`timezone_reconcile_active_model`] for why the update must stay
+/// column-targeted rather than a full-row write. A row whose next fire
+/// time can't be recomputed for the new timezone is logged and left alone,
+/// never half-updated.
+async fn reconcile_monitor_schedule_timezones(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    existing: &[agentic_runtime::entity::schedule::Model],
+    timezone: &str,
+) {
+    for row in existing.iter().filter(|r| r.timezone != timezone) {
+        let next = match agentic_pipeline::scheduler::next_after(
+            &row.cron_expr,
+            timezone,
+            chrono::Utc::now(),
+        ) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!(
+                    target: "metric_monitoring",
+                    %workspace_id,
+                    schedule_id = %row.id,
+                    error = %e,
+                    "reconcile: could not recompute next_run_at for the new timezone; leaving the row alone"
+                );
+                continue;
+            }
+        };
+        let active = timezone_reconcile_active_model(row, timezone, next);
+        match sea_orm::ActiveModelTrait::update(active, db).await {
+            Ok(_) => tracing::info!(
+                target: "metric_monitoring",
+                %workspace_id,
+                schedule_id = %row.id,
+                from = %row.timezone,
+                to = %timezone,
+                "reconciled monitor_scan schedule timezone"
+            ),
+            Err(e) => tracing::warn!(
+                target: "metric_monitoring",
+                %workspace_id,
+                schedule_id = %row.id,
+                error = %e,
+                "reconcile: failed to update monitor_scan schedule timezone"
+            ),
+        }
+    }
+}
+
 /// Read `.monitor.yml`'s `schedule:` block and create `monitor_scan` schedule
-/// rows for any granularity not yet present in `agentic_schedules`.
-/// Create-only — never updates or deletes rows already present.
+/// rows for any granularity not yet present in `agentic_schedules`. Also
+/// reconciles the `timezone` column on rows already present — see
+/// [`reconcile_monitor_schedule_timezones`]. Otherwise create-only: never
+/// touches cadence, enabled flag, or variables on existing rows, and never
+/// deletes rows.
 async fn bootstrap_monitor_schedules(
     db: &DatabaseConnection,
     workspace_id: uuid::Uuid,
@@ -1339,7 +1438,8 @@ async fn bootstrap_monitor_schedules(
             return;
         }
     };
-    let Some(sched) = cfg.schedule else {
+    let timezone = desired_schedule_timezone(&cfg);
+    let Some(sched) = cfg.schedule.clone() else {
         return;
     };
 
@@ -1372,6 +1472,8 @@ async fn bootstrap_monitor_schedules(
         })
     };
 
+    reconcile_monitor_schedule_timezones(db, workspace_id, &existing, &timezone).await;
+
     let entries = [
         (sched.daily.as_deref(), "day", "Metric monitoring (daily)"),
         (
@@ -1400,7 +1502,7 @@ async fn bootstrap_monitor_schedules(
             question: None,
             variables: Some(serde_json::json!({ "granularity": gran })),
             cron_expr: cron_expr.to_string(),
-            timezone: "UTC".to_string(),
+            timezone: timezone.clone(),
             enabled: true,
         };
         match create_schedule(db, workspace_id, input).await {
@@ -1487,5 +1589,107 @@ mod tests {
     fn an_undeserialisable_compiled_config_falls_through_to_the_working_copy() {
         let json = serde_json::json!({ "databases": "not-an-array" });
         assert!(config_from_compiled(uuid::Uuid::new_v4(), json, "/state/ws").is_none());
+    }
+
+    #[test]
+    fn schedule_timezone_comes_from_the_monitor_config() {
+        let cfg: oxy_metric_monitoring::MonitorConfig = serde_yaml::from_str(
+            "timezone: America/Los_Angeles\nmonitors:\n  - measure: a.b\n    time_dimension: a.t\n",
+        )
+        .unwrap();
+        assert_eq!(desired_schedule_timezone(&cfg), "America/Los_Angeles");
+    }
+
+    #[test]
+    fn schedule_timezone_defaults_to_utc() {
+        let cfg: oxy_metric_monitoring::MonitorConfig =
+            serde_yaml::from_str("monitors:\n  - measure: a.b\n    time_dimension: a.t\n").unwrap();
+        assert_eq!(
+            desired_schedule_timezone(&cfg),
+            "UTC",
+            "an existing config with no timezone must keep firing on the UTC cron"
+        );
+    }
+
+    #[test]
+    fn per_monitor_overrides_do_not_change_the_schedule_timezone() {
+        // One schedule row drives every monitor at a granularity, so only the
+        // file-level timezone can determine when it fires.
+        let cfg: oxy_metric_monitoring::MonitorConfig = serde_yaml::from_str(
+            "timezone: America/Los_Angeles\nmonitors:\n  - measure: a.b\n    time_dimension: a.t\n    timezone: Europe/Berlin\n",
+        )
+        .unwrap();
+        assert_eq!(desired_schedule_timezone(&cfg), "America/Los_Angeles");
+    }
+
+    /// `agentic_schedules` has exactly one true writer today — the tick's CAS
+    /// `UPDATE ... WHERE id = $2 AND next_run_at = $3` — and several replicas
+    /// run the tick loop concurrently with no leader election *because* that
+    /// CAS makes it safe. A reconcile built from `row.clone().into()` would
+    /// set every column and emit a full-row, unguarded `UPDATE`, becoming a
+    /// second, non-CAS writer that can silently revert a concurrent tick's
+    /// fire bookkeeping. Pin the reconcile to a true two-column update: every
+    /// field except `id` (the primary key, never emitted in `SET`),
+    /// `timezone` and `next_run_at` must stay `NotSet`.
+    #[test]
+    fn timezone_reconcile_active_model_only_touches_timezone_and_next_run_at() {
+        use agentic_runtime::entity::schedule;
+
+        let now: chrono::DateTime<chrono::FixedOffset> = chrono::Utc::now().fixed_offset();
+        let row = schedule::Model {
+            id: "sched-1".to_string(),
+            workspace_id: uuid::Uuid::new_v4(),
+            project_id: None,
+            branch_id: None,
+            name: "Metric monitoring (daily)".to_string(),
+            target_kind: "monitor_scan".to_string(),
+            target_ref: ".monitor.yml".to_string(),
+            question: None,
+            variables: Some(serde_json::json!({ "granularity": "day" })),
+            cron_expr: "0 6 * * *".to_string(),
+            timezone: "UTC".to_string(),
+            enabled: true,
+            next_run_at: now,
+            // Bookkeeping a concurrent CAS fire on another replica could have
+            // just written — must survive an unrelated timezone reconcile.
+            last_fired_at: Some(now),
+            last_run_id: Some("run-42".to_string()),
+            last_error: None,
+            missed_runs: 3,
+            last_missed_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        };
+        let next = now + chrono::Duration::hours(1);
+
+        let active = timezone_reconcile_active_model(&row, "America/Los_Angeles", next);
+
+        assert!(
+            active.id.is_set(),
+            "primary key must be set to target the row"
+        );
+        assert!(active.timezone.is_set());
+        assert!(active.next_run_at.is_set());
+
+        assert!(active.workspace_id.is_not_set());
+        assert!(active.project_id.is_not_set());
+        assert!(active.branch_id.is_not_set());
+        assert!(active.name.is_not_set());
+        assert!(active.target_kind.is_not_set());
+        assert!(active.target_ref.is_not_set());
+        assert!(active.question.is_not_set());
+        assert!(active.variables.is_not_set());
+        assert!(active.cron_expr.is_not_set());
+        assert!(active.enabled.is_not_set());
+        assert!(
+            active.last_fired_at.is_not_set(),
+            "must not revert a concurrent tick's fire bookkeeping"
+        );
+        assert!(active.last_run_id.is_not_set());
+        assert!(active.last_error.is_not_set());
+        assert!(active.missed_runs.is_not_set());
+        assert!(active.last_missed_at.is_not_set());
+        assert!(active.created_at.is_not_set());
+        assert!(active.updated_at.is_not_set());
     }
 }

@@ -699,7 +699,7 @@ dependencies = [
 [[package]]
 name = "airlayer"
 version = "0.3.6"
-source = "git+https://github.com/oxy-hq/airlayer?rev=06ba5e56e8e2000b054c970745239873f65ec3c5#06ba5e56e8e2000b054c970745239873f65ec3c5"
+source = "git+https://github.com/oxy-hq/airlayer?rev=e8353dbe39d4d989b3569a037f45bbee8ae92322#e8353dbe39d4d989b3569a037f45bbee8ae92322"
 dependencies = [
  "anyhow",
  "chrono",
@@ -9149,11 +9149,14 @@ dependencies = [
  "augurs-ets",
  "augurs-mstl",
  "chrono",
+ "chrono-tz 0.8.6",
  "entity",
+ "humantime",
  "sea-orm",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
  "tracing",

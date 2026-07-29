@@ -759,6 +759,7 @@ async fn list_anomalies_returns_empty_for_null_store() {
             _: String,
             _: (String, String),
             _: Vec<airlayer::engine::query::QueryFilter>,
+            _: Option<String>,
         ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
             Ok(vec![])
         }
@@ -891,6 +892,7 @@ async fn detect_anomalies_returns_message_when_insufficient_data() {
             _: String,
             _: (String, String),
             _: Vec<airlayer::engine::query::QueryFilter>,
+            _: Option<String>,
         ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
             // Only 3 data points — not enough for weekly seasonality (needs ≥ 8).
             Ok(vec![

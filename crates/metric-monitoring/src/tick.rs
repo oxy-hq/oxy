@@ -27,7 +27,7 @@ use uuid::Uuid;
 use std::sync::OnceLock;
 
 use crate::config::default_config_path;
-use crate::persist::upsert_anomalies;
+use crate::persist::{load_open_events, persist_scan};
 use crate::service::{ScanError, scan_workspace};
 
 /// Process-global registry used by the recovery-loop tick path. Lets
@@ -140,7 +140,10 @@ pub async fn tick_workspace(
             anomalies_persisted: 0,
         });
     }
-    let scan = scan_workspace(runner, &config_path, Utc::now(), None).await?;
+    // Events already on record, so a bucket continuing a reported slide is
+    // not made to re-clear its seasonal envelope from scratch.
+    let open_events = load_open_events(db, workspace_id).await?;
+    let scan = scan_workspace(runner, &config_path, Utc::now(), None, &open_events).await?;
     // Surface which monitors failed (and why) in logs — the periodic path has
     // no toast, so without this a broken monitor is invisible to ops.
     for failure in &scan.failures {
@@ -154,7 +157,7 @@ pub async fn tick_workspace(
             "monitor scan failed for one monitor"
         );
     }
-    let persisted = upsert_anomalies(db, workspace_id, &scan).await?;
+    let persisted = persist_scan(db, workspace_id, &scan).await?;
     Ok(TickOutcome {
         workspace_id,
         ran: true,

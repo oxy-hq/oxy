@@ -89,6 +89,21 @@ pub trait MetricTreeRunner: Send + Sync {
     ///
     /// `filters` are additional `equals` dimension filters applied before
     /// aggregation — used for per-store / per-segment monitors.
+    ///
+    /// `timezone` is an IANA name used to bucket the series in local time.
+    /// `None` means "use the runner's configured default" (which is UTC for
+    /// runners that have none) — NOT an explicit UTC request.
+    ///
+    /// **Contract:** implementations return only buckets within the requested
+    /// `period`, inclusive on both ends, and are responsible for compensating
+    /// for any timezone-conversion edge effects of their own query engine.
+    /// (Concretely: airlayer applies a `date_range` filter to the *raw*,
+    /// unconverted column while bucketing on the timezone-*converted* one, so
+    /// a non-UTC request clips or partially-sums its first and last buckets
+    /// unless the implementor pads the underlying query and trims the result
+    /// back down.) This is what lets every caller — the scheduled scanner and
+    /// the chat-driven `detect_anomalies` tool alike — pass `period` as-is
+    /// without knowing about the quirk or duplicating a workaround.
     async fn run_time_series(
         &self,
         measure: String,
@@ -96,6 +111,7 @@ pub trait MetricTreeRunner: Send + Sync {
         granularity: String,
         period: (String, String),
         filters: Vec<QueryFilter>,
+        timezone: Option<String>,
     ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError>;
 
     /// Execute a full airlayer query (window already injected by the caller as a

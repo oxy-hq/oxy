@@ -134,6 +134,9 @@ mod m20260716_000001_app_build_validation_status;
 mod m20260722_000001_app_visibility_and_members;
 mod m20260723_000001_metric_anomalies_seasonal_period;
 mod m20260728_000001_health_state_add_alert_tracking;
+mod m20260729_000001_metric_monitor_coverage;
+mod m20260729_000002_metric_anomalies_event_id;
+mod m20260729_000003_metric_anomalies_granularity_key;
 
 pub struct Migrator;
 
@@ -269,6 +272,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260722_000001_app_visibility_and_members::Migration),
             Box::new(m20260723_000001_metric_anomalies_seasonal_period::Migration),
             Box::new(m20260728_000001_health_state_add_alert_tracking::Migration),
+            Box::new(m20260729_000001_metric_monitor_coverage::Migration),
+            Box::new(m20260729_000002_metric_anomalies_event_id::Migration),
+            Box::new(m20260729_000003_metric_anomalies_granularity_key::Migration),
         ]
     }
 }

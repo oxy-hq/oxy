@@ -8,8 +8,43 @@ use super::Tolerance;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReconcileConfig {
+    /// IANA timezone every check window resolves in (e.g. `America/Los_Angeles`).
+    /// Absent = UTC. Overridable per check via `window.timezone`.
+    #[serde(
+        default,
+        deserialize_with = "de_timezone",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub timezone: Option<String>,
+    /// Freshness watermark: resolve every window as of `now - freshness`, so a
+    /// warehouse that is days behind on ingestion still compares a period that
+    /// has actually landed. Absent = zero. Overridable via `window.freshness`.
+    #[serde(
+        default,
+        with = "oxy_metric_monitoring::config::duration_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub freshness: Option<std::time::Duration>,
     #[serde(default)]
     pub checks: Vec<ReconcileCheck>,
+}
+
+impl ReconcileConfig {
+    /// Push file-level `timezone` / `freshness` into any window that did not set
+    /// them, so each [`Window`] is self-contained for `resolve_window`.
+    pub fn apply_defaults(&mut self) {
+        // Bind first: iterating `&mut self.checks` while reading `self.*` would
+        // be a double borrow.
+        let (tz, freshness) = (self.timezone.clone(), self.freshness);
+        for c in &mut self.checks {
+            if c.window.timezone.is_none() {
+                c.window.timezone = tz.clone();
+            }
+            if c.window.freshness.is_none() {
+                c.window.freshness = freshness;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,11 +75,75 @@ pub struct Window {
     /// excluded (offset: 1, grain: day == "yesterday").
     #[serde(default)]
     pub offset: u32,
+    /// Freshness watermark: resolve this window as of `now - freshness` rather
+    /// than `now`. Absent = the file-level `freshness`, else zero.
+    #[serde(
+        default,
+        with = "oxy_metric_monitoring::config::duration_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub freshness: Option<std::time::Duration>,
+    /// IANA timezone this window's calendar snapping happens in. Absent = the
+    /// file-level `timezone`, else UTC.
+    ///
+    /// Set this ONLY when the check's `time_dimension` is a timestamp. On a
+    /// DATE / business-date column the warehouse has already assigned the local
+    /// date, and converting again shifts the comparison by the UTC offset.
+    #[serde(
+        default,
+        deserialize_with = "de_timezone",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub timezone: Option<String>,
     /// Which weekday a `grain: week` window starts on. Ignored for day/month.
     /// Defaults to Sunday to match the Command Center's weekly ribbon and
-    /// 12-week charts (ClickHouse `toStartOfWeek` default).
+    /// 12-week charts — that reporting convention is the only reason, *not* a
+    /// warehouse default: most dialects truncate weeks to Monday (see the
+    /// dialect table on `oxy_metric_monitoring::config::WeekStart`, which
+    /// defaults to Monday for exactly that reason).
+    ///
+    /// Unlike the monitor knob, this one picks the **actual comparison window**
+    /// rather than just trimming an incomplete period, so a Mon–Sun business
+    /// silently reconciles Sun–Sat until it sets `week_start: monday`.
     #[serde(default)]
     pub week_start: WeekStart,
+}
+
+impl Window {
+    /// Resolved timezone. Defaults to UTC, which reproduces the pre-2026-07
+    /// UTC-only behavior exactly. Infallible — the name was validated at parse
+    /// time by [`de_timezone`], so `resolve_window` can stay infallible too.
+    pub fn effective_timezone(&self) -> chrono_tz::Tz {
+        self.timezone
+            .as_deref()
+            .and_then(|s| s.parse::<chrono_tz::Tz>().ok())
+            .unwrap_or(chrono_tz::UTC)
+    }
+
+    /// Resolved freshness watermark. Defaults to zero, which reproduces the
+    /// pre-freshness behavior exactly.
+    pub fn effective_freshness(&self) -> chrono::Duration {
+        self.freshness
+            .and_then(|d| chrono::Duration::from_std(d).ok())
+            .unwrap_or_else(chrono::Duration::zero)
+    }
+}
+
+/// Validate an IANA timezone name while deserializing.
+///
+/// Validation belongs here rather than in a post-parse pass so the error carries
+/// the right serde path and is naturally a `serde_json::Error`. `resolve_window`
+/// is infallible by design and has nowhere to report a bad name.
+fn de_timezone<'de, D>(d: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let Some(s) = Option::<String>::deserialize(d)? else {
+        return Ok(None);
+    };
+    s.parse::<chrono_tz::Tz>()
+        .map_err(|_| serde::de::Error::custom(format!("unknown IANA timezone '{s}'")))?;
+    Ok(Some(s))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,7 +286,9 @@ pub struct ExternalSpec {
 }
 
 pub fn parse_reconcile_config(v: &serde_json::Value) -> Result<ReconcileConfig, serde_json::Error> {
-    serde_json::from_value(v.clone())
+    let mut cfg: ReconcileConfig = serde_json::from_value(v.clone())?;
+    cfg.apply_defaults();
+    Ok(cfg)
 }
 
 #[cfg(test)]
@@ -390,6 +491,90 @@ checks:
         ));
         // No label on the constant → defaults to "Expected".
         assert_eq!(c.expected.label_or("Expected"), "Expected");
+    }
+
+    #[test]
+    fn window_freshness_parses_humantime_units() {
+        let w: Window = serde_yaml::from_str("last: 1\ngrain: day\nfreshness: 3d\n").unwrap();
+        assert_eq!(w.effective_freshness(), chrono::Duration::days(3));
+
+        let w: Window = serde_yaml::from_str("last: 1\ngrain: day\nfreshness: 30m\n").unwrap();
+        assert_eq!(w.effective_freshness(), chrono::Duration::minutes(30));
+
+        let w: Window = serde_yaml::from_str("last: 1\ngrain: day\nfreshness: 12h\n").unwrap();
+        assert_eq!(w.effective_freshness(), chrono::Duration::hours(12));
+    }
+
+    #[test]
+    fn absent_window_fields_mean_utc_and_zero() {
+        // The deployed shape: neither field present.
+        let w: Window = serde_yaml::from_str("last: 1\ngrain: day\noffset: 1\n").unwrap();
+        assert_eq!(w.effective_timezone(), chrono_tz::UTC);
+        assert_eq!(w.effective_freshness(), chrono::Duration::zero());
+    }
+
+    #[test]
+    fn file_level_defaults_fill_unset_windows() {
+        let yaml = r#"
+timezone: America/Los_Angeles
+freshness: 3d
+checks:
+  - name: inherits
+    window: { last: 1, grain: day, offset: 1 }
+    tolerance: { abs: 1.0, pct: 0.5 }
+    actual: { constant: 1 }
+    expected: { constant: 1 }
+  - name: overrides
+    window: { last: 1, grain: day, offset: 1, timezone: Europe/Berlin, freshness: 30m }
+    tolerance: { abs: 1.0, pct: 0.5 }
+    actual: { constant: 1 }
+    expected: { constant: 1 }
+"#;
+        let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
+        let cfg = parse_reconcile_config(&v).unwrap();
+
+        let inherits = &cfg.checks[0].window;
+        assert_eq!(
+            inherits.effective_timezone(),
+            chrono_tz::America::Los_Angeles
+        );
+        assert_eq!(inherits.effective_freshness(), chrono::Duration::days(3));
+
+        let overrides = &cfg.checks[1].window;
+        assert_eq!(overrides.effective_timezone(), chrono_tz::Europe::Berlin);
+        assert_eq!(
+            overrides.effective_freshness(),
+            chrono::Duration::minutes(30)
+        );
+    }
+
+    #[test]
+    fn invalid_timezone_is_rejected_at_parse() {
+        let yaml = r#"
+checks:
+  - name: bad_tz
+    window: { last: 1, grain: day, offset: 1, timezone: Mars/Olympus_Mons }
+    tolerance: { abs: 1.0, pct: 0.5 }
+    actual: { constant: 1 }
+    expected: { constant: 1 }
+"#;
+        let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
+        let err = parse_reconcile_config(&v).unwrap_err().to_string();
+        assert!(
+            err.contains("Mars/Olympus_Mons"),
+            "error should name the offending value, got: {err}"
+        );
+    }
+
+    #[test]
+    fn invalid_file_level_timezone_is_rejected_at_parse() {
+        let yaml = "timezone: Not/AZone\nchecks: []\n";
+        let v: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
+        let err = parse_reconcile_config(&v).unwrap_err().to_string();
+        assert!(
+            err.contains("Not/AZone"),
+            "error should name the offending value, got: {err}"
+        );
     }
 
     #[test]

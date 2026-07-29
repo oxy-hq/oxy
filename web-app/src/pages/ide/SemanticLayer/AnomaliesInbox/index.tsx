@@ -266,22 +266,66 @@ function AnomalyTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {anomalies.map((a) => (
-          <AnomalyRow key={a.id} anomaly={a} onExplain={onExplain} />
+        {groupIntoEvents(anomalies).map((event) => (
+          <AnomalyRow key={event.peak.id} event={event} onExplain={onExplain} />
         ))}
       </TableBody>
     </Table>
   );
 }
 
+/** One anomaly event: the buckets it spans, and the worst of them. */
+interface AnomalyEvent {
+  /** Every bucket in the event, oldest first. */
+  buckets: MetricAnomaly[];
+  /** The bucket that departed furthest from expectation — what the row shows. */
+  peak: MetricAnomaly;
+}
+
+/**
+ * Collapse per-bucket rows into events.
+ *
+ * A sustained problem files one row per bucket, so a three-day labour surge
+ * reads as three separate anomalies and "how many problems do I have" cannot be
+ * answered by counting rows. Rows stay per-bucket on the server because
+ * `explain` reasons about a single bucket, so the collapsing lives here.
+ *
+ * Rows with no `event_id` (detected before events existed) each stand alone
+ * rather than being lumped together under a shared null key.
+ */
+function groupIntoEvents(anomalies: MetricAnomaly[]): AnomalyEvent[] {
+  const byEvent = new Map<string, MetricAnomaly[]>();
+  for (const a of anomalies) {
+    const key = a.event_id ?? `ungrouped:${a.id}`;
+    const existing = byEvent.get(key);
+    if (existing) existing.push(a);
+    else byEvent.set(key, [a]);
+  }
+  return Array.from(byEvent.values()).map((buckets) => {
+    const ordered = [...buckets].sort((x, y) => x.period_start.localeCompare(y.period_start));
+    // The peak, not the latest: the worst day is what an operator triages on,
+    // and it is the bucket whose explain is worth reading.
+    const peak = ordered.reduce((a, b) => (Math.abs(b.z_score) > Math.abs(a.z_score) ? b : a));
+    return { buckets: ordered, peak };
+  });
+}
+
 function AnomalyRow({
-  anomaly,
+  event,
   onExplain
 }: {
-  anomaly: MetricAnomaly;
+  event: AnomalyEvent;
   onExplain: (a: MetricAnomaly) => void;
 }) {
   const update = useUpdateAnomalyStatus();
+  const anomaly = event.peak;
+  // Status actions apply to the whole event: acknowledging "the surge" and
+  // leaving its other two days sitting in the inbox would defeat the grouping.
+  const setStatus = (status: AnomalyStatus) => {
+    for (const bucket of event.buckets) {
+      update.mutate({ id: bucket.id, status });
+    }
+  };
 
   const deltaPct = useMemo(() => {
     if (Math.abs(anomaly.expected) < 1e-9) return null;
@@ -303,7 +347,13 @@ function AnomalyRow({
       <TableCell className='text-sm'>
         <div className='flex flex-col'>
           <span>{formatPeriod(anomaly)}</span>
-          <span className='text-muted-foreground text-xs'>{anomaly.granularity}</span>
+          {event.buckets.length > 1 ? (
+            <span className='text-muted-foreground text-xs'>
+              {anomaly.granularity} · worst of {event.buckets.length} in this event
+            </span>
+          ) : (
+            <span className='text-muted-foreground text-xs'>{anomaly.granularity}</span>
+          )}
         </div>
       </TableCell>
       <TableCell className='t-code text-right'>{formatNumber(anomaly.observed)}</TableCell>
@@ -321,7 +371,7 @@ function AnomalyRow({
               size='sm'
               variant='outline'
               disabled={update.isPending}
-              onClick={() => update.mutate({ id: anomaly.id, status: "acknowledged" })}
+              onClick={() => setStatus("acknowledged")}
             >
               Ack
             </Button>
@@ -331,7 +381,7 @@ function AnomalyRow({
               size='sm'
               variant='ghost'
               disabled={update.isPending}
-              onClick={() => update.mutate({ id: anomaly.id, status: "dismissed" })}
+              onClick={() => setStatus("dismissed")}
             >
               Dismiss
             </Button>

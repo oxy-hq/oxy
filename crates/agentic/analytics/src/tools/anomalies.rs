@@ -86,6 +86,10 @@ async fn detect_anomalies(params: Value, ctx: &AnomalyToolContext<'_>) -> Result
             granularity.clone(),
             (period_start, period_end),
             vec![],
+            // None = the runner's configured default, which OxyMetricTreeRunner
+            // resolves from the workspace's `.monitor.yml` (see Task 5) so
+            // chat-driven detection agrees with scheduled scans.
+            None,
         )
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;

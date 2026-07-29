@@ -12,8 +12,9 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::config::Sensitivity;
+use crate::config::{Granularity, Sensitivity};
 use crate::detect::{DetectInputs, Observation, Severity, detect};
+use crate::gates::min_history_buckets;
 
 pub struct OxyAnomalyStore {
     pub db: Arc<DatabaseConnection>,
@@ -32,6 +33,17 @@ fn seasonal_periods(granularity: &str) -> Vec<usize> {
         "month" => vec![12],
         "quarter" => vec![4],
         _ => vec![7],
+    }
+}
+
+/// Map this path's free-form granularity label onto the enum the shared
+/// history floor is defined over. `"quarter"` has no [`Granularity`] variant;
+/// it is coarse-grained, so it takes the coarse-grained floor.
+fn granularity_for_history(granularity: &str) -> Granularity {
+    match granularity {
+        "week" => Granularity::Week,
+        "month" | "quarter" => Granularity::Month,
+        _ => Granularity::Day,
     }
 }
 
@@ -161,10 +173,9 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
         let series: Vec<Observation> = observations
             .iter()
             .filter_map(|(ts, val)| {
-                parse_utc(ts).map(|timestamp| Observation {
-                    timestamp,
-                    value: *val,
-                })
+                // Caller-supplied series: every point is a real reading, and
+                // this path does no gap-filling of its own.
+                parse_utc(ts).map(|timestamp| Observation::measured(timestamp, *val))
             })
             .collect();
 
@@ -173,10 +184,14 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
         // its comparison window to the same phase one cycle back.
         let seasonal_period = seasonal.iter().copied().min().map(|p| p as i32);
         let max_period = seasonal.iter().copied().max().unwrap_or(7);
-        // Mirror detect()'s formula exactly: (max_period*2).max(10) + test_window.
-        // test_window is hardcoded to 1 below; keeping it consistent prevents
-        // detect() from returning SeriesTooShort on a series that passed this guard.
-        let min_obs = (max_period * 2).max(10) + 1;
+        // Two floors, both of which must hold. The algebraic one mirrors
+        // detect()'s formula exactly — (max_period*2).max(10) + test_window,
+        // with test_window hardcoded to 1 below — so detect() cannot return
+        // SeriesTooShort on a series that passed this guard. The statistical one
+        // is the same trust threshold `scan_one` applies, so the AI-tool path
+        // and the scheduled scan agree on what counts as enough history.
+        let min_obs = min_history_buckets(granularity_for_history(granularity), &seasonal)
+            .max((max_period * 2).max(10) + 1);
 
         if series.len() < min_obs {
             return Ok(DetectAndUpsertResult {
@@ -196,6 +211,9 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
             test_window: 1,
             sensitivity: Sensitivity::Medium,
             interval_level: 0.95,
+            // The AI-tool path scores a single bucket from a caller-supplied
+            // series and has no segment context to look events up by.
+            continuation: None,
         };
         let detected = detect(inputs).map_err(|e| AnomalyStoreError::Detection(e.to_string()))?;
         let total = series.len();
@@ -241,6 +259,9 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
                     .map_err(|e| AnomalyStoreError::Db(e.to_string()))?
             } else {
                 metric_anomalies::ActiveModel {
+                    // Events are assigned by the scheduled scan, which knows
+                    // the segment; this path has no segment identity.
+                    event_id: Set(None),
                     id: Set(Uuid::new_v4()),
                     workspace_id: Set(workspace_id),
                     measure: Set(measure.to_string()),

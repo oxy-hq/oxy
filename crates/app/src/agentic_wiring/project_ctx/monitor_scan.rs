@@ -26,15 +26,19 @@ impl MonitorScanPort for OxyProjectContext {
             other => return Err(format!("unknown granularity: {other:?}")),
         };
         let config_path = oxy_metric_monitoring::default_config_path(self.workspace_path());
+        let open_events = oxy_metric_monitoring::load_open_events(db, workspace_id)
+            .await
+            .map_err(|e| e.to_string())?;
         let scan = oxy_metric_monitoring::scan_workspace(
             runner,
             &config_path,
             chrono::Utc::now(),
             Some(gran),
+            &open_events,
         )
         .await
         .map_err(|e| e.to_string())?;
-        let persisted = oxy_metric_monitoring::upsert_anomalies(db, workspace_id, &scan)
+        let persisted = oxy_metric_monitoring::persist_scan(db, workspace_id, &scan)
             .await
             .map_err(|e| e.to_string())?;
         let summary = format!(
