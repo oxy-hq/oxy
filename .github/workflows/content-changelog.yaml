@@ -88,7 +88,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Generate and publish changelog draft
-        uses: anthropics/claude-code-action@12531344451323133b0493233c759991ac61da12 # v1
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Pass the ARGO app token via the action's `github_token` input (wired to
