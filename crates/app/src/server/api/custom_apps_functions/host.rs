@@ -9,9 +9,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use agentic_connector::DatabaseConnector;
-use agentic_pipeline::airway_run::{StartAirwayRequest, start_airway_run};
-use agentic_pipeline::platform::ProjectContext;
-use agentic_runtime::crud::TaskScope;
+use agentic_pipeline::airway_run::StartAirwayRequest;
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
 use agentic_semantic::config::SemanticQueryConfig;
 use sea_orm::DatabaseConnection;
@@ -19,10 +17,9 @@ use uuid::Uuid;
 
 use oxy::service::secret_manager::SecretManagerService;
 
-use crate::agentic_wiring::OxyProjectContext;
-
 use super::runtime::{
-    FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost, FunctionQueryExecutor,
+    FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost, FunctionProjectContext,
+    FunctionQueryExecutor,
 };
 
 /// Outbound fetch response size cap (design doc §11.9).
@@ -36,7 +33,10 @@ const FETCH_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// Concrete `FunctionHost` backed by the invocation's resolved project
 /// context (for SQL connectors) and a shared HTTP client (for `ctx.fetch`).
 pub struct ProjectFunctionHost {
-    proj_ctx: OxyProjectContext,
+    /// The invocation's project context (connectors + workspace config +
+    /// Airway seed), behind a trait so the runtime doesn't depend on
+    /// `agentic_wiring`. Injected at construction.
+    proj_ctx: Arc<dyn FunctionProjectContext>,
     /// Runs `ctx.query` / `ctx.queryStream` SQL. Injected at the composition
     /// root so the runtime depends on the trait, not on `projects::query`.
     query_exec: Arc<dyn FunctionQueryExecutor>,
@@ -71,7 +71,7 @@ pub struct ProjectFunctionHost {
 impl ProjectFunctionHost {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        proj_ctx: OxyProjectContext,
+        proj_ctx: Arc<dyn FunctionProjectContext>,
         query_exec: Arc<dyn FunctionQueryExecutor>,
         db: DatabaseConnection,
         write_destinations: Vec<String>,
@@ -294,16 +294,7 @@ impl FunctionHost for ProjectFunctionHost {
             backfill_from: None,
             backfill_to: None,
         };
-        let workspace_id = self.proj_ctx.workspace_id();
-        let run_id = start_airway_run(
-            &self.db,
-            &self.proj_ctx,
-            request,
-            TaskScope::Global,
-            workspace_id,
-        )
-        .await
-        .map_err(|e| format!("failed to start airway run: {e}"))?;
+        let run_id = self.proj_ctx.start_airway_seed(&self.db, request).await?;
         Ok(serde_json::json!({ "runId": run_id }))
     }
 

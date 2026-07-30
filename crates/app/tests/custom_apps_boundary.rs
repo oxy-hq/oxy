@@ -49,8 +49,13 @@ struct Seam {
 const ALLOWED_SEAMS: &[Seam] = &[
     Seam {
         prefix: "crate::agentic_wiring",
-        why: "OxyProjectContext — the pipeline adapter (a ~1.8k god-file). HEAVIEST remaining \
-               seam; the prime target to invert behind a trait before a Functions crate is feasible.",
+        why: "OxyProjectContext — the pipeline adapter. The function runtime's *consumption* is \
+               now inverted behind `custom_apps_functions::runtime::FunctionProjectContext` \
+               (host.rs no longer imports this); the only remaining importer is \
+               `custom_apps_gates`, which CONSTRUCTS the per-request context — a builder shared \
+               with the non-boundary /query + /semantic-query handlers. Fully deleting this seam \
+               means relocating that construction to a composition root, deferred to a real \
+               Functions-crate cut.",
     },
     // REMOVED 2026-07-25: `crate::server::api::projects` (the data-plane SQL path). The
     // function runtime's `ctx.query`/`ctx.queryStream` now runs through the runtime-owned

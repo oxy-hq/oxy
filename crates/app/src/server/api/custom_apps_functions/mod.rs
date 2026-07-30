@@ -1230,7 +1230,10 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         }
     };
     let host = host::into_arc(host::ProjectFunctionHost::new(
-        proj_ctx,
+        // Hand the runtime the project context behind its trait, so the host
+        // depends on `FunctionProjectContext`, not on `agentic_wiring`. The
+        // concrete `OxyProjectContext` is only named here (outside the runtime).
+        std::sync::Arc::new(proj_ctx) as std::sync::Arc<dyn runtime::FunctionProjectContext>,
         args.query_exec.clone(),
         args.db.clone(),
         args.write_destinations.clone(),
