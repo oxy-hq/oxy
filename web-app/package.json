@@ -117,7 +117,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/unist": "^3.0.3",
     "@vitejs/plugin-react-swc": "^4.3.2",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "rollup-plugin-visualizer": "^7.0.1",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2",
