@@ -53,9 +53,9 @@ use oxy_auth::types::AuthenticatedUser;
 
 use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::custom_apps_auth::is_org_member;
-use crate::server::authz;
 use crate::server::router::is_allowed_origin;
 use crate::server::service::secret_manager::SecretManagerService;
+use oxy_server_authz as authz;
 
 /// Resolved context produced by [`check_custom_app_gates`]. The
 /// handler unpacks whichever fields it needs; the struct is the
@@ -214,10 +214,10 @@ pub async fn check_custom_app_gates(
     let allowed = match is_org_member(&db, user.id, org_id).await {
         Ok(true) => true,
         Ok(false) => {
-            crate::server::authz::globals::platform_standing(&db, &user.email)
+            authz::globals::platform_standing(&db, &user.email)
                 .await
                 .is_staff()
-                || crate::server::api::middlewares::partner_authz::partner_grants_app_access(
+                || authz::partner_authz::partner_grants_app_access(
                     &db,
                     user.id,
                     &user.email,

@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::server::api::custom_apps_source::SourceSpec;
 
-use super::ops::build_pretty_url;
+use oxy_shared::utils::custom_app_url::build_pretty_url;
 
 /// Standard JSON error body for 4xx/5xx responses. The frontend reads
 /// `err.response.data.message` for actionable messaging in the create

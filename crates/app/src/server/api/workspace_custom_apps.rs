@@ -21,8 +21,8 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::admin::apps::handlers::build_pretty_url;
 use crate::server::api::custom_apps_manifest::OxyAppManifest;
+use oxy_shared::utils::custom_app_url::build_pretty_url;
 
 #[derive(Deserialize)]
 pub struct WorkspaceIdPath {

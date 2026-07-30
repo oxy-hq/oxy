@@ -58,19 +58,18 @@ const ALLOWED_SEAMS: &[Seam] = &[
     // (`projects::query::DataPlaneQueryExecutor`) injected at the composition root (the serve
     // router + the scheduled-function worker). The runtime no longer imports `projects`.
     // This deletion IS the decoupling migration — do not re-add without a real new dependency.
-    Seam {
-        prefix: "crate::server::api::middlewares",
-        why: "partner_authz (partner_for_org / resolve_scope) — the partner-tier authorization \
-               middleware used by the publish-consent gate.",
-    },
-    Seam {
-        prefix: "crate::server::api::admin::apps::handlers",
-        why: "build_pretty_url — a URL-formatting helper shared with the admin apps surface.",
-    },
-    Seam {
-        prefix: "crate::server::authz",
-        why: "authorization — re-exported from the oxy-server-authz crate.",
-    },
+    // REMOVED 2026-07-27: `crate::server::api::middlewares` (partner_authz) and
+    // `crate::server::authz`. Both were oxy-app *shims* that re-export the `oxy-server-authz`
+    // crate; custom-apps files now import `oxy_server_authz::{globals, loader, partner_authz}`
+    // directly (an external crate, not a `crate::` back-edge). Deleting these seams is the
+    // first "resolve the resolvable" step toward extracting the custom-apps surface: two of
+    // the six cross-crate cycles are already broken because the authz decision layer is its
+    // own crate. Do not re-add — reach oxy-server-authz directly.
+    // REMOVED 2026-07-27: `crate::server::api::admin::apps::handlers` (build_pretty_url). The
+    // `/customer-apps/<org>/<app>/` URL builder is shared by BOTH this surface and the admin
+    // apps browser, so it moved DOWN to `oxy_shared::utils::custom_app_url` — a lower crate both
+    // depend on. Moving it *into* custom-apps would have made admin depend on custom-apps (a
+    // future cross-feature-crate edge the decomposition plan bans), so a shared home is correct.
     Seam {
         prefix: "crate::server::router",
         why: "the router/state seam — is_allowed_origin (custom_apps_gates) and AppState \

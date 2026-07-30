@@ -347,7 +347,7 @@ pub(crate) async fn serve_pretty(
             let cookie_wants_draft = super::custom_apps_preview::wants_draft_preview(&headers);
             // Fail-closed inside the one reader: a lookup error reports no standing.
             // Admin OR owner — both operator tiers reach every custom-app surface.
-            let is_staff = crate::server::authz::globals::platform_standing(&db, &user.email)
+            let is_staff = oxy_server_authz::globals::platform_standing(&db, &user.email)
                 .await
                 .is_staff();
             let channel =

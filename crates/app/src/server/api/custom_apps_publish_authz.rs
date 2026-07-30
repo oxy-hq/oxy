@@ -22,9 +22,7 @@ use entity::prelude::{OrgMembers, PartnerPublishConsent};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
-use crate::server::api::middlewares::partner_authz::{
-    PartnerCapability, partner_for_org, resolve_scope,
-};
+use oxy_server_authz::partner_authz::{PartnerCapability, partner_for_org, resolve_scope};
 
 /// Who is trying to publish, reduced to what the decision needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,7 +138,7 @@ pub async fn resolve_actor(
     user_email: &str,
     target_org_id: Uuid,
 ) -> PublishActor {
-    if crate::server::authz::globals::platform_standing(db, user_email)
+    if oxy_server_authz::globals::platform_standing(db, user_email)
         .await
         .is_staff()
     {

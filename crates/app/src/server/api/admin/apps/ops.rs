@@ -90,17 +90,6 @@ pub(crate) fn validate_display_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Build the canonical pretty URL for an app.
-///
-/// Returns a **relative** URL (`/customer-apps/<org>/<app>/`); the client
-/// renders it against its own origin. Customer-app bundles share the SPA's
-/// domain in the current model — no whitelabelling yet — so no per-host
-/// prefix is needed. (When whitelabelling lands, the right surface will be
-/// per-app config in the DB, not a global env var.)
-pub(crate) fn build_pretty_url(org_slug: &str, app_slug: &str) -> String {
-    format!("/customer-apps/{org_slug}/{app_slug}/")
-}
-
 /// Validate a LocalFolder app's configured path. Returns operator-
 /// facing warning strings — nothing here is an error (the row is
 /// already persisted); these are hints the UI surfaces as toasts so

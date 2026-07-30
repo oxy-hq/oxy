@@ -104,7 +104,7 @@ pub async fn user_can_access_app(
     // platform_standing) but not VIEW one — the same question answered two ways in one
     // subsystem. Both operator tiers reach everything; they separate only at
     // owner-exclusive destructive operations.
-    let allowed = if crate::server::authz::globals::platform_standing(db, user_email)
+    let allowed = if oxy_server_authz::globals::platform_standing(db, user_email)
         .await
         .is_staff()
         && !is_oxy_locked_down(db, app.project_id).await?
@@ -189,19 +189,18 @@ pub(crate) async fn resolve_app_role(
     // the moment `Ring::AppAdmin` changed.
     //
     // Workspace facts are skipped: no app ring reads them.
-    let is_admin = match crate::server::authz::loader::load_principal_facts_scoped(
-        db, user_id, user_email, false,
-    )
-    .await
-    {
-        Some(facts) => oxy_authz::allows(
-            &facts,
-            oxy_authz::Action::AppAdmin,
-            &oxy_authz::Resource::app_with_visibility(app.id, app.org_id, app.is_restricted()),
-        ),
-        // Facts unknown (a DB blip) → not admin. Fail closed.
-        None => false,
-    };
+    let is_admin =
+        match oxy_server_authz::loader::load_principal_facts_scoped(db, user_id, user_email, false)
+            .await
+        {
+            Some(facts) => oxy_authz::allows(
+                &facts,
+                oxy_authz::Action::AppAdmin,
+                &oxy_authz::Resource::app_with_visibility(app.id, app.org_id, app.is_restricted()),
+            ),
+            // Facts unknown (a DB blip) → not admin. Fail closed.
+            None => false,
+        };
     if is_admin {
         return Ok(Some(app_members::ROLE_ADMIN));
     }
@@ -340,7 +339,7 @@ pub(crate) async fn authenticate_and_authorize(
 
     // Same definition as the access check above — otherwise an owner would pass access
     // but be flagged a customer, and silently lose draft previews.
-    let is_staff = crate::server::authz::globals::platform_standing(&db, &user.email)
+    let is_staff = oxy_server_authz::globals::platform_standing(&db, &user.email)
         .await
         .is_staff();
 
@@ -417,7 +416,7 @@ pub async fn bootstrap_app_admins_from_env(db: &DatabaseConnection) -> Result<()
 
     let count = to_insert.len();
     AppAdmins::insert_many(to_insert).exec(db).await?;
-    crate::server::authz::globals::invalidate_admin_cache();
+    oxy_server_authz::globals::invalidate_admin_cache();
     tracing::info!(
         count,
         "bootstrap_app_admins: seeded {count} global admin(s) from env"

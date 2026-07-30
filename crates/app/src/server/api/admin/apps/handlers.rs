@@ -24,7 +24,7 @@ use super::dto::*;
 use super::ops::*;
 
 pub(crate) use super::dto::{CreateAppRequest, ListAppsQuery};
-pub(crate) use super::ops::{build_pretty_url, publish_one, unpublish_one, validate_display_name};
+pub(crate) use super::ops::{publish_one, unpublish_one, validate_display_name};
 
 /// Public endpoint — returns the build-time config for an app by pretty
 /// path. Read by the customer-apps CI workflow (and `just build`) before
@@ -954,14 +954,6 @@ mod tests {
         assert!(!is_valid_slug("acme.analytics")); // dot
         assert!(!is_valid_slug("acme/x")); // slash
         assert!(!is_valid_slug(&"a".repeat(64))); // too long
-    }
-
-    #[test]
-    fn build_pretty_url_is_relative() {
-        assert_eq!(
-            build_pretty_url("acme", "analytics"),
-            "/customer-apps/acme/analytics/"
-        );
     }
 
     #[test]
