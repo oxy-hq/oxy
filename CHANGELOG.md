@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.118] - 2026-07-30
+
+### 💼 Other
+
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 8 updates (#2827)
+- *(deps)* Bump anthropics/claude-code-action from 1.0.174 to 1.0.183 (#2825)
+- *(deps)* Bump actions/checkout from 7.0.0 to 7.0.1 (#2824)
+- *(deps)* Bump prod npm minors + jsdom to latest (consolidates #2826, #2828) (#2831)
+
+### 🚜 Refactor
+
+- *(custom-apps)* Repoint authz imports at oxy-server-authz (6→4 seams) (#2804)
+- *(custom-apps)* Invert the OxyProjectContext consumption behind a trait (#2803)
+
+### 📚 Documentation
+
+- Establish team ownership matrix and CODEOWNERS (#2833)
+
 ## [0.5.117] - 2026-07-29
 
 ### 🚀 Features
@@ -18,6 +36,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - *(skills)* Reconcile knowledge cards with skills@0c51d931 (#2815)
+- Release 0.5.117 (#2817)
 
 ## [0.5.116] - 2026-07-28
 
