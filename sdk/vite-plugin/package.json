@@ -44,8 +44,8 @@
     "vite": "^5.0.0 || ^6.0.0 || ^7.0.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
-    "tsdown": "^0.22.13",
+    "@types/node": "^26.1.2",
+    "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

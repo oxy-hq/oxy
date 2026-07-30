@@ -102,14 +102,14 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.113.0",
-    "@playwright/test": "^1.61.1",
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@playwright/test": "^1.62.0",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.24",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@types/nunjucks": "3.2.6",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.17",
