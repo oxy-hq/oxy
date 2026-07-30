@@ -1,15 +1,250 @@
-.github/    luong@oxy.tech
+# ─────────────────────────────────────────────────────────────────────────────
+# Oxygen CODEOWNERS  —  every area has a PRIMARY and a BACKUP owner
+#
+# Convention: each rule lists two handles, `path  @primary  @backup`.
+#   * @primary = the reliable owner (drove the area / knows it best).
+#   * @backup  = second reviewer, covers when the primary is out.
+# GitHub requests BOTH and lets EITHER approve — the order encodes the convention
+# for humans; it does not change GitHub's behavior. Rules are matched
+# last-match-wins, so the fine-grained overrides at the BOTTOM take precedence.
+#
+#   Handle            Person   Primary area
+#   ----------------  -------  --------------------------------------------------
+#   @luong-komorebi   Luong    Platform · custom apps · admin · authz · fleet · CI
+#   @haitrr           Hai      Semantic layer · world model · metrics & monitoring
+#   @hotay            Tay      Cameras/video · airhouse · airway · agentic runtime
+#   @nresh            Nick     Web shell · onboarding · browser tests · sources
+#   @NTtanh           Mars     Billing · multi-tenancy · secrets · IDE/git · client shell
+#
+# Onboarding map + what each area is: internal-docs/team-ownership-matrix.md
+# Kept current weekly by .github/workflows/ownership-matrix-refresh.yaml, which
+# runs .github/scripts/ownership_analysis.py over the full commit history and
+# opens a PR. Edit that script's PEOPLE/AREAS when the team or layout changes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Luong (@luong-komorebi) primary
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Custom Apps Platform (code-first React bundles shipped via `oxy publish`)
+crates/app/src/server/api/custom_apps_serve/       @luong-komorebi @NTtanh
+crates/app/src/server/api/custom_apps_functions/   @luong-komorebi @NTtanh
+crates/app/src/server/api/custom_apps_storage/     @luong-komorebi @NTtanh
+crates/app/src/server/api/custom_apps_*.rs         @luong-komorebi @NTtanh
+crates/app/src/custom_app_template/                @luong-komorebi @NTtanh
+sdk/create-oxy-app/                                @luong-komorebi @NTtanh
+internal-docs/customer-apps*.md                    @luong-komorebi @NTtanh
+internal-docs/vibe-coding-customer-apps.md         @luong-komorebi @NTtanh
+.claude/skills/oxy-customer-apps-perf/             @luong-komorebi @NTtanh
+
+# Admin & staff surfaces (workspace-health carve-out is re-owned by Hai below)
+crates/app/src/server/api/admin/                   @luong-komorebi @haitrr
+web-app/src/pages/admin/                           @luong-komorebi @haitrr
+internal-docs/admin-surfaces.md                    @luong-komorebi @haitrr
+internal-docs/internal-jobs-admin-design.md        @luong-komorebi @haitrr
+
+# Authorization + authentication
+crates/authz/                                      @luong-komorebi @hotay
+crates/app/src/server/authz/                       @luong-komorebi @hotay
+crates/auth/                                       @luong-komorebi @hotay
+
+# Fleet, routing, compile boundary, project/workspace domain
+crates/oxy-compile/                                @luong-komorebi @NTtanh
+crates/project/                                    @luong-komorebi @NTtanh
+crates/workspace-fs/                               @luong-komorebi @NTtanh
+internal-docs/multi-instance-fleet.md              @luong-komorebi @NTtanh
+internal-docs/compile-boundary.md                  @luong-komorebi @NTtanh
+internal-docs/ephemeral-workspace-environments.md  @luong-komorebi @NTtanh
+internal-docs/architecture-review-checklist.md     @luong-komorebi @NTtanh
+.claude/skills/oxy-scaling-design/                 @luong-komorebi @NTtanh
+.claude/skills/oxy-route-classification/           @luong-komorebi @NTtanh
+.claude/skills/oxy-compile-boundary/               @luong-komorebi @NTtanh
+
+# Customer-facing observability (traces console)
+crates/observability/                              @luong-komorebi @hotay
+crates/app/src/server/api/traces.rs                @luong-komorebi @hotay
+internal-docs/observability-analytics.md           @luong-komorebi @hotay
+
+# Partner distribution platform
+crates/app/src/server/api/partner_console/         @luong-komorebi @NTtanh
+web-app/src/pages/partners/                        @luong-komorebi @NTtanh
+internal-docs/partner-platform.md                  @luong-komorebi @NTtanh
+
+# LLM vendor infrastructure + build/CI
+crates/infrastructure/llm/                         @luong-komorebi @haitrr
+/Dockerfile                                        @luong-komorebi @nresh
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Hai (@haitrr) primary
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Semantic layer (airlayer)
+crates/semantic/                                   @haitrr @luong-komorebi
+crates/agentic/semantic/                           @haitrr @luong-komorebi
+internal-docs/semantic-validation-standardization.md  @haitrr @luong-komorebi
+
+# World Model graph
+crates/app/src/server/api/world_model_graph/       @haitrr @NTtanh
+crates/app/src/server/api/world_model*.rs          @haitrr @NTtanh
+web-app/src/pages/ide/WorldModel/                  @haitrr @NTtanh
+
+# Metric Tree & Anomaly Monitoring
+crates/metric-monitoring/                          @haitrr @NTtanh
+crates/app/src/server/api/metric_tree.rs           @haitrr @NTtanh
+crates/app/src/server/api/metric_anomalies.rs      @haitrr @NTtanh
+crates/app/src/server/api/metrics.rs               @haitrr @NTtanh
+web-app/src/pages/ide/MetricTree/                  @haitrr @NTtanh
+internal-docs/anomaly-monitoring.md                @haitrr @NTtanh
+
+# Workspace health & reconciliation (override: carved out of admin/ above)
+crates/app/src/server/api/admin/workspace_health/  @haitrr @luong-komorebi
+crates/app/src/server/health_eval_executor.rs      @haitrr @luong-komorebi
+
+# Airform (dbt-style modeling)
+crates/airform/                                    @haitrr @luong-komorebi
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tay (@hotay) primary
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Cameras / edge / video analytics fleet
+crates/cameras/                                    @hotay @luong-komorebi
+crates/app/src/server/api/video.rs                 @hotay @luong-komorebi
+crates/app/src/server/api/foot_traffic*.rs         @hotay @luong-komorebi
+internal-docs/video-processing-fleet-architecture.md  @hotay @luong-komorebi
+internal-docs/camera-fleet-local-testing.md        @hotay @luong-komorebi
+internal-docs/smoke-test-camera-fleet.md           @hotay @luong-komorebi
+internal-docs/edge-image-releases.md               @hotay @luong-komorebi
+internal-docs/edge-tls-production.md               @hotay @luong-komorebi
+internal-docs/medallion-architecture.md            @hotay @luong-komorebi
+internal-docs/video-analytics-data-schema.md       @hotay @luong-komorebi
+internal-docs/congestion-evidence-clips.md         @hotay @luong-komorebi
+
+# Airhouse (warehouse + connector)
+crates/airhouse/                                   @hotay @luong-komorebi
+crates/agentic/connector/                          @hotay @luong-komorebi
+internal-docs/airhouse-integration.md              @hotay @luong-komorebi
+internal-docs/airhouse-service-accounts-migration.md  @hotay @luong-komorebi
+
+# Airway ELT
+crates/agentic/airway/                             @hotay @nresh
+web-app/src/pages/airway/                          @hotay @nresh
+web-app/src/pages/quickbooks/                      @hotay @nresh
+
+# Agentic runtime + FSM framework
+crates/agentic/runtime/                            @hotay @luong-komorebi
+crates/agentic/core/                               @hotay @luong-komorebi
+crates/agentic/pipeline/                           @hotay @luong-komorebi
+crates/agentic/http/                               @hotay @luong-komorebi
+internal-docs/worker-fleet.md                      @hotay @luong-komorebi
+internal-docs/adr-postgres-as-worker-queue.md      @hotay @luong-komorebi
+.claude/skills/oxy-task-spec-default/              @hotay @luong-komorebi
+
+# Platform services + server-authz plumbing crate
+crates/platform/                                   @hotay @luong-komorebi
+crates/server-authz/                               @hotay @luong-komorebi
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Nick (@nresh) primary
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Apps-first web shell
+web-app/src/pages/launcher/                        @nresh @NTtanh
+internal-docs/apps-first-shell.md                  @nresh @NTtanh
+
+# Workspace onboarding (feature owner; files also churned by high-volume committers)
+crates/app/src/server/api/onboarding/              @nresh @luong-komorebi
+web-app/src/pages/onboarding/                      @nresh @luong-komorebi
+web-app/src/pages/create-workspace/                @nresh @luong-komorebi
+
+# Agentic browser test suite + skill
+web-app/tests/agentic/                             @nresh @luong-komorebi
+.claude/skills/agentic-browser-test/              @nresh @luong-komorebi
+internal-docs/agentic-browser-testing-team-overview.md  @nresh @luong-komorebi
+internal-docs/agentic-browser-testing-spec.md      @nresh @luong-komorebi
+
+# Data-source integrations / enrichment (airway sources)
+internal-docs/data-enrichment-pattern.md           @nresh @hotay
+internal-docs/site-scout.md                        @nresh @hotay
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Mars (@NTtanh) primary
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Billing / Stripe
+crates/billing/                                    @NTtanh @luong-komorebi
+crates/app/src/server/api/billing/                 @NTtanh @luong-komorebi
+web-app/src/pages/billing/                         @NTtanh @luong-komorebi
+
+# Multi-tenancy / multi-org foundation
+crates/app/src/server/api/organizations/           @NTtanh @luong-komorebi
+
+# Secrets management
+crates/app/src/server/api/secrets.rs               @NTtanh @luong-komorebi
+
+# IDE git flow + git client crate
+crates/git/                                        @NTtanh @nresh
+internal-docs/ide-git.md                           @NTtanh @nresh
+
+# Client shell (deploy/stale-chunk recovery, shell context, .agents config)
+crates/app/src/server/api/custom_apps_shell_context.rs  @NTtanh @luong-komorebi
+web-app/.agents/                                   @NTtanh @luong-komorebi
+
+# Settings / context graph / data-app publish / import + invites
+web-app/src/pages/context-graph/                   @NTtanh @luong-komorebi
+web-app/src/pages/app/                             @NTtanh @haitrr
+web-app/src/pages/dashboards/                      @NTtanh @haitrr
+web-app/src/pages/github/                          @NTtanh @nresh
+web-app/src/pages/Invite/                          @NTtanh @nresh
+web-app/src/pages/ide/observability/               @NTtanh @luong-komorebi
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Cross-domain areas (primary = domain owner, backup = the adjacent specialist)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Analytics agent (Hai = anomaly/metric tools; Tay = the runtime it rests on)
+crates/agentic/analytics/                          @haitrr @hotay
+# Builder copilot (targeted line edits + onboarding generation)
+crates/agentic/builder/                            @haitrr @nresh
+# Automation/workflow engine (Luong = engine; Nick = http_request task)
+crates/agentic/automation/                         @luong-komorebi @nresh
+web-app/src/pages/automation/                      @luong-komorebi @NTtanh
+# Workspaces API (Luong = fleet materialization; Mars = multi-tenancy)
+crates/app/src/server/api/workspaces/              @luong-komorebi @NTtanh
+# TypeScript SDK (Luong = bulk/releases; Mars = @oxy-hq/sdk/shell)
+sdk/typescript/                                    @luong-komorebi @NTtanh
+sdk/vite-plugin/                                   @luong-komorebi @NTtanh
+
+# Deliberately UNOWNED — shared, no single reviewer (gating them would stall
+# everyone; the highest-volume committer only appears to "lead" them):
+#   crates/core, crates/shared, crates/entity, crates/migration,
+#   web-app/src/{components,hooks,services,types}, web-app/src/pages/{thread,chat}.
+# Add an owner only if that changes.
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Critical override rules (kept LAST so they win regardless of area rules)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Repo / CI configuration
+.github/                                           @luong-komorebi @nresh
 
 # Split-fleet route classification. A new route that touches the workspace FS
 # must be classified IdeOnly in role_manifest.rs or it 404s/421s on the serve
 # fleet. See .claude/skills/oxy-route-classification/SKILL.md.
-crates/app/src/server/role_manifest.rs    luong@oxy.tech
-crates/app/src/server/router/             luong@oxy.tech
+crates/app/src/server/role_manifest.rs             @luong-komorebi @NTtanh
+crates/app/src/server/router/                      @luong-komorebi @NTtanh
 
 # Brand & positioning copy — require brand/marketing sign-off before merge.
-# (luong@oxy.tech is a placeholder owner; swap for a dedicated brand/marketing
-# team handle once one exists.)
-/README.md                       luong@oxy.tech
-/docs/start/index.mdx            luong@oxy.tech
-/docs/start/what-is-oxygen.mdx   luong@oxy.tech
-/docs/snippets/positioning.mdx   luong@oxy.tech
+# (owners are a placeholder; swap for a dedicated brand/marketing handle once one
+# exists. Nick backs up here as he drove the Oxy→Oxygen rebrand.)
+/README.md                                         @luong-komorebi @nresh
+/docs/start/index.mdx                              @luong-komorebi @nresh
+/docs/start/what-is-oxygen.mdx                     @luong-komorebi @nresh
+/docs/snippets/positioning.mdx                     @luong-komorebi @nresh

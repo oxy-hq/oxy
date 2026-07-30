@@ -1,0 +1,68 @@
+# Validate CODEOWNERS
+#
+# Catches the failure modes our generator can't self-check: invalid syntax, a
+# pattern that no longer matches any file (a path renamed out from under a rule),
+# duplicate patterns, and — best-effort — an owner handle that doesn't resolve or
+# lacks repo access. Runs when CODEOWNERS (or this workflow / the analysis script)
+# changes; broader path-drift from unrelated PRs is caught by the weekly refresh.
+#
+# Tool: mszostok/codeowners-validator — the upstream, Apache-2.0, free for private
+# repos (its ghcr image is public). SHA-pinned like every other action in this repo.
+# NOTE: the step-security fork gates private repos behind a paid subscription, so we
+# use the upstream directly.
+
+name: Validate CODEOWNERS
+
+on:
+  pull_request:
+    paths:
+      - ".github/CODEOWNERS"
+      - ".github/workflows/codeowners-validate.yaml"
+      - ".github/scripts/ownership_analysis.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeowners-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: ${{ github.repository == 'oxy-hq/oxygen-internal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      # Hard gate — structural checks. No token, never flaky: every pattern must
+      # be valid syntax, match at least one real file, and not be duplicated.
+      - name: Validate structure (syntax / files / duplicates)
+        uses: mszostok/codeowners-validator@7f3f5e28c6d7b8dfae5731e54ce2272ca384592f # v0.7.4
+        with:
+          checks: "files,duppatterns,syntax"
+
+      # Advisory — resolve every owner handle and confirm it has repo access
+      # (catches a typo'd/renamed handle). Needs a token with org/collaborator
+      # read, so it runs best-effort: a red mark here is a warning for review, not
+      # a merge blocker. Flip continue-on-error to false to make it a hard gate.
+      - name: Create GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Validate owner handles
+        continue-on-error: true
+        uses: mszostok/codeowners-validator@7f3f5e28c6d7b8dfae5731e54ce2272ca384592f # v0.7.4
+        with:
+          checks: "owners"
+          owner_checker_repository: ${{ github.repository }}
+          github_access_token: ${{ steps.app-token.outputs.token }}

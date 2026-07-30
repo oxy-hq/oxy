@@ -1,0 +1,152 @@
+# Refresh Ownership Matrix
+#
+# Weekly, Claude keeps the team responsibility matrix current:
+#
+#   - internal-docs/team-ownership-matrix.md  (human onboarding map)
+#   - .github/CODEOWNERS                       (machine auto-review routing)
+#
+# A deterministic script (.github/scripts/ownership_analysis.py) parses the full
+# main history, attributes every file change to a person, and suggests a PRIMARY
+# (reliable owner) + BACKUP per area with bus-factor flags. Claude then reconciles
+# that data with PR feature-ownership (the file-touch leader is NOT always the
+# feature owner) and rewrites the two files, opened as ONE PR for human review —
+# never auto-merged.
+#
+# Safety rails mirror the other scheduled Claude workflows in this repo: SHA-pinned
+# actions, a GitHub App token, a scoped tool allowlist (no bare Bash with secrets),
+# a per-job timeout, a repo guard, and an agent told to stay on its branch.
+
+name: Refresh Ownership Matrix
+
+on:
+  schedule:
+    # Every Monday at 08:00 UTC (15:00 Vietnam time).
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: ownership-matrix-refresh-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: ${{ github.repository == 'oxy-hq/oxygen-internal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout (full history — required to attribute every commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure git
+        run: |
+          USER_ID=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Generate ownership report
+        run: |
+          python3 .github/scripts/ownership_analysis.py > /tmp/ownership-report.md
+          echo "----- ownership report -----"
+          cat /tmp/ownership-report.md
+
+      - name: Reconcile matrix + CODEOWNERS
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: >-
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(gh pr
+            create:*),Bash(gh pr list:*),Bash(python3:*),Bash(cat:*),Bash(ls:*),Bash(wc:*),Bash(date:*)"
+          prompt: |
+            You maintain the team responsibility matrix for oxy-hq/oxygen-internal:
+            `internal-docs/team-ownership-matrix.md` (human onboarding map) and
+            `.github/CODEOWNERS` (machine auto-review routing). Keep them in sync
+            and current, using this week's data. Make the smallest correct diff —
+            a no-op week is a fine outcome.
+
+            ## Ownership model (non-negotiable)
+
+            Every area has exactly ONE reliable **primary** owner and ONE **backup**.
+            In CODEOWNERS each rule lists `path @primary @backup` — first handle is
+            the reliable owner, second is the backup. In the matrix doc, the Primary
+            and Backup columns say the same thing in prose.
+
+            ## Steps
+
+            ### 1. Read the data
+            Read `/tmp/ownership-report.md` (already generated from the full main
+            history by `.github/scripts/ownership_analysis.py`). It gives, per area,
+            a data-derived primary (highest file-touch share) + backup, a bus-factor
+            list, and any newly-appeared hot areas. Also read both target files and
+            the script's `PEOPLE`/`AREAS` config.
+
+            ### 2. Reconcile data with feature ownership (do NOT blindly follow touch counts)
+            The file-touch leader is not always the true owner. Two known confounders:
+            - **Volume bias:** the highest-volume committer appears to "lead" areas
+              they only passed through. Prefer share-of-area and domain sense.
+            - **Rename/refactor churn** inflates touch counts without denoting authorship.
+            When the data and the feature owner (whoever drove the area's PRs) disagree,
+            the **feature owner wins as primary**. The canonical example is workspace
+            **onboarding → @nresh** even though higher-volume committers touch the files
+            more. Use `git log --author=<email> --oneline -- <path>` and
+            `gh pr list --search "<area>"` to check feature ownership when unsure.
+
+            ### 3. Apply changes
+            - Update Primary/Backup where the data shows a durable shift (not one-week noise).
+            - For each area in the report's "Unlisted hot areas" section, decide whether it
+              is a real new subsystem; if so add it to BOTH files (and to `AREAS` in the
+              script) with a primary+backup, else ignore it.
+            - Keep the ⚠️ **bus-factor** section in the matrix in sync with the report:
+              areas with one dominant owner and no real second contributor. These are
+              cross-training risks, not errors — the backup there is a senior generalist.
+            - Refresh the "By the numbers" table (per-person commits/touches) and the
+              dated line in the matrix footer.
+            - If the team roster changed (someone in the report you don't recognize, or a
+              handle that no longer resolves), flag it in the PR body — do NOT guess an
+              email→person mapping; that lives in the script's `PEOPLE` and needs a human.
+
+            ### 4. Preserve invariants
+            - Keep the CODEOWNERS header, the "deliberately unowned" note, and the
+              **critical override rules at the very bottom** (`.github/`, route
+              classification `role_manifest.rs` / `router/`, and the brand/positioning
+              copy) exactly — last-match-wins depends on their order.
+            - Every `path` you write must exist (`ls` it) and use a real GitHub handle
+              from the script's `PEOPLE`.
+
+            ### 5. Commit and open ONE PR
+            1. `git diff --stat internal-docs/team-ownership-matrix.md .github/CODEOWNERS .github/scripts/ownership_analysis.py`
+            2. If there are no changes, STOP — the matrix is already current.
+            3. Otherwise:
+               - `git checkout -b ownership-matrix-refresh/$(date +%Y-%m-%d)`
+               - stage the changed files, commit:
+                 "docs: refresh ownership matrix + CODEOWNERS (weekly)"
+               - `git push -u origin HEAD`
+               - open a PR (label it automated,chore):
+                 ```
+                 gh pr create --repo oxy-hq/oxygen-internal \
+                   --title "docs: refresh ownership matrix + CODEOWNERS (weekly)" \
+                   --label "automated,chore" \
+                   --body "Weekly automated refresh of the team responsibility matrix and CODEOWNERS from the full commit history (see .github/scripts/ownership_analysis.py). Primary = reliable owner, backup = second reviewer.
+
+            **Review before merging** — confirm that any primary/backup change reflects a durable shift (not one-week noise), that feature ownership was honored over raw touch counts, and that any newly-added area and its owners are right. Bus-factor ⚠️ items are cross-training flags, not errors."
+                 ```
