@@ -239,11 +239,13 @@ pub async fn mint_get_url(workspace_id: Uuid, key: &str) -> ServiceResult<MintGe
     ))?;
     let expected_prefix = format!("{}/{}/", cfg.key_prefix, workspace_id);
     if !key.starts_with(&expected_prefix) {
-        // Defense-in-depth: the route layer already enforces
-        // ownership via the compliance-reports row, but a
-        // belt-and-suspenders check here means we'd never sign
-        // a cross-tenant key even if a future caller forgets the
-        // outer check.
+        // This prefix check is the ONLY key-level gate. `key` is
+        // client-supplied and the route discards `report_id`, so
+        // nothing confirms the key against a report row. Workspace
+        // auth (session or the external API-key middleware) already
+        // proves the caller belongs to `workspace_id`; this rejects
+        // any key outside that workspace's prefix, so a UI bug or a
+        // hostile caller can't sign a cross-tenant key.
         return Err(ServiceError::Forbidden(
             "clip key does not belong to this workspace",
         ));

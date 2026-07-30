@@ -100,3 +100,14 @@ where
 {
     operator::external_stream_routes::<S>().layer(Extension(db))
 }
+
+/// Clip-playback URL for the EXTERNAL API surface. Merged by the app crate
+/// into the `/{workspace_id}` external tree behind API-key-only auth, so
+/// customer apps can play archived evidence/compliance clips. No DB needed —
+/// the handler only mints a presigned S3 GET after a workspace-prefix check.
+pub fn external_clip_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    operator::external_clip_routes::<S>()
+}

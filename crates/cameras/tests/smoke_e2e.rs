@@ -4549,6 +4549,52 @@ async fn get_clip_url_rejects_cross_workspace_key() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn external_clip_route_mounted_and_rejects_cross_workspace_key() {
+    // Guards `oxy_cameras::routes::external_clip_routes` — the builder the app
+    // crate merges into the EXTERNAL API surface so customer apps (not just the
+    // operator UI) can play clips. Asserts the /cameras/clips/{id}/url route is
+    // present AND keeps the operator route's cross-tenant guard. (The app-crate
+    // `.merge` that mounts it can't be unit-tested here — it sits behind
+    // API-key auth that 401s before routing — so this pins the builder +
+    // tenancy; workspace.rs carries a comment against un-mounting it.)
+    // SAFETY: nextest runs each test in its own process, so this write has no
+    // concurrent reader. clips::config() latches S3Config into a process-wide
+    // OnceLock, so the set_var only takes effect *because of* that per-test
+    // isolation (a fresh process ⇒ unlatched cache); the trailing remove_var
+    // is cosmetic — the cache has already latched by the time we hit it.
+    unsafe {
+        std::env::set_var("OXY_CAMERAS_CLIPS_S3_BUCKET", "test-bucket");
+    }
+    let ws_a = Uuid::new_v4();
+    let ws_b = Uuid::new_v4();
+    // Raw external builder, nested under /{workspace_id} exactly as
+    // build_external_workspace_routes mounts it — no auth/db layer.
+    let app = axum::Router::<()>::new().nest(
+        "/{workspace_id}",
+        oxy_cameras::routes::external_clip_routes::<()>(),
+    );
+    let foreign_key = format!("compliance/{}/2026-05-30/abc.mp4", ws_b);
+    let report_id = Uuid::new_v4();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/{ws_a}/cameras/clips/{report_id}/url?key={foreign_key}"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    unsafe {
+        std::env::remove_var("OXY_CAMERAS_CLIPS_S3_BUCKET");
+    }
+    // 403 (not 404) proves the route is mounted AND rejects the foreign key.
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
 // ── Camera health alerting ─────────────────────────────────────────────────
 
 #[tokio::test]

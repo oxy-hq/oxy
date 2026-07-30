@@ -411,6 +411,40 @@ mod router_split_tests {
             resp.status()
         );
     }
+
+    #[tokio::test]
+    async fn external_router_fallback_stays_behind_auth() {
+        if db_unavailable() {
+            return;
+        }
+        // The external JSON-404 fallback (protected.rs `external_api_not_found`)
+        // must sit BEHIND the api-key auth layer: an unauthenticated request to
+        // an *unmatched* external path must be 401, NOT the fallback's 404. If
+        // `.fallback(...)` were moved after the `.layer(...)` chain it would stop
+        // being wrapped by auth and unmatched paths would leak a 404 unauthed.
+        // (The matching valid-key → 404-JSON assertion — proving nested misses
+        // reach this fallback and not `with_context`'s own — needs a seeded API
+        // key; left as a follow-up.)
+        let (_router, external_router) = api_router(
+            ServeMode::Cloud,
+            false,
+            None,
+            std::path::PathBuf::new(),
+            tokio_util::sync::CancellationToken::new(),
+            false,
+        )
+        .await
+        .expect("router built");
+        let uri = "/00000000-0000-0000-0000-000000000000/no-such-external-route";
+        let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let resp = external_router.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated external miss must be 401 (auth wraps the fallback), got {}",
+            resp.status(),
+        );
+    }
 }
 
 #[cfg(test)]

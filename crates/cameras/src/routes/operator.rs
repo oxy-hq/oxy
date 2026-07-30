@@ -2123,6 +2123,19 @@ where
         )
 }
 
+/// Clip-playback URL for the EXTERNAL API surface. Mounted by the app crate
+/// at `/{workspace_id}/cameras/clips/{report_id}/url` behind API-key auth, so
+/// customer apps (not just the operator UI) can play archived evidence /
+/// compliance clips. Reuses [`get_clip_playback_url`] — `clips::mint_get_url`
+/// re-checks the `key` is under the workspace's prefix, so an API-key holder
+/// can only mint URLs for its own tenant's clips.
+pub fn external_clip_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new().route("/cameras/clips/{report_id}/url", get(get_clip_playback_url))
+}
+
 /// Identity + join-key fields only — not [`CameraSummaryDto`], which would
 /// leak `rtsp_url` / `credentials_ref` to API-key holders.
 #[derive(serde::Serialize)]

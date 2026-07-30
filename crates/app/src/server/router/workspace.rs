@@ -324,6 +324,16 @@ pub(super) fn build_external_workspace_routes(
             "/world-model/camera-stream",
             oxy_cameras::routes::external_stream_routes::<AppState>(agentic_state.db.clone()),
         )
+        // Evidence/compliance clip playback for standalone apps — mints a
+        // presigned S3 GET (workspace-prefix checked). Without this the
+        // customer app's clip-URL call falls through to the SPA.
+        //
+        // Path is intentionally `/cameras/clips/...` at the tree root
+        // (mirrors the operator route), NOT under `/world-model/camera-stream`
+        // like the streaming nest — already-shipped customer apps call this
+        // exact path. Don't "tidy" it under the stream prefix; that silently
+        // re-breaks playback and would need a coordinated app+server deploy.
+        .merge(oxy_cameras::routes::external_clip_routes::<AppState>())
         .route(
             "/world-model/weather/{layer}/{z}/{x}/{y}",
             get(video::weather_tile),

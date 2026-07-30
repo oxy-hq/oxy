@@ -7,7 +7,9 @@
 use std::sync::Arc;
 
 use axum::Router;
+use axum::http::StatusCode;
 use axum::middleware;
+use axum::response::{IntoResponse, Response};
 
 use agentic_http::AgenticState;
 use oxy_auth::middleware::{AuthState, api_key_only_middleware, auth_middleware};
@@ -98,6 +100,24 @@ pub(super) fn apply_local_middleware(
         .route_layer(middleware::from_fn(api_key_query_middleware)))
 }
 
+/// Loud JSON 404 for the external API surface. Without an explicit fallback,
+/// an unmatched `/external/api/*` path lets its default 404 propagate up to
+/// serve.rs's `.fallback_service(main)` and gets the SPA HTML back — which is
+/// exactly why a mis-wired external route (the clip-playback gap) surfaced as
+/// `undefined` JSON fields in the client instead of a clear 404. An explicit
+/// fallback intercepts before the SPA. Auth runs as an outer layer, so an
+/// unauthenticated miss still returns 401, not this.
+async fn external_api_not_found() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        axum::Json(serde_json::json!({
+            "error": "not_found",
+            "message": "no such external API route",
+        })),
+    )
+        .into_response()
+}
+
 /// Build the EXTERNAL API surface: the curated workspace routes
 /// (`build_external_workspace_routes`) under `/{workspace_id}`, gated by
 /// API-key-ONLY auth and served with wide-open CORS.
@@ -134,6 +154,11 @@ pub(super) fn build_external_api_router(
 
     Router::new()
         .nest("/{workspace_id}", with_context)
+        // Explicit 404 so an unmatched external path returns JSON, not the SPA
+        // HTML it would otherwise fall through to (serve.rs `.fallback_service`).
+        // A nested miss propagates its default 404 up to this fallback; auth
+        // (below) still runs first, so unauth misses stay 401.
+        .fallback(external_api_not_found)
         // Order mirrors `apply_middleware`: api_key_query is OUTERMOST (runs
         // first) so EventSource's `?api_key=` is promoted to the X-API-Key
         // header before the API-key-only auth gate reads it.
