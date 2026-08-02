@@ -30,6 +30,7 @@ the row just stays empty when archival didn't happen.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import urllib.parse
 from datetime import datetime, timezone, timedelta
@@ -84,6 +85,8 @@ async def upload_window_clip(
     camera_id: str,
     segment_start: datetime,
     segment_end: datetime,
+    annotate_zone: Any = None,
+    source_wh: Any = None,
 ) -> str | None:
     """Pull a time-window clip from MTX, fetch a presigned PUT URL
     from Oxy, upload the bytes, and return the bucket-relative key
@@ -92,6 +95,13 @@ async def upload_window_clip(
     Used for both compliance-violation windows and congestion
     windows — `report_id` is just the clip identifier that becomes
     the S3 key stem; the caller decides what window to capture.
+
+    When `annotate_zone` (a zone polygon in the live stream's pixel
+    space, with `source_wh` = that stream's (w, h)) is supplied, the
+    clip is re-rendered with the zone, per-person boxes, and the live
+    in-zone count baked in before upload — so a congestion clip visibly
+    shows the CV that fired it. Best-effort: if annotation is off or
+    fails, the raw clip is uploaded unchanged.
 
     `oxy_client` is the main control-plane httpx client — it
     already has the bearer/JWT auth wired, so we don't need a
@@ -132,6 +142,28 @@ async def upload_window_clip(
         log("warn", "clip_archive.empty_clip",
             report_id=report_id, camera_id=camera_id)
         return None
+
+    # Step 1b — bake the zone + person boxes + live count into the clip
+    # (congestion only; `annotate_zone` is None for compliance clips).
+    # CPU-bound YOLO re-detect, so run it off the event loop. Best-effort:
+    # on any failure we keep the raw bytes and still archive the clip.
+    # `content_length` (sign) and PUT `Content-Length` below both derive
+    # from `len(clip_bytes)`, so replacing it here needs no other change.
+    if annotate_zone is not None:
+        try:
+            from .annotate import annotate_clip_bytes
+
+            annotated = await asyncio.to_thread(
+                annotate_clip_bytes, clip_bytes,
+                polygon=annotate_zone, source_wh=source_wh,
+            )
+            if annotated:
+                log("info", "clip_archive.annotated", report_id=report_id,
+                    raw_bytes=len(clip_bytes), annotated_bytes=len(annotated))
+                clip_bytes = annotated
+        except Exception as e:
+            log("warn", "clip_archive.annotate_failed",
+                report_id=report_id, error=str(e))
 
     # Step 2 — ask Oxy for a presigned PUT URL. The server's
     # config (bucket / region / key prefix / TTL) is the source

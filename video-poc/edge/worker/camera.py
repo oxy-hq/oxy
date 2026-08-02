@@ -481,6 +481,14 @@ class CameraReader:
         event_id = str(uuid4())
         key: str | None = None
         if self._oxy_client is not None:
+            # Zone polygon (live-stream pixel space) + the live frame's
+            # dims → the archiver bakes the zone/boxes/count overlay into
+            # the clip so the evidence shows the CV that fired the flag.
+            zone = self._zones.get(flag.zone_id)
+            polygon = zone.polygon if zone is not None else None
+            with self._stats_lock:
+                fr = self._latest_frame
+            source_wh = (fr.shape[1], fr.shape[0]) if fr is not None else None
             try:
                 key = await upload_window_clip(
                     oxy_client=self._oxy_client,
@@ -488,6 +496,8 @@ class CameraReader:
                     camera_id=str(self.cfg.id),
                     segment_start=segment_start,
                     segment_end=ts,
+                    annotate_zone=polygon,
+                    source_wh=source_wh,
                 )
             except Exception as exc:  # noqa: BLE001 — log + still emit the event
                 log("warn", "camera.congestion_archive_failed",
