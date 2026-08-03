@@ -2,8 +2,16 @@
 //! `health_check:`. The cadence drives the workspace's `health_eval` schedule
 //! row (see `agentic_pipeline::scheduler::reconcile_health_schedule`); the eval
 //! itself runs as a `TaskSpec::Custom { kind: "health_eval_workspace" }` on the
-//! global-run fleet. See
-//! `internal-docs/2026-06-26-workspace-scoped-health-checks-design.md`.
+//! global-run fleet. Operator-facing notes — who gets evaluated, and what else
+//! rides inside the eval pass — live in `internal-docs/admin-surfaces.md`
+//! ("Workspace health → who actually gets evaluated").
+//!
+//! **Health checks are off until a workspace asks for them.** Writing a
+//! `health_check:` block is the opt-in; a workspace with no block runs no eval
+//! at all. See [`resolve_enabled`] — that function, not the `enabled` field's
+//! serde default, is the policy, because the two answer different questions:
+//! the field default covers "block written, `enabled:` omitted" (→ on), while
+//! `resolve_enabled` covers "no block at all" (→ off).
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -46,16 +54,21 @@ pub struct HealthCheckConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interval: Option<String>,
     /// When false, the workspace's health schedule row is disabled and no eval
-    /// is enqueued. Defaults to true.
+    /// is enqueued. Defaults to true *within a written block* — having gone to
+    /// the trouble of writing `health_check:`, you meant to turn it on.
+    ///
+    /// This default says nothing about a workspace with **no** `health_check:`
+    /// block: that one is off. Ask [`resolve_enabled`] rather than reaching for
+    /// `unwrap_or(..)` on an `Option<HealthCheckConfig>` at a call site.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     /// Active end-to-end probes of the workspace's own artifacts, run on their
     /// own slower cadence inside the eval pass.
     ///
     /// Absent → [`SmokeTestConfig::default`]: the smoke test still runs, but only
-    /// the zero-scan `connections` probe, so every workspace gets free
-    /// credential-expiry detection without opting in. To turn it off entirely,
-    /// write `smoke_test: { enabled: false }`.
+    /// the zero-scan `connections` probe, so opting into health checks at all
+    /// buys free credential-expiry detection. To turn it off entirely, write
+    /// `smoke_test: { enabled: false }`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub smoke_test: Option<SmokeTestConfig>,
 }
@@ -63,9 +76,11 @@ pub struct HealthCheckConfig {
 /// Which probes the workspace smoke test runs, and how often.
 ///
 /// **Only `connections` defaults on**, and the whole block defaults on when
-/// absent — every workspace gets a cheap credential check for free. The other
-/// three are opt-in because they are not cheap, and the reason is not obvious
-/// from their descriptions:
+/// absent — so a workspace that opted into `health_check:` gets a cheap
+/// credential check for free (nothing here runs for one that didn't: the smoke
+/// run is gated inside an eval pass). The other three are opt-in even then,
+/// because they are not cheap, and the reason is not obvious from their
+/// descriptions:
 ///
 /// * `connections` — `SELECT 1`. Scans zero bytes, so it is free on a
 ///   bytes-billed warehouse (BigQuery on-demand, Athena). Caveat: on Snowflake
@@ -374,6 +389,29 @@ impl SmokeTestConfig {
     }
 }
 
+/// Whether a workspace's health eval runs at all.
+///
+/// **Absent block → disabled.** Health checks are opt-in per workspace: an eval
+/// pass costs a warehouse round-trip per enabled probe on every cadence tick, so
+/// a workspace that never mentioned `health_check:` must not be spending that.
+/// Writing the block is the opt-in; `enabled: false` inside one is the way back
+/// out.
+///
+/// ```yaml
+/// # (no health_check block)   → off
+/// health_check:               → on, 1h
+///   interval: 30m             → on, 30m
+/// health_check:
+///   enabled: false            → off
+/// ```
+///
+/// This is the single seam every caller must go through, so the "no block"
+/// answer can't drift between the compile worker, onboarding, and startup
+/// reconcile.
+pub fn resolve_enabled(cfg: Option<&HealthCheckConfig>) -> bool {
+    cfg.is_some_and(|c| c.enabled)
+}
+
 /// Resolve the configured cadence to a clamped `Duration` in `[10m, 24h]`.
 /// `None`, an absent `interval`, an unparseable value, or an out-of-range value
 /// all resolve to a safe in-range duration (default 1h, or the nearest bound).
@@ -432,6 +470,29 @@ mod tests {
             resolve_interval(Some(&cfg(None))),
             Duration::from_secs(3600)
         );
+    }
+
+    #[test]
+    fn absent_block_is_disabled() {
+        // The default that matters: a workspace that never wrote `health_check:`
+        // runs no eval, so it never pays for probes it didn't ask for.
+        assert!(!resolve_enabled(None));
+    }
+
+    #[test]
+    fn a_written_block_is_the_opt_in() {
+        // Writing the block at all turns it on — `enabled:` need not be spelled
+        // out, or `health_check: { interval: 30m }` would be silently inert.
+        let hc: HealthCheckConfig = serde_yaml::from_str("{}").unwrap();
+        assert!(resolve_enabled(Some(&hc)));
+        let hc: HealthCheckConfig = serde_yaml::from_str("interval: 30m").unwrap();
+        assert!(resolve_enabled(Some(&hc)));
+    }
+
+    #[test]
+    fn an_explicit_disable_inside_a_block_still_wins() {
+        let hc: HealthCheckConfig = serde_yaml::from_str("enabled: false\ninterval: 30m").unwrap();
+        assert!(!resolve_enabled(Some(&hc)));
     }
 
     #[test]

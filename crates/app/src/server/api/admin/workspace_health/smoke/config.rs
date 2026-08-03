@@ -76,12 +76,32 @@ fn env_usize(key: &str, fallback: usize) -> usize {
 ///
 /// A `health_check` block that fails to deserialize yields `None` — a malformed
 /// cadence must never wedge the eval pass, matching `resolve_interval`'s
-/// fail-safe contract.
+/// fail-safe contract. It warns on the way, though: `health_check` rides the
+/// `other` JSONB catch-all, so compile never validates it and a typo'd key is
+/// only ever rejected here. Silently dropping a smoke config the tenant wrote
+/// looks exactly like one they never wrote.
+///
+/// `None` is not "no smoke test": the caller maps it to
+/// [`SmokeTestConfig::default`] (connections probe only), so the credential
+/// check still runs. In practice only on the manual `POST
+/// /workspace-health/{id}/eval` path — an unparseable block also disables the
+/// schedule, so nothing fires on its own.
 pub fn smoke_config_from_value(config: Option<&serde_json::Value>) -> Option<SmokeTestConfig> {
     let hc = config.and_then(|v| v.get("health_check"))?;
-    serde_json::from_value::<HealthCheckConfig>(hc.clone())
-        .ok()?
-        .smoke_test
+    match serde_json::from_value::<HealthCheckConfig>(hc.clone()) {
+        Ok(parsed) => parsed.smoke_test,
+        Err(e) => {
+            tracing::warn!(
+                target: "health_eval",
+                error = %e,
+                "config.yml has a `health_check:` block that could not be read (an unknown \
+                 or mistyped key, or an empty block — write `health_check: {{}}` for the \
+                 defaults); falling back to the default smoke config (connections probe \
+                 only) for this workspace"
+            );
+            None
+        }
+    }
 }
 
 /// The workspace's promoted compiled `config.yml`, as raw JSON.
@@ -181,7 +201,9 @@ mod tests {
     fn absent_blocks_yield_none() {
         assert!(smoke_config_from_value(None).is_none());
         assert!(smoke_config_from_value(Some(&serde_json::json!({ "databases": [] }))).is_none());
-        // `health_check` present but no `smoke_test` → no smoke test.
+        // `health_check` present but no `smoke_test` → no *explicit* config.
+        // The caller reads that as `SmokeTestConfig::default()`, not as "run
+        // nothing" — see `resolve_smoke_settings`.
         assert!(
             smoke_config_from_value(Some(&serde_json::json!({
                 "health_check": { "interval": "10m" }
@@ -192,9 +214,23 @@ mod tests {
 
     #[test]
     fn malformed_health_check_does_not_panic_or_wedge() {
-        // `deny_unknown_fields` rejects this; we must degrade to "no smoke test"
-        // rather than propagate an error into the eval pass.
+        // `deny_unknown_fields` rejects this; we must degrade to the default
+        // smoke config rather than propagate an error into the eval pass.
         let cfg = serde_json::json!({ "health_check": { "bogus_key": 1 } });
+        assert!(smoke_config_from_value(Some(&cfg)).is_none());
+    }
+
+    #[test]
+    fn a_bare_health_check_key_degrades_like_a_malformed_one() {
+        // `health_check:` with nothing under it reaches this reader as
+        // `Value::Null` (unprojected keys ride the compiled `other` catch-all as
+        // raw YAML→JSON), and `HealthCheckConfig` rejects null rather than
+        // yielding its default — the same shape the compiled reader pins in
+        // `compile_worker::a_bare_health_check_key_is_off_like_the_typed_path`.
+        // Pins the outcome only: unlike that sibling, this reader exposes no
+        // branch signal, so which arm produced the `None` isn't observable from
+        // here and the warning itself stays unasserted.
+        let cfg = serde_json::json!({ "health_check": serde_json::Value::Null });
         assert!(smoke_config_from_value(Some(&cfg)).is_none());
     }
 

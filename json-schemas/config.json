@@ -41,7 +41,7 @@
       ]
     },
     "health_check": {
-      "description": "Per-workspace health-check cadence. When unset, the workspace is evaluated on the default 10-minute cadence. Drives the workspace's `health_eval` schedule row.",
+      "description": "Per-workspace health checks, and how often they run. Drives the workspace's `health_eval` schedule row.\n\n**Unset means off** — health checks are opt-in. Writing the block is the opt-in and the cadence defaults to 1h, so `health_check: {}` is enough to turn them on; `enabled: false` inside a block turns them back off. See `health_check::resolve_enabled`.",
       "anyOf": [
         {
           "$ref": "#/definitions/HealthCheckConfig"
@@ -1066,7 +1066,7 @@
       "type": "object",
       "properties": {
         "enabled": {
-          "description": "When false, the workspace's health schedule row is disabled and no eval is enqueued. Defaults to true.",
+          "description": "When false, the workspace's health schedule row is disabled and no eval is enqueued. Defaults to true *within a written block* — having gone to the trouble of writing `health_check:`, you meant to turn it on.\n\nThis default says nothing about a workspace with **no** `health_check:` block: that one is off. Ask [`resolve_enabled`] rather than reaching for `unwrap_or(..)` on an `Option<HealthCheckConfig>` at a call site.",
           "default": true,
           "type": "boolean"
         },
@@ -1078,7 +1078,7 @@
           ]
         },
         "smoke_test": {
-          "description": "Active end-to-end probes of the workspace's own artifacts, run on their own slower cadence inside the eval pass.\n\nAbsent → [`SmokeTestConfig::default`]: the smoke test still runs, but only the zero-scan `connections` probe, so every workspace gets free credential-expiry detection without opting in. To turn it off entirely, write `smoke_test: { enabled: false }`.",
+          "description": "Active end-to-end probes of the workspace's own artifacts, run on their own slower cadence inside the eval pass.\n\nAbsent → [`SmokeTestConfig::default`]: the smoke test still runs, but only the zero-scan `connections` probe, so opting into health checks at all buys free credential-expiry detection. To turn it off entirely, write `smoke_test: { enabled: false }`.",
           "anyOf": [
             {
               "$ref": "#/definitions/SmokeTestConfig"
@@ -2130,7 +2130,7 @@
       "additionalProperties": false
     },
     "SmokeTestConfig": {
-      "description": "Which probes the workspace smoke test runs, and how often.\n\n**Only `connections` defaults on**, and the whole block defaults on when absent — every workspace gets a cheap credential check for free. The other three are opt-in because they are not cheap, and the reason is not obvious from their descriptions:\n\n* `connections` — `SELECT 1`. Scans zero bytes, so it is free on a bytes-billed warehouse (BigQuery on-demand, Athena). Caveat: on Snowflake it *resumes* a suspended warehouse, which bills a 60-second minimum. At the 6h default that is four wake-ups a day. * `semantic` — one measure query per topic. `SUM(x)` over an unpartitioned fact table reads the whole column; a `LIMIT` cannot shrink an aggregate's scan. Cost scales with your *data volume*, not your topic count, and on a bytes-billed warehouse it is by far the most expensive probe here. * `apps` — every task of every `.app.yml`; a superset of `semantic`. * `agent` — a real LLM round-trip, plus whatever SQL the agent decides to run.",
+      "description": "Which probes the workspace smoke test runs, and how often.\n\n**Only `connections` defaults on**, and the whole block defaults on when absent — so a workspace that opted into `health_check:` gets a cheap credential check for free (nothing here runs for one that didn't: the smoke run is gated inside an eval pass). The other three are opt-in even then, because they are not cheap, and the reason is not obvious from their descriptions:\n\n* `connections` — `SELECT 1`. Scans zero bytes, so it is free on a bytes-billed warehouse (BigQuery on-demand, Athena). Caveat: on Snowflake it *resumes* a suspended warehouse, which bills a 60-second minimum. At the 6h default that is four wake-ups a day. * `semantic` — one measure query per topic. `SUM(x)` over an unpartitioned fact table reads the whole column; a `LIMIT` cannot shrink an aggregate's scan. Cost scales with your *data volume*, not your topic count, and on a bytes-billed warehouse it is by far the most expensive probe here. * `apps` — every task of every `.app.yml`; a superset of `semantic`. * `agent` — a real LLM round-trip, plus whatever SQL the agent decides to run.",
       "type": "object",
       "properties": {
         "agent": {

@@ -205,14 +205,22 @@ pub(super) async fn register_project(
     })?;
     tracing::info!("Registered workspace '{}' at '{}'", name, path_str);
 
-    // Seed the per-workspace health schedule with the default 10-minute cadence.
-    // The compile worker refines it from config.yml's `health_check` once the
-    // workspace first compiles. Best-effort — never fail onboarding on this.
+    // Seed the per-workspace health schedule row **disabled**: health checks are
+    // opt-in, and a workspace being onboarded hasn't compiled a config.yml yet,
+    // so nothing here says it wants them. The compile worker enables it from
+    // `health_check` on the first promoted compile. Seeding the row anyway keeps
+    // the reconcile path a plain update.
+    //
+    // Both values come from the same resolvers the compile worker uses rather
+    // than being hardcoded, so there is exactly one definition of "unconfigured"
+    // — and seeding the cadence the first compile will also pick means that
+    // compile leaves `next_run_at` alone instead of recomputing it.
+    // Best-effort — never fail onboarding on this.
     if let Err(e) = agentic_pipeline::scheduler::reconcile_health_schedule(
         &db,
         workspace_id,
-        std::time::Duration::from_secs(600),
-        true,
+        oxy::config::health_check::resolve_interval(None),
+        oxy::config::health_check::resolve_enabled(None),
     )
     .await
     {

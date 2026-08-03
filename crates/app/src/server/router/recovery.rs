@@ -950,11 +950,10 @@ async fn tick_cloud(
     total
 }
 
-/// Shared drive helper: hand the (already resolved) workspace context to
 /// Build the host-side registry of `TaskSpec::Custom` executors injected into
 /// the global-run driver. Currently just per-workspace health eval; future
-/// Custom kinds register here. See
-/// `internal-docs/2026-06-26-workspace-scoped-health-checks-design.md`.
+/// Custom kinds register here. See `internal-docs/agentic-runtime-integration.md`
+/// ("One-shot queue work: `TaskSpec::Custom` + `CustomTaskRegistry`").
 fn build_custom_task_registry(
     db: &sea_orm::DatabaseConnection,
 ) -> Arc<agentic_runtime::worker::CustomTaskRegistry> {
@@ -1225,9 +1224,18 @@ async fn build_cloud_project_ctx(
 
 /// Reconcile per-workspace `health_eval` schedule rows on startup. Removes the
 /// legacy cross-tenant singleton row (`target_ref = 'global'`, the old 10-minute
-/// sweep) if present, then ensures every workspace has its own row with a cadence
-/// derived from its compiled `config.yml` `health_check` (default 1h when
-/// unconfigured). Idempotent and best-effort — a per-workspace failure is logged
+/// sweep) if present, then gives every workspace with a *readable promoted
+/// config* a row whose cadence comes from that config's `health_check` (1h when
+/// the block sets no interval; **disabled** when there is no block — health
+/// checks are opt-in).
+///
+/// Workspaces without one are skipped entirely rather than written as disabled:
+/// neither "no promoted revision yet" nor a failed read states intent, and this
+/// loops over *every* workspace, so a bad read here can't switch off a tenant
+/// that opted in. A skipped workspace may therefore have no row at all until its
+/// first promoted compile, which reconciles through the same upsert
+/// (`compile_worker::health_reconcile_target`) — and no row behaves exactly like
+/// a disabled one. Idempotent and best-effort: a per-workspace failure is logged
 /// and skipped. Replaces the old `bootstrap_health_schedule`.
 ///
 /// `prune_orphans` gates the destructive orphan sweep to Cloud mode: there the

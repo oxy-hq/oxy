@@ -49,15 +49,20 @@ pub struct PipelineHandle<Ev: DomainEvents> {
 ## Integrating a new system
 
 If you're standing up a new top-level system on top of this runtime
-(airway, airform, future ELT/transformation runners), follow the
-walkthrough in
+(airform, future ELT/transformation runners — airway is already on the
+queue-driven pattern below), follow the walkthrough in
 [`internal-docs/agentic-runtime-integration.md`](../../../internal-docs/agentic-runtime-integration.md).
-It covers both common patterns:
+It covers three patterns:
 
 - **Pipeline-style** (analytics, builder) — `DomainSolver` +
   `PipelineHandle`. Lifecycle only; no orchestrator queue.
-- **Queue-driven** (workflow, likely airway/airform) — `Worker` impl
-  draining the durable task queue; coordinator does the fan-out + resume.
+- **One-shot queue work** (per-workspace health eval) —
+  `TaskSpec::Custom { kind }` + a `CustomTaskRegistry` executor registered by
+  the host. One durable unit, no FSM, no resume.
+- **Queue-driven** (automation and airway; airform still to come) — dedicated
+  `TaskSpec` variants drained off the durable task queue; coordinator does the
+  fan-out + resume. **Currently a stub** in that doc — read
+  `crates/agentic/automation/` and `crates/agentic/airway/` for now.
 
 The integration doc has the API surface for both layers, the
 contributor checklist, and the rules around extension tables and

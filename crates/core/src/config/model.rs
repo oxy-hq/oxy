@@ -122,9 +122,13 @@ pub struct Config {
     #[garde(dive)]
     pub mcp: Option<McpConfig>,
 
-    /// Per-workspace health-check cadence. When unset, the workspace is
-    /// evaluated on the default 10-minute cadence. Drives the workspace's
-    /// `health_eval` schedule row.
+    /// Per-workspace health checks, and how often they run. Drives the
+    /// workspace's `health_eval` schedule row.
+    ///
+    /// **Unset means off** — health checks are opt-in. Writing the block is the
+    /// opt-in and the cadence defaults to 1h, so `health_check: {}` is enough to
+    /// turn them on; `enabled: false` inside a block turns them back off. See
+    /// `health_check::resolve_enabled`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub health_check: Option<crate::config::health_check::HealthCheckConfig>,

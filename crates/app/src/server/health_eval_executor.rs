@@ -3,8 +3,11 @@
 //! `CustomTaskRegistry` by the in-process driver
 //! (`server::router::recovery`); `PipelineTaskExecutor` delegates the
 //! `health_eval_workspace` kind here. The actual evaluation is the unchanged
-//! [`run_eval_pass_single`]. See
-//! `internal-docs/2026-06-26-workspace-scoped-health-checks-design.md`.
+//! [`run_eval_pass_single`]. The registry mechanism is
+//! `internal-docs/agentic-runtime-integration.md` ("One-shot queue work:
+//! `TaskSpec::Custom` + `CustomTaskRegistry`"); what this eval means for a
+//! tenant is `internal-docs/admin-surfaces.md` ("Workspace health → who
+//! actually gets evaluated").
 
 use agentic_core::delegation::{TaskAssignment, TaskOutcome, TaskSpec};
 use agentic_runtime::worker::{ExecutingTask, TaskExecutor};

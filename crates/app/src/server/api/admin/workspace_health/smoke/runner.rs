@@ -67,8 +67,12 @@ pub(crate) struct SmokeSettings {
 /// there is no compiled row to read).
 ///
 /// An absent `smoke_test:` block resolves to `SmokeTestConfig::default()` —
-/// connections only — so every workspace gets a cheap credential check without
-/// opting in. Opting *out* is `smoke_test: { enabled: false }`.
+/// connections only — so opting into health checks at all buys a cheap
+/// credential check for free. It buys nothing for a workspace that *didn't*
+/// opt in: the smoke run is gated inside an eval pass, so with no `health_check:`
+/// block nothing here runs on its own, only on the manual
+/// `POST /workspace-health/{id}/eval` path. Opting *out* of the probe while
+/// staying opted into health checks is `smoke_test: { enabled: false }`.
 pub(crate) async fn resolve_smoke_settings(
     db: &DatabaseConnection,
     workspace_id: uuid::Uuid,

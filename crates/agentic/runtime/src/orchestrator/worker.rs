@@ -98,7 +98,8 @@ pub trait TaskExecutor: Send + Sync + 'static {
 /// injected into the global-run driver. The pipeline layer's
 /// `PipelineTaskExecutor` consults it in its `Custom` arm, so a new Custom kind
 /// gets a durable fleet execution path without the pipeline crate importing the
-/// host. See `internal-docs/2026-06-26-workspace-scoped-health-checks-design.md`.
+/// host. See `internal-docs/agentic-runtime-integration.md` ("One-shot queue
+/// work: `TaskSpec::Custom` + `CustomTaskRegistry`").
 #[derive(Default, Clone)]
 pub struct CustomTaskRegistry {
     handlers: std::collections::HashMap<String, Arc<dyn TaskExecutor>>,

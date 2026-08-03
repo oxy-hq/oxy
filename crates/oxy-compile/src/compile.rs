@@ -892,8 +892,8 @@ mod redact_tests {
     /// land in the `other` JSONB catch-all and survive the compile boundary
     /// without a migration. If a future change adds `health_check` to the
     /// projected keys, this test fails — keep it in `other` so the per-workspace
-    /// cadence round-trips (see
-    /// `internal-docs/2026-06-26-workspace-scoped-health-checks-design.md`).
+    /// cadence round-trips (see `internal-docs/admin-surfaces.md`,
+    /// "Workspace health → who actually gets evaluated").
     #[test]
     fn health_check_lands_in_other_catch_all() {
         let yaml = json!({
