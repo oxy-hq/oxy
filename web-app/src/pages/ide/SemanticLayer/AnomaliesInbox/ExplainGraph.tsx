@@ -17,9 +17,15 @@ import { cn } from "@/libs/shadcn/utils";
 import { splitLabel } from "@/pages/ide/MetricTree/components/ExplainTree";
 import useTheme from "@/stores/useTheme";
 import type { ExplainNode, ExplainResult } from "@/types/metricTree";
+import { formatNumber, formatSigned } from "@/utils/measureFormat";
+import { driverPush, roleBadge } from "./driverClassification";
 
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 84;
+/** Weight for a driver with no `estimated_target_impact`. There is no honest
+ *  ratio to compute for one (see the call site), so every qualitative driver
+ *  renders at the same middling emphasis: present, but not ranked. */
+const QUALITATIVE_INTENSITY = 0.35;
 const elk = new ELK();
 
 // ── Node payload ────────────────────────────────────────────────────────────
@@ -138,7 +144,20 @@ function explainToFlow(result: ExplainResult): FlowGraph {
     for (let i = 0; i < result.driver_attribution.length; i++) {
       const driver = result.driver_attribution[i];
       const id = `driver-${i}`;
-      const impact = driver.estimated_target_impact ?? 0;
+      const impact = driver.estimated_target_impact;
+      const quantified = impact !== undefined && impact !== null;
+      // Tone by the driver's push *on the target*, never by the sign of its own
+      // delta — see `driverPush`. `null` means no signed claim, which must stay
+      // neutral rather than defaulting into the target's own tone.
+      const push = driverPush(driver, result.target_delta);
+      // `intensity` reads as "how much of the target's move this accounts for",
+      // so it is only computable from `estimated_target_impact` — the one figure
+      // in the *target's* units. Substituting `driver_delta` divides a
+      // driver-unit quantity by a target-unit one: a rate driver (Δ 0.0038
+      // against a target Δ of -589) lands at ~0 anyway, and a count-scale driver
+      // saturates at 1.0 while claiming a certainty it has not earned. So a
+      // qualitative driver gets a fixed middling weight instead — visible,
+      // ranked against nothing, with `roleBadge` carrying the meaning.
       nodes.push({
         id,
         type: "explain-node",
@@ -146,12 +165,14 @@ function explainToFlow(result: ExplainResult): FlowGraph {
         data: {
           kind: "driver",
           title: `driver · ${driver.driver_measure}`,
-          subtitle: `est. impact ${impact >= 0 ? "+" : ""}${formatNumber(impact)}`,
-          detail: `Δ ${driver.driver_delta >= 0 ? "+" : ""}${formatNumber(driver.driver_delta)}`,
-          intensity: clampIntensity(
-            Math.abs(impact) / Math.max(Math.abs(result.target_delta), 1e-9)
-          ),
-          direction: numberDirection(impact || driver.driver_delta)
+          subtitle: quantified
+            ? `est. impact ${formatSigned(impact)} · ${roleBadge(driver)}`
+            : `qualitative · ${roleBadge(driver)}`,
+          detail: `Δ ${formatSigned(driver.driver_delta)}`,
+          intensity: quantified
+            ? clampIntensity(Math.abs(impact) / Math.max(Math.abs(result.target_delta), 1e-9))
+            : QUALITATIVE_INTENSITY,
+          direction: push === null ? "neutral" : numberDirection(push)
         } satisfies ExplainGraphNodeData,
         width: NODE_WIDTH,
         height: NODE_HEIGHT
@@ -239,12 +260,6 @@ function numberDirection(n: number): "up" | "down" | "neutral" {
 function clampIntensity(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(1, n));
-}
-
-function formatNumber(n: number): string {
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(2)}k`;
-  return n.toFixed(2);
 }
 
 /** Position nodes top-down with ELK. Mirrors `MetricTreeGraph`'s layout. */

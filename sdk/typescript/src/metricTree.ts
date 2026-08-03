@@ -113,15 +113,40 @@ export interface ExplainNode {
   children?: ExplainNode[];
 }
 
+/** Whether a driver's observed move pushes the target the way it actually
+ *  moved (`contributing`) or against it (`counteracting` — it offset part of
+ *  the move rather than causing it). `unknown` when no signed claim is
+ *  available: `direction: unknown` with no coefficient, or a flat
+ *  driver/target. */
+export type DriverContribution = "contributing" | "counteracting" | "unknown";
+
+/** A driver's move split into the part its base forced and the part its own
+ *  ratio contributed. Emitted only when the driver genuinely tracks a sibling
+ *  rather than moving on its own — presence is the claim.
+ *  `base_driven_delta + ratio_driven_delta === driver_delta`. */
+export interface PassthroughSplit {
+  base_measure: string;
+  ratio_previous: number;
+  ratio_current: number;
+  base_driven_delta: number;
+  ratio_driven_delta: number;
+}
+
 export interface DriverAttribution {
   driver_measure: string;
   driver_previous: number;
   driver_current: number;
   driver_delta: number;
+  /** Both optional: an `explain_cache` row written before these fields shipped
+   *  is served verbatim, so absent means unclassified — not a default. */
+  direction?: DriverDirection;
+  contribution?: DriverContribution;
   coefficient?: number;
   form: DriverForm;
+  /** Absent for a purely qualitative driver (no coefficient). */
   estimated_target_impact?: number;
   description?: string;
+  passthrough?: PassthroughSplit;
 }
 
 export type ExplainWarning =

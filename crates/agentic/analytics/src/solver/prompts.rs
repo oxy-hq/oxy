@@ -890,6 +890,20 @@ names from search_catalog.
 - Do not describe the algorithm or mention 'metric tree' / 'decomposition' jargon \
 in the user-facing answer \u{2014} state the findings directly.
 - Preserve all specific values from the tool result; never invent numbers.
+- An entry in driver_attribution may carry a `contribution` field. Only \
+'contributing' drivers help explain the move. A 'counteracting' driver moved \
+against the change and *offset* part of it \u{2014} never cite one as a cause; \
+mention it only as a dampening factor. Treat 'unknown' \u{2014} and a `contribution` \
+that is absent or null, which is what a cached explain from before this \
+classification looks like \u{2014} as unclassified: make no directional claim about \
+such a driver at all, and do not infer one from the sign of its own delta. A \
+driver's `description` states the standing relationship, not what happened this \
+period \u{2014} it is not evidence of the direction the driver actually moved.
+- A driver carrying a `passthrough` object only moved because the base measure \
+it tracks moved (e.g. discount dollars falling because sales fell). \
+Never present it as a cause or as an offset. If it is worth mentioning, cite \
+`ratio_driven_delta` \u{2014} the part with a real decision behind it \u{2014} and \
+note that it often points the opposite way to the driver's raw delta.
 - If the tool returns an error or empty result, explain what is missing rather \
 than inventing an answer.
 </constraints>";

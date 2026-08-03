@@ -216,7 +216,32 @@ aho-corasick = "1.1"
 #
 # 06ba5e5 (the pin before last) is an ancestor of this SHA, so nothing above is
 # lost by moving to it.
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "e8353dbe39d4d989b3569a037f45bbee8ae92322" }
+#
+# Adds `direction` + `contribution` + `passthrough` to DriverAttribution, so the
+# anomaly explain panel can tell a driver that *caused* a move from one that
+# offset it (a `direction: negative` driver that fell pushes the target up) —
+# and both of those from one that only moved because its base did (discount
+# dollars tracking sales volume). Stacked on e8353db above, which it keeps.
+#
+# Now airlayer main (PRs #86 and #87 merged), not the branch head 67115e6 this
+# was developed against. 67115e6 is an ancestor, so nothing above is lost, and
+# the nine commits since carry the fix that makes the feature work on the
+# anomaly that motivated it: the passthrough drift test was symmetric, so
+# gross-is-a-passthrough-of-discounts passed the same gate as the reverse. Both
+# rows got a split, both sorted into the mechanical group, and the explain
+# returned nothing that explained the move — strictly worse than before the
+# feature. A base must now contain its driver (|ratio| < 1 in both periods),
+# and candidates include the target's component children rather than only its
+# declared sibling drivers, since `net = gross - discounts` is what discounts
+# actually ride on and nobody declares that as a driver edge.
+#
+# Serialized shapes are unchanged across the bump — DriverAttribution,
+# DriverContribution and PassthroughSplit keep their fields, so the TS mirrors
+# in web-app/src/types/metricTree.ts and sdk/typescript/src/metricTree.ts still
+# match. `contribution` is still emitted on a passthrough row (airlayer's own
+# CLI now prints `mechanical` for those rather than the raw value, matching how
+# `group()` files them — the same precedence the web panel applies).
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "7e884e77db2c63eeb3b632fad81245cbd41c980f" }
 # Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
 # Holt-Winters family (with auto model selection); augurs-mstl handles
 # multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.

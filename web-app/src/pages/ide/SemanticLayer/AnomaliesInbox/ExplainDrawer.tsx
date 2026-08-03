@@ -16,16 +16,14 @@ import { Textarea } from "@/components/ui/shadcn/textarea";
 import { useAnomalyExplain, useRefreshAnomalyExplain } from "@/hooks/api/useMetricAnomalies";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
-import { ExplainNodeRow, splitLabel } from "@/pages/ide/MetricTree/components/ExplainTree";
+import { ExplainNodeRow } from "@/pages/ide/MetricTree/components/ExplainTree";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { MetricAnomaly } from "@/types/metricAnomalies";
-import type {
-  DriverAttribution,
-  ExplainNode,
-  ExplainResult,
-  ExplainWarning
-} from "@/types/metricTree";
+import type { DriverAttribution, ExplainResult, PassthroughSplit } from "@/types/metricTree";
+import { formatNumber, formatPercent, formatSigned, shortMeasureName } from "@/utils/measureFormat";
+import { groupDrivers } from "./driverClassification";
 import ExplainGraph from "./ExplainGraph";
+import { buildFollowUpPrompt, type DerivedPeriods, warningMessage } from "./followUpPrompt";
 
 interface Props {
   anomaly: MetricAnomaly | null;
@@ -291,16 +289,82 @@ export function ExplainBody({ result }: { result: ExplainResult }) {
           </Tabs>
         </Section>
       )}
-      {result.driver_attribution && result.driver_attribution.length > 0 && (
-        <Section title='Driver attribution'>
+      <DriverSections drivers={result.driver_attribution} />
+    </div>
+  );
+}
+
+/** Driver attribution, split by whether each driver's move actually pushes the
+ *  target the way it moved.
+ *
+ *  Keeping the two in one list made an offsetting driver read as a cause: a
+ *  `direction: negative` driver that *fell* during a drop pushed the target
+ *  *up*, so it dampened the anomaly rather than explaining it. The backend
+ *  classifies (it holds the target delta); we only group and label. */
+function DriverSections({ drivers }: { drivers?: DriverAttribution[] }) {
+  if (!drivers || drivers.length === 0) return null;
+  // Grouping is total by construction — see `groupDrivers`. Section order below
+  // puts mechanical drivers after the sign split but ahead of the unresolved
+  // fallback; within a group we keep the order airlayer sent.
+  const { contributing, counteracting, mechanical, unresolved, anyStale } = groupDrivers(drivers);
+  return (
+    <>
+      {contributing.length > 0 && (
+        <Section title='Drivers explaining the move'>
           <ul className='flex flex-col gap-1'>
-            {result.driver_attribution.map((d, i) => (
-              <DriverRow key={i} driver={d} />
+            {contributing.map((d) => (
+              <DriverRow key={d.driver_measure} driver={d} />
             ))}
           </ul>
         </Section>
       )}
-    </div>
+      {counteracting.length > 0 && (
+        <Section title='Drivers offsetting the move'>
+          <p className='text-muted-foreground text-xs'>
+            These moved <em>against</em> the anomaly — they dampened it rather than causing it.
+          </p>
+          <ul className='flex flex-col gap-1'>
+            {counteracting.map((d) => (
+              <DriverRow key={d.driver_measure} driver={d} />
+            ))}
+          </ul>
+        </Section>
+      )}
+      {mechanical.length > 0 && (
+        <Section title='Drivers that moved mechanically'>
+          <p className='text-muted-foreground text-xs'>
+            These track another measure rather than moving on their own, so they say nothing about
+            why the target moved. The rate is the part that carries a decision.
+          </p>
+          <ul className='flex flex-col gap-1'>
+            {mechanical.map((d) => (
+              <DriverRow key={d.driver_measure} driver={d} />
+            ))}
+          </ul>
+        </Section>
+      )}
+      {unresolved.length > 0 && (
+        <Section title='Drivers with undetermined direction'>
+          <p className='text-muted-foreground text-xs'>
+            {anyStale ? (
+              <>
+                This explain was cached before drivers were classified — hit Refresh to reclassify.
+              </>
+            ) : (
+              <>
+                Declare <code className='t-code'>direction</code> (or a{" "}
+                <code className='t-code'>coefficient</code>) on these driver edges to place them.
+              </>
+            )}
+          </p>
+          <ul className='flex flex-col gap-1'>
+            {unresolved.map((d) => (
+              <DriverRow key={d.driver_measure} driver={d} />
+            ))}
+          </ul>
+        </Section>
+      )}
+    </>
   );
 }
 
@@ -323,15 +387,13 @@ function Section({
 
 /** Period-over-period delta + coverage % beneath the observed/expected card. */
 function CoverageLine({ result }: { result: ExplainResult }) {
-  const deltaSign = result.target_delta >= 0 ? "+" : "";
   return (
     <p className='text-muted-foreground text-xs'>
       Period-over-period:{" "}
       <span className='t-code text-foreground'>
         {formatNumber(result.target_previous)} → {formatNumber(result.target_current)}
       </span>{" "}
-      ({deltaSign}
-      {formatNumber(result.target_delta)})
+      ({formatSigned(result.target_delta)})
     </p>
   );
 }
@@ -342,35 +404,58 @@ function DriverRow({ driver }: { driver: DriverAttribution }) {
     <li className='rounded-md border border-border bg-card p-2 text-sm'>
       <div className='flex items-center justify-between gap-2'>
         <span className='font-medium'>{driver.driver_measure}</span>
-        {impact !== undefined && impact !== null && (
+        {impact !== undefined && impact !== null ? (
           <span className='text-muted-foreground text-xs tabular-nums'>
-            est. impact {impact >= 0 ? "+" : ""}
-            {formatNumber(impact)}
+            est. impact {formatSigned(impact)}
           </span>
+        ) : (
+          // No coefficient on the edge, so there is no magnitude to quote —
+          // say so rather than leaving the row looking like it has one.
+          <span className='text-muted-foreground text-xs'>qualitative</span>
         )}
       </div>
       <p className='text-muted-foreground text-xs'>
-        Δ {driver.driver_delta >= 0 ? "+" : ""}
-        {formatNumber(driver.driver_delta)} ({formatNumber(driver.driver_previous)} →{" "}
+        Δ {formatSigned(driver.driver_delta)} ({formatNumber(driver.driver_previous)} →{" "}
         {formatNumber(driver.driver_current)})
+        {driver.direction &&
+          driver.direction !== "unknown" &&
+          ` · ${driver.direction} relationship`}
         {driver.coefficient !== undefined &&
           driver.coefficient !== null &&
           ` · coef ${driver.coefficient}`}
         {driver.form && ` · ${driver.form}`}
       </p>
+      {driver.passthrough && <PassthroughLine split={driver.passthrough} />}
+      {/* The description explains the *relationship*, not this period's move —
+          it reads as a causal claim next to a delta that may run the other way,
+          so label it. */}
       {driver.description && (
-        <p className='mt-1 text-muted-foreground text-xs italic'>{driver.description}</p>
+        <p className='mt-1 text-muted-foreground text-xs italic'>
+          Relationship: {driver.description}
+        </p>
       )}
     </li>
   );
 }
 
-// ── derivations ────────────────────────────────────────────────────────────
-
-interface DerivedPeriods {
-  current: [string, string];
-  previous: [string, string];
+/** Break a driver's move into the part its base forced and the part its own
+ *  ratio contributed — the second number is the only one with a decision behind
+ *  it, and it routinely points the opposite way to the raw delta. */
+function PassthroughLine({ split }: { split: PassthroughSplit }) {
+  const base = shortMeasureName(split.base_measure);
+  return (
+    <p className='mt-1 text-muted-foreground text-xs'>
+      Tracks {base}:{" "}
+      <span className='t-code'>
+        {formatPercent(split.ratio_previous)} → {formatPercent(split.ratio_current)}
+      </span>{" "}
+      · {base}-driven {formatSigned(split.base_driven_delta)} · rate-driven{" "}
+      {formatSigned(split.ratio_driven_delta)}
+    </p>
+  );
 }
+
+// ── derivations ────────────────────────────────────────────────────────────
 
 /** Build (current, previous) period tuples for the explain call.
  *  current = the anomaly bucket; previous = one season back. */
@@ -395,117 +480,4 @@ function sameCyclePrior(a: MetricAnomaly): string {
       out.setUTCDate(out.getUTCDate() - 7);
   }
   return out.toISOString().slice(0, 10);
-}
-
-/** Build the chat prompt: a fenced "context" block with the full
- *  decomposition (anomaly summary, period-over-period, recursive split
- *  tree, driver attributions, warnings) followed by the user's literal
- *  question. The agent sees the context as background; the question
- *  itself is what it answers.
- *
- *  We dump quite a bit so the agent can answer "which child segment
- *  drove the parent component?" without re-running the decomposition. */
-function buildFollowUpPrompt(
-  anomaly: MetricAnomaly,
-  periods: DerivedPeriods | null,
-  result: ExplainResult | null,
-  userQuestion: string
-): string {
-  const ctx: string[] = [
-    `Anomaly: ${anomaly.label || anomaly.measure} (${anomaly.measure})`,
-    `Bucket: ${anomaly.period_start.slice(0, 10)} (${anomaly.granularity})`,
-    `Observed ${formatNumber(anomaly.observed)} vs expected baseline ${formatNumber(anomaly.expected)} (${anomaly.severity} severity, z=${anomaly.z_score.toFixed(2)})`
-  ];
-  if (periods) {
-    ctx.push(`Period-over-period: current=${periods.current[0]}, previous=${periods.previous[0]}`);
-  }
-  if (result) {
-    const deltaSign = result.target_delta >= 0 ? "+" : "";
-    ctx.push(
-      `Target moved ${formatNumber(result.target_previous)} → ${formatNumber(result.target_current)} (${deltaSign}${formatNumber(result.target_delta)}); ${(result.coverage * 100).toFixed(0)}% of the delta is explained by the decomposition below.`
-    );
-    if (result.nodes.length > 0) {
-      ctx.push("");
-      ctx.push("Decomposition tree (each line = one split; indent = nesting):");
-      for (const n of result.nodes) {
-        appendNodeLines(ctx, n, 0);
-      }
-    }
-    if (result.driver_attribution && result.driver_attribution.length > 0) {
-      ctx.push("");
-      ctx.push("Declared drivers (causal/correlative inputs from the metric tree):");
-      for (const d of result.driver_attribution) {
-        const driverSign = d.driver_delta >= 0 ? "+" : "";
-        const impact = d.estimated_target_impact;
-        const impactStr =
-          impact !== undefined && impact !== null
-            ? ` → est. target impact ${impact >= 0 ? "+" : ""}${formatNumber(impact)}`
-            : "";
-        ctx.push(
-          `  • ${d.driver_measure}: Δ ${driverSign}${formatNumber(d.driver_delta)} (${formatNumber(d.driver_previous)} → ${formatNumber(d.driver_current)})${d.coefficient !== undefined && d.coefficient !== null ? ` · coef ${d.coefficient}` : ""} · ${d.form}${impactStr}`
-        );
-        if (d.description) {
-          ctx.push(`    note: ${d.description}`);
-        }
-      }
-    }
-    if (result.warnings && result.warnings.length > 0) {
-      ctx.push("");
-      ctx.push("Detector warnings on this decomposition:");
-      for (const w of result.warnings) {
-        ctx.push(`  • ${warningMessage(w)}`);
-      }
-    }
-  }
-  return ["```context", ...ctx, "```", "", userQuestion].join("\n");
-}
-
-/** Recursively append one indented line per node + its siblings + its
- *  recursive children to the context buffer. Mirrors the visual
- *  Decomposition tree the user sees in the drawer so the agent works
- *  off the same structure. */
-function appendNodeLines(ctx: string[], node: ExplainNode, depth: number): void {
-  const indent = "  ".repeat(depth + 1);
-  const deltaSign = node.delta >= 0 ? "+" : "";
-  ctx.push(
-    `${indent}• ${splitLabel(node.split)} (measure ${node.measure}) — Δ ${deltaSign}${formatNumber(node.delta)} · ${(node.root_fraction * 100).toFixed(1)}% of root · concentration ${(node.concentration * 100).toFixed(0)}%`
-  );
-  // Surface siblings inline so the agent knows the next-best alternatives
-  // at the same level without us having to recurse into them.
-  if (node.siblings && node.siblings.length > 0) {
-    const sibSummary = node.siblings
-      .slice(0, 4)
-      .map((s) => `${splitLabel(s.split)} (${(s.root_fraction * 100).toFixed(1)}%)`)
-      .join("; ");
-    ctx.push(`${indent}  also considered: ${sibSummary}`);
-  }
-  if (node.children) {
-    for (const child of node.children) {
-      appendNodeLines(ctx, child, depth + 1);
-    }
-  }
-}
-
-/** Render an [`ExplainWarning`] as a single human-readable sentence. */
-function warningMessage(w: ExplainWarning): string {
-  switch (w.type) {
-    case "simpsons_paradox":
-      return `Simpson's paradox on ${w.dimension}: aggregate moved ${
-        w.aggregate_delta >= 0 ? "+" : ""
-      }${formatNumber(w.aggregate_delta)} but every segment moved the opposite way.`;
-    case "opposing_offset":
-      return `Opposing offsets: ${w.component_a} ${
-        w.delta_a >= 0 ? "+" : ""
-      }${formatNumber(w.delta_a)} cancels with ${w.component_b} ${
-        w.delta_b >= 0 ? "+" : ""
-      }${formatNumber(w.delta_b)} — the net move hides a bigger shift in both components.`;
-    case "non_additive_dimension_split":
-      return `${w.measure} is a ${w.measure_type} measure — per-element deltas on ${w.dimension} don't sum to the parent delta, so concentrations are approximations.`;
-  }
-}
-
-function formatNumber(n: number): string {
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(2)}k`;
-  return n.toFixed(2);
 }

@@ -1,4 +1,5 @@
 import type { ExplainNode, SplitKind } from "@/types/metricTree";
+import { formatSigned } from "@/utils/measureFormat";
 
 /** Human-readable label for a split — matches airlayer's SplitKind variants. */
 export function splitLabel(split: SplitKind): string {
@@ -43,8 +44,7 @@ export function ExplainNodeRow({
           )}
         </div>
         <p className='text-muted-foreground text-xs'>
-          {node.measure} · delta {node.delta >= 0 ? "+" : ""}
-          {node.delta.toFixed(2)}
+          {node.measure} · delta {formatSigned(node.delta)}
         </p>
       </div>
       {node.children && node.children.length > 0 && (

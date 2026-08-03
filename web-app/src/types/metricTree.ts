@@ -116,15 +116,57 @@ export interface ExplainNode {
   children?: ExplainNode[];
 }
 
+/** Whether a driver's observed move pushes the target the way it actually
+ *  moved, or against it. Mirrors `airlayer::…::DriverContribution`.
+ *
+ *  `counteracting` means the driver *offset* part of the move rather than
+ *  causing it — e.g. discounts falling during a net-sales drop, where a
+ *  `direction: negative` relationship means the fall pushed net sales up.
+ *  `unknown` = no signed claim available (`direction: unknown` with no
+ *  coefficient, or a flat driver/target). */
+export type DriverContribution = "contributing" | "counteracting" | "unknown";
+
+/** A driver's move split into the part its base forced and the part its own
+ *  ratio contributed. Mirrors `airlayer::…::PassthroughSplit`.
+ *
+ *  Presence *is* the claim: only emitted when the driver genuinely tracks a
+ *  sibling rather than moving on its own — discount *dollars* fall when volume
+ *  falls, with no decision behind it. A pair whose ratio swings freely reports
+ *  nothing at all, so there is no flag to check.
+ *  `base_driven_delta + ratio_driven_delta === driver_delta`. */
+export interface PassthroughSplit {
+  base_measure: string;
+  ratio_previous: number;
+  ratio_current: number;
+  /** The mechanical part — carries no information about the target. */
+  base_driven_delta: number;
+  /** The part with a decision behind it; routinely points the opposite way to
+   *  the driver's raw delta. */
+  ratio_driven_delta: number;
+}
+
 export interface DriverAttribution {
   driver_measure: string;
   driver_previous: number;
   driver_current: number;
   driver_delta: number;
+  /** Declared direction of the relationship — needed to know which way
+   *  `driver_delta` pushes the target.
+   *
+   *  Optional because `explain_cache` rows are returned verbatim with no schema
+   *  version: an explain cached before these two fields shipped still
+   *  deserializes here. Treat absent as unclassified, not as a default. */
+  direction?: DriverDirection;
+  contribution?: DriverContribution;
   coefficient?: number;
   form: DriverForm;
+  /** Absent for a purely qualitative driver (no coefficient) — the sign of its
+   *  push is then carried by `contribution`, not by a magnitude. */
   estimated_target_impact?: number;
   description?: string;
+  /** Set when this driver mechanically tracks a sibling driver rather than
+   *  moving independently. Absent on pre-classification cached explains. */
+  passthrough?: PassthroughSplit;
 }
 
 /** Mirrors `airlayer::engine::metric_tree_ops::ExplainWarning` —

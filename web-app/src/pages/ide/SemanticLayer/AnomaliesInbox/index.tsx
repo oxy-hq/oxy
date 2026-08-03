@@ -32,6 +32,7 @@ import type {
   MetricAnomaly,
   ScanFailure
 } from "@/types/metricAnomalies";
+import { formatNumber } from "@/utils/measureFormat";
 import ExplainDrawer from "./ExplainDrawer";
 import MonitorsTab from "./MonitorsTab";
 
@@ -473,12 +474,6 @@ function DeltaArrow({ value }: { value: number }) {
       {Math.abs(value).toFixed(1)}%
     </span>
   );
-}
-
-function formatNumber(n: number): string {
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(2)}k`;
-  return n.toFixed(2);
 }
 
 function formatPeriod(a: MetricAnomaly): string {
