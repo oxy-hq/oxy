@@ -57,6 +57,22 @@ Functions isolate and react-dom does not. `@oxy-hq/sdk/email`'s
 Locally, set `OXY_APP_EMAIL_LOCAL_TEST=1` on your dev server to preview the
 rendered email in the browser instead of sending it through SES.
 
+**Attachments** — `notify` attaches a small generated CSV. Each attachment says
+how to read its `content`, and the right `encoding` follows from where the bytes
+came from:
+
+| Source | Use |
+| ------ | --- |
+| Text you just generated (CSV/JSON/HTML) | `encoding: "utf8"` |
+| A file in the app's asset store | `ctx.storage.get(key, { encoding: "base64" })` |
+| A remote file | `ctx.fetch(url, { encoding: "base64" })` |
+| Bytes you built (`Uint8Array`) | `bytesToBase64(bytes)` from `@oxy-hq/sdk` |
+
+Prefer `"utf8"` for anything textual: `btoa` reads strings as Latin1, so
+`btoa(csvWithAccents)` yields mojibake rather than an error. Limits are 20
+attachments and 10 MiB decoded per send — for larger files, store them with
+`ctx.storage` and email a presigned link instead.
+
 ## Querying your data
 
 ```tsx

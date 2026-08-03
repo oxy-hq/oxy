@@ -559,6 +559,99 @@ class OxyResponse {
 }
 globalThis.Response = OxyResponse;
 
+// Base64. This isolate is bare deno_core — no `deno_web`, so none of the Web
+// binary helpers exist, and V8 here predates `Uint8Array.prototype.toBase64`.
+// Without these an author literally cannot produce the base64 that
+// `ctx.email.send` attachments and `ctx.storage.put({encoding:"base64"})`
+// require: `btoa` was simply `undefined`.
+//
+// These follow WHATWG semantics so that a helper unit-tested under Node behaves
+// identically here. For BYTES use `bytesToBase64` from `@oxy-hq/sdk`, which is
+// plain bundled JS and therefore the same function everywhere.
+const __B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+// Reverse lookup. `__B64.indexOf(ch)` is a 64-char scan per input character;
+// over the ~13.3 MB of base64 a 10 MiB attachment carries that is millions of
+// scans inside a wall-clock-capped invocation.
+const __B64R = new Uint8Array(256).fill(255);
+for (let __i = 0; __i < 64; __i++) __B64R[__B64.charCodeAt(__i)] = __i;
+// Accumulate into array segments rather than `out += c` per byte, which would
+// allocate one rope node per byte at exactly the sizes this feature targets.
+const __B64_CHUNK = 8192;
+
+globalThis.btoa = (input) => {
+  if (input instanceof ArrayBuffer || ArrayBuffer.isView(input)) {
+    // The spec would ToString this to "37,80,68,70" and cheerfully encode the
+    // wrong bytes. Refuse: a loud error beats a silently corrupt file, and the
+    // named helper does the right thing.
+    throw new TypeError(
+      "btoa: expected a string. For bytes use bytesToBase64() from @oxy-hq/sdk"
+    );
+  }
+  const s = String(input);
+  const parts = [];
+  let buf = "";
+  for (let i = 0; i < s.length; i += 3) {
+    const c0 = s.charCodeAt(i);
+    const c1 = i + 1 < s.length ? s.charCodeAt(i + 1) : 0;
+    const c2 = i + 2 < s.length ? s.charCodeAt(i + 2) : 0;
+    if (c0 > 0xff || c1 > 0xff || c2 > 0xff) {
+      // Same failure as a browser: btoa cannot carry UTF-8. Point at the way
+      // out rather than emitting mojibake.
+      throw new TypeError(
+        "btoa: input contains characters outside the Latin1 range; for text " +
+        "pass it directly with { encoding: \"utf8\" }"
+      );
+    }
+    const n = (c0 << 16) | (c1 << 8) | c2;
+    buf += __B64[(n >> 18) & 63] + __B64[(n >> 12) & 63]
+      + (i + 1 < s.length ? __B64[(n >> 6) & 63] : "=")
+      + (i + 2 < s.length ? __B64[n & 63] : "=");
+    if (buf.length >= __B64_CHUNK) { parts.push(buf); buf = ""; }
+  }
+  parts.push(buf);
+  return parts.join("");
+};
+
+globalThis.atob = (input) => {
+  let s = String(input).replace(/[ \t\n\f\r]/g, "");
+  // Strip padding BEFORE validating, and only when the length is a multiple of
+  // 4 — that is what the spec does. Breaking out of the decode loop on the
+  // first "=" instead would silently TRUNCATE: atob(chunkA + chunkB) where
+  // chunkA ends in padding would return a short buffer and report success.
+  if (s.length % 4 === 0) {
+    let pad = 0;
+    while (pad < 2 && s.charCodeAt(s.length - 1) === 61 /* = */) {
+      s = s.slice(0, -1);
+      pad++;
+    }
+  }
+  if (s.indexOf("=") >= 0) {
+    throw new TypeError("atob: '=' may only appear as trailing padding");
+  }
+  if (s.length % 4 === 1) throw new TypeError("atob: invalid base64 length");
+  const parts = [];
+  let chunk = [];
+  let buf = 0;
+  let bits = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    const v = code < 256 ? __B64R[code] : 255;
+    if (v === 255) throw new TypeError("atob: invalid base64 character '" + s[i] + "'");
+    buf = (buf << 6) | v;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      chunk.push((buf >> bits) & 0xff);
+      if (chunk.length >= __B64_CHUNK) {
+        parts.push(String.fromCharCode.apply(null, chunk));
+        chunk = [];
+      }
+    }
+  }
+  if (chunk.length) parts.push(String.fromCharCode.apply(null, chunk));
+  return parts.join("");
+};
+
 // Wire the console developers reach for reflexively into the same host log
 // sink as ctx.log — captured per-invocation and sent back with the response.
 const __fmt = (a) => {
@@ -962,6 +1055,81 @@ async fn execute_isolate(
 mod tests {
     use super::*;
 
+    /// Test host: `ctx.query` returns one row and `ctx.email.send` records what
+    /// actually arrived, so a test can assert a payload survived the isolate
+    /// boundary byte-for-byte. Everything else is unused.
+    #[derive(Default)]
+    struct MockHost {
+        last_email: std::sync::Mutex<Option<serde_json::Value>>,
+    }
+
+    #[async_trait::async_trait]
+    impl FunctionHost for MockHost {
+        async fn query(&self, _sql: String) -> Result<serde_json::Value, String> {
+            Ok(serde_json::json!({ "rows": [{ "x": 1 }], "truncated": false }))
+        }
+        async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
+            *self.last_email.lock().unwrap() = Some(input);
+            Ok(serde_json::json!({ "messageId": "test-message-id" }))
+        }
+        async fn query_stream(&self, _sql: String) -> Result<serde_json::Value, String> {
+            Err("unused".into())
+        }
+        async fn fetch(
+            &self,
+            _url: String,
+            _init: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            Err("unused".into())
+        }
+        async fn semantic_query(
+            &self,
+            _spec: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            Err("unused".into())
+        }
+        async fn airway_run(
+            &self,
+            _pipeline_ref: String,
+            _variables: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            Err("unused".into())
+        }
+        async fn warehouse_write(
+            &self,
+            _op: String,
+            _payload: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            Err("unused".into())
+        }
+        async fn secrets_set(
+            &self,
+            _key: String,
+            _value: String,
+        ) -> Result<serde_json::Value, String> {
+            Err("unused".into())
+        }
+        async fn storage(
+            &self,
+            _op: String,
+            _payload: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            Err("unused".into())
+        }
+    }
+
+    fn test_ctx() -> InvocationCtx {
+        InvocationCtx {
+            user: CtxUser {
+                id: "u".into(),
+                email: "e@example.com".into(),
+                org_id: "o".into(),
+                app_role: None,
+            },
+            env: Default::default(),
+        }
+    }
+
     #[test]
     fn reply_json_ok_passes_value_through() {
         let out = reply_json("ctx.query", Ok(serde_json::json!({ "rows": [] })));
@@ -991,85 +1159,18 @@ mod tests {
     /// with `with_event_loop_promise` it returns the handler's `Response` fast.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn handler_resumes_after_async_host_op() {
-        struct MockHost;
-        #[async_trait::async_trait]
-        impl FunctionHost for MockHost {
-            async fn query(&self, _sql: String) -> Result<serde_json::Value, String> {
-                Ok(serde_json::json!({ "rows": [{ "x": 1 }], "truncated": false }))
-            }
-            async fn query_stream(&self, _sql: String) -> Result<serde_json::Value, String> {
-                Err("unused".into())
-            }
-            async fn fetch(
-                &self,
-                _url: String,
-                _init: serde_json::Value,
-            ) -> Result<serde_json::Value, String> {
-                Err("unused".into())
-            }
-            async fn semantic_query(
-                &self,
-                _spec: serde_json::Value,
-            ) -> Result<serde_json::Value, String> {
-                Err("unused".into())
-            }
-            async fn airway_run(
-                &self,
-                _pipeline_ref: String,
-                _variables: serde_json::Value,
-            ) -> Result<serde_json::Value, String> {
-                Err("unused".into())
-            }
-            async fn warehouse_write(
-                &self,
-                _op: String,
-                _payload: serde_json::Value,
-            ) -> Result<serde_json::Value, String> {
-                Err("unused".into())
-            }
-            async fn secrets_set(
-                &self,
-                _key: String,
-                _value: String,
-            ) -> Result<serde_json::Value, String> {
-                Err("unused".into())
-            }
-            async fn send_email(
-                &self,
-                _input: serde_json::Value,
-            ) -> Result<serde_json::Value, String> {
-                Err("unused".into())
-            }
-            async fn storage(
-                &self,
-                _op: String,
-                _payload: serde_json::Value,
-            ) -> Result<serde_json::Value, String> {
-                Err("unused".into())
-            }
-        }
-
         let artifact = r#"
             export default async (req, ctx) => {
                 const r = await ctx.query("select 1");
                 return Response.json({ rows: r.rows.length });
             };
         "#;
-        let ctx = InvocationCtx {
-            user: CtxUser {
-                id: "u".into(),
-                email: "e@example.com".into(),
-                org_id: "o".into(),
-                app_role: None,
-            },
-            env: Default::default(),
-        };
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
         let result = run(
             artifact.to_string(),
-            ctx,
+            test_ctx(),
             b"{}".to_vec(),
-            std::sync::Arc::new(MockHost),
+            Arc::new(MockHost::default()),
             cancel_rx,
             std::time::Duration::from_secs(10),
             Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -1081,5 +1182,120 @@ mod tests {
             "unexpected handler body: {}",
             resp.body
         );
+    }
+
+    /// Regression: this isolate is bare `deno_core` (no `deno_web`) on a V8 that
+    /// predates `Uint8Array.prototype.toBase64`, so `btoa` was `undefined` — an
+    /// author could not produce the base64 that `ctx.email.send` attachments
+    /// require, and attaching a generated file was impossible. Proves the
+    /// encoder exists AND that the bytes reach the host unmangled.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn isolate_can_base64_encode_attachment_bytes() {
+        let artifact = r#"
+            export default async (req, ctx) => {
+                // Latin1 bytes as a string — what btoa is actually specified for.
+                const pdf = "\x25\x50\x44\x46"; // "%PDF"
+                await ctx.email.send({
+                    to: "a@b.com",
+                    subject: "report",
+                    text: "see attached",
+                    attachments: [{ filename: "r.pdf", content: btoa(pdf) }],
+                });
+                let wideThrew = false;
+                try { btoa("日本語"); } catch { wideThrew = true; }
+                // Handing btoa raw bytes must FAIL rather than encode
+                // String(u8) == "37,80,68,70". Silent corruption is the thing
+                // this whole change exists to prevent.
+                let bytesThrew = false;
+                try { btoa(new Uint8Array([0x25, 0x50])); } catch { bytesThrew = true; }
+                // Padding must not terminate the decode early: concatenated
+                // base64 is malformed and has to say so, not truncate.
+                let concatThrew = false;
+                try { atob(btoa("hello") + btoa("world")); } catch { concatThrew = true; }
+                return Response.json({
+                    str: btoa("hello"),
+                    roundTrip: atob(btoa("hello")),
+                    wideThrew,
+                    bytesThrew,
+                    concatThrew,
+                });
+            };
+        "#;
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let host = Arc::new(MockHost::default());
+        let resp = run(
+            artifact.to_string(),
+            test_ctx(),
+            b"{}".to_vec(),
+            host.clone(),
+            cancel_rx,
+            std::time::Duration::from_secs(10),
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+        )
+        .await
+        .expect("btoa/atob must exist in the isolate");
+
+        assert!(resp.body.contains(r#""str":"aGVsbG8=""#), "{}", resp.body);
+        assert!(
+            resp.body.contains(r#""roundTrip":"hello""#),
+            "{}",
+            resp.body
+        );
+        // Latin1-only, exactly like a browser. Note the subtler trap this
+        // guards: btoa ACCEPTS U+0080..U+00FF and encodes them as Latin1, so
+        // `btoa(csv)` on accented text yields mojibake rather than an error —
+        // which is why generated text should use `encoding: "utf8"` instead.
+        assert!(resp.body.contains(r#""wideThrew":true"#), "{}", resp.body);
+        assert!(resp.body.contains(r#""bytesThrew":true"#), "{}", resp.body);
+        assert!(resp.body.contains(r#""concatThrew":true"#), "{}", resp.body);
+
+        let email = host
+            .last_email
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("ctx.email.send must reach the host");
+        assert_eq!(email["attachments"][0]["content"], "JVBERg==");
+    }
+
+    /// The other half of the fix: generated TEXT needs no encoder at all, and
+    /// `encoding: "utf8"` must survive the isolate boundary so the host can
+    /// attach the bytes verbatim.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn utf8_attachment_crosses_the_boundary_intact() {
+        let artifact = r#"
+            export default async (req, ctx) => {
+                await ctx.email.send({
+                    to: "a@b.com",
+                    subject: "report",
+                    text: "see attached",
+                    attachments: [{
+                        filename: "report.csv",
+                        content: "name,total\nCafé,3\n",
+                        encoding: "utf8",
+                        contentType: "text/csv",
+                    }],
+                });
+                return Response.json({ ok: true });
+            };
+        "#;
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let host = Arc::new(MockHost::default());
+        run(
+            artifact.to_string(),
+            test_ctx(),
+            b"{}".to_vec(),
+            host.clone(),
+            cancel_rx,
+            std::time::Duration::from_secs(10),
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+        )
+        .await
+        .expect("handler must complete");
+
+        let email = host.last_email.lock().unwrap().clone().expect("sent");
+        let att = &email["attachments"][0];
+        assert_eq!(att["encoding"], "utf8");
+        assert_eq!(att["content"], "name,total\nCafé,3\n");
     }
 }

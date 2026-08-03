@@ -5,6 +5,30 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-08-02
+
+Makes email attachments actually reachable from an Oxy Function. `content` was
+documented as base64, but the Functions isolate is bare `deno_core` — no
+`deno_web`, and a V8 predating `Uint8Array.prototype.toBase64` — so `btoa` was
+`undefined` and there was no way to produce that base64 at all.
+
+- **`bytesToBase64` / `base64ToBytes`** — new named exports for binary. Plain
+  bundled JS, so they behave identically in the isolate, in Node/vitest, and in
+  a browser; and because they take bytes, `bytesToBase64(u8)` cannot be misread
+  the way `btoa(u8)` is (the spec stringifies it to `"37,80,68,70"` and encodes
+  that text instead of your file).
+- `btoa` / `atob` now exist in the isolate (polyfilled in the runtime
+  bootstrap), following WHATWG semantics so a helper unit-tested under Node
+  behaves the same there. Passing bytes to `btoa` throws and points at
+  `bytesToBase64`. These globals are declared for the functions tsconfig only —
+  deliberately **not** added to this package's browser type graph, where `btoa`
+  is the real DOM one with no polyfill behind it.
+- `EmailAttachment.encoding` (`"base64"` default, or `"utf8"`) — attach
+  generated text (CSV/JSON/HTML) with no encoder and byte-exact for non-ASCII.
+- `ctx.fetch` takes `encoding: "base64"` (`OxyFetchInit`) and echoes it on the
+  result. The default UTF-8 decode is lossy, so fetching a binary to attach
+  previously returned a silently corrupt file.
+
 ## [2.7.0] - 2026-07-27
 
 Completes the anomaly inbox for standalone custom apps. `scan()` and

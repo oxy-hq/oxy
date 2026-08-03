@@ -67,8 +67,25 @@ export interface OxyFunctionUser {
 /** Result of a `ctx.fetch` call. */
 export interface OxyFetchResult {
   status: number;
+  /** Response body, decoded per the requested {@link OxyFetchInit.encoding}. */
   body: string;
+  /** Echoes how `body` was encoded (`"utf8"` unless base64 was requested). */
+  encoding?: "utf8" | "base64";
 }
+
+/**
+ * `init` for `ctx.fetch` — the standard `RequestInit` fields the host honours
+ * (`method`, `headers`, `body`) plus how to decode the response.
+ */
+export type OxyFetchInit = RequestInit & {
+  /**
+   * How to decode the response body. `"utf8"` (default) is **lossy for
+   * binary** — every non-UTF-8 byte becomes U+FFFD, so a fetched PDF/PNG comes
+   * back corrupt. Pass `"base64"` for any binary response, e.g. to hand it
+   * straight to an email attachment.
+   */
+  encoding?: "utf8" | "base64";
+};
 
 /** `ctx.warehouse.*` — writes to one of the app's configured destination databases. */
 export interface OxyWarehouseApi {
@@ -130,6 +147,9 @@ export interface EmailSendInput {
    * Files to attach. Max 20 per send, and **10 MiB decoded in total** — SES
    * caps a whole message near 40 MB, so for anything larger store the file with
    * {@link OxyStorageApi} and email a presigned link instead of inlining it.
+   *
+   * `content` is base64 by default; for generated text set
+   * `encoding: "utf8"` and attach the string as-is.
    */
   attachments?: EmailAttachment[];
 }
@@ -138,8 +158,23 @@ export interface EmailSendInput {
 export interface EmailAttachment {
   /** Filename shown to the recipient. Required; path separators are stripped. */
   filename: string;
-  /** File bytes, **base64-encoded** (the only way binary crosses the isolate boundary). */
+  /**
+   * File contents, interpreted per {@link EmailAttachment.encoding} — base64 by
+   * default, which is the only way binary crosses the isolate boundary.
+   */
   content: string;
+  /**
+   * How `content` is encoded. Defaults to `"base64"`.
+   *
+   * Use `"utf8"` to attach text the function just generated (CSV, JSON, HTML)
+   * — it needs no encoder and is byte-exact for non-ASCII. `btoa` is the wrong
+   * tool there: it encodes U+0080..U+00FF as *Latin1*, so accented text comes
+   * out as mojibake rather than as an error. For binary, take base64 straight
+   * from the source — `ctx.storage.get(key, { encoding: "base64" })` or
+   * `ctx.fetch(url, { encoding: "base64" })` — or {@link bytesToBase64} for a
+   * `Uint8Array` you built yourself.
+   */
+  encoding?: "base64" | "utf8";
   /** MIME type; defaults to `application/octet-stream`. */
   contentType?: string;
   /** Render inline (e.g. an image referenced as `cid:<contentId>`) instead of as a download. */
@@ -340,8 +375,12 @@ export interface OxyFunctionContext {
     sql: string,
     opts?: { batchSize?: number }
   ): AsyncGenerator<OxyFunctionRow[], void, unknown>;
-  /** SSRF-allowlisted outbound HTTP with a response-size cap. */
-  fetch(url: string, init?: RequestInit): Promise<OxyFetchResult>;
+  /**
+   * SSRF-allowlisted outbound HTTP with a response-size cap. Pass
+   * `{ encoding: "base64" }` for a binary response — the default UTF-8 decode
+   * corrupts it.
+   */
+  fetch(url: string, init?: OxyFetchInit): Promise<OxyFetchResult>;
   warehouse: OxyWarehouseApi;
   secrets: OxySecretsApi;
   semantic: OxySemanticApi;

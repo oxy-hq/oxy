@@ -23,6 +23,7 @@
 // See `crates/app/src/server/api/custom_apps.rs` for the server-side
 // query contract.
 
+export { base64ToBytes, bytesToBase64 } from "./base64";
 export type { CustomAppDebugSnapshot } from "./debug";
 export { getCustomAppDebug } from "./debug";
 export type { CustomAppErrorReport } from "./errors";

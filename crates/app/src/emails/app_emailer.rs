@@ -79,14 +79,22 @@ pub struct EmailSendInput {
     from: Option<String>,
 }
 
-/// One author-supplied attachment. `content` is base64 (the only way binary can
-/// cross the isolate's JSON op boundary); it is decoded and size-checked here.
+/// One author-supplied attachment. `content` defaults to base64 (the only way
+/// binary can cross the isolate's JSON op boundary); it is decoded and
+/// size-checked here.
 #[derive(Debug, Deserialize)]
 pub struct EmailAttachmentInput {
     #[serde(default)]
     filename: Option<String>,
     #[serde(default)]
     content: Option<String>,
+    /// How `content` is encoded: `"base64"` (default) or `"utf8"`. Mirrors
+    /// `ctx.storage.put`. `"utf8"` exists because the overwhelmingly common
+    /// attachment is text a function just generated (CSV/JSON/HTML) — and
+    /// `btoa` cannot encode a non-ASCII string, so forcing base64 either
+    /// corrupts it or makes the author hand-roll UTF-8 encoding.
+    #[serde(default)]
+    encoding: Option<String>,
     #[serde(rename = "contentType", default)]
     content_type: Option<String>,
     /// Render inline (e.g. an image referenced by `cid:`) rather than as a
@@ -267,7 +275,28 @@ impl AppEmailer {
     /// Cloud path: send via SES v2, returning the SES message id.
     async fn send_ses(&self, msg: &ValidatedEmail) -> Result<serde_json::Value, String> {
         let client = ses_client(self.aws_region.as_deref()).await;
+        let out = self
+            .build_send_email(client, msg)?
+            .send()
+            .await
+            .map_err(|e| classify_ses_error(error_detail(&e)))?;
+        let message_id = out.message_id().unwrap_or_default().to_string();
+        Ok(serde_json::json!({ "messageId": message_id }))
+    }
 
+    /// Compose the SES `SendEmail` request.
+    ///
+    /// Split out from [`Self::send_ses`] so a test can drive it with a capturing
+    /// HTTP client and assert what actually goes **on the wire**. That is the
+    /// one thing exercising the typed builders cannot prove: that the
+    /// attachments set on `Message` survive into the serialized `EmailContent`
+    /// rather than being dropped somewhere between here and the request body.
+    fn build_send_email(
+        &self,
+        client: &aws_sdk_sesv2::Client,
+        msg: &ValidatedEmail,
+    ) -> Result<aws_sdk_sesv2::operation::send_email::builders::SendEmailFluentBuilder, String>
+    {
         let mut dest = Destination::builder().set_to_addresses(Some(msg.to.clone()));
         if !msg.cc.is_empty() {
             dest = dest.set_cc_addresses(Some(msg.cc.clone()));
@@ -294,13 +323,7 @@ impl AppEmailer {
         if let Some(reply_to) = &msg.reply_to {
             req = req.reply_to_addresses(reply_to.clone());
         }
-
-        let out = req
-            .send()
-            .await
-            .map_err(|e| classify_ses_error(error_detail(&e)))?;
-        let message_id = out.message_id().unwrap_or_default().to_string();
-        Ok(serde_json::json!({ "messageId": message_id }))
+        Ok(req)
     }
 }
 
@@ -352,15 +375,37 @@ fn validate_attachments(
                 format!("InvalidEmailPayload: attachment[{idx}] requires a `filename`")
             })?;
         let content = a.content.ok_or_else(|| {
-            format!(
-                "InvalidEmailPayload: attachment[{idx}] ('{filename}') requires base64 `content`"
-            )
+            // Deliberately does NOT say "base64": with `encoding: "utf8"` the
+            // author needs no encoder, and naming base64 here would send them
+            // hunting for one.
+            format!("InvalidEmailPayload: attachment[{idx}] ('{filename}') requires `content`")
         })?;
-        // Ignore whitespace/newlines a caller may have wrapped the base64 in.
-        let compact: String = content.chars().filter(|c| !c.is_whitespace()).collect();
-        let bytes = base64_decode(&compact).map_err(|e| {
-            format!("InvalidEmailPayload: attachment[{idx}] ('{filename}') `content` is not valid base64: {e}")
-        })?;
+        // An absent, empty, or whitespace-only `encoding` means "unspecified" →
+        // the default. `?? ""` in JS is an easy way to produce the empty case,
+        // and it should not be a distinct error from omitting the field.
+        let encoding = a
+            .encoding
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("base64");
+        let bytes = match encoding {
+            "base64" => {
+                // Ignore whitespace/newlines a caller may have wrapped the base64 in.
+                let compact: String = content.chars().filter(|c| !c.is_whitespace()).collect();
+                base64_decode(&compact).map_err(|e| {
+                    format!("InvalidEmailPayload: attachment[{idx}] ('{filename}') `content` is not valid base64: {e}")
+                })?
+            }
+            // Text the function generated — attach the bytes verbatim.
+            "utf8" => content.into_bytes(),
+            other => {
+                return Err(format!(
+                    "InvalidEmailPayload: attachment[{idx}] ('{filename}') unknown `encoding` \
+                     '{other}' (expected 'base64' or 'utf8')"
+                ));
+            }
+        };
         total = total.saturating_add(bytes.len());
         if total > MAX_ATTACHMENT_TOTAL_BYTES {
             return Err(format!(
@@ -894,6 +939,112 @@ mod tests {
         assert!(msg.attachments[0].inline);
         assert_eq!(msg.attachments[0].content_id.as_deref(), Some("logo"));
         assert!(build_attachments(&msg.attachments).is_ok());
+    }
+
+    /// The end of the pipeline: what SES actually receives. Everything else
+    /// asserts our own types; this asserts the AWS SDK's serialized request, so
+    /// an attachment silently dropped between `Message` and the wire would fail
+    /// here. Uses a capturing HTTP client — no network, no emulator, and no
+    /// dependency on a third party's fidelity to the SES v2 attachment shape.
+    #[tokio::test]
+    async fn ses_request_carries_the_attachment_on_the_wire() {
+        use base64::Engine as _;
+
+        let (http_client, captured) = aws_smithy_http_client::test_util::capture_request(None);
+        let conf = aws_sdk_sesv2::Config::builder()
+            .region(aws_sdk_sesv2::config::Region::new("us-east-1"))
+            .credentials_provider(aws_credential_types::Credentials::for_tests())
+            .http_client(http_client)
+            .behavior_version(aws_sdk_sesv2::config::BehaviorVersion::latest())
+            .build();
+        let client = aws_sdk_sesv2::Client::from_conf(conf);
+
+        let csv = "name,total\nCafé,3\n";
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                {
+                    "filename": "report.csv",
+                    "content": csv,
+                    "encoding": "utf8",
+                    "contentType": "text/csv"
+                }
+            ]))))
+            .expect("valid");
+
+        // The canned response isn't a real SES reply, so the call errors after
+        // the request is built — which is all this test cares about.
+        let _ = emailer()
+            .build_send_email(&client, &msg)
+            .expect("request must build")
+            .send()
+            .await;
+
+        let req = captured.expect_request();
+        let body: serde_json::Value =
+            serde_json::from_slice(req.body().bytes().expect("in-memory body")).unwrap();
+        let att = &body["Content"]["Simple"]["Attachments"][0];
+
+        assert_eq!(att["FileName"], "report.csv");
+        assert_eq!(att["ContentType"], "text/csv");
+        assert_eq!(att["ContentDisposition"], "ATTACHMENT");
+        // RawContent is a Blob — base64 on the JSON wire. Byte-exact, accents
+        // and all, which is the whole point of the utf8 encoding option.
+        assert_eq!(
+            att["RawContent"],
+            base64::engine::general_purpose::STANDARD.encode(csv.as_bytes())
+        );
+        assert_eq!(body["Destination"]["ToAddresses"][0], "a@b.com");
+    }
+
+    #[test]
+    fn attaches_utf8_text_without_base64() {
+        // The isolate has no base64 encoder, so a function that generates a
+        // report must be able to attach the text it already holds.
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                {
+                    "filename": "report.csv",
+                    "content": "name,total\nCafé,3\n",
+                    "encoding": "utf8",
+                    "contentType": "text/csv"
+                }
+            ]))))
+            .expect("valid");
+        assert_eq!(msg.attachments[0].bytes, "name,total\nCafé,3\n".as_bytes());
+        // Non-ASCII survives byte-exact — the case `btoa` cannot express at all.
+        assert!(build_attachments(&msg.attachments).is_ok());
+    }
+
+    #[test]
+    fn utf8_encoding_preserves_whitespace_verbatim() {
+        // base64 strips whitespace before decoding; utf8 must NOT, or every
+        // newline in an attached CSV would vanish.
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "a.txt", "content": "a\n b\t", "encoding": "utf8" }
+            ]))))
+            .expect("valid");
+        assert_eq!(msg.attachments[0].bytes, b"a\n b\t");
+    }
+
+    #[test]
+    fn rejects_unknown_attachment_encoding() {
+        let err = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "a.txt", "content": "aGVsbG8=", "encoding": "hex" }
+            ]))))
+            .unwrap_err();
+        assert!(err.contains("unknown `encoding`"), "{err}");
+    }
+
+    #[test]
+    fn attachment_encoding_defaults_to_base64() {
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "a.txt", "content": "aGVsbG8=" }
+            ]))))
+            .expect("valid");
+        assert_eq!(msg.attachments[0].bytes, b"hello", "default is base64");
     }
 
     #[test]

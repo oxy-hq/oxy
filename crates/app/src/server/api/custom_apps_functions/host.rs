@@ -225,8 +225,22 @@ impl FunctionHost for ProjectFunctionHost {
                 bytes.len()
             ));
         }
-        let body = String::from_utf8_lossy(&bytes).into_owned();
-        Ok(serde_json::json!({ "status": status, "body": body }))
+        // UTF-8 stays the default for back-compat, but it is lossy: every
+        // non-UTF-8 byte becomes U+FFFD, so fetching a PDF/PNG to attach to an
+        // email silently yields a corrupt file. `encoding: "base64"` is the
+        // only way binary survives the crossing — same contract as
+        // `ctx.storage.get`.
+        let encoding = encoding_or(init.get("encoding").and_then(|e| e.as_str()), "utf8");
+        let body = match encoding {
+            "utf8" => String::from_utf8_lossy(&bytes).into_owned(),
+            "base64" => encode_base64(&bytes),
+            other => {
+                return Err(format!(
+                    "ctx.fetch: unknown encoding '{other}' (expected 'utf8' or 'base64')"
+                ));
+            }
+        };
+        Ok(serde_json::json!({ "status": status, "body": body, "encoding": encoding }))
     }
 
     async fn semantic_query(&self, spec: serde_json::Value) -> Result<serde_json::Value, String> {
@@ -468,7 +482,7 @@ impl FunctionHost for ProjectFunctionHost {
                 // base64 is how a BINARY generated asset (PDF, PNG, Parquet)
                 // crosses the isolate's JSON boundary; utf8 is the default for
                 // text a function built itself.
-                let bytes = match str_field("encoding").unwrap_or("utf8") {
+                let bytes = match encoding_or(str_field("encoding"), "utf8") {
                     "base64" => decode_base64(body)
                         .map_err(|e| format!("ctx.storage.put: `body` is not valid base64: {e}"))?,
                     "utf8" => body.as_bytes().to_vec(),
@@ -496,7 +510,7 @@ impl FunctionHost for ProjectFunctionHost {
             }
             "get" => {
                 let key = str_field("key").ok_or_else(|| required("key"))?;
-                let encoding = str_field("encoding").unwrap_or("utf8").to_string();
+                let encoding = encoding_or(str_field("encoding"), "utf8").to_string();
                 if !matches!(encoding.as_str(), "utf8" | "base64") {
                     return Err(format!(
                         "ctx.storage.get: unknown encoding '{encoding}' (expected 'utf8' or \
@@ -567,6 +581,18 @@ impl FunctionHost for ProjectFunctionHost {
             other => Err(format!("ctx.storage: unknown op '{other}'")),
         }
     }
+}
+
+/// Normalize an author-supplied `encoding` field. Absent, empty, and
+/// whitespace-only all mean "unspecified" → `default`, so `ctx.fetch`,
+/// `ctx.storage`, and `ctx.email.send` attachments all read it the same way:
+/// a stray space shouldn't behave differently per API, and `?? ""` in JS
+/// shouldn't be a distinct error from omitting the field.
+fn encoding_or<'a>(value: Option<&'a str>, default: &'a str) -> &'a str {
+    value
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default)
 }
 
 /// Decode a base64 `ctx.storage` payload, tolerating whitespace/newlines a caller
