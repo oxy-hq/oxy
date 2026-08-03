@@ -290,6 +290,73 @@ mod tests {
         );
     }
 
+    /// How many days of settle time the newest day in the window actually got.
+    fn settle_days(w: &Window, now: chrono::DateTime<chrono::Utc>) -> i64 {
+        let r = resolve_window(w, now);
+        let end = NaiveDate::parse_from_str(&r.dates[1], "%Y-%m-%d").unwrap();
+        (now.with_timezone(&w.effective_timezone()).date_naive() - end).num_days()
+    }
+
+    /// Settle time for each of the given days of `month`, sampled at 17:00Z
+    /// (= 10:00 in Los Angeles, so the local date matches the UTC one).
+    fn settle_over(w: &Window, month: u32, days: std::ops::RangeInclusive<u32>) -> Vec<i64> {
+        days.map(|d| {
+            settle_days(
+                w,
+                chrono::Utc
+                    .with_ymd_and_hms(2026, month, d, 17, 0, 0)
+                    .unwrap(),
+            )
+        })
+        .collect()
+    }
+
+    #[test]
+    fn sub_grain_freshness_gives_a_settle_floor_that_swings_by_weekday() {
+        // The trap behind `freshness` on a CALENDAR-SNAPPED grain: the watermark
+        // only moves the window when it crosses a period boundary, so a value
+        // smaller than one grain buys a settle time that swings with the weekday
+        // rather than the flat margin the duration reads like.
+        //
+        // `3d` on a weekly `offset: 1` check holds the older week Sun–Tue, then
+        // steps forward to a week that closed only 4 days ago — the newest day in
+        // the window gets 10 days to settle on Tuesday and 4 on Wednesday. A
+        // source that needs longer than 4 days to finalise reconciles clean for
+        // three days and then reports drift that isn't there.
+        let mut w = win(1, Grain::Week, 1);
+        w.timezone = Some("America/Los_Angeles".to_string());
+        w.freshness = Some(humantime::parse_duration("3d").unwrap());
+        // Sun 2026-07-26 .. Sat 2026-08-01.
+        let mut settle = settle_over(&w, 7, 26..=31);
+        settle.extend(settle_over(&w, 8, 1..=1));
+        assert_eq!(settle, vec![8, 9, 10, 4, 5, 6, 7], "Wednesday is the cliff");
+
+        // Raising it to one whole grain removes the swing: the window rolls over
+        // ON the week boundary, so the floor is a full extra week.
+        w.freshness = Some(humantime::parse_duration("7d").unwrap());
+        let mut settle = settle_over(&w, 7, 26..=31);
+        settle.extend(settle_over(&w, 8, 1..=1));
+        assert_eq!(settle, vec![8, 9, 10, 11, 12, 13, 14], "no mid-week jump");
+    }
+
+    #[test]
+    fn month_grain_has_the_same_sub_grain_cliff() {
+        // Same trap one grain up, and the reason `7d` is a sound file-level
+        // default for a config whose checks are all week/month: it clears a
+        // week's worth of month-start days too.
+        let mut w = win(1, Grain::Month, 1);
+        w.timezone = Some("America/Los_Angeles".to_string());
+
+        // `3d`: the first three days of the month compare May, then July 4th
+        // steps forward to a June that closed 4 days ago.
+        w.freshness = Some(humantime::parse_duration("3d").unwrap());
+        assert_eq!(settle_over(&w, 7, 1..=6), vec![31, 32, 33, 4, 5, 6]);
+
+        // `7d` pushes the rollover to the 8th, so the floor is 8 days.
+        w.freshness = Some(humantime::parse_duration("7d").unwrap());
+        assert_eq!(settle_over(&w, 7, 5..=9), vec![35, 36, 37, 8, 9]);
+    }
+
     #[test]
     fn yesterday_single_day() {
         // last:1 day, offset:1, ref = 2026-06-24 → just 2026-06-23.

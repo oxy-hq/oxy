@@ -639,6 +639,10 @@ mod tests {
             description: None,
             actual_label: "Actual".to_string(),
             expected_label: "Expected".to_string(),
+            window: super::super::reconcile::ResolvedWindow {
+                dates: ["2026-07-12".to_string(), "2026-07-18".to_string()],
+                timezone: "UTC".to_string(),
+            },
         };
         apply_reconciliation(&mut s, vec![unreachable_verdict(&meta, "toast")]);
         assert_eq!(s.reconciliation.len(), 1);

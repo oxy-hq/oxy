@@ -187,33 +187,56 @@ export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: str
  * One reconciliation check: the actual operand against the expected reference,
  * the absolute and percent drift, an optional description + reason, and its
  * drift status pill. The value chips use the backend-resolved operand labels.
+ *
+ * The compared window is shown alongside the numbers because drift is only
+ * interpretable against the period it was measured over — a check whose
+ * `freshness` watermark is too small silently compares days the warehouse has
+ * not finished loading, which reads as real drift.
  */
-const ReconciliationRow = ({ check }: { check: WorkspaceHealthReconciliationCheck }) => (
-  <li className='flex items-center justify-between gap-3 rounded-md border border-border/50 px-3 py-2'>
-    <div className='min-w-0 space-y-1'>
-      <span className='font-medium text-sm'>{check.check}</span>
-      {check.description ? (
-        <span className='block truncate text-muted-foreground text-xs'>{check.description}</span>
-      ) : null}
-      <div className='flex flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground text-xs tabular-nums'>
-        <span>
-          {check.actual_label} {formatNumber(check.actual)}
-        </span>
-        <span>
-          {check.expected_label} {formatNumber(check.expected)}
-        </span>
-        <span>
-          Δ {formatNumber(check.abs_diff)}
-          {check.pct_diff !== null ? ` (${check.pct_diff.toFixed(1)}%)` : null}
-        </span>
+const ReconciliationRow = ({ check }: { check: WorkspaceHealthReconciliationCheck }) => {
+  const windowLabel = formatWindow(check);
+
+  return (
+    <li className='flex items-center justify-between gap-3 rounded-md border border-border/50 px-3 py-2'>
+      <div className='min-w-0 space-y-1'>
+        <span className='font-medium text-sm'>{check.check}</span>
+        {check.description ? (
+          <span className='block truncate text-muted-foreground text-xs'>{check.description}</span>
+        ) : null}
+        <div className='flex flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground text-xs tabular-nums'>
+          <span>
+            {check.actual_label} {formatNumber(check.actual)}
+          </span>
+          <span>
+            {check.expected_label} {formatNumber(check.expected)}
+          </span>
+          <span>
+            Δ {formatNumber(check.abs_diff)}
+            {check.pct_diff !== null ? ` (${check.pct_diff.toFixed(1)}%)` : null}
+          </span>
+          {windowLabel ? <span>{windowLabel}</span> : null}
+        </div>
+        {check.reason ? (
+          <span className='block truncate text-muted-foreground text-xs'>{check.reason}</span>
+        ) : null}
       </div>
-      {check.reason ? (
-        <span className='block truncate text-muted-foreground text-xs'>{check.reason}</span>
-      ) : null}
-    </div>
-    <AdminStatusPill tone={workspaceHealthTone(check.status)} label={check.status} />
-  </li>
-);
+      <AdminStatusPill tone={workspaceHealthTone(check.status)} label={check.status} />
+    </li>
+  );
+};
+
+/**
+ * The compared window as `start → end`, with the resolving calendar appended
+ * when it isn't UTC. Empty for rows stored before the window was recorded, so
+ * they render without a stray separator.
+ */
+const formatWindow = (check: WorkspaceHealthReconciliationCheck): string => {
+  if (!check.window_start || !check.window_end) return "";
+  const range = `${check.window_start} → ${check.window_end}`;
+  return check.window_timezone && check.window_timezone !== "UTC"
+    ? `${range} (${check.window_timezone})`
+    : range;
+};
 
 /** `null` (source unreachable/errored) and non-finite values render as an em dash. */
 const formatNumber = (value: number | null): string => {

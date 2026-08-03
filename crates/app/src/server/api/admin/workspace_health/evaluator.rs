@@ -494,6 +494,9 @@ mod tests {
                 pct_diff: 0.0,
                 status: HealthStatus::Healthy,
                 reason: None,
+                window_start: "2026-07-12".into(),
+                window_end: "2026-07-18".into(),
+                window_timezone: "UTC".into(),
             },
             DriftVerdict {
                 check: "b".into(),
@@ -506,6 +509,9 @@ mod tests {
                 pct_diff: 10.0,
                 status: HealthStatus::Unhealthy,
                 reason: Some("b drifts 10.0% from source".into()),
+                window_start: "2026-07-12".into(),
+                window_end: "2026-07-18".into(),
+                window_timezone: "UTC".into(),
             },
         ];
         let h = evaluate(&s, &HealthThresholds::default());

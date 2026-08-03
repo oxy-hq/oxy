@@ -37,6 +37,15 @@ export interface WorkspaceHealthReconciliationCheck {
   pct_diff: number | null;
   status: WorkspaceHealthStatus;
   reason: string | null;
+  /**
+   * Inclusive `YYYY-MM-DD` window both operands were compared over, already
+   * resolved through the check's `freshness` / `timezone` / `offset`. Null on
+   * rows stored before the window was recorded.
+   */
+  window_start: string | null;
+  window_end: string | null;
+  /** IANA calendar the window was resolved on ("UTC" when the check set none). */
+  window_timezone: string | null;
 }
 
 /** Which probe produced a smoke check. */

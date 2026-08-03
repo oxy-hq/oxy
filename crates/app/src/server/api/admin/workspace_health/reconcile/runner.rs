@@ -294,6 +294,7 @@ impl LiveReconcileRunner {
             description: check.description.clone(),
             actual_label: check.actual.label_or("Actual"),
             expected_label: check.expected.label_or("Expected"),
+            window: window.clone(),
         };
         let actual = match self
             .eval_operand(
@@ -487,6 +488,28 @@ impl ReconcileRunner for LiveReconcileRunner {
             .iter()
             .map(|c| resolve_window(&c.window, self.now))
             .collect();
+        for (check, w) in cfg.checks.iter().zip(&windows) {
+            // The window is the single most load-bearing input to a drift
+            // number, and `freshness` is invisible in the config as deployed
+            // (it can be inherited from the file level). Log the resolved one
+            // next to the freshness that produced it so an operator can tell a
+            // real drift from a period the warehouse hasn't finished loading.
+            //
+            // Read through the same `effective_freshness()` accessor
+            // `resolve_window` uses, so the logged watermark cannot drift from
+            // the one that actually produced the window above.
+            tracing::info!(
+                target: "health_eval",
+                %workspace_id,
+                check = %check.name,
+                window = format!("{}..{}", w.dates[0], w.dates[1]),
+                timezone = %w.timezone,
+                freshness = %humantime::format_duration(
+                    check.window.effective_freshness().to_std().unwrap_or_default()
+                ),
+                "reconcile check window resolved"
+            );
+        }
         let externals = self
             .fetch_all_externals(workspace_id, &cfg.checks, &windows, &toast_integrations)
             .await;
@@ -513,6 +536,7 @@ impl ReconcileRunner for LiveReconcileRunner {
 mod tests {
     use super::*;
     use crate::server::api::admin::workspace_health::evaluator::HealthStatus;
+    use chrono::TimeZone;
 
     struct FakeReconcileRunner {
         verdicts: Vec<DriftVerdict>,
@@ -531,6 +555,10 @@ mod tests {
             description: None,
             actual_label: "Actual".to_string(),
             expected_label: "Expected".to_string(),
+            window: ResolvedWindow {
+                dates: ["2026-07-12".to_string(), "2026-07-18".to_string()],
+                timezone: "UTC".to_string(),
+            },
         }
     }
 
@@ -674,6 +702,98 @@ mod tests {
                 .await;
             assert_eq!(v.status, HealthStatus::Healthy, "{grain:?} should compare");
         }
+    }
+
+    /// The exact shape the Toast reconcile ships: file-level `freshness`, weekly
+    /// checks with `offset: 1`, one Oxy semantic operand vs one Toast external
+    /// operand.
+    fn weekly_toast_yaml(freshness: &str) -> serde_json::Value {
+        let yaml = format!(
+            r#"
+freshness: {freshness}
+checks:
+  - name: net_sales_vs_toast_weekly
+    window: {{ last: 1, grain: week, offset: 1 }}
+    tolerance: {{ abs: 1.0, pct: 0.5 }}
+    actual:
+      label: Oxy net sales (wk)
+      semantic:
+        measures: [sales.net_sales]
+        time_dimension: sales.business_date
+    expected:
+      label: Toast net sales (wk)
+      external:
+        source: toast
+        metric: net_sales
+"#
+        );
+        serde_yaml::from_str(&yaml).unwrap()
+    }
+
+    #[test]
+    fn file_level_freshness_reaches_the_toast_request_window() {
+        // The chain this pins: reconcile.yml `freshness` → apply_defaults →
+        // Window.freshness → resolve_window → the [start, end] handed to the
+        // Toast report. Each link had its own test; nothing covered them joined,
+        // which is exactly where a freshness watermark can be silently dropped.
+        //
+        // Reference Wed 2026-07-29. Sunday-start current week began 2026-07-26,
+        // so with NO freshness "last full week" is 2026-07-19..2026-07-25 — the
+        // window whose final days a lagging warehouse has not loaded yet.
+        let now = chrono::Utc.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+        let cfg = parse_reconcile_config(&weekly_toast_yaml("0s")).unwrap();
+        let windows: Vec<ResolvedWindow> = cfg
+            .checks
+            .iter()
+            .map(|c| resolve_window(&c.window, now))
+            .collect();
+        assert_eq!(windows[0].dates, ["2026-07-19", "2026-07-25"]);
+
+        // With `freshness: 6d` the reference lands on Thu 2026-07-23, whose week
+        // began 2026-07-19 — so "last full week" steps back one whole week to a
+        // period a 6-day-behind warehouse has fully loaded.
+        let cfg = parse_reconcile_config(&weekly_toast_yaml("6d")).unwrap();
+        // The check itself set no `freshness`; it must have inherited the
+        // file-level one, or the window below silently would not move.
+        assert_eq!(
+            cfg.checks[0].window.effective_freshness(),
+            chrono::Duration::days(6)
+        );
+        let windows: Vec<ResolvedWindow> = cfg
+            .checks
+            .iter()
+            .map(|c| resolve_window(&c.window, now))
+            .collect();
+        assert_eq!(windows[0].dates, ["2026-07-12", "2026-07-18"]);
+
+        // And that shifted window is what the Toast operand actually fetches —
+        // both operands share it, so the two sides stay comparable.
+        let slots = LiveReconcileRunner::collect_external_slots(&cfg.checks, &windows);
+        assert_eq!(slots.len(), 1, "the toast operand must be collected");
+        assert_eq!(slots[0].side, Side::Expected);
+        assert_eq!(slots[0].window, ["2026-07-12", "2026-07-18"]);
+    }
+
+    #[test]
+    fn freshness_shift_survives_to_the_rendered_verdict() {
+        // A verdict that doesn't state its window makes `freshness` unfalsifiable
+        // from the health payload — the admin Reconciliation tab shows the drift
+        // but not the period it was measured over.
+        let now = chrono::Utc.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+        let cfg = parse_reconcile_config(&weekly_toast_yaml("6d")).unwrap();
+        let window = resolve_window(&cfg.checks[0].window, now);
+        let meta = VerdictMeta {
+            check: cfg.checks[0].name.clone(),
+            description: None,
+            actual_label: "Oxy net sales (wk)".to_string(),
+            expected_label: "Toast net sales (wk)".to_string(),
+            window: window.clone(),
+        };
+        let v = compare(&meta, 106_681.63, 149_056.91, &cfg.checks[0].tolerance, 5.0);
+        assert_eq!(v.status, HealthStatus::Unhealthy);
+        assert_eq!(v.window_start, "2026-07-12");
+        assert_eq!(v.window_end, "2026-07-18");
+        assert_eq!(v.window_timezone, "UTC");
     }
 
     #[tokio::test]

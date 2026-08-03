@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::ResolvedWindow;
 use crate::server::api::admin::workspace_health::evaluator::HealthStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,6 +34,12 @@ pub struct VerdictMeta {
     pub description: Option<String>,
     pub actual_label: String,
     pub expected_label: String,
+    /// The window BOTH operands were queried over, already resolved through
+    /// `freshness` / `timezone` / `offset`. Carried onto every verdict —
+    /// including the degraded ones — because "which period did this compare?"
+    /// is the first question a drift number raises, and without it a `freshness`
+    /// watermark is invisible from the health payload.
+    pub window: ResolvedWindow,
 }
 
 /// One reconciliation outcome, persisted and surfaced in the health payload.
@@ -54,6 +61,12 @@ pub struct DriftVerdict {
     pub pct_diff: f64,
     pub status: HealthStatus,
     pub reason: Option<String>,
+    /// Inclusive first date of the compared window (`%Y-%m-%d`).
+    pub window_start: String,
+    /// Inclusive last date of the compared window (`%Y-%m-%d`).
+    pub window_end: String,
+    /// IANA calendar the two dates were resolved on (`"UTC"` when unset).
+    pub window_timezone: String,
 }
 
 /// Compare the `actual` number against the `expected` (reference) number.
@@ -139,6 +152,9 @@ fn verdict(
         pct_diff,
         status,
         reason,
+        window_start: meta.window.dates[0].clone(),
+        window_end: meta.window.dates[1].clone(),
+        window_timezone: meta.window.timezone.clone(),
     }
 }
 
@@ -180,12 +196,20 @@ mod tests {
         }
     }
 
+    fn window() -> ResolvedWindow {
+        ResolvedWindow {
+            dates: ["2026-07-12".to_string(), "2026-07-18".to_string()],
+            timezone: "UTC".to_string(),
+        }
+    }
+
     fn meta(check: &str) -> VerdictMeta {
         VerdictMeta {
             check: check.to_string(),
             description: None,
             actual_label: "Actual".to_string(),
             expected_label: "Expected".to_string(),
+            window: window(),
         }
     }
 
@@ -234,12 +258,41 @@ mod tests {
     }
 
     #[test]
+    fn every_verdict_echoes_the_compared_window() {
+        // The window is what makes a `freshness` watermark visible: without it
+        // a drift number can't be told apart from one measured over a period
+        // the warehouse hasn't finished loading. It must survive the healthy,
+        // breached, AND degraded paths.
+        let healthy = compare(
+            &meta("m"),
+            100.0,
+            100.0,
+            &tol(1.0, 0.5, Combinator::And),
+            5.0,
+        );
+        let breached = compare(
+            &meta("m"),
+            200.0,
+            100.0,
+            &tol(1.0, 0.5, Combinator::And),
+            5.0,
+        );
+        let degraded = unreachable_verdict(&meta("m"), "toast");
+        for v in [healthy, breached, degraded] {
+            assert_eq!(v.window_start, "2026-07-12");
+            assert_eq!(v.window_end, "2026-07-18");
+            assert_eq!(v.window_timezone, "UTC");
+        }
+    }
+
+    #[test]
     fn reason_uses_resolved_labels_and_description() {
         let m = VerdictMeta {
             check: "net_sales_vs_toast".to_string(),
             description: Some("Daily net sales".to_string()),
             actual_label: "Oxy net sales".to_string(),
             expected_label: "Toast net sales".to_string(),
+            window: window(),
         };
         let v = compare(&m, 1030.0, 1000.0, &tol(1.0, 0.5, Combinator::And), 5.0);
         let reason = v.reason.unwrap();
