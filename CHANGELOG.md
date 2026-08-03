@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.119] - 2026-08-03
+
+### 🚀 Features
+
+- *(cameras)* Expose clip-playback URL on the external API surface (#2830)
+- *(edge)* Annotate congestion clips with zone, tracked boxes, live count (#2841)
+- *(workspace-health)* Make health checks opt-in per workspace (#2838)
+- *(custom-apps)* Team-based app visibility with org, admin and partner controls (#2836)
+
+### 🐛 Bug Fixes
+
+- *(custom-apps)* Make email attachments actually sendable from a function (#2842)
+- *(reconcile)* Surface the compared window, document the sub-grain freshness cliff (#2821)
+- *(anomalies)* Separate causal, offsetting, and mechanical drivers in explain (#2834)
+
+### 📚 Documentation
+
+- Biweekly internal-docs distillation (#2840)
+- Add customer-apps publishing quickstart guide (#2843)
+- Update product-context.md from recent changelogs (#2846)
+- Refresh ownership matrix + CODEOWNERS (weekly) (#2845)
+
+### ⚙️ Miscellaneous Tasks
+
+- Weekly health review — 2026-08-03 (#2844)
+
 ## [0.5.118] - 2026-07-30
 
 ### 💼 Other
@@ -19,6 +45,10 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Establish team ownership matrix and CODEOWNERS (#2833)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.118 (#2829)
 
 ## [0.5.117] - 2026-07-29
 
