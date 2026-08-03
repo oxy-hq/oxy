@@ -17,7 +17,10 @@ use tokio::fs::create_dir;
 
 use super::MakeArgs;
 
-use ::oxy::config::constants::{ANTHROPIC_API_KEY_VAR, GEMINI_API_KEY_VAR, OPENAI_API_KEY_VAR};
+use ::oxy::config::constants::{
+    ANTHROPIC_API_KEY_VAR, DEFAULT_ANTHROPIC_MODEL, DEFAULT_GOOGLE_MODEL, DEFAULT_OPENAI_MODEL,
+    GEMINI_API_KEY_VAR, OPENAI_API_KEY_VAR,
+};
 
 struct ProjectSetup {
     file_path: String,
@@ -65,54 +68,41 @@ async fn setup_directories(setup: &ProjectSetup) -> anyhow::Result<(PathBuf, Pat
 
 fn determine_model() -> (String, Model) {
     if std::env::var(GEMINI_API_KEY_VAR).is_ok() {
-        let name = "gemini1.5pro".to_string();
+        let name = "google".to_string();
         (
             name.clone(),
             Model::Google {
                 config: GeminiModelConfig {
                     name,
-                    model_ref: "gemini-1.5-pro".to_string(),
+                    model_ref: DEFAULT_GOOGLE_MODEL.to_string(),
                     key_var: GEMINI_API_KEY_VAR.to_string(),
                 },
             },
         )
     } else if std::env::var(ANTHROPIC_API_KEY_VAR).is_ok() {
-        let name = "claude-3-7-sonnet".to_string();
+        let name = "anthropic".to_string();
         (
             name.clone(),
             Model::Anthropic {
                 config: AnthropicModelConfig {
                     name,
-                    model_ref: "claude-3-7-sonnet-20250219".to_string(),
+                    model_ref: DEFAULT_ANTHROPIC_MODEL.to_string(),
                     key_var: ANTHROPIC_API_KEY_VAR.to_string(),
                     api_url: None,
                     headers: None,
                 },
             },
         )
-    } else if std::env::var(OPENAI_API_KEY_VAR).is_ok() {
-        let name = "openai-4.1".to_string();
-        (
-            name.clone(),
-            Model::OpenAI {
-                config: OpenAIModelConfig {
-                    name,
-                    model_ref: "gpt-4.1".to_string(),
-                    key_var: OPENAI_API_KEY_VAR.to_string(),
-                    api_url: None,
-                    azure: None,
-                    headers: None,
-                },
-            },
-        )
     } else {
-        let name = "openai-4.1".to_string();
+        // OpenAI is the default when its key is set and the fallback when no
+        // provider key is present.
+        let name = "openai".to_string();
         (
             name.clone(),
             Model::OpenAI {
                 config: OpenAIModelConfig {
                     name,
-                    model_ref: "gpt-4.1".to_string(),
+                    model_ref: DEFAULT_OPENAI_MODEL.to_string(),
                     key_var: OPENAI_API_KEY_VAR.to_string(),
                     api_url: None,
                     azure: None,

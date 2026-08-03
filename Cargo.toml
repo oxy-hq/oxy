@@ -332,6 +332,11 @@ syntect = "5.3"
 tabled = "0.20.0"
 terminal-light = "1.9.0"
 terminal_size = "0.4.4"
+# Integration-test container harness — used as a dev-dependency by 6 crates.
+# Version centralized here; each crate opts into the features (postgres, mysql,
+# clickhouse, …) it actually spins up.
+testcontainers = { version = "0.27" }
+testcontainers-modules = { version = "0.15" }
 tokio-postgres = "0.7"
 # tokio-postgres TLS connector backed by rustls. Matches the workspace's
 # existing rustls-based Postgres TLS stack (sqlx uses runtime-tokio-rustls),

@@ -496,23 +496,8 @@ pub async fn get_world_model_filter_instances(
 ) -> Result<extract::Json<WmInstancesResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let err = |code: StatusCode, message: String| (code, extract::Json(ErrorResponse { message }));
 
-    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
-    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
-        err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load layer: {e}"),
-        )
-    })?;
-    let promotions = Promotions::build(&layer.views)
-        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let wm_cfg = crate::server::api::world_model_config::WorldModelConfig::resolve(
-        workspace_id,
-        workspace_manager.config_manager.workspace_path(),
-    )
-    .await
-    .ok()
-    .flatten();
-
+    let (layer, promotions) = load_layer_and_promotions(&workspace_manager, &layer_cache).await?;
+    let wm_cfg = resolve_world_model_config(workspace_id, &workspace_manager).await;
     let entity_metas = build_entity_metas(&layer, &promotions, wm_cfg.as_ref());
 
     let target_view = primary_view_of(&layer, &q.entity).ok_or_else(|| {
@@ -663,13 +648,7 @@ pub async fn post_world_model_filter_counts(
 
     // World-model config supplies per-entity display fields used to render sample
     // labels on descendant cards (mirrors the instance-detail handler).
-    let wm_cfg = crate::server::api::world_model_config::WorldModelConfig::resolve(
-        layer_cache.workspace_id,
-        workspace_manager.config_manager.workspace_path(),
-    )
-    .await
-    .ok()
-    .flatten();
+    let wm_cfg = resolve_world_model_config(layer_cache.workspace_id, &workspace_manager).await;
 
     // Collect per-entity metadata needed to build semantic queries (struct
     // hoisted to module scope so the expansion-plan helpers can share it).
@@ -1669,13 +1648,7 @@ pub async fn get_world_model_instance_detail(
     // Load .world-model.yml config once — used for display_field across primary, child,
     // and parent entities. Silently ignore load errors (display degrades to PK fallback).
     // Compile boundary first (serve replicas have no working copy), FS fallback.
-    let wm_cfg = crate::server::api::world_model_config::WorldModelConfig::resolve(
-        layer_cache.workspace_id,
-        workspace_manager.config_manager.workspace_path(),
-    )
-    .await
-    .ok()
-    .flatten();
+    let wm_cfg = resolve_world_model_config(layer_cache.workspace_id, &workspace_manager).await;
     // Per-entity allowlist + labels for the PRIMARY entity, used to filter and relabel
     // the attribute and measure sections (mirrors apply_world_model_config for the graph).
     // `None` means no allowlist → show everything observed in the view (current behavior).

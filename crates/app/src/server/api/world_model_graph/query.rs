@@ -48,6 +48,24 @@ pub(super) async fn load_layer_and_promotions(
     Ok((layer, promotions))
 }
 
+/// Resolve the `.world-model.yml` display config, tolerating a missing or
+/// unreadable config (`None`). Compile-boundary first (serve replicas have no
+/// working copy), FS fallback — see [`WorldModelConfig::resolve`]. The
+/// world-model handlers otherwise repeat this `resolve(..).ok().flatten()`
+/// incantation verbatim, so it lives here in one place.
+pub(super) async fn resolve_world_model_config(
+    workspace_id: Uuid,
+    workspace_manager: &WorkspaceManager,
+) -> Option<crate::server::api::world_model_config::WorldModelConfig> {
+    crate::server::api::world_model_config::WorldModelConfig::resolve(
+        workspace_id,
+        workspace_manager.config_manager.workspace_path(),
+    )
+    .await
+    .ok()
+    .flatten()
+}
+
 // ── World Model — SQL helpers ─────────────────────────────────────────────────
 
 /// Find the view where `entity_name` is declared as Primary.

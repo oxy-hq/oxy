@@ -3,7 +3,10 @@ use crate::models::{
     OllamaModelConfig, OpenAIModelConfig,
 };
 use axum::http::StatusCode;
-use oxy::config::constants::{ANTHROPIC_API_KEY_VAR, OPENAI_API_KEY_VAR};
+use oxy::config::constants::{
+    ANTHROPIC_API_KEY_VAR, DEFAULT_ANTHROPIC_MODEL, DEFAULT_GOOGLE_MODEL, DEFAULT_OPENAI_MODEL,
+    OPENAI_API_KEY_VAR,
+};
 use oxy::config::model::{
     AnthropicModelConfig as LlmAnthropicConfig, GeminiModelConfig as LlmGeminiConfig, Model,
     OllamaModelConfig as LlmOllamaConfig, OpenAIModelConfig as LlmOpenAIConfig,
@@ -59,7 +62,7 @@ impl ModelConfigBuilder {
             .unwrap_or_else(|| "openai-model".to_string());
         let model_ref = openai_config
             .model_ref
-            .unwrap_or_else(|| "gpt-4o".to_string());
+            .unwrap_or_else(|| DEFAULT_OPENAI_MODEL.to_string());
         let key_var = name.to_uppercase() + "_API_KEY";
 
         Self::create_secret(
@@ -104,11 +107,12 @@ impl ModelConfigBuilder {
         // A model added without an explicit `model_ref` must not silently fall
         // back to a retiring id. `claude-3-opus-20240229` (Claude 3) is on
         // Anthropic's deprecation path and may 404 once sunset; default to the
-        // current platform top-tier instead. Kept in sync with
+        // current platform top-tier instead. The canonical value lives in
+        // `oxy::config::constants::DEFAULT_ANTHROPIC_MODEL`, kept in sync with
         // `agentic_llm::constants::DEFAULT_MODEL`.
         let model_ref = anthropic_config
             .model_ref
-            .unwrap_or_else(|| "claude-opus-4-8".to_string());
+            .unwrap_or_else(|| DEFAULT_ANTHROPIC_MODEL.to_string());
         let key_var = name.to_uppercase() + "_API_KEY";
 
         Self::create_secret(
@@ -151,7 +155,7 @@ impl ModelConfigBuilder {
             .unwrap_or_else(|| "google-model".to_string());
         let model_ref = google_config
             .model_ref
-            .unwrap_or_else(|| "gemini-1.5-pro".to_string());
+            .unwrap_or_else(|| DEFAULT_GOOGLE_MODEL.to_string());
         let key_var = name.to_uppercase() + "_API_KEY";
 
         Self::create_secret(

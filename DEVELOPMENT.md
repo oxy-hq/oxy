@@ -4,9 +4,11 @@ This guide will help you set up your development environment for contributing to
 
 ## Prerequisites
 
-- Rust (latest stable version)
-- Node.js and pnpm
+- Rust **1.92.0 or newer** (the workspace MSRV; edition 2024)
+- Node.js and pnpm (pnpm only — never npm or yarn)
 - Git
+- [`just`](https://github.com/casey/just) — the command runner the whole dev
+  workflow is built around (`cargo install just`, or `brew install just` on macOS)
 
 ## Clone the repository
 
@@ -17,16 +19,20 @@ cd oxy
 
 ## Setup
 
-1. Install Rust dependencies:
+The paved path is `just`, which bootstraps the dev toolchain (including
+[`cargo-nextest`](https://nexte.st/), the test runner used everywhere) and
+installs frontend dependencies in one step:
 
 ```bash
-cargo build
+just install   # installs nextest + other dev tools and runs `pnpm install`
+just           # list every available recipe
 ```
 
-1. Install Node.js dependencies:
+If you'd rather install the pieces by hand:
 
 ```bash
-pnpm install
+cargo build      # build the Rust workspace (debug — never use --release locally)
+pnpm install     # install frontend dependencies
 ```
 
 ## Environment Variables
@@ -37,17 +43,23 @@ Set environment variables only when integrating external services or overriding 
 
 ## Running Tests
 
-To run the test suite:
+Tests run under [`cargo-nextest`](https://nexte.st/), **not** `cargo test`. The
+simplest entry point is:
 
 ```bash
-cargo test
+just test
 ```
 
-To show test output for debugging:
+To run nextest directly (e.g. to scope to a crate or a single test):
 
 ```bash
-cargo test -- --nocapture
+cargo nextest run                 # whole workspace
+cargo nextest run -p oxy-app      # a single crate
+cargo nextest run <test_name>     # a single test by name
 ```
+
+nextest shows failing-test output by default; add `--no-capture` to stream
+stdout from passing tests too.
 
 ## Seed Test Data
 

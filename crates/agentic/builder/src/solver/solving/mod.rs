@@ -220,39 +220,16 @@ pub(super) fn extract_all_write_ops(prior_messages: &[serde_json::Value]) -> Vec
     result
 }
 
-/// Maximum number of transient-error retries before surfacing the failure to
-/// the user.  Prevents infinite retry loops when the LLM keeps returning
-/// recoverable errors.
+// LLM retry policy (caps + backoff math) is shared with the analytics solver
+// and lives in `agentic_llm::retry` so a policy fix propagates to both domains.
+use agentic_llm::retry::{
+    MAX_RATE_LIMIT_RETRIES, MAX_TRANSIENT_RETRIES, rate_limit_backoff_secs, transient_backoff_secs,
+};
+
+/// Maximum number of retries for a generic (non-rate-limit, non-transient)
+/// solve error before surfacing the failure to the user.  Prevents infinite
+/// retry loops when the LLM keeps returning recoverable errors.
 const MAX_SOLVE_RETRIES: u32 = 3;
-
-/// Maximum number of retries for rate-limit (429) responses.
-const MAX_RATE_LIMIT_RETRIES: u32 = 5;
-
-/// Base delay in seconds for rate-limit exponential backoff: `BASE * 2^attempt`.
-const RATE_LIMIT_BACKOFF_BASE_SECS: u64 = 5;
-
-/// Maximum number of retries for transient LLM failures (connection errors,
-/// timeouts, HTTP 5xx) before surfacing the failure to the user.
-const MAX_TRANSIENT_RETRIES: u32 = 3;
-
-/// Base delay in seconds for transient-error exponential backoff.  Smaller than
-/// the rate-limit base because a transient network blip usually clears fast.
-const TRANSIENT_BACKOFF_BASE_SECS: f64 = 1.0;
-
-/// Exponential backoff with full jitter for a transient retry `attempt`.
-///
-/// Returns `BASE * 2^attempt` scaled by a random factor in `[0.5, 1.5)` so
-/// concurrent clients don't retry in lock-step.  The jitter is derived from the
-/// wall-clock nanosecond fraction to avoid pulling in a `rand` dependency.
-fn transient_backoff_secs(attempt: u32) -> f64 {
-    let base = TRANSIENT_BACKOFF_BASE_SECS * 2f64.powi(attempt.min(6) as i32);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
-    let jitter = 0.5 + (nanos % 1_000_000_000) as f64 / 1_000_000_000.0;
-    base * jitter
-}
 
 impl BuilderSolver {
     pub(crate) async fn solve_impl(
@@ -554,7 +531,7 @@ impl BuilderSolver {
                         },
                     ))
                 } else {
-                    let computed = RATE_LIMIT_BACKOFF_BASE_SECS * (1u64 << current_attempt).min(64);
+                    let computed = rate_limit_backoff_secs(current_attempt);
                     // Prefer the provider's `Retry-After` hint over blind
                     // exponential backoff, clamped so a hostile/absurd header
                     // can't stall the run.

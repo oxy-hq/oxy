@@ -43,8 +43,8 @@ uuid = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 sea-orm-migration = { workspace = true }
 tempfile = { workspace = true }
-testcontainers = { version = "0.27", features = ["blocking", "reusable-containers"] }
-testcontainers-modules = { version = "0.15", features = ["postgres"] }
+testcontainers = { workspace = true, features = ["blocking", "reusable-containers"] }
+testcontainers-modules = { workspace = true, features = ["postgres"] }
 airlayer = { workspace = true }
 # Engine types (StateStore trait, PipelineState/Schema) for the run-scoped store
 # e2e — `AirwayRunScopedStateStore` implements `airway::StateStore`.

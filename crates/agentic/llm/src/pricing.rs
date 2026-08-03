@@ -47,7 +47,23 @@ impl ModelPricing {
 /// hit the same rate as the canonical id. Returns `None` for any model
 /// not in the table — the caller surfaces this as "cost unavailable".
 pub fn rates_for(model: &str) -> Option<ModelPricing> {
-    // Anthropic — Claude 4 family.
+    // Anthropic — Claude 5 family. Priced at the same published tiers as the
+    // Claude 4 generation (opus/sonnet/haiku). Checked before the `-4`
+    // prefixes below so a `claude-*-5` id never accidentally matches a shorter
+    // family prefix. `claude-haiku-4-5` is intentionally a Claude 4.5 haiku id
+    // (matched by the `claude-haiku-4` arm), not a 5-family model.
+    if model.starts_with("claude-opus-5") {
+        return Some(ModelPricing::new(15.0, 75.0).with_cache(18.75, 1.50));
+    }
+    if model.starts_with("claude-sonnet-5") {
+        return Some(ModelPricing::new(3.0, 15.0).with_cache(3.75, 0.30));
+    }
+    if model.starts_with("claude-haiku-5") {
+        return Some(ModelPricing::new(0.80, 4.0).with_cache(1.0, 0.08));
+    }
+
+    // Anthropic — Claude 4 family (incl. 4.5 point releases like
+    // `claude-haiku-4-5`, which share the 4-family rate card).
     if model.starts_with("claude-opus-4") {
         return Some(ModelPricing::new(15.0, 75.0).with_cache(18.75, 1.50));
     }
@@ -58,12 +74,33 @@ pub fn rates_for(model: &str) -> Option<ModelPricing> {
         return Some(ModelPricing::new(0.80, 4.0).with_cache(1.0, 0.08));
     }
 
-    // OpenAI — current generation.
+    // OpenAI — GPT-5 generation. `-mini` / `-nano` variants are cheaper tiers
+    // and must be matched before the bare `gpt-5` prefix.
+    if model.starts_with("gpt-5-nano") {
+        return Some(ModelPricing::new(0.05, 0.40));
+    }
+    if model.starts_with("gpt-5-mini") {
+        return Some(ModelPricing::new(0.25, 2.0));
+    }
+    if model.starts_with("gpt-5") {
+        return Some(ModelPricing::new(1.25, 10.0));
+    }
+
+    // OpenAI — GPT-4o generation.
     if model.starts_with("gpt-4o-mini") {
         return Some(ModelPricing::new(0.15, 0.60));
     }
     if model.starts_with("gpt-4o") {
         return Some(ModelPricing::new(2.50, 10.0));
+    }
+
+    // OpenAI — reasoning (o-series). `o3-mini` before `o3`, `o1-mini` before
+    // `o1`, so a bare-family prefix never shadows the cheaper mini tier.
+    if model.starts_with("o3-mini") {
+        return Some(ModelPricing::new(1.10, 4.40));
+    }
+    if model.starts_with("o3") {
+        return Some(ModelPricing::new(2.0, 8.0));
     }
     if model.starts_with("o1-mini") {
         return Some(ModelPricing::new(1.10, 4.40));
@@ -120,6 +157,53 @@ mod tests {
     #[test]
     fn unknown_model_returns_none() {
         assert!(cost_for_call("gpt-99-future", 1, 1, 0, 0).is_none());
+    }
+
+    #[test]
+    fn claude_5_family_is_priced() {
+        // Claude 5 ids (already referenced in-repo, e.g. `claude-sonnet-5`)
+        // must resolve to a rate rather than showing blank cost.
+        assert!(rates_for("claude-opus-5").is_some());
+        assert!(rates_for("claude-sonnet-5").is_some());
+        assert!(rates_for("claude-sonnet-5-20260101").is_some());
+        // Sonnet 5 shares the Sonnet 4 rate card.
+        assert_eq!(
+            cost_for_call("claude-sonnet-5", 1_000_000, 1_000_000, 0, 0),
+            cost_for_call("claude-sonnet-4-6", 1_000_000, 1_000_000, 0, 0),
+        );
+    }
+
+    #[test]
+    fn gpt5_and_o3_are_priced() {
+        assert!(rates_for("gpt-5").is_some());
+        assert!(rates_for("gpt-5-mini").is_some());
+        assert!(rates_for("gpt-5-nano").is_some());
+        assert!(rates_for("o3").is_some());
+        assert!(rates_for("o3-mini").is_some());
+    }
+
+    #[test]
+    fn family_mini_prefixes_win_over_bare_family() {
+        // `gpt-5-mini` must NOT resolve to the pricier bare `gpt-5` tier, and
+        // `o3-mini` must not resolve to the bare `o3` tier.
+        assert_ne!(
+            rates_for("gpt-5-mini").map(|p| p.input_per_million),
+            rates_for("gpt-5").map(|p| p.input_per_million)
+        );
+        assert_ne!(
+            rates_for("o3-mini").map(|p| p.input_per_million),
+            rates_for("o3").map(|p| p.input_per_million)
+        );
+    }
+
+    #[test]
+    fn haiku_4_5_matches_claude_4_family() {
+        // `claude-haiku-4-5` is a Claude 4.5 haiku id — must resolve to the
+        // haiku-4 rate card, not fall through to None.
+        assert_eq!(
+            rates_for("claude-haiku-4-5").map(|p| p.input_per_million),
+            rates_for("claude-haiku-4").map(|p| p.input_per_million),
+        );
     }
 
     #[test]

@@ -50,6 +50,20 @@ pub const OPENAI_API_KEY_VAR: &str = "OPENAI_API_KEY";
 pub const ANTHROPIC_API_KEY_VAR: &str = "ANTHROPIC_API_KEY";
 pub const GEMINI_API_KEY_VAR: &str = "GEMINI_API_KEY";
 
+/// Default per-vendor model ids used when a model is scaffolded without an
+/// explicit `model_ref` — `oxy make`, `oxy init`, and the workspace models
+/// settings builder (`oxy-project`). Consolidated here so the default can't
+/// silently drift per call-site (which is how `oxy make` was left pinned to a
+/// retiring `claude-3-7-sonnet` id while the platform default moved on).
+///
+/// The Anthropic default is kept in sync with
+/// `agentic_llm::constants::DEFAULT_MODEL`; that crate is infrastructure and
+/// must not be imported by the platform layer, so the value is mirrored here
+/// rather than re-exported.
+pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-opus-4-8";
+pub const DEFAULT_OPENAI_MODEL: &str = "gpt-4o";
+pub const DEFAULT_GOOGLE_MODEL: &str = "gemini-1.5-pro";
+
 // Auth-related header + JWT-secret constants live in `oxy-auth` so that
 // crate has no `oxy` dependency. Re-exported here for source compatibility.
 pub use oxy_auth::constants::{
