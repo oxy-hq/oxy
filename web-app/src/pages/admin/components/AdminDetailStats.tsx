@@ -37,7 +37,7 @@ export const AdminDetailStats = ({
           {item.icon ? <item.icon className='size-3' /> : null}
           {item.label}
         </div>
-        <div className='font-semibold text-lg tabular-nums tracking-tight'>{item.value}</div>
+        <div className='font-semibold text-sm tabular-nums tracking-tight'>{item.value}</div>
         {item.sub ? (
           <div className='truncate text-muted-foreground text-xs tabular-nums'>{item.sub}</div>
         ) : null}

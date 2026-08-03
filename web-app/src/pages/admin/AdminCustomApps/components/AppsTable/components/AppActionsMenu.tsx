@@ -48,7 +48,7 @@ export const AppActionsMenu = ({
         aria-label={`Actions for ${app.name}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <MoreHorizontal className='size-4' />
+        <MoreHorizontal className='size-3.5' />
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end' className='w-52' onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={() => onOpen(app)}>

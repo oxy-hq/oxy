@@ -17,6 +17,7 @@ use entity::organizations;
 use entity::prelude::{Apps, Organizations};
 use entity::{apps, apps::Model as AppsModel};
 use oxy::database::client::establish_connection;
+use oxy_auth::extractor::OptionalUserExtractor;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -61,6 +62,15 @@ pub struct CustomAppSummary {
     /// string, e.g. "23 stores · sales +33.5% YoY · live".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// `"org"` or `"members"` — what the launcher needs to show an org officer
+    /// this app's access state, and to offer the control that changes it,
+    /// without a second request per card.
+    ///
+    /// Normalized through [`AppsModel::is_restricted`] rather than passed
+    /// through raw, so the wire contract stays the two documented values and
+    /// an unrecognized column reads as unrestricted on both sides of the
+    /// wire — the same way the access gates read it.
+    pub visibility: String,
 }
 
 /// Art must be a plain relative path inside the bundle — reject anything
@@ -163,6 +173,7 @@ impl CustomAppSummary {
         // so appending the relative art/icon path yields a valid same-origin URL.
         let art_url = fields.art.map(|a| format!("{url}{a}"));
         let icon_url = fields.icon.map(|i| format!("{url}{i}"));
+        let visibility = if m.is_restricted() { "members" } else { "org" };
         Self {
             id: m.id,
             slug: m.slug,
@@ -176,18 +187,27 @@ impl CustomAppSummary {
             art_url,
             icon_url,
             status: fields.status,
+            visibility: visibility.to_string(),
         }
     }
 }
 
 pub async fn list_custom_apps(
+    OptionalUserExtractor(viewer): OptionalUserExtractor,
     Path(WorkspaceIdPath { workspace_id }): Path<WorkspaceIdPath>,
 ) -> Result<Json<Vec<CustomAppSummary>>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("list_custom_apps DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let out = published_app_summaries(&db, workspace_id)
+    // Optional rather than required: the route is mounted behind auth middleware, so
+    // a missing user means the middleware was bypassed — and the fail-closed filter
+    // below is a better answer to that than a 401 that hides the misconfiguration.
+    let viewer = viewer.as_ref().map(|u| Viewer {
+        id: u.id,
+        email: &u.email,
+    });
+    let out = published_app_summaries(&db, workspace_id, viewer)
         .await
         .map_err(|e| {
             tracing::error!("list_custom_apps failed: {e}");
@@ -196,13 +216,33 @@ pub async fn list_custom_apps(
     Ok(Json(out))
 }
 
-/// Published-app summaries for a workspace. Shared by the workspace
-/// sidebar endpoint above and the custom-app shell-context endpoint
-/// (`custom_apps_shell_context.rs`) so the two surfaces can't drift
-/// on which apps are listed or how their URLs/icons resolve.
-pub(crate) async fn published_app_summaries(
+/// Who is asking, for the visibility filter in [`published_app_summaries`].
+///
+/// `None` at the call site means "nobody authenticated", which drops every
+/// restricted app rather than 401ing — see the handler above.
+#[derive(Clone, Copy)]
+pub struct Viewer<'a> {
+    pub id: Uuid,
+    pub email: &'a str,
+}
+
+/// Published-app summaries for a workspace, **filtered to what `viewer` may open**.
+/// Shared by the workspace sidebar endpoint above and the custom-app shell-context
+/// endpoint (`custom_apps_shell_context.rs`) so the two surfaces can't drift on
+/// which apps are listed or how their URLs/icons resolve.
+///
+/// A restricted app the viewer holds no grant on is **omitted**, not rendered
+/// locked: the launcher would otherwise show a card that 403s on click, and the
+/// app's very name is often the thing being restricted.
+///
+/// The filter asks `oxy-authz` rather than re-deriving the visibility rule in SQL —
+/// one facts load for the whole page, then pure in-memory set containment per app.
+/// Re-stating the rule here is exactly the drift the crate exists to end, and this
+/// list is a hot path where an N+1 grant lookup would be felt.
+pub async fn published_app_summaries(
     db: &sea_orm::DatabaseConnection,
     workspace_id: Uuid,
+    viewer: Option<Viewer<'_>>,
 ) -> Result<Vec<CustomAppSummary>, sea_orm::DbErr> {
     let rows = Apps::find()
         .filter(apps::Column::ProjectId.eq(workspace_id))
@@ -210,6 +250,48 @@ pub(crate) async fn published_app_summaries(
         .order_by_asc(apps::Column::Name)
         .all(db)
         .await?;
+
+    if rows.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let any_restricted = rows.iter().any(|a| a.is_restricted());
+
+    // Only load facts when at least one app is actually restricted. This is a hot
+    // path (`oxy-customer-apps-perf`) — the loader costs ~5-7 queries (org sets,
+    // platform standing, partner standings, app_members, org_team_members,
+    // app_team_grants), and in the overwhelmingly common workspace where nothing is
+    // restricted the filter below returns `true` without ever reading them. Behavior
+    // is identical either way; this just stops every launcher render from paying for
+    // a decision it never makes.
+    //
+    // Scoped facts: no app ring reads the workspace override, so don't pay for it.
+    // Unknown facts (a DB blip) and an absent viewer both fail CLOSED here, unlike
+    // the access gates — a missing card is a recoverable annoyance, a leaked one is
+    // not, and this is discovery rather than an access decision so a wrong deny
+    // costs nobody their app. Unrestricted apps are unaffected either way, so the
+    // degraded case is exactly today's behavior.
+    let facts = match viewer.filter(|_| any_restricted) {
+        Some(v) => {
+            oxy_server_authz::loader::load_principal_facts_scoped(db, v.id, v.email, false).await
+        }
+        None => None,
+    };
+    let rows: Vec<apps::Model> = rows
+        .into_iter()
+        .filter(|app| {
+            if !app.is_restricted() {
+                return true;
+            }
+            facts.as_ref().is_some_and(|f| {
+                oxy_authz::allows(
+                    f,
+                    oxy_authz::Action::AppAccess,
+                    &oxy_authz::Resource::app_with_visibility(app.id, app.org_id, true),
+                )
+            })
+        })
+        .collect();
 
     if rows.is_empty() {
         return Ok(vec![]);

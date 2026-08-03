@@ -15,6 +15,7 @@ import {
   ADMIN_ROW_CLASS,
   AdminTh
 } from "@/pages/admin/components/AdminTable";
+import OwnAppsPanel from "../components/OwnAppsPanel";
 import PageShell from "../components/PageShell";
 import { usePartnerConsole } from "../context";
 import AppTokenManager from "./components/AppTokenManager";
@@ -36,17 +37,25 @@ export default function PartnerCustomApps() {
       description='Every app you ship to your clients — published state at a glance, plus how to deploy from CI.'
       testId='partner-custom-apps-page'
     >
-      {active.capabilities.manage_apps ? (
-        <div className='space-y-8'>
-          <AppsSection partnerId={active.partner_id} />
-          <PublishingSection partnerId={active.partner_id} />
-        </div>
-      ) : (
-        <p className='text-muted-foreground text-sm'>
-          Your partnership isn't granted app management (the <code>manage_apps</code> ceiling), so
-          there's nothing here yet.
-        </p>
-      )}
+      {/* The partner's OWN apps sit above the client fleet and OUTSIDE the
+          manage_apps gate: they're reached by org authority, not the ceiling, so an
+          operator without manage_apps can still administer their own org's apps if
+          they're an officer of it. The panel hides itself when they aren't. */}
+      <div className='space-y-8'>
+        <OwnAppsPanel partnerId={active.partner_id} orgSlug={active.slug} />
+
+        {active.capabilities.manage_apps ? (
+          <>
+            <AppsSection partnerId={active.partner_id} />
+            <PublishingSection partnerId={active.partner_id} />
+          </>
+        ) : (
+          <p className='text-muted-foreground text-sm'>
+            Your partnership isn't granted app management (the <code>manage_apps</code> ceiling), so
+            there's nothing here for your clients yet.
+          </p>
+        )}
+      </div>
     </PageShell>
   );
 }

@@ -59,7 +59,7 @@ export default function PendingCheckoutDialog({ orgId, info, onClose, onRecreate
           <DialogTitle>A Checkout link is already pending</DialogTitle>
         </DialogHeader>
 
-        <div className='space-y-3 text-sm'>
+        <div className='space-y-3 text-xs'>
           <p className='text-muted-foreground'>
             Resend the existing email, cancel and create a new link, or close this dialog.
           </p>

@@ -55,10 +55,10 @@ export default function AdminPublishTokens({ embedded = false }: { embedded?: bo
   return (
     <div className='mx-auto max-w-3xl p-6'>
       <div className='mb-6'>
-        {!embedded && <h1 className='font-semibold text-2xl tracking-tight'>Publish tokens</h1>}
+        {!embedded && <h1 className='font-semibold text-xl tracking-tight'>Publish tokens</h1>}
         <p
           className={
-            embedded ? "text-muted-foreground text-sm" : "mt-1 text-muted-foreground text-sm"
+            embedded ? "text-muted-foreground text-xs" : "mt-1 text-muted-foreground text-xs"
           }
         >
           Long-lived bearer tokens for machine auth — set one as the{" "}
@@ -103,13 +103,13 @@ export default function AdminPublishTokens({ embedded = false }: { embedded?: bo
       <Card>
         <CardContent className='p-0'>
           {isPending ? (
-            <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-sm'>
+            <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-xs'>
               <Spinner /> Loading…
             </div>
           ) : tokens.length === 0 ? (
             <div className='flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground'>
               <KeyRound className='size-8' />
-              <p className='text-sm'>No publish tokens yet.</p>
+              <p className='text-xs'>No publish tokens yet.</p>
               <p className='text-xs'>Create one above to authenticate `oxy publish` from CI.</p>
             </div>
           ) : (

@@ -3,6 +3,8 @@ import { create } from "zustand";
 export type SettingsSection =
   | "organization.general"
   | "organization.members"
+  | "organization.teams"
+  | "organization.app_access"
   | "organization.billing"
   | "organization.integration"
   | "workspace.members"

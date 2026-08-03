@@ -1,3 +1,5 @@
+import type { AppVisibility } from "./appAccess";
+
 /**
  * Tagged source spec — matches the backend `SourceSpec` enum 1:1.
  * - `v0`: oxy auth-wraps a deployed Vercel app URL in an iframe (typically
@@ -136,6 +138,12 @@ export interface CustomAppSummary {
   icon_url?: string;
   /** Launcher-card status line, e.g. "23 stores · sales +33.5% YoY · live". */
   status?: string;
+  /**
+   * Who can open the app. Every card in this list is one the viewer may open —
+   * the server drops the rest — so this is not an access decision, it's what
+   * lets an org officer see an app's access state and change it from the grid.
+   */
+  visibility: AppVisibility;
 }
 
 export interface Template {

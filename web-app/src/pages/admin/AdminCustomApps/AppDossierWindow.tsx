@@ -30,7 +30,7 @@ export default function AppDossierWindow() {
       <header className='flex h-9 shrink-0 items-center gap-2 border-b px-3'>
         {selected ? (
           <>
-            <span className='truncate font-medium text-sm leading-none'>{selected.name}</span>
+            <span className='truncate font-medium text-xs leading-none'>{selected.name}</span>
             <span className='min-w-0 truncate font-mono text-muted-foreground/70 text-xs'>
               {selected.org_slug}/{selected.slug}
             </span>
@@ -50,7 +50,7 @@ export default function AppDossierWindow() {
           <Skeleton className='h-40 w-full' />
         </div>
       ) : (
-        <div className='flex items-center gap-2 p-4 text-destructive text-sm'>
+        <div className='flex items-center gap-2 p-4 text-destructive text-xs'>
           <AlertCircle className='size-4 shrink-0' />
           <span>
             {error

@@ -219,7 +219,7 @@ const EntryRow = ({ onClick, icon, label, selected, selectable }: EntryRowProps)
       disabled={!selectable}
       data-selected={selected ? "true" : undefined}
       className={cn(
-        "flex w-full items-center gap-2 border-transparent border-l-2 px-2 py-1 text-left text-sm",
+        "flex w-full items-center gap-2 border-transparent border-l-2 px-2 py-1 text-left text-xs",
         selectable ? "hover:bg-muted" : "cursor-default text-muted-foreground/60",
         "data-[selected=true]:border-primary data-[selected=true]:bg-primary/5"
       )}

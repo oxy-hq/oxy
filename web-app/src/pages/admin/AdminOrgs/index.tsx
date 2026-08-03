@@ -40,8 +40,8 @@ export default function AdminOrgs() {
           </Link>{" "}
           / Organizations
         </p>
-        <h1 className='font-semibold text-3xl tracking-tight'>Organizations</h1>
-        <p className='max-w-2xl text-muted-foreground text-sm'>
+        <h1 className='font-semibold text-xl tracking-tight'>Organizations</h1>
+        <p className='max-w-2xl text-muted-foreground text-xs'>
           Every organization on this deployment. Select a row to inspect, rename, or transfer
           ownership. Use the overview hub for fleet-wide health.
         </p>
@@ -62,7 +62,7 @@ export default function AdminOrgs() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder='Search by name or slug'
-              className='h-8 pl-7 text-sm'
+              className='h-8 pl-7 text-xs'
             />
           </form>
           <div className='flex items-center gap-3'>
@@ -86,7 +86,7 @@ export default function AdminOrgs() {
 
         {/* Body */}
         {isLoading ? (
-          <div className='flex items-center justify-center gap-2 py-20 text-muted-foreground text-sm'>
+          <div className='flex items-center justify-center gap-2 py-20 text-muted-foreground text-xs'>
             <Spinner /> Loading organizations…
           </div>
         ) : orgs.length === 0 ? (
@@ -153,10 +153,10 @@ export default function AdminOrgs() {
                       label={org.member_count > 0 ? "Active" : "Empty"}
                     />
                   </TableCell>
-                  <TableCell className='text-right font-medium text-sm tabular-nums'>
+                  <TableCell className='text-right font-medium text-xs tabular-nums'>
                     {org.member_count.toLocaleString()}
                   </TableCell>
-                  <TableCell className='text-right font-medium text-sm tabular-nums'>
+                  <TableCell className='text-right font-medium text-xs tabular-nums'>
                     {org.workspace_count.toLocaleString()}
                   </TableCell>
                   <TableCell className='text-muted-foreground text-xs tabular-nums'>

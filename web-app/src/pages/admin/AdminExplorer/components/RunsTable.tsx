@@ -27,7 +27,7 @@ export const RunsTable = ({ rows }: { rows: ExplorerRun[] }) => {
     return (
       <div className='flex flex-col items-center justify-center gap-2 rounded-lg border border-border/60 border-dashed bg-muted/20 px-6 py-12 text-center'>
         <Play className='size-6 text-muted-foreground' />
-        <p className='font-medium text-sm'>No runs match.</p>
+        <p className='font-medium text-xs'>No runs match.</p>
         <p className='text-muted-foreground text-xs'>Search by question, error, or run id.</p>
       </div>
     );

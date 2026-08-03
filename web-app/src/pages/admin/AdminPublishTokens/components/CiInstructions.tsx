@@ -45,7 +45,7 @@ export default function CiInstructions({ showTokenPath = true }: { showTokenPath
     <Card className='mb-6'>
       <CardContent className='space-y-2 p-4'>
         <div>
-          <h2 className='font-semibold text-sm'>Use in CI (GitHub Actions)</h2>
+          <h2 className='font-semibold text-xs'>Use in CI (GitHub Actions)</h2>
           <p className='mt-0.5 text-muted-foreground text-xs'>
             {showTokenPath
               ? "Trusted publishing is recommended — it stores no secret."
@@ -105,7 +105,7 @@ function Method({
     <Collapsible defaultOpen={defaultOpen} className='rounded-lg border'>
       <CollapsibleTrigger className='group flex w-full items-center gap-1.5 px-3 py-2 text-left hover:bg-muted/40'>
         {Icon ? <Icon className='size-4 text-primary' /> : null}
-        <span className='font-medium text-sm'>{title}</span>
+        <span className='font-medium text-xs'>{title}</span>
         {badge ? (
           <Badge variant='outline' className='px-1.5 py-0 text-[10px] text-muted-foreground'>
             {badge}

@@ -45,8 +45,8 @@ export default function AdminUsers() {
   return (
     <div className='mx-auto max-w-6xl p-6'>
       <div className='mb-6'>
-        <h1 className='font-semibold text-2xl tracking-tight'>Users</h1>
-        <p className='mt-1 text-muted-foreground text-sm'>
+        <h1 className='font-semibold text-xl tracking-tight'>Users</h1>
+        <p className='mt-1 text-muted-foreground text-xs'>
           Every user across the deployment. Inspect org memberships, manage app-admin role, and
           deactivate accounts.
         </p>
@@ -85,7 +85,7 @@ export default function AdminUsers() {
 
           <div className='flex items-center gap-3'>
             {!isLoading ? (
-              <span className='text-muted-foreground text-sm'>
+              <span className='text-muted-foreground text-xs'>
                 {users.length} {users.length === 1 ? "user" : "users"}
               </span>
             ) : null}
@@ -97,7 +97,7 @@ export default function AdminUsers() {
         </CardHeader>
         <CardContent className='p-0'>
           {isLoading ? (
-            <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-sm'>
+            <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-xs'>
               <Spinner /> Loading…
             </div>
           ) : users.length === 0 ? (
@@ -151,10 +151,10 @@ export default function AdminUsers() {
                         label={u.status === "deleted" ? "Deactivated" : "Active"}
                       />
                     </TableCell>
-                    <TableCell className='text-muted-foreground text-sm tabular-nums'>
+                    <TableCell className='text-muted-foreground text-xs tabular-nums'>
                       {new Date(u.last_login_at).toLocaleDateString()}
                     </TableCell>
-                    <TableCell className='text-muted-foreground text-sm tabular-nums'>
+                    <TableCell className='text-muted-foreground text-xs tabular-nums'>
                       {new Date(u.created_at).toLocaleDateString()}
                     </TableCell>
                   </TableRow>
@@ -172,7 +172,7 @@ function EmptyState({ search }: { search: string }) {
   return (
     <div className='flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground'>
       <Users className='size-8' />
-      <p className='text-sm'>{search ? `No users match "${search}".` : "No users yet."}</p>
+      <p className='text-xs'>{search ? `No users match "${search}".` : "No users yet."}</p>
       <p className='text-xs'>
         {search
           ? "Try a different search term, or clear the filter."

@@ -24,7 +24,7 @@ export function PriceCard({ price, isSeatSync, onSeatSyncToggle, onRemove }: Pri
               {price.product_name}
             </div>
           ) : null}
-          <div className='mt-0.5 truncate font-medium text-sm'>
+          <div className='mt-0.5 truncate font-medium text-xs'>
             {price.nickname ?? "Untitled price"}
           </div>
           <div className='mt-1 text-muted-foreground text-xs tabular-nums'>

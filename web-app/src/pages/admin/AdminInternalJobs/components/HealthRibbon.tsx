@@ -82,7 +82,7 @@ const Cell = ({
     </span>
     <span
       className={cn(
-        "font-semibold text-lg tabular-nums tracking-tight",
+        "font-semibold text-sm tabular-nums tracking-tight",
         emphasize && value > 0 ? tone : "text-foreground"
       )}
     >

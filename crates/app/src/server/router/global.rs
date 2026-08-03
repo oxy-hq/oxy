@@ -12,7 +12,9 @@ use crate::api::billing;
 use crate::api::github::namespaces as github;
 use crate::api::github::{account, callback, installations};
 use crate::api::middlewares::{org_context, oxy_owner_or_app_admin_guard, subscription_guard};
-use crate::api::{admin, onboarding, org_logo, organizations, partner_console, user, workspaces};
+use crate::api::{
+    admin, onboarding, org_logo, org_teams, organizations, partner_console, user, workspaces,
+};
 
 use super::AppState;
 
@@ -293,6 +295,31 @@ fn build_org_routes() -> Router<AppState> {
                 .put(crate::server::api::partner_publish_consent::set_consent),
         )
         .route("/members", get(organizations::list_members))
+        // Teams + per-app access — the control plane for restricted custom apps.
+        // Pure Postgres (no FS, no git), so every route here is FleetOk.
+        .route(
+            "/teams",
+            get(org_teams::handlers::list_teams).post(org_teams::handlers::create_team),
+        )
+        .route(
+            "/teams/{team_id}",
+            get(org_teams::handlers::get_team)
+                .patch(org_teams::handlers::update_team)
+                .delete(org_teams::handlers::delete_team),
+        )
+        .route(
+            "/teams/{team_id}/members",
+            post(org_teams::handlers::add_team_member),
+        )
+        .route(
+            "/teams/{team_id}/members/{user_id}",
+            delete(org_teams::handlers::remove_team_member),
+        )
+        .route("/apps", get(org_teams::app_access::list_org_apps))
+        .route(
+            "/apps/{app_id}/access",
+            get(org_teams::app_access::get_app_access).put(org_teams::app_access::set_app_access),
+        )
         .route(
             "/members/{user_id}",
             patch(organizations::update_member_role),

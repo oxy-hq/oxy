@@ -54,8 +54,8 @@ export default function AdminFeatureFlags() {
   return (
     <div className='mx-auto max-w-5xl p-6'>
       <div className='mb-6'>
-        <h1 className='font-semibold text-2xl tracking-tight'>Feature flags</h1>
-        <p className='mt-1 text-muted-foreground text-sm'>
+        <h1 className='font-semibold text-xl tracking-tight'>Feature flags</h1>
+        <p className='mt-1 text-muted-foreground text-xs'>
           Toggle backend feature flags. Changes apply immediately on this server.
         </p>
       </div>
@@ -63,13 +63,13 @@ export default function AdminFeatureFlags() {
       <Card>
         <CardContent className='p-0'>
           {isLoading ? (
-            <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-sm'>
+            <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-xs'>
               <Spinner /> Loading…
             </div>
           ) : flags.length === 0 ? (
             <div className='flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground'>
               <Flag className='size-8' />
-              <p className='text-sm'>No feature flags defined.</p>
+              <p className='text-xs'>No feature flags defined.</p>
             </div>
           ) : (
             <Table>
@@ -89,9 +89,9 @@ export default function AdminFeatureFlags() {
                     className='border-border/60 transition-colors hover:bg-muted/40'
                   >
                     <TableCell>
-                      <span className='font-mono text-sm'>{flag.key}</span>
+                      <span className='font-mono text-xs'>{flag.key}</span>
                     </TableCell>
-                    <TableCell className='whitespace-normal break-words text-muted-foreground text-sm'>
+                    <TableCell className='whitespace-normal break-words text-muted-foreground text-xs'>
                       {flag.description}
                     </TableCell>
                     <TableCell>
@@ -99,7 +99,7 @@ export default function AdminFeatureFlags() {
                         {flag.default ? "On" : "Off"}
                       </Badge>
                     </TableCell>
-                    <TableCell className='text-muted-foreground text-sm tabular-nums'>
+                    <TableCell className='text-muted-foreground text-xs tabular-nums'>
                       {formatUpdatedAt(flag.updated_at)}
                     </TableCell>
                     <TableCell className='text-right'>

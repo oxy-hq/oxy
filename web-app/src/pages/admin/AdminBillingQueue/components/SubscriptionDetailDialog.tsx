@@ -38,11 +38,11 @@ export default function SubscriptionDetailDialog({ org, onClose }: Props) {
           </DialogHeader>
 
           {isLoading ? (
-            <div className='flex items-center gap-2 text-muted-foreground text-sm'>
+            <div className='flex items-center gap-2 text-muted-foreground text-xs'>
               <Spinner /> Loading subscription…
             </div>
           ) : error ? (
-            <div className='text-destructive text-sm'>
+            <div className='text-destructive text-xs'>
               {error instanceof Error ? error.message : "Failed to load subscription."}
             </div>
           ) : data ? (
@@ -88,7 +88,7 @@ export default function SubscriptionDetailDialog({ org, onClose }: Props) {
 
 function SubscriptionDetailBody({ detail }: { detail: AdminSubscriptionDetail }) {
   return (
-    <div className='space-y-4 text-sm'>
+    <div className='space-y-4 text-xs'>
       <div className='flex flex-wrap items-center gap-2'>
         <Badge variant={detail.status === "active" ? "default" : "secondary"}>
           {detail.status}

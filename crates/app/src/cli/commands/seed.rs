@@ -96,15 +96,24 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
 /// store refuse a filesystem write — would otherwise turn a stray env var into a
 /// completely failed seed.
 async fn deploy_example_apps(conn: &sea_orm::DatabaseConnection, workspace_id: Uuid, path: &str) {
-    let mut targets = vec![super::seed_apps::AppTarget {
-        org_id: LOCAL_ORG_ID,
-        org_slug: "local".to_string(),
+    let mut targets = vec![super::seed_apps::AppTarget::open(
+        LOCAL_ORG_ID,
+        "local".to_string(),
         workspace_id,
-    }];
+    )];
     // Absent when the partner seed skipped (non-local DB) — deploy to the demo
     // workspace anyway rather than treating that as an error.
-    match super::seed_apps::first_workspace_of(conn, "acme").await {
-        Ok(Some(acme)) => targets.push(acme),
+    match super::seed_apps::seeded_app_workspace_of(conn, "acme").await {
+        Ok(Some(acme)) => {
+            // A SECOND, restricted app beside the open one — never instead of it.
+            // Acme's only app being invisible to most of Acme would read as a broken
+            // seed; two apps show the contrast the feature is about, with the open
+            // one still on everyone's launcher.
+            if let Some(team) = super::seed_partners::restricted_team_for("acme") {
+                targets.push(acme.restricted(team));
+            }
+            targets.push(acme);
+        }
         Ok(None) => {}
         Err(e) => println!("{} could not resolve Acme's workspace: {e}", "⚠️".warning()),
     }

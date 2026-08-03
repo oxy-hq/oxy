@@ -28,12 +28,13 @@
 use chrono::Utc;
 use entity::org_members::{self, OrgRole};
 use entity::prelude::{
-    OrgMembers, Organizations, PartnerCapabilities, PartnerGrants, PartnerOrgs,
-    PartnerRoleBindings, Workspaces,
+    OrgMembers, OrgTeamMembers, OrgTeams, Organizations, PartnerCapabilities, PartnerGrants,
+    PartnerOrgs, PartnerRoleBindings, Workspaces,
 };
 use entity::workspaces::{self, WorkspaceStatus};
 use entity::{
-    organizations, partner_capabilities, partner_grants, partner_orgs, partner_role_bindings,
+    org_team_members, org_teams, organizations, partner_capabilities, partner_grants, partner_orgs,
+    partner_role_bindings,
 };
 use oxy::database::client::establish_connection;
 use oxy::theme::StyledText;
@@ -57,6 +58,24 @@ struct OrgSeed {
     members: usize,
     /// Workspace display names; each is pointed at the demo project.
     workspaces: &'static [&'static str],
+    /// Teams inside the org — the audiences app access is granted to.
+    teams: &'static [TeamSeed],
+}
+
+/// A team inside a seeded org.
+///
+/// Seeded so the Teams settings pane and the app-access grant picker have real
+/// content on a fresh `oxy seed`, instead of an empty state that makes the feature
+/// look unbuilt. Deliberately UNEVEN across orgs — one with several teams, one with
+/// a single team, one with none — because the interesting UI states are the empty
+/// one and the crowded one, and a uniform seed shows neither.
+struct TeamSeed {
+    name: &'static str,
+    description: &'static str,
+    /// Indices into the org's generated people (`person(i, slug)`); 0 is the owner.
+    /// Every index must be `<= OrgSeed::members` — pinned by a test, because an
+    /// out-of-range index would seed a team that silently grants nothing.
+    members: &'static [usize],
 }
 
 /// A partnership: the org that holds it, its clients, its **ceiling**, and how
@@ -144,18 +163,50 @@ const ORGS: &[OrgSeed] = &[
         name: "Acme Consulting",
         members: 6,
         workspaces: &["Acme Internal Analytics"],
+        // The crowded case: three teams, overlapping membership (person 1 is in two),
+        // and one person (6) in none — so the grant picker, the member counts, and
+        // the "belongs to no team" case all have real data.
+        teams: &[
+            TeamSeed {
+                name: "Analytics Guild",
+                description: "Builds and reviews the shared models",
+                members: &[0, 1, 2, 3],
+            },
+            TeamSeed {
+                name: "Client Delivery",
+                description: "Runs client engagements",
+                members: &[1, 4, 5],
+            },
+            TeamSeed {
+                name: "Leadership",
+                description: "Partners and practice leads",
+                members: &[0],
+            },
+        ],
     },
     OrgSeed {
         slug: "northwind",
         name: "Northwind Traders",
         members: 2,
         workspaces: &["Northwind Analytics", "Northwind Sandbox"],
+        // One team that does NOT include the owner — the case that proves officer
+        // break-glass is doing the work rather than the grant.
+        teams: &[TeamSeed {
+            name: "Finance",
+            description: "Sees revenue and margin apps",
+            members: &[1, 2],
+        }],
     },
     OrgSeed {
         slug: "globex",
         name: "Globex Corporation",
         members: 2,
         workspaces: &["Globex Analytics", "Globex Sandbox"],
+        teams: &[TeamSeed {
+            name: "Store Managers",
+            description: "Regional managers with store-level access",
+            members: &[1],
+        }],
     },
     // The second partner — narrow ceiling (see PARTNERS).
     OrgSeed {
@@ -163,19 +214,23 @@ const ORGS: &[OrgSeed] = &[
         name: "Initech",
         members: 2,
         workspaces: &["Initech Analytics"],
+        teams: &[],
     },
     OrgSeed {
         slug: "umbrella",
         name: "Umbrella Industries",
         members: 1,
         workspaces: &["Umbrella Analytics"],
+        teams: &[],
     },
-    // Deliberately UNMANAGED — no partner. The admin UI should show both states.
+    // Deliberately UNMANAGED — no partner, and no teams. The admin UI should show
+    // both states, and the Teams pane's empty state is worth seeing too.
     OrgSeed {
         slug: "vandelay",
         name: "Vandelay Industries",
         members: 1,
         workspaces: &["Vandelay Analytics"],
+        teams: &[],
     },
 ];
 
@@ -293,17 +348,122 @@ async fn seed_org(conn: &Conn, org: &OrgSeed, demo_path: &str) -> Result<(), Oxy
         };
         ensure_org_member(conn, org_id, uid, role).await?;
     }
-    for name in org.workspaces {
-        ensure_workspace(conn, org_id, name, demo_path).await?;
+    // First one is the landing workspace — the same one `seeded_workspace_id`
+    // resolves and the example apps deploy to, so the org's home page opens on the
+    // workspace that actually holds them.
+    for (i, name) in org.workspaces.iter().enumerate() {
+        ensure_workspace(conn, org_id, name, demo_path, i == 0).await?;
+    }
+    for team in org.teams {
+        seed_team(conn, org_id, org.slug, team).await?;
     }
     println!(
-        "  {} org {} ({}) — {} people",
+        "  {} org {} ({}) — {} people, {} team(s)",
         "✓".success(),
         org.slug,
         org.name,
-        org.members + 1
+        org.members + 1,
+        org.teams.len()
     );
     Ok(())
+}
+
+/// Ensure one team and its roster. Idempotent like the rest of the seed: the team
+/// is keyed by a derived UUID, so re-running updates rather than duplicating.
+async fn seed_team(
+    conn: &Conn,
+    org_id: Uuid,
+    org_slug: &str,
+    team: &TeamSeed,
+) -> Result<(), OxyError> {
+    let team_id = seed_id("team", &format!("{org_slug}:{}", team.name));
+    if OrgTeams::find_by_id(team_id)
+        .one(conn)
+        .await
+        .map_err(|e| OxyError::DBError(format!("find team {}: {e}", team.name)))?
+        .is_none()
+    {
+        org_teams::ActiveModel {
+            id: ActiveValue::Set(team_id),
+            org_id: ActiveValue::Set(org_id),
+            name: ActiveValue::Set(team.name.to_string()),
+            description: ActiveValue::Set(Some(team.description.to_string())),
+            created_at: ActiveValue::NotSet,
+            updated_at: ActiveValue::NotSet,
+            created_by: ActiveValue::Set(None),
+        }
+        .insert(conn)
+        .await
+        .map_err(|e| OxyError::DBError(format!("insert team {}: {e}", team.name)))?;
+    }
+
+    for i in team.members {
+        let p = person(*i, org_slug);
+        let uid = ensure_user(&p.email, &p.name).await?;
+        let member_id = seed_id("team_member", &format!("{team_id}:{uid}"));
+        if OrgTeamMembers::find_by_id(member_id)
+            .one(conn)
+            .await
+            .map_err(|e| OxyError::DBError(format!("find team member: {e}")))?
+            .is_some()
+        {
+            continue;
+        }
+        org_team_members::ActiveModel {
+            id: ActiveValue::Set(member_id),
+            team_id: ActiveValue::Set(team_id),
+            user_id: ActiveValue::Set(uid),
+            created_at: ActiveValue::NotSet,
+            created_by: ActiveValue::Set(None),
+        }
+        .insert(conn)
+        .await
+        .map_err(|e| OxyError::DBError(format!("insert team member: {e}")))?;
+    }
+    Ok(())
+}
+
+/// The id of the workspace this seed CREATES for `org_slug` — the one the example
+/// app belongs in.
+///
+/// The app seed used to resolve its target with `ORDER BY name ASC LIMIT 1`, which
+/// is only correct while the org has exactly the workspaces the seed made. A
+/// developer who adds one (or a client who does) can sort ahead of it — `"AAA"`
+/// beats `"Acme Internal Analytics"` — and a re-seed then silently moves the apps
+/// onto that workspace, off the one the org subdomain names as default. The symptom
+/// is the org's home page rendering an empty grid with no error anywhere.
+///
+/// The seeded workspace has a derived id (`seed_id("workspace", "<org>:<name>")`),
+/// so name it directly instead of guessing by sort order.
+pub fn seeded_workspace_id(org_slug: &str, org_id: Uuid) -> Option<Uuid> {
+    let name = ORGS
+        .iter()
+        .find(|o| o.slug == org_slug)?
+        .workspaces
+        .first()?;
+    Some(workspace_seed_id(org_id, name))
+}
+
+/// The derived id of a seeded workspace — shared by the writer (`ensure_workspace`)
+/// and this reader so the two cannot drift. A divergence wouldn't error; it would
+/// send the app seed back to its sort-order fallback, which is the bug
+/// `seeded_workspace_id` exists to retire.
+fn workspace_seed_id(org_id: Uuid, name: &str) -> Uuid {
+    seed_id("workspace", &format!("{org_id}:{name}"))
+}
+
+/// The team an org's example app is restricted to, if the seed defines one.
+///
+/// Only Acme, because it is the only seeded org the example app is deployed to
+/// besides `local` — and leaving `local`'s copy open is what makes a fresh seed show
+/// BOTH states side by side.
+///
+/// "Client Delivery" deliberately **excludes the owner** (person 0) and includes
+/// only 1, 4 and 5 of Acme's seven people. So one seed exercises every branch of
+/// `Ring::AppAccess` at once: granted-via-team (1/4/5), officer break-glass (0, who
+/// holds no grant), and filtered-out (2, 3, 6 — who don't see the card at all).
+pub fn restricted_team_for(org_slug: &str) -> Option<Uuid> {
+    (org_slug == "acme").then(|| seed_id("team", "acme:Client Delivery"))
 }
 
 /// Ensure one partnership: the grant, its ceiling, its clients, and its people's
@@ -428,13 +588,19 @@ async fn ensure_org_member(
 
 /// A workspace row pointed at the demo project (`demo_path`), so a seeded org's
 /// workspace opens to real content instead of an empty shell.
+///
+/// `is_landing` marks the org's first workspace — the one `seeded_workspace_id`
+/// names and the one the example apps are deployed to. It gets a `last_opened_at`
+/// so the frontend's workspace picker lands there by default; see the comment on
+/// the write below for why that column and not another.
 async fn ensure_workspace(
     conn: &Conn,
     org_id: Uuid,
     name: &str,
     demo_path: &str,
+    is_landing: bool,
 ) -> Result<(), OxyError> {
-    let id = seed_id("workspace", &format!("{org_id}:{name}"));
+    let id = workspace_seed_id(org_id, name);
     if let Some(row) = Workspaces::find_by_id(id)
         .one(conn)
         .await
@@ -443,14 +609,24 @@ async fn ensure_workspace(
         // Patch the path if it's missing or stale. Earlier seeds created these
         // path-less, which made the recovery/latency worker skip + warn on them
         // ("workspace has no path"); a re-run of `oxy seed` now heals them.
-        if row.path.as_deref() != Some(demo_path) {
+        let stale_path = row.path.as_deref() != Some(demo_path);
+        // Backfill only — never restamp. A box seeded before this existed heals on
+        // the next run, but a value already there is left alone.
+        let needs_landing = is_landing && row.last_opened_at.is_none();
+        if stale_path || needs_landing {
+            let now = Utc::now().fixed_offset();
             let mut active = row.into_active_model();
-            active.path = ActiveValue::Set(Some(demo_path.to_string()));
-            active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
+            if stale_path {
+                active.path = ActiveValue::Set(Some(demo_path.to_string()));
+            }
+            if needs_landing {
+                active.last_opened_at = ActiveValue::Set(Some(now));
+            }
+            active.updated_at = ActiveValue::Set(now);
             active
                 .update(conn)
                 .await
-                .map_err(|e| OxyError::DBError(format!("patch workspace {name} path: {e}")))?;
+                .map_err(|e| OxyError::DBError(format!("patch workspace {name}: {e}")))?;
         }
         return Ok(());
     }
@@ -463,7 +639,23 @@ async fn ensure_workspace(
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
         path: ActiveValue::Set(Some(demo_path.to_string())),
-        last_opened_at: ActiveValue::Set(None),
+        // The picker (`pickWorkspace`) sorts navigable workspaces by
+        // `last_opened_at` descending and treats NULL as the epoch. Seeding every
+        // workspace NULL left that comparison a tie for every org, so the landing
+        // fell through to whatever order the API happened to return — and a
+        // workspace a developer added later could win it. Stamping the org's first
+        // workspace makes it the default landing outright.
+        //
+        // Nothing in the server writes this column today, so the value stays put;
+        // if that changes, a real open is newer than the seed and wins, which is
+        // the behavior we want either way.
+        //
+        // Accepted cost: the column is also operator-facing — the admin workspace
+        // list renders it as "Last opened" and the detail page computes an age off
+        // it — so every seeded landing workspace will report a visit nobody made.
+        // That is a lie only on a seeded box, where every row is fabricated anyway,
+        // and it buys a deterministic landing on real data.
+        last_opened_at: ActiveValue::Set(is_landing.then_some(now)),
         created_by: ActiveValue::Set(None),
         org_id: ActiveValue::Set(Some(org_id)),
         status: ActiveValue::Set(WorkspaceStatus::Ready),
@@ -675,6 +867,104 @@ mod tests {
         let max_people = ORGS.iter().map(|o| o.members + 1).max().unwrap();
         assert!(max_people <= FIRST_NAMES.len(), "grow FIRST_NAMES");
         assert!(max_people <= LAST_NAMES.len(), "grow LAST_NAMES");
+    }
+
+    #[test]
+    fn team_members_index_real_people() {
+        // An index past the org's roster would seed a team missing a person, and the
+        // grant would silently reach fewer people than the seed claims. Nothing at
+        // runtime would complain — `person(i, slug)` just wraps the name pools.
+        for org in ORGS {
+            for team in org.teams {
+                assert!(
+                    !team.members.is_empty(),
+                    "{}/{}: an empty team grants nothing — drop it or give it people",
+                    org.slug,
+                    team.name
+                );
+                for i in team.members {
+                    assert!(
+                        *i <= org.members,
+                        "{}/{}: member index {i} is past the org's {} people",
+                        org.slug,
+                        team.name,
+                        org.members + 1
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn team_names_are_unique_within_an_org() {
+        // `org_teams` has a case-insensitive unique index on (org_id, name), so a
+        // duplicate would make the seed fail on insert rather than be idempotent.
+        for org in ORGS {
+            let names: HashSet<_> = org.teams.iter().map(|t| t.name.to_lowercase()).collect();
+            assert_eq!(
+                names.len(),
+                org.teams.len(),
+                "{}: duplicate team name (case-insensitively)",
+                org.slug
+            );
+        }
+    }
+
+    #[test]
+    fn team_ids_are_deterministic_and_distinct() {
+        // Re-seeding must update rather than duplicate, which relies on the derived
+        // id being stable — and two teams must never collide onto one id.
+        let a = seed_id("team", "acme:Client Delivery");
+        assert_eq!(a, seed_id("team", "acme:Client Delivery"));
+        assert_ne!(a, seed_id("team", "acme:Analytics Guild"));
+        // Same team name in two orgs is legal and must stay distinct.
+        assert_ne!(
+            seed_id("team", "acme:Finance"),
+            seed_id("team", "globex:Finance")
+        );
+    }
+
+    #[test]
+    fn the_restricted_seed_app_targets_a_real_team_that_excludes_its_owner() {
+        // The seeded restriction is only interesting if it exercises more than one
+        // branch of Ring::AppAccess. Acme's "Client Delivery" must exist, and must
+        // NOT contain person 0 — otherwise the owner reaches the app by grant and
+        // officer break-glass never gets exercised by a fresh seed.
+        let acme = ORGS.iter().find(|o| o.slug == "acme").expect("acme seeded");
+        let team = acme
+            .teams
+            .iter()
+            .find(|t| t.name == "Client Delivery")
+            .expect("restricted_team_for() names a team the seed creates");
+        assert!(
+            !team.members.contains(&0),
+            "Client Delivery must exclude the owner so break-glass is exercised"
+        );
+        // And somebody must be left out entirely, or the filtered-out state — the
+        // one this whole feature exists for — never appears in seeded data.
+        let granted: HashSet<_> = team.members.iter().copied().collect();
+        let excluded = (0..=acme.members).filter(|i| !granted.contains(i)).count();
+        assert!(
+            excluded >= 2,
+            "at least two of Acme's people should NOT reach the restricted app"
+        );
+    }
+
+    #[test]
+    fn only_an_org_with_a_seeded_app_is_restricted() {
+        // `restricted_team_for` is consumed by the app seed, which deploys to `local`
+        // and `acme` only. Naming any other org would set visibility on an app that
+        // doesn't exist — a silent no-op that reads like a bug when someone looks.
+        for org in ORGS {
+            if restricted_team_for(org.slug).is_some() {
+                assert_eq!(
+                    org.slug, "acme",
+                    "only Acme gets the example app besides `local`"
+                );
+            }
+        }
+        assert!(restricted_team_for("acme").is_some());
+        assert!(restricted_team_for("vandelay").is_none());
     }
 
     #[test]

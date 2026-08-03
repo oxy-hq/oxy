@@ -31,7 +31,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 1
+          # Full history, not depth 1: `detect_changes_tool` diffs against a git
+          # base (`HEAD~1` by default, the PR base here), and on a shallow clone
+          # that base doesn't exist — the tool then reports no changes, which
+          # reads as a clean PR rather than a broken checkout.
+          fetch-depth: 0
+
+      # Same search kit a reviewer has locally, so CLAUDE.md's routing table means
+      # the same thing here. A diff review is the case it pays for most: the graph
+      # answers "what breaks if this changes", and "which handlers in this module
+      # skip the audit call" is one ast-grep query — where a text search for
+      # `audit::` also matches every comment discussing auditing.
+      - uses: ./.github/actions/claude-search-tools
 
       - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
         with:
@@ -63,4 +74,4 @@ jobs:
             noisy cross-links.
 
           claude_args: |
-            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(ast-grep:*),Bash(jq:*)"

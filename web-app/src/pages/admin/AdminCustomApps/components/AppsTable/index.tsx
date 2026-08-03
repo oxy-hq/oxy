@@ -127,7 +127,7 @@ export const AppsTable = ({
 };
 
 const CenteredState = ({ children }: { children: React.ReactNode }) => (
-  <div className='flex min-h-0 flex-1 items-center justify-center p-12 text-center text-muted-foreground text-sm'>
+  <div className='flex min-h-0 flex-1 items-center justify-center p-12 text-center text-muted-foreground text-xs'>
     {children}
   </div>
 );

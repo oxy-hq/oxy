@@ -44,7 +44,7 @@ export const AccessStrip = ({
 
 const AccessStat = ({ value, label }: { value: number; label: string }) => (
   <span className='flex items-center gap-1.5'>
-    <span className='font-semibold text-foreground text-sm tabular-nums'>{value}</span>
+    <span className='font-semibold text-foreground text-xs tabular-nums'>{value}</span>
     <span className='text-muted-foreground'>{label}</span>
   </span>
 );
@@ -70,7 +70,7 @@ export const RowAction = ({
         variant='ghost'
         size='icon'
         disabled={disabled}
-        className='size-7 text-muted-foreground hover:text-foreground'
+        className='size-6 text-muted-foreground hover:text-foreground'
         onClick={onClick}
         aria-label={label}
       >
@@ -101,7 +101,7 @@ export const CopyPublishAction = ({ workspaceId }: { workspaceId: string }) => {
         <Button
           variant='ghost'
           size='icon'
-          className='size-7 text-muted-foreground hover:text-foreground'
+          className='size-6 text-muted-foreground hover:text-foreground'
           onClick={copy}
           aria-label='Copy publish command'
         >
@@ -188,7 +188,7 @@ export const ListRow = ({
       )}
     />
     <span className={cn("min-w-0 flex-1", muted && "opacity-55")}>
-      <span className='block truncate font-medium text-sm'>{title}</span>
+      <span className='block truncate font-medium text-xs'>{title}</span>
       <span className='block truncate font-mono text-[11px] text-muted-foreground'>{subtitle}</span>
     </span>
     {trailing}
@@ -207,8 +207,8 @@ export const EmptyHint = ({ title, body }: { title: string; body: string }) => (
       <ShieldCheck className='size-5 text-muted-foreground' />
     </div>
     <div>
-      <p className='font-medium text-foreground text-sm'>{title}</p>
-      <p className='mt-1 max-w-sm text-muted-foreground text-sm'>{body}</p>
+      <p className='font-medium text-foreground text-xs'>{title}</p>
+      <p className='mt-1 max-w-sm text-muted-foreground text-xs'>{body}</p>
     </div>
   </div>
 );
@@ -219,7 +219,7 @@ export const GrantsError = ({ error }: { error: unknown }) => (
     <div className='rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center'>
       {isAxiosError(error) && error.response?.status === 403 ? (
         <>
-          <p className='font-medium text-destructive text-sm'>
+          <p className='font-medium text-destructive text-xs'>
             Your account isn't on the custom-apps allow list.
           </p>
           <p className='mt-2 text-muted-foreground text-xs'>
@@ -229,7 +229,7 @@ export const GrantsError = ({ error }: { error: unknown }) => (
           </p>
         </>
       ) : (
-        <p className='text-destructive text-sm'>Failed to load Oxy-access grants.</p>
+        <p className='text-destructive text-xs'>Failed to load Oxy-access grants.</p>
       )}
     </div>
   </div>

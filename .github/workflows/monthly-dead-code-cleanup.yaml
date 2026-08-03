@@ -29,6 +29,11 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      # "Is this symbol referenced anywhere" is the question this job exists to
+      # answer, and it is the one text search is worst at — a name in a comment,
+      # a doc link, or a same-named field in another module all read as a hit.
+      - uses: ./.github/actions/claude-search-tools
+
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           run_install: false
@@ -110,7 +115,7 @@ jobs:
             6. Run `pnpm exec biome check --write .` in web-app/ for final formatting
 
           claude_args: |
-            --allowedTools "Read,Edit,Glob,Grep,Bash(pnpm run compile:*),Bash(pnpm run build:*),Bash(pnpm exec biome:*),Bash(grep:*)"
+            --allowedTools "Read,Edit,Glob,Grep,Bash(pnpm run compile:*),Bash(pnpm run build:*),Bash(pnpm exec biome:*),Bash(grep:*),Bash(ast-grep:*),Bash(jq:*)"
 
       # Hard gate: if Claude couldn't fix everything, fail before opening a PR
       # with a broken TypeScript compile.

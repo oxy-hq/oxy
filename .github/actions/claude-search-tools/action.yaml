@@ -1,0 +1,157 @@
+name: Claude search tools
+description: >-
+  Give a Claude step in CI the same search kit a developer has locally, so the
+  routing table in CLAUDE.md ("Search: four layers, one question each") means the
+  same thing in both places: the `code-review-graph` knowledge graph, the
+  `ast-grep` CLI, and the skills that drive each. Without this the agent falls
+  back to text search on a 4400-file repo — exactly what that section says not to
+  do — or worse, follows guidance for tools the runner doesn't have.
+
+  `jq` is installed if absent rather than asserted present — the runner image is
+  not a contract, and a missing filter shows up as an agent that quietly stopped
+  trimming its output. `rg` is deliberately NOT required: the built-in Grep tool
+  carries its own ripgrep, so nothing here shells out to the binary.
+
+  Pair with `--allowedTools "...,Bash(ast-grep:*),Bash(jq:*)"` on the Claude step,
+  or the agent can see the tools and not run them. The graph is reached over MCP,
+  not Bash, so it needs no allowlist entry.
+
+  Check out with `fetch-depth: 0` in any job whose agent uses
+  `detect_changes_tool` — it diffs against a git base, and a shallow clone makes
+  it report no changes rather than fail.
+
+inputs:
+  ast-grep-version:
+    description: >-
+      Pinned `@ast-grep/cli` version. Match the team's local install; a version
+      skew changes which patterns parse, and a rule that silently stops matching
+      reads as "no findings".
+    required: false
+    default: "0.45.0"
+  skills-ref:
+    description: >-
+      Pinned commit of ast-grep/agent-skill. Fetched rather than vendored so
+      third-party prose stays out of the tree, and pinned rather than tracking
+      `main` so a CI run is reproducible.
+    required: false
+    default: c2a9bc154f4ffe08b25d28d5e852dfac8c0d0d8a
+  install-skills:
+    description: Set to "false" for a Claude step that only needs the CLI.
+    required: false
+    default: "true"
+  graph:
+    description: >-
+      Build the code-review-graph knowledge graph and register its MCP server.
+      Set to "false" for a job that only needs pattern search — a doc refresh, a
+      changelog — since the build is ~25s and ~370 MB it would never read.
+    required: false
+    default: "true"
+  graph-version:
+    description: >-
+      Pinned `code-review-graph` PyPI version. The graph schema migrates on open,
+      so a runner ahead of the team writes a database local tooling then has to
+      migrate back.
+    required: false
+    default: "2.3.7"
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure jq
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Install rather than assert. The first cut of this step asserted `rg` and
+        # `jq` were both preinstalled; `rg` is not, and the run failed on a tool
+        # nothing here even uses (the Grep tool bundles its own ripgrep). Whatever
+        # today's runner image ships is not a contract worth encoding.
+        command -v jq >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq jq; }
+        jq --version
+
+    - name: Install ast-grep
+      shell: bash
+      run: |
+        set -euo pipefail
+        npm install -g "@ast-grep/cli@${{ inputs.ast-grep-version }}"
+        ast-grep --version
+
+    - name: Install ast-grep skills
+      if: inputs.install-skills == 'true'
+      shell: bash
+      env:
+        SKILLS_REF: ${{ inputs.skills-ref }}
+      run: |
+        set -euo pipefail
+        # Shallow-fetch the pinned commit only; the repo is small but there is no
+        # reason to pay for its history on every review run.
+        tmp="$(mktemp -d)"
+        git -C "$tmp" init -q
+        git -C "$tmp" remote add origin https://github.com/ast-grep/agent-skill.git
+        git -C "$tmp" fetch -q --depth 1 origin "$SKILLS_REF"
+        git -C "$tmp" checkout -q FETCH_HEAD
+
+        # Into the repo's own skills dir, so the agent discovers them exactly as it
+        # does the hand-written ones in .claude/skills/ — no plugin marketplace on a
+        # runner. Copied, not symlinked: the source lives under $TMPDIR.
+        mkdir -p .claude/skills
+        cp -R "$tmp/ast-grep/skills/ast-grep"  .claude/skills/ast-grep
+        cp -R "$tmp/ast-grep/skills/outline"   .claude/skills/ast-grep-outline
+        rm -rf "$tmp"
+        ls .claude/skills/ast-grep/SKILL.md .claude/skills/ast-grep-outline/SKILL.md
+
+    - name: Install code-review-graph
+      if: inputs.graph == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Bootstrap pipx if the image doesn't carry it — same lesson as jq above.
+        # (`uv tool install` is the local equivalent but needs a setup-uv step.)
+        command -v pipx >/dev/null || python3 -m pip install --user -q pipx
+        # pipx puts shims in ~/.local/bin, which is not reliably on PATH for
+        # LATER steps — and "Build knowledge graph" is a later step, so without
+        # this the install succeeds and the build dies on command-not-found.
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        export PATH="$HOME/.local/bin:$PATH"
+        pipx install "code-review-graph==${{ inputs.graph-version }}"
+        code-review-graph --version
+        # Generates the four graph skills (explore-codebase, review-changes,
+        # debug-issue, refactor-safely) into .claude/skills/. The MCP *server*
+        # entry already arrives with the checkout — `.mcp.json` is tracked — and
+        # its approval is `enabledMcpjsonServers` in the tracked
+        # `.claude/settings.json`. Both have to be committed: the approval used to
+        # live only in `.claude/settings.local.json`, which is gitignored, so a
+        # runner would build the graph and then not be allowed to talk to it.
+        #
+        # `--no-instructions` is the flag that matters: without it, install appends
+        # an "ALWAYS use the graph BEFORE Grep/Glob/Read" block to CLAUDE.md, which
+        # contradicts the four-layer routing table that file already carries — and
+        # it would land as an uncommitted diff on a job that opens PRs. `-y` keeps
+        # it from prompting on a tty-less runner; `--platform claude-code` stops it
+        # writing config for fourteen editors nobody is running here.
+        code-review-graph install -y --platform claude-code --no-instructions
+
+    - name: Build knowledge graph
+      if: inputs.graph == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Built fresh, NOT restored from actions/cache. A full build of this repo
+        # is ~25s local (3.4k files, ~370 MB), which is noise against a review
+        # job's budget — and a cache would trade that for the one failure mode
+        # that actually costs something here: an agent reasoning confidently from
+        # a graph that describes a different commit.
+        time code-review-graph build --quiet
+        code-review-graph status
+
+        # Fail loudly on an empty graph. Every failure mode above this line is
+        # silent from the agent's side — it just gets no results and falls back to
+        # Grep, which reads as "the graph had nothing to say" rather than "the
+        # graph was never built".
+        nodes=$(code-review-graph status | sed -n 's/^Nodes: //p')
+        [ "${nodes:-0}" -gt 1000 ] || { echo "::error::graph built with only ${nodes:-0} nodes"; exit 1; }
+
+        # The approval that lets the agent reach the server at all. Checked here
+        # because the symptom of its absence is indistinguishable from the graph
+        # simply not being useful.
+        grep -q '"code-review-graph"' .claude/settings.json \
+          || { echo "::error::code-review-graph missing from enabledMcpjsonServers in .claude/settings.json"; exit 1; }

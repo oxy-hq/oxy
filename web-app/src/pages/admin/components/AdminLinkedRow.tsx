@@ -53,7 +53,7 @@ export const AdminLinkedRow = ({
         </div>
       ) : null}
       <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
-        <div className='truncate font-medium text-sm leading-tight'>{primary}</div>
+        <div className='truncate font-medium text-xs leading-tight'>{primary}</div>
         {secondary ? (
           <div className='truncate font-mono text-[11px] text-muted-foreground'>{secondary}</div>
         ) : null}

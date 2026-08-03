@@ -42,7 +42,7 @@ export function MethodCard({
     >
       <div className='flex items-start justify-between gap-2'>
         <div className='flex flex-wrap items-center gap-1.5'>
-          <span className='font-medium text-sm'>{title}</span>
+          <span className='font-medium text-xs'>{title}</span>
           {recommended ? (
             <Badge variant='secondary' className='text-[10px]'>
               Recommended

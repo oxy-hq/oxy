@@ -137,6 +137,7 @@ mod m20260728_000001_health_state_add_alert_tracking;
 mod m20260729_000001_metric_monitor_coverage;
 mod m20260729_000002_metric_anomalies_event_id;
 mod m20260729_000003_metric_anomalies_granularity_key;
+mod m20260730_000001_org_teams_and_app_grants;
 
 pub struct Migrator;
 
@@ -275,6 +276,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260729_000001_metric_monitor_coverage::Migration),
             Box::new(m20260729_000002_metric_anomalies_event_id::Migration),
             Box::new(m20260729_000003_metric_anomalies_granularity_key::Migration),
+            Box::new(m20260730_000001_org_teams_and_app_grants::Migration),
         ]
     }
 }

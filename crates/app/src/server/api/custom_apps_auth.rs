@@ -32,9 +32,13 @@ use std::sync::{OnceLock, RwLock};
 use std::time::Instant;
 
 use entity::prelude::{
-    AppAdmins, AppMembers, Apps, OrgMembers, Organizations, WorkspaceOxyLockdown,
+    AppAdmins, AppMembers, AppTeamGrants, Apps, OrgMembers, OrgTeamMembers, Organizations,
+    WorkspaceOxyLockdown,
 };
-use entity::{app_admins, app_members, apps, org_members, organizations, workspace_oxy_lockdown};
+use entity::{
+    app_admins, app_members, app_team_grants, apps, org_members, org_team_members, organizations,
+    workspace_oxy_lockdown,
+};
 use oxy::database::client::establish_connection;
 use oxy_auth::authenticator::Authenticator;
 use oxy_auth::built_in::BuiltInAuthenticator;
@@ -75,12 +79,23 @@ pub fn invalidate_access_cache() {
 /// True if `user` may serve / read data products for `app`. Two
 /// independent access paths:
 ///
-/// - **Oxy staff path**: `app_admins` membership + the workspace has
-///   not locked Oxy out (`workspace_oxy_lockdown`). Works on draft (unpublished)
-///   apps too — that's how Oxy engineers iterate.
-/// - **Customer path**: the app is **published** (`published_at IS NOT
-///   NULL`) AND the user is a member of the owning org. Unpublished
-///   apps are invisible to customers — they look like 404s.
+/// - **Oxy staff path**: platform standing is staff — Global Owner **or** Global
+///   Admin, read through `oxy_server_authz::globals::platform_standing`, not from
+///   `app_admins` directly — plus the workspace has not locked Oxy out
+///   (`workspace_oxy_lockdown`). Works on draft (unpublished) apps too, which is
+///   how Oxy engineers iterate.
+/// - **Customer path**: the app is **published** (`published_at IS NOT NULL`) and
+///   then, by visibility:
+///   - `org` (the default) — any member of the owning org.
+///   - `members` (restricted) — an org member who also holds a grant on the app,
+///     direct or through a team ([`has_app_grant`]; a grant narrows the org, it is
+///     not a way into one), **or** an org officer, who keeps a break-glass path so
+///     an org cannot lock its own owners out of its app.
+///
+///   Unpublished apps are invisible to customers — they look like 404s.
+///
+/// The customer path mirrors `Ring::AppAccess` in `oxy-authz`; this is the shipped
+/// gate that ring is differenced against, so the two must be changed together.
 ///
 /// Short-circuits on the staff path so an Oxy engineer's request
 /// skips the org-membership query, and on the unpublished check so
@@ -118,7 +133,13 @@ pub async fn user_can_access_app(
         // `oxy-authz`, which states the same rule; this is the shipped gate that
         // ring is differenced against.
         if app.is_restricted() {
-            is_app_member(db, user_id, app.id).await?
+            // A grant NARROWS the org — it is not a way into one. Without the
+            // org-membership conjunction, a grant row let a non-member load the
+            // app's shell while `check_custom_app_gates` (which requires org
+            // membership) 403'd every query behind it. Mirrors the same term in
+            // `Ring::AppAccess`.
+            (is_org_member(db, user_id, app.org_id).await?
+                && has_app_grant(db, user_id, app.id).await?)
                 || is_org_officer(db, user_id, app.org_id).await?
         } else {
             is_org_member(db, user_id, app.org_id).await?
@@ -131,18 +152,52 @@ pub async fn user_can_access_app(
     Ok(allowed)
 }
 
-/// Returns `true` when `user_id` holds an `app_members` row for `app_id` (any role).
-pub(crate) async fn is_app_member(
+/// Whether `user_id` holds any grant on `app_id`, **direct or through a team**.
+///
+/// The ONE place the two grant kinds are unioned on the shipped-gate side; the fact
+/// loader does the same union for `oxy-authz`. Anything asking "does this user have a
+/// grant" must come through here, or the two sources drift.
+///
+/// Deliberately an existence check and not a role resolution. Both callers only need
+/// "is there a grant": [`user_can_access_app`] gates access on it, and
+/// [`resolve_app_role`] reports `member` for anyone who isn't already `admin` — and
+/// `admin` comes from `Ring::AppAdmin`, which reads the loader's unioned
+/// `app_admin_memberships`. A second strongest-grant-wins resolution here would be a
+/// parallel copy of a rule the model already owns, which is exactly the drift
+/// `oxy-authz` exists to end. The strongest-wins property is pinned where it lives,
+/// in the loader (`authz_loader_differential`).
+///
+/// Short-circuits on the direct row so the common case costs one query.
+pub async fn has_app_grant(
     db: &DatabaseConnection,
     user_id: Uuid,
     app_id: Uuid,
 ) -> Result<bool, DbErr> {
-    AppMembers::find()
+    let direct = AppMembers::find()
         .filter(app_members::Column::AppId.eq(app_id))
         .filter(app_members::Column::UserId.eq(user_id))
         .one(db)
+        .await?;
+    if direct.is_some() {
+        return Ok(true);
+    }
+
+    let team_ids: Vec<Uuid> = OrgTeamMembers::find()
+        .filter(org_team_members::Column::UserId.eq(user_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|row| row.team_id)
+        .collect();
+    if team_ids.is_empty() {
+        return Ok(false);
+    }
+    AppTeamGrants::find()
+        .filter(app_team_grants::Column::AppId.eq(app_id))
+        .filter(app_team_grants::Column::TeamId.is_in(team_ids))
+        .one(db)
         .await
-        .map(|opt| opt.is_some())
+        .map(|row| row.is_some())
 }
 
 /// Returns `true` when `user_id` is an **officer** (owner or admin) of `org_id`.
@@ -177,7 +232,7 @@ pub(crate) async fn is_org_officer(
 ///
 /// This mirrors `Ring::AppAdmin` in `oxy-authz`; a function that gates a privileged
 /// surface on it is server-enforcing, not merely hiding a tab.
-pub(crate) async fn resolve_app_role(
+pub async fn resolve_app_role(
     db: &DatabaseConnection,
     user_id: Uuid,
     user_email: &str,
@@ -204,14 +259,13 @@ pub(crate) async fn resolve_app_role(
     if is_admin {
         return Ok(Some(app_members::ROLE_ADMIN));
     }
-    // Not an admin — a plain membership row still reports as "member" so an app
-    // can distinguish "belongs to this app" from "just any org member".
-    let row = AppMembers::find()
-        .filter(app_members::Column::AppId.eq(app.id))
-        .filter(app_members::Column::UserId.eq(user_id))
-        .one(db)
-        .await?;
-    Ok(row.map(|_| app_members::ROLE_MEMBER))
+    // Not an admin — a plain grant still reports as "member" so an app can
+    // distinguish "belongs to this app" from "just any org member". Goes through
+    // `has_app_grant` so a team-granted user isn't reported as `None`, which would
+    // make team grants invisible to `ctx.user.appRole`.
+    Ok(has_app_grant(db, user_id, app.id)
+        .await?
+        .then_some(app_members::ROLE_MEMBER))
 }
 
 /// Returns `true` when `user_id` is a member of `org_id`.

@@ -1,10 +1,12 @@
 import type { SettingsSection } from "@/stores/useSettingsDialog";
 import type { Organization, OrgRole } from "@/types/organization";
 import type { Workspace } from "@/types/workspace";
+import OrgAppAccess from "../sections/organization/AppAccess";
 import Billing from "../sections/organization/Billing";
 import General from "../sections/organization/General";
 import Integration from "../sections/organization/Integration";
 import OrgMembers from "../sections/organization/Members";
+import OrgTeams from "../sections/organization/Teams";
 import Appearance from "../sections/preferences/Appearance";
 import ActivityLogs from "../sections/workspace/ActivityLogs";
 import Airhouse from "../sections/workspace/Airhouse";
@@ -46,6 +48,12 @@ export function ActiveSection({
       )}
       {org && role && activeSection === "organization.members" && (
         <OrgMembers org={org} viewerRole={role} />
+      )}
+      {org && role && activeSection === "organization.teams" && (
+        <OrgTeams org={org} viewerRole={role} />
+      )}
+      {org && role && activeSection === "organization.app_access" && (
+        <OrgAppAccess org={org} viewerRole={role} />
       )}
       {org && role && activeSection === "organization.billing" && isAdmin && (
         <Billing org={org} onClose={close} />

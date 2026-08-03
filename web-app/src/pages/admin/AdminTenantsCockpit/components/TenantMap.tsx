@@ -23,7 +23,7 @@ export default function TenantMap({ onFocus }: { onFocus: (t: TenantType, id: st
         {isPending ? (
           <Skeleton className='h-24 w-full' />
         ) : !partners?.length ? (
-          <p className='text-muted-foreground text-sm'>No partners yet.</p>
+          <p className='text-muted-foreground text-xs'>No partners yet.</p>
         ) : (
           <div className='space-y-1'>
             {partners.map((p) => (

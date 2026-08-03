@@ -229,11 +229,27 @@ fn caps_of(c: &partner_authz::Capabilities) -> Vec<Cap> {
     caps
 }
 
-/// Apps where the user holds an `app_members` row, as `(every app, admin apps)`.
-/// One bounded query on the `user_id` index; `admin ⊆ all`, mirroring how the org
-/// sets nest so a ring reads one set rather than re-deriving the role.
+/// Apps the user holds a grant on, as `(every app, admin apps)`. `admin ⊆ all`,
+/// mirroring how the org sets nest so a ring reads one set rather than re-deriving
+/// the role.
 ///
-/// `None` = the query errored. Same reasoning as the org sets and the workspace
+/// A grant reaches the user two ways, and this is the ONLY place that difference
+/// exists:
+///
+/// - **directly** — an `app_members` row naming them, and
+/// - **through a team** — an `org_team_members` row putting them in a team that an
+///   `app_team_grants` row grants the app to.
+///
+/// Both land in the same two vectors, which is why no `oxy-authz` ring mentions
+/// teams: to the model a grant is a grant, and teams are just a second way for the
+/// fact to be true. `admin` is the union of both admin sources, so a plain direct
+/// row plus an admin team grant reads as admin (the strongest grant wins — the same
+/// way two org memberships would).
+///
+/// Two bounded queries on indexed columns (`app_members.user_id`, then
+/// `org_team_members.user_id` joined to `app_team_grants.team_id`).
+///
+/// `None` = a query errored. Same reasoning as the org sets and the workspace
 /// override: a member of a RESTRICTED app whose lookup blips is not "a user with no
 /// app membership" — reporting them as one costs them the app entirely.
 async fn load_app_memberships(
@@ -261,7 +277,61 @@ async fn load_app_memberships(
         }
         all.push(row.app_id);
     }
+
+    for grant in load_team_grants(db, user_id).await? {
+        if grant.is_admin() && !admins.contains(&grant.app_id) {
+            admins.push(grant.app_id);
+        }
+        if !all.contains(&grant.app_id) {
+            all.push(grant.app_id);
+        }
+    }
+
     Some((all, admins))
+}
+
+/// Every `app_team_grants` row reachable from the user's team memberships.
+///
+/// Split from [`load_app_memberships`] only to keep each function to one job; it is
+/// not separately callable by a ring. Returns an empty vec (not `None`) when the user
+/// is in no teams — that is a known fact, unlike a failed query.
+async fn load_team_grants(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+) -> Option<Vec<entity::app_team_grants::Model>> {
+    let team_ids: Vec<Uuid> = entity::prelude::OrgTeamMembers::find()
+        .filter(entity::org_team_members::Column::UserId.eq(user_id))
+        .all(db)
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                target: "authz",
+                error = %e,
+                user = %user_id,
+                "team membership lookup failed — facts are unknown, not empty"
+            );
+        })
+        .ok()?
+        .into_iter()
+        .map(|row| row.team_id)
+        .collect();
+    if team_ids.is_empty() {
+        return Some(Vec::new());
+    }
+
+    entity::prelude::AppTeamGrants::find()
+        .filter(entity::app_team_grants::Column::TeamId.is_in(team_ids))
+        .all(db)
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                target: "authz",
+                error = %e,
+                user = %user_id,
+                "team app-grant lookup failed — facts are unknown, not empty"
+            );
+        })
+        .ok()
 }
 
 /// Workspaces where a `workspace_members` override raises the user to Admin or Owner.

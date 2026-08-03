@@ -64,8 +64,8 @@ export default function AdminBillingQueue() {
   return (
     <div className='mx-auto max-w-5xl p-6'>
       <div className='mb-6'>
-        <h1 className='font-semibold text-2xl tracking-tight'>Billing queue</h1>
-        <p className='mt-1 text-muted-foreground text-sm'>
+        <h1 className='font-semibold text-xl tracking-tight'>Billing queue</h1>
+        <p className='mt-1 text-muted-foreground text-xs'>
           Review organizations and provision Stripe subscriptions.
         </p>
       </div>
@@ -76,7 +76,7 @@ export default function AdminBillingQueue() {
         <Card>
           <CardHeader className='flex-row items-center justify-between gap-2 space-y-0 border-b py-4'>
             <div className='flex items-center gap-3'>
-              <span className='text-muted-foreground text-sm'>Status</span>
+              <span className='text-muted-foreground text-xs'>Status</span>
               <Select value={status} onValueChange={(v) => setStatus(v as BillingStatusId)}>
                 <SelectTrigger className='w-40'>
                   <SelectValue />
@@ -90,7 +90,7 @@ export default function AdminBillingQueue() {
                 </SelectContent>
               </Select>
               {!isLoading ? (
-                <span className='text-muted-foreground text-sm'>
+                <span className='text-muted-foreground text-xs'>
                   {orgs.length} {orgs.length === 1 ? "org" : "orgs"}
                 </span>
               ) : null}
@@ -102,13 +102,13 @@ export default function AdminBillingQueue() {
           </CardHeader>
           <CardContent className='p-0'>
             {isLoading ? (
-              <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-sm'>
+              <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-xs'>
                 <Spinner /> Loading…
               </div>
             ) : orgs.length === 0 ? (
               <div className='flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground'>
                 <Inbox className='size-8' />
-                <p className='text-sm'>No orgs in this status.</p>
+                <p className='text-xs'>No orgs in this status.</p>
               </div>
             ) : (
               <Table>
@@ -133,10 +133,10 @@ export default function AdminBillingQueue() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className='text-muted-foreground text-sm'>
+                      <TableCell className='text-muted-foreground text-xs'>
                         {org.owner_email ?? "—"}
                       </TableCell>
-                      <TableCell className='text-muted-foreground text-sm tabular-nums'>
+                      <TableCell className='text-muted-foreground text-xs tabular-nums'>
                         {new Date(org.created_at).toLocaleString()}
                       </TableCell>
                       <TableCell>

@@ -99,8 +99,8 @@ export default function AdminCompilesPage() {
           <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
             Admin · Compile boundary
           </p>
-          <h1 className='font-semibold text-2xl tracking-tight'>Compiles</h1>
-          <p className='max-w-2xl text-muted-foreground text-sm'>
+          <h1 className='font-semibold text-xl tracking-tight'>Compiles</h1>
+          <p className='max-w-2xl text-muted-foreground text-xs'>
             One row per workspace, expandable to its full revision history. GitHub pushes
             auto-enqueue compiles with <code className='font-mono'>promote=true</code>; use the
             tools here for ad-hoc, batch, and rollback operations.
@@ -146,7 +146,7 @@ export default function AdminCompilesPage() {
         {c.active.isLoading ? (
           <Skeleton className='h-40 w-full' />
         ) : c.active.isError ? (
-          <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+          <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
             Failed to load compiles.
           </div>
         ) : c.view === "workspace" ? (
@@ -173,7 +173,7 @@ export default function AdminCompilesPage() {
 }
 
 const EmptyState = ({ message }: { message: string }) => (
-  <div className='rounded-lg border border-border/60 border-dashed bg-muted/30 p-6 text-center text-muted-foreground text-sm'>
+  <div className='rounded-lg border border-border/60 border-dashed bg-muted/30 p-6 text-center text-muted-foreground text-xs'>
     {message}
   </div>
 );

@@ -81,7 +81,7 @@ export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: str
       </AdminSectionLabel>
 
       {isLoading ? (
-        <div className='flex items-center gap-2 text-muted-foreground text-sm'>
+        <div className='flex items-center gap-2 text-muted-foreground text-xs'>
           <Spinner /> Loading health…
         </div>
       ) : !health ? (
@@ -121,7 +121,7 @@ export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: str
                     key={d.dimension}
                     className='flex items-center justify-between gap-3 rounded-md border border-border/50 px-3 py-2'
                   >
-                    <span className='font-medium text-sm'>
+                    <span className='font-medium text-xs'>
                       {DIMENSION_LABELS[d.dimension] ?? d.dimension}
                     </span>
                     <div className='flex min-w-0 items-center gap-2'>
@@ -140,14 +140,14 @@ export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: str
             <AdminSectionLabel>Signals (recent window)</AdminSectionLabel>
             <dl className='grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2'>
               {SIGNAL_ROWS.map((row) => (
-                <div key={row.key} className='flex items-center justify-between gap-3 text-sm'>
+                <div key={row.key} className='flex items-center justify-between gap-3 text-xs'>
                   <dt className='text-muted-foreground'>{row.label}</dt>
                   <dd className='tabular-nums'>
                     {health.signals ? (health.signals[row.key] as number) : "—"}
                   </dd>
                 </div>
               ))}
-              <div className='flex items-center justify-between gap-3 text-sm'>
+              <div className='flex items-center justify-between gap-3 text-xs'>
                 <dt className='text-muted-foreground'>Latest Airway run</dt>
                 <dd>{health.signals ? airwayLabel(health.signals) : "—"}</dd>
               </div>
@@ -199,7 +199,7 @@ const ReconciliationRow = ({ check }: { check: WorkspaceHealthReconciliationChec
   return (
     <li className='flex items-center justify-between gap-3 rounded-md border border-border/50 px-3 py-2'>
       <div className='min-w-0 space-y-1'>
-        <span className='font-medium text-sm'>{check.check}</span>
+        <span className='font-medium text-xs'>{check.check}</span>
         {check.description ? (
           <span className='block truncate text-muted-foreground text-xs'>{check.description}</span>
         ) : null}

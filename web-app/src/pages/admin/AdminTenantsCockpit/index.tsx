@@ -90,7 +90,7 @@ function usePartnerName(partnerId: string | null): string | undefined {
 function EmptyStage() {
   return (
     <div className='flex h-full items-center justify-center p-8 text-center'>
-      <p className='max-w-sm text-muted-foreground text-sm'>
+      <p className='max-w-sm text-muted-foreground text-xs'>
         Select an entity to inspect and manage it — roles, transfers, and partnerships are all
         editable inline here.
       </p>

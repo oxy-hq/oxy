@@ -22,7 +22,10 @@ use axum::http::{Request, StatusCode};
 use axum::routing::get;
 use chrono::Utc;
 use common::{APP_SLUG, demo_workspace_id, examples_path, test_db};
-use entity::prelude::{Apps, Organizations};
+
+/// The seed's second, restricted deployment into Acme — see `seed_apps`.
+const RESTRICTED_APP_SLUG: &str = "oxy-starter-private";
+use entity::prelude::{Apps, OrgMembers, Organizations};
 use entity::{apps, org_members, org_members::OrgRole, organizations};
 use oxy_app::cli::commands::seed;
 use oxy_app::server::api::{custom_apps_serve, workspace_custom_apps};
@@ -270,5 +273,288 @@ async fn a_non_member_cannot_open_another_orgs_app() {
         status,
         StatusCode::FORBIDDEN,
         "a non-member reached another org's custom app"
+    );
+}
+
+/// An org's home page lists the app the seed deployed into it.
+///
+/// The chain has four links and every one of them has silently broken at least
+/// once: the app must be **published**, its `project_id` must be the workspace the
+/// org's subdomain names as default, that subdomain row must be **enabled**, and
+/// the visibility filter must let the viewer through. Asserting the rows separately
+/// would pass while the chain is broken, so this drives the real reader
+/// (`published_app_summaries`) against the real seed.
+#[tokio::test]
+async fn a_seeded_org_home_lists_its_published_app() {
+    let db = test_db().await;
+    seed::seed_demo(Some(examples_path())).await.expect("seed");
+
+    // Acme only, deliberately. The `local` org's membership depends on
+    // `OXY_GLOBAL_ADMINS`, which this harness strips (see the module header), so it
+    // has no owner here — while Acme's seven people are seeded unconditionally.
+    // `local`'s grid is already covered by `home_grid_is_scoped_to_its_own_workspace`.
+    {
+        let org_slug = "acme";
+        let org = Organizations::find()
+            .filter(organizations::Column::Slug.eq(org_slug))
+            .one(&db)
+            .await
+            .expect("query org")
+            .unwrap_or_else(|| panic!("{org_slug} seeded"));
+
+        // The org's home resolves through its subdomain's default workspace. Without
+        // an ENABLED row the host 302s to the app root, so the org would have no home
+        // for the app to appear on at all.
+        let sub = entity::prelude::OrgSubdomains::find()
+            .filter(entity::org_subdomains::Column::OrgId.eq(org.id))
+            .one(&db)
+            .await
+            .expect("query subdomain")
+            .unwrap_or_else(|| panic!("{org_slug} should have a seeded subdomain row"));
+        assert!(sub.enabled, "{org_slug}'s subdomain must be enabled");
+        let home_ws = sub
+            .default_workspace_id
+            .unwrap_or_else(|| panic!("{org_slug}'s subdomain needs a default workspace"));
+
+        // An owner of the org — the person whose home page this is.
+        let owner = OrgMembers::find()
+            .filter(org_members::Column::OrgId.eq(org.id))
+            .filter(org_members::Column::Role.eq(OrgRole::Owner))
+            .one(&db)
+            .await
+            .expect("query owner")
+            .unwrap_or_else(|| panic!("{org_slug} should have an owner"));
+        let user = entity::prelude::Users::find_by_id(owner.user_id)
+            .one(&db)
+            .await
+            .expect("query user")
+            .expect("owner user row");
+
+        let viewer = workspace_custom_apps::Viewer {
+            id: user.id,
+            email: &user.email,
+        };
+        let names: Vec<String> =
+            workspace_custom_apps::published_app_summaries(&db, home_ws, Some(viewer))
+                .await
+                .expect("summaries")
+                .into_iter()
+                .map(|s| s.slug)
+                .collect();
+
+        assert!(
+            names.iter().any(|s| s == APP_SLUG),
+            "{org_slug}'s home page must list the seeded app, got {names:?}"
+        );
+    }
+}
+
+/// The restricted seeded app is invisible to an Acme person who holds no grant —
+/// on the very same home page that shows them the open one.
+///
+/// This is the seed's whole point: without it, "restricted" is a column value no
+/// screen ever demonstrates.
+#[tokio::test]
+async fn the_restricted_seeded_app_is_hidden_from_an_ungranted_member() {
+    let db = test_db().await;
+    seed::seed_demo(Some(examples_path())).await.expect("seed");
+
+    let org = Organizations::find()
+        .filter(organizations::Column::Slug.eq("acme"))
+        .one(&db)
+        .await
+        .expect("query org")
+        .expect("acme seeded");
+    let sub = entity::prelude::OrgSubdomains::find()
+        .filter(entity::org_subdomains::Column::OrgId.eq(org.id))
+        .one(&db)
+        .await
+        .expect("query subdomain")
+        .expect("acme subdomain");
+    let home_ws = sub.default_workspace_id.expect("default workspace");
+
+    // A plain member who is NOT in "Client Delivery". The seed puts persons 2, 3 and
+    // 6 in no granted team, so at least one such member exists by construction.
+    let members = OrgMembers::find()
+        .filter(org_members::Column::OrgId.eq(org.id))
+        .filter(org_members::Column::Role.eq(OrgRole::Member))
+        .all(&db)
+        .await
+        .expect("query members");
+
+    // The POSITIVE half first, and it is what stops this test passing vacuously.
+    // Counting members who DON'T see the app would be green if the restricted
+    // deployment were missing entirely — every member fails to see something that
+    // doesn't exist — so "correctly hidden" and "never deployed" would look
+    // identical. Proving a granted member DOES see it pins the app's existence, its
+    // grant, and the team's roster in one assertion.
+    // Scoped to THIS app, not just "some grant on a team in Acme". Exactly one grant
+    // exists today, so the looser query happens to resolve — but a second restricted
+    // seed app would let it pick that app's team, and the assertion below would then
+    // fail while pointing at the wrong thing.
+    let restricted_app = Apps::find()
+        .filter(apps::Column::OrgId.eq(org.id))
+        .filter(apps::Column::Slug.eq(RESTRICTED_APP_SLUG))
+        .one(&db)
+        .await
+        .expect("query restricted app")
+        .expect("the seed must deploy Acme's restricted app");
+    let granted_team = entity::prelude::AppTeamGrants::find()
+        .filter(entity::app_team_grants::Column::AppId.eq(restricted_app.id))
+        .find_also_related(entity::prelude::OrgTeams)
+        .one(&db)
+        .await
+        .expect("query team grants")
+        .and_then(|(_, team)| team)
+        .expect("the seed must grant Acme's restricted app to one of its teams");
+
+    let granted_member = entity::prelude::OrgTeamMembers::find()
+        .filter(entity::org_team_members::Column::TeamId.eq(granted_team.id))
+        .one(&db)
+        .await
+        .expect("query team members")
+        .unwrap_or_else(|| panic!("{} must have at least one member", granted_team.name));
+    let granted_user = entity::prelude::Users::find_by_id(granted_member.user_id)
+        .one(&db)
+        .await
+        .expect("query user")
+        .expect("granted user row");
+
+    let granted_slugs: Vec<String> = workspace_custom_apps::published_app_summaries(
+        &db,
+        home_ws,
+        Some(workspace_custom_apps::Viewer {
+            id: granted_user.id,
+            email: &granted_user.email,
+        }),
+    )
+    .await
+    .expect("summaries")
+    .into_iter()
+    .map(|s| s.slug)
+    .collect();
+    assert!(
+        granted_slugs.iter().any(|s| s == RESTRICTED_APP_SLUG),
+        "a member of {} must see the restricted app — without this the \"hidden\" \
+         assertions below would pass even if the app were never deployed: {granted_slugs:?}",
+        granted_team.name
+    );
+
+    // And the negative half: at least one Acme member is left out entirely.
+    let mut checked = 0;
+    for m in members {
+        if m.user_id == granted_member.user_id {
+            continue;
+        }
+        let user = entity::prelude::Users::find_by_id(m.user_id)
+            .one(&db)
+            .await
+            .expect("query user")
+            .expect("member user row");
+        let viewer = workspace_custom_apps::Viewer {
+            id: user.id,
+            email: &user.email,
+        };
+        let slugs: Vec<String> =
+            workspace_custom_apps::published_app_summaries(&db, home_ws, Some(viewer))
+                .await
+                .expect("summaries")
+                .into_iter()
+                .map(|s| s.slug)
+                .collect();
+
+        // Every member sees the open app, whatever their team.
+        assert!(
+            slugs.iter().any(|s| s == APP_SLUG),
+            "the open app must stay visible to every Acme member, got {slugs:?}"
+        );
+        if !slugs.iter().any(|s| s == RESTRICTED_APP_SLUG) {
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 0,
+        "the seed must leave at least one Acme member without the restricted app — \
+         otherwise the filtered-out state is never demonstrated"
+    );
+}
+
+/// An extra workspace that sorts before the seeded one must not steal the app.
+///
+/// The app seed used to resolve its target with `ORDER BY name ASC LIMIT 1`. That
+/// held only while the org had exactly the workspaces the seed made — add one named
+/// `"AAA"` and the next re-seed moves the apps onto it, off the workspace the org
+/// subdomain names as default. Nothing errors; the org's home page just renders an
+/// empty grid. This reproduces that setup and asserts the apps stay put.
+#[tokio::test]
+async fn an_alphabetically_earlier_workspace_does_not_steal_the_seeded_app() {
+    let db = test_db().await;
+    seed::seed_demo(Some(examples_path())).await.expect("seed");
+
+    let org = Organizations::find()
+        .filter(organizations::Column::Slug.eq("acme"))
+        .one(&db)
+        .await
+        .expect("query org")
+        .expect("acme seeded");
+
+    // Where the seed put the apps the first time.
+    let seeded_ws = Apps::find()
+        .filter(apps::Column::OrgId.eq(org.id))
+        .filter(apps::Column::Slug.eq(APP_SLUG))
+        .one(&db)
+        .await
+        .expect("query app")
+        .expect("acme's app")
+        .project_id;
+
+    // A workspace that sorts ahead of "Acme Internal Analytics" under any collation.
+    let intruder = Uuid::new_v4();
+    entity::workspaces::ActiveModel {
+        id: ActiveValue::Set(intruder),
+        name: ActiveValue::Set("AAA scratch".into()),
+        org_id: ActiveValue::Set(Some(org.id)),
+        ..Default::default()
+    }
+    .insert(&db)
+    .await
+    .expect("insert intruder workspace");
+
+    // Re-seed. The target must still be the workspace the seed created.
+    seed::seed_demo(Some(examples_path()))
+        .await
+        .expect("re-seed");
+
+    let after = Apps::find()
+        .filter(apps::Column::OrgId.eq(org.id))
+        .filter(apps::Column::Slug.eq(APP_SLUG))
+        .one(&db)
+        .await
+        .expect("query app")
+        .expect("acme's app")
+        .project_id;
+    assert_eq!(
+        after, seeded_ws,
+        "a re-seed moved the app onto a workspace that merely sorts earlier"
+    );
+    assert_ne!(after, intruder);
+
+    // The org root has somewhere to point at all. That existence — an enabled row —
+    // is what this block earns; the equality below cannot independently fail, since
+    // `default_workspace_id` is written once on the first seed and `needs_default`
+    // leaves it alone on every re-seed. It stays as the statement of the invariant
+    // the two halves have to agree on: the workspace the seed deploys apps to is the
+    // one the org root opens. Break that and the home page renders an empty grid.
+    let sub = entity::prelude::OrgSubdomains::find()
+        .filter(entity::org_subdomains::Column::OrgId.eq(org.id))
+        .one(&db)
+        .await
+        .expect("query subdomain")
+        .expect("acme subdomain");
+    assert!(sub.enabled, "the seeded org subdomain must be enabled");
+    assert_eq!(
+        sub.default_workspace_id,
+        Some(seeded_ws),
+        "the org home's default workspace must be the one holding the apps"
     );
 }

@@ -1,0 +1,47 @@
+name: Configure git identity for the app bot
+description: >-
+  Set `user.name` / `user.email` so commits pushed by a workflow are attributed
+  to the GitHub App bot rather than to `github-actions[bot]` or an empty author.
+
+  The email is not a free choice: GitHub only links a commit to the bot account
+  when it is exactly `<numeric-user-id>+<slug>[bot]@users.noreply.github.com`,
+  and the id has to be looked up from the API at runtime because it isn't among
+  the token action's outputs. That incantation was copy-pasted into five
+  workflows; a typo in any of them produces commits that push fine and are
+  attributed to nobody, which nothing fails on.
+
+inputs:
+  app-slug:
+    description: >-
+      `steps.<id>.outputs.app-slug` from `actions/create-github-app-token`.
+    required: true
+  token:
+    description: >-
+      `steps.<id>.outputs.token` from the same step — needed for the user-id
+      lookup, not for the commit itself.
+    required: true
+  path:
+    description: >-
+      Repository to configure, when it isn't the workspace root — a second
+      checkout under a `path:` (see `content-changelog`, which commits into
+      `oxygen-content`).
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: Configure git
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        APP_SLUG: ${{ inputs.app-slug }}
+        REPO_PATH: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+        # Fail here rather than let a bad lookup produce an unattributed commit.
+        user_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+        [ -n "$user_id" ] || { echo "::error::could not resolve user id for ${APP_SLUG}[bot]"; exit 1; }
+        git -C "$REPO_PATH" config user.name "${APP_SLUG}[bot]"
+        git -C "$REPO_PATH" config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+        git -C "$REPO_PATH" config --get user.email

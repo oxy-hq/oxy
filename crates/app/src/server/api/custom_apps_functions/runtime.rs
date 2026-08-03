@@ -56,9 +56,12 @@ pub struct CtxUser {
     pub email: String,
     pub org_id: String,
     /// The caller's role **within this app** — `"admin"`, `"member"`, or absent.
-    /// Server-derived from `app_members` (plus org-owner / staff break-glass); an
-    /// app gates its privileged surface on this rather than on a client-side flag
-    /// or a hard-coded email allowlist. Mirrors `Ring::AppAdmin` in `oxy-authz`.
+    /// Server-derived: `"admin"` is `Ring::AppAdmin` in `oxy-authz` (an app grant,
+    /// org owner/admin, or staff break-glass), and `"member"` is any grant the
+    /// caller holds on the app — **direct (`app_members`) or through a team they
+    /// belong to (`app_team_grants` × `org_team_members`)**. An app gates its
+    /// privileged surface on this rather than on a client-side flag or a
+    /// hard-coded email allowlist.
     #[serde(rename = "appRole", skip_serializing_if = "Option::is_none")]
     pub app_role: Option<String>,
 }

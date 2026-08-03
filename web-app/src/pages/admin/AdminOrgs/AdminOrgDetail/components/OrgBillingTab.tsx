@@ -72,7 +72,7 @@ export const OrgBillingTab = ({ orgId }: { orgId: string }) => {
       <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-3'>
-            <h3 className='font-semibold text-base'>Subscription</h3>
+            <h3 className='font-semibold text-sm'>Subscription</h3>
             <AdminStatusPill tone={tone} label={sub.status.replace(/_/g, " ")} />
             {sub.livemode ? null : <AdminStatusPill tone='warn' label='test mode' />}
           </div>
@@ -84,7 +84,7 @@ export const OrgBillingTab = ({ orgId }: { orgId: string }) => {
           </Button>
         </div>
 
-        <dl className='grid gap-4 text-sm sm:grid-cols-3'>
+        <dl className='grid gap-4 text-xs sm:grid-cols-3'>
           <div className='space-y-0.5'>
             <dt className='text-muted-foreground text-xs'>Seats</dt>
             <dd className='font-medium tabular-nums'>{seats.toLocaleString()}</dd>
@@ -112,7 +112,7 @@ export const OrgBillingTab = ({ orgId }: { orgId: string }) => {
         </AdminSectionLabel>
         <ul className='divide-y divide-border/60 overflow-hidden rounded-md border border-border/60 bg-card'>
           {sub.items.map((item) => (
-            <li key={item.id} className='flex items-center justify-between gap-3 px-4 py-3 text-sm'>
+            <li key={item.id} className='flex items-center justify-between gap-3 px-4 py-3 text-xs'>
               <div className='min-w-0'>
                 <p className='truncate font-medium'>
                   {item.product_name ?? item.price_nickname ?? item.price_id}
@@ -128,7 +128,7 @@ export const OrgBillingTab = ({ orgId }: { orgId: string }) => {
       {sub.latest_invoice ? (
         <section className='space-y-3'>
           <AdminSectionLabel>Latest invoice</AdminSectionLabel>
-          <div className='flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card px-4 py-3 text-sm'>
+          <div className='flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card px-4 py-3 text-xs'>
             <div className='flex items-center gap-3'>
               <AdminStatusPill
                 tone={sub.latest_invoice.status === "paid" ? "ok" : "warn"}

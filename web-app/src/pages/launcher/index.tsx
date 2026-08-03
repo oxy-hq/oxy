@@ -1,10 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { AppAccessDialog } from "@/components/appAccess/AppAccessDialog";
 import { RecentThreads } from "@/components/RecentThreads";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useCustomApps } from "@/hooks/api/customApps/useCustomApps";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import useAskDock from "@/stores/useAskDock";
+import useCurrentOrg from "@/stores/useCurrentOrg";
+import type { CustomAppSummary } from "@/types/apps";
 import { AppCard } from "./components/AppCard";
 import { AskForwardFallback } from "./components/AskForwardFallback";
 import { CriticalAlertBanner } from "./components/CriticalAlertBanner";
@@ -19,6 +22,23 @@ const LauncherPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const openAsk = useAskDock((s) => s.open);
+
+  // Managing access from the home grid, so an org admin doesn't have to know that
+  // the control lives three levels into the settings dialog. One dialog for the
+  // whole grid rather than one per card — the cards only report which app.
+  //
+  // Owner and admin are the roles `Ring::AppGrant` accepts; the server re-checks,
+  // so this gate decides whether the affordance is worth showing, not who gets in.
+  // An operator acting as a tenant resolves to owner (staff) or admin (a partner
+  // acting on a client), so assume-role sessions get the control too.
+  //
+  // One value rather than a boolean beside the org: it narrows, so the dialog can
+  // read `orgId` off it without a second `org &&` guard that could drift out of
+  // agreement with the gate.
+  const org = useCurrentOrg((s) => s.org);
+  const orgRole = useCurrentOrg((s) => s.role);
+  const manageableOrgId = org && (orgRole === "owner" || orgRole === "admin") ? org.id : null;
+  const [managing, setManaging] = useState<CustomAppSummary | null>(null);
 
   // Back-compat with navigate(HOME, { state: { prefillQuestion, ... } })
   // callers (onboarding EXPLORE buttons etc.): open the Ask dock
@@ -70,7 +90,11 @@ const LauncherPage = () => {
             >
               {customApps.map((app) => (
                 // art_url in the key remounts the card when art changes, resetting its error fallback
-                <AppCard key={`${app.id}:${app.art_url ?? ""}`} app={app} />
+                <AppCard
+                  key={`${app.id}:${app.art_url ?? ""}`}
+                  app={app}
+                  onManageAccess={manageableOrgId ? setManaging : undefined}
+                />
               ))}
             </div>
           </div>
@@ -81,6 +105,18 @@ const LauncherPage = () => {
         <AskForwardFallback shouldDisableChat={readiness.shouldDisableChat} />
       )}
       <RecentThreads className='mx-auto w-full max-w-6xl px-6 pb-8' />
+      {/* Gated on the same value as the button, so a member doesn't mount a dialog
+          they can never open. (This is a render cost only — the dialog's queries
+          are already keyed on `open`, so nothing was being fetched.) */}
+      {manageableOrgId && (
+        <AppAccessDialog
+          open={managing !== null}
+          onOpenChange={(open) => !open && setManaging(null)}
+          scope={{ kind: "org", orgId: manageableOrgId }}
+          appId={managing?.id ?? null}
+          appName={managing?.name ?? ""}
+        />
+      )}
     </div>
   );
 };

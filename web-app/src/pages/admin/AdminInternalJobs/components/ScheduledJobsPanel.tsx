@@ -25,7 +25,7 @@ export const ScheduledJobsPanel = () => {
       {isLoading ? (
         <Skeleton className='h-24 w-full' />
       ) : isError || !data ? (
-        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
           Failed to load scheduled jobs.
         </div>
       ) : (
@@ -40,7 +40,7 @@ export const ScheduledJobsPanel = () => {
               >
                 <div className='flex min-w-0 flex-col gap-1'>
                   <div className='flex items-center gap-2'>
-                    <span className='font-mono text-sm'>{job.name}</span>
+                    <span className='font-mono text-xs'>{job.name}</span>
                     <span className='inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-medium text-[10px] text-muted-foreground tabular-nums'>
                       <Clock className='size-2.5' />
                       every {formatInterval(job.interval_secs)}

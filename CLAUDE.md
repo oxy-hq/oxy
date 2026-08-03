@@ -1,5 +1,12 @@
 # Claude Code Assistant Guidelines
 
+> **Injected into every API call**, together with `product-context.md` and
+> `internal-docs/backend-architecture.md` (both `@`-imported below). State each rule
+> **once**, in the section that owns it. A recap section is how three copies of the
+> `--local` rule accumulated here; if a rule feels worth repeating, the first
+> statement is the one to sharpen. Anything retrievable by reading the code in a
+> minute belongs in the code or a crate-local `CLAUDE.md`, not here.
+
 Oxy (brand: **Oxygen**) is a Rust workspace + web frontend. The `oxy` CLI/server
 binary lives in the `app` crate (the default workspace member).
 
@@ -39,23 +46,16 @@ crates/
 web-app/                    # Frontend (see web-app/CLAUDE.md)
 ```
 
-Many crates carry their own `CLAUDE.md` (all `agentic/*`, `authz`, `cameras`,
-`integration/unifi`) — read the local one before editing a crate. The two largest crates, `core` (`oxy`) and
-`app` (`oxy-app`), have crate-root `CLAUDE.md` guides too; start there before diving in.
+Many crates carry their own `CLAUDE.md` — all `agentic/*`, `authz`, `cameras`,
+`integration/unifi`, plus the two largest (`core`, `app`). Read the local one first.
 
-## Build
+## Build & Test
 
-**Never use `--release`** locally or in CI checks — debug only (`cargo build`/`check`/`run`).
-
-- **Check every affected package**, not just one: `cargo check --workspace`, or run
-  `cargo check -p <crate>` for each changed crate (e.g. both `oxy` and `oxy-app`).
-- **Filter output** to actionable lines: `cargo check 2>&1 | grep -E "^(error|warning\[)"`.
-
-## Testing
-
-- Use **`cargo nextest run`**, never `cargo test`. Scope with `-p <crate>`, `--test <file>`, or a test name.
-- After CLI changes: `cargo build` then exercise `./target/debug/oxy <command>`.
-- Write tests alongside the change; for bug fixes, add a failing test first when practical.
+- **Never `--release`** locally or in CI checks — debug only.
+- **`cargo nextest run`**, never `cargo test`.
+- **Check every affected package.** A change usually lands in two: `cargo check -p oxy`
+  *and* `-p oxy-app`, or `--workspace`.
+- After CLI changes, exercise the binary: `cargo build && ./target/debug/oxy <command>`.
 
 ### Browser tests (UI features)
 
@@ -68,19 +68,19 @@ authoring/maintenance; drive it via slash commands (`/test-feature`,
 
 ## Committing
 
-Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
-types `feat|fix|refactor|docs|test|build|chore|perf|style|ci`. Name the area after the
-colon (`fix: web-app chart rendering bug`). Subject: imperative, <72 chars, no period;
-put the "why" in the body.
+Conventional Commits, types `feat|fix|refactor|docs|test|build|chore|perf|style|ci`.
+Name the **area** after the colon (`fix: web-app chart rendering bug`) — this repo uses
+free-text areas, not scoped parens.
 
 ## Code Style
 
-**Rust** — `cargo fmt`; clear clippy (`cargo clippy --workspace`); prefer
-`thiserror`/`OxyError` (see `oxy_shared::errors`); use `tracing` (`info!`/`warn!`/`debug!`),
-never `println!` in library crates; CLI output via the `StyledText` trait from `oxy::theme`.
+**Rust** — errors via `thiserror`/`OxyError` (`oxy_shared::errors`); logging via `tracing`,
+**never `println!` in library crates**; CLI output via the `StyledText` trait from
+`oxy::theme`.
 
-**Frontend** — pnpm only; `pnpm exec <tool>` not `npx`; lint/format with Biome
-(`pnpm exec biome check --write <file>`). Full conventions in `web-app/CLAUDE.md`.
+**Frontend** — **pnpm only**, and `pnpm exec <tool>` never `npx`; format with Biome
+(`pnpm exec biome check --write <file>`), not Prettier. Full conventions in
+`web-app/CLAUDE.md`.
 
 ## Database & Runtime
 
@@ -89,18 +89,21 @@ never `println!` in library crates; CLI output via the `StyledText` trait from `
   Entities in `entity`, migrations in `migration`.
 - **Docker** (`oxy start`): containers managed via `bollard` (not docker-compose) —
   `oxy-postgres` container, `oxy-postgres-data` volume; `oxy start --clean` for a fresh slate.
-- **`oxy serve --local`** is a **legacy**, narrow single-user/no-auth mode (one fixed project
-  on disk) — **not actively used or maintained**; don't design new behavior around it.
-  **Local development runs the production path**: `oxy serve --enterprise` (or `oxy start` for a
-  Docker-Postgres dev box) — cloud/enterprise mode, multi-tenant. Use `--enterprise`/cloud for
-  tests, demos, role-split, S3/worker-fleet, and anything production-shaped. A dev box is cloud
-  mode with non-prod secrets, so it's not distinguishable from prod by mode.
+- **Local development runs the production path** — `oxy serve --enterprise`, or `oxy start`
+  for a Docker-Postgres dev box. Use it for tests, demos, role-split, S3/worker-fleet, and
+  anything production-shaped. (`--local` is the legacy no-auth mode; see product-context.md.)
+- **A dev box is cloud mode with non-prod secrets**, so it is indistinguishable from prod by
+  `ServeMode` — never gate dev behavior on `ServeMode::Local` or on error heuristics.
+  Concretely: `ctx.email.send` hits real SES, so set `OXY_APP_EMAIL_LOCAL_TEST=1` (and
+  `MAGIC_LINK_LOCAL_TEST=true`) to preview the rendered email in the browser instead of
+  sending. Both are in `.env.example` — which is the only `.env*` file that may be committed.
 
 ## Authorization
 
 Every authorization decision goes through **`oxy-authz`** (`crates/authz`) — one exhaustive
-`match` in `allows()` that states every authority ring. `oxy-auth` is authentication (who
-you are); this is authorization (what you may do). Full guide: `crates/authz/CLAUDE.md`.
+`match` in `allows()` that states every authority ring. Note the neighbouring crate
+`oxy-auth` is *authentication*; they are not interchangeable. Full guide:
+`crates/authz/CLAUDE.md`.
 
 - **Never decide access by hand.** No `matches!(role, Owner | Admin)` in a handler, no
   reading `OXY_OWNER` / the `app_admins` table. Take a `role_guards::*` extractor (there
@@ -131,8 +134,8 @@ third. Policy-as-data is an explicit non-goal; that's the requirement that pays 
 
 ## Project Skills (invoke, don't rederive)
 
-These skills encode already-made decisions. When the work matches, **invoke the skill** —
-each `SKILL.md` carries the full trigger list and contract. The load-bearing constraints:
+These encode decisions already made and argued. When the work matches, **invoke the
+skill** rather than reasoning it out again — its `SKILL.md` carries the full contract.
 
 | Skill | Governs — invoke when… | Non-negotiable |
 | ----- | ---------------------- | -------------- |
@@ -144,52 +147,92 @@ each `SKILL.md` carries the full trigger list and contract. The load-bearing con
 
 PRs that violate the right-hand column should be challenged through the matching skill.
 
-## Docs & Brand Copy
+## Docs
 
-- Save design docs/specs to `internal-docs/`, not `docs/superpowers/specs/`.
-- **Never regenerate homepage/positioning/tagline copy from scratch** — port it verbatim or
-  flag marketing. The canonical positioning lives in `docs/snippets/positioning.mdx`
-  (mirrored by `README.md`); `.github/CODEOWNERS` gates these. Any docs PR that deletes a
-  landing page or touches >~50 files must confirm "positioning carried over verbatim".
+**`internal-docs/`** holds the living implementation references and operator runbooks —
+the "how a subsystem works and why" you can't grep from code. Consult the matching doc
+before working on a subsystem, and fold non-obvious durable facts back in when you ship.
+[`internal-docs/README.md`](internal-docs/README.md) is the index; its **Maintenance
+policy** is the full contract.
 
-## Internal engineering docs (`internal-docs/`)
+- **Design docs and specs go here**, never `docs/superpowers/specs/`. Prefer an existing
+  living doc to a new file.
+- **Undated filenames are durable; dated `YYYY-MM-DD-*.md` are ephemeral** snapshots that a
+  biweekly workflow distills and prunes — never the lasting home for a fact.
 
-`internal-docs/` holds the **living platform-implementation references and operator
-runbooks** — the durable "how a subsystem works and why" that you can't cheaply grep from
-code. **Consult the matching doc before working on a subsystem, and fold any non-obvious
-durable fact back into it when you ship.** [`internal-docs/README.md`](internal-docs/README.md)
-is the categorized index (customer-apps, worker-fleet/scaling, observability, anomaly-
-monitoring, admin-surfaces, partner-platform, compile-boundary, …).
+**Brand copy:** never regenerate homepage/positioning/tagline copy from scratch — port it
+verbatim or flag marketing. Canonical source is `docs/snippets/positioning.mdx` (mirrored
+by `README.md`), gated by `.github/CODEOWNERS`. A docs PR that deletes a landing page or
+touches >~50 files must confirm "positioning carried over verbatim".
 
-- **Prefer an existing living doc** over a new file; create one only when a subsystem has
-  no home. Undated filenames are the durable references; **dated `YYYY-MM-DD-*.md` files are
-  ephemeral** design/plan snapshots and get distilled + pruned by a biweekly workflow
-  (`.github/workflows/internal-docs-distill.yaml`) — don't treat them as the lasting home.
-- The full curation contract is `internal-docs/README.md` → **Maintenance policy**.
+## Search: four layers, one question each
 
-## Common Pitfalls
+Four search systems are installed and they overlap. Route by **what kind of question
+you're asking**, not by which tool you remember:
 
-- No `--release` for local/CI. No `println!` in library code (use `tracing`).
-- New crates must be added to the workspace `Cargo.toml` members list.
-- Never commit `.env` files or secrets.
-- **Local dev runs cloud/enterprise mode** (`oxy start` / `oxy serve --enterprise`), so a dev box
-  is indistinguishable from prod by `ServeMode` — never gate dev behavior on `ServeMode::Local`
-  (nobody runs the legacy `--local`) or on error heuristics. Concretely: custom-app email
-  (`ctx.email.send`) hits real SES in cloud mode; on a dev box set `OXY_APP_EMAIL_LOCAL_TEST=1`
-  (and `MAGIC_LINK_LOCAL_TEST=true`) to preview the rendered email in the browser instead of
-  sending. Both are in `.env.example`.
+| The question | Use | Why not the others |
+| ------------ | --- | ------------------ |
+| **How does this code relate?** — callers, callees, imports, tests-for, blast radius, execution flows, module structure | **code-review-graph** MCP (`query_graph_tool`, `get_impact_radius_tool`, `get_architecture_overview_tool`) | Precomputed edges. Nothing else here knows "which flows break if I change this". |
+| **Review this diff** | **code-review-graph** `detect_changes_tool` + `get_review_context_tool` | Risk-scored and token-bounded; reading the files is the expensive way to the same answer. |
+| **What does this code look like?** — call shapes, JSX props, `impl` blocks, "every handler that skips X" | **`ast-grep`** (see below) | The graph indexes symbols and edges, not syntax. A shape query is exactly its blind spot. |
+| **Map a big file before reading it** | **`ast-grep outline <f> --view signatures`** | Zero setup, and works on files the graph hasn't indexed yet — a brand-new file, a worktree, `node_modules`. |
+| **Where does this exact symbol resolve?** — one symbol, ground truth, generics and traits included | **serena** `find_referencing_symbols` / `find_symbol` | LSP, not an index. Use when the graph's answer looks incomplete or the code is uncommitted. |
+| **Where does this string appear?** — literals, config keys, log lines, comments, TODOs | **Grep / Glob** | Text is text. The graph has no node for a string in a YAML file. |
 
-## code-review-graph MCP (use BEFORE Grep/Glob/Read)
+**Grep IS ripgrep and Glob IS fd** — use the tools, not Bash, so results stay capped
+and structured (`output_mode`, `head_limit`, `-A/-B/-C`). Shelling out to `rg`/`fd`
+buys nothing and loses those. `fzf` is a TTY selector and is useless here.
 
-This repo has a knowledge graph — it's faster, cheaper, and gives structural context
-(callers, dependents, test coverage) that file scanning can't. Reach for it first:
+**Never run `ast-grep` without `--json=compact | jq`:**
+
+```bash
+ast-grep -p '<pat>' -l <lang> --json=compact | jq -r '.[] | "\(.file):\(.range.start.line)"'
+```
+
+A match is a whole AST node, so `tokio::spawn($$$)` returns every spawned block in
+full: 36 call sites in `crates/app/src/server/` = **258 KB** raw, vs 4.5 KB for
+`rg -n` and 2.5 KB filtered. Filtered it's the cheapest of the three; raw it's a
+context bomb. Same shape for `outline`: `world_model_graph/handlers.rs` is 117 KB,
+its outline 624 bytes.
+
+**Graph freshness.** `.code-review-graph/` (gitignored, ~370 MB) is built at a
+commit; a `PostToolUse` hook runs `code-review-graph update --skip-flows` after
+edits, so symbols stay current but **flow and community data lag until a full
+`update`**. If a graph answer contradicts the code in front of you, the code wins —
+re-check with serena or ast-grep and run `code-review-graph update`.
+
+Skills: `explore-codebase`, `review-changes`, `debug-issue`, `refactor-safely` drive
+the graph; `ast-grep` and `ast-grep-outline` carry pattern syntax. Invoke them rather
+than guessing tool names or metavariable syntax.
+
+> A generated block below may say "**ALWAYS** use the graph BEFORE Grep/Glob/Read".
+> It is written by `code-review-graph install` and doesn't know the other three tools
+> exist. **The table above supersedes it** — the graph is first for *relationship*
+> questions, not for all of them.
+
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+Routing for these tools lives in **"Search: four layers, one question each"** above,
+alongside the three other search systems this repo has — read that, not this stub.
+
+Everything below the marker comment is regenerated by `code-review-graph install`.
+If a rerun replaces this stub with the stock "ALWAYS use the graph first" text,
+that text is wrong here (it can't know serena and ast-grep are installed); restore
+this pointer. The tool table it ships is accurate and worth keeping — it's the
+*ordering* claim that conflicts.
 
 | Tool | Use when |
-| ---- | -------- |
-| `semantic_search_nodes` / `query_graph` | finding code, tracing callers/callees/imports/tests |
-| `detect_changes` + `get_review_context` | reviewing a diff (risk-scored, token-efficient) |
-| `get_impact_radius` / `get_affected_flows` | blast radius of a change |
-| `get_architecture_overview` / `list_communities` | high-level structure |
-| `refactor_tool` | planning renames, finding dead code |
+| ------ | ---------- |
+| `detect_changes_tool` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context_tool` | Need source snippets for review — token-efficient |
+| `get_impact_radius_tool` | Understanding blast radius of a change |
+| `get_affected_flows_tool` | Finding which execution paths are impacted |
+| `query_graph_tool` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes_tool` | Finding functions/classes by name or keyword |
+| `get_architecture_overview_tool` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
 
-The graph auto-updates on file changes. Fall back to Grep/Glob/Read only when it doesn't cover what you need.
+Start with `get_minimal_context(task=...)` and `detail_level="minimal"` — the
+generated skills set a budget of ≤5 calls and ≤800 output tokens per task.

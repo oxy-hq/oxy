@@ -73,7 +73,7 @@ export function CreatedTokenDialog({ token, onClose }: CreatedTokenDialogProps) 
 
         <div className='flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2'>
           <code
-            className={`flex-1 break-all font-mono text-sm ${
+            className={`flex-1 break-all font-mono text-xs ${
               revealed ? "select-all" : "select-none"
             }`}
           >

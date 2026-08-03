@@ -15,7 +15,7 @@ const DETAILS: Record<ProvisionMethod, MethodDetail> = {
   invoice: {
     title: "Provision via Invoice",
     body: (
-      <div className='space-y-3 text-sm leading-relaxed'>
+      <div className='space-y-3 text-xs leading-relaxed'>
         <p>Create the subscription directly and email the invoice to the customer.</p>
         <ul className='list-disc space-y-1.5 pl-5'>
           <li>Stripe creates a draft invoice and auto-finalizes + emails it after about 1 hour.</li>
@@ -40,7 +40,7 @@ const DETAILS: Record<ProvisionMethod, MethodDetail> = {
   checkout: {
     title: "Provision via Checkout",
     body: (
-      <div className='space-y-3 text-sm leading-relaxed'>
+      <div className='space-y-3 text-xs leading-relaxed'>
         <p>Create a Stripe Checkout Session and email the link for the customer to pay.</p>
         <ul className='list-disc space-y-1.5 pl-5'>
           <li>The customer opens the link and must enter billing address, tax ID, and a card.</li>

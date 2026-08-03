@@ -353,7 +353,27 @@ const orgKeys = {
   item: (orgId: string) => [...orgKeys.all, "item", orgId] as const,
   members: (orgId: string) => [...orgKeys.all, "members", orgId] as const,
   invitations: (orgId: string) => [...orgKeys.all, "invitations", orgId] as const,
-  myInvitations: () => [...orgKeys.all, "my-invitations"] as const
+  myInvitations: () => [...orgKeys.all, "my-invitations"] as const,
+  teams: (orgId: string) => [...orgKeys.all, "teams", orgId] as const,
+  team: (orgId: string, teamId: string) => [...orgKeys.all, "teams", orgId, teamId] as const
+};
+
+/**
+ * App access is edited from three surfaces with three different gates, so the key
+ * carries the SCOPE it was fetched through. Without that, an admin-console read and
+ * an org-settings read of the same app would share a cache entry and one surface's
+ * 403 would poison the other.
+ */
+const appAccessKeys = {
+  all: ["app-access"] as const,
+  detail: (scope: string, appId: string) => [...appAccessKeys.all, scope, appId] as const,
+  grantableTeams: (scope: string, key: string) =>
+    [...appAccessKeys.all, "teams", scope, key] as const,
+  grantablePeople: (scope: string, key: string) =>
+    [...appAccessKeys.all, "people", scope, key] as const,
+  /** Prefix — invalidate to refresh every org's app list at once. */
+  orgAppsAll: () => [...appAccessKeys.all, "org-apps"] as const,
+  orgApps: (orgId: string) => [...appAccessKeys.orgAppsAll(), orgId] as const
 };
 
 const githubKeys = {
@@ -880,6 +900,7 @@ const queryKeys = {
   worldModel: worldModelKeys,
   metricAnomalies: metricAnomaliesKeys,
   org: orgKeys,
+  appAccess: appAccessKeys,
   agent: agentKeys,
   builder: builderKeys,
   coordinator: coordinatorKeys,

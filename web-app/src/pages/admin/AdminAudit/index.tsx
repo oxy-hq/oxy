@@ -52,8 +52,8 @@ export default function AdminAudit() {
   return (
     <div className='mx-auto w-full max-w-[100rem] space-y-4 p-6'>
       <div>
-        <h1 className='font-semibold text-2xl'>Audit log</h1>
-        <p className='text-muted-foreground text-sm'>
+        <h1 className='font-semibold text-xl tracking-tight'>Audit log</h1>
+        <p className='text-muted-foreground text-xs'>
           Every privileged action across the platform — partner grants, member changes, custom-app
           deploys — newest first.
         </p>

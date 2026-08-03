@@ -177,7 +177,7 @@ export default function GrantPartnershipDialog({
                       <label
                         key={k}
                         htmlFor={`grant-cap-${k}`}
-                        className={cn("flex items-center gap-1.5 text-sm", locked && "opacity-50")}
+                        className={cn("flex items-center gap-1.5 text-xs", locked && "opacity-50")}
                         title={locked ? "Global Owner only" : undefined}
                       >
                         <Switch

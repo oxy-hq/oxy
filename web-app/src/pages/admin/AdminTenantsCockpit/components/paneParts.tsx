@@ -121,7 +121,7 @@ export function Stat({ label, value }: { label: string; value: ReactNode }) {
       <div className='font-medium text-[10px] text-muted-foreground uppercase tracking-wider'>
         {label}
       </div>
-      <div className='mt-0.5 font-semibold text-base tabular-nums leading-tight'>{value}</div>
+      <div className='mt-0.5 font-semibold text-sm tabular-nums leading-tight'>{value}</div>
     </div>
   );
 }
@@ -137,5 +137,5 @@ export function PaneLoading() {
 }
 
 export function PaneError({ what }: { what: string }) {
-  return <p className='p-4 text-destructive text-sm'>Failed to load {what}.</p>;
+  return <p className='p-4 text-destructive text-xs'>Failed to load {what}.</p>;
 }

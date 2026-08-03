@@ -199,7 +199,7 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent side='right' className='flex w-full flex-col gap-0 p-0 sm:max-w-md'>
             <SheetHeader className='shrink-0 border-b px-4 py-3'>
-              <SheetTitle className='text-sm'>Status &amp; details</SheetTitle>
+              <SheetTitle className='text-xs'>Status &amp; details</SheetTitle>
             </SheetHeader>
             <DossierBody app={app} />
           </SheetContent>

@@ -36,7 +36,7 @@ export const AppCockpit = ({ apps, selected, onSelect, onBack }: AppCockpitProps
     <div className='flex h-full min-h-0 flex-col'>
       <header className='flex h-10 shrink-0 items-center gap-1 border-b px-2'>
         <Button variant='ghost' size='sm' className='h-8 gap-1.5' onClick={onBack}>
-          <ArrowLeft className='size-4' />
+          <ArrowLeft className='size-3.5' />
           Apps
         </Button>
         <Button
@@ -48,7 +48,7 @@ export const AppCockpit = ({ apps, selected, onSelect, onBack }: AppCockpitProps
           aria-pressed={railOpen}
           tooltip={{ content: railOpen ? "Hide registry" : "Show registry", side: "bottom" }}
         >
-          <PanelLeft className='size-4' />
+          <PanelLeft className='size-3.5' />
         </Button>
         <span className='ml-1 font-mono text-[11px] text-muted-foreground uppercase tracking-wider'>
           Registry

@@ -156,8 +156,8 @@ const SettingRow = ({
     // wraps.
     <div className={`rounded-lg border p-4 ${toneClass}`}>
       <div className='min-w-0'>
-        <div className={`font-medium text-sm ${titleToneClass}`}>{title}</div>
-        <p className='mt-1 text-muted-foreground text-sm leading-relaxed'>{description}</p>
+        <div className={`font-medium text-xs ${titleToneClass}`}>{title}</div>
+        <p className='mt-1 text-muted-foreground text-xs leading-relaxed'>{description}</p>
         {meta && (
           <p className='mt-2 font-mono text-muted-foreground text-xs tabular-nums'>{meta}</p>
         )}
@@ -209,11 +209,11 @@ const LocalBundlePathRow = ({ app }: { app: CustomApp }) => {
     <div className='rounded-lg border bg-card p-4'>
       <div className='flex items-start justify-between gap-6'>
         <div className='min-w-0 flex-1'>
-          <div className='flex items-center gap-2 font-medium text-sm'>
+          <div className='flex items-center gap-2 font-medium text-xs'>
             <FolderOpen className='size-3.5 text-muted-foreground' />
             Local bundle path
           </div>
-          <p className='mt-1 text-muted-foreground text-sm leading-relaxed'>
+          <p className='mt-1 text-muted-foreground text-xs leading-relaxed'>
             Absolute path to the built bundle folder on this host.
           </p>
           {!editing && (

@@ -27,8 +27,8 @@
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use entity::prelude::{AppBuilds, Apps, Organizations, Workspaces};
-use entity::{app_builds, apps, organizations, workspaces};
+use entity::prelude::{AppBuilds, AppTeamGrants, Apps, OrgTeams, Organizations, Workspaces};
+use entity::{app_builds, app_team_grants, apps, organizations, workspaces};
 use oxy::theme::StyledText;
 use oxy_shared::errors::OxyError;
 use sea_orm::{
@@ -56,6 +56,14 @@ const BUNDLE_REL_PATH: &str = "customer_apps/oxy-starter";
 /// and `oxy seed --clear` would then delete their work.
 const APP_SLUG: &str = "oxy-starter";
 
+/// The slug of the second, RESTRICTED deployment seeded alongside the open one.
+///
+/// A separate app rather than restricting the only one: an org whose sole app is
+/// invisible to most of its people reads as a broken seed, not as a demonstrated
+/// feature. With two, the launcher shows one card to everyone and the second only to
+/// the granted team — which is the contrast the feature is actually about.
+const RESTRICTED_APP_SLUG: &str = "oxy-starter-private";
+
 /// Files that document the example but aren't part of the deployed bundle.
 /// A real `oxy publish` ships a build output directory, which wouldn't
 /// contain these.
@@ -69,14 +77,52 @@ pub(crate) struct AppTarget {
     /// `apps.project_id` — the column is named `project_id` but holds a
     /// `workspaces.id`. The launcher filters on it verbatim.
     pub workspace_id: Uuid,
+    /// The app's slug. Usually [`APP_SLUG`]; a second deployment into the same org
+    /// uses a different one so the two don't collide on `(org_id, slug)`.
+    pub slug: String,
+    pub name: String,
+    /// When set, the app is restricted to this team instead of being org-visible.
+    ///
+    /// Deliberately a per-target field rather than a per-ORG rule: an org's ONLY app
+    /// must never be the restricted one, or the seed hides the app from most of that
+    /// org's people and the launcher looks broken. Orgs that demonstrate the
+    /// restricted state get a SECOND app for it.
+    pub restrict_to_team: Option<Uuid>,
 }
 
-/// Deterministic per-org app id, so re-seeding updates one row rather than
+impl AppTarget {
+    /// The default, org-visible deployment.
+    pub fn open(org_id: Uuid, org_slug: String, workspace_id: Uuid) -> Self {
+        Self {
+            org_id,
+            org_slug,
+            workspace_id,
+            slug: APP_SLUG.to_string(),
+            name: "Oxy Starter".to_string(),
+            restrict_to_team: None,
+        }
+    }
+
+    /// A second deployment in the same org, restricted to `team_id` — the seeded
+    /// example of `visibility = 'members'`.
+    pub fn restricted(&self, team_id: Uuid) -> Self {
+        Self {
+            org_id: self.org_id,
+            org_slug: self.org_slug.clone(),
+            workspace_id: self.workspace_id,
+            slug: RESTRICTED_APP_SLUG.to_string(),
+            name: "Oxy Starter (Private)".to_string(),
+            restrict_to_team: Some(team_id),
+        }
+    }
+}
+
+/// Deterministic per-(org, slug) app id, so re-seeding updates one row rather than
 /// racing the `(org_id, slug)` unique index.
-fn app_id_for(org_id: Uuid) -> Uuid {
+fn app_id_for(org_id: Uuid, slug: &str) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_DNS,
-        format!("oxy.app-seed.{org_id}.{APP_SLUG}").as_bytes(),
+        format!("oxy.app-seed.{org_id}.{slug}").as_bytes(),
     )
 }
 
@@ -189,14 +235,175 @@ pub(crate) async fn seed_example_apps(
     let mut deployed = 0;
     for target in targets {
         deploy(conn, target, &files, &build_id, manifest.clone()).await?;
+        // An org's home page is its SUBDOMAIN, and those are opt-in: without an
+        // enabled `org_subdomains` row the host 302s to the app root, so a seeded
+        // org had no home for its seeded app to appear on. Enable it here, pointed
+        // at the workspace the app was just deployed into, so `<slug>.<zone>/` lands
+        // on a launcher that actually lists it.
+        ensure_org_subdomain(conn, target).await?;
+        let restricted = apply_seed_visibility(conn, target).await?;
         println!(
-            "  {} /customer-apps/{}/{APP_SLUG}/",
+            "  {} /customer-apps/{}/{}/{}",
             "✓".success(),
-            target.org_slug
+            target.org_slug,
+            target.slug,
+            if restricted { "  (restricted)" } else { "" }
         );
         deployed += 1;
     }
     Ok(deployed)
+}
+
+/// Enable the org's subdomain and point it at the workspace holding the seeded app.
+///
+/// Idempotent, and deliberately **non-destructive on a default project someone
+/// chose**: an existing row has `enabled` forced, and its `default_workspace_id`
+/// backfilled ONLY when empty — a developer who re-pointed an org at a different
+/// default workspace keeps it across a re-seed, but an enabled row with no project
+/// to scope to (which `set_subdomain` permits, and the `ON DELETE SET NULL` FK can
+/// produce) is repaired rather than left as the one state this function exists to
+/// prevent.
+///
+/// Note the zone itself is deployment config (`OXY_ORG_SUBDOMAIN_ZONE`, or derived
+/// from `OXY_API_URL` when the admin host's first label is `app`). The row only says
+/// "this org has one"; whether `<slug>.<zone>` resolves in a given environment is a
+/// DNS/config question the seed can't answer.
+async fn ensure_org_subdomain(conn: &Conn, target: &AppTarget) -> Result<(), OxyError> {
+    use entity::org_subdomains;
+
+    // The admin UI refuses to create a subdomain on a reserved label, and dispatch
+    // bounces one before `resolve()` ever runs — so writing an enabled row for such
+    // a slug would produce a host that looks configured and never works. No seeded
+    // slug collides today; this keeps that true if one is ever added. Cosmetic loss,
+    // so warn and carry on, like the rest of the example-app seed.
+    if crate::server::api::org_host_dispatch::is_reserved_label(&target.org_slug) {
+        println!(
+            "{} skipping org subdomain for reserved label '{}'",
+            "⚠️".warning(),
+            target.org_slug
+        );
+        return Ok(());
+    }
+
+    let existing = entity::prelude::OrgSubdomains::find()
+        .filter(org_subdomains::Column::OrgId.eq(target.org_id))
+        .one(conn)
+        .await
+        .map_err(|e| OxyError::DBError(format!("find org subdomain: {e}")))?;
+
+    match existing {
+        Some(row) => {
+            // Backfill an EMPTY default workspace, but never overwrite a set one.
+            // `set_subdomain` accepts `default_workspace_id: None`, and the FK is
+            // `ON DELETE SET NULL`, so an enabled row with no default project is
+            // reachable — and that is precisely the state this function exists to
+            // prevent, since the org root would then have nothing to scope to.
+            let needs_default = row.default_workspace_id.is_none();
+            // A default pointing elsewhere is a deliberate re-point (the admin UI can
+            // set one), so leave it — but say so. Deploying the example app to a
+            // workspace the org root never scopes to produces exactly the empty grid
+            // this function exists to prevent, and it is the half that leaves no
+            // trace: the app is published, nothing errors, the home page is blank.
+            if let Some(current) = row.default_workspace_id
+                && current != target.workspace_id
+            {
+                println!(
+                    "{} org '{}' scopes its subdomain to workspace {current}, but the example app went to {} — it will not show on the org root",
+                    "⚠️".warning(),
+                    target.org_slug,
+                    target.workspace_id
+                );
+            }
+            if !row.enabled || needs_default {
+                let mut active = row.into_active_model();
+                active.enabled = ActiveValue::Set(true);
+                if needs_default {
+                    active.default_workspace_id = ActiveValue::Set(Some(target.workspace_id));
+                }
+                active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
+                active
+                    .update(conn)
+                    .await
+                    .map_err(|e| OxyError::DBError(format!("enable org subdomain: {e}")))?;
+            }
+        }
+        None => {
+            org_subdomains::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v5(
+                    &Uuid::NAMESPACE_DNS,
+                    format!("oxy.subdomain-seed.{}", target.org_id).as_bytes(),
+                )),
+                org_id: ActiveValue::Set(target.org_id),
+                default_workspace_id: ActiveValue::Set(Some(target.workspace_id)),
+                enabled: ActiveValue::Set(true),
+                created_by: ActiveValue::Set(None),
+                created_at: ActiveValue::NotSet,
+                updated_at: ActiveValue::NotSet,
+            }
+            .insert(conn)
+            .await
+            .map_err(|e| OxyError::DBError(format!("insert org subdomain: {e}")))?;
+        }
+    }
+    Ok(())
+}
+
+/// Put the seeded app into the `visibility = 'members'` state for targets the seed
+/// defines a team for, so a fresh `oxy seed` shows the restricted case as well as
+/// the default one — otherwise the whole visibility feature looks unbuilt until
+/// someone restricts an app by hand.
+///
+/// Returns whether the app was restricted. Idempotent: re-running rewrites the same
+/// grant. A missing team is treated as "nothing to restrict" rather than an error —
+/// the team seed is skipped on a non-local DB, so its absence is expected.
+async fn apply_seed_visibility(conn: &Conn, target: &AppTarget) -> Result<bool, OxyError> {
+    let Some(team_id) = target.restrict_to_team else {
+        return Ok(false);
+    };
+    // The team is seeded by `seed_partner_tenants`, which is skipped on a non-local
+    // DB — so its absence is expected, not an error.
+    if OrgTeams::find_by_id(team_id)
+        .one(conn)
+        .await
+        .map_err(|e| OxyError::DBError(format!("find seed team: {e}")))?
+        .is_none()
+    {
+        return Ok(false);
+    }
+
+    let app_id = app_id_for(target.org_id, &target.slug);
+    apps::ActiveModel {
+        id: ActiveValue::Unchanged(app_id),
+        visibility: ActiveValue::Set("members".to_string()),
+        ..Default::default()
+    }
+    .update(conn)
+    .await
+    .map_err(|e| OxyError::DBError(format!("restrict seeded app: {e}")))?;
+
+    let grant_id = Uuid::new_v5(
+        &Uuid::NAMESPACE_DNS,
+        format!("oxy.app-seed.grant.{app_id}.{team_id}").as_bytes(),
+    );
+    if AppTeamGrants::find_by_id(grant_id)
+        .one(conn)
+        .await
+        .map_err(|e| OxyError::DBError(format!("find seed grant: {e}")))?
+        .is_none()
+    {
+        app_team_grants::ActiveModel {
+            id: ActiveValue::Set(grant_id),
+            app_id: ActiveValue::Set(app_id),
+            team_id: ActiveValue::Set(team_id),
+            role: ActiveValue::Set(entity::app_members::ROLE_MEMBER.to_string()),
+            created_at: ActiveValue::NotSet,
+            created_by: ActiveValue::Set(None),
+        }
+        .insert(conn)
+        .await
+        .map_err(|e| OxyError::DBError(format!("grant seeded app to team: {e}")))?;
+    }
+    Ok(true)
 }
 
 /// One deployment, in the same order `publish()` uses:
@@ -217,7 +424,7 @@ async fn deploy(
     build_id: &str,
     manifest: Option<serde_json::Value>,
 ) -> Result<(), OxyError> {
-    let app_id = app_id_for(target.org_id);
+    let app_id = app_id_for(target.org_id, &target.slug);
     ensure_app(conn, target, app_id).await?;
 
     // Unconditional, even when the rows already exist: this is what heals a
@@ -307,8 +514,8 @@ async fn ensure_app(conn: &Conn, target: &AppTarget, app_id: Uuid) -> Result<(),
         // explicitly restricted later.
         visibility: sea_orm::ActiveValue::NotSet,
         id: ActiveValue::Set(app_id),
-        slug: ActiveValue::Set(APP_SLUG.to_string()),
-        name: ActiveValue::Set("Oxy Starter".to_string()),
+        slug: ActiveValue::Set(target.slug.clone()),
+        name: ActiveValue::Set(target.name.clone()),
         org_id: ActiveValue::Set(target.org_id),
         project_id: ActiveValue::Set(target.workspace_id),
         branch: ActiveValue::Set("main".to_string()),
@@ -378,14 +585,17 @@ async fn point_app_at(conn: &Conn, app_id: Uuid, build_pk: Uuid) -> Result<(), O
 /// bytes on disk have no owner at all.
 pub(crate) async fn clear_example_apps(conn: &Conn) -> Result<u64, OxyError> {
     let rows = Apps::find()
-        .filter(apps::Column::Slug.eq(APP_SLUG))
+        .filter(apps::Column::Slug.is_in([APP_SLUG, RESTRICTED_APP_SLUG]))
         .all(conn)
         .await
         .map_err(|e| OxyError::DBError(format!("query seeded apps: {e}")))?;
 
     let mut removed = 0;
     for row in rows {
-        if row.id != app_id_for(row.org_id) {
+        // Both seeded slugs, each keyed by its own deterministic id — so the
+        // restricted second app is cleaned up too, and a developer's own app that
+        // happens to share a slug still isn't.
+        if row.id != app_id_for(row.org_id, &row.slug) {
             continue;
         }
         // Bytes first: a failure here leaves the row in place, so a re-run
@@ -402,10 +612,26 @@ pub(crate) async fn clear_example_apps(conn: &Conn) -> Result<u64, OxyError> {
     Ok(removed)
 }
 
-/// An org's first workspace by name, for orgs the partner seed created (whose
-/// ids it derives internally). `None` when the org or its workspace is absent —
-/// the partner seed skips on a non-local DB, so callers must tolerate that.
-pub(crate) async fn first_workspace_of(
+/// The workspace an org's example app belongs in — the one the partner seed
+/// created, resolved by its DERIVED id rather than by sort order.
+///
+/// Sorting by name was only correct while the org had exactly the workspaces the
+/// seed made. Anyone adding one that sorts earlier (`"AAA"` beats `"Acme Internal
+/// Analytics"`) would have the next re-seed move the apps onto it, off the workspace
+/// the org subdomain names as default — and the org's home page would render an
+/// empty grid with nothing logged.
+///
+/// For an org the seed **does** define, the seeded workspace is the only answer:
+/// absent, this returns `None` rather than guessing. The absence means the partner
+/// seed never ran against this database — and an org slugged `acme` on the other
+/// end of a remote `OXY_DATABASE_URL` is then somebody's real tenant, whose
+/// workspace would get a demo app published into it and an enabled `org_subdomains`
+/// row written over it.
+///
+/// First-by-name survives only for an org `ORGS` doesn't define, where there is no
+/// derived id to prefer and no seed identity to contradict. `None` is also the
+/// answer when the org itself is absent, so callers must tolerate it either way.
+pub(crate) async fn seeded_app_workspace_of(
     conn: &Conn,
     org_slug: &str,
 ) -> Result<Option<AppTarget>, OxyError> {
@@ -417,6 +643,19 @@ pub(crate) async fn first_workspace_of(
     else {
         return Ok(None);
     };
+
+    if let Some(seeded) = super::seed_partners::seeded_workspace_id(org_slug, org.id) {
+        let exists = Workspaces::find_by_id(seeded)
+            .one(conn)
+            .await
+            .map_err(|e| OxyError::DBError(format!("lookup seeded workspace for {org_slug}: {e}")))?
+            .is_some();
+        // Return either way — never fall through. See the doc above: for a
+        // seed-defined slug, a missing seeded workspace means this is not the seed's
+        // database, and the fallback would write into whoever's org is really there.
+        return Ok(exists.then(|| AppTarget::open(org.id, org.slug, seeded)));
+    }
+
     let Some(ws) = Workspaces::find()
         .filter(workspaces::Column::OrgId.eq(org.id))
         .order_by_asc(workspaces::Column::Name)
@@ -426,11 +665,7 @@ pub(crate) async fn first_workspace_of(
     else {
         return Ok(None);
     };
-    Ok(Some(AppTarget {
-        org_id: org.id,
-        org_slug: org.slug,
-        workspace_id: ws.id,
-    }))
+    Ok(Some(AppTarget::open(org.id, org.slug, ws.id)))
 }
 
 #[cfg(test)]

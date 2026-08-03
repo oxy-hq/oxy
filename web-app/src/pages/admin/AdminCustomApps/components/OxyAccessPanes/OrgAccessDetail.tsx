@@ -42,7 +42,7 @@ export const OrgAccessDetail = ({
         )}
       </div>
       <div className='min-w-0'>
-        <h2 className='truncate font-semibold text-sm leading-tight'>{org.orgName}</h2>
+        <h2 className='truncate font-semibold text-xs leading-tight'>{org.orgName}</h2>
         <p className='flex items-center gap-1 font-mono text-[11px] text-muted-foreground'>
           <span className='truncate'>{org.orgSlug}</span>
           <span aria-hidden>·</span>
@@ -110,8 +110,8 @@ const AppsSection = ({ apps }: { apps: CustomApp[] }) => {
                 onClick={() => navigate(`/admin/apps/${a.org_slug}/${a.slug}`)}
                 className='flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-muted/40'
               >
-                <AppWindow className='size-4 shrink-0 text-muted-foreground/60' />
-                <span className='min-w-0 flex-1 truncate font-medium text-sm'>{a.name}</span>
+                <AppWindow className='size-3.5 shrink-0 text-muted-foreground/60' />
+                <span className='min-w-0 flex-1 truncate font-medium text-xs'>{a.name}</span>
                 <span className='shrink-0 truncate font-mono text-[11px] text-muted-foreground'>
                   {a.slug}
                 </span>
@@ -133,10 +133,10 @@ const AppsSection = ({ apps }: { apps: CustomApp[] }) => {
 const EmptyBody = ({ workspaceCount }: { workspaceCount: number }) => (
   <div className='flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center'>
     <div className='flex size-10 items-center justify-center rounded-full border bg-muted/30'>
-      <Boxes className='size-4 text-muted-foreground' />
+      <Boxes className='size-3.5 text-muted-foreground' />
     </div>
-    <p className='font-medium text-sm'>No workspaces</p>
-    <p className='max-w-xs text-muted-foreground text-sm'>
+    <p className='font-medium text-xs'>No workspaces</p>
+    <p className='max-w-xs text-muted-foreground text-xs'>
       This org has {workspaceCount} workspace{workspaceCount === 1 ? "" : "s"} in the directory but
       none resolved here.
     </p>
@@ -148,13 +148,13 @@ const WorkspaceAccessRow = ({ row, dim }: { row: OxyAccessRow; dim?: boolean }) 
   return (
     <li className={cn("flex items-center gap-2.5 px-4 py-2", dim && "opacity-40")}>
       {row.locked ? (
-        <Lock className='size-4 shrink-0 text-destructive' />
+        <Lock className='size-3.5 shrink-0 text-destructive' />
       ) : (
-        <Boxes className='size-4 shrink-0 text-muted-foreground/60' />
+        <Boxes className='size-3.5 shrink-0 text-muted-foreground/60' />
       )}
       <div className='min-w-0 flex-1'>
         <div className='flex items-center gap-2'>
-          <span className='truncate font-medium text-sm'>{row.workspace_name}</span>
+          <span className='truncate font-medium text-xs'>{row.workspace_name}</span>
           <CopyableId value={row.workspace_id} className='shrink-0' />
           {row.locked && (
             <Badge variant='destructive' className='shrink-0 px-1.5 py-0 text-[10px]'>

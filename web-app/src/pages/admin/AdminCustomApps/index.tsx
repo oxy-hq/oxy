@@ -155,7 +155,7 @@ const ErrorState = ({ error }: { error: unknown }) => (
     <div className='rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center'>
       {isAxiosError(error) && error.response?.status === 403 ? (
         <>
-          <p className='font-medium text-destructive text-sm'>
+          <p className='font-medium text-destructive text-xs'>
             Your account isn't on the custom-apps allow list.
           </p>
           <p className='mt-2 text-muted-foreground text-xs'>
@@ -165,7 +165,7 @@ const ErrorState = ({ error }: { error: unknown }) => (
           </p>
         </>
       ) : (
-        <p className='text-destructive text-sm'>Failed to load apps.</p>
+        <p className='text-destructive text-xs'>Failed to load apps.</p>
       )}
     </div>
   </div>

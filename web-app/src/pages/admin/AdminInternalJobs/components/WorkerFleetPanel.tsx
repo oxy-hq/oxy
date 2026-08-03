@@ -42,15 +42,15 @@ export const WorkerFleetPanel = () => {
       {isLoading ? (
         <Skeleton className='h-24 w-full' />
       ) : isError || !data ? (
-        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
           Failed to load worker fleet.
         </div>
       ) : !data.supported ? (
-        <div className='rounded-lg border border-border/60 border-dashed bg-muted/20 p-6 text-center text-muted-foreground text-sm'>
+        <div className='rounded-lg border border-border/60 border-dashed bg-muted/20 p-6 text-center text-muted-foreground text-xs'>
           Worker fleet info isn't available for this deployment (column not present).
         </div>
       ) : data.workers.length === 0 ? (
-        <div className='rounded-lg border border-border/60 border-dashed bg-muted/20 p-6 text-center text-muted-foreground text-sm'>
+        <div className='rounded-lg border border-border/60 border-dashed bg-muted/20 p-6 text-center text-muted-foreground text-xs'>
           No worker activity in the last 24h. Either the queue has been idle, or no `oxy worker`
           process is connected.
         </div>

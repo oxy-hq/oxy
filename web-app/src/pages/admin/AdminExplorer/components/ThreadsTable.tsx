@@ -99,7 +99,7 @@ export const ThreadsTable = ({ rows }: { rows: ExplorerThread[] }) => {
 const Empty = () => (
   <div className='flex flex-col items-center justify-center gap-2 rounded-lg border border-border/60 border-dashed bg-muted/20 px-6 py-12 text-center'>
     <MessageSquare className='size-6 text-muted-foreground' />
-    <p className='font-medium text-sm'>No threads match.</p>
+    <p className='font-medium text-xs'>No threads match.</p>
     <p className='text-muted-foreground text-xs'>Search by title, content, or thread id.</p>
   </div>
 );

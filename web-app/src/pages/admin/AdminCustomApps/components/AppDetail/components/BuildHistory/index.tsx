@@ -105,14 +105,14 @@ export const BuildHistory = ({ appId }: { appId: string }) => {
   const builds = data?.builds;
 
   if (isLoading) {
-    return <p className='text-muted-foreground text-sm'>Loading deployments…</p>;
+    return <p className='text-muted-foreground text-xs'>Loading deployments…</p>;
   }
   if (error) {
-    return <p className='text-destructive text-sm'>Couldn't load deployments.</p>;
+    return <p className='text-destructive text-xs'>Couldn't load deployments.</p>;
   }
   if (!builds || builds.length === 0) {
     return (
-      <p className='text-muted-foreground text-sm'>
+      <p className='text-muted-foreground text-xs'>
         No deployments yet — this app hasn't been published via the pipeline (oxy publish).
       </p>
     );
@@ -152,7 +152,7 @@ export const BuildHistory = ({ appId }: { appId: string }) => {
 
       {/* Full history */}
       <div className='flex flex-col gap-2'>
-        <h3 className='font-medium text-sm'>Build history</h3>
+        <h3 className='font-medium text-xs'>Build history</h3>
         <ul className='flex flex-col gap-1'>
           {builds.map((b) => (
             <li
@@ -254,7 +254,7 @@ const ChannelCard = ({
     </div>
     {build ? (
       <>
-        <span className='font-mono text-sm' title={build.build_id}>
+        <span className='font-mono text-xs' title={build.build_id}>
           {shortId(build.build_id)}
         </span>
         <span className='text-muted-foreground text-xs'>
@@ -269,7 +269,7 @@ const ChannelCard = ({
         )}
       </>
     ) : (
-      <span className='text-muted-foreground text-sm'>
+      <span className='text-muted-foreground text-xs'>
         {tone === "live" ? "Not live yet" : "Same as live"}
       </span>
     )}

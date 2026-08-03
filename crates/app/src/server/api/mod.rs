@@ -60,6 +60,7 @@ pub mod onboarding;
 pub mod org_host_dispatch;
 pub mod org_logo;
 pub mod org_subdomain;
+pub mod org_teams;
 pub mod organizations;
 pub mod partner_console;
 pub mod partner_publish_consent;

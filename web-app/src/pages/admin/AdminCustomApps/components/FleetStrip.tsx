@@ -31,7 +31,7 @@ export const FleetStrip = ({ apps }: { apps: CustomApp[] }) => {
 const Stat = ({ value, label, led }: { value: number; label: string; led?: "live" | "draft" }) => (
   <span className='flex items-center gap-1.5'>
     {led && <StatusDot isLive={led === "live"} decorative />}
-    <span className='font-semibold text-foreground text-sm tabular-nums'>{value}</span>
+    <span className='font-semibold text-foreground text-xs tabular-nums'>{value}</span>
     <span className='text-muted-foreground'>{label}</span>
   </span>
 );

@@ -22,7 +22,7 @@ export default function PartnerPeopleList({ partner }: { partner: AdminPartnerDe
 
   if (partner.people.length === 0) {
     return (
-      <p className='text-muted-foreground text-sm'>
+      <p className='text-muted-foreground text-xs'>
         {partner.name} has no members yet. Add people to the org, then grant them partner access
         here.
       </p>

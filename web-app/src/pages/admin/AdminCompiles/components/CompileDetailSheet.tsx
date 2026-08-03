@@ -73,14 +73,14 @@ export function CompileDetailSheet({
 
         <div className='space-y-6 px-4 pb-6'>
           {fatal ? (
-            <div className='rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive text-sm'>
+            <div className='rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive text-xs'>
               {fatal}
             </div>
           ) : null}
 
           {failures.length > 0 ? (
             <section>
-              <h3 className='font-medium text-destructive text-sm'>Failed ({failures.length})</h3>
+              <h3 className='font-medium text-destructive text-xs'>Failed ({failures.length})</h3>
               <ul className='mt-2 space-y-2'>
                 {failures.map((failure) => (
                   <li key={failure.path} className='rounded-md border border-border p-2'>
@@ -100,11 +100,11 @@ export function CompileDetailSheet({
           ) : null}
 
           <section>
-            <h3 className='font-medium text-foreground text-sm'>Compiled ({compiledCount})</h3>
+            <h3 className='font-medium text-foreground text-xs'>Compiled ({compiledCount})</h3>
             {isPending ? (
-              <p className='mt-2 text-muted-foreground text-sm'>Loading…</p>
+              <p className='mt-2 text-muted-foreground text-xs'>Loading…</p>
             ) : grouped.length === 0 ? (
-              <p className='mt-2 text-muted-foreground text-sm'>
+              <p className='mt-2 text-muted-foreground text-xs'>
                 No entities compiled in this revision.
               </p>
             ) : (
@@ -118,7 +118,7 @@ export function CompileDetailSheet({
                       {list.map((entity) => (
                         <li
                           key={`${kind}:${entity.file_path}`}
-                          className='flex items-baseline gap-2 text-sm'
+                          className='flex items-baseline gap-2 text-xs'
                         >
                           <span className='text-foreground'>{entity.name}</span>
                           <span

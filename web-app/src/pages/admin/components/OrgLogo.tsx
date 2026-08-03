@@ -3,7 +3,7 @@ import { cn } from "@/libs/shadcn/utils";
 
 const BOX: Record<"sm" | "md" | "lg", string> = {
   sm: "size-8 text-xs",
-  md: "size-10 text-sm",
+  md: "size-10 text-xs",
   lg: "size-16 text-2xl"
 };
 

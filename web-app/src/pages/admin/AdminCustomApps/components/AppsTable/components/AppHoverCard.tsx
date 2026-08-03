@@ -63,7 +63,7 @@ export const AppHoverCard = ({
             <div className='min-w-0 flex-1'>
               <div className='flex items-center gap-1.5'>
                 <StatusDot isLive={isLive} />
-                <span className='truncate font-medium text-sm'>{app.name}</span>
+                <span className='truncate font-medium text-xs'>{app.name}</span>
               </div>
               <span className='block truncate font-mono text-muted-foreground text-xs'>
                 {app.org_slug}/{app.slug}

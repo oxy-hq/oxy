@@ -128,7 +128,7 @@ export default function AdminOrgDetail({
 
   if (isLoading || !detail) {
     return (
-      <div className='flex min-h-[60vh] items-center justify-center gap-2 text-muted-foreground text-sm'>
+      <div className='flex min-h-[60vh] items-center justify-center gap-2 text-muted-foreground text-xs'>
         <Spinner /> Loading organization…
       </div>
     );
@@ -361,7 +361,7 @@ export default function AdminOrgDetail({
         <AdminSectionLabel>Settings</AdminSectionLabel>
         <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
           <div className='space-y-1'>
-            <h3 className='font-semibold text-base'>Branding</h3>
+            <h3 className='font-semibold text-sm'>Branding</h3>
             <p className='text-muted-foreground text-xs'>
               The org logo white-labels the workspace HQ chrome for every member.
             </p>
@@ -371,7 +371,7 @@ export default function AdminOrgDetail({
 
         <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
           <div className='space-y-1'>
-            <h3 className='font-semibold text-base'>Identity</h3>
+            <h3 className='font-semibold text-sm'>Identity</h3>
             <p className='text-muted-foreground text-xs'>
               The slug appears in every workspace URL for this organization. Changing it rewrites
               every link.
@@ -425,7 +425,7 @@ export default function AdminOrgDetail({
 
         <section className='space-y-4 rounded-lg border border-destructive/40 bg-destructive/5 p-6'>
           <div className='space-y-1'>
-            <h3 className='font-semibold text-base text-destructive'>Danger zone</h3>
+            <h3 className='font-semibold text-destructive text-sm'>Danger zone</h3>
             <p className='text-destructive/80 text-xs'>
               Removing this organization deletes every workspace, member, billing record, and
               history. This cannot be undone.

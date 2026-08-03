@@ -70,7 +70,7 @@ export default function ResyncConfirmDialog({
             className='mt-0.5'
           />
           <div className='space-y-1'>
-            <Label htmlFor='sync-seats' className='font-medium text-sm'>
+            <Label htmlFor='sync-seats' className='font-medium text-xs'>
               Also push seat count to Stripe
             </Label>
             <p className='text-muted-foreground text-xs'>

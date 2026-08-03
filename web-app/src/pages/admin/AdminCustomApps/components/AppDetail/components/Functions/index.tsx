@@ -15,14 +15,14 @@ export const Functions = ({ appId }: { appId: string }) => {
   const { data: functions, isLoading, error } = useAppFunctions(appId);
 
   if (isLoading) {
-    return <p className='text-muted-foreground text-sm'>Loading functions…</p>;
+    return <p className='text-muted-foreground text-xs'>Loading functions…</p>;
   }
   if (error) {
-    return <p className='text-destructive text-sm'>Couldn't load functions.</p>;
+    return <p className='text-destructive text-xs'>Couldn't load functions.</p>;
   }
   if (!functions || functions.length === 0) {
     return (
-      <p className='text-muted-foreground text-sm'>
+      <p className='text-muted-foreground text-xs' data-testid='admin-app-functions-empty'>
         This app ships no Oxy Functions. Add a <code>functions/&lt;name&gt;.ts</code> to the bundle
         and <code>oxy publish</code>.
       </p>
@@ -30,7 +30,7 @@ export const Functions = ({ appId }: { appId: string }) => {
   }
 
   return (
-    <ul className='flex flex-col gap-1.5'>
+    <ul className='flex flex-col gap-1.5' data-testid='admin-app-functions-list'>
       {functions.map((fn) => (
         <FunctionRow key={fn.name} appId={appId} fn={fn} />
       ))}
@@ -42,7 +42,10 @@ const FunctionRow = ({ appId, fn }: { appId: string; fn: AppFunctionSummary }) =
   const [open, setOpen] = useState(false);
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <li className='rounded-md border border-border bg-card'>
+    <li
+      className='rounded-md border border-border bg-card'
+      data-testid={`admin-app-function-${fn.name}`}
+    >
       <button
         type='button'
         onClick={() => setOpen((o) => !o)}
@@ -51,7 +54,7 @@ const FunctionRow = ({ appId, fn }: { appId: string; fn: AppFunctionSummary }) =
       >
         <Chevron className='size-3.5 shrink-0 text-muted-foreground' />
         <Code2 className='size-3.5 shrink-0 text-vis-violet' />
-        <span className='truncate font-mono text-sm'>{fn.name}</span>
+        <span className='truncate font-mono text-xs'>{fn.name}</span>
         <div className='ml-auto flex shrink-0 items-center gap-1'>
           <SurfaceBadges fn={fn} />
         </div>

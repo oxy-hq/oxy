@@ -59,7 +59,7 @@ export default function PartnerCeiling({
           <div key={r.key} className='flex items-center justify-between gap-3 px-3 py-2'>
             <div className={cn("min-w-0", locked && "opacity-60")}>
               <div className='flex items-center gap-1.5'>
-                <span className='font-medium text-sm'>{r.label}</span>
+                <span className='font-medium text-xs'>{r.label}</span>
                 {r.notEnforced && (
                   <span className='rounded-sm bg-muted px-1 py-0 text-[10px] text-muted-foreground uppercase tracking-wide'>
                     not enforced yet

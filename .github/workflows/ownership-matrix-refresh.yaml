@@ -54,13 +54,10 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Configure git
-        run: |
-          USER_ID=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
-          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
-          git config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      - uses: ./.github/actions/git-identity
+        with:
+          app-slug: ${{ steps.app-token.outputs.app-slug }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Generate ownership report
         run: |

@@ -12,7 +12,8 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   SunMoon,
-  Users
+  Users,
+  UsersRound
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AirhouseLogo } from "@/components/icons";
@@ -50,6 +51,15 @@ const CLOUD_NAV: NavGroup[] = [
     items: [
       { value: "organization.general", label: "General", icon: SettingsIcon },
       { value: "organization.members", label: "Members", icon: Users },
+      // Teams then App access, in the order an admin works: group people, then
+      // decide what those groups can reach.
+      { value: "organization.teams", label: "Teams", icon: UsersRound, adminOnly: true },
+      {
+        value: "organization.app_access",
+        label: "App access",
+        icon: ShieldCheck,
+        adminOnly: true
+      },
       {
         value: "organization.billing",
         label: "Billing",

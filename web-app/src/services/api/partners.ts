@@ -1,3 +1,4 @@
+import type { AppAccessSummary } from "@/types/appAccess";
 import type {
   ChildOrg,
   CreatedOrg,
@@ -55,7 +56,9 @@ export const PartnersService = {
     return data;
   },
 
-  async orgApps(partnerId: string, orgId: string): Promise<PartnerApp[]> {
+  // The list route returns the access-bearing summary (visibility + grant count);
+  // publish/unpublish still return the narrow `PartnerApp`. Two shapes, two types.
+  async orgApps(partnerId: string, orgId: string): Promise<AppAccessSummary[]> {
     const { data } = await apiClient.get(`/partners/${partnerId}/orgs/${orgId}/apps`);
     return data;
   },

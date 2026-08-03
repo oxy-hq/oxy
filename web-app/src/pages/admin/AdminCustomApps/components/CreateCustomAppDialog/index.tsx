@@ -276,7 +276,7 @@ export const CreateCustomAppDialog = ({ open, onOpenChange }: Props) => {
               {submitError && (
                 <div
                   role='alert'
-                  className='flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive text-sm'
+                  className='flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive text-xs'
                 >
                   <AlertTriangle className='mt-0.5 size-4 shrink-0' />
                   <span className='min-w-0 flex-1 break-words'>{submitError}</span>
@@ -449,7 +449,7 @@ const IntentCard = ({ active, onClick, icon, title, description }: IntentCardPro
     >
       {icon}
     </span>
-    <span className='font-medium text-sm'>{title}</span>
+    <span className='font-medium text-xs'>{title}</span>
     <span className='text-muted-foreground text-xs leading-snug'>{description}</span>
   </button>
 );
@@ -511,7 +511,7 @@ const IntentDetails = ({
               <Label>Start from</Label>
               <TemplatePicker value={templateId} onChange={onTemplateChange} />
             </div>
-            <div className='rounded-md border border-border bg-muted/40 p-3 text-sm'>
+            <div className='rounded-md border border-border bg-muted/40 p-3 text-xs'>
               <p className='font-medium'>Oxy will create a folder for you.</p>
               <p className='mt-1 text-muted-foreground text-xs'>
                 Path appears in the Settings tab after creation. Build into it, or ship a versioned
@@ -520,7 +520,7 @@ const IntentDetails = ({
             </div>
           </>
         ) : (
-          <div className='rounded-md border border-border bg-muted/40 p-3 text-sm'>
+          <div className='rounded-md border border-border bg-muted/40 p-3 text-xs'>
             <p className='font-medium'>Oxy registers the app row.</p>
             <p className='mt-1 text-muted-foreground text-xs'>
               No bundle is uploaded here. Ship builds from your app directory with{" "}
@@ -606,7 +606,7 @@ const BundleProbeSummary = ({
     return (
       <div
         role='alert'
-        className='flex flex-col gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive text-sm'
+        className='flex flex-col gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive text-xs'
       >
         <div className='flex items-center gap-2 font-medium'>
           <AlertTriangle className='size-4 shrink-0' />
@@ -954,7 +954,7 @@ const CreatedSummary = ({ app, onDone }: { app: CustomApp; onDone: () => void })
   // min-w-0 throughout — long absolute paths and PR URLs would
   // otherwise widen the modal past max-w-xl. Inline `<code>` blocks
   // can't break on a slash, so we lean on `break-all` for them.
-  <div className='flex min-w-0 flex-col gap-3 text-sm'>
+  <div className='flex min-w-0 flex-col gap-3 text-xs'>
     <div className='flex min-w-0 flex-col gap-1'>
       <SummaryRow label='ID'>
         <code className='break-all rounded bg-muted px-1 py-0.5 font-mono text-xs'>{app.id}</code>

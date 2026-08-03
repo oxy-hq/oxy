@@ -31,7 +31,7 @@ export function OrgSubdomainSettings({ orgId }: { orgId: string }) {
 
   if (isLoading || !data) {
     return (
-      <section className='flex items-center gap-2 rounded-lg border border-border/60 bg-card p-6 text-muted-foreground text-sm'>
+      <section className='flex items-center gap-2 rounded-lg border border-border/60 bg-card p-6 text-muted-foreground text-xs'>
         <Spinner /> Loading subdomain…
       </section>
     );
@@ -54,7 +54,7 @@ export function OrgSubdomainSettings({ orgId }: { orgId: string }) {
       <div className='space-y-1'>
         <div className='flex items-center gap-2'>
           <Globe className='size-4 text-muted-foreground' />
-          <h3 className='font-semibold text-base'>Org subdomain</h3>
+          <h3 className='font-semibold text-sm'>Org subdomain</h3>
           {data.enabled ? <AdminStatusPill tone='ok' label='Enabled' /> : null}
         </div>
         <p className='text-muted-foreground text-xs'>
@@ -73,7 +73,7 @@ export function OrgSubdomainSettings({ orgId }: { orgId: string }) {
 
       <div className='flex items-center justify-between gap-4'>
         <div className='flex flex-col'>
-          <span className='font-medium text-sm'>Enabled</span>
+          <span className='font-medium text-xs'>Enabled</span>
           <span className='text-muted-foreground text-xs'>
             {data.enabled && data.url ? (
               <>

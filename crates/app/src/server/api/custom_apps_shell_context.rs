@@ -142,7 +142,11 @@ pub async fn get_shell_context(Path(project_id): Path<Uuid>, headers: HeaderMap)
         }
     };
 
-    let summaries = match published_app_summaries(&ctx.db, project_id).await {
+    let viewer = crate::server::api::workspace_custom_apps::Viewer {
+        id: ctx.user.id,
+        email: &ctx.user.email,
+    };
+    let summaries = match published_app_summaries(&ctx.db, project_id, Some(viewer)).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("shell-context app listing failed: {e}");

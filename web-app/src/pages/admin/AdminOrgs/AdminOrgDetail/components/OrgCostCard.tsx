@@ -24,12 +24,12 @@ export const OrgCostCard = ({
       {isLoading ? (
         <div className='h-28 animate-pulse rounded bg-muted/40' />
       ) : !usage || usage.total.run_count === 0 ? (
-        <p className='text-muted-foreground text-sm'>No LLM activity in this window.</p>
+        <p className='text-muted-foreground text-xs'>No LLM activity in this window.</p>
       ) : (
         <div className='space-y-4'>
           <div className='flex items-baseline gap-2'>
             <DollarSign className='size-4 text-muted-foreground' />
-            <span className='font-semibold text-3xl tabular-nums tracking-tight'>
+            <span className='font-semibold text-2xl tabular-nums tracking-tight'>
               {usd(usage.total.cost_usd)}
             </span>
           </div>

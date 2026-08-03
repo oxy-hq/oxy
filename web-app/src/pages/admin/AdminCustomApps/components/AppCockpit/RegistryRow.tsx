@@ -50,7 +50,7 @@ export const RegistryRow = forwardRef<HTMLButtonElement, RegistryRowProps>(
         <span className='min-w-0 flex-1'>
           <span
             className={cn(
-              "block truncate text-sm",
+              "block truncate text-xs",
               selected ? "font-medium text-foreground" : "text-foreground/90"
             )}
           >

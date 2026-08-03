@@ -30,7 +30,7 @@ export const AdminEmptyState = ({
       <Icon className='size-5' />
     </div>
     <div className='space-y-1'>
-      <p className='font-medium text-sm'>{title}</p>
+      <p className='font-medium text-xs'>{title}</p>
       {description ? (
         <p className='mx-auto max-w-md text-muted-foreground text-xs'>{description}</p>
       ) : null}

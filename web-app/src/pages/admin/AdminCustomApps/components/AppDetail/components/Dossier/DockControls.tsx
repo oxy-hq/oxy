@@ -32,7 +32,7 @@ export const DockControls = ({
     {OPTIONS.map(({ value: option, icon: Icon, label }) => (
       <Tooltip key={option}>
         <TooltipTrigger asChild>
-          <ToggleGroupItem value={option} aria-label={label} className='size-7 px-0'>
+          <ToggleGroupItem value={option} aria-label={label} className='size-6 px-0'>
             <Icon className='size-3.5' />
           </ToggleGroupItem>
         </TooltipTrigger>

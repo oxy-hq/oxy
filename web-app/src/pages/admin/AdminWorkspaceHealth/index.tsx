@@ -63,11 +63,11 @@ export default function AdminWorkspaceHealthPage() {
           <Skeleton className='h-10 w-full' />
         </div>
       ) : isError || !data ? (
-        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
           Failed to load workspace health data.
         </div>
       ) : data.workspaces.length === 0 ? (
-        <div className='rounded-lg border border-border bg-muted/30 p-6 text-center text-muted-foreground text-sm'>
+        <div className='rounded-lg border border-border bg-muted/30 p-6 text-center text-muted-foreground text-xs'>
           No workspaces found.
         </div>
       ) : (
@@ -94,7 +94,7 @@ export default function AdminWorkspaceHealthPage() {
                       to={`${ROUTES.ADMIN.WORKSPACE_DETAIL(ws.workspace_id)}?tab=health`}
                       className='group block'
                     >
-                      <span className='font-medium text-sm group-hover:underline'>
+                      <span className='font-medium text-xs group-hover:underline'>
                         {ws.workspace_name ?? "Unknown workspace"}
                       </span>
                       <span className='block text-muted-foreground text-xs'>

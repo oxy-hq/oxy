@@ -61,7 +61,7 @@ function PageBody() {
       {queueStats.isLoading ? (
         <Skeleton className='h-16 w-full' />
       ) : queueStats.isError || !queueStats.data ? (
-        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
           Failed to load queue stats.
         </div>
       ) : (

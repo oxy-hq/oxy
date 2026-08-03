@@ -45,11 +45,42 @@ fn build_id_is_stable_for_identical_bundles() {
 
 #[test]
 fn app_id_differs_per_org_so_one_bundle_can_back_two_deployments() {
-    let a = app_id_for(Uuid::from_u128(1));
-    let b = app_id_for(Uuid::from_u128(2));
+    let a = app_id_for(Uuid::from_u128(1), APP_SLUG);
+    let b = app_id_for(Uuid::from_u128(2), APP_SLUG);
     assert_ne!(a, b);
     // Deterministic, so a re-seed updates rather than duplicates.
-    assert_eq!(a, app_id_for(Uuid::from_u128(1)));
+    assert_eq!(a, app_id_for(Uuid::from_u128(1), APP_SLUG));
+}
+
+#[test]
+fn app_id_differs_per_slug_so_one_org_can_hold_both_seeded_apps() {
+    // Acme gets the open app AND the restricted one. Keyed on slug as well as org,
+    // or the second deployment would collide onto the first's id and the seed would
+    // silently overwrite instead of adding.
+    let org = Uuid::from_u128(7);
+    assert_ne!(
+        app_id_for(org, APP_SLUG),
+        app_id_for(org, RESTRICTED_APP_SLUG)
+    );
+}
+
+#[test]
+fn the_restricted_target_keeps_the_org_but_changes_slug_and_visibility() {
+    let open = AppTarget::open(Uuid::from_u128(3), "acme".into(), Uuid::from_u128(4));
+    assert_eq!(open.slug, APP_SLUG);
+    assert!(
+        open.restrict_to_team.is_none(),
+        "the default deployment must stay org-visible — an org's only app must never \
+         be the restricted one, or the launcher looks broken"
+    );
+
+    let team = Uuid::from_u128(5);
+    let restricted = open.restricted(team);
+    assert_eq!(restricted.org_id, open.org_id);
+    assert_eq!(restricted.workspace_id, open.workspace_id);
+    assert_eq!(restricted.slug, RESTRICTED_APP_SLUG);
+    assert_ne!(restricted.slug, open.slug, "the two must not collide");
+    assert_eq!(restricted.restrict_to_team, Some(team));
 }
 
 #[test]

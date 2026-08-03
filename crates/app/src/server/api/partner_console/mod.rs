@@ -72,6 +72,28 @@ pub(crate) fn scoped_routes() -> Router<AppState> {
             get(workspaces::list_org_workspaces),
         )
         .route("/orgs/{org_id}/apps", get(app_mgmt::list_org_apps))
+        // The partner's OWN apps — a partner is a real org with its own custom
+        // apps, and those are not reachable through the client routes because the
+        // partner is not its own client. Authorized by ORG authority (an officer of
+        // the partner org), never by the ceiling, so no operator gains reach over
+        // their own org that they didn't already have. See `load_manageable_app`.
+        .route("/own-apps", get(app_mgmt::list_own_apps))
+        .route("/own-teams", get(app_mgmt::list_own_teams))
+        .route("/own-people", get(app_mgmt::list_own_people))
+        .route("/orgs/{org_id}/teams", get(app_mgmt::list_org_teams))
+        // Both halves of the grant picker are gated on `manage_apps` — the
+        // member-management endpoint above needs `manage_members`, which a
+        // manage_apps-only partner correctly does not hold.
+        .route(
+            "/orgs/{org_id}/grantable-people",
+            get(app_mgmt::list_grantable_people),
+        )
+        // Who may open a managed app — `manage_apps`, the same capability as
+        // publish. Naming an audience is lifecycle, not data access.
+        .route(
+            "/apps/{app_id}/access",
+            get(app_mgmt::get_app_access).put(app_mgmt::set_app_access),
+        )
         .route(
             "/apps/{app_id}/publish",
             post(app_mgmt::publish_app).delete(app_mgmt::unpublish_app),

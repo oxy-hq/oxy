@@ -101,6 +101,27 @@ pub enum Action {
     /// Deliberately not a develop_apps partner — building an app is not
     /// administering its live privileged surface.
     AppAdmin,
+    /// Decide WHO may open a custom app: flip `apps.visibility`, and grant or
+    /// revoke `app_members` / `app_team_grants` rows. Also covers the org's team
+    /// roster (`org_teams`, `org_team_members`), which exists only to be granted.
+    ///
+    /// An org **officer** (owner or admin), Oxy staff, or a partner whose ceiling
+    /// grants `manage_apps`. Naming an app's audience is app LIFECYCLE — the same
+    /// thing `manage_apps` already means — which is why the partner term belongs
+    /// here and pointedly not on [`Action::AppAdmin`].
+    ///
+    /// Separate from [`Action::AppAdmin`] on purpose: administering an app's
+    /// privileged surface (what an app admin does) is not the same authority as
+    /// deciding who reaches the app at all (what an org officer does). Fusing them
+    /// would either hand app admins the roster or hand partners the app's admin
+    /// surface — both wrong, in opposite directions.
+    ///
+    /// Note this DOES let a `manage_apps` partner edit the client's team roster.
+    /// That is intended — a partner curating audiences for apps it manages needs
+    /// the audiences — but it is reach into org membership data, so if teams ever
+    /// gate something other than apps, that consumer needs its own action rather
+    /// than riding this one.
+    AppAccessManage,
     /// Rename a workspace (`ensure_org_admin_or_workspace_creator`): an org
     /// owner/admin, OR the plain member who CREATED that workspace. The creator half
     /// is the only place a `created_by` self-claim grants a workspace action, so it
@@ -146,7 +167,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 24] = [
+    pub const ALL: [Action; 25] = [
         Action::OrgRead,
         Action::MemberInvite,
         Action::MemberSetRole,
@@ -158,6 +179,7 @@ impl Action {
         Action::WorkspaceEdit,
         Action::AppAccess,
         Action::AppAdmin,
+        Action::AppAccessManage,
         Action::WorkspaceRename,
         Action::NamespaceDelete,
         Action::WorkspaceOxyAccess,
@@ -189,6 +211,7 @@ impl Action {
             Action::WorkspaceEdit => "workspace_edit",
             Action::AppAccess => "app_access",
             Action::AppAdmin => "app_admin",
+            Action::AppAccessManage => "app_access_manage",
             Action::WorkspaceRename => "workspace_rename",
             Action::NamespaceDelete => "namespace_delete",
             Action::WorkspaceOxyAccess => "workspace_oxy_access",
@@ -219,6 +242,7 @@ impl Action {
             Action::WorkspaceEdit => Ring::WorkspaceEdit,
             Action::AppAccess => Ring::AppAccess,
             Action::AppAdmin => Ring::AppAdmin,
+            Action::AppAccessManage => Ring::AppGrant,
             Action::WorkspaceRename | Action::NamespaceDelete => Ring::OrgAdminOrCreator,
             Action::WorkspaceOxyAccess => Ring::WorkspaceAdminStrict,
             Action::PartnerManageMembers => Ring::PartnerCap(Cap::ManageMembers),
@@ -321,13 +345,19 @@ enum Ring {
     /// coarse managed-partner path, and NOT global owner (the check uses app-admin).
     ///
     /// Conditional on `resource.app_restricted`: a restricted app drops the plain
-    /// org-membership term and demands an `app_members` row (org officers + staff +
-    /// develop_apps partner remain).
+    /// org-membership term and demands a grant (org officers + staff +
+    /// develop_apps partner remain). The grant is ANDed with org membership, so a
+    /// grant is a filter on the org, never a way into it.
     AppAccess,
     /// A custom app's own privileged surface: any org officer (owner/admin), an
     /// `app_members` admin row, or Oxy staff. No partner term — see
     /// [`Action::AppAdmin`].
     AppAdmin,
+    /// Who may decide an app's audience: an org officer (owner/admin), Oxy staff, or
+    /// a `manage_apps` partner. Distinct from [`Self::AppAdmin`] — that ring includes
+    /// app admins and excludes partners; this one is the exact inverse, because
+    /// running an app and staffing it are different authorities.
+    AppGrant,
     /// Org owner/admin (via the hierarchy) OR the thing's creator — the plain member
     /// who made it may manage it. The creator claim reads `resource.owner`
     /// (`created_by`), and is confined to the actions that opt into this ring, so it
@@ -649,8 +679,18 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
                 || in_org(&facts.admin_orgs);
             if resource.app_restricted {
                 // Restricted: plain org membership is NOT enough — that is the
-                // whole point. An explicit `app_members` row (either role) is.
-                unconditional || facts.app_memberships.contains(&resource.id)
+                // whole point. A grant (a direct `app_members` row or one reached
+                // through an `org_teams` team, either role) is.
+                //
+                // The grant is ANDed with org membership so it can only ever NARROW
+                // the org, never widen it. Without that term a bare grant row let a
+                // non-member through this ring while the DATA-plane gate
+                // (`check_custom_app_gates`, which requires org membership) still
+                // refused — the app's shell would load and every query would 403.
+                // Grantees are validated as org members at write time too; this is
+                // the enforcement half of the same rule.
+                unconditional
+                    || (in_org(&facts.member_orgs) && facts.app_memberships.contains(&resource.id))
             } else {
                 // Unrestricted (the default): unchanged — any member of the org.
                 unconditional || in_org(&facts.member_orgs)
@@ -665,6 +705,24 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
             is_global
                 || in_org(&facts.admin_orgs)
                 || facts.app_admin_memberships.contains(&resource.id)
+        }
+        // Staffing an app — visibility, grants, and the org team roster that feeds
+        // them. An org officer, Oxy staff, or a `manage_apps` partner.
+        //
+        // `manage_apps` and NOT `develop_apps`: naming an audience is lifecycle, the
+        // same class as publish/unpublish. The two capabilities stay split in the
+        // direction that matters — this ring lets a partner decide who sees an app
+        // WITHOUT letting it read the app's data, which `Ring::AppAccess` still gates
+        // on `develop_apps` separately.
+        //
+        // No `app_admin_memberships` term: an app admin runs the app's privileged
+        // surface, but deciding who reaches the app is the org's call, not the app's.
+        // Otherwise an app admin could grant themselves a second app admin and the
+        // org would have no way to see it coming.
+        Ring::AppGrant => {
+            is_global
+                || in_org(&facts.admin_orgs)
+                || facts.any_partner_grants(Cap::ManageApps, resource.org_id)
         }
         // The console IS scoped: the capability must come from the partner being acted
         // as. Operating a partner that grants `cap` over some other client authorizes
@@ -1330,6 +1388,120 @@ mod policy_tests {
 
         // A plain member and an outsider hold nothing.
         assert!(!allows(&facts(), Action::AppAdmin, &app));
+    }
+
+    #[test]
+    fn restricted_grant_is_a_filter_on_the_org_not_a_way_into_it() {
+        // A grant NARROWS an org; it never widens one. Before the org-membership
+        // term, a bare `app_memberships` entry passed this ring while the data-plane
+        // gate (which requires org membership) still refused — the app shell loaded
+        // and every query 403'd. Grantees are validated as org members at write
+        // time; this is the enforcement half of that rule.
+        let app_id = Uuid::from_u128(980);
+        let restricted = Resource::app_with_visibility(app_id, org(), true);
+
+        let granted_outsider = PrincipalFacts {
+            app_memberships: vec![app_id],
+            ..facts() // note: NO member_orgs
+        };
+        assert!(!allows(&granted_outsider, Action::AppAccess, &restricted));
+
+        // The same grant, held by a real org member, does reach it.
+        let granted_member = PrincipalFacts {
+            member_orgs: vec![org()],
+            app_memberships: vec![app_id],
+            ..facts()
+        };
+        assert!(allows(&granted_member, Action::AppAccess, &restricted));
+
+        // Membership of a DIFFERENT org doesn't satisfy the new term either.
+        let wrong_org = PrincipalFacts {
+            member_orgs: vec![Uuid::from_u128(981)],
+            app_memberships: vec![app_id],
+            ..facts()
+        };
+        assert!(!allows(&wrong_org, Action::AppAccess, &restricted));
+    }
+
+    #[test]
+    fn app_grant_ring_is_officer_staff_or_manage_apps_partner() {
+        let app = Resource::app(Uuid::from_u128(990), org());
+
+        // Org officers decide their org's audiences.
+        let owner = PrincipalFacts {
+            owned_orgs: vec![org()],
+            admin_orgs: vec![org()],
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        let org_admin = PrincipalFacts {
+            admin_orgs: vec![org()],
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        assert!(allows(&owner, Action::AppAccessManage, &app));
+        assert!(allows(&org_admin, Action::AppAccessManage, &app));
+
+        // Both Oxy operator tiers reach it.
+        for staff in [
+            PrincipalFacts {
+                is_global_admin: true,
+                ..facts()
+            },
+            PrincipalFacts {
+                is_global_owner: true,
+                ..facts()
+            },
+        ] {
+            assert!(allows(&staff, Action::AppAccessManage, &app));
+        }
+
+        // A `manage_apps` partner CAN — naming an audience is app lifecycle. This is
+        // the exact inverse of AppAdmin, which has no partner term at all.
+        let manage_partner = PrincipalFacts {
+            partners: vec![standing(partner_org(), org(), &[Cap::ManageApps])],
+            ..facts()
+        };
+        assert!(allows(&manage_partner, Action::AppAccessManage, &app));
+        assert!(!allows(&manage_partner, Action::AppAdmin, &app));
+
+        // ...but a `develop_apps`-only partner CANNOT. The split holds in this
+        // direction too: building an app is not staffing it.
+        let dev_only = PrincipalFacts {
+            partners: vec![standing(partner_org(), org(), &[Cap::DevelopApps])],
+            ..facts()
+        };
+        assert!(!allows(&dev_only, Action::AppAccessManage, &app));
+
+        // A capability held over a DIFFERENT org authorizes nothing here.
+        let elsewhere = PrincipalFacts {
+            partners: vec![standing(
+                partner_org(),
+                Uuid::from_u128(991),
+                &[Cap::ManageApps],
+            )],
+            ..facts()
+        };
+        assert!(!allows(&elsewhere, Action::AppAccessManage, &app));
+
+        // A plain org member cannot restaff an app, and neither can an app admin —
+        // running an app's privileged surface is not deciding who reaches it.
+        let plain_member = PrincipalFacts {
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        assert!(!allows(&plain_member, Action::AppAccessManage, &app));
+        let app_admin = PrincipalFacts {
+            member_orgs: vec![org()],
+            app_memberships: vec![app.id],
+            app_admin_memberships: vec![app.id],
+            ..facts()
+        };
+        assert!(allows(&app_admin, Action::AppAdmin, &app));
+        assert!(!allows(&app_admin, Action::AppAccessManage, &app));
+
+        // An outsider holds nothing.
+        assert!(!allows(&facts(), Action::AppAccessManage, &app));
     }
 
     #[test]

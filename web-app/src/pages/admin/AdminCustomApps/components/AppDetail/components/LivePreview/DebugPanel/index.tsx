@@ -62,7 +62,7 @@ export const DebugPanel = ({
     <div className='flex h-80 flex-col border-border border-t bg-card'>
       <div className='flex items-center gap-2 border-border/60 border-b px-3 py-1.5'>
         <Activity className='h-3.5 w-3.5 text-muted-foreground' />
-        <span className='font-medium text-sm'>Network</span>
+        <span className='font-medium text-xs'>Network</span>
         <span className='rounded bg-muted px-1.5 font-mono text-[11px] text-muted-foreground'>
           {entries.length}
         </span>

@@ -86,6 +86,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Structural search for the analysis passes; see CLAUDE.md "Search".
+      - uses: ./.github/actions/claude-search-tools
+
       - name: Analyze ${{ matrix.dimension }}
         uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
         env:
@@ -122,7 +125,7 @@ jobs:
             Constraints: READ-ONLY (do NOT edit code); real citations only; be
             terse and evidence-dense; no filler.
           claude_args: |
-            --allowedTools "Read,Glob,Grep,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git ls-files:*)"
+            --allowedTools "Read,Glob,Grep,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git ls-files:*),Bash(ast-grep:*),Bash(jq:*)"
             --max-turns 40
             --model claude-opus-4-8
 
@@ -163,6 +166,9 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+
+      # Structural search for the analysis passes; see CLAUDE.md "Search".
+      - uses: ./.github/actions/claude-search-tools
 
       - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
         with:
@@ -314,7 +320,7 @@ jobs:
             not `cd` outside the repository. Just leave your edits uncommitted in
             the working tree and the report file written.
           claude_args: |
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(cargo check:*),Bash(cargo clippy:*),Bash(cargo nextest run:*),Bash(cargo fmt:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*),Bash(ls:*),Bash(cat:*)"
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(cargo check:*),Bash(cargo clippy:*),Bash(cargo nextest run:*),Bash(cargo fmt:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*),Bash(ls:*),Bash(cat:*),Bash(ast-grep:*),Bash(jq:*)"
             --max-turns 160
             --model claude-opus-4-8
 

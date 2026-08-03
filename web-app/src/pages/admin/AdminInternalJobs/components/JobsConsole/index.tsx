@@ -200,13 +200,13 @@ export const JobsConsole = () => {
       {isLoading ? (
         <Skeleton className='h-48 w-full' />
       ) : isError || !data ? (
-        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
           Failed to load jobs.
         </div>
       ) : rows.length === 0 ? (
         <div className='flex flex-col items-center justify-center gap-2 rounded-lg border border-border/60 border-dashed bg-muted/20 px-6 py-12 text-center'>
           <CheckCircle2 className='size-6 text-emerald-600' />
-          <p className='font-medium text-sm'>
+          <p className='font-medium text-xs'>
             {query.trim()
               ? `No jobs match "${query.trim()}".`
               : filter === "all"

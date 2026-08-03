@@ -89,7 +89,7 @@ export const AppCard = ({
         <div className='min-w-0 flex-1'>
           <span className='flex items-center gap-1.5'>
             <StatusDot isLive={!!app.published_at} />
-            <span className='truncate font-medium text-foreground text-sm'>{app.name}</span>
+            <span className='truncate font-medium text-foreground text-xs'>{app.name}</span>
           </span>
           {showOrg && (
             <span className='mt-0.5 block truncate font-mono text-muted-foreground text-xs'>

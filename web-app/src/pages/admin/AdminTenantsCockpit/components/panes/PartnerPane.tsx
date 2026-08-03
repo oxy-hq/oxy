@@ -134,7 +134,7 @@ export default function PartnerPane({
           }
         >
           {partner.managed_orgs.length === 0 ? (
-            <p className='text-muted-foreground text-sm'>No clients yet.</p>
+            <p className='text-muted-foreground text-xs'>No clients yet.</p>
           ) : (
             <div className='space-y-2'>
               {partner.managed_orgs.map((o) => (

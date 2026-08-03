@@ -30,7 +30,7 @@ export default function TenantHeader({
   return (
     <header className='flex h-11 shrink-0 items-center justify-between gap-3 border-b px-3'>
       <div className='flex items-center gap-3'>
-        <span className='font-semibold text-sm'>Tenants</span>
+        <span className='font-semibold text-xs'>Tenants</span>
         {/* The switcher only makes sense in list view. The map spans all three
             entities at once, so switching type there changes nothing — hide it
             rather than offer a no-op control. */}

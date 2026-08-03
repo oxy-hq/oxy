@@ -41,9 +41,9 @@ export default function AuditTable({
   limit: number;
 }) {
   if (isPending) return <Skeleton className='h-64 w-full' />;
-  if (isError) return <p className='text-destructive text-sm'>Failed to load the audit log.</p>;
+  if (isError) return <p className='text-destructive text-xs'>Failed to load the audit log.</p>;
   if (!events?.length)
-    return <p className='text-muted-foreground text-sm'>No events match these filters.</p>;
+    return <p className='text-muted-foreground text-xs'>No events match these filters.</p>;
 
   return (
     <div className='space-y-2'>

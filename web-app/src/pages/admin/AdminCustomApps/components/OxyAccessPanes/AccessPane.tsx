@@ -325,7 +325,7 @@ const OrgGallery = ({
                   )}
                 </div>
                 <div className='min-w-0 flex-1'>
-                  <p className='truncate font-medium text-sm leading-tight'>{o.orgName}</p>
+                  <p className='truncate font-medium text-xs leading-tight'>{o.orgName}</p>
                   <p className='truncate font-mono text-[11px] text-muted-foreground'>
                     {o.orgSlug}
                   </p>

@@ -55,7 +55,7 @@ export const LlmCostSection = () => {
       {isPending ? (
         <Skeleton className='h-64 w-full' />
       ) : isError || !data ? (
-        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
           Failed to load LLM usage.
         </div>
       ) : (
@@ -77,7 +77,7 @@ const Body = ({ data, days }: { data: LlmUsageOverview; days: number }) => {
             <span className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
               Total spend · {days}d
             </span>
-            <div className='font-semibold text-3xl tabular-nums tracking-tight'>
+            <div className='font-semibold text-2xl tabular-nums tracking-tight'>
               {usd(t.cost_usd)}
             </div>
           </div>
@@ -169,6 +169,6 @@ const Metric = ({ label, value }: { label: string; value: string }) => (
     <span className='block font-medium text-[10px] text-muted-foreground uppercase tracking-[0.12em]'>
       {label}
     </span>
-    <span className='font-mono text-sm tabular-nums'>{value}</span>
+    <span className='font-mono text-xs tabular-nums'>{value}</span>
   </div>
 );

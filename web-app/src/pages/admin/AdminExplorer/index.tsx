@@ -155,7 +155,7 @@ export default function AdminExplorer() {
       {active.isPending ? (
         <Skeleton className='h-64 w-full' />
       ) : active.isError ? (
-        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+        <div className='rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
           Failed to load {resource}.
         </div>
       ) : (

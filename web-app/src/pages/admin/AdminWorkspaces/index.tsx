@@ -52,8 +52,8 @@ export default function AdminWorkspaces() {
   return (
     <div className='mx-auto max-w-6xl p-6'>
       <div className='mb-6'>
-        <h1 className='font-semibold text-2xl tracking-tight'>Workspaces</h1>
-        <p className='mt-1 text-muted-foreground text-sm'>
+        <h1 className='font-semibold text-xl tracking-tight'>Workspaces</h1>
+        <p className='mt-1 text-muted-foreground text-xs'>
           Every workspace across every organization. Search, filter by status, and operate on the
           membership.
         </p>
@@ -94,7 +94,7 @@ export default function AdminWorkspaces() {
 
           <div className='flex items-center gap-3'>
             {!isLoading ? (
-              <span className='text-muted-foreground text-sm'>
+              <span className='text-muted-foreground text-xs'>
                 {workspaces.length} {workspaces.length === 1 ? "workspace" : "workspaces"}
               </span>
             ) : null}
@@ -106,7 +106,7 @@ export default function AdminWorkspaces() {
         </CardHeader>
         <CardContent className='p-0'>
           {isLoading ? (
-            <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-sm'>
+            <div className='flex items-center justify-center gap-2 py-16 text-muted-foreground text-xs'>
               <Spinner /> Loading…
             </div>
           ) : workspaces.length === 0 ? (
@@ -145,7 +145,7 @@ export default function AdminWorkspaces() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className='text-muted-foreground text-sm'>
+                    <TableCell className='text-muted-foreground text-xs'>
                       {w.org_slug ? `/${w.org_slug}` : <span className='italic'>orphaned</span>}
                     </TableCell>
                     <TableCell>
@@ -155,7 +155,7 @@ export default function AdminWorkspaces() {
                       />
                     </TableCell>
                     <TableCell className='text-right tabular-nums'>{w.member_count}</TableCell>
-                    <TableCell className='text-muted-foreground text-sm tabular-nums'>
+                    <TableCell className='text-muted-foreground text-xs tabular-nums'>
                       {w.last_opened_at ? new Date(w.last_opened_at).toLocaleDateString() : "—"}
                     </TableCell>
                   </TableRow>
@@ -173,7 +173,7 @@ function EmptyState({ search }: { search: string }) {
   return (
     <div className='flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground'>
       <FolderOpen className='size-8' />
-      <p className='text-sm'>
+      <p className='text-xs'>
         {search ? `No workspaces match "${search}".` : "No workspaces yet."}
       </p>
       <p className='text-xs'>

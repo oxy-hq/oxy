@@ -56,7 +56,7 @@ export default function OrgPicker({
                   }}
                 >
                   <div className='min-w-0'>
-                    <div className='truncate text-sm'>{o.name}</div>
+                    <div className='truncate text-xs'>{o.name}</div>
                     <div className='truncate text-muted-foreground text-xs'>{o.slug}</div>
                   </div>
                 </CommandItem>

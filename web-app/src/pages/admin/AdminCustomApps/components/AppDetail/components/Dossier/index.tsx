@@ -9,6 +9,7 @@ import type { CustomApp } from "@/types/apps";
 import type { DockMode } from "../../dock";
 import { usePersistentState } from "../../usePersistentState";
 import { Activity } from "../Activity";
+import { AppAccessPane } from "../AppAccessPane";
 import { AppInfo } from "../AppInfo";
 import { AppSettings } from "../AppSettings";
 import { BuildHistory } from "../BuildHistory";
@@ -17,7 +18,7 @@ import { DockControls } from "./DockControls";
 
 export { DockControls };
 
-type SectionId = "status" | "builds" | "functions" | "activity" | "settings";
+type SectionId = "status" | "builds" | "access" | "functions" | "activity" | "settings";
 
 /**
  * Open by default: the two an operator opens the panel *for*. The rest answer
@@ -27,6 +28,9 @@ type SectionId = "status" | "builds" | "functions" | "activity" | "settings";
 const DEFAULT_OPEN: Record<SectionId, boolean> = {
   status: true,
   builds: true,
+  // Collapsed by default: most apps are open to their whole org, so the badge
+  // inside answers the question without the section needing to be expanded.
+  access: false,
   functions: false,
   activity: false,
   settings: false
@@ -69,7 +73,7 @@ export const DossierHeader = ({
       <Button
         variant='ghost'
         size='icon'
-        className='size-7'
+        className='size-6'
         onClick={onClose}
         aria-label='Hide details'
       >
@@ -92,32 +96,37 @@ export const DossierHeader = ({
  */
 export const DossierBody = ({ app }: { app: CustomApp }) => {
   const [open, setOpen] = usePersistentState(SECTIONS_STORAGE_KEY, DEFAULT_OPEN, reviveOpenState);
-  const toggle = (id: SectionId) => (next: boolean) => setOpen({ ...open, [id]: next });
+  // One source of each section's id — it drives the open state, the toggle, and
+  // the testid, and repeating it three times per call site is how those drift.
+  const section = (id: SectionId) => ({
+    id,
+    open: open[id],
+    onOpenChange: (next: boolean) => setOpen({ ...open, [id]: next })
+  });
 
   return (
     <div className='@container min-h-0 flex-1 overflow-auto'>
       <div className='grid @3xl:grid-cols-2 @5xl:grid-cols-3 grid-cols-1 items-start gap-x-8'>
-        <DossierSection
-          title='Status & manifest'
-          open={open.status}
-          onOpenChange={toggle("status")}
-        >
+        <DossierSection {...section("status")} title='Status & manifest'>
           <AppInfo app={app} />
         </DossierSection>
-        <DossierSection title='Build history' open={open.builds} onOpenChange={toggle("builds")}>
+        <DossierSection {...section("builds")} title='Build history'>
           <div className='p-4 pt-0'>
             <BuildHistory appId={app.id} />
           </div>
         </DossierSection>
-        <DossierSection title='Functions' open={open.functions} onOpenChange={toggle("functions")}>
+        <DossierSection {...section("access")} title='Access'>
+          <AppAccessPane app={app} />
+        </DossierSection>
+        <DossierSection {...section("functions")} title='Functions'>
           <div className='p-4 pt-0'>
             <Functions appId={app.id} />
           </div>
         </DossierSection>
-        <DossierSection title='Activity' open={open.activity} onOpenChange={toggle("activity")}>
+        <DossierSection {...section("activity")} title='Activity'>
           <Activity appId={app.id} />
         </DossierSection>
-        <DossierSection title='Settings' open={open.settings} onOpenChange={toggle("settings")}>
+        <DossierSection {...section("settings")} title='Settings'>
           <AppSettings app={app} />
         </DossierSection>
       </div>
@@ -136,11 +145,17 @@ export const DossierBody = ({ app }: { app: CustomApp }) => {
  * otherwise a wide panel tells a 360px cell to lay out four columns.
  */
 const DossierSection = ({
+  id,
   title,
   open,
   onOpenChange,
   children
 }: {
+  /**
+   * The section's stable identity — same key as its open/closed state. Drives
+   * `data-testid`, so a section stays targetable when its `title` copy changes.
+   */
+  id: SectionId;
   title: string;
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -149,6 +164,7 @@ const DossierSection = ({
   <Collapsible
     open={open}
     onOpenChange={onOpenChange}
+    data-testid={`admin-app-dossier-section-${id}`}
     className='@container min-w-0 border-border/60 border-b'
   >
     <CollapsibleTrigger className='group flex w-full items-center gap-1.5 px-4 py-2 text-left transition-colors hover:bg-muted/40'>

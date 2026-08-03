@@ -131,3 +131,5 @@ examples/agents/test-agent-e2e.agent.yml
 .playwright-mcp/
 docs/superpowers/
 .claude/worktrees/
+# Added by code-review-graph
+.code-review-graph/

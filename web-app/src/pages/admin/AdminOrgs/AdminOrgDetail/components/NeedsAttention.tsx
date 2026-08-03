@@ -40,7 +40,7 @@ export const NeedsAttention = ({ alerts }: { alerts: OrgAlert[] }) => {
                   a.severity === "danger" ? "text-destructive" : "text-warning"
                 )}
               />
-              <span className='text-sm'>{a.text}</span>
+              <span className='text-xs'>{a.text}</span>
               <ArrowRight className='ml-auto size-3.5 text-muted-foreground/60 transition-colors group-hover:text-foreground' />
             </button>
           </li>

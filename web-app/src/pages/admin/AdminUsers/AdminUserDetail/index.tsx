@@ -87,7 +87,7 @@ export default function AdminUserDetail({
 
   if (isLoading || !detail) {
     return (
-      <div className='flex min-h-[60vh] items-center justify-center gap-2 text-muted-foreground text-sm'>
+      <div className='flex min-h-[60vh] items-center justify-center gap-2 text-muted-foreground text-xs'>
         <Spinner /> Loading user…
       </div>
     );
@@ -367,7 +367,7 @@ export default function AdminUserDetail({
         <AdminSectionLabel>Access</AdminSectionLabel>
         <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
           <div className='space-y-1'>
-            <h3 className='font-semibold text-base'>Account status</h3>
+            <h3 className='font-semibold text-sm'>Account status</h3>
             <p className='text-muted-foreground text-xs'>
               Deactivated users cannot sign in. Existing org and workspace memberships are preserved
               and re-applied on reactivation.
@@ -375,7 +375,7 @@ export default function AdminUserDetail({
           </div>
           <div className='flex items-center justify-between rounded-md border border-border/60 bg-muted/30 p-4'>
             <div className='space-y-1'>
-              <div className='font-medium text-sm'>
+              <div className='font-medium text-xs'>
                 Status: {isDeleted ? "Deactivated" : "Active"}
               </div>
               <div className='text-muted-foreground text-xs'>

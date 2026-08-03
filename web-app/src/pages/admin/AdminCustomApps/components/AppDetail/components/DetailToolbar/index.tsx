@@ -28,6 +28,7 @@ import { cn } from "@/libs/shadcn/utils";
 import type { CustomApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../../resolveBundleUrl";
 import { ActAsOrgButton } from "./ActAsOrgButton";
+import { OrgHomeButton } from "./OrgHomeButton";
 
 export type DetailTab = "preview" | "info" | "activity" | "settings";
 export type Device = "mobile" | "tablet" | "desktop";
@@ -128,7 +129,7 @@ export const DetailToolbar = ({
     <header className='flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b bg-background px-3 py-1'>
       {/* Identity — name + breadcrumb + source on one truncating line. */}
       <div className='flex min-w-0 flex-1 items-center gap-2'>
-        <span className='truncate font-medium text-sm leading-none'>{app.name}</span>
+        <span className='truncate font-medium text-xs leading-none'>{app.name}</span>
         <span className='hidden min-w-0 truncate font-mono text-muted-foreground/70 text-xs sm:inline'>
           {app.org_slug}/{app.slug}
         </span>
@@ -169,7 +170,7 @@ export const DetailToolbar = ({
                 <Button
                   variant='ghost'
                   size='icon'
-                  className='size-7'
+                  className='size-6'
                   onClick={onReload}
                   aria-label='Reload preview'
                 >
@@ -288,15 +289,21 @@ export const DetailToolbar = ({
         )}
 
         {/* Sits beside Open because they answer the same question — "let me look
-            at the real thing" — and differ only in whose data comes back. */}
-        <ActAsOrgButton app={app} />
+            at the real thing" — and differ only in whose data comes back.
+            Org home is the cheap version of the same question and is deliberately
+            first: checking the launcher usually answers it without an audited
+            session that closes admin for an hour. */}
+        <div className='flex items-center gap-1'>
+          <OrgHomeButton app={app} />
+          <ActAsOrgButton app={app} />
+        </div>
 
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant='ghost'
               size='icon'
-              className='size-7'
+              className='size-6'
               onClick={() =>
                 window.open(
                   app.url_subdomain ?? resolveBundleUrl(app.url),

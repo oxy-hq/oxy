@@ -158,7 +158,7 @@ export const LinkPlanSummary = ({ plan }: Props) => {
     : plan.partial;
 
   return (
-    <div className='flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm'>
+    <div className='flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3 text-xs'>
       <p className='font-medium'>Will be linked as:</p>
       <dl className='flex flex-col gap-1'>
         {partial.name && <SummaryField label='Name' value={partial.name} mono={false} />}

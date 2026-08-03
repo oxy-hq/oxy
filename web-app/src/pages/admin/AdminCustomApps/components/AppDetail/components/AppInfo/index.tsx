@@ -36,7 +36,7 @@ export const AppInfo = ({ app }: { app: CustomApp }) => {
 
   if (error || !data) {
     return (
-      <div className='flex items-center gap-2 p-4 text-destructive text-sm'>
+      <div className='flex items-center gap-2 p-4 text-destructive text-xs'>
         <AlertCircle className='size-4' />
         <span>Failed to load diagnostic snapshot.</span>
       </div>
@@ -188,7 +188,7 @@ const Section = ({
  * pairing is what made this panel demand width it never used.
  */
 const KV = ({ k, v, mono }: { k: string; v: string; mono?: boolean }) => (
-  <div className='flex items-baseline gap-3 border-b py-1 text-sm last:border-0'>
+  <div className='flex items-baseline gap-3 border-b py-1 text-xs last:border-0'>
     <span className='w-20 shrink-0 text-muted-foreground text-xs'>{k}</span>
     <span className={cn("min-w-0 flex-1 break-all", mono && "font-mono text-xs")}>{v}</span>
   </div>

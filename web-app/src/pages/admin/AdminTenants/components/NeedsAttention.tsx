@@ -77,8 +77,8 @@ export const NeedsAttention = ({
                         : "text-muted-foreground"
                   )}
                 />
-                <span className='font-semibold text-sm tabular-nums'>{row.count}</span>
-                <span className='text-muted-foreground text-sm'>{row.label}</span>
+                <span className='font-semibold text-xs tabular-nums'>{row.count}</span>
+                <span className='text-muted-foreground text-xs'>{row.label}</span>
                 <ArrowRight className='ml-auto size-3.5 text-muted-foreground/60 transition-colors group-hover:text-foreground' />
               </Link>
             </li>

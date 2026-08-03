@@ -22,8 +22,9 @@
 //! Each test seeds its own uniquely-keyed rows, so they're independent and re-runnable.
 
 use entity::{
-    app_admins, app_members, apps, org_members, organizations, partner_capabilities,
-    partner_grants, partner_orgs, partner_role_bindings, users, workspace_members, workspaces,
+    app_admins, app_members, app_team_grants, apps, org_members, org_team_members, org_teams,
+    organizations, partner_capabilities, partner_grants, partner_orgs, partner_role_bindings,
+    users, workspace_members, workspaces,
 };
 use oxy::database::client::establish_connection;
 use oxy_app::server::authz::loader::load_principal_facts;
@@ -605,5 +606,186 @@ async fn loader_scopes_app_membership_to_its_own_app() {
     assert!(
         !facts.app_memberships.contains(&theirs) && !facts.app_admin_memberships.contains(&theirs),
         "admin of one app must not confer standing on another app in the same org"
+    );
+}
+
+// ── Team-reached grants ─────────────────────────────────────────────────────
+//
+// Teams are the control surface an org admin actually uses, and they reach
+// `PrincipalFacts` through a SECOND path (`org_team_members` → `app_team_grants`)
+// that the hand-built unit differential cannot see. If this union regresses, every
+// team-granted user silently loses the app while direct `app_members` rows keep
+// working — the failure would look like "teams don't do anything."
+
+async fn seed_team(conn: &DatabaseConnection, org_id: Uuid) -> Uuid {
+    let id = Uuid::new_v4();
+    org_teams::ActiveModel {
+        id: ActiveValue::Set(id),
+        org_id: ActiveValue::Set(org_id),
+        name: ActiveValue::Set(format!("authz-diff-team-{id}")),
+        description: ActiveValue::Set(None),
+        created_at: ActiveValue::NotSet,
+        updated_at: ActiveValue::NotSet,
+        created_by: ActiveValue::Set(None),
+    }
+    .insert(conn)
+    .await
+    .expect("seed team");
+    id
+}
+
+async fn seed_team_member(conn: &DatabaseConnection, team_id: Uuid, user_id: Uuid) {
+    org_team_members::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        team_id: ActiveValue::Set(team_id),
+        user_id: ActiveValue::Set(user_id),
+        created_at: ActiveValue::NotSet,
+        created_by: ActiveValue::Set(None),
+    }
+    .insert(conn)
+    .await
+    .expect("seed team member");
+}
+
+async fn seed_team_grant(conn: &DatabaseConnection, app_id: Uuid, team_id: Uuid, role: &str) {
+    app_team_grants::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        app_id: ActiveValue::Set(app_id),
+        team_id: ActiveValue::Set(team_id),
+        role: ActiveValue::Set(role.to_string()),
+        created_at: ActiveValue::NotSet,
+        created_by: ActiveValue::Set(None),
+    }
+    .insert(conn)
+    .await
+    .expect("seed team grant");
+}
+
+/// A grant reached through a team must land in the same fact vectors a direct
+/// `app_members` row does — that union is why no `oxy-authz` ring mentions teams.
+#[tokio::test]
+async fn loader_unions_team_reached_grants_into_app_membership_sets() {
+    if db_unavailable() {
+        eprintln!("skipping: OXY_DATABASE_URL not set");
+        return;
+    }
+    let conn = establish_connection().await.expect("connect");
+    let org_id = seed_org(&conn).await;
+    let app_id = seed_app(&conn, org_id, true).await;
+
+    // Plain member grant through a team → app_memberships only.
+    let (member_id, member_email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, member_id, org_members::OrgRole::Member).await;
+    let team = seed_team(&conn, org_id).await;
+    seed_team_member(&conn, team, member_id).await;
+    seed_team_grant(&conn, app_id, team, "member").await;
+
+    let facts = load_principal_facts(&conn, member_id, &member_email)
+        .await
+        .expect("loader facts");
+    assert!(
+        facts.app_memberships.contains(&app_id),
+        "a team grant must reach app_memberships, or teams grant nothing at all"
+    );
+    assert!(
+        !facts.app_admin_memberships.contains(&app_id),
+        "a role='member' team grant must not confer the app's privileged surface"
+    );
+
+    // Admin grant through a team → BOTH sets, exactly like a direct admin row.
+    let (admin_id, admin_email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, admin_id, org_members::OrgRole::Member).await;
+    let admin_team = seed_team(&conn, org_id).await;
+    seed_team_member(&conn, admin_team, admin_id).await;
+    seed_team_grant(&conn, app_id, admin_team, "admin").await;
+
+    let facts = load_principal_facts(&conn, admin_id, &admin_email)
+        .await
+        .expect("loader facts");
+    assert!(
+        facts.app_memberships.contains(&app_id) && facts.app_admin_memberships.contains(&app_id),
+        "an admin team grant must nest admin ⊆ all, like a direct admin row"
+    );
+}
+
+/// Being in a team that holds NO grant confers nothing. The team is the audience,
+/// not the authority — this is the check that stops "add them to Finance" from
+/// quietly meaning "give them every app".
+#[tokio::test]
+async fn loader_ignores_team_membership_without_a_grant() {
+    if db_unavailable() {
+        eprintln!("skipping: OXY_DATABASE_URL not set");
+        return;
+    }
+    let conn = establish_connection().await.expect("connect");
+    let org_id = seed_org(&conn).await;
+    let granted = seed_app(&conn, org_id, true).await;
+    let ungranted = seed_app(&conn, org_id, true).await;
+
+    let (user_id, email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, user_id, org_members::OrgRole::Member).await;
+    let team = seed_team(&conn, org_id).await;
+    seed_team_member(&conn, team, user_id).await;
+    seed_team_grant(&conn, granted, team, "member").await;
+
+    let facts = load_principal_facts(&conn, user_id, &email)
+        .await
+        .expect("loader facts");
+    assert!(facts.app_memberships.contains(&granted));
+    assert!(
+        !facts.app_memberships.contains(&ungranted),
+        "a team grant on one app must not reach another app in the same org"
+    );
+
+    // And someone in NO team holds nothing, even with the grant in place.
+    let (outsider_id, outsider_email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, outsider_id, org_members::OrgRole::Member).await;
+    let facts = load_principal_facts(&conn, outsider_id, &outsider_email)
+        .await
+        .expect("loader facts");
+    assert!(
+        !facts.app_memberships.contains(&granted),
+        "a grant to a team the user is not in must not reach them"
+    );
+}
+
+/// The strongest grant wins when both paths name the same app. A direct `member`
+/// row plus an `admin` team grant must read as admin — the same way two org
+/// memberships resolve — or the two sources would fight and the answer would depend
+/// on load order.
+#[tokio::test]
+async fn loader_takes_the_strongest_grant_when_both_paths_apply() {
+    if db_unavailable() {
+        eprintln!("skipping: OXY_DATABASE_URL not set");
+        return;
+    }
+    let conn = establish_connection().await.expect("connect");
+    let org_id = seed_org(&conn).await;
+    let app_id = seed_app(&conn, org_id, true).await;
+    let (user_id, email) = seed_user(&conn).await;
+    seed_membership(&conn, org_id, user_id, org_members::OrgRole::Member).await;
+
+    seed_app_member(&conn, app_id, user_id, "member").await;
+    let team = seed_team(&conn, org_id).await;
+    seed_team_member(&conn, team, user_id).await;
+    seed_team_grant(&conn, app_id, team, "admin").await;
+
+    let facts = load_principal_facts(&conn, user_id, &email)
+        .await
+        .expect("loader facts");
+    assert!(
+        facts.app_admin_memberships.contains(&app_id),
+        "an admin team grant must win over a weaker direct row"
+    );
+    // And the app must appear exactly once — the union de-duplicates, or a ring
+    // reading `.len()` would see phantom grants.
+    assert_eq!(
+        facts
+            .app_memberships
+            .iter()
+            .filter(|a| **a == app_id)
+            .count(),
+        1,
+        "the two grant paths must union, not append"
     );
 }

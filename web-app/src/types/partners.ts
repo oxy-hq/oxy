@@ -74,7 +74,14 @@ export interface PartnerCreatedToken {
   expires_at: string;
 }
 
-/** A custom app in a client org, from `GET /partners/:id/orgs/:orgId/apps`. */
+/**
+ * The narrow shape publish/unpublish return (`PartnerAppDto`).
+ *
+ * Deliberately NOT widened with visibility/grant_count: the LIST route returns the
+ * access-bearing `AppAccessSummary`, but the publish handlers still return these
+ * four fields — declaring the extra keys here would have TypeScript assert them on
+ * a payload that doesn't carry them.
+ */
 export interface PartnerApp {
   id: string;
   slug: string;

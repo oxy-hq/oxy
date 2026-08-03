@@ -54,12 +54,12 @@ export function ActAsOrgButton({ app }: { app: CustomApp }) {
             <Button
               variant='outline'
               size='sm'
-              className='h-7 gap-1.5 px-2 text-xs'
+              className='h-6 gap-1 px-1.5 text-[11px]'
               disabled={isActing}
               onClick={openDialog}
               data-testid='admin-app-act-as-org'
             >
-              <ShieldAlert className='size-3.5 text-amber-600 dark:text-amber-400' />
+              <ShieldAlert className='size-3 text-amber-600 dark:text-amber-400' />
               Act as org
             </Button>
           </span>

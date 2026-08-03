@@ -42,7 +42,7 @@ export function PublishTokenRow({ token, onRevoke }: PublishTokenRowProps) {
 
       <div className='min-w-0 flex-1'>
         <div className='flex items-center gap-2'>
-          <span className='truncate font-medium text-sm'>{token.name}</span>
+          <span className='truncate font-medium text-xs'>{token.name}</span>
           {token.revoked ? (
             <Badge variant='outline' className='text-muted-foreground'>
               Revoked

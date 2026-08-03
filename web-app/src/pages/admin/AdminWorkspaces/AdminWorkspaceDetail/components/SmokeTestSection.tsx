@@ -169,7 +169,7 @@ const SmokeKindGroup = ({ group, lastRunAt }: { group: SmokeGroup; lastRunAt: st
   return (
     <div className='space-y-1.5'>
       <div className='flex items-baseline justify-between gap-3'>
-        <span className='font-medium text-sm'>{KIND_LABELS[group.kind]}</span>
+        <span className='font-medium text-xs'>{KIND_LABELS[group.kind]}</span>
         {group.enabled && probes.length > 0 ? (
           <span className='text-muted-foreground text-xs tabular-nums'>
             {passed}/{probes.length} passed
@@ -210,7 +210,7 @@ const SmokeCheckRow = ({ check }: { check: WorkspaceHealthSmokeCheck }) => {
   return (
     <li className='flex items-center justify-between gap-3 rounded-md border border-border/50 px-3 py-2'>
       <div className='min-w-0 space-y-1'>
-        <span className='font-medium text-sm'>{check.target}</span>
+        <span className='font-medium text-xs'>{check.target}</span>
         {check.reason ? (
           <span className='block truncate text-muted-foreground text-xs'>{check.reason}</span>
         ) : null}

@@ -101,7 +101,7 @@ export default function AdminWorkspaceDetail({
 
   if (isLoading || !detail) {
     return (
-      <div className='flex min-h-[60vh] items-center justify-center gap-2 text-muted-foreground text-sm'>
+      <div className='flex min-h-[60vh] items-center justify-center gap-2 text-muted-foreground text-xs'>
         <Spinner /> Loading workspace…
       </div>
     );
@@ -221,7 +221,7 @@ export default function AdminWorkspaceDetail({
       />
 
       {detail.error ? (
-        <div className='flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-sm'>
+        <div className='flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs'>
           <CircleAlert className='mt-0.5 size-4 shrink-0' />
           <div className='space-y-0.5'>
             <div className='font-semibold'>Workspace error</div>
@@ -265,7 +265,7 @@ export default function AdminWorkspaceDetail({
               )}
 
               <AdminSectionLabel className='mt-6'>Source</AdminSectionLabel>
-              <div className='space-y-2.5 rounded-lg border border-border/60 bg-card p-4 text-sm'>
+              <div className='space-y-2.5 rounded-lg border border-border/60 bg-card p-4 text-xs'>
                 <Field label='Path' icon={FolderOpen} value={detail.path ?? "—"} mono />
                 <Field
                   label='Git remote'
@@ -360,7 +360,7 @@ export default function AdminWorkspaceDetail({
         <AdminDetailTabPanel>
           <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
             <div className='space-y-1'>
-              <h3 className='font-semibold text-base'>Identity</h3>
+              <h3 className='font-semibold text-sm'>Identity</h3>
               <p className='text-muted-foreground text-xs'>
                 Rename the workspace. The underlying git repository is untouched.
               </p>
@@ -391,7 +391,7 @@ export default function AdminWorkspaceDetail({
 
           <section className='space-y-4 rounded-lg border border-destructive/40 bg-destructive/5 p-6'>
             <div className='space-y-1'>
-              <h3 className='font-semibold text-base text-destructive'>Danger zone</h3>
+              <h3 className='font-semibold text-destructive text-sm'>Danger zone</h3>
               <p className='text-destructive/80 text-xs'>
                 Removing this workspace deletes its files, members, and history. The underlying git
                 repository is left alone.
@@ -485,7 +485,7 @@ const Field = ({
       {Icon ? <Icon className='size-3' /> : null}
       {label}
     </span>
-    <span className={`truncate ${mono ? "font-mono text-xs" : "text-sm"}`}>{value}</span>
+    <span className={`truncate ${mono ? "font-mono text-xs" : "text-xs"}`}>{value}</span>
   </div>
 );
 

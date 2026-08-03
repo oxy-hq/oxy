@@ -39,7 +39,7 @@ export const AppsToolbar = ({
         value={state.q}
         onChange={(e) => setState({ q: e.target.value })}
         placeholder='Search name, org, workspace…'
-        className='h-8 pl-8'
+        className='h-7 pl-7'
       />
     </div>
 
@@ -47,7 +47,7 @@ export const AppsToolbar = ({
       value={state.group}
       onValueChange={(v) => setState({ group: v as AppsTableState["group"] })}
     >
-      <SelectTrigger className='h-8 w-auto gap-1.5 px-2 text-xs' aria-label='Group by'>
+      <SelectTrigger className='h-7 w-auto gap-1.5 px-2 text-xs' aria-label='Group by'>
         <span className='text-muted-foreground'>Group:</span>
         <SelectValue />
       </SelectTrigger>
@@ -63,7 +63,7 @@ export const AppsToolbar = ({
       value={state.status}
       onValueChange={(v) => setState({ status: v as AppsTableState["status"] })}
     >
-      <SelectTrigger className='h-8 w-auto gap-1 px-2 text-xs' aria-label='Filter by status'>
+      <SelectTrigger className='h-7 w-auto gap-1 px-2 text-xs' aria-label='Filter by status'>
         <SelectValue />
       </SelectTrigger>
       <SelectContent align='end'>
@@ -77,7 +77,7 @@ export const AppsToolbar = ({
       value={state.source}
       onValueChange={(v) => setState({ source: v as AppsTableState["source"] })}
     >
-      <SelectTrigger className='h-8 w-auto gap-1 px-2 text-xs' aria-label='Filter by source'>
+      <SelectTrigger className='h-7 w-auto gap-1 px-2 text-xs' aria-label='Filter by source'>
         <SelectValue />
       </SelectTrigger>
       <SelectContent align='end'>
@@ -109,7 +109,7 @@ export const AppsToolbar = ({
     </span>
 
     <Button size='icon' className='size-8 shrink-0' onClick={onCreate} aria-label='Create app'>
-      <Plus className='size-4' />
+      <Plus className='size-3.5' />
     </Button>
   </div>
 );

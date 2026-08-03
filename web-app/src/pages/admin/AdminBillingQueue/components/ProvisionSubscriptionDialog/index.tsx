@@ -165,7 +165,7 @@ export default function ProvisionSubscriptionDialog({ org, onClose, onSuccess }:
           </DialogHeader>
 
           {isLoading ? (
-            <div className='flex items-center gap-2 text-muted-foreground text-sm'>
+            <div className='flex items-center gap-2 text-muted-foreground text-xs'>
               <Spinner /> Loading prices…
             </div>
           ) : (
@@ -191,7 +191,7 @@ export default function ProvisionSubscriptionDialog({ org, onClose, onSuccess }:
                     ))}
                   </div>
                 ) : (
-                  <div className='rounded-md border border-dashed py-6 text-center text-muted-foreground text-sm'>
+                  <div className='rounded-md border border-dashed py-6 text-center text-muted-foreground text-xs'>
                     No prices added yet.
                   </div>
                 )}

@@ -211,6 +211,7 @@ struct AppScenario {
     is_app_member: bool,
     is_app_admin: bool,
     has_develop_apps: bool,
+    has_manage_apps: bool,
 }
 
 impl AppScenario {
@@ -225,14 +226,23 @@ impl AppScenario {
             member_orgs: org_set(self.is_org_member || self.is_org_admin || self.is_org_owner),
             app_memberships: app_set(self.is_app_member || self.is_app_admin),
             app_admin_memberships: app_set(self.is_app_admin),
-            partners: if self.has_develop_apps {
-                vec![PartnerStanding {
-                    partner_id: Uuid::from_u128(900),
-                    client_orgs: vec![org()],
-                    caps: vec![Cap::DevelopApps],
-                }]
-            } else {
-                vec![]
+            partners: {
+                let mut caps = Vec::new();
+                if self.has_develop_apps {
+                    caps.push(Cap::DevelopApps);
+                }
+                if self.has_manage_apps {
+                    caps.push(Cap::ManageApps);
+                }
+                if caps.is_empty() {
+                    vec![]
+                } else {
+                    vec![PartnerStanding {
+                        partner_id: Uuid::from_u128(900),
+                        client_orgs: vec![org()],
+                        caps,
+                    }]
+                }
             },
             is_global_admin: self.is_staff,
             ..Default::default()
@@ -250,6 +260,7 @@ fn app_scenarios() -> Vec<AppScenario> {
         is_app_member: false,
         is_app_admin: false,
         has_develop_apps: false,
+        has_manage_apps: false,
     };
     vec![
         AppScenario {
@@ -290,6 +301,25 @@ fn app_scenarios() -> Vec<AppScenario> {
             ..base
         },
         AppScenario {
+            name: "manage_apps partner, not a member",
+            has_manage_apps: true,
+            ..base
+        },
+        // The scenario that pins the closed gap: a grant row exists but the holder
+        // is NOT an org member. The serve gate used to admit them while the data
+        // plane refused, so the app's shell loaded and every query 403'd. Both the
+        // model and the shipped gate must now deny.
+        AppScenario {
+            name: "app grant WITHOUT org membership",
+            is_app_member: true,
+            ..base
+        },
+        AppScenario {
+            name: "app ADMIN grant WITHOUT org membership",
+            is_app_admin: true,
+            ..base
+        },
+        AppScenario {
             name: "outsider",
             ..base
         },
@@ -324,16 +354,37 @@ fn app_access_ring_matches_the_shipped_gate_for_an_open_app() {
 #[test]
 fn app_access_ring_matches_the_shipped_gate_for_a_restricted_app() {
     // Same gate, `visibility = 'members'` branch: plain org membership no longer
-    // suffices — an app_members row does, and any org officer (owner/admin) or
-    // staff stay break-glass.
+    // suffices — a grant does, and any org officer (owner/admin) or staff stay
+    // break-glass.
+    //
+    // The grant term is ANDed with org membership, matching `user_can_access_app`.
+    // A grant NARROWS the org; it is not a way into one. The two
+    // "…WITHOUT org membership" scenarios are what hold that line.
     assert_app_ring(Action::AppAccess, true, |s| {
         s.is_staff
             || s.has_develop_apps
             || s.is_org_owner
             || s.is_org_admin
-            || s.is_app_member
-            || s.is_app_admin
+            || (s.is_org_member && (s.is_app_member || s.is_app_admin))
     });
+}
+
+#[test]
+fn app_access_manage_ring_matches_the_shipped_grant_surface() {
+    // Oracle = the teams/grants handlers' gate: an org officer (owner/admin), Oxy
+    // staff, or a `manage_apps` partner. Visibility is irrelevant — who may RESTAFF
+    // an app doesn't change with whether it's currently restricted.
+    //
+    // The two terms this test exists to pin, because they point in opposite
+    // directions from `AppAdmin`: a `manage_apps` partner IS admitted here (naming an
+    // audience is lifecycle) and an app-admin row is NOT (running an app's privileged
+    // surface is not deciding who reaches it). A `develop_apps`-only partner is also
+    // denied — the manage/develop split holds in both directions.
+    for restricted in [false, true] {
+        assert_app_ring(Action::AppAccessManage, restricted, |s| {
+            s.is_staff || s.is_org_owner || s.is_org_admin || s.has_manage_apps
+        });
+    }
 }
 
 #[test]

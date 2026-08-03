@@ -9,6 +9,7 @@
 //! `GET /apps/{id}/build-config` so that CI can fetch it without any
 //! per-app repo variables.
 
+pub mod access;
 mod dto;
 pub mod fs;
 pub mod functions;
@@ -52,6 +53,16 @@ pub(crate) fn router() -> Router<AppState> {
             "/apps/{id}/functions/{name}/runs",
             post(handlers::run_function_job),
         )
+        // Who may open the app. Staff-gated twin of the org's own
+        // `/organizations/{id}/apps/{id}/access` — the org route needs an
+        // assume-role session, which `block_admin_while_acting` makes mutually
+        // exclusive with standing in this console. Same service, different gate.
+        .route(
+            "/apps/{id}/access",
+            get(access::get_app_access).put(access::set_app_access),
+        )
+        .route("/apps/{id}/teams", get(access::list_app_org_teams))
+        .route("/apps/{id}/members", get(access::list_app_org_members))
         .route("/apps/fs/listdir", get(fs::listdir))
         .route("/apps/fs/probe", get(fs::probe))
 }

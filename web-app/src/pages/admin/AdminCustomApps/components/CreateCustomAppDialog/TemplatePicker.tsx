@@ -38,7 +38,7 @@ export const TemplatePicker = ({ value, onChange }: Props) => {
   if (error || !Array.isArray(data)) {
     const detail = error instanceof Error ? error.message : null;
     return (
-      <div className='text-destructive text-sm'>
+      <div className='text-destructive text-xs'>
         <p>Couldn't load templates. The server may be offline.</p>
         {detail && <p className='mt-1 text-muted-foreground text-xs'>{detail}</p>}
       </div>
@@ -61,7 +61,7 @@ export const TemplatePicker = ({ value, onChange }: Props) => {
         >
           <div className='aspect-[3/2] w-full bg-muted' />
           <div className='flex flex-col gap-1 p-3'>
-            <span className='font-medium text-sm'>{t.name}</span>
+            <span className='font-medium text-xs'>{t.name}</span>
             <span className='text-muted-foreground text-xs leading-snug'>{t.description}</span>
           </div>
           {value === t.id && (
