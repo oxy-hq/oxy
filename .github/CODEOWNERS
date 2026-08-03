@@ -246,5 +246,4 @@ crates/app/src/server/router/                      @luong-komorebi @NTtanh
 # exists. Nick backs up here as he drove the Oxy→Oxygen rebrand.)
 /README.md                                         @luong-komorebi @nresh
 /docs/start/index.mdx                              @luong-komorebi @nresh
-/docs/start/what-is-oxygen.mdx                     @luong-komorebi @nresh
 /docs/snippets/positioning.mdx                     @luong-komorebi @nresh
