@@ -6,6 +6,7 @@ import { CanWorkspaceAdmin } from "@/components/auth/Can";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import type { CreateApiKeyResponse } from "@/types/apiKey";
+import NoAccessNotice from "../../../components/NoAccessNotice";
 import SectionHeader from "../../../components/SectionHeader";
 import ApiKeyTable from "./ApiKeyTable";
 import CreateApiKeyDialog from "./CreateApiKeyDialog";
@@ -33,11 +34,7 @@ const ApiKeys: React.FC = () => {
   return (
     <CanWorkspaceAdmin
       fallback={
-        <div className='flex items-center justify-center py-12'>
-          <p className='text-muted-foreground text-sm'>
-            You need workspace admin access to manage API keys.
-          </p>
-        </div>
+        <NoAccessNotice>You need workspace admin access to manage API keys.</NoAccessNotice>
       }
     >
       <div className='flex flex-col gap-5'>

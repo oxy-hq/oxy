@@ -34,13 +34,17 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
   const orgId = org.id;
   const { data: currentUser } = useCurrentUser();
   const { data: members, isPending, isError } = useOrgMembers(orgId);
-  const { data: invitations } = useOrgInvitations(orgId);
   const revokeInvitation = useRevokeInvitation();
   const createInvitation = useCreateInvitation();
   const [search, setSearch] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const canManage = viewerRole === "owner" || viewerRole === "admin";
+  // `GET /orgs/:id/invitations` is OrgAdmin-guarded while the roster itself is
+  // readable by any member, so firing it unconditionally made every member who
+  // opened this section trip the global 403 toast — a denial notice for a
+  // request the page never needed. Only ask when the answer is renderable.
+  const { data: invitations } = useOrgInvitations(orgId, canManage);
   const ownerCount = members?.filter((m) => m.role === "owner").length ?? 0;
   const adminCount = members?.filter((m) => m.role === "admin").length ?? 0;
   // Expired invites are included deliberately — they're the ones that need

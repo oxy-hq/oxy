@@ -1,3 +1,4 @@
+import { CanOrgAdmin } from "@/components/auth/Can";
 import type { SettingsSection } from "@/stores/useSettingsDialog";
 import type { Organization, OrgRole } from "@/types/organization";
 import type { Workspace } from "@/types/workspace";
@@ -17,30 +18,34 @@ import WorkspaceMembers from "../sections/workspace/Members";
 import OxyAccess from "../sections/workspace/OxyAccess";
 import Repositories from "../sections/workspace/Repositories";
 import Secrets from "../sections/workspace/Secrets";
+import NoAccessNotice from "./NoAccessNotice";
 
 export type ActiveSectionProps = {
   activeSection: SettingsSection;
   org: Organization | null;
   role: OrgRole | null;
-  isAdmin: boolean;
   workspace: Workspace | null;
-  isLocalMode: boolean;
   close: () => void;
 };
 
 /**
  * Renders whichever settings section matches `activeSection`. Shared between
  * the mobile and desktop layouts so section selection logic lives in one place.
+ *
+ * **The nav is the gate.** `activeSection` is always one of the items
+ * `visibleNavGroups` produced, so a section the caller may not reach can never
+ * become active. Nothing here re-derives authority — a second check against a
+ * *different* role is what hid Secrets from workspace admins who were only org
+ * members.
+ *
+ * A section's own `Can*` wrapper is defence-in-depth on top of that, not the
+ * primary gate, and coverage is uneven: General, Databases, Apps, Secrets,
+ * Repositories and ApiKeys carry one; Integration, Teams and App access do not
+ * (they hide mutations via `viewerRole`/`canManage` instead). Billing and Oxy
+ * access get their wrapper here because they have none internally. Anything
+ * added below inherits the nav gate — give it a `requires` entry in `nav.ts`.
  */
-export function ActiveSection({
-  activeSection,
-  org,
-  role,
-  isAdmin,
-  workspace,
-  isLocalMode,
-  close
-}: ActiveSectionProps) {
+export function ActiveSection({ activeSection, org, role, workspace, close }: ActiveSectionProps) {
   return (
     <>
       {org && role && activeSection === "organization.general" && (
@@ -55,8 +60,14 @@ export function ActiveSection({
       {org && role && activeSection === "organization.app_access" && (
         <OrgAppAccess org={org} viewerRole={role} />
       )}
-      {org && role && activeSection === "organization.billing" && isAdmin && (
-        <Billing org={org} onClose={close} />
+      {org && role && activeSection === "organization.billing" && (
+        <CanOrgAdmin
+          fallback={
+            <NoAccessNotice>You need organization admin access to manage billing.</NoAccessNotice>
+          }
+        >
+          <Billing org={org} onClose={close} />
+        </CanOrgAdmin>
       )}
       {org && activeSection === "organization.integration" && <Integration org={org} />}
 
@@ -65,11 +76,19 @@ export function ActiveSection({
       {workspace && activeSection === "workspace.airhouse" && <Airhouse />}
       {workspace && activeSection === "workspace.repositories" && <Repositories />}
       {workspace && activeSection === "workspace.api_keys" && <ApiKeys />}
-      {workspace && activeSection === "workspace.secrets" && (isLocalMode || isAdmin) && (
-        <Secrets />
+      {workspace && activeSection === "workspace.secrets" && <Secrets />}
+      {workspace && activeSection === "workspace.apps" && <Apps />}
+      {workspace && activeSection === "workspace.oxy_access" && (
+        <CanOrgAdmin
+          fallback={
+            <NoAccessNotice>
+              You need organization admin access to manage Oxy staff access.
+            </NoAccessNotice>
+          }
+        >
+          <OxyAccess />
+        </CanOrgAdmin>
       )}
-      {workspace && activeSection === "workspace.apps" && (isLocalMode || isAdmin) && <Apps />}
-      {workspace && activeSection === "workspace.oxy_access" && isAdmin && <OxyAccess />}
       {workspace && activeSection === "workspace.activity_logs" && <ActivityLogs />}
 
       {activeSection === "preferences.appearance" && <Appearance />}

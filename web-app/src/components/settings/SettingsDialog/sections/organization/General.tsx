@@ -12,6 +12,7 @@ import { clearLastOrgSlug } from "@/libs/utils/lastWorkspace";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { Organization } from "@/types/organization";
+import NoAccessNotice from "../../components/NoAccessNotice";
 import OrgLogoUpload from "./OrgLogoUpload";
 import PartnerPublishConsent from "./PartnerPublishConsent";
 
@@ -75,9 +76,18 @@ export default function GeneralSection({ org, onClose }: GeneralSectionProps) {
 
   const hasChanges = name.trim() !== org.name || slug.trim() !== org.slug;
 
+  // Every block below is admin-or-owner only, so a member used to get an empty
+  // panel. Gate the whole section once, with a reason, and let the inner
+  // `CanOrgOwner` still narrow the Danger Zone to owners.
   return (
-    <div className='space-y-8'>
-      <CanOrgAdmin>
+    <CanOrgAdmin
+      fallback={
+        <NoAccessNotice>
+          You need organization admin access to manage organization settings.
+        </NoAccessNotice>
+      }
+    >
+      <div className='space-y-8'>
         <div className='space-y-4'>
           <OrgLogoUpload org={org} />
           <div className='space-y-2'>
@@ -100,34 +110,32 @@ export default function GeneralSection({ org, onClose }: GeneralSectionProps) {
             {updateOrg.isPending ? "Saving..." : "Save"}
           </Button>
         </div>
-      </CanOrgAdmin>
 
-      <CanOrgAdmin>
         <PartnerPublishConsent orgId={org.id} />
-      </CanOrgAdmin>
 
-      <CanOrgOwner>
-        <div className='space-y-4 rounded-lg border border-destructive/50 p-4'>
-          <h3 className='font-medium text-destructive'>Danger Zone</h3>
-          <p className='text-muted-foreground text-sm'>
-            Deleting this organization will permanently remove all workspaces, members, and data.
-          </p>
-          <Button variant='destructive' onClick={() => setDeleteOpen(true)}>
-            Delete Organization
-          </Button>
-        </div>
-      </CanOrgOwner>
+        <CanOrgOwner>
+          <div className='space-y-4 rounded-lg border border-destructive/50 p-4'>
+            <h3 className='font-medium text-destructive'>Danger Zone</h3>
+            <p className='text-muted-foreground text-sm'>
+              Deleting this organization will permanently remove all workspaces, members, and data.
+            </p>
+            <Button variant='destructive' onClick={() => setDeleteOpen(true)}>
+              Delete Organization
+            </Button>
+          </div>
+        </CanOrgOwner>
 
-      <ConfirmDeleteDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title='Delete this entire organization permanently?'
-        description='This action cannot be undone. This will permanently delete the organization, including all workspaces, members, and data. Please type the name of the organization to confirm.'
-        confirmationName={org.name}
-        confirmButtonLabel='Permanently delete organization'
-        onConfirm={handleDelete}
-        isPending={deleteOrg.isPending}
-      />
-    </div>
+        <ConfirmDeleteDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title='Delete this entire organization permanently?'
+          description='This action cannot be undone. This will permanently delete the organization, including all workspaces, members, and data. Please type the name of the organization to confirm.'
+          confirmationName={org.name}
+          confirmButtonLabel='Permanently delete organization'
+          onConfirm={handleDelete}
+          isPending={deleteOrg.isPending}
+        />
+      </div>
+    </CanOrgAdmin>
   );
 }

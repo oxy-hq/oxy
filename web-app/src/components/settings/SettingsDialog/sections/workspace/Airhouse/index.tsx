@@ -104,11 +104,19 @@ const Airhouse: React.FC = () => {
           onAddToConfig={handleAddToConfig}
           isAddingToConfig={addToConfig.isPending}
         />
-        {workspaceId && <CatalogIndexes workspaceId={workspaceId} canManage={canProvision} />}
+        {/* Both catalog-index routes are org-admin-gated server-side
+            (`require_workspace_admin`), the GET included — so a non-admin can't
+            read this state at all. Rendering it anyway fired a 403 on every
+            open and tripped the global denial toast. */}
+        {workspaceId && canProvision && <CatalogIndexes workspaceId={workspaceId} />}
       </>
     );
   };
 
+  // Deliberately open to any org member: the credential this panel fetches is
+  // minted per-user and role-scoped, so a member receives their own read-only
+  // `Reader` credential rather than a shared secret. The admin-only pieces
+  // (provisioning, catalog indexes) are gated individually above.
   return (
     <div className='flex flex-col gap-5'>
       <SectionHeader

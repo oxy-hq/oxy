@@ -1,124 +1,16 @@
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import {
-  Activity,
-  AppWindow,
-  CreditCard,
-  Database,
-  GitBranch,
-  Key,
-  KeyRound,
-  type LucideIcon,
-  Plug,
-  Settings as SettingsIcon,
-  ShieldCheck,
-  SunMoon,
-  Users,
-  UsersRound
-} from "lucide-react";
 import { useEffect, useState } from "react";
-import { AirhouseLogo } from "@/components/icons";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { useAuth } from "@/contexts/AuthContext";
-import { FEATURES } from "@/libs/features";
+import { useRole } from "@/hooks/useRole";
 import { cn } from "@/libs/shadcn/utils";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
-import useSettingsDialog, { type SettingsSection } from "@/stores/useSettingsDialog";
+import useSettingsDialog from "@/stores/useSettingsDialog";
 import { ActiveSection } from "./components/ActiveSection";
 import { MobileSettingsView } from "./components/MobileSettingsView";
 import { VersionBadge } from "./components/VersionBadge";
-
-type NavIcon = LucideIcon | React.ComponentType<{ className?: string }>;
-
-interface NavItem {
-  value: SettingsSection;
-  label: string;
-  icon: NavIcon;
-  adminOnly?: boolean;
-  featureFlag?: keyof typeof FEATURES;
-  /** When set, only render this item if the matching authConfig flag is true. */
-  requiresBilling?: boolean;
-}
-
-interface NavGroup {
-  label: string;
-  items: NavItem[];
-}
-
-const CLOUD_NAV: NavGroup[] = [
-  {
-    label: "Organization",
-    items: [
-      { value: "organization.general", label: "General", icon: SettingsIcon },
-      { value: "organization.members", label: "Members", icon: Users },
-      // Teams then App access, in the order an admin works: group people, then
-      // decide what those groups can reach.
-      { value: "organization.teams", label: "Teams", icon: UsersRound, adminOnly: true },
-      {
-        value: "organization.app_access",
-        label: "App access",
-        icon: ShieldCheck,
-        adminOnly: true
-      },
-      {
-        value: "organization.billing",
-        label: "Billing",
-        icon: CreditCard,
-        adminOnly: true,
-        requiresBilling: true
-      },
-      { value: "organization.integration", label: "Integration", icon: Plug }
-    ]
-  },
-  {
-    label: "Workspace",
-    items: [
-      { value: "workspace.members", label: "Members", icon: Users },
-      { value: "workspace.databases", label: "Databases", icon: Database },
-      { value: "workspace.airhouse", label: "Airhouse", icon: AirhouseLogo },
-      {
-        value: "workspace.repositories",
-        label: "Repositories",
-        icon: GitBranch,
-        featureFlag: "LINKED_REPOS"
-      },
-      { value: "workspace.api_keys", label: "API Keys", icon: Key },
-      { value: "workspace.secrets", label: "Secrets", icon: KeyRound, adminOnly: true },
-      { value: "workspace.apps", label: "Apps", icon: AppWindow, adminOnly: true },
-      {
-        value: "workspace.oxy_access",
-        label: "Oxy access",
-        icon: ShieldCheck,
-        adminOnly: true
-      },
-      { value: "workspace.activity_logs", label: "Activity Logs", icon: Activity }
-    ]
-  },
-  // Customer-apps management used to live here. It now has its own
-  // top-level surface at `/admin/apps`, gated by `is_app_admin`.
-  {
-    label: "Preferences",
-    items: [{ value: "preferences.appearance", label: "Appearance", icon: SunMoon }]
-  }
-];
-
-const LOCAL_NAV: NavGroup[] = [
-  {
-    label: "Workspace",
-    items: [
-      { value: "workspace.databases", label: "Databases", icon: Database },
-      { value: "workspace.airhouse", label: "Airhouse", icon: AirhouseLogo },
-      { value: "workspace.api_keys", label: "API Keys", icon: Key },
-      { value: "workspace.secrets", label: "Secrets", icon: KeyRound },
-      { value: "workspace.apps", label: "Apps", icon: AppWindow },
-      { value: "workspace.activity_logs", label: "Activity Logs", icon: Activity }
-    ]
-  },
-  {
-    label: "Preferences",
-    items: [{ value: "preferences.appearance", label: "Appearance", icon: SunMoon }]
-  }
-];
+import { visibleNavGroups } from "./nav";
 
 export default function SettingsDialog() {
   const { isOpen, section, open, close } = useSettingsDialog();
@@ -126,8 +18,8 @@ export default function SettingsDialog() {
   const { org } = useCurrentOrg();
   const role = useCurrentOrg((s) => s.role);
   const { workspace } = useCurrentWorkspace();
+  const { is } = useRole();
 
-  const isAdmin = role === "owner" || role === "admin";
   const billingEnabled = authConfig.billing_enabled;
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
@@ -137,33 +29,16 @@ export default function SettingsDialog() {
     if (!isOpen) setMobileDetailOpen(false);
   }, [isOpen]);
 
-  const groupSubtitle = (groupLabel: string): string | undefined => {
-    if (groupLabel === "Organization") return org?.name;
-    if (groupLabel === "Workspace") return workspace?.name;
-    return undefined;
-  };
-
-  const groupAvailable = (groupLabel: string): boolean => {
-    if (groupLabel === "Organization") return !!org && !!role;
-    if (groupLabel === "Workspace") return !!workspace;
-    return true;
-  };
-
-  const navConfig = isLocalMode ? LOCAL_NAV : CLOUD_NAV;
-
-  const visibleGroups = navConfig
-    .filter((g) => groupAvailable(g.label))
-    .map((g) => ({
-      ...g,
-      subtitle: groupSubtitle(g.label),
-      items: g.items.filter(
-        (i) =>
-          (!i.featureFlag || FEATURES[i.featureFlag]) &&
-          (!i.adminOnly || isLocalMode || isAdmin) &&
-          (!i.requiresBilling || billingEnabled)
-      )
-    }))
-    .filter((g) => g.items.length > 0);
+  const visibleGroups = visibleNavGroups({
+    isLocalMode,
+    isOrgAdmin: is.orgAdmin,
+    isWorkspaceAdmin: is.workspaceAdmin,
+    billingEnabled,
+    hasOrg: !!org && !!role,
+    hasWorkspace: !!workspace,
+    orgName: org?.name,
+    workspaceName: workspace?.name
+  });
 
   const allItems = visibleGroups.flatMap((g) => g.items);
   const activeSection = allItems.some((i) => i.value === section)
@@ -207,9 +82,7 @@ export default function SettingsDialog() {
           onBackToList={() => setMobileDetailOpen(false)}
           org={org}
           role={role}
-          isAdmin={isAdmin}
           workspace={workspace}
-          isLocalMode={isLocalMode}
           close={close}
         />
 
@@ -262,9 +135,7 @@ export default function SettingsDialog() {
               activeSection={activeSection}
               org={org}
               role={role}
-              isAdmin={isAdmin}
               workspace={workspace}
-              isLocalMode={isLocalMode}
               close={close}
             />
           </div>

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { CanWorkspaceAdmin } from "@/components/auth/Can";
 import { useAppIntegrations } from "@/hooks/api/appIntegrations/useAppIntegrations";
 import type { AppIntegration, AppIntegrationKind } from "@/services/api/appIntegrations";
+import NoAccessNotice from "../../../components/NoAccessNotice";
 import SectionHeader from "../../../components/SectionHeader";
 import { AppCard } from "./components/AppCard";
 import { ConfigureAppDialog } from "./components/ConfigureAppDialog";
@@ -22,13 +23,7 @@ const Apps: React.FC = () => {
 
   return (
     <CanWorkspaceAdmin
-      fallback={
-        <div className='flex items-center justify-center py-12'>
-          <p className='text-muted-foreground text-sm'>
-            You need workspace admin access to manage apps.
-          </p>
-        </div>
-      }
+      fallback={<NoAccessNotice>You need workspace admin access to manage apps.</NoAccessNotice>}
     >
       <div className='flex flex-col gap-5'>
         <SectionHeader

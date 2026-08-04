@@ -5,8 +5,6 @@ import { useCatalogIndexes, useSetCatalogIndexes } from "@/hooks/api/airhouse/us
 
 type Props = {
   workspaceId: string;
-  /** Owner/Admin (or local mode). Non-admins see the state read-only. */
-  canManage: boolean;
 };
 
 /**
@@ -15,8 +13,12 @@ type Props = {
  * indexes `CONCURRENTLY`, so the switch reflects an async `building → ready`
  * state — the hook polls the status while a build is in flight and the switch
  * locks with a spinner until it settles.
+ *
+ * Admin-only, and rendered only when the caller can manage: both catalog-index
+ * routes are org-admin-gated server-side (the status GET included), so there is
+ * no read-only view of this state to fall back to.
  */
-export function CatalogIndexes({ workspaceId, canManage }: Props) {
+export function CatalogIndexes({ workspaceId }: Props) {
   const { data: status, isPending, isError } = useCatalogIndexes(workspaceId);
   const set = useSetCatalogIndexes(workspaceId);
 
@@ -59,7 +61,7 @@ export function CatalogIndexes({ workspaceId, canManage }: Props) {
         )}
         <Switch
           checked={enabled}
-          disabled={!canManage || isPending || isError || inFlight}
+          disabled={isPending || isError || inFlight}
           onCheckedChange={(next) => set.mutate(next)}
           aria-label='Toggle DuckLake catalog indexes for this workspace'
         />

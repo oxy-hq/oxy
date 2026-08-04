@@ -1,29 +1,15 @@
-import type { LucideIcon } from "lucide-react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { DialogClose } from "@/components/ui/shadcn/dialog";
 import type { SettingsSection } from "@/stores/useSettingsDialog";
 import type { Organization, OrgRole } from "@/types/organization";
 import type { Workspace } from "@/types/workspace";
+import type { VisibleNavGroup } from "../nav";
 import { ActiveSection } from "./ActiveSection";
 import { VersionBadge } from "./VersionBadge";
 
-type NavIcon = LucideIcon | React.ComponentType<{ className?: string }>;
-
-interface NavItem {
-  value: SettingsSection;
-  label: string;
-  icon: NavIcon;
-}
-
-interface NavGroup {
-  label: string;
-  subtitle?: string;
-  items: NavItem[];
-}
-
 interface MobileSettingsViewProps {
-  visibleGroups: NavGroup[];
+  visibleGroups: VisibleNavGroup[];
   activeSection: SettingsSection;
   activeLabel: string;
   detailOpen: boolean;
@@ -31,9 +17,7 @@ interface MobileSettingsViewProps {
   onBackToList: () => void;
   org: Organization | null;
   role: OrgRole | null;
-  isAdmin: boolean;
   workspace: Workspace | null;
-  isLocalMode: boolean;
   close: () => void;
 }
 
@@ -54,9 +38,7 @@ export function MobileSettingsView({
   onBackToList,
   org,
   role,
-  isAdmin,
   workspace,
-  isLocalMode,
   close
 }: MobileSettingsViewProps) {
   return (
@@ -72,9 +54,7 @@ export function MobileSettingsView({
             activeSection={activeSection}
             org={org}
             role={role}
-            isAdmin={isAdmin}
             workspace={workspace}
-            isLocalMode={isLocalMode}
             close={close}
           />
         </div>

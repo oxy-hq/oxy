@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/shadcn/separator";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useDataClean } from "@/hooks/api/databases/useDataClean";
 import useDatabaseOperation from "@/stores/useDatabaseOperation";
+import NoAccessNotice from "../../../components/NoAccessNotice";
 import SectionHeader from "../../../components/SectionHeader";
 import { AddDatabaseForm } from "./AddDatabaseForm";
 import DatabaseTable from "./DatabaseTable";
@@ -57,27 +58,37 @@ export default function Databases() {
     </CanWorkspaceAdmin>
   );
 
+  // The section used to hide only its buttons, leaving a member a read-only
+  // list of every warehouse connection in the workspace. Gate the whole
+  // section instead, matching the nav — the inner `CanWorkspaceAdmin` on the
+  // actions is now redundant but harmless, and keeps the block self-describing.
   return (
-    <div className='flex flex-col gap-5'>
-      <SectionHeader icon={Database} title='Databases' actions={headerActions} />
+    <CanWorkspaceAdmin
+      fallback={
+        <NoAccessNotice>You need workspace admin access to manage databases.</NoAccessNotice>
+      }
+    >
+      <div className='flex flex-col gap-5'>
+        <SectionHeader icon={Database} title='Databases' actions={headerActions} />
 
-      <DatabaseTable />
+        <DatabaseTable />
 
-      <Separator />
+        <Separator />
 
-      <EmbeddingsManagement />
+        <EmbeddingsManagement />
 
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className='flex max-h-[85vh] max-w-2xl flex-col overflow-hidden p-0'>
-          <DialogHeader className='p-6 pb-0'>
-            <DialogTitle>Add Database Connection</DialogTitle>
-            <DialogDescription>Configure a new database connection</DialogDescription>
-          </DialogHeader>
-          <div className='min-h-0 flex-1 overflow-auto p-6 pt-0'>
-            <AddDatabaseForm onSuccess={handleAddDatabaseSuccess} onCancel={handleCloseDialog} />
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogContent className='flex max-h-[85vh] max-w-2xl flex-col overflow-hidden p-0'>
+            <DialogHeader className='p-6 pb-0'>
+              <DialogTitle>Add Database Connection</DialogTitle>
+              <DialogDescription>Configure a new database connection</DialogDescription>
+            </DialogHeader>
+            <div className='min-h-0 flex-1 overflow-auto p-6 pt-0'>
+              <AddDatabaseForm onSuccess={handleAddDatabaseSuccess} onCancel={handleCloseDialog} />
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </CanWorkspaceAdmin>
   );
 }

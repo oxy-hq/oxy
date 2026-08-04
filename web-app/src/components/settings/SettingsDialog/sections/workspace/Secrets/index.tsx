@@ -6,6 +6,7 @@ import { CanWorkspaceAdmin } from "@/components/auth/Can";
 import { CreateSecretDialog } from "@/components/settings/secrets/CreateSecretDialog";
 import { UnifiedSecretsTable } from "@/components/settings/secrets/UnifiedSecretsTable";
 import { Button } from "@/components/ui/shadcn/button";
+import NoAccessNotice from "../../../components/NoAccessNotice";
 import SectionHeader from "../../../components/SectionHeader";
 
 const Secrets: React.FC = () => {
@@ -13,13 +14,7 @@ const Secrets: React.FC = () => {
 
   return (
     <CanWorkspaceAdmin
-      fallback={
-        <div className='flex items-center justify-center py-12'>
-          <p className='text-muted-foreground text-sm'>
-            You need workspace admin access to manage secrets.
-          </p>
-        </div>
-      }
+      fallback={<NoAccessNotice>You need workspace admin access to manage secrets.</NoAccessNotice>}
     >
       <div className='flex flex-col gap-5'>
         <SectionHeader
