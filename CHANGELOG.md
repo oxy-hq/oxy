@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.120] - 2026-08-04
+
+### 🐛 Bug Fixes
+
+- Settings sections a Member can't use no longer appear (#2848)
+- Custom-app email attachments arrive corrupt because SES emitted 7bit (#2852)
+
 ## [0.5.119] - 2026-08-03
 
 ### 🚀 Features
@@ -27,6 +34,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Weekly health review — 2026-08-03 (#2844)
+- Release 0.5.119 (#2835)
 
 ## [0.5.118] - 2026-07-30
 
