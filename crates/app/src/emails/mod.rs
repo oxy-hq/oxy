@@ -5,6 +5,7 @@ pub mod app_emailer;
 pub mod billing_checkout;
 pub mod billing_past_due;
 pub mod local_test;
+mod mime;
 pub mod ses;
 
 pub struct EmailMessage {

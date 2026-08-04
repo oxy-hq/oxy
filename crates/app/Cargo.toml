@@ -169,6 +169,9 @@ rand = { workspace = true }
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-s3 = { workspace = true }
 aws-sdk-sesv2 = { workspace = true }
+# Composes the MIME for app email so it is OUR artifact and can be asserted
+# byte-exact offline — see emails/mime.rs.
+lettre = { workspace = true }
 # customer-apps publish pipeline: tarball pack/unpack + bundle LRU cache
 tar = { workspace = true }
 flate2 = { workspace = true }

@@ -7,10 +7,7 @@
 //!
 //! Design: `internal-docs/customer-apps-functions.md`.
 
-use aws_sdk_sesv2::types::{
-    Attachment, AttachmentContentDisposition, Body, Content, Destination, EmailContent,
-    Message as SesMessage,
-};
+use aws_sdk_sesv2::types::{Destination, EmailContent, RawMessage};
 use serde::Deserialize;
 
 /// Max combined `to` + `cc` + `bcc` recipients per `ctx.email.send` call
@@ -153,23 +150,19 @@ impl AppEmailer {
         }
     }
 
-    /// The `From` header: `App Name <mailbox>` (or bare mailbox when the name is
-    /// empty). The display name is RFC-5322 safe — control/CR-LF and `<`/`>` are
-    /// dropped (header-injection defense), and a name with specials (comma, `@`,
-    /// …) is emitted as an escaped quoted-string.
-    fn from_header(&self) -> String {
-        match display_name(&self.app_name) {
-            Some(name) => format!("{name} <{}>", self.from_mailbox),
-            None => self.from_mailbox.clone(),
-        }
-    }
-
     /// Validate + send. Returns the value `ctx.email.send` resolves to
     /// (`{ "messageId": ... }`), or `Err(message)` surfaced to JS via the
     /// runtime's `__oxyError` envelope. Error messages are prefixed with a
     /// typed label (`SenderRejected`, `TooManyRecipients`, …).
     pub async fn send(&self, input: EmailSendInput) -> Result<serde_json::Value, String> {
         let msg = self.validate(input)?;
+        // Composed BEFORE the local/cloud fork, and propagated either way. A
+        // payload that cannot produce a valid message (an address lettre
+        // rejects, a misconfigured platform sender) must fail identically on a
+        // laptop and in cloud — a preview that logged the error and returned a
+        // `messageId` anyway would reopen, one layer up, exactly the
+        // dev-vs-prod blind spot that let the 7bit bug ship.
+        let mime = self.compose(&msg)?;
         // Local mode (or the `OXY_APP_EMAIL_LOCAL_TEST` override) previews in the
         // browser and never touches SES. In cloud, SES errors PROPAGATE: a
         // transient failure (DispatchFailure, credential rotation) must re-run via
@@ -177,9 +170,21 @@ impl AppEmailer {
         // cloud dev box that wants the preview sets `OXY_APP_EMAIL_LOCAL_TEST=1`
         // (the SES-config error message says so).
         if self.local_test {
-            return Ok(self.preview_local(&msg));
+            return Ok(self.preview_local(&msg, &mime));
         }
-        self.send_ses(&msg).await
+        self.send_ses(&msg, mime).await
+    }
+
+    /// Assemble the RFC-5322 bytes for `msg`, sender included.
+    ///
+    /// The display name is passed unencoded alongside the bare mailbox rather
+    /// than as a preformatted `Name <addr>` string — see `mime::build_mime`.
+    fn compose(&self, msg: &ValidatedEmail) -> Result<Vec<u8>, String> {
+        super::mime::build_mime(
+            sanitized_display_name(&self.app_name).as_deref(),
+            &self.from_mailbox,
+            msg,
+        )
     }
 
     /// Validate the payload into a normalized, ready-to-send message.
@@ -198,12 +203,16 @@ impl AppEmailer {
             .filter(|s| !s.is_empty())
             .ok_or("InvalidEmailPayload: `subject` is required")?
             .to_string();
-        let to = input.to.map(OneOrMany::into_vec).unwrap_or_default();
+        // Trimmed and de-blanked here so both consumers see the same list:
+        // lettre's parser rejects a leading space outright, and SES would take
+        // it into the envelope. `" a@b.com "` out of a form field is ordinary
+        // input, not a payload bug worth failing a send over.
+        let to = addresses(input.to);
         if to.is_empty() {
             return Err("InvalidEmailPayload: at least one `to` recipient is required".to_string());
         }
-        let cc = input.cc.map(OneOrMany::into_vec).unwrap_or_default();
-        let bcc = input.bcc.map(OneOrMany::into_vec).unwrap_or_default();
+        let cc = addresses(input.cc);
+        let bcc = addresses(input.bcc);
         let total = to.len() + cc.len() + bcc.len();
         if total > MAX_RECIPIENTS_PER_SEND {
             return Err(format!(
@@ -227,7 +236,10 @@ impl AppEmailer {
             to,
             cc,
             bcc,
-            reply_to: input.reply_to.filter(|s| !s.is_empty()),
+            reply_to: input
+                .reply_to
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             html: input.html,
             text: input.text,
             attachments,
@@ -238,7 +250,7 @@ impl AppEmailer {
     /// `oxy-email-previews/` subdir of the temp dir (so it doesn't litter temp;
     /// auto-pruned) and open it in the browser so a developer sees the rendered
     /// template with its real data. Returns a synthetic message id. Prefers HTML.
-    fn preview_local(&self, msg: &ValidatedEmail) -> serde_json::Value {
+    fn preview_local(&self, msg: &ValidatedEmail, mime: &[u8]) -> serde_json::Value {
         let message_id = format!("local-test-{}", uuid::Uuid::new_v4());
         // Prefer the HTML body for a faithful preview; fall back to text.
         let (mut contents, ext) = match (&msg.html, &msg.text) {
@@ -255,7 +267,7 @@ impl AppEmailer {
         prune_old_previews(&dir);
         let path = dir.join(format!("email-{message_id}.{ext}"));
         tracing::info!(
-            from = %self.from_header(),
+            from = %self.from_mailbox,
             to = ?msg.to,
             cc = ?msg.cc,
             bcc = ?msg.bcc,
@@ -269,14 +281,49 @@ impl AppEmailer {
             Ok(()) => super::local_test::open_in_browser(&path),
             Err(e) => tracing::warn!("failed to write email preview to {}: {e}", path.display()),
         }
+        self.write_eml_preview(msg, mime, &message_id, &dir);
         serde_json::json!({ "messageId": message_id })
     }
 
+    /// Write the byte-exact message SES would receive next to the rendered
+    /// preview, as `.eml`.
+    ///
+    /// The HTML preview above shows the *template*; it says nothing about
+    /// transfer encodings or part structure, which is why a release that
+    /// mangled every binary attachment looked perfect on a laptop. This file
+    /// opens in any mail client, so "is the attachment actually intact?" is
+    /// answerable before merge instead of after a customer says so.
+    ///
+    /// The bytes are composed by the caller, so a composition failure has
+    /// already aborted the send; only the filesystem write is best-effort here.
+    fn write_eml_preview(
+        &self,
+        msg: &ValidatedEmail,
+        mime: &[u8],
+        message_id: &str,
+        dir: &std::path::Path,
+    ) {
+        let path = dir.join(format!("email-{message_id}.eml"));
+        match std::fs::write(&path, mime) {
+            Ok(()) => tracing::info!(
+                path = %path.display(),
+                attachments = msg.attachments.len(),
+                "wrote the exact MIME SES would receive; open it in a mail client to \
+                 verify attachments end-to-end"
+            ),
+            Err(e) => tracing::warn!("failed to write .eml preview to {}: {e}", path.display()),
+        }
+    }
+
     /// Cloud path: send via SES v2, returning the SES message id.
-    async fn send_ses(&self, msg: &ValidatedEmail) -> Result<serde_json::Value, String> {
+    async fn send_ses(
+        &self,
+        msg: &ValidatedEmail,
+        mime: Vec<u8>,
+    ) -> Result<serde_json::Value, String> {
         let client = ses_client(self.aws_region.as_deref()).await;
         let out = self
-            .build_send_email(client, msg)?
+            .build_send_email(client, msg, mime)?
             .send()
             .await
             .map_err(|e| classify_ses_error(error_detail(&e)))?;
@@ -284,17 +331,21 @@ impl AppEmailer {
         Ok(serde_json::json!({ "messageId": message_id }))
     }
 
-    /// Compose the SES `SendEmail` request.
+    /// Compose the SES `SendEmail` request around MIME **we** built.
     ///
-    /// Split out from [`Self::send_ses`] so a test can drive it with a capturing
-    /// HTTP client and assert what actually goes **on the wire**. That is the
-    /// one thing exercising the typed builders cannot prove: that the
-    /// attachments set on `Message` survive into the serialized `EmailContent`
-    /// rather than being dropped somewhere between here and the request body.
+    /// The message goes out as `Content.Raw`, not `Content.Simple`. Letting SES
+    /// assemble the MIME put the encoding decision on a server this process
+    /// cannot observe, and its undocumented default (`7bit`) destroyed every
+    /// binary attachment. See `emails/mime.rs` for the full account.
+    ///
+    /// Recipients are still passed as a `Destination`: those are the envelope
+    /// addresses SES actually delivers to, and it is how a Bcc reaches its
+    /// recipient without appearing in the headers.
     fn build_send_email(
         &self,
         client: &aws_sdk_sesv2::Client,
         msg: &ValidatedEmail,
+        mime: Vec<u8>,
     ) -> Result<aws_sdk_sesv2::operation::send_email::builders::SendEmailFluentBuilder, String>
     {
         let mut dest = Destination::builder().set_to_addresses(Some(msg.to.clone()));
@@ -305,49 +356,49 @@ impl AppEmailer {
             dest = dest.set_bcc_addresses(Some(msg.bcc.clone()));
         }
 
-        let mut content = SesMessage::builder()
-            .subject(text_content(&msg.subject)?)
-            .body(build_body(msg.html.as_deref(), msg.text.as_deref())?);
-        // Attachments ride the SES v2 **simple** content path — `Message` carries
-        // them natively, so this needs no hand-built raw MIME.
-        if !msg.attachments.is_empty() {
-            content = content.set_attachments(Some(build_attachments(&msg.attachments)?));
-        }
-        let content = content.build();
+        let raw = RawMessage::builder()
+            .data(aws_sdk_sesv2::primitives::Blob::new(mime))
+            .build()
+            .map_err(|e| format!("InvalidEmailPayload: could not build the raw message: {e}"))?;
 
-        let mut req = client
+        // `Reply-To` is a header inside the MIME now, so it is NOT also set on
+        // the request — SES would add a second one and the recipient's client
+        // would have to guess.
+        Ok(client
             .send_email()
-            .from_email_address(self.from_header())
+            // The BARE mailbox, not `Name <mailbox>`. SES uses this as the
+            // source identity (and the bounce path); the display name belongs
+            // to the MIME `From` header, which lettre owns. Rendering the name
+            // here too would mean two escapers for one value — the SES field
+            // carrying raw UTF-8 while the header carries RFC-2047 — and only
+            // one of them is covered by the MIME tests.
+            .from_email_address(&self.from_mailbox)
             .destination(dest.build())
-            .content(EmailContent::builder().simple(content).build());
-        if let Some(reply_to) = &msg.reply_to {
-            req = req.reply_to_addresses(reply_to.clone());
-        }
-        Ok(req)
+            .content(EmailContent::builder().raw(raw).build()))
     }
 }
 
 /// A validated, normalized email ready to hand to SES or the local logger.
 #[derive(Debug)]
-struct ValidatedEmail {
-    subject: String,
-    to: Vec<String>,
-    cc: Vec<String>,
-    bcc: Vec<String>,
-    reply_to: Option<String>,
-    html: Option<String>,
-    text: Option<String>,
-    attachments: Vec<ValidatedAttachment>,
+pub(super) struct ValidatedEmail {
+    pub(super) subject: String,
+    pub(super) to: Vec<String>,
+    pub(super) cc: Vec<String>,
+    pub(super) bcc: Vec<String>,
+    pub(super) reply_to: Option<String>,
+    pub(super) html: Option<String>,
+    pub(super) text: Option<String>,
+    pub(super) attachments: Vec<ValidatedAttachment>,
 }
 
 /// An attachment whose base64 has been decoded and size-checked.
 #[derive(Debug)]
-struct ValidatedAttachment {
-    filename: String,
-    bytes: Vec<u8>,
-    content_type: Option<String>,
-    inline: bool,
-    content_id: Option<String>,
+pub(super) struct ValidatedAttachment {
+    pub(super) filename: String,
+    pub(super) bytes: Vec<u8>,
+    pub(super) content_type: Option<String>,
+    pub(super) inline: bool,
+    pub(super) content_id: Option<String>,
 }
 
 /// Decode + bound the author's attachments. Enforces the count cap, the
@@ -406,6 +457,22 @@ fn validate_attachments(
                 ));
             }
         };
+        // An empty `content` is *valid* input to both decoders — base64 "" and
+        // utf8 "" each yield zero bytes — so neither guard above fires and SES
+        // is handed a well-formed part with the right filename, type and
+        // disposition wrapped around nothing. That is delivered as a 0-byte
+        // file the recipient's viewer calls corrupt, with no error anywhere on
+        // our side. Whatever produced the empty string (`?? ""`, a read that
+        // returned nothing, a mis-keyed field) is a bug in the caller, so say
+        // so at the boundary instead of mailing the evidence to a customer.
+        if bytes.is_empty() {
+            return Err(format!(
+                "InvalidEmailPayload: attachment[{idx}] ('{filename}') is empty — `content` \
+                 decoded to zero bytes. An empty part is delivered as a corrupt file; check \
+                 that the value passed to `content` is non-empty (a `?? \"\"` fallback, or a \
+                 ctx.storage/ctx.fetch read that returned nothing, both land here)"
+            ));
+        }
         total = total.saturating_add(bytes.len());
         if total > MAX_ATTACHMENT_TOTAL_BYTES {
             return Err(format!(
@@ -419,10 +486,27 @@ fn validate_attachments(
             bytes,
             content_type: a.content_type.filter(|s| !s.trim().is_empty()),
             inline: a.inline.unwrap_or(false),
-            content_id: a.content_id.filter(|s| !s.trim().is_empty()),
+            content_id: a
+                .content_id
+                .as_deref()
+                .map(content_id)
+                .filter(|s| !s.is_empty()),
         });
     }
     Ok(out)
+}
+
+/// Normalize a `string | string[]` recipient field: trim each address and drop
+/// the blanks a template can easily interpolate (`[user.email]` where the row
+/// had none).
+fn addresses(field: Option<OneOrMany>) -> Vec<String> {
+    field
+        .map(OneOrMany::into_vec)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|a| a.trim().to_string())
+        .filter(|a| !a.is_empty())
+        .collect()
 }
 
 /// Standard-base64 decode (accepts the common unpadded form too).
@@ -433,17 +517,60 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
         .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(s))
 }
 
+/// Header-safe `Content-ID`: the same header-injection defense as
+/// [`attachment_filename`], plus the delimiters that make up the token itself.
+///
+/// This value is emitted as `Content-ID: <…>` in MIME **we** now write, so it
+/// is author-controlled input into a header this process owns. Under the old
+/// `Content.Simple` path SES assembled the header and this was AWS's problem;
+/// composing in-process moved that responsibility here.
+///
+/// Unlike a filename this is an **allowlist**, because a Content-ID is a token
+/// (RFC 2045 §7 defers to RFC 5322 `msg-id`), not free text. Stripping only
+/// CR/LF would stop header injection but still let
+/// `contentId: "logo\r\nX-Injected: 1"` become
+/// `Content-ID: <logoX-Injected: 1>` — unresolvable by any `cid:` reference and
+/// alarming to read in a bug report. Real-world ids (`logo`,
+/// `image001.png@01D9`, `ii_abc123`) fit comfortably in this set.
+///
+/// Angle brackets are dropped along with everything else: lettre adds its own,
+/// so a caller-supplied pair would emit `Content-ID: <<logo>>`.
+/// Also reached from `emails::mime`, which must run the **filename** through
+/// this when an inline part supplies no `contentId` — `attachment_filename`
+/// allows spaces, `<`, `>`, `:` and non-ASCII, none of which belong in a
+/// msg-id token.
+pub(super) fn content_id(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '@' | '+'))
+        .take(200)
+        .collect()
+}
+
 /// Header-safe attachment filename: drop CR/LF and quote characters (MIME
 /// header-injection defense) and any path separators, then bound the length.
+///
+/// Bounded by **characters**, not bytes. `String::truncate` panics when the
+/// byte index is not a char boundary, and this keeps non-ASCII deliberately
+/// (lettre RFC-2231-encodes it), so a 100-emoji filename — 300 bytes, every
+/// boundary a multiple of 3 — would have panicked inside the function host on
+/// `truncate(200)`.
 fn attachment_filename(name: &str) -> String {
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
-    let mut out: String = base
-        .chars()
+    base.chars()
         .filter(|c| !c.is_control() && !matches!(c, '"' | '\r' | '\n'))
-        .collect();
-    out = out.trim().to_string();
-    out.truncate(200);
-    out
+        .collect::<String>()
+        // Trimmed on BOTH sides of the cap. After, because a >200-char name
+        // whose 200th character is a space would otherwise leave that space
+        // inside `filename="…"`. Before, because 200 leading spaces followed
+        // by a real name would otherwise truncate to pure whitespace and then
+        // to nothing, turning an absurd-but-recoverable name into a rejected
+        // send.
+        .trim()
+        .chars()
+        .take(200)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 /// Render the attachment list for the local preview (which never sends, so the
@@ -583,82 +710,20 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Map validated attachments onto SES v2 `Attachment` parts.
-fn build_attachments(attachments: &[ValidatedAttachment]) -> Result<Vec<Attachment>, String> {
-    attachments
-        .iter()
-        .map(|a| {
-            let mut b = Attachment::builder()
-                .raw_content(aws_sdk_sesv2::primitives::Blob::new(a.bytes.clone()))
-                .file_name(&a.filename)
-                .content_disposition(if a.inline {
-                    AttachmentContentDisposition::Inline
-                } else {
-                    AttachmentContentDisposition::Attachment
-                });
-            if let Some(ct) = &a.content_type {
-                b = b.content_type(ct);
-            }
-            if let Some(cid) = &a.content_id {
-                b = b.content_id(cid);
-            }
-            b.build().map_err(|e| {
-                format!(
-                    "InvalidEmailPayload: could not build attachment '{}': {e}",
-                    a.filename
-                )
-            })
-        })
-        .collect()
-}
-
-/// Build a UTF-8 SES `Content`.
-fn text_content(data: &str) -> Result<Content, String> {
-    Content::builder()
-        .data(data)
-        .charset("UTF-8")
-        .build()
-        .map_err(|e| format!("InvalidEmailPayload: {e}"))
-}
-
-/// Build the SES `Body` from whichever of html/text is present (at least one is
-/// guaranteed by validation).
-fn build_body(html: Option<&str>, text: Option<&str>) -> Result<Body, String> {
-    let mut body = Body::builder();
-    if let Some(html) = html {
-        body = body.html(text_content(html)?);
-    }
-    if let Some(text) = text {
-        body = body.text(text_content(text)?);
-    }
-    Ok(body.build())
-}
-
-/// Build an RFC-5322 `display-name` from an app name, or `None` if empty after
-/// cleaning. Control chars, CR/LF (header injection), and `<`/`>` are dropped; if
-/// the remainder contains a char that isn't valid unquoted (comma, `@`, `.`,
-/// `:`, …), it's returned as a `\`/`"`-escaped quoted-string.
-fn display_name(raw: &str) -> Option<String> {
+/// The app name with header-unsafe characters removed, and **not** quoted.
+///
+/// This is what `emails::mime` hands to lettre: `Mailbox` takes an unencoded
+/// display name and does its own RFC-5322 quoting and RFC-2047 encoding, so
+/// passing the already-quoted [`display_name`] would double-quote it and ship
+/// visible `""` to the recipient. The sanitising half is shared because it is a
+/// header-injection defense either way.
+pub(super) fn sanitized_display_name(raw: &str) -> Option<String> {
     let cleaned: String = raw
         .chars()
         .filter(|c| !c.is_control() && !matches!(c, '<' | '>'))
         .collect();
     let cleaned = cleaned.trim();
-    if cleaned.is_empty() {
-        return None;
-    }
-    // atext (RFC 5322 §3.2.3) + space are safe unquoted; anything else needs a
-    // quoted-string.
-    const ATEXT_SYMBOLS: &str = "!#$%&'*+-/=?^_`{|}~";
-    let safe_unquoted = cleaned
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == ' ' || ATEXT_SYMBOLS.contains(c));
-    if safe_unquoted {
-        Some(cleaned.to_string())
-    } else {
-        let escaped = cleaned.replace('\\', "\\\\").replace('"', "\\\"");
-        Some(format!("\"{escaped}\""))
-    }
+    (!cleaned.is_empty()).then(|| cleaned.to_string())
 }
 
 /// Directory for locally-rendered email previews — one dedicated subdir of the
@@ -774,44 +839,71 @@ mod tests {
         serde_json::from_value(json).expect("valid input")
     }
 
+    /// The smallest payload `validate` accepts.
+    fn basic() -> serde_json::Value {
+        serde_json::json!({ "to": "a@b.com", "subject": "hi", "text": "yo" })
+    }
+
+    /// The app name reaches the composed `From`. Quoting and RFC-2047 are
+    /// lettre's job now (asserted in `emails::mime`); this only pins that the
+    /// name is carried through and sanitized on the way.
     #[test]
-    fn from_header_uses_app_display_name() {
-        assert_eq!(
-            emailer().from_header(),
-            "Acme Reports <noreply@oxygen-hq.com>"
+    fn app_name_reaches_the_composed_from_header() {
+        let mime = String::from_utf8(
+            emailer()
+                .compose(&emailer().validate(parse(basic())).expect("valid"))
+                .expect("composes"),
+        )
+        .unwrap();
+        // lettre quotes a multi-word display-name. Both spellings are legal
+        // RFC 5322 and clients strip the quotes on display, so assert the name
+        // and mailbox rather than pinning lettre's choice.
+        let from = mime.lines().find(|l| l.starts_with("From: ")).unwrap();
+        assert!(from.contains("Acme Reports"), "{from}");
+        assert!(from.ends_with("<noreply@oxygen-hq.com>"), "{from}");
+    }
+
+    #[test]
+    fn a_blank_app_name_composes_a_bare_mailbox() {
+        let mut e = emailer();
+        e.app_name = "  ".to_string();
+        let mime = String::from_utf8(
+            e.compose(&e.validate(parse(basic())).expect("valid"))
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(mime.contains("From: noreply@oxygen-hq.com"), "{mime}");
+    }
+
+    #[test]
+    fn sanitized_display_name_drops_injection_characters() {
+        // CR/LF (header injection) and <> are removed before the name ever
+        // reaches lettre. Quoting is deliberately NOT done here — doing it in
+        // two places is what shipped a pre-quoted name into an encoded-word.
+        let n = sanitized_display_name("Ac<me>\r\n\"X").unwrap();
+        assert!(
+            !n.contains('<') && !n.contains('>') && !n.contains('\r') && !n.contains('\n'),
+            "{n}"
         );
     }
 
     #[test]
-    fn from_header_falls_back_to_bare_mailbox() {
+    fn sanitized_display_name_empty_after_cleaning_is_none() {
+        assert!(sanitized_display_name("  <>  ").is_none());
+    }
+
+    /// The name is author-adjacent (it is the app's title), so a CRLF in it
+    /// must not be able to add a header to the composed message.
+    #[test]
+    fn an_app_name_cannot_inject_a_header() {
         let mut e = emailer();
-        e.app_name = "  ".to_string();
-        assert_eq!(e.from_header(), "noreply@oxygen-hq.com");
-    }
-
-    #[test]
-    fn display_name_leaves_plain_names_unquoted() {
-        assert_eq!(display_name("Acme Reports").unwrap(), "Acme Reports");
-    }
-
-    #[test]
-    fn display_name_quotes_specials() {
-        // A comma is illegal in an unquoted display-name → quoted-string.
-        assert_eq!(display_name("Acme, Inc").unwrap(), "\"Acme, Inc\"");
-    }
-
-    #[test]
-    fn display_name_drops_injection_and_escapes_quotes() {
-        // CR/LF (header injection) and <> are removed; a literal quote is escaped
-        // (not stripped) inside the resulting quoted-string.
-        let n = display_name("Ac<me>\r\n\"X").unwrap();
-        assert!(!n.contains('<') && !n.contains('>') && !n.contains('\r') && !n.contains('\n'));
-        assert!(n.starts_with('"') && n.contains("\\\""));
-    }
-
-    #[test]
-    fn display_name_empty_after_cleaning_is_none() {
-        assert!(display_name("  <>  ").is_none());
+        e.app_name = "Acme\r\nX-Injected: 1".to_string();
+        let mime = String::from_utf8(
+            e.compose(&e.validate(parse(basic())).expect("valid"))
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(!mime.contains("X-Injected:"), "{mime}");
     }
 
     #[test]
@@ -925,8 +1017,8 @@ mod tests {
         assert_eq!(a.bytes, b"hello");
         assert_eq!(a.content_type.as_deref(), Some("application/pdf"));
         assert!(!a.inline, "attachment disposition is the default");
-        // Maps onto a real SES part.
-        assert_eq!(build_attachments(&msg.attachments).unwrap().len(), 1);
+        // Composes into a real MIME part (structure asserted in emails::mime).
+        assert!(super::super::mime::build_mime(Some("App"), "a@oxy.tech", &msg).is_ok());
     }
 
     #[test]
@@ -938,16 +1030,19 @@ mod tests {
             .expect("valid");
         assert!(msg.attachments[0].inline);
         assert_eq!(msg.attachments[0].content_id.as_deref(), Some("logo"));
-        assert!(build_attachments(&msg.attachments).is_ok());
+        assert!(super::super::mime::build_mime(Some("App"), "a@oxy.tech", &msg).is_ok());
     }
 
-    /// The end of the pipeline: what SES actually receives. Everything else
-    /// asserts our own types; this asserts the AWS SDK's serialized request, so
-    /// an attachment silently dropped between `Message` and the wire would fail
-    /// here. Uses a capturing HTTP client — no network, no emulator, and no
-    /// dependency on a third party's fidelity to the SES v2 attachment shape.
+    /// The end of the pipeline: what SES actually receives.
+    ///
+    /// Now that Oxy composes the MIME itself, this asserts the finished message
+    /// really rides in `Content.Raw` and that the envelope still carries every
+    /// recipient — the two halves that only exist once the request is
+    /// serialized. Part-level structure is asserted offline in `emails::mime`.
+    ///
+    /// Uses a capturing HTTP client: no network, no credentials, no emulator.
     #[tokio::test]
-    async fn ses_request_carries_the_attachment_on_the_wire() {
+    async fn ses_request_carries_our_mime_as_raw_content() {
         use base64::Engine as _;
 
         let (http_client, captured) = aws_smithy_http_client::test_util::capture_request(None);
@@ -959,22 +1054,21 @@ mod tests {
             .build();
         let client = aws_sdk_sesv2::Client::from_conf(conf);
 
-        let csv = "name,total\nCafé,3\n";
-        let msg = emailer()
-            .validate(parse(with_attachments(serde_json::json!([
-                {
-                    "filename": "report.csv",
-                    "content": csv,
-                    "encoding": "utf8",
-                    "contentType": "text/csv"
-                }
-            ]))))
-            .expect("valid");
+        let jpeg: &[u8] = &[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x0D, 0x0A, 0x80, 0x00];
+        let mut input = with_attachments(serde_json::json!([
+            {
+                "filename": "IMG_20260330_155601_2.jpg",
+                "content": base64::engine::general_purpose::STANDARD.encode(jpeg),
+                "contentType": "image/jpeg"
+            }
+        ]));
+        input["bcc"] = serde_json::json!("blind@oxy.tech");
+        let msg = emailer().validate(parse(input)).expect("valid");
 
         // The canned response isn't a real SES reply, so the call errors after
         // the request is built — which is all this test cares about.
         let _ = emailer()
-            .build_send_email(&client, &msg)
+            .build_send_email(&client, &msg, emailer().compose(&msg).expect("composes"))
             .expect("request must build")
             .send()
             .await;
@@ -982,18 +1076,36 @@ mod tests {
         let req = captured.expect_request();
         let body: serde_json::Value =
             serde_json::from_slice(req.body().bytes().expect("in-memory body")).unwrap();
-        let att = &body["Content"]["Simple"]["Attachments"][0];
 
-        assert_eq!(att["FileName"], "report.csv");
-        assert_eq!(att["ContentType"], "text/csv");
-        assert_eq!(att["ContentDisposition"], "ATTACHMENT");
-        // RawContent is a Blob — base64 on the JSON wire. Byte-exact, accents
-        // and all, which is the whole point of the utf8 encoding option.
-        assert_eq!(
-            att["RawContent"],
-            base64::engine::general_purpose::STANDARD.encode(csv.as_bytes())
+        assert!(
+            body["Content"]["Simple"].is_null(),
+            "the simple path let SES choose the transfer encoding; it must be gone"
         );
+        let raw = body["Content"]["Raw"]["Data"]
+            .as_str()
+            .expect("Raw.Data is a base64 Blob on the JSON wire");
+        let mime = String::from_utf8(
+            base64::engine::general_purpose::STANDARD
+                .decode(raw)
+                .expect("Blob is base64"),
+        )
+        .expect("our MIME is ASCII");
+
+        // Matched as one contiguous run so the encoding is pinned to the JPEG's
+        // own part. 7bit on the ASCII text body beside it is legal and expected.
+        assert!(
+            mime.contains("Content-Type: image/jpeg\r\nContent-Transfer-Encoding: base64"),
+            "the binary part must declare base64:\n{mime}"
+        );
+
+        // The envelope still has to name everyone, including the blind copy —
+        // that is what makes omitting Bcc from the headers safe.
         assert_eq!(body["Destination"]["ToAddresses"][0], "a@b.com");
+        assert_eq!(body["Destination"]["BccAddresses"][0], "blind@oxy.tech");
+        assert!(
+            !mime.contains("blind@oxy.tech"),
+            "a blind recipient must not be disclosed in the headers:\n{mime}"
+        );
     }
 
     #[test]
@@ -1012,7 +1124,7 @@ mod tests {
             .expect("valid");
         assert_eq!(msg.attachments[0].bytes, "name,total\nCafé,3\n".as_bytes());
         // Non-ASCII survives byte-exact — the case `btoa` cannot express at all.
-        assert!(build_attachments(&msg.attachments).is_ok());
+        assert!(super::super::mime::build_mime(Some("App"), "a@oxy.tech", &msg).is_ok());
     }
 
     #[test]
@@ -1057,6 +1169,108 @@ mod tests {
         assert_eq!(msg.attachments[0].bytes, b"hello");
     }
 
+    /// `contentId` is author-controlled and lands in a `Content-ID:` header
+    /// this process now writes — under the old `Content.Simple` path SES
+    /// assembled that header, so escaping it was AWS's problem. The same
+    /// defense `attachment_filename` has always had applies here.
+    #[test]
+    fn content_id_cannot_escape_its_header() {
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([{
+                "filename": "logo.png",
+                "content": "aGVsbG8=",
+                "inline": true,
+                "contentId": "logo\r\nX-Injected: 1"
+            }]))))
+            .expect("valid");
+        let cid = msg.attachments[0].content_id.as_deref().unwrap();
+        assert_eq!(
+            cid, "logoX-Injected1",
+            "only token characters survive: {cid:?}"
+        );
+
+        // And it must not reappear as a header once composed.
+        let mime = String::from_utf8(emailer().compose(&msg).expect("composes")).unwrap();
+        assert!(
+            !mime.contains("X-Injected:"),
+            "a caller must not be able to add a header:\n{mime}"
+        );
+    }
+
+    /// lettre wraps the value in angle brackets itself, so caller-supplied ones
+    /// would emit `<<logo>>` — a Content-ID no `cid:` reference can resolve.
+    #[test]
+    fn content_id_strips_caller_supplied_angle_brackets() {
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([{
+                "filename": "logo.png",
+                "content": "aGVsbG8=",
+                "inline": true,
+                "contentId": "<logo>"
+            }]))))
+            .expect("valid");
+        assert_eq!(msg.attachments[0].content_id.as_deref(), Some("logo"));
+        let mime = String::from_utf8(emailer().compose(&msg).expect("composes")).unwrap();
+        assert!(mime.contains("Content-ID: <logo>"), "{mime}");
+        assert!(!mime.contains("<<"), "{mime}");
+    }
+
+    /// A contentId that is nothing but delimiters sanitizes to empty, which
+    /// must fall back to the filename rather than emitting `Content-ID: <>`.
+    #[test]
+    fn content_id_that_sanitizes_to_empty_falls_back_to_the_filename() {
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([{
+                "filename": "logo.png",
+                "content": "aGVsbG8=",
+                "inline": true,
+                "contentId": "<>"
+            }]))))
+            .expect("valid");
+        assert!(msg.attachments[0].content_id.is_none());
+        let mime = String::from_utf8(emailer().compose(&msg).expect("composes")).unwrap();
+        assert!(mime.contains("Content-ID: <logo.png>"), "{mime}");
+    }
+
+    #[test]
+    fn recipient_addresses_are_trimmed_and_blanks_dropped() {
+        let msg = emailer()
+            .validate(parse(serde_json::json!({
+                "to": [" a@b.com ", "", "   "],
+                "cc": " c@d.com",
+                "replyTo": "  r@s.com  ",
+                "subject": "hi",
+                "text": "yo"
+            })))
+            .expect("valid");
+        assert_eq!(msg.to, vec!["a@b.com"]);
+        assert_eq!(msg.cc, vec!["c@d.com"]);
+        assert_eq!(msg.reply_to.as_deref(), Some("r@s.com"));
+        // And the trimmed forms must actually compose.
+        assert!(emailer().compose(&msg).is_ok());
+    }
+
+    /// `String::truncate` panics when the byte index is not a char boundary,
+    /// and this sanitizer deliberately keeps non-ASCII (lettre RFC-2231-encodes
+    /// it). 100 coffee emoji is 300 bytes with every boundary a multiple of 3,
+    /// so a byte-wise cap at 200 split a character and panicked inside the
+    /// function host. Bounding by chars is the fix.
+    #[test]
+    fn a_long_non_ascii_filename_is_bounded_without_panicking() {
+        // 300 chars / 900 bytes: byte 200 lands mid-character (900 boundaries
+        // are all multiples of 3), which is precisely what used to panic.
+        let name = "☕".repeat(300);
+        let out = attachment_filename(&name);
+        assert_eq!(out.chars().count(), 200, "bounded by chars, not bytes");
+        // And it survives a real compose.
+        let msg = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": name, "content": "aGVsbG8=" }
+            ]))))
+            .expect("valid");
+        assert!(emailer().compose(&msg).is_ok());
+    }
+
     #[test]
     fn rejects_bad_base64_rather_than_sending_an_empty_part() {
         let err = emailer()
@@ -1065,6 +1279,31 @@ mod tests {
             ]))))
             .unwrap_err();
         assert!(err.contains("not valid base64"), "{err}");
+    }
+
+    /// Empty `content` is *valid* base64 — it decodes to zero bytes — so the
+    /// malformed-input guard above never fires for it. Left unchecked it ships
+    /// a well-formed MIME part with the right filename and type and an empty
+    /// body: a 0-byte file the recipient's viewer reports as corrupt, with
+    /// nothing anywhere in the logs. `content: someBase64 ?? ""` and a failed
+    /// upstream read both land here.
+    #[test]
+    fn rejects_empty_content_rather_than_attaching_zero_bytes() {
+        for content in ["", "   \n"] {
+            let err = emailer()
+                .validate(parse(with_attachments(serde_json::json!([
+                    { "filename": "warehouse-card.png", "content": content }
+                ]))))
+                .unwrap_err();
+            assert!(err.contains("empty"), "content {content:?} gave: {err}");
+        }
+        // utf8 has the same hole: an empty string is a legal decode too.
+        let err = emailer()
+            .validate(parse(with_attachments(serde_json::json!([
+                { "filename": "report.csv", "content": "", "encoding": "utf8" }
+            ]))))
+            .unwrap_err();
+        assert!(err.contains("empty"), "{err}");
     }
 
     #[test]

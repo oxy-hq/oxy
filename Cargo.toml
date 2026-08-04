@@ -307,7 +307,9 @@ itertools = "0.14.0"
 jsonschema = "0.33.0"
 jsonwebtoken = "10"
 lazy_static = "1.5.0"
-lettre = "0.11.22"
+# MIME assembly only — no transport. Oxy hands the composed message to SES v2
+# as `Content.Raw`, so every SMTP/TLS/pool feature is dead weight here.
+lettre = { version = "0.11.22", default-features = false, features = ["builder"] }
 libc = "0.2"
 linfa = "0.8.1"
 linfa-reduction = "0.8.1"
