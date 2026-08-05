@@ -10,10 +10,14 @@ raw camera dump.
 Why re-run detection here instead of reusing the live loop: the clip
 covers the ~30s *before* the flag, and those frames already streamed
 past `CameraReader._frame_loop`. We can't recover the live detections
-for them, so we decode the clip and detect again — reusing the exact
-live pipeline (Ultralytics `.track()` + `DetectionsSmoother`) on a
-DEDICATED model whose tracker we reset per clip, so we never touch the
-live per-camera tracker state (Ultralytics keeps it on the model object).
+for them, so we decode the clip and detect again — with a DEDICATED
+model (its own instance, so clip inference never perturbs a live tracker).
+
+Detection here is plain per-frame `.predict()`, NOT `.track()`: a tracker
+fed subsampled clip frames keeps *lost* tracks alive and drifts their
+predicted boxes across empty frames (bytetrack's ~30-frame buffer), which
+showed up as boxes jumping around with no one present. Predict draws a box
+only where a person is actually detected on that frame (see `_detect`).
 
 Why ffmpeg for the encode: `opencv-python-headless` bundles an ffmpeg
 without libx264, so `cv2.VideoWriter` can't emit browser-playable
@@ -42,8 +46,11 @@ from .log import log
 # separate model instance from the per-camera models so clip inference
 # never perturbs a live tracker; we reset ITS tracker per clip below.
 _YOLO_MODEL = os.environ.get("YOLO_MODEL", "yolo11n.pt")
-_TRACKER = os.environ.get("TRACKER", "bytetrack.yaml")
 _PERSON_CLASS_ID = 0  # COCO person
+# Confidence gate for the boxes we draw. A touch above the model default (0.25)
+# to gate the weakest false positives without dropping real (often far/low-conf,
+# ~0.3-0.45) CCTV people; the real phantom fix is dropping the tracker. Tunable.
+_CONF = float(os.environ.get("CLIP_ANNOTATE_CONF", "0.3"))
 
 # Master toggle — set CLIP_ANNOTATE_ENABLED=0 to ship raw clips.
 _ENABLED = os.environ.get("CLIP_ANNOTATE_ENABLED", "1") != "0"
@@ -147,15 +154,13 @@ def _render(cap, zone, wh: "tuple[int, int]", fps: float, out_path: str) -> int:
     """Decode → detect (subsampled) → draw → pipe to ffmpeg. Returns the
     number of frames written."""
     w, h = wh
-    smoother = sv.DetectionsSmoother()
     detect_every = max(1, int(round(fps / _DETECT_FPS)) if _DETECT_FPS > 0 else 1)
     proc = _open_encoder(out_path, w, h, fps)
-    det = None  # last tracked detections, carried forward between detects
+    det = None  # last detections, carried forward between detects
     mask = None
     count = 0
     idx = 0
     written = 0
-    n_detect = 0
     try:
         while idx < _MAX_FRAMES:
             ok, frame = cap.read()
@@ -164,8 +169,7 @@ def _render(cap, zone, wh: "tuple[int, int]", fps: float, out_path: str) -> int:
             if frame.shape[1] != w or frame.shape[0] != h:
                 frame = cv2.resize(frame, (w, h))
             if idx % detect_every == 0:
-                det = _detect(frame, smoother, first=(n_detect == 0))
-                n_detect += 1
+                det = _detect(frame)
                 mask = zone.trigger(detections=det) if len(det) else np.array([], bool)
                 count = int(mask.sum()) if mask is not None else 0
             _draw_frame(frame, zone, det, mask, count)
@@ -177,23 +181,22 @@ def _render(cap, zone, wh: "tuple[int, int]", fps: float, out_path: str) -> int:
     return written
 
 
-def _detect(frame: np.ndarray, smoother, *, first: bool) -> sv.Detections:
-    """Person detection + tracking for one clip frame — the SAME pipeline
-    as the live loop (`CameraReader._detect_and_track`): Ultralytics
-    `.track()` + `DetectionsSmoother`. `sv.ByteTrack` is deliberately not
-    used here — it drops unconfirmed tracks and collapses the intermittent
-    low-confidence CCTV detections to ~0/frame. `first` passes
-    `persist=False` on the clip's opening frame to reset the dedicated
-    model's tracker so no state leaks in from a previous clip."""
-    results = _load_model().track(
+def _detect(frame: np.ndarray) -> sv.Detections:
+    """Per-frame person detection for annotation — plain `.predict()`, NOT
+    `.track()`. A tracker fed *subsampled* clip frames keeps lost tracks alive
+    (bytetrack's ~30-frame buffer) and drifts their Kalman-predicted boxes
+    across frames where no one is present — that is the "boxes jump around with
+    no people there" bug. `.predict()` puts a box only where YOLO actually sees
+    a person on this frame; `_CONF` gates low-confidence phantoms off clutter.
+    (We lose stable per-track ids — fine for evidence; the count banner is the
+    number that matters.)"""
+    results = _load_model().predict(
         frame,
-        persist=not first,
-        tracker=_TRACKER,
+        conf=_CONF,
         classes=[_PERSON_CLASS_ID],
         verbose=False,
     )[0]
-    det = sv.Detections.from_ultralytics(results)
-    return smoother.update_with_detections(det)
+    return sv.Detections.from_ultralytics(results)
 
 
 def _draw_frame(frame, zone, det, mask, count: int) -> None:
