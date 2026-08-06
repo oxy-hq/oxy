@@ -13,6 +13,7 @@ pub mod default_branch;
 pub mod feature_flags;
 pub mod git_fetch_maintenance;
 pub mod health_eval_executor;
+pub mod http_cache;
 pub mod ide_proxy;
 pub mod preagg_executor;
 pub(super) mod preagg_rebuild;

@@ -148,7 +148,7 @@ pub(super) async fn redirect_legacy_uuid(
 /// wanted to 404 cleanly (asset for a missing file shouldn't get the SPA
 /// shell back at 200). Missing Accept is rare in practice (manual `curl`
 /// without flags); we treat it as HTML so the SPA still renders.
-pub(super) fn wants_html(headers: &HeaderMap) -> bool {
+pub(crate) fn wants_html(headers: &HeaderMap) -> bool {
     let Some(accept) = headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()) else {
         return true;
     };
@@ -194,23 +194,9 @@ pub(super) fn cache_control_for(request_path: &str, file_path: &StdPath) -> &'st
     }
 }
 
-/// Weak ETag over the final response bytes (post-injection for HTML). Weak
-/// (`W/`) because the bytes are produced by a transform, not a raw file.
-pub(super) fn etag_for(bytes: &[u8]) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    bytes.hash(&mut h);
-    format!("W/\"{:016x}\"", h.finish())
-}
-
-/// True when the request's `If-None-Match` already holds `etag`.
-pub(super) fn if_none_match(headers: &HeaderMap, etag: &str) -> bool {
-    headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.split(',').any(|t| t.trim() == etag))
-        .unwrap_or(false)
-}
+// The ETag format and `If-None-Match` comparison are shared with the admin
+// SPA shell — see `server::http_cache` for why they have one home.
+pub(super) use crate::server::http_cache::{if_none_match, weak_etag as etag_for};
 
 pub(super) fn guess_content_type(path: &StdPath) -> &'static str {
     match path.extension().and_then(|e| e.to_str()) {

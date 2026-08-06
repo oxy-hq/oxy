@@ -58,6 +58,9 @@ use super::custom_apps_cache::{cached_user, set_cached_user};
 use super::custom_apps_functions::runtime::FunctionQueryExecutor;
 
 mod headers;
+// The admin SPA's static handler answers the same navigation-vs-subresource
+// question for its own fallback, and must answer it identically.
+pub(crate) use headers::wants_html;
 mod rewrite;
 mod sources;
 
