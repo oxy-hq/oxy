@@ -421,6 +421,20 @@ async fn new_agentic_state(
     // probe later). Tied to the same shutdown token as the rest of
     // the agentic state so the loop exits on Ctrl-C / SIGTERM with
     // everything else.
+    //
+    // "Process-level" overstates it: both callers of `new_agentic_state`
+    // reach here, and a single `oxy serve` builds both routers — the
+    // public one always, the internal one unless `internal_port=0`
+    // (default 3001). So a default serve process runs *two* of these
+    // loops, i.e. two reapers, two health probes, two retention sweeps.
+    // Benign — a reap claims its rows with an `UPDATE`, so the second
+    // loop finds nothing rather than double-dead-lettering, and both
+    // increment the same in-process counters — but note the asymmetry
+    // with `internal_api_router`'s call site above: there, startup
+    // cleanup and recovery are deliberately skipped on the internal
+    // router to avoid exactly this kind of duplication, and these loops
+    // are not. That looks unintended rather than decided; collapsing
+    // them wants its own change (and a test), not a rider on a doc pass.
     let bg_cancel = agentic_runtime::background::start(db.clone(), router.clone());
     let shutdown_for_bg = shutdown_token.clone();
     tokio::spawn(async move {
