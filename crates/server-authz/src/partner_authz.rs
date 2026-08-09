@@ -285,12 +285,15 @@ pub async fn resolve_scope(
     }
 }
 
-/// Global Owner (env allow-list) or Global Admin (`app_admins` table) — read through
-/// the one place that knows what those sources are.
+/// Staff reach into the **partner console** — `ManagePartners`, read through the one
+/// place that knows what the platform sources are.
+///
+/// Not `is_staff()`: that is now true for every platform role, so it would let an App
+/// Operator operate the partner registry. Capability without scope, matching
+/// `Ring::PlatformCap` — the partner registry is Oxy's own surface, and a platform
+/// grant's scope names *client* orgs, which is a different set from partner orgs.
 async fn is_oxy_staff(db: &DatabaseConnection, email: &str) -> bool {
-    crate::globals::platform_standing(db, email)
-        .await
-        .is_staff()
+    crate::globals::platform_holds(db, email, oxy_authz::Cap::ManagePartners).await
 }
 
 /// Every client this partner manages.

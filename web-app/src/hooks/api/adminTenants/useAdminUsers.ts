@@ -20,7 +20,7 @@ export const useAdminUsersList = (
   options: { enabled?: boolean } = {}
 ) =>
   useQuery({
-    queryKey: queryKeys.adminUsers.list(query.search, query.status),
+    queryKey: queryKeys.adminUsers.list(query.search, query.status, query.role),
     queryFn: () => AdminUsersService.list(query),
     enabled: options.enabled ?? true
   });

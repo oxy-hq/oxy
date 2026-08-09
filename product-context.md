@@ -38,8 +38,10 @@ Deployment modes — almost every bug report depends on which one:
 
 ## Roles (the same word means different things at different levels)
 
-- **Global Owner** (`OXY_OWNER` env allow-list → `is_owner`) — Oxy staff; reaches everything, incl. the Billing queue and Global-admin management.
-- **Global Admin** (`app_admins` table, seeded by `OXY_GLOBAL_ADMINS`; legacy `OXY_APP_ADMINS` still accepted → `is_app_admin`) — Oxy ops; reaches most of admin + every custom app, but **not** Billing or Global-admin management.
+- **Platform standing is a grant, not a rank** — a row in `app_admins` carries a **role** (a capability preset) and a **scope** (all orgs, or a list). `is_app_admin` says only *that* someone is staff, so nothing may authorize from it. Full model: `internal-docs/roles-and-authorization.md`.
+- **Global Owner** (`OXY_OWNER` env allow-list → `is_owner`) — Oxy staff; reaches everything, incl. the Billing queue and Global-admin management. Still a boolean: it's root.
+- **Global Admin** (role `global_admin`, seeded by `OXY_GLOBAL_ADMINS`; legacy `OXY_APP_ADMINS` still accepted) — Oxy ops; reaches most of admin + every custom app, but **not** Billing or Global-admin management.
+- **App Operator** (role `app_operator`) — ships and develops custom apps and **nothing else**: no org deletion, member management, org settings, billing, partners, or platform machinery. Optionally scoped to specific orgs. Exists because "manages apps" used to require Global Admin, which silently included the authority to delete any org.
 - **Partner** (capability-gated, **not** an org membership) — a distributor tier between Oxy staff and tenants: owns a set of downstream orgs and, only for those, creates orgs, manages members (with an owner-seizure guardrail), and publishes their custom apps. Scoped to exactly its grants — **no** general platform reach; every action lands in an append-only per-org audit log.
 - **Org Owner / Admin / Member** (`role` in `org_members`) — tenant-internal only, **no** platform reach. Workspace role derives via `EffectiveWorkspaceRole`.
 - **Per-app scope** — a custom app is visible org-wide (default) or limited to an explicit member list, and a **per-app admin** role can extend app-admin rights to someone who isn't org staff. An app must ask the authz model for the caller's role, never infer it, so an in-app privileged view can't be forged.

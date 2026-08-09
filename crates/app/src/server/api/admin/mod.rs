@@ -22,6 +22,7 @@ pub mod orgs_admin;
 pub mod oxy_access;
 pub mod partners;
 pub mod routing;
+pub mod scope;
 pub mod users_admin;
 pub(crate) mod workspace_health;
 pub mod workspaces_admin;
@@ -29,7 +30,8 @@ pub mod workspaces_admin;
 use axum::Router;
 use axum::middleware;
 
-use crate::server::api::middlewares::oxy_owner_guard;
+use crate::server::api::middlewares::{app_scope_guard, oxy_owner_guard, platform_cap_guard};
+use crate::server::authz::Action;
 use crate::server::feature_flags;
 use crate::server::router::AppState;
 
@@ -80,14 +82,26 @@ use crate::server::router::AppState;
 ///   - DELETE /admin/workspaces/{workspace_id}
 ///   - POST   /admin/workspaces/{workspace_id}/transfer-org
 ///   - POST   /admin/workspace-health/{workspace_id}/eval
-/// Admin routes. The outer nest layer in `router::global` is permissive
-/// (OXY_OWNER **or** app_admins). Only `billing` and `app_admins` sub-routers
-/// escalate to strict OXY_OWNER via `route_layer` — the inner layer runs
-/// after the outer one, so a request that passed the permissive check
-/// still gets a 403 here if the caller isn't an owner. Everything else,
-/// including `partners` (tenant provisioning is an ops action, not platform
-/// governance), is reachable by Global Admins — matching orgs/users/workspaces
-/// and the `adminOrAppAdmin` Tenants surface that fronts them.
+/// Admin routes. The outer nest layer in `router::global` is the **door**
+/// (`oxy_owner_or_app_admin_guard`): it answers "are you Oxy staff at all". Each
+/// sub-router below then escalates to the capability its surface is actually about,
+/// via `route_layer` — the inner layer runs after the outer one, so a request that
+/// passed the door still gets a 403 here without the capability.
+///
+/// That per-section escalation is not new machinery: `billing` and `app_admins` have
+/// always escalated to strict OXY_OWNER this way. What changed is that the *rest* of
+/// the console used to escalate to nothing, so any staff standing reached all of it —
+/// which is why an app publisher had the same authority as someone entitled to delete
+/// a tenant. `require(Action::Platform*)` generalises the pattern that was already here.
+///
+/// Two gates remain owner-only rather than capability-gated, deliberately:
+/// * `billing` — the Billing queue, `Ring::GlobalOwnerOnly`.
+/// * `app_admins` — the **grant table itself**. A capability that could edit the grant
+///   table would let its holder widen their own grant, and the ceiling would mean
+///   nothing. It stays a boolean the model cannot reach.
+///
+/// **Scope is not enforced here** — see `platform_cap_guard`. A scoped operator passes
+/// these gates and the handler filters its rows.
 ///
 /// `internal_jobs::router()` is mounted separately at `/admin/internal-jobs`
 /// in `router::global` because its routes were flattened during the
@@ -97,23 +111,35 @@ pub(crate) fn router() -> Router<AppState> {
     // the strict guard; everything else runs only under the outer
     // permissive guard.
     let strict = middleware::from_fn(oxy_owner_guard::oxy_owner_guard_middleware);
+    let cap = |action| middleware::from_fn(platform_cap_guard::require(action));
 
     // The staff surface. Everything here is refused while the caller is acting as
     // a tenant: you cannot wield staff powers and wear a customer's identity in
     // the same breath. Ending the session (below) restores all of it.
     let staff_surface = feature_flags::routes::router()
-        .merge(apps::router())
-        .merge(audit::router())
-        .merge(app_publish_tokens::router())
-        .merge(explorer::router())
-        .merge(metrics::router())
-        .merge(orgs_admin::router())
-        .merge(org_subdomains::router())
-        .merge(users_admin::router())
-        .merge(workspaces_admin::router())
-        .merge(routing::router())
-        .merge(workspace_health::router())
-        .merge(partners::router())
+        .route_layer(cap(Action::PlatformOperate))
+        // Two layers, two questions: the capability admits you to the section, then the
+        // scope guard fences which apps you may touch inside it. Layered here rather
+        // than in ~20 handlers — see `app_scope_guard`.
+        .merge(
+            apps::router()
+                .route_layer(middleware::from_fn(app_scope_guard::enforce_app_scope))
+                .route_layer(cap(Action::PlatformApps)),
+        )
+        .merge(audit::router().route_layer(cap(Action::PlatformAudit)))
+        .merge(app_publish_tokens::router().route_layer(cap(Action::PlatformApps)))
+        .merge(explorer::router().route_layer(cap(Action::PlatformExplorer)))
+        .merge(metrics::router().route_layer(cap(Action::PlatformOperate)))
+        // Org administration and creation are one router but two capabilities; the
+        // router-level gate is the broader `PlatformOrgs`, and `create_org` asks for
+        // `PlatformOrgCreate` inside the handler where the verb is known.
+        .merge(orgs_admin::router().route_layer(cap(Action::PlatformOrgs)))
+        .merge(org_subdomains::router().route_layer(cap(Action::PlatformOrgs)))
+        .merge(users_admin::router().route_layer(cap(Action::PlatformUsers)))
+        .merge(workspaces_admin::router().route_layer(cap(Action::PlatformOrgs)))
+        .merge(routing::router().route_layer(cap(Action::PlatformOperate)))
+        .merge(workspace_health::router().route_layer(cap(Action::PlatformOperate)))
+        .merge(partners::router().route_layer(cap(Action::PlatformPartners)))
         .merge(billing::router().route_layer(strict.clone()))
         .merge(app_admins::router().route_layer(strict))
         .route_layer(middleware::from_fn(assume::block_admin_while_acting));

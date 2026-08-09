@@ -33,6 +33,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::server::api::admin::scope;
 use crate::server::router::AppState;
 
 pub(crate) fn router() -> Router<AppState> {
@@ -101,7 +102,13 @@ fn plan_owner_seeding(existing_user_id: Option<Uuid>, email: &str) -> OwnerSeed 
 /// If `owner_email` is a known user they are seeded as `Owner`; otherwise an
 /// `Owner`-role invitation is created and emailed (7-day expiry). The org is
 /// created billing-`Incomplete` (admin provisions the subscription separately).
-/// Reachable by Global Owner or Global Admin (see module docs).
+///
+/// Requires [`Action::PlatformOrgCreate`] (`Cap::CreateOrgs`), not merely the router's
+/// broader `PlatformOrgs` gate: creating a tenant and being able to administer one are
+/// different powers, and the partner tier already draws that line. Today every role that
+/// reaches this router holds both, so the check is inert — but an inert check that is
+/// actually wired stays true when a role is added; a documented one that isn't wired is
+/// just a comment.
 pub async fn create_org(
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     headers: HeaderMap,
@@ -110,6 +117,37 @@ pub async fn create_org(
     use crate::server::api::organizations::{
         is_reserved_slug, normalize_invite_email, send_invitation_email, slugify_name,
     };
+
+    let db = establish_connection().await.map_err(internal)?;
+
+    {
+        // `load_platform_facts` returns `None` ONLY on a DbErr — `Ok(None)` (a real
+        // non-staff caller) still yields `Some(facts)`. So an unreadable grant must be a
+        // 500, not a 403: the same rule `deny_out_of_scope` and `split_by_scope` settled
+        // in this change. Answering "you don't have permission" to a database blip is
+        // both wrong and unactionable, and two call sites disagreeing about it is the
+        // drift the helper split was meant to end.
+        let facts =
+            match crate::server::authz::loader::load_platform_facts(&db, actor.id, &actor.email)
+                .await
+            {
+                Some(facts) => facts,
+                None => {
+                    tracing::error!(
+                        target: "authz",
+                        "platform facts unreadable on create_org — refusing"
+                    );
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            };
+        if !crate::server::authz::allows(
+            &facts,
+            crate::server::authz::Action::PlatformOrgCreate,
+            &crate::server::authz::Resource::platform(),
+        ) {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
 
     let name = body.name.trim().to_string();
     if name.is_empty() {
@@ -133,8 +171,6 @@ pub async fn create_org(
     // same shape as the reserved-slug case above, and what the client maps.
     let owner_email =
         normalize_invite_email(&body.owner_email).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
-
-    let db = establish_connection().await.map_err(internal)?;
 
     // Best-effort slug uniqueness pre-check; the DB UNIQUE constraint is the
     // real guard against races (handled on insert below).
@@ -451,8 +487,13 @@ pub async fn list_orgs_meta(
     Ok(Json(out))
 }
 
-pub async fn get_org_detail(Path(org_id): Path<Uuid>) -> Result<Json<AdminOrgDetail>, StatusCode> {
+pub async fn get_org_detail(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    Path(org_id): Path<Uuid>,
+) -> Result<Json<AdminOrgDetail>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
+    // Scope: a bounded grant must not reach this org. See `admin::scope`.
+    scope::deny_out_of_scope(&db, &actor, org_id).await?;
     let org = organizations::Entity::find_by_id(org_id)
         .one(&db)
         .await
@@ -509,6 +550,8 @@ pub async fn rename_org(
     }
 
     let db = establish_connection().await.map_err(internal)?;
+    // Scope: a bounded grant must not reach this org. See `admin::scope`.
+    scope::deny_out_of_scope(&db, &actor, org_id).await?;
     let org = organizations::Entity::find_by_id(org_id)
         .one(&db)
         .await
@@ -572,6 +615,8 @@ pub async fn delete_org(
     Path(org_id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
+    // Scope: a bounded grant must not reach this org. See `admin::scope`.
+    scope::deny_out_of_scope(&db, &actor, org_id).await?;
     let res = organizations::Entity::delete_by_id(org_id)
         .exec(&db)
         .await
@@ -594,6 +639,8 @@ pub async fn transfer_ownership(
     Json(body): Json<TransferOwnershipBody>,
 ) -> Result<StatusCode, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
+    // Scope: a bounded grant must not reach this org. See `admin::scope`.
+    scope::deny_out_of_scope(&db, &actor, org_id).await?;
     organizations::Entity::find_by_id(org_id)
         .one(&db)
         .await

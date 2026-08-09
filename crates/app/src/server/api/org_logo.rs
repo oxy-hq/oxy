@@ -14,6 +14,7 @@ use axum::response::Response;
 use chrono::Utc;
 use entity::organizations;
 use oxy::database::client::establish_connection;
+use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
 use uuid::Uuid;
 
@@ -125,7 +126,19 @@ async fn load_org_for_admin(org_id: Uuid) -> Result<organizations::Model, Status
 /// `GET /api/admin/orgs/{org_id}/logo` — the org's uploaded logo bytes, or 404
 /// (the frontend then renders the name initial). Same XSS-hardening headers as
 /// every other logo serve path.
-pub async fn admin_get_org_logo(Path(org_id): Path<Uuid>) -> Result<Response, StatusCode> {
+pub async fn admin_get_org_logo(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    Path(org_id): Path<Uuid>,
+) -> Result<Response, StatusCode> {
+    // Scope. These three sit on `orgs_admin::router()`, which every other route fenced —
+    // they were missed because they are implemented HERE, in a file about images, which
+    // is the same shape `admin::scope`'s module doc says has now been got wrong four
+    // times: mounted in a fenced router, implemented in an unfenced file.
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("org logo: DB connect failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &actor, org_id).await?;
     let org = load_org_for_admin(org_id).await?;
     let bytes = org.logo.ok_or(StatusCode::NOT_FOUND)?;
     let mime = org
@@ -138,10 +151,21 @@ pub async fn admin_get_org_logo(Path(org_id): Path<Uuid>) -> Result<Response, St
 
 /// `PUT /api/admin/orgs/{org_id}/logo` — store raw image bytes for any tenant.
 pub async fn admin_upload_org_logo(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(org_id): Path<Uuid>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<StatusCode, StatusCode> {
+    // Scope. These three sit on `orgs_admin::router()`, which every other route fenced —
+    // they were missed because they are implemented HERE, in a file about images, which
+    // is the same shape `admin::scope`'s module doc says has now been got wrong four
+    // times: mounted in a fenced router, implemented in an unfenced file.
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("org logo: DB connect failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &actor, org_id).await?;
+
     let Some(content_type) = allowed_content_type(&headers) else {
         return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     };
@@ -168,11 +192,20 @@ pub async fn admin_upload_org_logo(
 }
 
 /// `DELETE /api/admin/orgs/{org_id}/logo` — clear any tenant's logo.
-pub async fn admin_delete_org_logo(Path(org_id): Path<Uuid>) -> Result<StatusCode, StatusCode> {
+pub async fn admin_delete_org_logo(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    Path(org_id): Path<Uuid>,
+) -> Result<StatusCode, StatusCode> {
+    // Scope. These three sit on `orgs_admin::router()`, which every other route fenced —
+    // they were missed because they are implemented HERE, in a file about images, which
+    // is the same shape `admin::scope`'s module doc says has now been got wrong four
+    // times: mounted in a fenced router, implemented in an unfenced file.
     let db = establish_connection().await.map_err(|e| {
-        tracing::error!("admin_delete_org_logo DB connect failed: {e}");
+        tracing::error!("org logo: DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &actor, org_id).await?;
+
     let org = load_org_for_admin(org_id).await?;
     let mut active: organizations::ActiveModel = org.into();
     active.logo = ActiveValue::Set(None);

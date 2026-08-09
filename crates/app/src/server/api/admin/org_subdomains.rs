@@ -118,10 +118,29 @@ async fn build_response(
     })
 }
 
+/// Bridge the shared fence into this module's `ApiError`.
+///
+/// Named for what it calls, not for what it is: the coverage test looks for
+/// `deny_out_of_scope` in a handler body, and a wrapper called `fence` made the two
+/// fenced handlers here read as unfenced.
+async fn deny_out_of_scope(
+    db: &sea_orm::DatabaseConnection,
+    actor: &oxy_auth::types::AuthenticatedUser,
+    org_id: Uuid,
+) -> Result<(), ApiError> {
+    crate::server::api::admin::scope::deny_out_of_scope(db, actor, org_id)
+        .await
+        // 404 stays 404: the message is generic on purpose, so an out-of-scope caller
+        // learns nothing the status doesn't already say.
+        .map_err(|status| (status, "not found".to_string()))
+}
+
 pub async fn get_subdomain(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(org_id): Path<Uuid>,
 ) -> Result<Json<AdminOrgSubdomainResponse>, ApiError> {
     let db = establish_connection().await.map_err(db_err)?;
+    deny_out_of_scope(&db, &actor, org_id).await?;
     let org = load_org(&db, org_id).await?;
     Ok(Json(build_response(&db, &org).await?))
 }
@@ -132,6 +151,14 @@ pub async fn set_subdomain(
     Json(body): Json<SetOrgSubdomainBody>,
 ) -> Result<Json<AdminOrgSubdomainResponse>, ApiError> {
     let db = establish_connection().await.map_err(db_err)?;
+    // Scope. This router is merged on the SAME capability as `orgs_admin`
+    // (`cap(Action::PlatformOrgs)`) and owns an `/orgs/{org_id}` write, but was never
+    // part of the sweep that fenced its sibling — a second router on one capability,
+    // which is round 12's shape stated a level up. Unfenced, a grant bounded to one
+    // tenant could disable another's `<slug>.oxygen-hq.com`, and
+    // `org_host_dispatch::invalidate_cache()` makes it take effect at once: a logo is
+    // defacement, this is the tenant's production entry point.
+    deny_out_of_scope(&db, &actor, org_id).await?;
     let org = load_org(&db, org_id).await?;
 
     if body.enabled && org_host_dispatch::is_reserved_label(&org.slug) {

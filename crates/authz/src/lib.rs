@@ -150,16 +150,39 @@ pub enum Action {
     PartnerManageOrgSettings,
 
     // ── Platform (Oxy's own operator surfaces) ────────────────────────────────
-    // These are not org-scoped: they target the `Platform` singleton. They are here
-    // so the policy states the WHOLE authority model — a reader or auditor sees the
-    // platform tier next to the tenant tiers instead of having to go read three
-    // middlewares. They fuse no facts (each is one global flag), so they add no
-    // decision power; they buy one place to read.
-    /// Any Oxy operator surface (`oxy_owner_or_app_admin_guard`): a global admin OR a
-    /// global owner. Both tiers reach everything — the admin console, the custom-app
-    /// lifecycle, all of it. There is deliberately no admin-ONLY action: the tiers
-    /// separate at [`Action::PlatformOwnerOnly`], not before it.
+    // These are not org-scoped: they target the `Platform` singleton, so no org set and
+    // no grant SCOPE is consulted — a scoped operator passes the door and the handler
+    // filters the rows. Each names the capability its surface is actually about, which
+    // is what lets one console serve several staff roles.
+    /// The staff console **door** (`oxy_owner_or_app_admin_guard`): holds any platform
+    /// standing at all. This is the outer `/admin/*` nest and nothing more — passing it
+    /// means "you are staff", not "you may use this section". Every section escalates
+    /// to its own capability action below, the same way billing already escalates via
+    /// `route_layer`.
     PlatformOps,
+    /// The custom-app registry and its publish tokens (`/admin/apps`,
+    /// `/admin/app-publish-tokens`, `/customer-apps`) — [`Cap::ManageApps`].
+    PlatformApps,
+    /// The cross-tenant explorer (`/admin/explorer`) — reading tenants' threads and
+    /// state as staff. [`Cap::ViewTenants`].
+    PlatformExplorer,
+    /// The staff audit log (`/admin/audit`) — [`Cap::ViewAudit`].
+    PlatformAudit,
+    /// Org administration: settings, subdomains, workspace administration, deletion
+    /// (`/admin/orgs`, `/admin/org-subdomains`, `/admin/workspaces`) —
+    /// [`Cap::ManageOrgSettings`].
+    PlatformOrgs,
+    /// Creating a tenant org (`POST /admin/orgs`) — [`Cap::CreateOrgs`]. Split from
+    /// [`Action::PlatformOrgs`] because creating a tenant and being able to delete one
+    /// are different powers, and the partner tier already draws the line there.
+    PlatformOrgCreate,
+    /// Staff user administration (`/admin/users`) — [`Cap::ManageMembers`].
+    PlatformUsers,
+    /// The partner registry (`/admin/partners`) — [`Cap::ManagePartners`].
+    PlatformPartners,
+    /// Oxy's own machinery: internal jobs, compiles, serve routing, platform metrics,
+    /// workspace health — [`Cap::OperatePlatform`].
+    PlatformOperate,
     /// The owner-exclusive surfaces — and the ONLY place the two operator tiers differ:
     /// destructive or irreversible operations (deleting the master org, demoting other
     /// admins), plus the Billing queue. A global **owner** only.
@@ -167,7 +190,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 25] = [
+    pub const ALL: [Action; 33] = [
         Action::OrgRead,
         Action::MemberInvite,
         Action::MemberSetRole,
@@ -192,6 +215,14 @@ impl Action {
         Action::PartnerCreateOrgs,
         Action::PartnerManageOrgSettings,
         Action::PlatformOps,
+        Action::PlatformApps,
+        Action::PlatformExplorer,
+        Action::PlatformAudit,
+        Action::PlatformOrgs,
+        Action::PlatformOrgCreate,
+        Action::PlatformUsers,
+        Action::PlatformPartners,
+        Action::PlatformOperate,
         Action::PlatformOwnerOnly,
     ];
 
@@ -226,6 +257,14 @@ impl Action {
             Action::PartnerCreateOrgs => "partner_create_orgs",
             Action::PartnerManageOrgSettings => "partner_manage_org_settings",
             Action::PlatformOps => "platform_ops",
+            Action::PlatformApps => "platform_apps",
+            Action::PlatformExplorer => "platform_explorer",
+            Action::PlatformAudit => "platform_audit",
+            Action::PlatformOrgs => "platform_orgs",
+            Action::PlatformOrgCreate => "platform_org_create",
+            Action::PlatformUsers => "platform_users",
+            Action::PlatformPartners => "platform_partners",
+            Action::PlatformOperate => "platform_operate",
             Action::PlatformOwnerOnly => "platform_owner_only",
         }
     }
@@ -253,13 +292,33 @@ impl Action {
             Action::PartnerManageSecrets => Ring::PartnerCap(Cap::ManageSecrets),
             Action::PartnerCreateOrgs => Ring::PartnerCap(Cap::CreateOrgs),
             Action::PartnerManageOrgSettings => Ring::PartnerCap(Cap::ManageOrgSettings),
-            Action::PlatformOps => Ring::GlobalAdminOrOwner,
+            Action::PlatformOps => Ring::PlatformAny,
+            Action::PlatformApps => Ring::PlatformCap(Cap::ManageApps),
+            Action::PlatformExplorer => Ring::PlatformCap(Cap::ViewTenants),
+            Action::PlatformAudit => Ring::PlatformCap(Cap::ViewAudit),
+            Action::PlatformOrgs => Ring::PlatformCap(Cap::ManageOrgSettings),
+            Action::PlatformOrgCreate => Ring::PlatformCap(Cap::CreateOrgs),
+            Action::PlatformUsers => Ring::PlatformCap(Cap::ManageMembers),
+            Action::PlatformPartners => Ring::PlatformCap(Cap::ManagePartners),
+            Action::PlatformOperate => Ring::PlatformCap(Cap::OperatePlatform),
             Action::PlatformOwnerOnly => Ring::GlobalOwnerOnly,
         }
     }
 }
 
-/// A partner ceiling capability, one-to-one with `PartnerCapability`.
+/// A capability — the atom of authority in this model. **One vocabulary, two tiers.**
+///
+/// A capability names a *kind of power*, never who holds it. Both operator tiers grant
+/// subsets of this same set:
+///
+/// * the **partner** ceiling is the first eight, one-to-one with `PartnerCapability`
+///   (`cap_of` maps into them);
+/// * the **platform** ceiling ([`PlatformStanding`]) may grant any of them, including
+///   the three that have no partner analogue — a distributor never operates Oxy itself,
+///   manages the partner registry, or reads across every tenant.
+///
+/// That asymmetry is the point, not an accident: `PartnerCapability` stays exhaustive at
+/// eight, so adding a platform-only capability here cannot silently widen a partner.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Cap {
     ManageMembers,
@@ -270,11 +329,27 @@ pub enum Cap {
     ManageSecrets,
     CreateOrgs,
     ManageOrgSettings,
+
+    // ── Platform-only (no `PartnerCapability` analogue) ───────────────────────
+    /// Read-only reach into a tenant that the principal is not a member of — the
+    /// support engineer's capability. Gates the staff half of [`Ring::Read`] and the
+    /// admin explorer. Deliberately separate from [`Cap::ViewAudit`], which is the
+    /// audit log specifically: seeing a tenant's threads is not reading its audit
+    /// trail, and a role may want either without the other.
+    ViewTenants,
+    /// Administer the partner registry — create partners, edit their ceilings and
+    /// client assignments. Platform-only by construction: a partner that could grant
+    /// itself capabilities would make the ceiling meaningless.
+    ManagePartners,
+    /// Operate Oxy's own machinery: the worker fleet console, compile history, serve
+    /// routing, platform metrics, workspace health. Infrastructure, not tenant data.
+    OperatePlatform,
 }
 
 impl Cap {
-    /// Every capability — the full ceiling.
-    pub const ALL: [Cap; 8] = [
+    /// Every capability — the full platform ceiling. The partner ceiling is the first
+    /// eight; see `PartnerCapability::ALL`, which stays at eight on purpose.
+    pub const ALL: [Cap; 11] = [
         Cap::ManageMembers,
         Cap::ManageApps,
         Cap::DevelopApps,
@@ -283,7 +358,172 @@ impl Cap {
         Cap::ManageSecrets,
         Cap::CreateOrgs,
         Cap::ManageOrgSettings,
+        Cap::ViewTenants,
+        Cap::ManagePartners,
+        Cap::OperatePlatform,
     ];
+
+    /// Stable id, and a wire contract: it lands in the `authz` tracing output and is
+    /// serialized outward on `/user` and the admin grant API, which the frontend gates
+    /// its nav on. Renaming a variant is free; renaming an id silently empties a
+    /// console.
+    ///
+    /// **Not** persisted — the grant table stores `role` and `scope_all`, and
+    /// capabilities are derived from the role by [`PlatformRole::caps`]. That is what
+    /// keeps a role's meaning editable in code rather than by `UPDATE`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Cap::ManageMembers => "manage_members",
+            Cap::ManageApps => "manage_apps",
+            Cap::DevelopApps => "develop_apps",
+            Cap::ViewAudit => "view_audit",
+            Cap::ManageBilling => "manage_billing",
+            Cap::ManageSecrets => "manage_secrets",
+            Cap::CreateOrgs => "create_orgs",
+            Cap::ManageOrgSettings => "manage_org_settings",
+            Cap::ViewTenants => "view_tenants",
+            Cap::ManagePartners => "manage_partners",
+            Cap::OperatePlatform => "operate_platform",
+        }
+    }
+
+    /// Parse an id back. The inverse of [`Self::as_str`], kept as a pair so the
+    /// round-trip is testable and so a caller receiving a capability id over the wire
+    /// (an SDK, a future policy import) can resolve it without re-deriving the mapping.
+    ///
+    /// Deliberately **not** load-bearing today: capabilities are derived from
+    /// [`PlatformRole::caps`], never read back from storage, so nothing in production
+    /// calls this. If that changes, note the fail-closed rule the loader already applies
+    /// to roles — an unrecognised id must drop the grant, not be guessed at.
+    pub fn from_str(s: &str) -> Option<Cap> {
+        Cap::ALL.into_iter().find(|c| c.as_str() == s)
+    }
+}
+
+/// Where a grant reaches. The second axis of every operator standing: capabilities say
+/// **what**, scope says **where**.
+///
+/// `Scope::All` is not a wildcard org set — it is the absence of a boundary, which is
+/// why it can't be spelled as `Orgs(every_org)`: an unbounded grant must keep covering
+/// orgs created after it was issued.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum Scope {
+    /// Every org, present and future.
+    #[default]
+    All,
+    /// Exactly these orgs. An empty vector reaches nothing — fail closed.
+    Orgs(Vec<Uuid>),
+}
+
+impl Scope {
+    pub fn covers(&self, org_id: Uuid) -> bool {
+        match self {
+            Scope::All => true,
+            Scope::Orgs(orgs) => orgs.contains(&org_id),
+        }
+    }
+
+    pub fn is_all(&self) -> bool {
+        matches!(self, Scope::All)
+    }
+}
+
+/// A named preset over (capabilities × scope) — what a human calls "a role".
+///
+/// The preset is the unit that is **stored and administered**; the capability list is
+/// the unit the model **decides** with. Keeping the expansion here rather than in the
+/// database is what preserves the crate's policy-as-code stance: a role's meaning
+/// changes by editing this file and shipping it, never by an UPDATE.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PlatformRole {
+    /// Oxy ops. Everything except the owner-exclusive surfaces (the Billing queue and
+    /// the grant table itself), which are gated by [`Ring::GlobalOwnerOnly`] and are
+    /// therefore not expressible as a capability at all.
+    GlobalAdmin,
+    /// Ships and develops custom apps, and nothing else. Holds no capability that
+    /// reaches org membership, org settings, billing, the partner registry, or Oxy's
+    /// own infrastructure — so every tenant ring that isn't about apps evaluates to
+    /// `false` for them, including org deletion.
+    AppOperator,
+}
+
+impl PlatformRole {
+    pub const ALL: [PlatformRole; 2] = [PlatformRole::GlobalAdmin, PlatformRole::AppOperator];
+
+    /// The capabilities the role expands to.
+    pub fn caps(self) -> Vec<Cap> {
+        match self {
+            // Everything a capability can express. `ManageBilling` is deliberately
+            // absent: platform billing is owner-only and rides
+            // [`Ring::GlobalOwnerOnly`], so granting the cap here would imply a reach
+            // no ring honours — a lie in the model.
+            PlatformRole::GlobalAdmin => Cap::ALL
+                .into_iter()
+                .filter(|c| *c != Cap::ManageBilling)
+                .collect(),
+            // The whole role, and the whole point: two capabilities.
+            PlatformRole::AppOperator => vec![Cap::ManageApps, Cap::DevelopApps],
+        }
+    }
+
+    /// Stable id. Persisted in the platform-grant table — a wire contract.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PlatformRole::GlobalAdmin => "global_admin",
+            PlatformRole::AppOperator => "app_operator",
+        }
+    }
+
+    /// Parse a stored id. `None` for an unknown role — the loader drops the grant
+    /// rather than guessing, so an unrecognised row denies instead of escalating.
+    pub fn from_str(s: &str) -> Option<PlatformRole> {
+        PlatformRole::ALL.into_iter().find(|r| r.as_str() == s)
+    }
+}
+
+/// One platform (Oxy-staff) standing: the capability ceiling and where it reaches.
+///
+/// The deliberate twin of [`PartnerStanding`] minus the `partner_id` — a platform grant
+/// is not held *through* anything, which is the only structural difference between the
+/// two operator tiers. Both are `(scope, caps)`; both are ceilings; neither can be
+/// widened by standing held elsewhere.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlatformStanding {
+    /// The role this standing was granted as, kept for display and audit. The
+    /// decision reads [`Self::caps`] — never this — so a future custom cap set stays
+    /// expressible without the model learning about roles.
+    pub role: PlatformRole,
+    pub caps: Vec<Cap>,
+    pub scope: Scope,
+}
+
+impl PlatformStanding {
+    /// A standing from a preset.
+    pub fn from_role(role: PlatformRole, scope: Scope) -> Self {
+        Self {
+            role,
+            caps: role.caps(),
+            scope,
+        }
+    }
+
+    /// Holds `cap` **anywhere** — scope not consulted. This is the console-door
+    /// question ("may you open this staff surface at all"), which has no org to check
+    /// against: [`Resource::platform`] is parented to nothing.
+    ///
+    /// A scoped operator therefore PASSES the door. Narrowing what they see behind it
+    /// is a row filter the handler owns — see [`Self::scope`]. Getting this backwards
+    /// gives you either a role that 403s on its own console or one that lists every
+    /// tenant's apps.
+    pub fn holds(&self, cap: Cap) -> bool {
+        self.caps.contains(&cap)
+    }
+
+    /// Holds `cap` **over `org_id`** — capability AND scope. This is the tenant-reach
+    /// question, and it is the only one that may cross an org boundary.
+    pub fn grants(&self, cap: Cap, org_id: Uuid) -> bool {
+        self.holds(cap) && self.scope.covers(org_id)
+    }
 }
 
 impl PrincipalFacts {
@@ -301,6 +541,57 @@ impl PrincipalFacts {
     /// FROM the org (the custom-app data plane), not from the URL.
     fn any_partner_grants(&self, cap: Cap, org_id: Uuid) -> bool {
         self.partners.iter().any(|p| p.grants(cap, org_id))
+    }
+
+    /// **Staff reach into a tenant**, gated on the capability that names the ring's
+    /// authority and on the grant's scope. The deliberate mirror of
+    /// [`Self::any_partner_grants`] — one primitive, both operator tiers.
+    ///
+    /// This replaces the bare `is_global_admin || is_global_owner` term that used to
+    /// appear in nine tenant rings. That term is why a Global Admin could delete any
+    /// org: [`Ring::OwnerOnly`] honoured it unconditionally. Now the same ring asks
+    /// for [`Cap::ManageOrgSettings`], which an App Operator does not hold.
+    ///
+    /// The Global **Owner** short-circuit is intentional and is the one place standing
+    /// is still a boolean: the owner is Oxy's root, and modelling root as a grant it
+    /// could edit buys nothing.
+    fn platform_grants(&self, cap: Cap, org_id: Uuid) -> bool {
+        self.is_global_owner
+            || self
+                .platform
+                .as_ref()
+                .is_some_and(|p| p.grants(cap, org_id))
+    }
+
+    /// Holds `cap` with scope ignored — the platform-console door. See
+    /// [`PlatformStanding::holds`] for why scope must not be consulted here.
+    fn platform_holds(&self, cap: Cap) -> bool {
+        self.is_global_owner || self.platform.as_ref().is_some_and(|p| p.holds(cap))
+    }
+
+    /// Any platform standing at all — a Global Owner, or a grant of any shape.
+    /// Gates [`Action::PlatformOps`], the "is this person staff" question the outer
+    /// `/admin/*` nest asks before any section-specific capability is consulted.
+    pub fn is_staff(&self) -> bool {
+        self.is_global_owner || self.platform.is_some()
+    }
+
+    /// Back-compatible read for display and telemetry: staff who are not the owner.
+    /// **Not an authorization primitive** — nothing in [`allows`] reads it, and no
+    /// call site should branch on it. Ask for a capability instead.
+    pub fn is_global_admin(&self) -> bool {
+        self.platform.is_some()
+    }
+
+    /// Where this principal's platform grant reaches, for handlers that must filter
+    /// rows. `None` = no platform standing; `Some(Scope::All)` = unbounded.
+    pub fn platform_scope(&self) -> Option<&Scope> {
+        /// The owner's scope is unbounded and has no grant row to borrow from.
+        static UNBOUNDED: Scope = Scope::All;
+        if self.is_global_owner {
+            return Some(&UNBOUNDED);
+        }
+        self.platform.as_ref().map(|p| &p.scope)
     }
 }
 
@@ -375,8 +666,15 @@ enum Ring {
     /// No global or membership term, deliberately: the ceiling is the whole story, so
     /// standing elsewhere cannot widen it.
     PartnerCap(Cap),
-    /// Platform tier — a global admin OR owner (`oxy_owner_or_app_admin_guard`).
-    GlobalAdminOrOwner,
+    /// Platform tier — holds ANY staff standing. The `/admin/*` door only
+    /// (`oxy_owner_or_app_admin_guard`); every section behind it escalates to
+    /// [`Self::PlatformCap`].
+    PlatformAny,
+    /// Platform tier — holds `cap`. **Scope is not consulted**: the platform resource
+    /// is parented to no org, so a scoped grant passes and the handler filters rows.
+    /// The twin of [`Self::PartnerCap`] without the acting-partner scoping, because a
+    /// platform grant is not held through anything.
+    PlatformCap(Cap),
     /// Platform tier — a global **owner** only (Billing queue, global-admin mgmt).
     GlobalOwnerOnly,
 }
@@ -579,7 +877,17 @@ pub struct PrincipalFacts {
     /// Apps where the principal's `app_members` row is `role = 'admin'`. A subset
     /// of [`Self::app_memberships`]; gates [`Ring::AppAdmin`].
     pub app_admin_memberships: Vec<Uuid>,
-    pub is_global_admin: bool,
+    /// This principal's Oxy-staff standing, if any: a capability ceiling and the orgs
+    /// it reaches. `None` = not staff.
+    ///
+    /// This replaced a bare `is_global_admin: bool`. The boolean was the defect: it
+    /// made every staff member identical, so the nine tenant rings that honour an
+    /// operator override could not tell an app publisher from someone entitled to
+    /// delete the org. Read it through [`PrincipalFacts::platform_grants`], never
+    /// directly.
+    pub platform: Option<PlatformStanding>,
+    /// Oxy's root. Deliberately still a boolean — see
+    /// [`PrincipalFacts::platform_grants`].
     pub is_global_owner: bool,
 }
 
@@ -631,7 +939,6 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
     // The per-workspace elevation is keyed by the workspace, not its org.
     let elevated_here =
         resource.kind == ResourceKind::Workspace && facts.ws_admin_override.contains(&resource.id);
-    let is_global = facts.is_global_admin || facts.is_global_owner;
     let is_platform = resource.kind == ResourceKind::Platform;
 
     // Operator reach — staff, and a managing partner — models the SYNTHETIC-OWNER
@@ -639,27 +946,48 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
     // Unconditional, it out-ranks a real membership and silently promotes an operator
     // who happens to be a plain member of the tenant.
     let not_member = !in_org(&facts.member_orgs);
-    let operator = not_member && is_global;
-    let operator_or_partner = not_member && (is_global || facts.manages(resource.org_id));
+
+    // Staff reach into a tenant, NAMED BY CAPABILITY. This used to be one boolean
+    // (`is_global_admin || is_global_owner`) shared by every ring below, which is why
+    // an app publisher could delete an org: `Ring::OwnerOnly` honoured the same term
+    // `Ring::AppAdmin` did. Each ring now asks for the capability its own authority is
+    // about, so a grant that omits the capability cannot reach the ring at all.
+    let staff = |cap: Cap| not_member && facts.platform_grants(cap, resource.org_id);
+    let staff_or_partner = |cap: Cap| {
+        not_member
+            && (facts.platform_grants(cap, resource.org_id) || facts.manages(resource.org_id))
+    };
 
     match action.ring() {
-        Ring::Read => in_org(&facts.member_orgs) || operator,
+        // Reading a tenant you don't belong to is the support engineer's power, and it
+        // is now a capability an app-only role simply doesn't hold.
+        Ring::Read => in_org(&facts.member_orgs) || staff(Cap::ViewTenants),
         Ring::MemberStrict => in_org(&facts.member_orgs),
-        Ring::OrgAdmin => in_org(&facts.admin_orgs) || operator_or_partner,
+        Ring::OrgAdmin => in_org(&facts.admin_orgs) || staff_or_partner(Cap::ManageMembers),
         // Billing: real owner/admin only — the override is barred and partners don't bill.
         Ring::OrgAdminStrict => in_org(&facts.admin_orgs),
-        // A partner assumes Admin, never Owner, so no partner term here.
-        Ring::OwnerOnly => in_org(&facts.owned_orgs) || operator,
+        // Deleting an org, transferring ownership, promoting an owner. A partner assumes
+        // Admin, never Owner, so no partner term here.
+        //
+        // THE headline of the capability split: this arm's staff term used to be the
+        // bare global flag, so every Global Admin — including the ones who only ship
+        // custom apps — could delete any tenant. It now demands
+        // `ManageOrgSettings`, which `PlatformRole::AppOperator` does not grant.
+        Ring::OwnerOnly => in_org(&facts.owned_orgs) || staff(Cap::ManageOrgSettings),
         Ring::OrgAdminOrCreator => {
             in_org(&facts.admin_orgs)
                 || resource.owner == Some(facts.user_id)
-                || operator_or_partner
+                || staff_or_partner(Cap::ManageOrgSettings)
         }
-        Ring::WorkspaceAdmin => in_org(&facts.admin_orgs) || elevated_here || operator_or_partner,
+        Ring::WorkspaceAdmin => {
+            in_org(&facts.admin_orgs) || elevated_here || staff_or_partner(Cap::ManageOrgSettings)
+        }
         // The Oxy-access switch: a REAL workspace officer; the override is rejected so
         // staff cannot unlock themselves.
         Ring::WorkspaceAdminStrict => in_org(&facts.admin_orgs) || elevated_here,
-        Ring::WorkspaceEdit => in_org(&facts.member_orgs) || operator_or_partner,
+        Ring::WorkspaceEdit => {
+            in_org(&facts.member_orgs) || staff_or_partner(Cap::ManageOrgSettings)
+        }
         // A member of the app's org, any Oxy operator, or a develop_apps partner.
         //
         // The operator term is deliberately NOT conditioned on non-membership the way
@@ -674,7 +1002,11 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
             // Break-glass regardless of visibility: staff, a develop_apps partner,
             // and any org OFFICER (owner or admin — `admin_orgs` contains owners).
             // An org's own officers are never locked out of its apps.
-            let unconditional = is_global
+            // `platform_grants` is called WITHOUT the `not_member` precondition the org
+            // rings apply — preserved from the original: this gate really does grant
+            // staff unconditionally, and it is the same answer either way, since a
+            // staff member of the org already passes on the membership term.
+            let unconditional = facts.platform_grants(Cap::DevelopApps, resource.org_id)
                 || facts.any_partner_grants(Cap::DevelopApps, resource.org_id)
                 || in_org(&facts.admin_orgs);
             if resource.app_restricted {
@@ -702,7 +1034,7 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
         // without granting org-wide billing/member powers. No develop_apps term:
         // building an app is not administering its live privileged surface.
         Ring::AppAdmin => {
-            is_global
+            facts.platform_grants(Cap::ManageApps, resource.org_id)
                 || in_org(&facts.admin_orgs)
                 || facts.app_admin_memberships.contains(&resource.id)
         }
@@ -720,7 +1052,7 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
         // Otherwise an app admin could grant themselves a second app admin and the
         // org would have no way to see it coming.
         Ring::AppGrant => {
-            is_global
+            facts.platform_grants(Cap::ManageApps, resource.org_id)
                 || in_org(&facts.admin_orgs)
                 || facts.any_partner_grants(Cap::ManageApps, resource.org_id)
         }
@@ -736,10 +1068,17 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
                         || p.client_orgs.contains(&resource.org_id))
             }),
         },
-        // The platform tier reads ONLY the global flags and is pinned to the Platform
+        // The platform tier reads ONLY platform standing and is pinned to the Platform
         // singleton: no tenant standing reaches an operator surface, and no platform
         // action can be asked of a tenant resource.
-        Ring::GlobalAdminOrOwner => is_platform && is_global,
+        //
+        // Neither arm consults SCOPE — `Resource::platform()` has a nil org, so there
+        // is nothing to check it against. A scoped operator therefore passes the door
+        // and the handler narrows the rows (`PrincipalFacts::platform_scope`). That
+        // split is deliberate and is the one thing to get right when adding a surface:
+        // capabilities gate verbs, scope filters rows.
+        Ring::PlatformAny => is_platform && facts.is_staff(),
+        Ring::PlatformCap(cap) => is_platform && facts.platform_holds(cap),
         Ring::GlobalOwnerOnly => is_platform && facts.is_global_owner,
     }
 }
@@ -876,6 +1215,24 @@ mod policy_tests {
         }
     }
 
+    /// An unscoped Global Admin — the standing that replaced `is_global_admin: true`.
+    /// Every assertion written against the old boolean holds unchanged against this,
+    /// which is the property that makes the capability split non-breaking.
+    fn global_admin_standing() -> Option<PlatformStanding> {
+        Some(PlatformStanding::from_role(
+            PlatformRole::GlobalAdmin,
+            Scope::All,
+        ))
+    }
+
+    /// An App Operator: `{ManageApps, DevelopApps}` and nothing else.
+    fn app_operator_standing(scope: Scope) -> Option<PlatformStanding> {
+        Some(PlatformStanding::from_role(
+            PlatformRole::AppOperator,
+            scope,
+        ))
+    }
+
     #[test]
     fn org_admin_may_manage_members() {
         let f = PrincipalFacts {
@@ -899,7 +1256,7 @@ mod policy_tests {
         // escalation, live the moment the legacy term is dropped.
         let staffer_who_is_a_plain_member = PrincipalFacts {
             member_orgs: vec![org()],
-            is_global_admin: true,
+            platform: global_admin_standing(),
             ..facts()
         };
         assert!(!allows(
@@ -921,7 +1278,7 @@ mod policy_tests {
         // The override path itself must still work: NOT a real member -> the operator
         // reaches in (org_context synthesizes Owner, and the legacy check agrees).
         let staffer_not_a_member = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             ..facts()
         };
         assert!(allows(
@@ -960,7 +1317,7 @@ mod policy_tests {
         // A global operator who is NOT a real member reaches the org only via the
         // synthetic-Owner override, which billing rejects.
         let global_only = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             is_global_owner: true,
             ..facts()
         };
@@ -1000,7 +1357,7 @@ mod policy_tests {
     #[test]
     fn global_reaches_member_mgmt_via_override_but_not_billing() {
         let ga = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             ..facts()
         };
         let go = PrincipalFacts {
@@ -1142,7 +1499,7 @@ mod policy_tests {
             ..facts()
         };
         let global = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             ..facts()
         };
         let outsider = PrincipalFacts {
@@ -1177,7 +1534,7 @@ mod policy_tests {
         };
         // A global operator reaches in as the synthetic Owner.
         let global = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             ..facts()
         };
         assert!(allows(&owner, Action::OrgOwnerManage, &r));
@@ -1196,7 +1553,7 @@ mod policy_tests {
         // A global operator with no real membership must NOT get a member-strict read
         // (billing-status/checkout must not leak cross-tenant).
         let global = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             is_global_owner: true,
             ..facts()
         };
@@ -1219,7 +1576,7 @@ mod policy_tests {
         };
         // An Oxy global admin.
         let ga = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             ..facts()
         };
         // A partner whose ceiling grants develop_apps over the org.
@@ -1294,7 +1651,7 @@ mod policy_tests {
             ..facts()
         };
         let staff = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             ..facts()
         };
         assert!(allows(&owner, Action::AppAccess, &restricted));
@@ -1445,7 +1802,7 @@ mod policy_tests {
         // Both Oxy operator tiers reach it.
         for staff in [
             PrincipalFacts {
-                is_global_admin: true,
+                platform: global_admin_standing(),
                 ..facts()
             },
             PrincipalFacts {
@@ -1599,6 +1956,11 @@ mod policy_tests {
             ..facts()
         };
         for cap in Cap::ALL {
+            // The platform-only capabilities have no partner action, and that is the
+            // asymmetry the two tiers are built on: a distributor can never operate
+            // Oxy, edit the partner registry, or read across every tenant. `None` here
+            // is an assertion, not a gap — if one of these ever gains a partner action
+            // the ceiling has been widened and this arm must be reconsidered.
             let action = match cap {
                 Cap::ManageMembers => Action::PartnerManageMembers,
                 Cap::ManageApps => Action::PartnerManageApps,
@@ -1608,6 +1970,7 @@ mod policy_tests {
                 Cap::ManageSecrets => Action::PartnerManageSecrets,
                 Cap::CreateOrgs => Action::PartnerCreateOrgs,
                 Cap::ManageOrgSettings => Action::PartnerManageOrgSettings,
+                Cap::ViewTenants | Cap::ManagePartners | Cap::OperatePlatform => continue,
             };
             assert!(
                 !allows(&no_ceiling, action, &as_a),
@@ -1688,7 +2051,7 @@ mod policy_tests {
     fn platform_tier_reads_only_global_flags_and_is_unreachable_from_a_tenant_role() {
         let p = Resource::platform();
         let ga = PrincipalFacts {
-            is_global_admin: true,
+            platform: global_admin_standing(),
             ..facts()
         };
         let go = PrincipalFacts {
@@ -1720,5 +2083,247 @@ mod policy_tests {
             Action::PlatformOwnerOnly,
             &Resource::org(org())
         ));
+    }
+
+    // ── The capability split ──────────────────────────────────────────────────
+    // What the platform tier buys once staff standing is `(scope × caps)` instead of a
+    // boolean. Each test below fails against the old model.
+
+    /// **The bug this design exists to fix.** `Ring::OwnerOnly` gates
+    /// `Action::OrgOwnerManage` — "delete, ownership transfer, owner-promotion" — and
+    /// its staff term used to be the bare global flag. Every Global Admin could
+    /// therefore delete any tenant, including the ones who only ship custom apps.
+    #[test]
+    fn an_app_operator_cannot_delete_an_org() {
+        let op = PrincipalFacts {
+            platform: app_operator_standing(Scope::All),
+            ..facts()
+        };
+        assert!(
+            !allows(&op, Action::OrgOwnerManage, &Resource::org(org())),
+            "an app operator must never reach org deletion / ownership transfer"
+        );
+
+        // The Global Admin preset still does, so this subtracts from exactly one role.
+        let ga = PrincipalFacts {
+            platform: global_admin_standing(),
+            ..facts()
+        };
+        assert!(allows(&ga, Action::OrgOwnerManage, &Resource::org(org())));
+    }
+
+    /// Everything else an app-only role must not inherit from staff standing.
+    #[test]
+    fn an_app_operator_holds_no_tenant_authority_beyond_apps() {
+        let op = PrincipalFacts {
+            platform: app_operator_standing(Scope::All),
+            ..facts()
+        };
+        let o = Resource::org(org());
+        let ws = Resource::workspace(Uuid::from_u128(77), org());
+
+        for (action, resource) in [
+            (Action::MemberInvite, &o),
+            (Action::MemberSetRole, &o),
+            (Action::MemberRemove, &o),
+            (Action::OrgOwnerManage, &o),
+            (Action::OrgBilling, &o),
+            (Action::OrgRead, &o),
+            (Action::WorkspaceManage, &ws),
+            (Action::WorkspaceEdit, &ws),
+            (Action::WorkspaceRename, &ws),
+            (Action::WorkspaceOxyAccess, &ws),
+        ] {
+            assert!(
+                !allows(&op, action, resource),
+                "{action:?} leaked to an app operator"
+            );
+        }
+    }
+
+    /// The other half: the role must actually work. Both app capabilities reach their
+    /// rings, on a restricted app as well as an open one.
+    #[test]
+    fn an_app_operator_reaches_every_app_ring() {
+        let op = PrincipalFacts {
+            platform: app_operator_standing(Scope::All),
+            ..facts()
+        };
+        let app_id = Uuid::from_u128(55);
+        let open = Resource::app(app_id, org());
+        let restricted = Resource::app_with_visibility(app_id, org(), true);
+
+        assert!(allows(&op, Action::AppAccess, &open));
+        assert!(allows(&op, Action::AppAccess, &restricted));
+        assert!(allows(&op, Action::AppAdmin, &open));
+        assert!(allows(&op, Action::AppAccessManage, &open));
+    }
+
+    /// Console sections are gated by capability, so one `/admin` shell serves several
+    /// staff roles. The DOOR (`PlatformOps`) opens for any standing — that is what
+    /// makes it a door and not an authority.
+    #[test]
+    fn console_sections_are_gated_by_capability_not_by_being_staff() {
+        let p = Resource::platform();
+        let op = PrincipalFacts {
+            platform: app_operator_standing(Scope::All),
+            ..facts()
+        };
+
+        assert!(allows(&op, Action::PlatformOps, &p), "the door must open");
+        assert!(allows(&op, Action::PlatformApps, &p));
+
+        for action in [
+            Action::PlatformOrgs,
+            Action::PlatformOrgCreate,
+            Action::PlatformUsers,
+            Action::PlatformPartners,
+            Action::PlatformOperate,
+            Action::PlatformAudit,
+            Action::PlatformExplorer,
+            Action::PlatformOwnerOnly,
+        ] {
+            assert!(
+                !allows(&op, action, &p),
+                "{action:?} leaked to an app operator"
+            );
+        }
+
+        // A Global Admin still reaches every section except the owner-only ones.
+        let ga = PrincipalFacts {
+            platform: global_admin_standing(),
+            ..facts()
+        };
+        for action in [
+            Action::PlatformApps,
+            Action::PlatformOrgs,
+            Action::PlatformOrgCreate,
+            Action::PlatformUsers,
+            Action::PlatformPartners,
+            Action::PlatformOperate,
+            Action::PlatformAudit,
+            Action::PlatformExplorer,
+        ] {
+            assert!(
+                allows(&ga, action, &p),
+                "{action:?} regressed for a global admin"
+            );
+        }
+        assert!(!allows(&ga, Action::PlatformOwnerOnly, &p));
+    }
+
+    /// **Caps gate verbs; scope filters rows.** A scoped operator passes the console
+    /// door — there is no org on `Resource::platform()` to check scope against — and is
+    /// narrowed inside its tenant reach. Handlers own the row filter
+    /// (`PrincipalFacts::platform_scope`); asserting the door closes here would be
+    /// asserting the wrong design.
+    #[test]
+    fn scope_narrows_tenant_reach_and_deliberately_not_the_console_door() {
+        let mine = org();
+        let theirs = Uuid::from_u128(4242);
+        let op = PrincipalFacts {
+            platform: app_operator_standing(Scope::Orgs(vec![mine])),
+            ..facts()
+        };
+
+        assert!(allows(
+            &op,
+            Action::AppAdmin,
+            &Resource::app(Uuid::from_u128(1), mine)
+        ));
+        assert!(
+            !allows(
+                &op,
+                Action::AppAdmin,
+                &Resource::app(Uuid::from_u128(2), theirs)
+            ),
+            "scope must fence tenant reach"
+        );
+
+        // The door, by design, does not consult scope.
+        assert!(allows(&op, Action::PlatformApps, &Resource::platform()));
+        assert_eq!(op.platform_scope(), Some(&Scope::Orgs(vec![mine])));
+    }
+
+    /// An empty scope reaches nothing — fail closed, not "unbounded by omission".
+    #[test]
+    fn an_empty_scope_grants_nothing() {
+        let op = PrincipalFacts {
+            platform: app_operator_standing(Scope::Orgs(vec![])),
+            ..facts()
+        };
+        assert!(!allows(
+            &op,
+            Action::AppAdmin,
+            &Resource::app(Uuid::from_u128(1), org())
+        ));
+    }
+
+    /// The Global Owner is still a boolean and still reaches everything, scope-free.
+    #[test]
+    fn the_global_owner_is_unaffected_by_the_capability_split() {
+        let go = PrincipalFacts {
+            is_global_owner: true,
+            ..facts()
+        };
+        assert!(allows(&go, Action::OrgOwnerManage, &Resource::org(org())));
+        assert!(allows(
+            &go,
+            Action::PlatformOwnerOnly,
+            &Resource::platform()
+        ));
+        assert!(allows(&go, Action::PlatformApps, &Resource::platform()));
+        assert!(go.platform_scope().is_some_and(Scope::is_all));
+    }
+
+    /// Staff standing must not out-rank a REAL membership — the pre-existing rule,
+    /// re-pinned now that the term is per-capability rather than one flag.
+    #[test]
+    fn a_capability_still_does_not_out_rank_a_real_membership() {
+        let staffer_who_is_a_plain_member = PrincipalFacts {
+            member_orgs: vec![org()],
+            platform: global_admin_standing(),
+            ..facts()
+        };
+        assert!(
+            !allows(
+                &staffer_who_is_a_plain_member,
+                Action::MemberSetRole,
+                &Resource::org(org())
+            ),
+            "a staffer who is a real plain member is a plain member there"
+        );
+    }
+
+    /// Stored ids are a wire contract: every capability and role round-trips, and an
+    /// id this build doesn't know is DROPPED rather than guessed — so rolling back
+    /// past a capability's introduction narrows reach instead of widening it.
+    #[test]
+    fn capability_and_role_ids_round_trip_and_unknown_ids_are_dropped() {
+        for cap in Cap::ALL {
+            assert_eq!(Cap::from_str(cap.as_str()), Some(cap));
+        }
+        for role in PlatformRole::ALL {
+            assert_eq!(PlatformRole::from_str(role.as_str()), Some(role));
+        }
+        assert_eq!(Cap::from_str("manage_everything"), None);
+        assert_eq!(PlatformRole::from_str("superuser"), None);
+    }
+
+    /// The preset is the unit that is administered; these are the exact expansions.
+    #[test]
+    fn role_presets_expand_to_the_documented_capabilities() {
+        assert_eq!(
+            PlatformRole::AppOperator.caps(),
+            vec![Cap::ManageApps, Cap::DevelopApps]
+        );
+        // Platform billing rides `Ring::GlobalOwnerOnly`, so granting the cap would
+        // imply a reach no ring honours.
+        assert!(
+            !PlatformRole::GlobalAdmin
+                .caps()
+                .contains(&Cap::ManageBilling)
+        );
+        assert_eq!(PlatformRole::GlobalAdmin.caps().len(), Cap::ALL.len() - 1);
     }
 }

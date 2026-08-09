@@ -11,7 +11,10 @@ use axum::routing::{delete, get, patch, post, put};
 use crate::api::billing;
 use crate::api::github::namespaces as github;
 use crate::api::github::{account, callback, installations};
-use crate::api::middlewares::{org_context, oxy_owner_or_app_admin_guard, subscription_guard};
+use crate::api::middlewares::{
+    app_scope_guard, org_context, oxy_owner_or_app_admin_guard, platform_cap_guard,
+    subscription_guard,
+};
 use crate::api::{
     admin, onboarding, org_logo, org_teams, organizations, partner_console, user, workspaces,
 };
@@ -69,6 +72,13 @@ pub(super) fn build_global_routes() -> Router<AppState> {
         .nest(
             "/admin/internal-jobs",
             admin::internal_jobs::router()
+                // Operating the durable task fleet is Oxy's own machinery, not tenant
+                // data — `Cap::OperatePlatform`. A sibling nest gets no capability gate
+                // from `admin::router`, so it names its own, exactly as it must name
+                // its own `block_admin_while_acting`.
+                .layer(middleware::from_fn(platform_cap_guard::require(
+                    crate::server::authz::Action::PlatformOperate,
+                )))
                 // Refuse the staff surface while acting, exactly like `admin::router`
                 // does internally. This is a SIBLING nest — it never passes through
                 // `admin::router`, so the block it applies does not reach here. Any
@@ -85,6 +95,10 @@ pub(super) fn build_global_routes() -> Router<AppState> {
         .nest(
             "/admin/compiles",
             admin::compiles::router()
+                // Compile history is platform machinery — `Cap::OperatePlatform`.
+                .layer(middleware::from_fn(platform_cap_guard::require(
+                    crate::server::authz::Action::PlatformOperate,
+                )))
                 // Sibling nest — see internal-jobs above.
                 .layer(middleware::from_fn(admin::assume::block_admin_while_acting))
                 .layer(middleware::from_fn(
@@ -235,6 +249,19 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 // applies a `.layer` only to routes registered before it, so this
                 // covers the routes above and NOT `/publish` below.
                 .layer(middleware::from_fn(admin::assume::block_admin_while_acting))
+                // Scope: which apps may this grant touch. Layered over the whole tree so
+                // the ~20 `/{id}` routes above don't each have to remember — see
+                // `app_scope_guard`. Same `.layer` ordering rule: covers the routes
+                // registered before it, not `/publish` (which resolves its own actor via
+                // `custom_apps_publish_authz::resolve_actor`, scope included).
+                .layer(middleware::from_fn(app_scope_guard::enforce_app_scope))
+                // The custom-app lifecycle IS `Cap::ManageApps` — this surface is the
+                // one an App Operator exists to use, so it is gated on the capability
+                // rather than on being staff. Same `.layer` ordering rule as above:
+                // applies to the routes registered before it, not to `/publish`.
+                .layer(middleware::from_fn(platform_cap_guard::require(
+                    crate::server::authz::Action::PlatformApps,
+                )))
                 // Owner-or-admin, not admin-only. A Global Owner who isn't also in
                 // `app_admins` was 403'd here — locking the MORE senior role out of a
                 // surface the junior one runs. Both tiers reach the custom-app

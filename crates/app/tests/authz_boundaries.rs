@@ -100,6 +100,13 @@ const ALLOWED: &[(&str, &str)] = &[
         "legacy term — the `is_staff` shape",
     ),
     (
+        "app/src/server/api/middlewares/platform_cap_guard.rs",
+        "legacy term — the SAME `is_staff` oracle as the door guard above, passed as \
+         `existing_allow` so the per-capability gate can only SUBTRACT from the reach \
+         the console already had. Without it this layer would be a bare `allows`, and a \
+         mis-modeled capability would silently become a hole instead of a loud 403",
+    ),
+    (
         "app/src/server/api/partner_console/people.rs",
         "legacy term for the partner-console ring",
     ),

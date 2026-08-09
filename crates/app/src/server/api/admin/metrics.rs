@@ -14,6 +14,7 @@ use axum::Router;
 use axum::extract::{Path, Query};
 use axum::response::Response;
 use axum::routing::get;
+use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{DatabaseBackend, DbErr, FromQueryResult, Statement};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -221,11 +222,19 @@ async fn fetch_org_model_rows(
 }
 
 async fn org_llm_usage(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(org_id): Path<Uuid>,
     Query(q): Query<UsageQuery>,
 ) -> Result<Json<OrgUsageDetail>, Response> {
     let days = q.days.unwrap_or(30).clamp(1, 365);
     let db = connect().await?;
+    // Scope. `PlatformOperate` is held by every Global Admin regardless of bound, so
+    // unfenced this reads another tenant's LLM cost and token totals. Milder than the
+    // subdomain toggle — a read, and cost rather than content — but the same axis, and
+    // it is the fourth `{org_id}` router rather than a special case.
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &actor, org_id)
+        .await
+        .map_err(axum::response::IntoResponse::into_response)?;
     let day_rows = fetch_org_usage_day_rows(&db, days, org_id)
         .await
         .map_err(db_err)?;

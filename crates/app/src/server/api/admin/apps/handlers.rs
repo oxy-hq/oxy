@@ -26,6 +26,123 @@ use super::ops::*;
 pub(crate) use super::dto::{CreateAppRequest, ListAppsQuery};
 pub(crate) use super::ops::{publish_one, unpublish_one, validate_display_name};
 
+/// The org ids a **bounded** platform grant reaches — `None` for unbounded.
+///
+/// **Fallible on purpose.** An unreadable grant is not "unbounded"; it is *unknown*, and
+/// the two callers of this need opposite things from that:
+///
+/// * a READ (`list_apps`, `oxy-access`) prefers to show rows — the capability gate
+///   already admitted this caller, and a blip shouldn't present an empty console as
+///   though it were the truth. [`scope_org_filter`] collapses `Err` that way.
+/// * a WRITE (`create_app`, the `batch/*` endpoints) must refuse. Treating unknown as
+///   unbounded there means one transient `DbErr` turns `batch/delete` into a
+///   cross-tenant delete — which the module docs correctly call the worst leak this
+///   model could have.
+///
+/// `app_scope_guard` already fails closed on `Err`. Having the two halves of one system
+/// disagree about what an unreadable grant means is how this drifts, so the difference is
+/// stated here once rather than re-decided at each call site.
+async fn scope_org_filter_checked(
+    db: &sea_orm::DatabaseConnection,
+    user: &oxy_auth::types::AuthenticatedUser,
+) -> Result<Option<Vec<Uuid>>, sea_orm::DbErr> {
+    use oxy_authz::Scope;
+    // A Global Owner is unbounded by definition and holds no grant row — short-circuit
+    // rather than reading one, so an owner who ALSO carries a bounded row (possible when
+    // OXY_OWNER and OXY_GLOBAL_ADMINS overlap) isn't narrowed here while every other
+    // path says they reach everything. Mirrors `platform_reaches` / `platform_holds`.
+    if crate::server::authz::globals::is_global_owner(&user.email) {
+        return Ok(None);
+    }
+    match crate::server::authz::globals::platform_grant_checked(db, &user.email).await? {
+        Some(grant) => Ok(match &grant.scope {
+            Scope::All => None,
+            Scope::Orgs(orgs) => Some(orgs.clone()),
+        }),
+        // No grant row and not an owner: nothing to narrow by. The capability gate
+        // decides whether they belong here at all.
+        None => Ok(None),
+    }
+}
+
+/// The lenient read-path filter — see [`scope_org_filter_checked`] for why `Err`
+/// collapses to "don't filter" here and nowhere else.
+///
+/// `Some(vec![])` is a real answer — a grant bounded to nothing — and correctly yields
+/// an empty list.
+pub(crate) async fn scope_org_filter(
+    db: &sea_orm::DatabaseConnection,
+    user: &oxy_auth::types::AuthenticatedUser,
+) -> Option<Vec<Uuid>> {
+    scope_org_filter_checked(db, user).await.unwrap_or_else(|e| {
+        tracing::warn!(
+            target: "authz",
+            error = %e,
+            "platform grant unreadable — listing unfiltered rather than showing an empty registry"
+        );
+        None
+    })
+}
+
+/// Scope exception #2 (see `app_scope_guard`): **batch** ids travel in the request body,
+/// where the path-based guard cannot see them. Without this, `batch/delete` would happily
+/// delete apps in every org a bounded grant has no reach into — the single worst leak the
+/// scope model could have, because it needs no discovery step: the caller just posts ids.
+///
+/// Splits the requested ids into the ones this grant reaches and per-item failures for
+/// the rest. Out-of-scope ids report the same "not found" an out-of-scope single read
+/// gets, so batching cannot be used to probe the registry.
+async fn split_by_scope(
+    db: &sea_orm::DatabaseConnection,
+    user: &oxy_auth::types::AuthenticatedUser,
+    ids: Vec<Uuid>,
+) -> Result<(Vec<Uuid>, Vec<BatchItemResult>), StatusCode> {
+    // Fail CLOSED on an unreadable grant. Collapsing `Err` to "unbounded" here would let
+    // a single transient `DbErr` turn `batch/delete` into a cross-tenant delete.
+    let orgs = match scope_org_filter_checked(db, user).await {
+        Ok(None) => return Ok((ids, Vec::new())), // unbounded grant — nothing to fence
+        Ok(Some(orgs)) => orgs,
+        Err(e) => {
+            tracing::error!(
+                target: "authz",
+                error = %e,
+                "platform grant unreadable on a batch WRITE — refusing"
+            );
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // One query for the whole batch: id → org. A failure here must NOT degrade to an
+    // empty map — that would read as "no id has a known org", passing every id through
+    // the `_ => allowed` arm below and defeating the fence entirely.
+    let owning_org: std::collections::HashMap<Uuid, Uuid> = Apps::find()
+        .filter(apps::Column::Id.is_in(ids.clone()))
+        .all(db)
+        .await
+        .map_err(|e| {
+            tracing::error!("batch scope lookup failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .into_iter()
+        .map(|a| (a.id, a.org_id))
+        .collect();
+
+    let mut allowed = Vec::with_capacity(ids.len());
+    let mut denied = Vec::new();
+    for id in ids {
+        // An id with no row is passed THROUGH, not denied: the per-id op returns its own
+        // "not found", and answering differently here would tell a bounded operator
+        // which unknown ids are real.
+        match owning_org.get(&id) {
+            Some(org_id) if !orgs.contains(org_id) => {
+                denied.push(BatchItemResult::failed(id, "App not found.".to_string()));
+            }
+            _ => allowed.push(id),
+        }
+    }
+    Ok((allowed, denied))
+}
+
 /// Public endpoint — returns the build-time config for an app by pretty
 /// path. Read by the customer-apps CI workflow (and `just build`) before
 /// running `pnpm build` so no per-app env config has to live in the
@@ -81,7 +198,31 @@ pub async fn get_org_for_project(
     }))
 }
 
-pub async fn create_app(Json(req): Json<CreateAppRequest>) -> Result<Json<AppResponse>, ApiErr> {
+pub async fn create_app(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(req): Json<CreateAppRequest>,
+) -> Result<Json<AppResponse>, ApiErr> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("DB connection error: {e}");
+        internal(e)
+    })?;
+
+    // Scope exception #1 (see `app_scope_guard`): the target org arrives in the BODY, so
+    // the path-based guard can't see it. Without this a grant bounded to org A could
+    // register an app in org B and then reach it legitimately ever after — scope would
+    // be bypassable by creating your way in.
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &user, req.org_id)
+        .await
+        .map_err(|s| api_err(s, "Organization not found."))?;
+
+    create_app_unscoped(Json(req)).await
+}
+
+/// Registration with no scope check — the CLI path (`oxy apps create`). See
+/// [`list_apps_scoped`] for why the CLI does not go through the extractor.
+pub async fn create_app_unscoped(
+    Json(req): Json<CreateAppRequest>,
+) -> Result<Json<AppResponse>, ApiErr> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("DB connection error: {e}");
         internal(e)
@@ -312,7 +453,26 @@ pub async fn create_app(Json(req): Json<CreateAppRequest>) -> Result<Json<AppRes
 const MAX_LIST_LIMIT: u64 = 200;
 
 pub async fn list_apps(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(q): Query<ListAppsQuery>,
+) -> Result<Json<ListAppsResponse>, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("DB connection error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let scope = scope_org_filter(&db, &user).await;
+    list_apps_scoped(q, scope).await
+}
+
+/// The registry list, with an explicit org filter.
+///
+/// Split from [`list_apps`] so the CLI (`oxy apps list`) can call it: the CLI has direct
+/// database access on the box and no HTTP principal, so it is unbounded by construction.
+/// Handing it a synthetic `AuthenticatedUser` to satisfy the extractor would fabricate a
+/// principal, and fabricated principals are how authorization models start lying.
+pub async fn list_apps_scoped(
+    q: ListAppsQuery,
+    scope: Option<Vec<Uuid>>,
 ) -> Result<Json<ListAppsResponse>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("DB connection error: {e}");
@@ -325,8 +485,18 @@ pub async fn list_apps(
     // (whether that's a sync, a config edit, or a publish) sit at the
     // top of the page. Pairs with the frontend's `useInfiniteQuery`
     // so "load more" walks back in time from the most recent.
-    let rows = Apps::find()
-        .order_by_desc(apps::Column::UpdatedAt)
+    //
+    // **This is where scope lives.** `platform_cap_guard` proved the caller may use
+    // this section; it deliberately did not check scope, because the platform resource
+    // has no org to check against. A bounded grant is enforced here, as a row filter —
+    // capabilities gate verbs, scope filters rows. Applied BEFORE the limit/offset so
+    // paging walks the caller's own registry rather than paging a global list and
+    // discarding most of it.
+    let mut query = Apps::find().order_by_desc(apps::Column::UpdatedAt);
+    if let Some(orgs) = scope {
+        query = query.filter(apps::Column::OrgId.is_in(orgs));
+    }
+    let rows = query
         .limit(Some(limit))
         .offset(q.offset)
         .all(&db)
@@ -441,7 +611,10 @@ pub async fn list_my_apps(
     Ok(Json(items))
 }
 
-pub async fn get_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, StatusCode> {
+pub async fn get_app(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<AppResponse>, StatusCode> {
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -450,6 +623,7 @@ pub async fn get_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, StatusCo
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &user, row.org_id).await?;
     let org = Organizations::find_by_id(row.org_id)
         .one(&db)
         .await
@@ -472,6 +646,7 @@ pub async fn get_app(Path(id): Path<Uuid>) -> Result<Json<AppResponse>, StatusCo
 }
 
 pub async fn update_app(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateAppRequest>,
 ) -> Result<Json<AppResponse>, StatusCode> {
@@ -484,6 +659,7 @@ pub async fn update_app(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let org_id = existing.org_id;
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &user, org_id).await?;
 
     if let Some(slug) = req.slug.as_deref() {
         let slug = slug.trim();
@@ -774,7 +950,28 @@ pub async fn rollback_app(
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
 
-pub async fn delete_app(Path(id): Path<Uuid>) -> Result<StatusCode, StatusCode> {
+pub async fn delete_app(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, StatusCode> {
+    let db = establish_connection()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Resolve the app's org BEFORE deleting it, so a bounded grant can't delete an app
+    // it cannot see. `delete_one` 404s on a missing id, which is the same answer an
+    // out-of-scope id gets.
+    let row = Apps::find_by_id(id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &user, row.org_id).await?;
+    delete_app_unscoped(id).await
+}
+
+/// Delete with no scope check — the CLI path (`oxy apps delete`). See
+/// [`list_apps_scoped`] for why the CLI does not go through the extractor.
+pub async fn delete_app_unscoped(id: Uuid) -> Result<StatusCode, StatusCode> {
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -789,8 +986,11 @@ pub async fn batch_publish_apps(
 ) -> Result<Json<BatchResponse>, ApiErr> {
     validate_batch(&req.ids)?;
     let db = establish_connection().await.map_err(internal)?;
-    let mut results = Vec::with_capacity(req.ids.len());
-    for id in req.ids {
+    // Scope exception #2 — ids come from the body; see `split_by_scope`.
+    let (ids, mut results) = split_by_scope(&db, &user, req.ids)
+        .await
+        .map_err(|s| api_err(s, "Could not verify grant scope."))?;
+    for id in ids {
         results.push(match publish_one(&db, id, user.id).await {
             Ok(_) => BatchItemResult::ok(id),
             Err(e) => BatchItemResult::failed(id, e.message),
@@ -815,8 +1015,11 @@ pub async fn batch_promote_latest_apps(
 ) -> Result<Json<BatchResponse>, ApiErr> {
     validate_batch(&req.ids)?;
     let db = establish_connection().await.map_err(internal)?;
-    let mut results = Vec::with_capacity(req.ids.len());
-    for id in req.ids {
+    // Scope exception #2 — ids come from the body; see `split_by_scope`.
+    let (ids, mut results) = split_by_scope(&db, &user, req.ids)
+        .await
+        .map_err(|s| api_err(s, "Could not verify grant scope."))?;
+    for id in ids {
         results.push(match promote_latest_one(&db, id, user.id).await {
             Ok(_) => BatchItemResult::ok(id),
             Err(e) => BatchItemResult::failed(id, e.message),
@@ -830,12 +1033,16 @@ pub async fn batch_promote_latest_apps(
 
 /// `POST /api/customer-apps/batch/unpublish` — unpublish many apps at once.
 pub async fn batch_unpublish_apps(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(req): Json<BatchIdsRequest>,
 ) -> Result<Json<BatchResponse>, ApiErr> {
     validate_batch(&req.ids)?;
     let db = establish_connection().await.map_err(internal)?;
-    let mut results = Vec::with_capacity(req.ids.len());
-    for id in req.ids {
+    // Scope exception #2 — ids come from the body; see `split_by_scope`.
+    let (ids, mut results) = split_by_scope(&db, &user, req.ids)
+        .await
+        .map_err(|s| api_err(s, "Could not verify grant scope."))?;
+    for id in ids {
         results.push(match unpublish_one(&db, id).await {
             Ok(_) => BatchItemResult::ok(id),
             Err(e) => BatchItemResult::failed(id, e.message),
@@ -850,12 +1057,16 @@ pub async fn batch_unpublish_apps(
 /// `POST /api/customer-apps/batch/delete` — delete many app registrations at
 /// once. POST (not DELETE) because the id set travels in the request body.
 pub async fn batch_delete_apps(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(req): Json<BatchIdsRequest>,
 ) -> Result<Json<BatchResponse>, ApiErr> {
     validate_batch(&req.ids)?;
     let db = establish_connection().await.map_err(internal)?;
-    let mut results = Vec::with_capacity(req.ids.len());
-    for id in req.ids {
+    // Scope exception #2 — ids come from the body; see `split_by_scope`.
+    let (ids, mut results) = split_by_scope(&db, &user, req.ids)
+        .await
+        .map_err(|s| api_err(s, "Could not verify grant scope."))?;
+    for id in ids {
         results.push(match delete_one(&db, id).await {
             Ok(()) => BatchItemResult::ok(id),
             Err(e) => BatchItemResult::failed(id, e.message),

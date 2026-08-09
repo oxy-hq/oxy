@@ -350,9 +350,15 @@ pub(crate) async fn serve_pretty(
             let cookie_wants_draft = super::custom_apps_preview::wants_draft_preview(&headers);
             // Fail-closed inside the one reader: a lookup error reports no standing.
             // Admin OR owner — both operator tiers reach every custom-app surface.
-            let is_staff = oxy_server_authz::globals::platform_standing(&db, &user.email)
-                .await
-                .is_staff();
+            // Scoped to THIS app's org: a grant bounded elsewhere must not unlock the
+            // draft channel here. `is_staff()` would, and is now true for every role.
+            let is_staff = oxy_server_authz::globals::platform_reaches(
+                &db,
+                &user.email,
+                oxy_authz::Cap::DevelopApps,
+                app.org_id,
+            )
+            .await;
             let channel =
                 resolve_channel(cookie_wants_draft && is_staff, app.published_at.is_some());
             // New publish pipeline: when the channel has a build pointer,

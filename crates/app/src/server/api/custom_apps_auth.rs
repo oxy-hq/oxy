@@ -119,9 +119,15 @@ pub async fn user_can_access_app(
     // platform_standing) but not VIEW one — the same question answered two ways in one
     // subsystem. Both operator tiers reach everything; they separate only at
     // owner-exclusive destructive operations.
-    let allowed = if oxy_server_authz::globals::platform_standing(db, user_email)
-        .await
-        .is_staff()
+    // `develop_apps` over THIS app's org — not a bare `is_staff()`. Every platform role
+    // reports staff, and a grant bounded to one org must not open another's app.
+    let allowed = if oxy_server_authz::globals::platform_reaches(
+        db,
+        user_email,
+        oxy_authz::Cap::DevelopApps,
+        app.org_id,
+    )
+    .await
         && !is_oxy_locked_down(db, app.project_id).await?
     {
         true
@@ -392,10 +398,16 @@ pub(crate) async fn authenticate_and_authorize(
     }
 
     // Same definition as the access check above — otherwise an owner would pass access
-    // but be flagged a customer, and silently lose draft previews.
-    let is_staff = oxy_server_authz::globals::platform_standing(&db, &user.email)
-        .await
-        .is_staff();
+    // but be flagged a customer, and silently lose draft previews. It must stay
+    // literally the same call, capability and scope included: the two drifting apart is
+    // precisely the bug this comment was written for.
+    let is_staff = oxy_server_authz::globals::platform_reaches(
+        &db,
+        &user.email,
+        oxy_authz::Cap::DevelopApps,
+        app.org_id,
+    )
+    .await;
 
     Ok(AuthOutcome {
         app,
@@ -461,6 +473,17 @@ pub async fn bootstrap_app_admins_from_env(db: &DatabaseConnection) -> Result<()
             email: sea_orm::ActiveValue::Set(email),
             granted_by: sea_orm::ActiveValue::Set(None),
             created_at: sea_orm::ActiveValue::NotSet,
+            // The env allow-list predates roles and has always meant "full staff", so
+            // it seeds Global Admins. A narrower role is a deliberate act performed
+            // through the grant API, not something an env var can express — keeping
+            // `OXY_GLOBAL_ADMINS` the blunt instrument it already is.
+            role: sea_orm::ActiveValue::Set(
+                oxy_authz::PlatformRole::GlobalAdmin.as_str().to_string(),
+            ),
+            scope_all: sea_orm::ActiveValue::Set(true),
+            // Seeded, never edited — `updated_at` equals the creation default, which
+            // reads correctly as "unchanged since it was granted".
+            updated_at: sea_orm::ActiveValue::NotSet,
         })
         .collect();
 

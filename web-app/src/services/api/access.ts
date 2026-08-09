@@ -1,4 +1,9 @@
-import type { AppAdmin, OrgSubdomainStatus, OxyAccessStatus } from "@/types/access";
+import type {
+  AppAdmin,
+  CreateAppAdminInput,
+  OrgSubdomainStatus,
+  OxyAccessStatus
+} from "@/types/access";
 import { apiClient } from "./axios";
 
 /**
@@ -11,8 +16,14 @@ export const AppAdminsService = {
     return response.data;
   },
 
-  async create(email: string): Promise<AppAdmin> {
-    const response = await apiClient.post("/admin/app-admins", { email });
+  async create(input: CreateAppAdminInput): Promise<AppAdmin> {
+    // `scope_org_ids` is omitted entirely for an unbounded grant — the server reads
+    // its absence as `scope_all`, and sending `[]` would mean "reaches nothing".
+    const response = await apiClient.post("/admin/app-admins", {
+      email: input.email,
+      role: input.role,
+      ...(input.scope_org_ids ? { scope_org_ids: input.scope_org_ids } : {})
+    });
     return response.data;
   },
 

@@ -138,9 +138,19 @@ pub async fn resolve_actor(
     user_email: &str,
     target_org_id: Uuid,
 ) -> PublishActor {
-    if oxy_server_authz::globals::platform_standing(db, user_email)
-        .await
-        .is_staff()
+    // Staff publish authority is `ManageApps` **over this org** — capability and scope.
+    //
+    // `is_staff()` alone would let a grant bounded to org A publish into org B, which
+    // silently voids scope on the one verb an App Operator exists to perform. There is no
+    // `enforce` conjunction here to catch it the way `custom_apps_gates` has: this
+    // function resolves WHICH actor you are, and the answer decides the rest.
+    if oxy_server_authz::globals::platform_reaches(
+        db,
+        user_email,
+        oxy_authz::Cap::ManageApps,
+        target_org_id,
+    )
+    .await
     {
         return PublishActor::Staff;
     }

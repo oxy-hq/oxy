@@ -27,12 +27,17 @@ pub(crate) fn router() -> Router<AppState> {
 
 /// `GET /admin/audit/verify/{org_id}` — recompute an org's hash chain.
 pub async fn verify_audit_chain(
+    oxy_auth::extractor::AuthenticatedUserExtractor(actor): oxy_auth::extractor::AuthenticatedUserExtractor,
     axum::extract::Path(org_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<audit::ChainReport>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("admin/audit: DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    // Scope. Found by the merge-derived coverage test on its first run — a fifth
+    // `{org_id}` router nobody had swept. Verifying another tenant's hash chain is a
+    // read of that tenant's audit trail.
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &actor, org_id).await?;
     audit::verify_chain(&db, org_id)
         .await
         .map(Json)

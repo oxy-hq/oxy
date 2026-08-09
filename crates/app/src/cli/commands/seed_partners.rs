@@ -279,6 +279,13 @@ fn seed_id(kind: &str, key: &str) -> Uuid {
 /// staging box), so the guard is an obstacle to accidents, not to work.
 /// Does the target DB look local (or was remote seeding explicitly allowed)? The
 /// seed creates real users, orgs and a partner grant, so it must not touch prod.
+/// Shared with `seed_platform_grants`, which seeds STAFF standing and therefore
+/// needs the same locality guard — issuing platform grants against a real database
+/// would be handing out console access.
+pub(crate) fn is_local_db() -> bool {
+    is_local()
+}
+
 fn is_local() -> bool {
     if std::env::var("OXY_SEED_ALLOW_REMOTE").is_ok() {
         return true;

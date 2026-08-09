@@ -1,11 +1,16 @@
-//! `/api/admin/users/*` — OXY_OWNER-only directory across all tenants.
+//! `/api/admin/users/*` — the cross-tenant user directory.
 //!
-//! Surfaces every user in the database, regardless of org, so operators
-//! can search by email, inspect their org memberships, and run targeted
-//! actions (deactivate, change role, remove from org). Sits behind
-//! `oxy_owner_guard_middleware`.
+//! Surfaces every user in the database, regardless of org, so operators can search by
+//! email, inspect their org memberships, and run targeted actions (deactivate, change
+//! role, remove from org).
+//!
+//! **Gated by `cap(Action::PlatformUsers)`, not OXY_OWNER** — the doc said owner-only
+//! long after that stopped being true, which mattered here more than most: this is the
+//! file whose membership writes needed their own scope fence precisely because
+//! non-owner, possibly BOUNDED staff reach it. A header claiming they can't is the
+//! reason nobody went looking.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use axum::extract::{Path, Query};
@@ -16,8 +21,12 @@ use axum::{Json, Router};
 use chrono::Utc;
 use entity::org_invitations::InviteStatus;
 use entity::org_members::OrgRole;
+use entity::prelude::AppAdmins;
 use entity::users::UserStatus;
-use entity::{app_admins, org_invitations, org_members, organizations, users, workspace_members};
+use entity::{
+    app_admin_scope_orgs, app_admins, org_invitations, org_members, organizations, users,
+    workspace_members,
+};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
@@ -27,6 +36,10 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use serde_json::json;
+
+use crate::server::api::admin::scope;
+use crate::server::api::audit;
 use crate::server::router::AppState;
 
 pub(crate) fn router() -> Router<AppState> {
@@ -67,7 +80,18 @@ pub struct AdminUserRow {
     pub status: String,
     pub created_at: String,
     pub last_login_at: String,
+    /// Holds a platform grant of ANY role. Kept for existing consumers; it cannot
+    /// distinguish a Global Admin from an App Operator, which is why the two fields
+    /// below exist.
     pub is_app_admin: bool,
+    /// The platform role they hold (`global_admin` | `app_operator`), or `None` for a
+    /// non-staff user. This is the column the directory actually shows: "is staff" is
+    /// no longer a rank, so a boolean cannot answer "what can this person do".
+    pub platform_role: Option<String>,
+    /// `true` = the grant reaches every org. Meaningless when `platform_role` is None.
+    pub platform_scope_all: bool,
+    /// How many orgs a bounded grant reaches. 0 when unbounded or non-staff.
+    pub platform_scope_org_count: usize,
     pub org_count: i64,
     /// Partners this user administers. Non-empty ⇒ they are a **Partner Admin**,
     /// a delegated cross-org authority that is invisible from `org_count` alone.
@@ -137,6 +161,9 @@ pub struct UserInvitation {
 pub struct ListUsersQuery {
     pub search: Option<String>,
     pub status: Option<String>,
+    /// Narrow to a role. `global_admin` / `app_operator` select one platform grant;
+    /// `staff` selects any. Applied BEFORE pagination — see `emails_with_platform_role`.
+    pub role: Option<String>,
     pub page: Option<u64>,
     pub page_size: Option<u64>,
 }
@@ -179,6 +206,32 @@ pub async fn list_users(
             UserStatus::from_str(status_str.as_str()).map_err(|_| StatusCode::BAD_REQUEST)?;
         query = query.filter(users::Column::Status.eq(status));
     }
+    if let Some(role) = q.role.as_ref().filter(|s| !s.trim().is_empty()) {
+        let role = role.trim();
+        let wanted = match role {
+            // Any grant, whatever its role — "show me everyone with console access".
+            "staff" => None,
+            r => Some(r),
+        };
+        // An unknown role yields an empty allow-list, so the page comes back empty
+        // rather than unfiltered. A filter that silently stops filtering is worse than
+        // one that shows nothing.
+        let emails = emails_with_platform_role(&db, wanted)
+            .await
+            .map_err(internal)?;
+        if emails.is_empty() {
+            return Ok(Json(Vec::new()));
+        }
+        // LOWER() on both sides: grant emails are normalised at write time, `users.email`
+        // is not, so a mixed-case staff address matched nothing and vanished from the
+        // Staff filter — which this change just made the rail's primary navigation.
+        query = query.filter(
+            sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
+                sea_orm::sea_query::Expr::col(users::Column::Email),
+            ))
+            .is_in(emails),
+        );
+    }
 
     let rows = query
         .offset(page * page_size)
@@ -195,7 +248,7 @@ pub async fn list_users(
     let org_counts = count_user_org_memberships_in(&db, &user_ids)
         .await
         .map_err(internal)?;
-    let app_admin_set = lookup_app_admin_emails_in(&db, &emails_lower)
+    let grant_map = lookup_platform_grants_in(&db, &emails_lower)
         .await
         .map_err(internal)?;
     // Two more IN (...) lookups — still O(1) per page, no N+1.
@@ -216,7 +269,13 @@ pub async fn list_users(
             status: u.status.as_str().to_string(),
             created_at: u.created_at.to_rfc3339(),
             last_login_at: u.last_login_at.to_rfc3339(),
-            is_app_admin: app_admin_set.contains(&lc_email),
+            is_app_admin: grant_map.contains_key(&lc_email),
+            platform_role: grant_map.get(&lc_email).map(|g| g.role.clone()),
+            platform_scope_all: grant_map.get(&lc_email).is_none_or(|g| g.scope_all),
+            platform_scope_org_count: grant_map
+                .get(&lc_email)
+                .map(|g| g.scope_org_count)
+                .unwrap_or(0),
             org_count: org_counts.get(&u.id).copied().unwrap_or(0),
             partners: partner_map.get(&u.id).cloned().unwrap_or_default(),
             top_org_role: role_map.get(&u.id).cloned(),
@@ -260,24 +319,84 @@ async fn count_user_org_memberships_in(
     Ok(rows.into_iter().map(|r| (r.user_id, r.cnt)).collect())
 }
 
-async fn lookup_app_admin_emails_in(
+/// The platform grant behind a row, if any — role and reach, not just "is staff".
+#[derive(Clone)]
+pub struct PlatformGrantRef {
+    pub role: String,
+    pub scope_all: bool,
+    pub scope_org_count: usize,
+}
+
+/// Platform grants for a page of emails, keyed by lowercased email.
+///
+/// Typed entity query rather than the hand-built `IN (...)` this replaced: the
+/// statement now selects `role` and `scope_all` as well, and raw SQL is exactly what
+/// survives a schema change without complaining. One query for the page, plus one for
+/// the scope rows of whichever grants are bounded — still O(1) per page.
+async fn lookup_platform_grants_in(
     db: &sea_orm::DatabaseConnection,
     emails: &[String],
-) -> Result<HashSet<String>, sea_orm::DbErr> {
+) -> Result<HashMap<String, PlatformGrantRef>, sea_orm::DbErr> {
     if emails.is_empty() {
-        return Ok(HashSet::new());
+        return Ok(HashMap::new());
     }
-    let placeholders = sql_placeholders(emails.len());
-    let sql = format!("SELECT DISTINCT email FROM app_admins WHERE email IN ({placeholders})");
-    let values: Vec<sea_orm::Value> = emails.iter().map(|e| e.clone().into()).collect();
-    let rows = EmailRow::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        sql,
-        values,
-    ))
-    .all(db)
-    .await?;
-    Ok(rows.into_iter().map(|r| r.email).collect())
+    let grants = AppAdmins::find()
+        .filter(app_admins::Column::Email.is_in(emails.to_vec()))
+        .all(db)
+        .await?;
+
+    // Count scope rows only for the bounded grants — usually none on a page.
+    let bounded: Vec<Uuid> = grants
+        .iter()
+        .filter(|g| !g.scope_all)
+        .map(|g| g.id)
+        .collect();
+    let mut scope_counts: HashMap<Uuid, usize> = HashMap::new();
+    if !bounded.is_empty() {
+        for row in app_admin_scope_orgs::Entity::find()
+            .filter(app_admin_scope_orgs::Column::AppAdminId.is_in(bounded))
+            .all(db)
+            .await?
+        {
+            *scope_counts.entry(row.app_admin_id).or_default() += 1;
+        }
+    }
+
+    Ok(grants
+        .into_iter()
+        .map(|g| {
+            let scope_org_count = scope_counts.get(&g.id).copied().unwrap_or(0);
+            (
+                g.email.to_ascii_lowercase(),
+                PlatformGrantRef {
+                    role: g.role,
+                    scope_all: g.scope_all,
+                    scope_org_count,
+                },
+            )
+        })
+        .collect())
+}
+
+/// Emails holding a platform grant, for the `?role=` pre-pagination filter.
+///
+/// Filtering must narrow the query BEFORE `offset`/`limit`, or pages come back
+/// short and the count is a lie — so this reads the (small) grant table first and
+/// feeds the result back as a `WHERE email IN (...)`, rather than filtering the
+/// assembled rows after the fact.
+async fn emails_with_platform_role(
+    db: &sea_orm::DatabaseConnection,
+    role: Option<&str>,
+) -> Result<Vec<String>, sea_orm::DbErr> {
+    let mut q = AppAdmins::find();
+    if let Some(role) = role {
+        q = q.filter(app_admins::Column::Role.eq(role));
+    }
+    Ok(q.all(db)
+        .await?
+        .into_iter()
+        .map(|g| g.email.to_ascii_lowercase())
+        .collect())
 }
 
 fn sql_placeholders(n: usize) -> String {
@@ -373,28 +492,54 @@ pub async fn set_user_status(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// `POST /admin/users/{id}/org-memberships` — put someone in an org, at a role.
+///
+/// **Audited.** This grants a person standing inside a tenant they were not part of,
+/// which is among the most consequential writes staff can make — and until now it wrote
+/// nothing to `audit_events`, so there was no record of who was added where or by whom.
+/// The partner tier has logged the equivalent action since it shipped; the staff path
+/// simply never did, and a nicer UI on top would have made an unrecorded privileged
+/// write easier to reach.
+///
+/// The audit row goes in the SAME transaction as the membership, so a change that
+/// cannot be recorded does not happen. Best-effort logging would leave exactly the gap
+/// this closes, just narrower.
 pub async fn add_to_org(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(user_id): Path<Uuid>,
     Json(body): Json<AddToOrgBody>,
 ) -> Result<StatusCode, StatusCode> {
     let role = OrgRole::from_str(body.role.as_str()).map_err(|_| StatusCode::BAD_REQUEST)?;
     let db = establish_connection().await.map_err(internal)?;
 
-    users::Entity::find_by_id(user_id)
+    let target = users::Entity::find_by_id(user_id)
         .one(&db)
         .await
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    organizations::Entity::find_by_id(body.org_id)
+    let org = organizations::Entity::find_by_id(body.org_id)
         .one(&db)
         .await
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
+    // **Scope.** A bounded grant must not reach outside its orgs — without this a
+    // global_admin scoped to one tenant could POST {org_id: <any>, role: "owner"} and
+    // hold permanent Owner in a tenant its grant never covered, which is a strictly
+    // worse escalation than anything the console's read paths could leak.
+    //
+    // 404, matching every other out-of-scope answer in this change: an operator with no
+    // reach into an org must not learn it exists by being told "forbidden".
+    scope::deny_out_of_scope(&db, &actor, body.org_id).await?;
+
+    let tx = db.begin().await.map_err(internal)?;
+
+    // Existence check inside the transaction: outside it, two concurrent adds both see
+    // "absent" and the second dies on the unique index with a 500 instead of a 409.
     let existing = org_members::Entity::find()
         .filter(org_members::Column::OrgId.eq(body.org_id))
         .filter(org_members::Column::UserId.eq(user_id))
-        .one(&db)
+        .one(&tx)
         .await
         .map_err(internal)?;
     if existing.is_some() {
@@ -402,6 +547,7 @@ pub async fn add_to_org(
     }
 
     let now = Utc::now().fixed_offset();
+    let role_str = role.as_str().to_string();
     let model = org_members::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         org_id: Set(body.org_id),
@@ -410,7 +556,23 @@ pub async fn add_to_org(
         created_at: Set(now),
         updated_at: Set(now),
     };
-    model.insert(&db).await.map_err(internal)?;
+    model.insert(&tx).await.map_err(internal)?;
+
+    audit::record_in_txn(
+        &tx,
+        audit::AuditEntry::new(actor.email.clone(), "member.added")
+            .actor(actor.id, audit::ActorType::User)
+            .org(body.org_id)
+            .target("user", user_id.to_string(), target.email.clone())
+            // `before: null` reads as "held nothing here" — the fact that makes this row
+            // meaningful, since it distinguishes a grant from a role change.
+            .change(serde_json::Value::Null, json!({ "role": role_str }))
+            .metadata(json!({ "org_slug": org.slug, "surface": "admin" })),
+    )
+    .await
+    .map_err(internal)?;
+
+    tx.commit().await.map_err(internal)?;
     Ok(StatusCode::CREATED)
 }
 
@@ -422,6 +584,11 @@ pub async fn update_role(
     let role = OrgRole::from_str(body.role.as_str())
         .map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
     let db = establish_connection().await.map_err(internal_resp)?;
+    // Same fence as `add_to_org` — changing or revoking standing inside a tenant is as
+    // scoped an act as granting it.
+    scope::deny_out_of_scope(&db, &actor, org_id)
+        .await
+        .map_err(IntoResponse::into_response)?;
     let tx = db.begin().await.map_err(internal_resp)?;
 
     let membership = org_members::Entity::find()
@@ -431,6 +598,15 @@ pub async fn update_role(
         .await
         .map_err(internal_resp)?
         .ok_or_else(|| StatusCode::NOT_FOUND.into_response())?;
+
+    // Resolved for the audit row's human label — an audit entry keyed only by uuid
+    // makes the log unreadable at exactly the moment someone needs to read it.
+    let target_email = users::Entity::find_by_id(user_id)
+        .one(&tx)
+        .await
+        .map_err(internal_resp)?
+        .map(|u| u.email)
+        .unwrap_or_default();
 
     // Last-owner guard: refuse to demote the only Owner of the org. The
     // owner_count read sits inside the same tx as the role update, so we
@@ -457,11 +633,31 @@ pub async fn update_role(
         }
     }
 
+    let old_role_str = membership.role.as_str().to_string();
     let mut active: org_members::ActiveModel = membership.into();
     let new_role_str = role.as_str().to_string();
     active.role = Set(role);
     active.updated_at = Set(Utc::now().fixed_offset());
     active.update(&tx).await.map_err(internal_resp)?;
+
+    // Audited in the same transaction — see `add_to_org`. A role change that cannot be
+    // recorded must not commit; the `tracing::info!` below is operational visibility,
+    // not an audit trail (it is unqueryable, unretained and not tamper-evident).
+    audit::record_in_txn(
+        &tx,
+        audit::AuditEntry::new(actor.email.clone(), "member.role.updated")
+            .actor(actor.id, audit::ActorType::User)
+            .org(org_id)
+            .target("user", user_id.to_string(), target_email.clone())
+            .change(
+                json!({ "role": old_role_str }),
+                json!({ "role": new_role_str }),
+            )
+            .metadata(json!({ "surface": "admin" })),
+    )
+    .await
+    .map_err(internal_resp)?;
+
     tx.commit().await.map_err(internal_resp)?;
     tracing::info!(
         admin_email = %actor.email,
@@ -479,6 +675,11 @@ pub async fn remove_from_org(
     Path((user_id, org_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, Response> {
     let db = establish_connection().await.map_err(internal_resp)?;
+    // Same fence as `add_to_org` — revoking standing inside a tenant is as scoped an act
+    // as granting it.
+    scope::deny_out_of_scope(&db, &actor, org_id)
+        .await
+        .map_err(IntoResponse::into_response)?;
     let tx = db.begin().await.map_err(internal_resp)?;
 
     // Look the target up first so we know if removing them strips the last
@@ -491,6 +692,13 @@ pub async fn remove_from_org(
         .await
         .map_err(internal_resp)?
         .ok_or_else(|| StatusCode::NOT_FOUND.into_response())?;
+
+    let target_email = users::Entity::find_by_id(user_id)
+        .one(&tx)
+        .await
+        .map_err(internal_resp)?
+        .map(|u| u.email)
+        .unwrap_or_default();
 
     if matches!(membership.role, OrgRole::Owner) {
         let owner_count = org_members::Entity::find()
@@ -512,6 +720,7 @@ pub async fn remove_from_org(
         }
     }
 
+    let removed_role = membership.role.as_str().to_string();
     let res = org_members::Entity::delete_many()
         .filter(org_members::Column::OrgId.eq(org_id))
         .filter(org_members::Column::UserId.eq(user_id))
@@ -523,6 +732,21 @@ pub async fn remove_from_org(
         // DELETE. Treat as 404 for the caller.
         return Err(StatusCode::NOT_FOUND.into_response());
     }
+    audit::record_in_txn(
+        &tx,
+        audit::AuditEntry::new(actor.email.clone(), "member.removed")
+            .actor(actor.id, audit::ActorType::User)
+            .org(org_id)
+            .target("user", user_id.to_string(), target_email.clone())
+            // `after: null` — they hold nothing here now. Recording the role they LOST
+            // is the part that matters: "removed" without it can't answer whether an
+            // owner or a viewer was taken out.
+            .change(json!({ "role": removed_role }), serde_json::Value::Null)
+            .metadata(json!({ "surface": "admin" })),
+    )
+    .await
+    .map_err(internal_resp)?;
+
     tx.commit().await.map_err(internal_resp)?;
     tracing::info!(
         admin_email = %actor.email,

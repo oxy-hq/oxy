@@ -1,4 +1,5 @@
 import { isAxiosError } from "axios";
+import type { PlatformRoleId } from "@/types/access";
 import { apiClient } from "./axios";
 
 // ---------------------------------------------------------------------------
@@ -203,7 +204,14 @@ export interface AdminUserRow {
   status: UserStatusId;
   created_at: string;
   last_login_at: string;
+  /** Holds a platform grant of ANY role — cannot distinguish them. Prefer `platform_role`. */
   is_app_admin: boolean;
+  /** `global_admin` | `app_operator`, or null for a non-staff user. */
+  platform_role: PlatformRoleId | null;
+  /** True = the grant reaches every org. Meaningless when `platform_role` is null. */
+  platform_scope_all: boolean;
+  /** Orgs a bounded grant reaches; 0 when unbounded or non-staff. */
+  platform_scope_org_count: number;
   org_count: number;
   /** Non-empty ⇒ Partner Admin — a delegated cross-org authority that org_count alone hides. */
   partners: UserPartnerRef[];
@@ -252,9 +260,13 @@ export interface AdminUserWorkspaceMembership {
   joined_at: string;
 }
 
+/** Values the `role` filter accepts: a specific platform role, or any staff standing. */
+export type UserRoleFilter = PlatformRoleId | "staff";
+
 export interface ListUsersQuery {
   search?: string;
   status?: UserStatusId;
+  role?: UserRoleFilter;
   page?: number;
   page_size?: number;
 }

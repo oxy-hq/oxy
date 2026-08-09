@@ -33,19 +33,39 @@ the fact is missing from `PrincipalFacts`, not that the crate needs a connection
 
 ## Vocabulary
 
-- **`Action`** (23) — the closed vocabulary of things a caller can do. This is what call
+- **`Action`** (33) — the closed vocabulary of things a caller can do. This is what call
   sites name.
-- **`Ring`** (13) — the authority level that gates an action. **Private on purpose:** a
+- **`Ring`** — the authority level that gates an action. **Private on purpose:** a
   ring is how the model is *stated*, not a menu callers pick from. Public, it would let a
   call site choose its own authority level — the scatter this crate exists to end.
 - **`PrincipalFacts`** — the whole input surface. Empty = denied everything (fail closed).
 - **`Resource`** — what's being acted on: `org_id`, `kind`, optional `owner`, optional
   acting `partner`.
-- **`Cap`** (8) — a partner ceiling capability, one-to-one with `PartnerCapability`.
+- **`Cap`** (11) — a capability. **One vocabulary, two tiers:** the first eight are the
+  partner ceiling (one-to-one with `PartnerCapability`); `ViewTenants` / `ManagePartners` /
+  `OperatePlatform` are platform-only and have no partner analogue, deliberately.
+- **`Scope`** — `All` or `Orgs(..)`. Where a grant reaches.
+- **`PlatformStanding`** / **`PlatformRole`** — Oxy-staff standing as `(caps × scope)`, and
+  the presets (`GlobalAdmin`, `AppOperator`) that name common ones.
 
 Rings, briefly: `Read` · `MemberStrict` · `OrgAdmin` · `OrgAdminStrict` · `OwnerOnly` ·
 `OrgAdminOrCreator` · `WorkspaceAdmin` · `WorkspaceAdminStrict` · `WorkspaceEdit` ·
-`AppAccess` · `PartnerCap` · `GlobalAdminOrOwner` · `GlobalOwnerOnly`.
+`AppAccess` · `AppAdmin` · `AppGrant` · `PartnerCap` · `PlatformAny` · `PlatformCap` ·
+`GlobalOwnerOnly`.
+
+## Staff standing is a grant, not a flag
+
+`is_global_admin: bool` is gone. It was shared by nine tenant rings, so `Ring::OwnerOnly`
+— org **deletion** — honoured the same term `Ring::AppAdmin` did, and every app publisher
+could delete any tenant. Each ring now names the capability its own authority is about,
+via `PrincipalFacts::platform_grants(cap, org)` — the deliberate mirror of
+`any_partner_grants`. `is_global_owner` stays a boolean: it is root.
+
+**Capabilities gate verbs; scope filters rows.** `Resource::platform()` has a nil org, so
+no platform ring consults scope — a scoped operator passes the console door and the
+*handler* narrows what it returns. Getting this backwards yields either a role that 403s
+out of its own console or one that lists every tenant. Full guide:
+`internal-docs/roles-and-authorization.md`.
 
 The `*Strict` variants reject the global-operator override. That distinction is
 load-bearing and has already been got wrong once (billing was modeled `OwnerOnly`; the

@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { useAdminPartners } from "@/hooks/api/adminPartners";
 import AdminOrgDetail from "@/pages/admin/AdminOrgs/AdminOrgDetail";
 import AdminUserDetail from "@/pages/admin/AdminUsers/AdminUserDetail";
 import AdminWorkspaceDetail from "@/pages/admin/AdminWorkspaces/AdminWorkspaceDetail";
 import PartnerPane from "./components/panes/PartnerPane";
 import TenantHeader from "./components/TenantHeader";
+import { pushRecent } from "./components/TenantHeader/components/TenantSwitcher";
 import TenantMap from "./components/TenantMap";
 import TenantRail from "./components/TenantRail";
 import { type TenantType, useTenantSelection } from "./useTenantSelection";
@@ -20,6 +22,12 @@ export default function AdminTenantsCockpit() {
 
   const partnerFilterName = usePartnerName(partnerFilter);
 
+  // Record every opened tenant, so the switcher's "Recent" list reflects where the
+  // operator has actually been rather than only where they jumped from the switcher.
+  useEffect(() => {
+    if (type === "orgs" && id) pushRecent(id);
+  }, [type, id]);
+
   return (
     <div
       data-testid='admin-tenants-cockpit'
@@ -27,7 +35,9 @@ export default function AdminTenantsCockpit() {
     >
       <TenantHeader
         type={type}
+        id={id}
         onTypeChange={setType}
+        onSelect={setId}
         view={view}
         onViewChange={setView}
         onCreatedOrg={setId}

@@ -20,21 +20,30 @@ use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
-use entity::app_admins;
 use entity::prelude::AppAdmins;
+use entity::{app_admin_scope_orgs, app_admins};
+use oxy_authz::{PlatformRole, PlatformStanding as Grant, Scope};
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 
-/// What Oxy's platform sources say about a person. Not a decision — feed it to a ring,
-/// or report it.
+/// What Oxy's platform sources say about a person, **as flags to display**. Not a
+/// decision, and deliberately lossy: it says *that* someone is staff, never what they
+/// may do. Feed [`platform_grant_checked`] to a ring when you need the latter.
+///
+/// Renamed off `PlatformStanding` when platform standing became a real grant — that
+/// name now belongs to [`oxy_authz::PlatformStanding`], which carries the capabilities
+/// and scope. Two types with one name, one of them a boolean pair, is how a call site
+/// ends up deciding access from a display flag.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PlatformStanding {
+pub struct PlatformFlags {
     /// In the `OXY_OWNER` env allow-list.
     pub is_global_owner: bool,
-    /// In the `app_admins` table.
+    /// Holds a row in the platform-grant table (`app_admins`) — **any** role. A
+    /// display flag only: an App Operator and a Global Admin both report `true` here,
+    /// which is precisely why nothing may authorize from it.
     pub is_global_admin: bool,
 }
 
-impl PlatformStanding {
+impl PlatformFlags {
     /// Either flag — "is this Oxy staff at all". The `oxy_owner_or_app_admin` shape.
     pub fn is_staff(self) -> bool {
         self.is_global_owner || self.is_global_admin
@@ -51,26 +60,32 @@ pub fn is_global_owner(email: &str) -> bool {
 /// moved here from `custom_apps_auth`.
 const ADMIN_CACHE_TTL: Duration = Duration::from_secs(60);
 
-/// Cache of `app_admins` membership, keyed by the normalized email. Self-contained here
-/// (rather than reusing `custom_apps_auth`'s cache helper) so authz owns its only
-/// `app_admins` read with **no** import back into `custom_apps_*` — that import was a
-/// dependency cycle blocking the customer-apps surface from moving.
-fn admin_cache() -> &'static RwLock<HashMap<String, (bool, Instant)>> {
-    static CACHE: OnceLock<RwLock<HashMap<String, (bool, Instant)>>> = OnceLock::new();
+/// Cache of the platform **grant** for an email — `None` meaning "looked, not staff".
+/// Self-contained here (rather than reusing `custom_apps_auth`'s cache helper) so authz
+/// owns its only `app_admins` read with **no** import back into `custom_apps_*` — that
+/// import was a dependency cycle blocking the customer-apps surface from moving.
+///
+/// The cache holds the whole grant, not a bool, so the role and scope ride the same
+/// entry the membership check already paid for. A second cache keyed differently would
+/// be a way for "is staff" and "what may they do" to disagree for up to a TTL.
+type GrantCache = RwLock<HashMap<String, (Option<Grant>, Instant)>>;
+
+fn admin_cache() -> &'static GrantCache {
+    static CACHE: OnceLock<GrantCache> = OnceLock::new();
     CACHE.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-fn cached_admin(email: &str) -> Option<bool> {
+fn cached_admin(email: &str) -> Option<Option<Grant>> {
     let cache = admin_cache().read().ok()?;
     let (value, at) = cache.get(email)?;
-    (at.elapsed() < ADMIN_CACHE_TTL).then_some(*value)
+    (at.elapsed() < ADMIN_CACHE_TTL).then(|| value.clone())
 }
 
-fn set_cached_admin(email: String, is_admin: bool) {
+fn set_cached_admin(email: String, grant: Option<Grant>) {
     if let Ok(mut cache) = admin_cache().write() {
         // Sweep expired entries so churn of distinct emails can't grow the map unbounded.
         cache.retain(|_, (_, at)| at.elapsed() < ADMIN_CACHE_TTL);
-        cache.insert(email, (is_admin, Instant::now()));
+        cache.insert(email, (grant, Instant::now()));
     }
 }
 
@@ -90,20 +105,112 @@ pub fn invalidate_admin_cache() {
 /// Moved here from `custom_apps_auth` so authz owns this read outright; the only other
 /// caller is `oxy_app_admin_guard`.
 pub async fn is_app_admin_email(db: &DatabaseConnection, email: &str) -> Result<bool, DbErr> {
+    Ok(platform_grant_checked(db, email).await?.is_some())
+}
+
+/// The **authorization** read: this person's platform grant, or `None` if they hold
+/// none. Cached for [`ADMIN_CACHE_TTL`] alongside the membership check.
+///
+/// Two rules make an unreadable grant deny rather than escalate:
+///
+/// * a `role` this build cannot expand ([`PlatformRole::from_str`] returns `None`) drops
+///   the whole grant — so rolling back past a role's introduction removes standing
+///   instead of reinterpreting it as something more powerful;
+/// * `scope_all = false` yields `Scope::Orgs`, which reaches nothing when the child
+///   table is empty. Unbounded reach is never inferred from missing rows.
+pub async fn platform_grant_checked(
+    db: &DatabaseConnection,
+    email: &str,
+) -> Result<Option<Grant>, DbErr> {
     let key = email.trim().to_ascii_lowercase();
     if key.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
     if let Some(v) = cached_admin(&key) {
         return Ok(v);
     }
-    let found = AppAdmins::find()
+
+    let Some(row) = AppAdmins::find()
         .filter(app_admins::Column::Email.eq(key.clone()))
         .one(db)
         .await?
-        .is_some();
-    set_cached_admin(key, found);
-    Ok(found)
+    else {
+        set_cached_admin(key, None);
+        return Ok(None);
+    };
+
+    let Some(role) = PlatformRole::from_str(&row.role) else {
+        tracing::warn!(
+            target: "authz",
+            role = %row.role,
+            "platform grant names a role this build cannot expand — dropping the grant"
+        );
+        set_cached_admin(key, None);
+        return Ok(None);
+    };
+
+    let scope = if row.scope_all {
+        Scope::All
+    } else {
+        Scope::Orgs(
+            app_admin_scope_orgs::Entity::find()
+                .filter(app_admin_scope_orgs::Column::AppAdminId.eq(row.id))
+                .all(db)
+                .await?
+                .into_iter()
+                .map(|s| s.org_id)
+                .collect(),
+        )
+    };
+
+    let grant = Grant::from_role(role, scope);
+    set_cached_admin(key, Some(grant.clone()));
+    Ok(Some(grant))
+}
+
+/// **Does `email` hold `cap` over `org_id`?** The platform tier's org-scoped question,
+/// for call sites that resolve an actor rather than enforce a ring.
+///
+/// Reach for this instead of `platform_standing(..).is_staff()` anywhere the answer
+/// implies authority *inside a tenant*. `is_staff()` is now true for every platform
+/// role, so it can no longer distinguish an App Operator from a Global Admin, and it
+/// never consulted scope at all — a grant bounded to org A would pass it for org B.
+///
+/// Handlers that enforce a ring don't need this: `allows()` already applies the same
+/// rule via `PrincipalFacts::platform_grants`. This exists for the resolve-an-actor
+/// shape (publish authority, assume-role, app serving), where there is no ring to lean
+/// on and a bare `is_staff()` silently voids scope.
+///
+/// A Global Owner short-circuits — root holds no grant row. An unreadable grant denies.
+pub async fn platform_reaches(
+    db: &DatabaseConnection,
+    email: &str,
+    cap: oxy_authz::Cap,
+    org_id: uuid::Uuid,
+) -> bool {
+    if is_global_owner(email) {
+        return true;
+    }
+    matches!(
+        platform_grant_checked(db, email).await,
+        Ok(Some(grant)) if grant.grants(cap, org_id)
+    )
+}
+
+/// **Does `email` hold `cap` at all?** Scope is not consulted — the platform-surface
+/// question, matching `Ring::PlatformCap`.
+///
+/// Use for surfaces that belong to Oxy rather than to a tenant (the partner registry,
+/// the console sections). Where the question is reach *into a specific org*, use
+/// [`platform_reaches`] instead so the grant's scope applies.
+pub async fn platform_holds(db: &DatabaseConnection, email: &str, cap: oxy_authz::Cap) -> bool {
+    if is_global_owner(email) {
+        return true;
+    }
+    matches!(
+        platform_grant_checked(db, email).await,
+        Ok(Some(grant)) if grant.holds(cap)
+    )
 }
 
 /// Read the platform sources for `email`, distinguishing **"not staff"** from **"we
@@ -115,14 +222,14 @@ pub async fn is_app_admin_email(db: &DatabaseConnection, email: &str) -> Result<
 /// standing rather than inventing it — but under `enforce` it is read as a *fact* that
 /// the principal is not staff, and the model then subtracts access their legacy check
 /// granted. A wrong 403, from a blip.
-pub async fn platform_standing_checked(
-    db: &DatabaseConnection,
-    email: &str,
-) -> Option<PlatformStanding> {
-    match is_app_admin_email(db, email).await {
-        Ok(is_global_admin) => Some(PlatformStanding {
-            is_global_owner: is_global_owner(email),
-            is_global_admin,
+pub async fn platform_standing_checked(db: &DatabaseConnection, email: &str) -> Option<Checked> {
+    match platform_grant_checked(db, email).await {
+        Ok(grant) => Some(Checked {
+            flags: PlatformFlags {
+                is_global_owner: is_global_owner(email),
+                is_global_admin: grant.is_some(),
+            },
+            grant,
         }),
         Err(e) => {
             tracing::warn!(
@@ -135,15 +242,27 @@ pub async fn platform_standing_checked(
     }
 }
 
+/// A resolved platform read: the display flags **and** the grant behind them.
+///
+/// They travel together because they are one database read and must never disagree.
+/// The loader takes [`Self::grant`] (what may this person do); `/me`-style payloads take
+/// [`Self::flags`] (is this person staff). A call site that authorizes from `flags` has
+/// re-created the boolean this whole change removed — take the grant.
+#[derive(Clone, Debug)]
+pub struct Checked {
+    pub flags: PlatformFlags,
+    pub grant: Option<Grant>,
+}
+
 /// The most standing that can be established with **no database**: the `OXY_OWNER`
 /// allow-list, which is an env read.
 ///
-/// This is not a lesser `Default`. `PlatformStanding::default()` says "no standing";
+/// This is not a lesser `Default`. `PlatformFlags::default()` says "no standing";
 /// this says "no standing *we needed the database for*" — and the difference is a Global
 /// Owner keeping their owner-tier UI through a DB outage. Owner status never depended on
 /// the DB, so no DB failure should be able to take it away.
-pub fn platform_standing_offline(email: &str) -> PlatformStanding {
-    PlatformStanding {
+pub fn platform_standing_offline(email: &str) -> PlatformFlags {
+    PlatformFlags {
         is_global_owner: is_global_owner(email),
         // Genuinely unknown without the `app_admins` table. Withheld, not invented.
         is_global_admin: false,
@@ -159,15 +278,18 @@ pub fn platform_standing_offline(email: &str) -> PlatformStanding {
 /// behaviour for a **flag to display** (`/me`) and for a call site whose own check reads
 /// these same sources. If you are feeding a ring, take [`platform_standing_checked`] and
 /// decide for yourself what unknown means.
-pub async fn platform_standing(db: &DatabaseConnection, email: &str) -> PlatformStanding {
-    for_display(platform_standing_checked(db, email).await, email)
+pub async fn platform_standing(db: &DatabaseConnection, email: &str) -> PlatformFlags {
+    for_display(
+        platform_standing_checked(db, email).await.map(|c| c.flags),
+        email,
+    )
 }
 
 /// How an unknown standing collapses for display. Split out from [`platform_standing`]
 /// only so it is reachable without a database — this one line IS the bug that motivated
 /// the split (`unwrap_or_default()` here silently un-owned a Global Owner), so it should
 /// be pinned by a test rather than reviewed by eye.
-fn for_display(known: Option<PlatformStanding>, email: &str) -> PlatformStanding {
+fn for_display(known: Option<PlatformFlags>, email: &str) -> PlatformFlags {
     known.unwrap_or_else(|| platform_standing_offline(email))
 }
 
@@ -179,21 +301,44 @@ mod tests {
     /// longer reaches into `custom_apps_auth` for it (that import was a cycle). A
     /// cache that dropped writes would re-query every call — correctness-neutral but
     /// the point of the cache — so pin the round-trip.
+    ///
+    /// It now stores the whole GRANT rather than a bool, so the round-trip has to
+    /// prove the role and scope survive too — a cache that dropped them would answer
+    /// "is staff" correctly while silently widening an App Operator to whatever the
+    /// re-derived default was.
     #[test]
-    fn admin_cache_round_trips_a_stored_verdict() {
+    fn admin_cache_round_trips_a_stored_grant() {
         let email = "admin-cache-probe@oxy.tech";
         assert_eq!(cached_admin(email), None, "a cold cache misses");
-        set_cached_admin(email.to_string(), true);
+
+        let scoped = Grant::from_role(
+            PlatformRole::AppOperator,
+            Scope::Orgs(vec![uuid::Uuid::from_u128(7)]),
+        );
+        set_cached_admin(email.to_string(), Some(scoped.clone()));
         assert_eq!(
             cached_admin(email),
-            Some(true),
-            "a warm cache returns the stored verdict, not a re-query"
+            Some(Some(scoped)),
+            "a warm cache returns the stored grant — role and scope included — not a re-query"
+        );
+    }
+
+    /// "Looked, and they are not staff" must cache as a hit, or every anonymous-ish
+    /// request re-queries `app_admins`.
+    #[test]
+    fn admin_cache_stores_a_negative_verdict_as_a_hit() {
+        let email = "not-staff-probe@example.com";
+        set_cached_admin(email.to_string(), None);
+        assert_eq!(
+            cached_admin(email),
+            Some(None),
+            "a cached 'not staff' is a hit, not a miss"
         );
     }
 
     /// The regression this exists to prevent: a DB outage must not un-own an owner.
     ///
-    /// Both halves used to collapse together onto `PlatformStanding::default()`, which
+    /// Both halves used to collapse together onto `PlatformFlags::default()`, which
     /// reported `is_owner: false` at a Global Owner and hid their own UI — over a
     /// failure in a table their standing never depended on.
     #[test]
@@ -223,7 +368,7 @@ mod tests {
 
         assert_eq!(
             standing,
-            PlatformStanding::default(),
+            PlatformFlags::default(),
             "a caller not on the allow-list has no standing to report offline"
         );
     }
@@ -237,7 +382,7 @@ mod tests {
         unsafe { std::env::set_var("OXY_OWNER", "owner@oxy.tech") };
         let unknown = for_display(None, "owner@oxy.tech");
         let known = for_display(
-            Some(PlatformStanding {
+            Some(PlatformFlags {
                 is_global_owner: true,
                 is_global_admin: true,
             }),

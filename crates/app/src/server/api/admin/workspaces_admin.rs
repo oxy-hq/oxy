@@ -19,6 +19,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::server::api::admin::scope;
 use crate::server::router::AppState;
 
 pub(crate) fn router() -> Router<AppState> {
@@ -218,6 +219,7 @@ fn sql_placeholders(n: usize) -> String {
 }
 
 pub async fn get_workspace_detail(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<Json<AdminWorkspaceDetail>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
@@ -226,6 +228,9 @@ pub async fn get_workspace_detail(
         .await
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    // Scope: keyed by the workspace's OWNING org, resolved above — a workspace is not
+    // itself scopeable, so the fence has to read through it. See `admin::scope`.
+    scope::deny_out_of_scope_opt(&db, &actor, ws.org_id).await?;
 
     let member_count = workspace_members::Entity::find()
         .filter(workspace_members::Column::WorkspaceId.eq(ws.id))
@@ -282,6 +287,9 @@ pub async fn update_workspace(
         .await
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    // Scope: keyed by the workspace's OWNING org, resolved above — a workspace is not
+    // itself scopeable, so the fence has to read through it. See `admin::scope`.
+    scope::deny_out_of_scope_opt(&db, &actor, ws.org_id).await?;
 
     let mut active: workspaces::ActiveModel = ws.into();
     if let Some(name) = trimmed_name {
@@ -303,6 +311,14 @@ pub async fn delete_workspace(
     Path(workspace_id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
+    // Resolve the workspace BEFORE deleting it, purely so its org can be fenced — the
+    // handler had no lookup at all, which is exactly why it was reachable unscoped.
+    let ws = workspaces::Entity::find_by_id(workspace_id)
+        .one(&db)
+        .await
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    scope::deny_out_of_scope_opt(&db, &actor, ws.org_id).await?;
     let res = workspaces::Entity::delete_by_id(workspace_id)
         .exec(&db)
         .await
@@ -347,6 +363,9 @@ pub async fn transfer_org(
     Json(body): Json<TransferOrgBody>,
 ) -> Result<StatusCode, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
+    // Both ends: fencing only the source would let a bounded grant move a workspace it
+    // legitimately holds INTO an org it has no reach over.
+    scope::deny_out_of_scope(&db, &actor, body.new_org_id).await?;
     organizations::Entity::find_by_id(body.new_org_id)
         .one(&db)
         .await
@@ -358,6 +377,9 @@ pub async fn transfer_org(
         .await
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    // Scope: keyed by the workspace's OWNING org, resolved above — a workspace is not
+    // itself scopeable, so the fence has to read through it. See `admin::scope`.
+    scope::deny_out_of_scope_opt(&db, &actor, ws.org_id).await?;
 
     let mut active: workspaces::ActiveModel = ws.into();
     active.org_id = Set(Some(body.new_org_id));

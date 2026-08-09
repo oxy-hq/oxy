@@ -5,6 +5,7 @@ pub mod prelude;
 pub mod admin_assume_sessions;
 pub mod apalis_jobs;
 pub mod api_keys;
+pub mod app_admin_scope_orgs;
 pub mod app_admins;
 pub mod app_builds;
 pub mod app_function_invocations;

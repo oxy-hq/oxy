@@ -105,7 +105,8 @@ pub async fn load_principal_facts_scoped(
     // means threading fallibility through `resolve_scope`, whose 404-vs-403 existence
     // hiding has to be decided rather than mechanically rewritten. So `Some` here means
     // the loader's OWN reads succeeded, not that every fact in it is known-good.
-    let partners = load_partner_standings(db, &memberships, user_id, standing.is_staff()).await;
+    let partners =
+        load_partner_standings(db, &memberships, user_id, standing.flags.is_staff()).await;
     let ws_admin_override = if include_workspace_facts {
         load_ws_admin_override(db, user_id).await?
     } else {
@@ -126,17 +127,17 @@ pub async fn load_principal_facts_scoped(
         ws_admin_override,
         app_memberships,
         app_admin_memberships,
-        is_global_admin: standing.is_global_admin,
-        is_global_owner: standing.is_global_owner,
+        platform: standing.grant,
+        is_global_owner: standing.flags.is_global_owner,
     })
 }
 
-/// Facts for a PLATFORM decision (Oxy's operator surfaces): the two global flags only.
+/// Facts for a PLATFORM decision (Oxy's operator surfaces): the platform grant only.
 ///
 /// The platform rings read nothing else — no org set can reach the `Platform`
 /// singleton — so this skips every org / partner / workspace query. An admin route
-/// must not pay for tenant facts it never consults. `is_app_admin_email` is itself
-/// cached, so this is ~free.
+/// must not pay for tenant facts it never consults. The grant read is itself cached,
+/// so this is ~free.
 pub async fn load_platform_facts(
     db: &DatabaseConnection,
     user_id: Uuid,
@@ -145,8 +146,8 @@ pub async fn load_platform_facts(
     let standing = globals::platform_standing_checked(db, email).await?;
     Some(PrincipalFacts {
         user_id,
-        is_global_admin: standing.is_global_admin,
-        is_global_owner: standing.is_global_owner,
+        platform: standing.grant,
+        is_global_owner: standing.flags.is_global_owner,
         ..Default::default()
     })
 }

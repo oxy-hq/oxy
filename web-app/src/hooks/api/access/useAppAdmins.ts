@@ -2,7 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { toast } from "sonner";
 import { AppAdminsService } from "@/services/api/access";
+import type { CreateAppAdminInput, PlatformRoleId } from "@/types/access";
 import queryKeys from "../queryKey";
+
+/**
+ * Display names for the platform roles. The ids are a wire contract shared with
+ * `oxy_authz::PlatformRole::as_str` and persisted in the grant table; these labels are
+ * only what a human reads.
+ */
+export const ROLE_LABELS: Record<PlatformRoleId, string> = {
+  global_admin: "Global Admin",
+  app_operator: "App Operator"
+};
 
 export const useAppAdmins = () =>
   useQuery({
@@ -13,17 +24,24 @@ export const useAppAdmins = () =>
 export const useCreateAppAdmin = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (email: string) => AppAdminsService.create(email),
-    onSuccess: () => {
+    mutationFn: (input: CreateAppAdminInput) => AppAdminsService.create(input),
+    onSuccess: (grant) => {
       qc.invalidateQueries({ queryKey: queryKeys.appAdmins.list() });
-      toast.success("Global Admin added");
+      // Report the role the SERVER returned, not the one submitted, and say "saved"
+      // rather than "added" — the endpoint upserts, so this is equally the path for
+      // downgrading someone. Naming the outcome from the response is what stops the
+      // UI claiming a change that the server didn't make.
+      const reach = grant.scope_all
+        ? "all organizations"
+        : `${grant.scope_org_ids.length} organization${grant.scope_org_ids.length === 1 ? "" : "s"}`;
+      toast.success(`${ROLE_LABELS[grant.role] ?? grant.role} saved — ${reach}`);
     },
     onError: (err) => {
       const message = isAxiosError(err)
         ? (err.response?.data?.message ?? err.message)
         : err instanceof Error
           ? err.message
-          : "Failed to add app admin";
+          : "Failed to add staff access";
       toast.error(message);
     }
   });
@@ -35,7 +53,7 @@ export const useRemoveAppAdmin = () => {
     mutationFn: (id: string) => AppAdminsService.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.appAdmins.list() });
-      toast.success("Global Admin removed");
+      toast.success("Staff access removed");
     },
     onError: (err) => {
       const message = isAxiosError(err)

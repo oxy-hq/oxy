@@ -1,11 +1,28 @@
 //! `/api/admin/app-publish-tokens` — CRUD for app publish tokens (machine-auth bearer
 //! credentials, primarily for `oxy publish` in CI).
 //!
-//! Sits behind the permissive `/admin` guard (OXY_OWNER **or** app_admins),
-//! so any global app-admin can mint, list, or revoke tokens — tokens are
-//! "managed across admins", not owned by their minter. The plaintext is
-//! returned **once** on create and never stored; only a SHA-256 hash and a
-//! non-secret display prefix are persisted.
+//! Sits behind the `/admin` door plus `Cap::ManageApps` (publishing is what these are
+//! for). The plaintext is returned **once** on create and never stored; only a SHA-256
+//! hash and a non-secret display prefix are persisted.
+//!
+//! ## Tokens are owned by their minter
+//!
+//! This module used to state the opposite — "managed across admins, not owned by their
+//! minter" — and that was a fair rule while every admin was the same homogeneous staff
+//! population, all equally entitled to everything.
+//!
+//! The capability split falsified that premise. `Cap::ManageApps` is now held by App
+//! Operators, who never existed when the rule was written, so an unfiltered list plus an
+//! id-addressed revoke means a grant bounded to a single tenant can enumerate and revoke
+//! **every Oxy engineer's CI publish token** — a cross-operator denial of service with no
+//! boundary at all.
+//!
+//! So list and revoke are scoped to the caller's own tokens, and the shared cross-admin
+//! view is what `Cap::OperatePlatform` buys — the capability that already means "operates
+//! Oxy's own machinery". Minting is unrestricted and needs no boundary: a staff token
+//! carries `app_id: None`, and `custom_apps_publish_authz::resolve_actor` re-resolves the
+//! minter's own capability and scope at publish time, so a token can never out-reach the
+//! person holding it.
 //!
 //! A live token authenticates as its minting app-admin **only on the
 //! customer-apps admin surface** — see the `app_publish_token_scope` middleware and
@@ -24,7 +41,7 @@ use entity::prelude::AppPublishTokens;
 use oxy::database::client::establish_connection;
 use oxy_auth::app_publish_token_domain::generate_token;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
-use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait, QueryOrder};
+use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -135,19 +152,30 @@ pub async fn create_token(
     }))
 }
 
-pub async fn list_tokens() -> Result<Json<Vec<TokenResponse>>, StatusCode> {
+/// Does this caller get the shared cross-admin view of every staff token?
+///
+/// `Cap::OperatePlatform` — the "operates Oxy's own machinery" capability. Held by
+/// Global Admins and owners, not by App Operators, which is exactly the line: fleet
+/// operators audit the token estate; an app publisher manages their own credential.
+async fn sees_all_tokens(db: &sea_orm::DatabaseConnection, email: &str) -> bool {
+    crate::server::authz::globals::platform_holds(db, email, oxy_authz::Cap::OperatePlatform).await
+}
+
+pub async fn list_tokens(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+) -> Result<Json<Vec<TokenResponse>>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("list_tokens DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let rows = AppPublishTokens::find()
-        .order_by_desc(app_publish_tokens::Column::CreatedAt)
-        .all(&db)
-        .await
-        .map_err(|e| {
-            tracing::error!("list_tokens query failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let mut query = AppPublishTokens::find().order_by_desc(app_publish_tokens::Column::CreatedAt);
+    if !sees_all_tokens(&db, &actor.email).await {
+        query = query.filter(app_publish_tokens::Column::CreatedBy.eq(actor.id));
+    }
+    let rows = query.all(&db).await.map_err(|e| {
+        tracing::error!("list_tokens query failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Ok(Json(rows.into_iter().map(Into::into).collect()))
 }
 
@@ -216,7 +244,10 @@ mod tests {
     }
 }
 
-pub async fn revoke_token(Path(id): Path<Uuid>) -> Result<Json<TokenResponse>, StatusCode> {
+pub async fn revoke_token(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<TokenResponse>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("revoke_token DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -230,6 +261,13 @@ pub async fn revoke_token(Path(id): Path<Uuid>) -> Result<Json<TokenResponse>, S
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Revoking someone else's token is a fleet-operator action, not an app-publishing
+    // one — see the module docs. 404 rather than 403, so a bounded caller can't confirm
+    // another operator's token exists by probing ids.
+    if token.created_by != Some(actor.id) && !sees_all_tokens(&db, &actor.email).await {
+        return Err(StatusCode::NOT_FOUND);
+    }
 
     // Idempotent: re-revoking an already-revoked token is a no-op success.
     if token.revoked_at.is_some() {

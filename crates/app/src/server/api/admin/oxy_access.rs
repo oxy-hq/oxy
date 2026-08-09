@@ -18,6 +18,7 @@ use axum::http::StatusCode;
 use entity::prelude::{Organizations, Users, WorkspaceOxyLockdown, Workspaces};
 use entity::{organizations, users, workspace_oxy_lockdown, workspaces};
 use oxy::database::client::establish_connection;
+use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Serialize;
 use uuid::Uuid;
@@ -39,14 +40,26 @@ pub struct OxyAccessRow {
     pub locked_at: Option<String>,
 }
 
-pub async fn list_grants() -> Result<Json<Vec<OxyAccessRow>>, StatusCode> {
+pub async fn list_grants(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+) -> Result<Json<Vec<OxyAccessRow>>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("oxy-access list: DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
     // Every workspace is a candidate now — access is the default.
-    let all_ws = Workspaces::find().all(&db).await.map_err(db_err)?;
+    let mut query = Workspaces::find();
+    // Scope exception #3 (see `app_scope_guard`): this route names no app at all — it
+    // browses every org's workspaces to populate the "Add custom app" picker. A bounded
+    // grant must see only its own orgs here, or the picker becomes a cross-tenant
+    // directory listing.
+    if let Some(orgs) =
+        crate::server::api::admin::apps::handlers::scope_org_filter(&db, &user).await
+    {
+        query = query.filter(workspaces::Column::OrgId.is_in(orgs));
+    }
+    let all_ws = query.all(&db).await.map_err(db_err)?;
     if all_ws.is_empty() {
         return Ok(Json(vec![]));
     }

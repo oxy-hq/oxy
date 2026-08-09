@@ -15,12 +15,14 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/shadcn/table";
 import { useAdminUsersList } from "@/hooks/api/adminTenants/useAdminUsers";
 import ROUTES from "@/libs/utils/routes";
-import type { UserStatusId } from "@/services/api/adminTenants";
+import type { UserRoleFilter, UserStatusId } from "@/services/api/adminTenants";
 import { AdminStatusPill } from "../components/AdminStatusPill";
 import { ADMIN_HEADER_ROW_CLASS, ADMIN_ROW_CLASS, AdminTh } from "../components/AdminTable";
-import { orgRoleKind, RoleBadge } from "../components/RoleBadge";
+import { orgRoleKind, platformRoleKind, RoleBadge } from "../components/RoleBadge";
 
 type StatusFilter = "all" | UserStatusId;
+/** `staff` = any platform grant; the two role ids narrow to one. */
+type RoleFilter = "all" | UserRoleFilter;
 
 /**
  * `/admin/users` — OXY_OWNER-only directory of every user across every
@@ -31,6 +33,9 @@ export default function AdminUsers() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
+  // Role filter. Narrows server-side (before pagination), so a filtered page is a
+  // real page rather than whatever survived a client-side pass over 50 rows.
+  const [role, setRole] = useState<RoleFilter>("all");
 
   const {
     data: users = [],
@@ -39,7 +44,8 @@ export default function AdminUsers() {
     refetch
   } = useAdminUsersList({
     search,
-    status: status === "all" ? undefined : status
+    status: status === "all" ? undefined : status,
+    role: role === "all" ? undefined : role
   });
 
   return (
@@ -47,8 +53,8 @@ export default function AdminUsers() {
       <div className='mb-6'>
         <h1 className='font-semibold text-xl tracking-tight'>Users</h1>
         <p className='mt-1 text-muted-foreground text-xs'>
-          Every user across the deployment. Inspect org memberships, manage app-admin role, and
-          deactivate accounts.
+          Every user across the deployment. Filter by role to find who holds staff access, inspect
+          org memberships, and deactivate accounts.
         </p>
       </div>
 
@@ -70,6 +76,20 @@ export default function AdminUsers() {
                 className='pl-8'
               />
             </form>
+
+            <Select value={role} onValueChange={(v) => setRole(v as RoleFilter)}>
+              <SelectTrigger className='w-40' data-testid='admin-users-role-filter'>
+                <SelectValue placeholder='Any role' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>Any role</SelectItem>
+                {/* "Staff" first: the question this filter exists for is "who can get
+                    into the console", and the two roles below narrow it. */}
+                <SelectItem value='staff'>Staff (any)</SelectItem>
+                <SelectItem value='global_admin'>Global Admin</SelectItem>
+                <SelectItem value='app_operator'>App Operator</SelectItem>
+              </SelectContent>
+            </Select>
 
             <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
               <SelectTrigger className='w-36'>
@@ -130,7 +150,16 @@ export default function AdminUsers() {
                             {u.name || u.email}
                             {/* The three authorities are different in KIND, so they
                                 stack rather than collapse into one label. */}
-                            {u.is_app_admin && <RoleBadge kind='global_admin' />}
+                            {(() => {
+                              const kind = platformRoleKind(u.platform_role);
+                              return kind ? <RoleBadge kind={kind} /> : null;
+                            })()}
+                            {u.platform_role && !u.platform_scope_all && (
+                              <span className='text-[10px] text-muted-foreground'>
+                                {u.platform_scope_org_count} org
+                                {u.platform_scope_org_count === 1 ? "" : "s"}
+                              </span>
+                            )}
                             {u.top_org_role && <RoleBadge kind={orgRoleKind(u.top_org_role)} />}
                             {/* Delegated cross-org authority via a partner grant —
                                 one operator badge per partner they operate. */}

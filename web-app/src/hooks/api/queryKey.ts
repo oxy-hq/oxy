@@ -669,8 +669,10 @@ const adminExplorerKeys = {
 
 const adminUsersKeys = {
   all: ["admin", "users"] as const,
-  list: (search?: string, status?: string) =>
-    [...adminUsersKeys.all, "list", search ?? "", status ?? ""] as const,
+  // `role` is part of the key: without it, switching the role filter serves the
+  // previous filter's page from cache and the list silently disagrees with the control.
+  list: (search?: string, status?: string, role?: string) =>
+    [...adminUsersKeys.all, "list", search ?? "", status ?? "", role ?? ""] as const,
   detail: (userId: string) => [...adminUsersKeys.all, "detail", userId] as const
 };
 

@@ -29,6 +29,7 @@ pub mod run;
 pub mod seed;
 mod seed_apps;
 mod seed_partners;
+mod seed_platform_grants;
 pub(crate) mod serve;
 mod start;
 mod status;

@@ -28,10 +28,21 @@
 //!   a synthetic Owner/Admin with `is_global_override`).
 //! * `authz::loader` → the [`PrincipalFacts`] [`allows`] reads.
 
-use oxy_authz::{Action, Cap, PartnerStanding, PrincipalFacts, Resource, allows};
+use oxy_authz::{
+    Action, Cap, PartnerStanding, PlatformRole, PlatformStanding, PrincipalFacts, Resource, Scope,
+    allows,
+};
 use uuid::Uuid;
 
 use entity::org_members::OrgRole;
+
+/// The Global Admin preset — exactly what `is_global_admin: true` meant before staff
+/// standing became a grant. Every scenario below keeps the meaning it was written with,
+/// which is what makes these tests evidence that the capability split is non-breaking
+/// rather than a rewrite of the oracle.
+fn global_admin() -> PlatformStanding {
+    PlatformStanding::from_role(PlatformRole::GlobalAdmin, Scope::All)
+}
 
 fn org() -> Uuid {
     Uuid::from_u128(1)
@@ -94,7 +105,7 @@ fn scenarios() -> Vec<Scenario> {
             ctx_role: OrgRole::Owner,
             ctx_override: true,
             facts: PrincipalFacts {
-                is_global_admin: true,
+                platform: Some(global_admin()),
                 ..base()
             },
         },
@@ -116,7 +127,7 @@ fn scenarios() -> Vec<Scenario> {
             ctx_override: false,
             facts: PrincipalFacts {
                 member_orgs: vec![org()],
-                is_global_admin: true,
+                platform: Some(global_admin()),
                 ..base()
             },
         },
@@ -127,7 +138,7 @@ fn scenarios() -> Vec<Scenario> {
             facts: PrincipalFacts {
                 admin_orgs: vec![org()],
                 member_orgs: vec![org()],
-                is_global_admin: true,
+                platform: Some(global_admin()),
                 ..base()
             },
         },
@@ -244,7 +255,7 @@ impl AppScenario {
                     }]
                 }
             },
-            is_global_admin: self.is_staff,
+            platform: self.is_staff.then(global_admin),
             ..Default::default()
         }
     }

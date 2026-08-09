@@ -1,5 +1,6 @@
 pub mod api_key_query;
 pub mod app_publish_token_scope;
+pub mod app_scope_guard;
 pub mod local_context;
 pub mod org_context;
 pub mod oxy_app_admin_guard;
@@ -7,6 +8,7 @@ pub mod oxy_owner_guard;
 pub mod oxy_owner_or_app_admin_guard;
 pub mod partner_authz;
 pub mod partner_context;
+pub mod platform_cap_guard;
 pub mod role_guards;
 pub mod subscription_guard;
 pub mod timeout;

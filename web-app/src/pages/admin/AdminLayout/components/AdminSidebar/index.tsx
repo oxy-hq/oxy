@@ -27,6 +27,7 @@ import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import { useWorkspaceHealth } from "@/hooks/api/workspaceHealth/useWorkspaceHealth";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import type { PlatformCapability } from "@/types/auth";
 import { Footer } from "./components/Footer";
 
 type AdminNavItem = {
@@ -35,8 +36,13 @@ type AdminNavItem = {
   icon: ComponentType<{ className?: string }>;
   /** When true, render only for Global Owners (the OXY_OWNER env-var allow-list). */
   ownerOnly?: boolean;
-  /** When true, render for either Global Owners or Global Admins (`app_admins` table). */
-  adminOrAppAdmin?: boolean;
+  /**
+   * The platform capability this page needs — the same one its router gate names in
+   * `crates/app/src/server/api/admin/mod.rs`. Keeping the two in step is what stops the
+   * nav from offering a room the server will 403; when they drift, the server wins and
+   * the user gets a dead link.
+   */
+  capability?: PlatformCapability;
   /** Logical grouping label shown above the items. */
   group: "operations" | "tenants";
 };
@@ -55,35 +61,35 @@ const ADMIN_NAV: AdminNavItem[] = [
     to: ROUTES.ADMIN.FEATURE_FLAGS,
     label: "Feature flags",
     icon: Flag,
-    adminOrAppAdmin: true,
+    capability: "operate_platform",
     group: "operations"
   },
   {
     to: ROUTES.ADMIN.INTERNAL_JOBS,
     label: "Internal jobs",
     icon: Activity,
-    adminOrAppAdmin: true,
+    capability: "operate_platform",
     group: "operations"
   },
   {
     to: ROUTES.ADMIN.COMPILES,
     label: "Compile revisions",
     icon: FileCheck,
-    adminOrAppAdmin: true,
+    capability: "operate_platform",
     group: "operations"
   },
   {
     to: ROUTES.ADMIN.EXPLORER,
     label: "Explorer",
     icon: Telescope,
-    adminOrAppAdmin: true,
+    capability: "view_tenants",
     group: "operations"
   },
   {
     to: ROUTES.ADMIN.AUDIT,
     label: "Audit log",
     icon: ScrollText,
-    adminOrAppAdmin: true,
+    capability: "view_audit",
     group: "operations"
   },
   // "Global admins" manages the `app_admins` table itself — "promotion /
@@ -99,7 +105,7 @@ const ADMIN_NAV: AdminNavItem[] = [
     to: ROUTES.ADMIN.CUSTOMER_APPS,
     label: "Custom apps",
     icon: AppWindow,
-    adminOrAppAdmin: true,
+    capability: "manage_apps",
     group: "operations"
   },
   // Publish tokens now lives as a tab inside Custom apps (/admin/apps?view=tokens),
@@ -108,7 +114,7 @@ const ADMIN_NAV: AdminNavItem[] = [
     to: ROUTES.ADMIN.WORKSPACE_HEALTH,
     label: "Workspace health",
     icon: HeartPulse,
-    adminOrAppAdmin: true,
+    capability: "operate_platform",
     group: "operations"
   },
   // Tenant management: the unified, relationship-first directory of orgs /
@@ -120,21 +126,21 @@ const ADMIN_NAV: AdminNavItem[] = [
     to: `${ROUTES.ADMIN.TENANTS}?type=orgs`,
     label: "Organizations",
     icon: Building2,
-    adminOrAppAdmin: true,
+    capability: "manage_org_settings",
     group: "tenants"
   },
   {
     to: `${ROUTES.ADMIN.TENANTS}?type=partners`,
     label: "Partners",
     icon: Handshake,
-    adminOrAppAdmin: true,
+    capability: "manage_partners",
     group: "tenants"
   },
   {
     to: `${ROUTES.ADMIN.TENANTS}?type=users`,
     label: "Users",
     icon: Users,
-    adminOrAppAdmin: true,
+    capability: "manage_members",
     group: "tenants"
   }
 ];
@@ -146,7 +152,7 @@ export function AdminSidebar() {
   const currentTenantType = new URLSearchParams(location.search).get("type") ?? "orgs";
   const { data: user } = useCurrentUser();
   const isOwner = user?.is_owner ?? false;
-  const isAppAdmin = user?.is_app_admin ?? false;
+  const capabilities = user?.platform_capabilities ?? [];
 
   // Surface a count of workspaces needing attention right on the nav item,
   // so operators see trouble without opening the Workspace health page.
@@ -155,17 +161,20 @@ export function AdminSidebar() {
   const attentionCount = health?.workspaces.filter((ws) => ws.status !== "healthy").length ?? 0;
   const hasUnhealthy = health?.workspaces.some((ws) => ws.status === "unhealthy") ?? false;
 
+  // One rule per item, in the same order the server applies them: owner-only rooms are
+  // a boolean the capability model deliberately cannot reach (the Billing queue and the
+  // grant table itself); everything else asks for a capability. An item with neither is
+  // open to any staff member who got through the console door.
   const visibleItems = ADMIN_NAV.filter((item) => {
     if (item.ownerOnly) return isOwner;
-    if (item.adminOrAppAdmin) return isOwner || isAppAdmin;
+    if (item.capability) return capabilities.includes(item.capability);
     return true;
   });
 
-  // Logo link goes to the first visible admin route. App-admin-only users
-  // land on Customer apps (their only admin surface); owners land on the
-  // billing queue (their operational home). Falls back to `/` only when the
-  // user has no admin access at all — the layout-level guard should have
-  // already redirected them in that case.
+  // Logo link goes to the first visible admin route, so each role lands somewhere it
+  // can actually use: an App Operator on Custom apps, an owner on the billing queue.
+  // Falls back to `/` only when the user has no admin access at all — the layout-level
+  // guard should have already redirected them in that case.
   const logoTarget = visibleItems[0]?.to ?? "/";
 
   return (

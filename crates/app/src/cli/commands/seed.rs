@@ -78,6 +78,10 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
     // DB, so this stays safe to run anywhere the demo-workspace seed runs.
     super::seed_partners::seed_partner_tenants(&resolved_str).await?;
 
+    // After the tenants (the Acme-scoped grant needs Acme to exist) and before the
+    // apps summary, so the output reads: tenants → staff → what they can see.
+    super::seed_platform_grants::seed_platform_grants().await?;
+
     deploy_example_apps(&conn, workspace_id, &resolved_str).await;
 
     println!();
@@ -278,6 +282,18 @@ pub async fn clear_demo() -> Result<(), OxyError> {
     // workspace that no longer exists, and their bundle bytes would sit on disk
     // with nothing left to reference them.
     let apps = super::seed_apps::clear_example_apps(&conn).await?;
+
+    // Staff grants are keyed by email, not by workspace or org, so nothing else in
+    // this teardown reaches them — left behind, they would keep granting console
+    // access to accounts the developer believes they deleted.
+    let grants = super::seed_platform_grants::clear_platform_grants(&conn).await?;
+    if grants > 0 {
+        println!(
+            "{} cleared {grants} seeded platform grant{}",
+            "🧹".info(),
+            if grants == 1 { "" } else { "s" }
+        );
+    }
 
     let deleted = Workspaces::delete_by_id(demo_workspace_id())
         .exec(&conn)

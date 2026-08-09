@@ -28,6 +28,7 @@ use entity::{
 };
 use oxy::database::client::establish_connection;
 use oxy_app::server::authz::loader::load_principal_facts;
+use oxy_authz::{Action, PlatformRole, Resource, allows};
 use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
 use uuid::Uuid;
 
@@ -95,15 +96,43 @@ async fn seed_membership(
 }
 
 async fn seed_app_admin(conn: &DatabaseConnection, email: &str) {
+    seed_platform_grant(conn, email, PlatformRole::GlobalAdmin, None).await;
+}
+
+/// Seed a platform grant. `scope` of `None` is unbounded; `Some(orgs)` writes
+/// `scope_all = false` plus the child rows.
+async fn seed_platform_grant(
+    conn: &DatabaseConnection,
+    email: &str,
+    role: PlatformRole,
+    scope: Option<&[Uuid]>,
+) {
+    let id = Uuid::new_v4();
     app_admins::ActiveModel {
-        id: ActiveValue::Set(Uuid::new_v4()),
+        id: ActiveValue::Set(id),
         email: ActiveValue::Set(email.to_string()),
         granted_by: ActiveValue::Set(None),
         created_at: ActiveValue::NotSet,
+        role: ActiveValue::Set(role.as_str().to_string()),
+        scope_all: ActiveValue::Set(scope.is_none()),
+        updated_at: ActiveValue::NotSet,
     }
     .insert(conn)
     .await
     .expect("seed app_admin");
+
+    for org_id in scope.unwrap_or_default() {
+        entity::app_admin_scope_orgs::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            app_admin_id: ActiveValue::Set(id),
+            org_id: ActiveValue::Set(*org_id),
+            created_at: ActiveValue::NotSet,
+            created_by: ActiveValue::Set(None),
+        }
+        .insert(conn)
+        .await
+        .expect("seed app_admin scope org");
+    }
 }
 
 /// The **positive** Global-Admin grant — the direction `app_admins` membership actually
@@ -126,9 +155,91 @@ async fn loader_grants_global_admin_to_an_app_admins_member() {
         .await
         .expect("loader must resolve facts against a live seeded database");
     assert!(
-        facts.is_global_admin,
+        facts.is_global_admin(),
         "a user seeded into app_admins must load as Global Admin — the elevation path that \
          only the negative case was guarding"
+    );
+}
+
+/// **The capability split, against real rows.** The unit tests hand-build
+/// `PlatformStanding`, so they test an *assumption* about the loader. This is the one
+/// that tests the loader: seed an `app_operator` grant and prove the role survives the
+/// round trip, so the app rings open and org deletion does not.
+///
+/// A loader that ignored `role` and kept minting Global Admins would pass every unit
+/// test in `oxy-authz` and fail here.
+#[tokio::test]
+async fn loader_reads_the_role_so_an_app_operator_cannot_delete_an_org() {
+    if db_unavailable() {
+        eprintln!("skipping: OXY_DATABASE_URL unset");
+        return;
+    }
+    let conn = establish_connection().await.expect("db connect");
+
+    let (user_id, email) = seed_user(&conn).await;
+    let org_id = seed_org(&conn).await;
+    seed_platform_grant(&conn, &email, PlatformRole::AppOperator, None).await;
+
+    let facts = load_principal_facts(&conn, user_id, &email)
+        .await
+        .expect("loader must resolve facts against a live seeded database");
+
+    assert!(
+        allows(
+            &facts,
+            Action::AppAdmin,
+            &Resource::app(Uuid::new_v4(), org_id)
+        ),
+        "an app operator must reach the app rings — the role has to be useful"
+    );
+    assert!(
+        !allows(&facts, Action::OrgOwnerManage, &Resource::org(org_id)),
+        "an app operator must NOT reach org deletion; if this fails the loader is \
+         discarding `role` and every grant is a Global Admin again"
+    );
+    assert!(
+        !allows(&facts, Action::MemberInvite, &Resource::org(org_id)),
+        "nor org member management"
+    );
+}
+
+/// Scope, against real rows: a bounded grant reaches its own orgs and no others.
+///
+/// Pins the child-table read AND the fail-closed direction — `scope_all = false` with
+/// rows for org A must not resolve to "everything" for org B.
+#[tokio::test]
+async fn loader_reads_scope_rows_and_fences_tenant_reach() {
+    if db_unavailable() {
+        eprintln!("skipping: OXY_DATABASE_URL unset");
+        return;
+    }
+    let conn = establish_connection().await.expect("db connect");
+
+    let (user_id, email) = seed_user(&conn).await;
+    let in_scope = seed_org(&conn).await;
+    let out_of_scope = seed_org(&conn).await;
+    seed_platform_grant(&conn, &email, PlatformRole::AppOperator, Some(&[in_scope])).await;
+
+    let facts = load_principal_facts(&conn, user_id, &email)
+        .await
+        .expect("loader must resolve facts against a live seeded database");
+
+    assert!(
+        allows(
+            &facts,
+            Action::AppAdmin,
+            &Resource::app(Uuid::new_v4(), in_scope)
+        ),
+        "the granted org must be reachable"
+    );
+    assert!(
+        !allows(
+            &facts,
+            Action::AppAdmin,
+            &Resource::app(Uuid::new_v4(), out_of_scope)
+        ),
+        "an org outside the grant's scope must not be reachable — scope is loaded from \
+         app_admin_scope_orgs, and dropping that read reads as unbounded"
     );
 }
 
@@ -226,7 +337,7 @@ async fn loader_gives_no_partner_sets_to_an_ordinary_member() {
          errored, which every caller reads as unknown-not-absent",
     );
     assert!(facts.partners.is_empty());
-    assert!(!facts.is_global_admin, "not seeded into app_admins");
+    assert!(!facts.is_global_admin(), "not seeded into app_admins");
 }
 
 /// The partner path end-to-end, and the distinction that a mis-model would have leaked:

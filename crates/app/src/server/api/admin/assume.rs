@@ -170,9 +170,23 @@ pub async fn may_act_as(
     user_email: &str,
     org_id: Uuid,
 ) -> Option<ActingAs> {
-    if crate::server::authz::globals::platform_standing(db, user_email)
-        .await
-        .is_staff()
+    // Staff acting as a tenant synthesize **Owner** in that org, so this door demands the
+    // capability that gates owner-level authority (`ManageOrgSettings`) — and honours the
+    // grant's scope, since it is a reach INTO a specific tenant rather than a console
+    // section.
+    //
+    // `is_staff()` alone would reopen exactly the hole the doc comment above warns about:
+    // an App Operator holds neither capability, and their legitimate reach into a tenant
+    // is the app data plane (`Ring::AppAccess` via `develop_apps`), which needs no
+    // impersonation at all. A Global Admin holds `ManageOrgSettings` at `Scope::All`, so
+    // nothing changes for them.
+    if crate::server::authz::globals::platform_reaches(
+        db,
+        user_email,
+        oxy_authz::Cap::ManageOrgSettings,
+        org_id,
+    )
+    .await
     {
         return Some(ActingAs::Staff);
     }
@@ -397,10 +411,17 @@ pub async fn history(
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<SessionDto>>, StatusCode> {
     let db = db().await?;
-    let staff = crate::server::authz::globals::platform_standing(&db, &actor.email)
+    // The impersonation log spans every tenant, so it is an audit read — `ViewAudit`,
+    // not merely "is staff". An App Operator has no business reading who impersonated
+    // whom across the platform.
+    let facts = crate::server::authz::loader::load_platform_facts(&db, actor.id, &actor.email)
         .await
-        .is_staff();
-    if !staff {
+        .ok_or(StatusCode::FORBIDDEN)?;
+    if !crate::server::authz::allows(
+        &facts,
+        crate::server::authz::Action::PlatformAudit,
+        &crate::server::authz::Resource::platform(),
+    ) {
         return Err(StatusCode::FORBIDDEN);
     }
     let rows = AdminAssumeSessions::find()

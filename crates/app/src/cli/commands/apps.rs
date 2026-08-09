@@ -15,10 +15,7 @@
 //! Template files ship inside the binary via `include_dir!` — same
 //! pattern as `demo_project` in `oxy init`.
 
-use axum::{
-    Json,
-    extract::{Path, Query},
-};
+use axum::Json;
 use clap::Parser;
 use entity::organizations;
 use entity::prelude::Organizations;
@@ -156,7 +153,7 @@ async fn handle_create(
         // with the same args.
         repo_path: None,
     };
-    let resp = handlers::create_app(Json(req))
+    let resp = handlers::create_app_unscoped(Json(req))
         .await
         .map_err(|(sc, body)| {
             OxyError::RuntimeError(format!(
@@ -179,7 +176,9 @@ async fn handle_create(
 }
 
 async fn handle_list() -> Result<(), OxyError> {
-    let resp = handlers::list_apps(Query(handlers::ListAppsQuery::default()))
+    // Unbounded: the CLI runs on the box with direct database access, so there is no
+    // platform grant to narrow it by. Scope is an HTTP-principal concept.
+    let resp = handlers::list_apps_scoped(handlers::ListAppsQuery::default(), None)
         .await
         .map_err(|sc| OxyError::RuntimeError(format!("list_apps failed with status {sc}")))?;
 
@@ -190,7 +189,7 @@ async fn handle_list() -> Result<(), OxyError> {
 }
 
 async fn handle_delete(id: Uuid) -> Result<(), OxyError> {
-    handlers::delete_app(Path(id))
+    handlers::delete_app_unscoped(id)
         .await
         .map_err(|sc| OxyError::RuntimeError(format!("delete_app failed with status {sc}")))?;
     println!("{}", format!("Deleted app {id}").success());

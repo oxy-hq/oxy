@@ -4,11 +4,12 @@ import { Badge } from "@/components/ui/shadcn/badge";
 import { Input } from "@/components/ui/shadcn/input";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useAdminPartners } from "@/hooks/api/adminPartners";
-import { useAdminOrgsList, useAdminUsersList } from "@/hooks/api/adminTenants/index";
+import { useAdminUsersList, useDrainedAdminOrgs } from "@/hooks/api/adminTenants/index";
 import { cn } from "@/libs/shadcn/utils";
-import { RoleBadge } from "@/pages/admin/components/RoleBadge";
+import { platformRoleKind, RoleBadge } from "@/pages/admin/components/RoleBadge";
 import type { TenantType } from "../useTenantSelection";
 import PartnerChip from "./PartnerChip";
+import { type OrgFilter, RailFilters, type UserFilter } from "./RailFilters";
 
 function useDebounced(value: string, ms = 200) {
   const [d, setD] = useState(value);
@@ -46,6 +47,12 @@ export default function TenantRail({
 }) {
   const [search, setSearch] = useState("");
   const q = useDebounced(search);
+  // One state per entity, so an org filter cannot leak onto the user list. The previous
+  // shared-union version needed a reset effect to prevent that, and the effect's dep
+  // array was empty — it ran once on mount, and the rail is never remounted across a
+  // type switch, so it never fired for the transition it existed for.
+  const [orgFilter, setOrgFilter] = useState<OrgFilter>("all");
+  const [userFilter, setUserFilter] = useState<UserFilter>("all");
 
   return (
     <div className='flex h-full flex-col'>
@@ -56,6 +63,10 @@ export default function TenantRail({
           placeholder={`Search ${type}…`}
           className='h-8'
         />
+        {type === "orgs" && <RailFilters type='orgs' value={orgFilter} onChange={setOrgFilter} />}
+        {type === "users" && (
+          <RailFilters type='users' value={userFilter} onChange={setUserFilter} />
+        )}
         {partnerFilter && (
           <button
             type='button'
@@ -71,6 +82,7 @@ export default function TenantRail({
       <div data-testid='tenant-rail-list' className='min-h-0 flex-1 overflow-auto p-1'>
         {type === "orgs" && (
           <OrgListSource
+            filter={orgFilter}
             q={q}
             partnerFilter={partnerFilter}
             selectedId={selectedId}
@@ -78,7 +90,9 @@ export default function TenantRail({
             onPartnerChip={onPartnerChip}
           />
         )}
-        {type === "users" && <UserListSource q={q} selectedId={selectedId} onSelect={onSelect} />}
+        {type === "users" && (
+          <UserListSource filter={userFilter} q={q} selectedId={selectedId} onSelect={onSelect} />
+        )}
         {type === "partners" && (
           <PartnerListSource q={q} selectedId={selectedId} onSelect={onSelect} />
         )}
@@ -149,23 +163,47 @@ function ListSkeleton() {
 
 function OrgListSource({
   q,
+  filter,
   partnerFilter,
   selectedId,
   onSelect,
   onPartnerChip
 }: {
   q: string;
+  filter: OrgFilter;
   partnerFilter: string | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onPartnerChip: (partnerId: string) => void;
 }) {
-  const { data, isPending } = useAdminOrgsList({ search: q || undefined });
+  // Drained, not the capped first page: "Empty" exists to find abandoned tenants, and
+  // a filter that stops at org 50 answers a different question than the one it labels.
+  // Search is applied client-side over the full set for the same reason.
+  // `isLoading` only — the list paints as soon as the FIRST page lands, so typing a
+  // name is not blocked on draining the directory. The chips read the drained set, so
+  // mid-drain "Empty" can briefly under-report on a large deployment; `isDraining` is
+  // exposed for a caller that wants to disable them, and this one deliberately does not
+  // pay a skeleton for it.
+  const { orgs: allOrgs, isLoading: isPending } = useDrainedAdminOrgs();
+  const needle = q.trim().toLowerCase();
+  const data = needle
+    ? allOrgs.filter(
+        (o) => o.name.toLowerCase().includes(needle) || o.slug.toLowerCase().includes(needle)
+      )
+    : allOrgs;
   // Partners are a separate population with their own view, so every org here is a
   // CUSTOMER — independent, or managed by a partner.
   const rows = (data ?? [])
     .filter((o) => !o.is_partner)
-    .filter((o) => !partnerFilter || o.partner?.id === partnerFilter);
+    .filter((o) => !partnerFilter || o.partner?.id === partnerFilter)
+    // Client-side: the list is already fully loaded for search, and these three read
+    // off fields it carries. A round trip per chip would be slower and no more correct.
+    .filter((o) => {
+      if (filter === "managed") return !!o.partner;
+      if (filter === "unmanaged") return !o.partner;
+      if (filter === "empty") return o.member_count === 0;
+      return true;
+    });
   const items: RailItem[] = rows.map((o) => ({
     id: o.id,
     primary: o.name,
@@ -204,19 +242,32 @@ function OrgListSource({
 
 function UserListSource({
   q,
+  filter,
   selectedId,
   onSelect
 }: {
   q: string;
+  filter: UserFilter;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  const { data, isPending } = useAdminUsersList({ search: q || undefined });
+  // Server-side, via the same `?role=` the users page uses: it narrows BEFORE
+  // pagination, so a filtered rail is a real page rather than whatever survived a
+  // client-side pass over the first fifty rows.
+  const { data, isPending } = useAdminUsersList({
+    search: q || undefined,
+    role: filter === "all" ? undefined : filter
+  });
   const items: RailItem[] = (data ?? []).map((u) => ({
     id: u.id,
     primary: u.name || u.email,
     secondary: u.email,
-    meta: u.is_app_admin ? <RoleBadge kind='global_admin' /> : undefined
+    // Badge the ROLE, not the boolean: `is_app_admin` is true for App Operators too,
+    // so this rail used to label every app publisher a Global Admin.
+    meta: (() => {
+      const kind = platformRoleKind(u.platform_role);
+      return kind ? <RoleBadge kind={kind} /> : undefined;
+    })()
   }));
   return (
     <RailList items={items} isPending={isPending} selectedId={selectedId} onSelect={onSelect} />

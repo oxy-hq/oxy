@@ -44,6 +44,7 @@ import { AdminEmptyState } from "../../components/AdminEmptyState";
 import { AdminLinkedList, AdminLinkedRow } from "../../components/AdminLinkedRow";
 import { AdminSectionLabel } from "../../components/AdminSectionLabel";
 import { AdminStatusPill } from "../../components/AdminStatusPill";
+import { AssignToOrgDialog } from "./components/AssignToOrgDialog";
 
 const ageDays = (iso: string) =>
   Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
@@ -199,9 +200,16 @@ export default function AdminUserDetail({
       <section id='user-section-orgs' className='scroll-mt-4 space-y-3'>
         <AdminSectionLabel
           trailing={
-            <span className='tabular-nums'>
-              {detail.org_memberships.length.toLocaleString()} total
-            </span>
+            <div className='flex items-center gap-2'>
+              <span className='tabular-nums'>
+                {detail.org_memberships.length.toLocaleString()} total
+              </span>
+              <AssignToOrgDialog
+                userId={detail.id}
+                userEmail={detail.email}
+                existingOrgIds={detail.org_memberships.map((m) => m.org_id)}
+              />
+            </div>
           }
         >
           Organization memberships

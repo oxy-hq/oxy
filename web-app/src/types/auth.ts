@@ -91,11 +91,40 @@ export interface UserInfo {
   is_owner: boolean;
   is_app_admin: boolean;
   /**
+   * What this staff member's platform grant lets them do (`Cap::as_str` in
+   * `oxy-authz`). Empty for non-staff; a Global Owner reports every capability.
+   *
+   * `is_app_admin` says only *that* someone is staff — an App Operator and a Global
+   * Admin both report `true` — so nav must gate on this instead. UX only: the server
+   * re-decides on every admin route, and hiding an item is not a security control.
+   *
+   * Present on `GET /user`; the login response omits it, so default to empty.
+   */
+  platform_capabilities?: PlatformCapability[];
+  /**
    * Present on `GET /user` (the canonical role source, `useCurrentUser`); the
    * login response omits it, so treat as optional and default to empty.
    */
   partner_memberships?: PartnerMembership[];
 }
+
+/**
+ * The platform capability vocabulary, mirroring `oxy_authz::Cap::as_str`. These strings
+ * are a wire contract — they are also persisted in the grant table, so renaming one
+ * orphans stored grants.
+ */
+export type PlatformCapability =
+  | "manage_members"
+  | "manage_apps"
+  | "develop_apps"
+  | "view_audit"
+  | "manage_billing"
+  | "manage_secrets"
+  | "create_orgs"
+  | "manage_org_settings"
+  | "view_tenants"
+  | "manage_partners"
+  | "operate_platform";
 
 export interface MessageResponse {
   message: string;

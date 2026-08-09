@@ -26,6 +26,17 @@ pub struct UserInfo {
     pub status: String,
     pub is_owner: bool,
     pub is_app_admin: bool,
+    /// The capabilities this user's platform grant expands to (`Cap::as_str`), empty
+    /// for a non-staff user. A Global Owner reports every capability.
+    ///
+    /// **UX only** — the admin console renders its nav from this so a staff member
+    /// isn't shown rooms they'll be 403'd out of. Every route re-decides server-side
+    /// (`platform_cap_guard`); hiding a nav item is not a security control, and the
+    /// only reason this is safe to ship is that it never *grants* anything.
+    ///
+    /// Sent instead of a role name so the frontend never re-implements
+    /// `PlatformRole::caps()` — one expansion, in the model, serialized outward.
+    pub platform_capabilities: Vec<String>,
     /// Partners this user administers (empty for most users). Non-empty means
     /// the frontend should surface the partner console. Each entry carries the
     /// partner's capability snapshot so the UI can hide surfaces the partner
@@ -73,6 +84,7 @@ pub async fn user_info_from(user: AuthenticatedUser) -> UserInfo {
     };
     let is_owner = standing.is_global_owner;
     let is_app_admin = standing.is_global_admin;
+    let platform_capabilities = platform_capabilities_for(&user.email, is_owner).await;
     let partner_memberships = partner_memberships_for(&user).await;
     UserInfo {
         id: user.id.to_string(),
@@ -82,7 +94,29 @@ pub async fn user_info_from(user: AuthenticatedUser) -> UserInfo {
         status: user.status.as_str().to_string(),
         is_owner,
         is_app_admin,
+        platform_capabilities,
         partner_memberships,
+    }
+}
+
+/// The capability list to report. The owner short-circuit mirrors the model, where
+/// `is_global_owner` is still a boolean that satisfies every capability — reading the
+/// grant table for an owner would report an empty list and blank their own console.
+async fn platform_capabilities_for(email: &str, is_owner: bool) -> Vec<String> {
+    if is_owner {
+        return oxy_authz::Cap::ALL
+            .iter()
+            .map(|c| c.as_str().to_string())
+            .collect();
+    }
+    let Ok(db) = oxy::database::client::establish_connection().await else {
+        return Vec::new();
+    };
+    match crate::server::authz::globals::platform_grant_checked(&db, email).await {
+        Ok(Some(grant)) => grant.caps.iter().map(|c| c.as_str().to_string()).collect(),
+        // No grant, or an unreadable one. Reporting nothing hides nav items rather than
+        // showing ones that would 403 — the safe direction for a display-only field.
+        _ => Vec::new(),
     }
 }
 

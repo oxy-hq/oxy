@@ -64,8 +64,9 @@ export const useAdminOrgsList = (
  * `fetchNextPage` while `hasNextPage` — the pattern the admin Apps list uses —
  * so counts and the "no access" set are exhaustive, not capped at one page.
  */
-export const useAllAdminOrgs = () =>
+export const useAllAdminOrgs = (enabled = true) =>
   useInfiniteQuery({
+    enabled,
     queryKey: [...queryKeys.adminOrgs.all, "all-pages"] as const,
     queryFn: ({ pageParam }) =>
       AdminOrgsService.list({ page: pageParam, page_size: ORGS_PAGE_SIZE }),
