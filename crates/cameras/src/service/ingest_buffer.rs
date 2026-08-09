@@ -569,6 +569,7 @@ mod tests {
             confidence: None,
             frame_uri: None,
             evidence_s3_key: None,
+            label: None,
         }
     }
 

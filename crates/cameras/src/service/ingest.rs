@@ -43,6 +43,11 @@ pub struct EventPayload {
     /// kind (which omits the field) still deserializes to `None`.
     #[serde(default)]
     pub evidence_s3_key: Option<String>,
+    /// Free-text label. `upsell_attempt` events carry the offered item
+    /// ('avocado', 'salmon'); `#[serde(default)]` so every other event kind
+    /// (which omits the field) still deserializes to `None`.
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,7 +105,7 @@ fn build_events_insert(events: &[EventPayload]) -> String {
     let mut sql = String::from(
         "INSERT INTO oxy_cam_events \
          (event_id, ts, camera_id, event_type, zone_id, line_id, track_id, \
-          dwell_seconds, confidence, frame_uri, evidence_s3_key) VALUES ",
+          dwell_seconds, confidence, frame_uri, evidence_s3_key, label) VALUES ",
     );
     for (i, e) in events.iter().enumerate() {
         if i > 0 {
@@ -108,7 +113,7 @@ fn build_events_insert(events: &[EventPayload]) -> String {
         }
         let _ = write!(
             sql,
-            "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+            "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
             sql_str(&e.event_id.to_string()),
             sql_ts(e.ts),
             sql_str(&e.camera_id.to_string()),
@@ -120,6 +125,7 @@ fn build_events_insert(events: &[EventPayload]) -> String {
             sql_opt_f32(e.confidence),
             sql_opt_str(e.frame_uri.as_deref()),
             sql_opt_str(e.evidence_s3_key.as_deref()),
+            sql_opt_str(e.label.as_deref()),
         );
     }
     sql
@@ -234,6 +240,7 @@ mod tests {
             confidence: None,
             frame_uri: None,
             evidence_s3_key: None,
+            label: None,
         }
     }
 

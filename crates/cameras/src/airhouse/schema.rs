@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS oxy_cam_events (
        enter/exit/dwell/line_cross row). Bucket is deployment-wide
        config; we persist only the key, like the compliance table. */
     evidence_s3_key VARCHAR   DEFAULT '',
+    /* Free-text label for the event. On event_type='upsell_attempt' rows it
+       carries the offered item the classifier detected ('avocado', 'salmon',
+       'large size'); the upsell rollup matches it against the order's
+       modifiers. Empty/NULL on every other event kind. */
+    label         VARCHAR     DEFAULT '',
     received_at   TIMESTAMPTZ DEFAULT current_timestamp
 )
 "#;
@@ -141,6 +146,15 @@ ALTER TABLE oxy_cam_events
     ADD COLUMN IF NOT EXISTS evidence_s3_key VARCHAR DEFAULT ''
 "#;
 
+/// Backfill `label` on `oxy_cam_events` for tenants provisioned before
+/// upsell detection. New tenants get it from [`CREATE_EVENTS_TABLE`];
+/// this keeps old tenants on the same shape so `upsell_attempt`'s item
+/// has a column to land in.
+pub const ALTER_EVENTS_ADD_LABEL: &str = r#"
+ALTER TABLE oxy_cam_events
+    ADD COLUMN IF NOT EXISTS label VARCHAR DEFAULT ''
+"#;
+
 /// Backfill `detections_json` on tenants provisioned before P3
 /// (Option C). New tenants get the column from the CREATE; this
 /// keeps old tenants on the same shape.
@@ -178,6 +192,7 @@ pub const ALL_DDL: &[&str] = &[
     ALTER_COMPLIANCE_ADD_AGREEMENT,
     ALTER_COMPLIANCE_ADD_AGREEMENT_DETAIL,
     ALTER_EVENTS_ADD_EVIDENCE_KEY,
+    ALTER_EVENTS_ADD_LABEL,
 ];
 
 /// Run the camera-fleet DDL inside a tenant. Idempotent; safe to call
