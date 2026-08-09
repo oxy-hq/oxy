@@ -102,6 +102,16 @@ pub enum AirwayRunError {
     Db(#[from] DbErr),
     #[error("io error reading airway spec: {0}")]
     Io(String),
+    /// A run of this pipeline is already in flight in this workspace.
+    ///
+    /// Carries the incumbent's `run_id` so callers can link to it instead of
+    /// reporting a bare "busy" — the UI shows what is already running, and a
+    /// scheduler can record *which* run it collapsed into.
+    #[error("pipeline `{pipeline_name}` already has a run in flight ({run_id})")]
+    AlreadyRunning {
+        pipeline_name: String,
+        run_id: String,
+    },
 }
 
 /// Discover the tables a source exposes, for the pipeline-create UI.
@@ -159,6 +169,51 @@ pub async fn start_airway_run(
     let spec = AirwayPipelineSpec::from_yaml_with_vars(&yaml, request.variables.as_ref())?;
 
     let run_id = Uuid::new_v4().to_string();
+
+    // Single-flight gate, taken BEFORE any row is written so a rejected caller
+    // leaves no orphan `agentic_runs` row behind. Two runs of one pipeline are
+    // incorrect, not just wasteful: they read-modify-write a single
+    // `airway_pipeline_state` cursor row (keyed by `pipeline_name`), and their
+    // end-of-load folds can overlap snapshots and land duplicate rows.
+    //
+    // Held across the whole run and released when it terminalizes; the TTL is
+    // only the crash backstop. See `extension::pipeline_lease`.
+    //
+    // `allow_concurrent_runs: true` in the YAML opts a pipeline out. Logged at
+    // start so an operator debugging duplicate rows can see from the run's own
+    // trace that the guard was disabled, rather than having to go read the spec.
+    if spec.allow_concurrent_runs {
+        tracing::warn!(
+            pipeline = %spec.name,
+            "airway single-flight DISABLED for this pipeline (allow_concurrent_runs: true)"
+        );
+    } else {
+        match agentic_airway::extension::pipeline_lease::try_acquire(
+            db,
+            workspace_id,
+            &spec.name,
+            &run_id,
+            agentic_airway::extension::pipeline_lease::LEASE_TTL_SECS,
+        )
+        .await?
+        {
+            agentic_airway::extension::pipeline_lease::LeaseAcquisition::Acquired => {}
+            agentic_airway::extension::pipeline_lease::LeaseAcquisition::Held {
+                run_id: holder,
+                ..
+            } => {
+                tracing::info!(
+                    pipeline = %spec.name,
+                    held_by = %holder,
+                    "airway run rejected — single-flight lease held"
+                );
+                return Err(AirwayRunError::AlreadyRunning {
+                    pipeline_name: spec.name.clone(),
+                    run_id: holder,
+                });
+            }
+        }
+    }
     // Lineage labels stamped at run-start so the dashboard can label
     // the Source / Destination cards even before `pipeline_plan` fires
     // (or for legacy runs that predated it). `source_kind` is the
@@ -197,6 +252,62 @@ pub async fn start_airway_run(
         &request.retry_of,
     );
 
+    // From here on the lease is held, so every failure path must release it —
+    // otherwise a transient DB error would block the pipeline until the TTL
+    // lapses. Seeding runs in a helper and the result is funnelled through one
+    // release-on-error, rather than repeating the cleanup at each `?`.
+    let seeded = seed_airway_run_rows(
+        db,
+        &run_id,
+        &spec,
+        &metadata_and_request(metadata, request),
+        scope,
+        workspace_id,
+    )
+    .await;
+    if seeded.is_err() {
+        // Best-effort: if this DELETE also fails the TTL still frees the lease.
+        let _ = agentic_airway::extension::pipeline_lease::release(
+            db,
+            workspace_id,
+            &spec.name,
+            &run_id,
+        )
+        .await;
+    }
+    seeded?;
+
+    Ok(run_id)
+}
+
+/// The request fields `seed_airway_run_rows` needs, bundled so the seeding
+/// helper stays under the argument limit and the caller keeps one owned value
+/// to move.
+struct SeedInputs {
+    metadata: serde_json::Value,
+    request: StartAirwayRequest,
+}
+
+fn metadata_and_request(metadata: serde_json::Value, request: StartAirwayRequest) -> SeedInputs {
+    SeedInputs { metadata, request }
+}
+
+/// Insert the run row, the airway extension row, and the queue task.
+///
+/// Split out of [`start_airway_run`] purely so the single-flight lease has one
+/// error path to unwind rather than four.
+async fn seed_airway_run_rows(
+    db: &DatabaseConnection,
+    run_id: &str,
+    spec: &AirwayPipelineSpec,
+    inputs: &SeedInputs,
+    scope: crud::TaskScope,
+    workspace_id: Uuid,
+) -> Result<(), AirwayRunError> {
+    let run_id = run_id.to_string();
+    let metadata = inputs.metadata.clone();
+    let request = &inputs.request;
+
     let question = format!("airway: {}", spec.name);
     if let Some(schedule_id) = request.schedule_id.as_deref() {
         crud::insert_run_with_schedule(
@@ -223,18 +334,107 @@ pub async fn start_airway_run(
         .await?;
     }
 
-    run_extension::insert_run_extension(db, &run_id, &spec, Some(&request.pipeline_ref)).await?;
+    run_extension::insert_run_extension(db, &run_id, spec, Some(&request.pipeline_ref)).await?;
 
     let task_spec = TaskSpec::Airway {
-        pipeline_ref: request.pipeline_ref,
-        variables: request.variables,
-        resources: request.resources,
-        backfill_from: request.backfill_from,
-        backfill_to: request.backfill_to,
+        pipeline_ref: request.pipeline_ref.clone(),
+        variables: request.variables.clone(),
+        resources: request.resources.clone(),
+        backfill_from: request.backfill_from.clone(),
+        backfill_to: request.backfill_to.clone(),
     };
     crud::enqueue_task(db, &run_id, &run_id, None, &task_spec, None, scope).await?;
 
-    Ok(run_id)
+    Ok(())
+}
+
+/// Release the single-flight lease held by `run_id`, if any.
+///
+/// Exists so transport-layer terminal paths can free the lease without
+/// importing `agentic-airway` — `agentic-http` may only enter agentic through
+/// this facade, so a direct domain import there would break the layering rule.
+///
+/// Idempotent: a `run_id`-scoped DELETE, so calling it on a run that already
+/// released is a no-op rather than freeing a successor's lease.
+pub async fn release_airway_lease(db: &DatabaseConnection, run_id: &str) {
+    if let Err(e) = agentic_airway::extension::pipeline_lease::release_by_run(db, run_id).await {
+        tracing::warn!(%run_id, error = %e,
+            "failed to release the airway single-flight lease; it will lapse at expires_at");
+    }
+}
+
+/// Release the lease for `run_id` **only if its task was never claimed**.
+///
+/// The cancel handler terminalizes a run without `drive` ever returning, so it
+/// must free the lease — but `request_cancel` is polled, so on a replica that
+/// is NOT driving, the worker may still be mid-fold when the cancel lands.
+/// Releasing there lets a scheduler tick or `POST /runs` start a second run
+/// alongside one that is still writing: precisely the overlap the lease exists
+/// to prevent, created by the cleanup for it.
+///
+/// `claimed_at.is_none()` is the safe subset — a queued-but-unclaimed run has
+/// no worker to race. The cross-replica case is left to the worker's own
+/// release at the tail of `drive` (and to the TTL if that worker dies), which
+/// is later but never wrong.
+///
+/// The `Ok(None)` branch (no queue row) holds two different situations, and
+/// only one has a worker to defer to. A row reaped from under a LIVE worker
+/// does — that is why this branch does not release. A **reaper dead-letter**
+/// does not: no row, no worker, `drive` never returns. Cancel used to clear
+/// that lease and deliberately no longer does, because the two are
+/// indistinguishable from here and releasing the wrong one admits a concurrent
+/// run. The recourse for a dead-lettered run is
+/// `oxy airway release-lease <pipeline> --workspace-id <id>`, or waiting out
+/// the TTL — not this handler.
+pub async fn release_airway_lease_if_unclaimed(db: &DatabaseConnection, run_id: &str) {
+    match agentic_runtime::crud::get_queue_entry(db, run_id).await {
+        Ok(Some(entry)) if entry.claimed_at.is_some() => {
+            tracing::debug!(
+                %run_id,
+                "airway cancel: task is claimed; leaving the lease to the driving worker"
+            );
+        }
+        // Never claimed — no worker to race, so releasing is safe.
+        Ok(Some(_)) => release_airway_lease(db, run_id).await,
+        // No queue row at all. Distinct from "never claimed": the task may have
+        // been reaped or completed, and a worker could still be finishing its
+        // fold with the row already gone. Folding this into the safe case was
+        // the same over-eager release finding E fixed, one branch along.
+        // Leave it to the worker's release, or the TTL.
+        Ok(None) => tracing::debug!(
+            %run_id,
+            "airway cancel: no queue row; leaving the lease to the worker or the TTL"
+        ),
+        Err(e) => {
+            // Don't guess: leaving it costs at most the TTL, releasing wrongly
+            // costs a concurrent run.
+            tracing::warn!(%run_id, error = %e,
+                "airway cancel: could not read queue state; leaving the lease to lapse");
+        }
+    }
+}
+
+/// List every single-flight lease held in `workspace_id`.
+///
+/// Facade re-export so the CLI can answer "why won't this pipeline start?"
+/// without importing the airway domain crate directly.
+pub async fn list_airway_leases(
+    db: &DatabaseConnection,
+    workspace_id: Uuid,
+) -> Result<Vec<agentic_airway::extension::pipeline_lease::Model>, DbErr> {
+    agentic_airway::extension::pipeline_lease::list_for_workspace(db, workspace_id).await
+}
+
+/// Force-release a pipeline's lease. Returns rows removed.
+///
+/// See [`agentic_airway::extension::pipeline_lease::force_release`] for the risk
+/// this accepts — callers must show the holder and confirm before calling.
+pub async fn force_release_airway_lease(
+    db: &DatabaseConnection,
+    workspace_id: Uuid,
+    pipeline_name: &str,
+) -> Result<u64, DbErr> {
+    agentic_airway::extension::pipeline_lease::force_release(db, workspace_id, pipeline_name).await
 }
 
 /// Spawn the coordinator + worker pair that drives a queued airway run

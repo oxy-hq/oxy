@@ -140,6 +140,23 @@ async fn start_and_drive(
             // Spec parse / validation failure — caller's input problem.
             return (StatusCode::BAD_REQUEST, format!("airway spec: {e}")).into_response();
         }
+        // 409, not 500: nothing is broken — this pipeline is already running.
+        // The active run id rides the body so the UI can link to it rather
+        // than telling the user to go hunt for it.
+        Err(AirwayRunError::AlreadyRunning {
+            pipeline_name,
+            run_id,
+        }) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "error": "pipeline_already_running",
+                    "pipeline_name": pipeline_name,
+                    "run_id": run_id,
+                })),
+            )
+                .into_response();
+        }
         Err(e) => {
             tracing::error!(%e, "airway run start failed");
             return (StatusCode::INTERNAL_SERVER_ERROR, format!("start: {e}")).into_response();
@@ -227,8 +244,11 @@ pub struct ChunkedBackfillRequest {
     pub to: chrono::DateTime<chrono::Utc>,
     /// Chunk size: `month` | `week` | `day`.
     pub granularity: String,
-    /// Max chunks to run concurrently (default 4, clamped to 1..=16). Higher
-    /// parallelizes extract but contends on DuckLake's per-table commit lock.
+    /// Accepted for compatibility and IGNORED: chunks of one pipeline run one
+    /// at a time. They share a single `<table>_raw` staging buffer whose fold
+    /// watermark spans the whole buffer, so a parallel chunk's fold drains
+    /// another's partially-loaded rows. Defaults to 1; the driver clamps
+    /// regardless, and a higher value only logs a warning.
     #[serde(default)]
     pub concurrency: Option<usize>,
 }
@@ -280,7 +300,11 @@ pub async fn chunked_backfill(
         }
     };
     let workspace_id = platform.workspace_id();
-    let concurrency = body.concurrency.unwrap_or(4).clamp(1, 16);
+    // 1, not 4: chunks of one pipeline are serialized (they share a single
+    // `<table>_raw` staging buffer whose fold watermark spans the whole buffer).
+    // The driver clamps regardless, so a persisted 4 only bought an
+    // ignored-value warning on every drive of every HTTP-created range.
+    let concurrency = body.concurrency.unwrap_or(1).clamp(1, 16);
     // No merge: this range owns exactly the chunks its window enumerates.
     let chunk_count = enumerate_chunks(body.from, body.to, granularity).len();
 
@@ -457,6 +481,12 @@ pub async fn cancel_airway_run(
         {
             tracing::warn!(%run_id, error = %e, "airway cancel: defensive DB update failed");
         }
+        // Free the lease for a queued-but-unclaimed run, whose `drive` never
+        // ran and so never releases. Gated on unclaimed deliberately: cancel is
+        // polled, so on a replica that isn't driving, the worker may still be
+        // mid-fold — releasing there would admit a second run alongside one
+        // still writing. That case is left to the worker's own release.
+        agentic_pipeline::airway_run::release_airway_lease_if_unclaimed(&state.db, &run_id).await;
         state.notify(&run_id);
         state.notifiers.remove(&run_id);
     }

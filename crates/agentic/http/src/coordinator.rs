@@ -774,6 +774,13 @@ pub async fn retry_run(
         Ok(new_run_id) => Json(RetryRunResponse { run_id: new_run_id }).into_response(),
         Err(RetryError::NotFound) => (StatusCode::NOT_FOUND, "run not found").into_response(),
         Err(RetryError::NotRetryable(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
+        // 409, and logged at info: a lease refusal is the guard working, not a
+        // fault. `warn!` + 500 here would page on the common cross-replica
+        // cancel-then-retry path.
+        Err(RetryError::Conflict(m)) => {
+            tracing::info!(%run_id, reason = %m, "retry: refused, run or pipeline still active");
+            (StatusCode::CONFLICT, m).into_response()
+        }
         Err(RetryError::SeedFailed(m)) => {
             tracing::warn!(%run_id, error = %m, "retry: seed failed");
             (StatusCode::INTERNAL_SERVER_ERROR, m).into_response()

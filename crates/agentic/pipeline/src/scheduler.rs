@@ -343,8 +343,21 @@ pub async fn run_schedule_now(
     // `manual` distinguishes operator-fired runs from `scheduled` (the tick)
     // and `backfill` (out-of-band replay) in the run log.
     match fire_schedule(db, workspace, &s, "manual").await {
-        Ok(run_id) => {
+        Ok(FireOutcome::Seeded(run_id)) => {
             record_fire_success(db, &s.id, &run_id).await;
+            Ok(run_id)
+        }
+        // Operator pressed "Run now" while a load is already in flight. Not an
+        // error and not a silent no-op: hand back the in-flight run so the UI
+        // navigates to it. `record_fire_success` is deliberately skipped — no
+        // new run was seeded, and stamping one would misreport the fire count.
+        Ok(FireOutcome::SkippedAlreadyRunning(run_id)) => {
+            tracing::info!(
+                target: "scheduler",
+                schedule_id = %s.id,
+                run_id = %run_id,
+                "run-now collapsed into the in-flight run (single-flight)"
+            );
             Ok(run_id)
         }
         Err(e) => {
@@ -530,7 +543,7 @@ pub async fn tick_schedules(
         }
 
         match fire_schedule(db, workspace, &s, "scheduled").await {
-            Ok(rid) => {
+            Ok(FireOutcome::Seeded(rid)) => {
                 fired += 1;
                 tracing::info!(
                     target: "scheduler",
@@ -540,6 +553,20 @@ pub async fn tick_schedules(
                     "tick: fired schedule (Global run seeded)"
                 );
                 record_fire_success(db, &s.id, &rid).await;
+            }
+            // The prior load is still running. `next_run_at` has already been
+            // advanced, so this slot is simply dropped — same "fire one, resume"
+            // policy the catch-up path uses for missed occurrences. Not counted
+            // in `fired`, and `last_error` is left alone: a schedule that
+            // out-paces its own load is operating normally, not failing.
+            Ok(FireOutcome::SkippedAlreadyRunning(rid)) => {
+                tracing::info!(
+                    target: "scheduler",
+                    schedule_id = %s.id,
+                    schedule_name = %s.name,
+                    in_flight_run_id = %rid,
+                    "tick: slot skipped — previous run still in flight (single-flight)"
+                );
             }
             Err(e) => {
                 // next_run_at was already advanced — the seed failed
@@ -1026,6 +1053,22 @@ pub async fn reconcile_health_schedule(
 
 // ── Shared firing ───────────────────────────────────────────────────────────
 
+/// What a fire attempt actually did.
+///
+/// "Already running" is deliberately NOT an error: for a periodic ELT it is
+/// the expected outcome whenever a load outruns its own cadence, and routing
+/// it through the error arm would stamp `last_error` and paint the schedule
+/// red for a system behaving exactly as designed. It collapses instead —
+/// matching the existing CAS `next_run_at` policy, where missed slots fire
+/// once rather than queueing up.
+#[derive(Debug, Clone)]
+pub enum FireOutcome {
+    /// A new run was seeded.
+    Seeded(String),
+    /// Single-flight rejected this tick; carries the run already in flight.
+    SkippedAlreadyRunning(String),
+}
+
 /// Seed a `TaskScope::Global` run for `s`. Shared by the tick and run-now;
 /// caller picks the trigger label so the run log can distinguish
 /// `scheduled` / `manual` / `backfill` at a glance.
@@ -1034,7 +1077,7 @@ async fn fire_schedule(
     workspace: &dyn crate::WorkflowWorkspaceContext,
     s: &schedule::Model,
     trigger: &str,
-) -> Result<String, String> {
+) -> Result<FireOutcome, String> {
     match s.target_kind.as_str() {
         "workflow" => {
             let req = StartAutomationRequest {
@@ -1057,6 +1100,7 @@ async fn fire_schedule(
                 s.workspace_id,
             )
             .await
+            .map(FireOutcome::Seeded)
             .map_err(|e| e.to_string())
         }
         "airway" => {
@@ -1072,7 +1116,7 @@ async fn fire_schedule(
                 backfill_from: None,
                 backfill_to: None,
             };
-            start_airway_run(
+            match start_airway_run(
                 db,
                 workspace,
                 req,
@@ -1080,7 +1124,15 @@ async fn fire_schedule(
                 s.workspace_id,
             )
             .await
-            .map_err(|e| e.to_string())
+            {
+                Ok(rid) => Ok(FireOutcome::Seeded(rid)),
+                // The previous load is still going — collapse this slot
+                // instead of recording a failure.
+                Err(crate::airway_run::AirwayRunError::AlreadyRunning { run_id, .. }) => {
+                    Ok(FireOutcome::SkippedAlreadyRunning(run_id))
+                }
+                Err(e) => Err(e.to_string()),
+            }
         }
         "agent" => {
             // validate_input guarantees `question` is present + non-empty
@@ -1105,6 +1157,7 @@ async fn fire_schedule(
                 s.workspace_id,
             )
             .await
+            .map(FireOutcome::Seeded)
             .map_err(|e| e.to_string())
         }
         "function" => {
@@ -1169,7 +1222,7 @@ async fn fire_schedule(
             )
             .await
             .map_err(|e| e.to_string())?;
-            Ok(run_id)
+            Ok(FireOutcome::Seeded(run_id))
         }
         other => Err(format!("unknown target_kind {other:?}")),
     }
@@ -1276,6 +1329,31 @@ pub async fn backfill_schedule(
     if request.to <= request.from {
         return Err(ScheduleError::Invalid(
             "backfill `to` must be after `from`".into(),
+        ));
+    }
+
+    // Cron-replay seeds every occurrence at once, which is a request for N
+    // concurrent runs of one pipeline — exactly what single-flight forbids, and
+    // for the same reason chunked backfill is now pinned to one chunk at a time:
+    // every run of a pipeline shares one `<table>_raw` staging buffer, and a
+    // fold's watermark spans the whole buffer, so concurrent runs consume each
+    // other's half-loaded rows.
+    //
+    // Rejected up front rather than seeded-then-collapsed. Previously
+    // occurrence #1 took the lease, #2 returned `AlreadyRunning`, the loop
+    // stopped at the first error, and the caller got one run plus a success
+    // response claiming N planned — the worst of the options. `oxy airway
+    // backfill` is the tool for this: it splits a window into checkpointed
+    // chunks and runs them serially, resuming where it left off.
+    if s.target_kind == "airway" {
+        return Err(ScheduleError::Invalid(
+            "cron-replay backfill is not supported for airway schedules: it would \
+             start several runs of one pipeline at once, which corrupts the shared \
+             staging buffer. Use `oxy airway backfill --from … --to …` (or the \
+             Backfill dialog), which runs checkpointed chunks one at a time and \
+             resumes on failure. To re-fire a SINGLE missed slot, use Run now — \
+             that seeds one run, which single-flight admits."
+                .into(),
         ));
     }
 

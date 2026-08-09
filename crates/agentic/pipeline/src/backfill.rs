@@ -137,6 +137,16 @@ pub fn enumerate_chunks(
 /// driver forever — the chunk stays resumable instead.
 const MAX_CHUNK_WAIT: std::time::Duration = std::time::Duration::from_secs(2 * 60 * 60);
 
+/// How long `get_run` may fail CONTINUOUSLY before a chunk gives up waiting.
+///
+/// Wall clock, not a poll count: a failing read returns after the pool's
+/// `ACQUIRE_TIMEOUT` (30s), not after the 200ms poll interval, so a count
+/// bounds nothing. 2 minutes rides out a blip or a managed-Postgres failover
+/// (typically 30–120s) while still failing a real outage well inside
+/// [`MAX_CHUNK_WAIT`]. Reset by any successful read, so intermittent errors
+/// never accumulate to it.
+const MAX_POLL_FAILURE_WINDOW: std::time::Duration = std::time::Duration::from_secs(120);
+
 fn build_event_registry() -> EventRegistry {
     let mut registry = EventRegistry::new();
     registry.register(AIRWAY_SOURCE_TYPE, airway_event_handler());
@@ -262,6 +272,70 @@ async fn latest_event_seq(db: &DatabaseConnection, run_id: &str) -> i64 {
 /// status flipped back to `running`, and `retry_count` bumped — keeping a stable
 /// run_id (and, once the cursor lands, resuming instead of re-extracting).
 /// Otherwise a fresh run is seeded.
+/// Re-take the single-flight lease for a chunk's reset-in-place re-drive.
+///
+/// Returns `false` when another run holds it, so the caller seeds a fresh run
+/// instead — which will itself hit the guard in `start_airway_run` and surface
+/// the conflict through the normal path rather than a second bespoke one.
+async fn reacquire_chunk_lease(
+    db: &DatabaseConnection,
+    platform: &Arc<dyn PlatformContext>,
+    pipeline_ref: &str,
+    run_id: &str,
+) -> Result<bool, AirwayRunError> {
+    use agentic_airway::extension::pipeline_lease::{
+        LEASE_TTL_SECS, LeaseAcquisition, try_acquire,
+    };
+    // The chunk driver knows the ref, not the spec's `name`. The lease is keyed
+    // by pipeline NAME, so read it off the run's own metadata — the same place
+    // `start_airway_run` stamped it when the chunk was first seeded.
+    let Some(name) = crud::get_run(db, run_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.metadata)
+        .and_then(|m| {
+            m.get("pipeline_name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
+    else {
+        // Fail CLOSED. Returning `true` here reported "lease acquired" while
+        // taking none, so the chunk re-drove unguarded — the single-flight hole
+        // this function exists to close, reached by a metadata gap rather than
+        // by contention. `false` sends the caller down the seed-fresh path,
+        // where `start_airway_run` re-derives the name from the spec and takes
+        // the lease properly.
+        tracing::warn!(
+            run_id,
+            pipeline_ref,
+            "backfill retry: no pipeline_name on the run; seeding fresh so the \
+             lease is taken through the normal path"
+        );
+        return Ok(false);
+    };
+    match try_acquire(db, platform.workspace_id(), &name, run_id, LEASE_TTL_SECS).await? {
+        LeaseAcquisition::Acquired => Ok(true),
+        LeaseAcquisition::Held { run_id: holder, .. } => {
+            tracing::info!(pipeline = %name, held_by = %holder,
+                "backfill retry: lease held by another run; will seed fresh");
+            Ok(false)
+        }
+    }
+}
+
+/// Outcome of a chunk's reset-in-place attempt. `StillLive` exists so the
+/// "a worker holds this run" bail can return without releasing — routing it
+/// through `Err` would hit the release-on-error arm and free that worker's
+/// lease, which is the overlap this guard prevents.
+enum Reuse {
+    Reused((String, i64)),
+    /// Task row gone, or the lease was never taken — safe to release + reseed.
+    Reaped,
+    /// Task is queued/claimed: a worker is driving it. Do not release.
+    StillLive,
+}
+
 async fn run_airway_window(
     db: &DatabaseConnection,
     platform: &Arc<dyn PlatformContext>,
@@ -270,6 +344,16 @@ async fn run_airway_window(
     backfill_from: String,
     backfill_to: String,
     existing_run_id: Option<&str>,
+    // The chunk's checkpoint, so a freshly seeded run's id is persisted where
+    // it is FIRST KNOWN rather than when the outcome returns. The caller only
+    // learns the id when this function comes back, which can be up to
+    // `MAX_CHUNK_WAIT` (2h) later — a deploy, pod restart or CLI `Ctrl-C` in
+    // that window left a run that exists and holds the lease with
+    // `cp.run_id = None`, and the next pass re-ingested the window. Recording
+    // at seed time makes "seeded but unrecorded" one statement wide instead of
+    // two hours. Same move as `RunIdWrite`: remove the state, not the paths
+    // that reach it.
+    cp: &CpModel,
 ) -> Result<ChunkOutcome, AirwayRunError> {
     // Reset-in-place re-drive of the chunk's prior run — but only if its queued
     // task still exists. `reset_task_to_queued` returns 0 rows when the task was
@@ -280,7 +364,81 @@ async fn run_airway_window(
         Some(rid) => {
             // `reset_task_to_queued` revives the task in place; 0 rows = it was
             // reaped, so there's nothing to re-drive → seed a fresh run below.
-            if crud::reset_task_to_queued(db, rid).await? > 0 {
+            // Re-take the single-flight lease before reviving the task. It was
+            // deleted when the prior attempt terminalized, so a reset-in-place
+            // re-drive would otherwise run unguarded — the same gap as the
+            // `retry_airway` path. Keyed to the SAME run_id so the worker's
+            // existing `release_by_run` still frees exactly this lease.
+            //
+            // On conflict, fall through to `None` (seed a fresh run below)
+            // rather than erroring: the caller already treats a reap the same
+            // way, and a chunk that can't reuse its run is not a chunk failure.
+            let lease_ok = match reacquire_chunk_lease(db, platform, pipeline_ref, rid).await {
+                Ok(ok) => ok,
+                Err(e) => {
+                    tracing::warn!(run_id = %rid, error = %e,
+                        "backfill retry: lease re-acquire failed; seeding a fresh run");
+                    false
+                }
+            };
+            // Whether the reset actually revived the task. Split out from the
+            // `&&` because the acquired-but-not-reused combination is a LEAK:
+            // `lease_ok == true` with `revived == false` (the task was reaped)
+            // seeds a fresh run below whose `start_airway_run` takes its own
+            // lease, stranding this one under `rid` for the full 6h TTL — and
+            // that fresh seed then fails against the very lease we just took,
+            // so the chunk can never progress. Self-sustaining stall.
+            // The `?` here is itself an exit under the lease — releasing only on
+            // the acquired-but-not-revived path left a DB error leaking it.
+            //
+            // Same shape as `retry_airway`: one block with plain `?` inside and
+            // a single release on the way out. `Some` = reused in place; `None`
+            // = seed fresh. Every non-reuse exit — reaped, DB error, lease held
+            // — releases exactly once, at the match below. Releasing per call
+            // site is what left `reset_run_for_retry` leaking through two
+            // rounds of fixes.
+            let guarded = async {
+                if !lease_ok {
+                    return Ok::<Reuse, AirwayRunError>(Reuse::Reaped);
+                }
+                if crud::reset_task_to_queued(db, rid).await? == 0 {
+                    // 0 rows is TWO states: the row is gone (reaped), or it is
+                    // queued/claimed and a worker is still driving this run.
+                    // This function's own doc says both out loud; treating them
+                    // alike releases the lease and seeds fresh ALONGSIDE a live
+                    // worker — two concurrent runs of one pipeline, via this
+                    // guard's own path.
+                    //
+                    // Reachable on any chunk that hit MAX_CHUNK_WAIT: the
+                    // timeout arm reports `failed` while the spawned drive keeps
+                    // running (deliberately, so a wedged worker can't hang the
+                    // driver), and the next Resume pass arrives here with the
+                    // task still `claimed`.
+                    // Fails CLOSED on a read error: guessing "reaped" wrongly
+                    // releases a running worker's lease and starts a second
+                    // run; guessing "live" wrongly costs one deferred chunk.
+                    let live = match crud::get_queue_entry(db, rid).await {
+                        Ok(entry) => entry.is_some(),
+                        Err(e) => {
+                            tracing::warn!(run_id = %rid, error = %e,
+                                "backfill retry: queue-state read failed; assuming live");
+                            true
+                        }
+                    };
+                    if live {
+                        tracing::warn!(
+                            run_id = %rid,
+                            "backfill retry: prior run is still queued/claimed — a worker \
+                             is driving it; deferring this chunk instead of reseeding"
+                        );
+                        return Ok(Reuse::StillLive);
+                    }
+                    tracing::warn!(
+                        run_id = %rid,
+                        "backfill retry: prior run's task was reaped; seeding a fresh run"
+                    );
+                    return Ok(Reuse::Reaped);
+                }
                 // Drop the prior attempt's events + clear its terminal error so
                 // the re-run shows clean; `since = -1` (no old events left).
                 crud::delete_events_from_seq(db, rid, 0).await.ok();
@@ -290,13 +448,33 @@ async fn run_airway_window(
                 {
                     tracing::warn!(run_id = %rid, error = %e, "backfill retry: retry_count bump failed");
                 }
-                Some((rid.to_string(), latest_event_seq(db, rid).await))
-            } else {
-                tracing::warn!(
-                    run_id = %rid,
-                    "backfill retry: prior run's task was reaped; seeding a fresh run"
-                );
-                None
+                Ok(Reuse::Reused((rid.to_string(), latest_event_seq(db, rid).await)))
+            }
+            .await;
+
+            match guarded {
+                Ok(Reuse::Reused(pair)) => Some(pair),
+                Ok(Reuse::Reaped) => {
+                    if lease_ok {
+                        crate::airway_run::release_airway_lease(db, rid).await;
+                    }
+                    None
+                }
+                // A worker holds this run. Return WITHOUT releasing — the lease
+                // is that worker's. Surfacing `AlreadyRunning` defers the chunk
+                // (it stays `pending` for the next pass) rather than failing it.
+                Ok(Reuse::StillLive) => {
+                    return Err(AirwayRunError::AlreadyRunning {
+                        pipeline_name: pipeline_ref.to_string(),
+                        run_id: rid.to_string(),
+                    });
+                }
+                Err(e) => {
+                    if lease_ok {
+                        crate::airway_run::release_airway_lease(db, rid).await;
+                    }
+                    return Err(e);
+                }
             }
         }
         None => None,
@@ -328,6 +506,13 @@ async fn run_airway_window(
                 workspace_id,
             )
             .await?;
+            // Persist immediately — before the drive is even spawned.
+            // Best-effort: failing to record must not abandon a run that now
+            // exists, and the outcome path records it again on return.
+            if let Err(e) = checkpoint_record_run_id(db, cp, &rid).await {
+                tracing::warn!(run_id = %rid, error = %e,
+                    "backfill: could not record the seeded run on its checkpoint");
+            }
             (rid, -1)
         }
     };
@@ -345,9 +530,103 @@ async fn run_airway_window(
     );
 
     let deadline = tokio::time::Instant::now() + MAX_CHUNK_WAIT;
+    // `None` while reads are succeeding; set on the first of a run of failures
+    // so the tolerance is measured in wall clock, not iterations.
+    let mut first_poll_failure: Option<tokio::time::Instant> = None;
+    // `None` = nothing logged for the CURRENT failure run. Not a bare `u64`:
+    // the first failure has `elapsed` ≈ 0, so its bucket is 0 — identical to a
+    // zero initial value, which made the opening failure of a chunk silent and
+    // absorbed every sub-30s blip without a trace. Reset alongside
+    // `first_poll_failure` so every run logs its own first failure.
+    let mut last_logged_failure_bucket: Option<u64> = None;
     loop {
+        // Checked BEFORE the read, so it bounds the failure path too. It used
+        // to live only in the `match observed` arm below, which a failing poll
+        // never reaches — leaving the chunk (and, at concurrency 1, the range)
+        // bounded solely by the retry budget.
+        if tokio::time::Instant::now() >= deadline {
+            // One last read before declaring failure: the run may have reached
+            // a terminal status since the poll above, and checkpointing a
+            // SUCCEEDED run `failed` would re-ingest a window already loaded.
+            // Cheap — one query, only on the timeout path.
+            if let Ok(Some(run)) = crud::get_run(db, &run_id).await
+                && is_terminal(run.task_status.as_deref())
+            {
+                let task_status = run.task_status.unwrap_or_else(|| "done".into());
+                let (status, row_count, detail) =
+                    classify_run_outcome(db, &run_id, &task_status, since).await;
+                tracing::info!(%run_id, %status,
+                    "backfill: run reached a terminal status as the chunk deadline expired");
+                return Ok(ChunkOutcome {
+                    run_id,
+                    status,
+                    row_count,
+                    detail,
+                });
+            }
+            return Ok(ChunkOutcome {
+                run_id,
+                status: "failed".into(),
+                row_count: None,
+                detail: Some(format!(
+                    "timed out after {}s waiting for a terminal status",
+                    MAX_CHUNK_WAIT.as_secs()
+                )),
+            });
+        }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        match crud::get_run(db, &run_id).await? {
+        // Tolerant of a BLIP, not of an outage. This `?` used to be the one
+        // fallible exit between seeding a run and returning its id, so a
+        // transient `DbErr` aborted the wait while the spawned drive kept
+        // going. But retrying unboundedly to the 2h deadline was worse than
+        // what it replaced: a sustained outage stalled the chunk — and with
+        // concurrency pinned to 1, the whole range — for two hours, where it
+        // previously failed in 200ms and re-ran next pass. The `"failed"`
+        // outcome could not even be persisted, since `checkpoint_set` needs the
+        // same database.
+        //
+        // An ELAPSED WINDOW, reset by any successful read, separates the two:
+        // blips are absorbed, a dead database gives up promptly.
+        //
+        // Deliberately not a poll count. A failing `get_run` does not return in
+        // 200ms — it returns after the pool's ACQUIRE_TIMEOUT (30s), so N polls
+        // is anywhere from 0.2N to 30N seconds and no count can bound wall
+        // clock. A previous revision capped at 300 polls and claimed ~60s; the
+        // real worst case was ~2.5h, past MAX_CHUNK_WAIT, which is the one
+        // property the bound exists to provide.
+        let observed = match crud::get_run(db, &run_id).await {
+            Ok(v) => {
+                first_poll_failure = None;
+                last_logged_failure_bucket = None;
+                v
+            }
+            Err(e) => {
+                let since = *first_poll_failure.get_or_insert_with(tokio::time::Instant::now);
+                let elapsed = since.elapsed();
+                // First failure, then every ~30s of continuous failure.
+                let bucket = elapsed.as_secs() / 30;
+                if last_logged_failure_bucket != Some(bucket) {
+                    last_logged_failure_bucket = Some(bucket);
+                    tracing::warn!(
+                        %run_id, error = %e, elapsed_secs = elapsed.as_secs(),
+                        "backfill: run poll failed; retrying"
+                    );
+                }
+                if elapsed >= MAX_POLL_FAILURE_WINDOW {
+                    return Ok(ChunkOutcome {
+                        run_id,
+                        status: "failed".into(),
+                        row_count: None,
+                        detail: Some(format!(
+                            "run poll failed continuously for {}s: {e}",
+                            elapsed.as_secs()
+                        )),
+                    });
+                }
+                continue;
+            }
+        };
+        match observed {
             Some(run) if is_terminal(run.task_status.as_deref()) => {
                 let task_status = run.task_status.unwrap_or_else(|| "done".into());
                 let (status, row_count, detail) =
@@ -367,17 +646,6 @@ async fn run_airway_window(
                     status: "failed".into(),
                     row_count: None,
                     detail: Some("run row vanished before reaching a terminal status".into()),
-                });
-            }
-            _ if tokio::time::Instant::now() >= deadline => {
-                return Ok(ChunkOutcome {
-                    run_id,
-                    status: "failed".into(),
-                    row_count: None,
-                    detail: Some(format!(
-                        "timed out after {}s waiting for a terminal status",
-                        MAX_CHUNK_WAIT.as_secs()
-                    )),
                 });
             }
             _ => {}
@@ -430,25 +698,81 @@ async fn checkpoint_upsert_pending(
     .await
 }
 
-/// Update a checkpoint's status (and only the touched columns).
+/// How a checkpoint write should treat the `run_id` column.
+///
+/// Exists because the parameter used to be a bare `Option<String>`, where
+/// `None` meant ERASE — and no caller ever meant that. Three of the five call
+/// sites passed `None` to mean "I have nothing to say about run_id", silently
+/// NULLing the link to a live run; two rounds of review each caught one of
+/// them. Making "leave it alone" spellable is what stops the next caller
+/// reintroducing it.
+enum RunIdWrite {
+    /// Leave the stored `run_id` untouched.
+    Keep,
+    /// Overwrite it, including with `None` when the link is genuinely gone.
+    Set(Option<String>),
+}
+
+/// Update a checkpoint's status, `error` and `row_count` together.
+///
+/// All three are written on EVERY call — `error: None` and `row_count: None`
+/// mean "clear it", not "leave it". That suits all current callers: each marks
+/// a state transition where the previous attempt's error and row count are
+/// stale by definition. It does NOT suit a caller that wants to touch one
+/// column; that caller wants [`checkpoint_record_run_id`], or a `Keep`/`Set`
+/// treatment for the field in question the way [`RunIdWrite`] gives `run_id`.
+///
+/// `run_id` is the exception precisely because it once behaved this way and
+/// was wrong for it — see [`RunIdWrite`]. Reviewers have flagged the remaining
+/// three as the same hazard three times; they are left in-band deliberately,
+/// because no caller today means anything else, and an enum per column with a
+/// single variant in use is harder to read than this note. Add the enum when a
+/// caller needs it, not before.
 async fn checkpoint_set(
     db: &DatabaseConnection,
     cp: &CpModel,
     status: &str,
-    run_id: Option<String>,
+    run_id: RunIdWrite,
     error: Option<String>,
     row_count: Option<i64>,
     bump_attempts: bool,
 ) -> Result<(), DbErr> {
     let mut active: CpActive = cp.clone().into();
     active.status = Set(status.to_string());
-    active.run_id = Set(run_id);
+    // `Keep` leaves the column out of the update entirely — an unset
+    // ActiveValue is not written, which is the whole point.
+    if let RunIdWrite::Set(v) = run_id {
+        active.run_id = Set(v);
+    }
     active.error = Set(error);
     active.row_count = Set(row_count);
     active.updated_at = Set(Utc::now().fixed_offset());
     if bump_attempts {
         active.attempts = Set(cp.attempts + 1);
     }
+    active.update(db).await?;
+    Ok(())
+}
+
+/// Record the run a chunk was just seeded with, touching **only** `run_id`.
+///
+/// Deliberately not `checkpoint_set`: that helper restates `status`, `error`
+/// and `row_count` on every call, and the only model available here is the one
+/// read before the caller wrote `"running"`. Passing `&cp.status` back would
+/// revert the row to its pre-attempt status — `pending` on the normal path,
+/// `failed` on a re-run — for the entire time the chunk runs, contradicting
+/// the `pending` vs `running` split this module documents below. Restating a
+/// stale `error` alongside it would be incoherent in the same way.
+///
+/// This write means one thing, so it writes one column.
+async fn checkpoint_record_run_id(
+    db: &DatabaseConnection,
+    cp: &CpModel,
+    run_id: &str,
+) -> Result<(), DbErr> {
+    let mut active: CpActive = cp.clone().into();
+    active.run_id = Set(Some(run_id.to_string()));
+    active.updated_at = Set(Utc::now().fixed_offset());
     active.update(db).await?;
     Ok(())
 }
@@ -464,6 +788,12 @@ pub enum ChunkDisposition {
     Degraded,
     /// Hard failure / timeout / cancelled.
     Failed,
+    /// Not attempted: the pipeline's single-flight lease was held by another
+    /// run. Distinct from `Failed` on purpose — nothing went wrong, the chunk
+    /// simply has to wait, and it stays `pending` so the next pass takes it.
+    /// Folding this into `Failed` would put red chunks in coverage for a
+    /// pipeline behaving exactly as designed.
+    Deferred,
 }
 
 /// One progress tick, emitted per chunk as a chunked backfill proceeds so a
@@ -482,6 +812,10 @@ pub struct BackfillSummary {
     pub resumed: usize,
     pub degraded: usize,
     pub failed: usize,
+    /// Chunks not attempted because the pipeline's single-flight lease was
+    /// held. Counted separately from `failed` so a caller can tell "needs
+    /// investigation" from "run it again in a minute".
+    pub deferred: usize,
 }
 
 /// Run one already-checkpointed chunk to completion: skip if `done`, else mark
@@ -510,7 +844,7 @@ async fn run_one_chunk(
             note: None,
         });
     }
-    checkpoint_set(&db, &cp, "running", None, None, None, true).await?;
+    checkpoint_set(&db, &cp, "running", RunIdWrite::Keep, None, None, true).await?;
     // Re-drive the chunk's prior run in place if it already has one (a retry);
     // otherwise seed a fresh run. Keeps the checkpoint's run_id stable.
     let (disposition, note) = match run_airway_window(
@@ -521,11 +855,21 @@ async fn run_one_chunk(
         chunk.start.to_rfc3339(),
         chunk.end.to_rfc3339(),
         cp.run_id.as_deref(),
+        &cp,
     )
     .await
     {
         Ok(o) if o.status == "done" => {
-            checkpoint_set(&db, &cp, "done", Some(o.run_id), None, o.row_count, false).await?;
+            checkpoint_set(
+                &db,
+                &cp,
+                "done",
+                RunIdWrite::Set(Some(o.run_id)),
+                None,
+                o.row_count,
+                false,
+            )
+            .await?;
             (ChunkDisposition::Done, None)
         }
         Ok(o) => {
@@ -541,7 +885,7 @@ async fn run_one_chunk(
                 &db,
                 &cp,
                 &o.status,
-                Some(o.run_id),
+                RunIdWrite::Set(Some(o.run_id)),
                 o.detail,
                 o.row_count,
                 false,
@@ -549,9 +893,56 @@ async fn run_one_chunk(
             .await?;
             (disposition, Some(note))
         }
+        // Lease contention is not a chunk failure. A scheduled tick (or a manual
+        // run) landing between chunks makes the next `start_airway_run` return
+        // `AlreadyRunning`; recording that as `failed` puts a red chunk in
+        // coverage for a pipeline that is working exactly as designed, and an
+        // operator reading coverage cannot tell it from a real load error.
+        // Left `pending` instead, so the next pass picks it up — the same
+        // treatment a never-started chunk gets, which is what this is.
+        Err(AirwayRunError::AlreadyRunning {
+            pipeline_name,
+            run_id: holder,
+        }) => {
+            // Two distinct causes reach here, and the note says which:
+            //   * this chunk's OWN prior run is still queued/claimed (StillLive)
+            //   * a different run holds the pipeline's lease
+            // Only the first names this chunk's run id.
+            let mine = cp.run_id.as_deref() == Some(holder.as_str());
+            let note = if mine {
+                format!("deferred: this chunk's run {holder} is still active; stays pending")
+            } else {
+                format!("deferred: `{pipeline_name}` had another run in flight ({holder})")
+            };
+            // PRESERVE the run_id. `checkpoint_set` assigns it unconditionally,
+            // so passing `None` erased the link to the still-live run — and the
+            // next pass would then seed a FRESH run instead of recognising its
+            // own, which is the reseed-alongside-a-live-worker this deferral
+            // exists to prevent.
+            checkpoint_set(
+                &db,
+                &cp,
+                "pending",
+                RunIdWrite::Keep,
+                Some(note.clone()),
+                None,
+                false,
+            )
+            .await?;
+            (ChunkDisposition::Deferred, Some(note))
+        }
         Err(e) => {
             let note = e.to_string();
-            checkpoint_set(&db, &cp, "failed", None, Some(note.clone()), None, false).await?;
+            checkpoint_set(
+                &db,
+                &cp,
+                "failed",
+                RunIdWrite::Keep,
+                Some(note.clone()),
+                None,
+                false,
+            )
+            .await?;
             (ChunkDisposition::Failed, Some(note))
         }
     };
@@ -648,13 +1039,19 @@ pub async fn find_or_create_backfill_range(
 /// (airhouse is merge-on-read). The range `status` is rolled up from its chunks
 /// when the pass finishes.
 ///
-/// Up to the range's `concurrency` chunks run at once (`buffer_unordered`);
-/// `on_progress` fires once per chunk in *completion* order (the CLI prints; the
-/// HTTP driver passes a no-op). Each chunk is a full airway run writing the same
-/// table, and DuckLake serializes catalog commits per table — so a high
-/// concurrency mostly trades parallel extract for commit-time conflict-retries.
-/// A modest value (≈4) is the sweet spot; checkpoints make any conflict-failed
-/// chunk safely resumable.
+/// Chunks run **one at a time**, whatever the range's stored `concurrency`
+/// says — the value is clamped at the driver (see the pin below), and a higher
+/// stored value logs a warning rather than taking effect. `on_progress` fires
+/// once per chunk in completion order (the CLI prints; the HTTP driver passes a
+/// no-op).
+///
+/// This doc previously recommended ≈4 as a "sweet spot", on the reasoning that
+/// concurrency trades parallel extract for DuckLake commit-retries. That
+/// reasoning was incomplete: chunks of one pipeline share a single
+/// `<table>_raw` staging buffer, and the fold's watermark spans the WHOLE
+/// buffer — so one chunk's fold drains another's partially-loaded rows
+/// mid-flight. Per-chunk cursor isolation (run-scoped store) covers the cursor
+/// and nothing else.
 pub async fn drive_backfill_range(
     db: &DatabaseConnection,
     platform: Arc<dyn PlatformContext>,
@@ -672,7 +1069,23 @@ pub async fn drive_backfill_range(
     let to = range.requested_to.with_timezone(&Utc);
     let granularity =
         ChunkGranularity::parse(&range.granularity).unwrap_or(ChunkGranularity::Month);
-    let concurrency = range.concurrency.max(1) as usize;
+    // Clamped to 1, not merely defaulted: `range.concurrency` is read from a
+    // stored row, so existing ranges (and the HTTP path) would otherwise still
+    // fan out. Concurrent chunks of one pipeline share a single `<table>_raw`
+    // buffer whose fold watermark spans the WHOLE buffer, so one chunk's fold
+    // drains another's partially-loaded rows; and concurrent folds of one table
+    // are the exact shape of the duplicate rows measured on pokehouse. Per-chunk
+    // cursor isolation (run-scoped store) covers the cursor and nothing else.
+    let concurrency = 1usize;
+    // Say so rather than silently ignoring the operator's setting — a backfill
+    // that quietly runs 4x slower than asked is its own support ticket.
+    if range.concurrency > 1 {
+        tracing::warn!(
+            requested = range.concurrency,
+            "backfill chunk concurrency is pinned to 1; the requested value is ignored \
+             (chunks share one raw buffer and their folds would interleave)"
+        );
+    }
     let chunks = enumerate_chunks(from, to, granularity);
     // Pre-create every chunk as `pending` so coverage shows the plan (0/N) at once.
     for chunk in &chunks {
@@ -742,6 +1155,7 @@ async fn run_chunks(
             ChunkDisposition::Done => summary.done += 1,
             ChunkDisposition::Degraded => summary.degraded += 1,
             ChunkDisposition::Failed => summary.failed += 1,
+            ChunkDisposition::Deferred => summary.deferred += 1,
         }
         on_progress(progress);
     }
@@ -749,8 +1163,9 @@ async fn run_chunks(
 }
 
 /// Recompute a range's rollup `status` from its chunks and persist it if
-/// changed: `running` while any chunk is pending/running, else `done` (all
-/// done), `failed` (any hard failure), or `degraded` (some
+/// changed: `running` while a chunk is claimed, `pending` when work remains but
+/// nothing is driving it (a chunk deferred by lease contention), else `done`
+/// (all done), `failed` (any hard failure), or `degraded` (some
 /// `completed_with_errors`, the rest done).
 async fn rollup_range_status(db: &DatabaseConnection, range_id: Uuid) -> Result<(), DbErr> {
     let statuses: Vec<String> = Checkpoint::find()
@@ -760,10 +1175,18 @@ async fn rollup_range_status(db: &DatabaseConnection, range_id: Uuid) -> Result<
         .into_iter()
         .map(|r| r.status)
         .collect();
+    // `pending` and `running` are NOT the same rollup. A chunk deferred by lease
+    // contention is left `pending` with nobody driving it, and folding that into
+    // "running" made the range read as live indefinitely — a stalled backfill
+    // presented as an in-flight one, which is the state an operator is least
+    // likely to investigate. `running` now means a chunk is genuinely claimed;
+    // `pending` means work remains and nothing is doing it.
     let rolled = if statuses.is_empty() {
         "done"
-    } else if statuses.iter().any(|s| s == "pending" || s == "running") {
+    } else if statuses.iter().any(|s| s == "running") {
         "running"
+    } else if statuses.iter().any(|s| s == "pending") {
+        "pending"
     } else if statuses.iter().all(|s| s == "done") {
         "done"
     } else if statuses
@@ -806,7 +1229,23 @@ pub async fn resume_backfill_range(
         .ok_or_else(|| {
             AirwayRunError::InvalidInput(format!("backfill range {range_id} not found"))
         })?;
-    let concurrency = range.concurrency.max(1) as usize;
+    // Clamped to 1, not merely defaulted: `range.concurrency` is read from a
+    // stored row, so existing ranges (and the HTTP path) would otherwise still
+    // fan out. Concurrent chunks of one pipeline share a single `<table>_raw`
+    // buffer whose fold watermark spans the WHOLE buffer, so one chunk's fold
+    // drains another's partially-loaded rows; and concurrent folds of one table
+    // are the exact shape of the duplicate rows measured on pokehouse. Per-chunk
+    // cursor isolation (run-scoped store) covers the cursor and nothing else.
+    let concurrency = 1usize;
+    // Say so rather than silently ignoring the operator's setting — a backfill
+    // that quietly runs 4x slower than asked is its own support ticket.
+    if range.concurrency > 1 {
+        tracing::warn!(
+            requested = range.concurrency,
+            "backfill chunk concurrency is pinned to 1; the requested value is ignored \
+             (chunks share one raw buffer and their folds would interleave)"
+        );
+    }
     let chunks: Vec<Chunk> = Checkpoint::find()
         .filter(CpCol::BackfillRangeId.eq(range_id))
         .filter(CpCol::Status.ne("done"))

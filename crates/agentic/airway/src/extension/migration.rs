@@ -19,6 +19,7 @@ impl MigratorTrait for AirwayMigrator {
             Box::new(CreateRunExtensions),
             Box::new(AddPartialToLoadAudit),
             Box::new(AddRetryStateToRunExtensions),
+            Box::new(CreatePipelineLeases),
         ]
     }
 
@@ -66,6 +67,17 @@ enum AirwayRunExtensions {
     Resources,
     RetryCount,
     ResumeState,
+}
+
+#[derive(Iden)]
+enum AirwayPipelineLeases {
+    #[iden = "airway_pipeline_leases"]
+    Table,
+    WorkspaceId,
+    PipelineName,
+    RunId,
+    AcquiredAt,
+    ExpiresAt,
 }
 
 /// Mirror of the runtime's `agentic_runs` table — only the `Id`
@@ -396,6 +408,104 @@ impl MigrationTrait for AddRetryStateToRunExtensions {
                 Table::alter()
                     .table(AirwayRunExtensions::Table)
                     .drop_column(AirwayRunExtensions::ResumeState)
+                    .to_owned(),
+            )
+            .await
+    }
+}
+
+// ── Migration 6: airway_pipeline_leases ─────────────────────────────────────
+
+/// Single-flight lease: at most one *active* airway run per
+/// `(workspace_id, pipeline_name)`.
+///
+/// Two overlapping runs of one pipeline are not merely wasteful, they are
+/// incorrect on two independent axes:
+///
+///  1. **Cursor corruption.** `airway_pipeline_state` is keyed by
+///     `pipeline_name`, so concurrent runs read-modify-write a single cursor
+///     row. The optimistic `version` check makes the loser *fail its save*
+///     rather than merge — leaving a window silently skipped or re-pulled.
+///  2. **Duplicate rows downstream.** Each run ends with a merge-on-read fold
+///     of `<table>_raw` into the served table. Two folds whose snapshots
+///     overlap each purge against a base the other has not committed yet, so
+///     both versions of a changed row survive. Measured on pokehouse
+///     (2026-08-05): 34 excess rows in `toast_pos.orders`, 104 in
+///     `order_selections` — every duplicate pair spanning two `_aw_load_id`s.
+///
+/// Keyed by workspace **and** name because `pipeline_name` comes from the
+/// YAML and is not globally unique — two tenants may both ship a pipeline
+/// called `restaurant_analytics`, and one must never gate the other.
+///
+/// `expires_at` (not a liveness heartbeat) is the crash backstop: a worker
+/// that OOMs mid-run cannot release, so the lease self-heals at expiry. That
+/// mirrors the task queue's own reaper, which reclaims stale claims on the
+/// same principle rather than tracking worker liveness.
+struct CreatePipelineLeases;
+
+impl MigrationName for CreatePipelineLeases {
+    fn name(&self) -> &str {
+        "m20260805_000006_create_airway_pipeline_leases"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for CreatePipelineLeases {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_table(
+                Table::create()
+                    .table(AirwayPipelineLeases::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(AirwayPipelineLeases::WorkspaceId)
+                            .uuid()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AirwayPipelineLeases::PipelineName)
+                            .text()
+                            .not_null(),
+                    )
+                    // The run currently holding the lease. Returned to the
+                    // caller on a conflict so the UI can link to the run that
+                    // is already in flight instead of just saying "busy".
+                    .col(
+                        ColumnDef::new(AirwayPipelineLeases::RunId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AirwayPipelineLeases::AcquiredAt)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(AirwayPipelineLeases::ExpiresAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    // Composite PK is what makes acquisition atomic: the
+                    // `ON CONFLICT` target below is this constraint, so two
+                    // replicas racing to start the same pipeline resolve in
+                    // the database rather than in a check-then-act window.
+                    .primary_key(
+                        Index::create()
+                            .col(AirwayPipelineLeases::WorkspaceId)
+                            .col(AirwayPipelineLeases::PipelineName),
+                    )
+                    .to_owned(),
+            )
+            .await
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(AirwayPipelineLeases::Table)
+                    .if_exists()
                     .to_owned(),
             )
             .await

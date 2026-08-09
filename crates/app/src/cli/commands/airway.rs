@@ -52,6 +52,43 @@ pub enum AirwayCommand {
     /// Show backfill coverage for a pipeline (done / failed / pending chunks)
     /// from `backfill_checkpoints` — i.e. what period is loaded vs missing.
     Coverage(AirwayCoverageArgs),
+    /// List the single-flight leases held in a workspace — the answer to
+    /// "why won't this pipeline start?".
+    Leases(AirwayLeasesArgs),
+    /// Force-release a pipeline's single-flight lease.
+    ///
+    /// The recovery path for a holder that will never release itself: a
+    /// dead-lettered run (the reaper cannot free it), or a `Ctrl-C`'d
+    /// `oxy airway run`, which otherwise leaves the pipeline unrunnable until
+    /// the 6h TTL lapses.
+    ReleaseLease(AirwayReleaseLeaseArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct AirwayLeasesArgs {
+    /// Workspace to inspect. Defaults to the local single-tenant workspace
+    /// (`Uuid::nil()`), which every other `oxy airway` subcommand assumes.
+    ///
+    /// Required for cloud: a lease stranded by a dead-lettered run lives under
+    /// a real workspace id, and without this flag the recovery command cannot
+    /// name the case it exists for — it would list the local workspace and
+    /// report "no leases held" while prod stays blocked for six hours.
+    #[clap(long)]
+    pub workspace_id: Option<Uuid>,
+}
+
+#[derive(Parser, Debug)]
+pub struct AirwayReleaseLeaseArgs {
+    /// Pipeline NAME (the `name:` in the `.airway.yml`), not the file path —
+    /// leases are keyed by name, which is what `oxy airway leases` prints.
+    pub pipeline_name: String,
+    /// Skip the confirmation prompt.
+    #[clap(long)]
+    pub force: bool,
+    /// Workspace holding the lease. Defaults to the local single-tenant
+    /// workspace; required to clear a cloud lease. See `AirwayLeasesArgs`.
+    #[clap(long)]
+    pub workspace_id: Option<Uuid>,
 }
 
 #[derive(Parser, Debug)]
@@ -76,11 +113,29 @@ pub struct AirwayBackfillArgs {
     /// Chunk size: `month` (default), `week`, or `day`.
     #[clap(long, default_value = "month")]
     pub granularity: String,
-    /// Max chunks to run concurrently. Each chunk is a full airway run writing
-    /// the same table, and DuckLake serializes catalog commits per table — so a
-    /// high value trades parallel extract for commit conflict-retries (safe:
-    /// resumable). ≈4 is a good default; 1 is fully sequential.
-    #[clap(long, default_value = "4")]
+    /// Max chunks to run concurrently.
+    ///
+    /// FORCED TO 1. Kept as a flag so existing invocations don't break, but a
+    /// higher value is ignored — concurrent chunks of one pipeline are unsafe
+    /// for three reasons, only the first of which was previously understood:
+    ///
+    ///  1. All chunks append to the SAME `<table>_raw`, and the fold's
+    ///     watermark is `max(_aw_ingested_at)` over that whole buffer — so one
+    ///     chunk's fold folds and DRAINS another chunk's partially-loaded rows
+    ///     mid-flight. Not data loss (rows are valid, deduped by guid), but the
+    ///     bounded-window abstraction leaks entirely.
+    ///  2. Concurrent folds of one table is the exact shape of the duplicate
+    ///     rows measured on the pokehouse tenant (152 excess rows, every pair
+    ///     spanning two `_aw_load_id`s). Why the cross-pod advisory lock did
+    ///     not prevent those is still unexplained, so running 4 folds in
+    ///     parallel is doing the suspected-harmful thing on purpose.
+    ///  3. Backfills pull OLD windows, and the fold's version guard is merged
+    ///     but not in the pinned airway release — so today an older re-pulled
+    ///     row overwrites a newer one. Concurrency multiplies that exposure.
+    ///
+    /// Cursor state IS isolated per chunk (run-scoped store), which is what
+    /// made this look safe; that isolation covers the cursor and nothing else.
+    #[clap(long, default_value = "1")]
     pub concurrency: usize,
     /// Emit one JSON object per event instead of pretty output.
     #[clap(long)]
@@ -101,6 +156,8 @@ pub async fn handle_airway_command(args: AirwayArgs) -> Result<(), OxyError> {
         AirwayCommand::Run(a) => cmd_run(a).await,
         AirwayCommand::Backfill(a) => cmd_backfill(a).await,
         AirwayCommand::Coverage(a) => cmd_coverage(a).await,
+        AirwayCommand::Leases(a) => cmd_leases(a).await,
+        AirwayCommand::ReleaseLease(a) => cmd_release_lease(a).await,
     }
 }
 
@@ -435,6 +492,14 @@ async fn cmd_backfill(args: AirwayBackfillArgs) -> Result<(), OxyError> {
                     let note = p.note.unwrap_or_default();
                     println!("  {}", format!("✗ {} ({note})", p.label).error());
                 }
+                // Not a failure: the chunk was never attempted because another
+                // run held the lease, and it stays pending for the next pass.
+                // Printed distinctly so an operator scanning output doesn't
+                // read a deferral as an error.
+                ChunkDisposition::Deferred => {
+                    let note = p.note.unwrap_or_default();
+                    println!("  {}", format!("⏸ {} ({note})", p.label).warning());
+                }
             }
         },
     )
@@ -444,15 +509,28 @@ async fn cmd_backfill(args: AirwayBackfillArgs) -> Result<(), OxyError> {
     println!(
         "{}",
         format!(
-            "done={} resumed={} degraded={} failed={}",
-            summary.done, summary.resumed, summary.degraded, summary.failed
+            "done={} resumed={} degraded={} failed={} deferred={}",
+            summary.done, summary.resumed, summary.degraded, summary.failed, summary.deferred
         )
         .info()
     );
+    // `deferred` counts toward the re-run hint. Without it an all-deferred pass
+    // printed every counter as zero, gave no hint and exited 0 — a backfill that
+    // did nothing, reported as a backfill that had nothing to do.
     if summary.degraded + summary.failed > 0 {
         println!(
             "{}",
             "re-run the same command to retry failed / partial chunks.".secondary()
+        );
+    }
+    if summary.deferred > 0 {
+        println!(
+            "{}",
+            format!(
+                "{} chunk(s) deferred — another run held the pipeline's lease. Re-run once it finishes; nothing failed.",
+                summary.deferred
+            )
+            .warning()
         );
     }
     Ok(())
@@ -555,4 +633,119 @@ fn emit(as_json: bool, seq: i64, event_type: &str, payload: &Value) {
         "cancelled" => println!("{}", "■ cancelled".secondary()),
         other => println!("  {other}: {payload}"),
     }
+}
+
+// ── leases ─────────────────────────────────────────────────────────────────
+
+/// `oxy airway leases` — what is currently holding each pipeline.
+///
+/// The CLI runs against the local workspace (`Uuid::nil()`), matching every
+/// other airway subcommand here.
+async fn cmd_leases(args: AirwayLeasesArgs) -> Result<(), OxyError> {
+    let db = connect_db().await?;
+    let workspace_id = args.workspace_id.unwrap_or_else(Uuid::nil);
+    let leases = agentic_pipeline::airway_run::list_airway_leases(&db, workspace_id)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("list leases: {e}")))?;
+    if leases.is_empty() {
+        println!("{}", "No airway leases held.".success());
+        return Ok(());
+    }
+    println!(
+        "{:<32}  {:<38}  {:<22}  {}",
+        "PIPELINE", "RUN_ID", "ACQUIRED (UTC)", "EXPIRES (UTC)"
+    );
+    let now = chrono::Utc::now();
+    for l in leases {
+        // Flag lapsed rows: they no longer block anything (the next acquire
+        // steals them), so an operator seeing one should not go reaching for
+        // release-lease.
+        let expiry = if l.expires_at <= now {
+            format!("{} (LAPSED)", l.expires_at.format("%Y-%m-%d %H:%M:%S"))
+        } else {
+            l.expires_at.format("%Y-%m-%d %H:%M:%S").to_string()
+        };
+        println!(
+            "{:<32}  {:<38}  {:<22}  {}",
+            l.pipeline_name,
+            l.run_id,
+            l.acquired_at.format("%Y-%m-%d %H:%M:%S"),
+            expiry
+        );
+    }
+    Ok(())
+}
+
+/// `oxy airway release-lease <pipeline_name>` — recover a stuck pipeline.
+///
+/// Shows the holder and requires confirmation by default. Releasing a lease
+/// whose run is genuinely still executing re-admits exactly the concurrency the
+/// lease exists to prevent, so the prompt states that rather than assuming the
+/// operator has read the docs.
+async fn cmd_release_lease(args: AirwayReleaseLeaseArgs) -> Result<(), OxyError> {
+    let db = connect_db().await?;
+    let workspace_id = args.workspace_id.unwrap_or_else(Uuid::nil);
+    let leases = agentic_pipeline::airway_run::list_airway_leases(&db, workspace_id)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("list leases: {e}")))?;
+    let Some(held) = leases
+        .iter()
+        .find(|l| l.pipeline_name == args.pipeline_name)
+    else {
+        // Not an error: "already free" is the state the caller wanted.
+        println!(
+            "{}",
+            format!(
+                "No lease held for `{}` — nothing to release.",
+                args.pipeline_name
+            )
+            .success()
+        );
+        return Ok(());
+    };
+
+    if !args.force {
+        println!(
+            "Lease on `{}` is held by run {} (acquired {} UTC, expires {} UTC).",
+            held.pipeline_name,
+            held.run_id,
+            held.acquired_at.format("%Y-%m-%d %H:%M:%S"),
+            held.expires_at.format("%Y-%m-%d %H:%M:%S"),
+        );
+        println!(
+            "{}",
+            "If that run is still executing, releasing lets a second run start \
+             alongside it — which can produce duplicate rows. Only release a \
+             holder you know is dead (dead-lettered, or a Ctrl-C'd CLI run)."
+                .warning()
+        );
+        print!("Release it? [y/N] ");
+        use std::io::Write as _;
+        std::io::stdout().flush().ok();
+        let mut answer = String::new();
+        std::io::stdin()
+            .read_line(&mut answer)
+            .map_err(|e| OxyError::RuntimeError(format!("read confirmation: {e}")))?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            println!("{}", "Aborted; lease left in place.".text());
+            return Ok(());
+        }
+    }
+
+    let removed = agentic_pipeline::airway_run::force_release_airway_lease(
+        &db,
+        Uuid::nil(),
+        &args.pipeline_name,
+    )
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("release lease: {e}")))?;
+    println!(
+        "{}",
+        format!(
+            "Released {removed} lease(s) for `{}`; the pipeline can run again.",
+            args.pipeline_name
+        )
+        .success()
+    );
+    Ok(())
 }

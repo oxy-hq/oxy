@@ -1,0 +1,261 @@
+//! Integration tests for the airway single-flight lease.
+//!
+//! These need a real Postgres: the whole point of the lease is that the
+//! *database* resolves the race between replicas, so an in-memory fake would
+//! test the mock rather than the guarantee. Uses testcontainers (never the dev
+//! DB) — set `OXY_DATABASE_URL` to point at a throwaway instance instead.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use agentic_airway::extension::AirwayMigrator;
+use agentic_airway::extension::pipeline_lease::{
+    LEASE_TTL_SECS, LeaseAcquisition, release, release_by_run, try_acquire,
+};
+use agentic_runtime::migration::RuntimeMigrator;
+use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
+use sea_orm_migration::MigratorTrait;
+use uuid::Uuid;
+
+static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+static TEST_CONTAINER: tokio::sync::OnceCell<
+    Arc<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
+> = tokio::sync::OnceCell::const_new();
+
+async fn test_db() -> Option<DatabaseConnection> {
+    let url = TEST_DB_URL
+        .get_or_init(|| async {
+            if let Ok(url) = std::env::var("OXY_DATABASE_URL") {
+                return url;
+            }
+            use testcontainers::runners::AsyncRunner;
+            use testcontainers::{ImageExt, ReuseDirective};
+            use testcontainers_modules::postgres::Postgres;
+            let container = TEST_CONTAINER
+                .get_or_init(|| async {
+                    Arc::new(
+                        Postgres::default()
+                            .with_tag("18-alpine")
+                            .with_reuse(ReuseDirective::Always)
+                            .start()
+                            .await
+                            .expect("start Postgres testcontainer — is Docker running?"),
+                    )
+                })
+                .await;
+            let port = container.get_host_port_ipv4(5432_u16).await.unwrap();
+            format!("postgresql://postgres:postgres@127.0.0.1:{port}/postgres")
+        })
+        .await
+        .clone();
+
+    let mut db = None;
+    for attempt in 0..10 {
+        match Database::connect(&url).await {
+            Ok(conn) => {
+                db = Some(conn);
+                break;
+            }
+            Err(e) if attempt < 9 => {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                eprintln!("test_db: attempt {attempt} failed: {e}, retrying");
+            }
+            Err(e) => panic!("connect to test DB failed after 10 retries: {e}"),
+        }
+    }
+    let db = db?;
+    RuntimeMigrator::up(&db, None)
+        .await
+        .expect("runtime migrations failed");
+    AirwayMigrator::up(&db, None)
+        .await
+        .expect("airway migrations failed");
+    Some(db)
+}
+
+/// Every test uses a fresh workspace uuid, so cases stay independent without
+/// truncating a table other tests may be using concurrently.
+fn ws() -> Uuid {
+    Uuid::new_v4()
+}
+
+#[tokio::test]
+async fn second_acquire_is_refused_and_names_the_holder() {
+    let Some(db) = test_db().await else { return };
+    let (w, pipe) = (ws(), "restaurant_analytics");
+
+    let first = try_acquire(&db, w, pipe, "run-a", LEASE_TTL_SECS)
+        .await
+        .expect("first acquire");
+    assert_eq!(first, LeaseAcquisition::Acquired);
+
+    let second = try_acquire(&db, w, pipe, "run-b", LEASE_TTL_SECS)
+        .await
+        .expect("second acquire");
+    // Not merely refused — it must identify the incumbent, which is what the
+    // 409 body and the scheduler's skip log both surface.
+    match second {
+        LeaseAcquisition::Held { run_id, .. } => assert_eq!(run_id, "run-a"),
+        LeaseAcquisition::Acquired => panic!("second run must not acquire"),
+    }
+}
+
+#[tokio::test]
+async fn a_different_workspace_is_not_gated_by_the_same_pipeline_name() {
+    let Some(db) = test_db().await else { return };
+    // `pipeline_name` comes from the YAML and is not globally unique. Two
+    // tenants shipping `restaurant_analytics` must not block each other —
+    // that would be a cross-tenant denial of service.
+    let pipe = "restaurant_analytics";
+
+    assert_eq!(
+        try_acquire(&db, ws(), pipe, "run-tenant-1", LEASE_TTL_SECS)
+            .await
+            .unwrap(),
+        LeaseAcquisition::Acquired
+    );
+    assert_eq!(
+        try_acquire(&db, ws(), pipe, "run-tenant-2", LEASE_TTL_SECS)
+            .await
+            .unwrap(),
+        LeaseAcquisition::Acquired
+    );
+}
+
+#[tokio::test]
+async fn release_lets_the_next_run_in() {
+    let Some(db) = test_db().await else { return };
+    let (w, pipe) = (ws(), "orders");
+
+    try_acquire(&db, w, pipe, "run-a", LEASE_TTL_SECS)
+        .await
+        .unwrap();
+    release(&db, w, pipe, "run-a").await.expect("release");
+
+    assert_eq!(
+        try_acquire(&db, w, pipe, "run-b", LEASE_TTL_SECS)
+            .await
+            .unwrap(),
+        LeaseAcquisition::Acquired
+    );
+}
+
+#[tokio::test]
+async fn release_by_run_finds_the_lease_without_workspace_or_pipeline() {
+    let Some(db) = test_db().await else { return };
+    let (w, pipe) = (ws(), "checks");
+
+    try_acquire(&db, w, pipe, "run-a", LEASE_TTL_SECS)
+        .await
+        .unwrap();
+    // This is the path the worker takes at task completion — it holds the run
+    // id but not the workspace.
+    release_by_run(&db, "run-a").await.expect("release_by_run");
+
+    assert_eq!(
+        try_acquire(&db, w, pipe, "run-b", LEASE_TTL_SECS)
+            .await
+            .unwrap(),
+        LeaseAcquisition::Acquired
+    );
+}
+
+#[tokio::test]
+async fn a_stale_release_cannot_free_the_successors_lease() {
+    let Some(db) = test_db().await else { return };
+    let (w, pipe) = (ws(), "payments");
+
+    // run-a takes a lease that expires immediately, then run-b takes over.
+    try_acquire(&db, w, pipe, "run-a", 0).await.unwrap();
+    assert_eq!(
+        try_acquire(&db, w, pipe, "run-b", LEASE_TTL_SECS)
+            .await
+            .unwrap(),
+        LeaseAcquisition::Acquired
+    );
+
+    // run-a finally finishes and releases. Without the run_id guard this would
+    // free run-b's live lease and re-admit exactly the concurrency the lease
+    // exists to prevent.
+    release(&db, w, pipe, "run-a").await.unwrap();
+    release_by_run(&db, "run-a").await.unwrap();
+
+    match try_acquire(&db, w, pipe, "run-c", LEASE_TTL_SECS)
+        .await
+        .unwrap()
+    {
+        LeaseAcquisition::Held { run_id, .. } => assert_eq!(run_id, "run-b"),
+        LeaseAcquisition::Acquired => {
+            panic!("run-a's stale release freed run-b's lease")
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_expired_lease_is_taken_over() {
+    let Some(db) = test_db().await else { return };
+    let (w, pipe) = (ws(), "selections");
+
+    // ttl 0 → `expires_at = now()`, already lapsed for the next caller. This
+    // is the crashed-worker case: nothing released, but the lease must not
+    // block the pipeline forever.
+    try_acquire(&db, w, pipe, "crashed-run", 0).await.unwrap();
+
+    assert_eq!(
+        try_acquire(&db, w, pipe, "next-run", LEASE_TTL_SECS)
+            .await
+            .unwrap(),
+        LeaseAcquisition::Acquired
+    );
+}
+
+#[tokio::test]
+async fn concurrent_acquirers_produce_exactly_one_winner() {
+    let Some(db) = test_db().await else { return };
+    let (w, pipe) = (ws(), "concurrent");
+
+    // The guarantee that matters: N replicas racing to start the same pipeline
+    // must yield exactly one winner. A check-then-act implementation passes
+    // every other test in this file and fails this one.
+    let mut set = tokio::task::JoinSet::new();
+    for i in 0..8 {
+        let db = db.clone();
+        let pipe = pipe.to_string();
+        set.spawn(async move {
+            try_acquire(&db, w, &pipe, &format!("run-{i}"), LEASE_TTL_SECS)
+                .await
+                .expect("acquire")
+        });
+    }
+
+    let mut winners = 0;
+    while let Some(res) = set.join_next().await {
+        if res.expect("task panicked") == LeaseAcquisition::Acquired {
+            winners += 1;
+        }
+    }
+    assert_eq!(winners, 1, "expected exactly one winner, got {winners}");
+}
+
+#[tokio::test]
+async fn lease_row_is_gone_after_release() {
+    let Some(db) = test_db().await else { return };
+    let (w, pipe) = (ws(), "row_check");
+
+    try_acquire(&db, w, pipe, "run-a", LEASE_TTL_SECS)
+        .await
+        .unwrap();
+    release_by_run(&db, "run-a").await.unwrap();
+
+    // Released means deleted, not tombstoned — a lingering row with a past
+    // expiry would still work, but it would grow unboundedly.
+    let remaining = db
+        .query_all(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT run_id FROM airway_pipeline_leases WHERE workspace_id = $1",
+            [w.into()],
+        ))
+        .await
+        .expect("query");
+    assert!(remaining.is_empty(), "lease row should be deleted");
+}

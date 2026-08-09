@@ -41,6 +41,23 @@ pub struct AirwayPipelineSpec {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resources: Vec<String>,
 
+    /// Allow more than one run of this pipeline at a time.
+    ///
+    /// **Defaults to `false` (single-flight enforced), and that is almost
+    /// always what you want.** Two concurrent runs of one pipeline are
+    /// incorrect on two independent axes: they read-modify-write a single
+    /// `airway_pipeline_state` cursor row (keyed by `pipeline_name`), so one
+    /// silently loses its window; and their end-of-load folds can overlap
+    /// snapshots, so a row changed between the two runs lands twice.
+    ///
+    /// Set `true` only for a pipeline that owns no incremental cursor and
+    /// writes no `replacing` table — a full-refresh append into a
+    /// partitioned target, say. If you are unsure, leave it off: the failure
+    /// it prevents is silent, and the cost of the guard is a skipped
+    /// scheduler tick.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_concurrent_runs: bool,
+
     /// Maximum in-flight extractions when running resources in
     /// parallel. Capped at [`MAX_CONCURRENCY`] to avoid DoS-ing the
     /// upstream source. Defaults to 1 (sequential, matches airway's

@@ -8,7 +8,7 @@
  * merge), so overlapping backfills are distinct, inspectable rows.
  */
 
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, PauseCircle } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
 
@@ -19,6 +19,11 @@ import { cn } from "@/libs/shadcn/utils";
 /** Rollup status → bar color. Unknown falls back to muted. */
 const STATUS_BAR: Record<string, string> = {
   running: "bg-blue-500 animate-pulse",
+  // Work remains but nothing is driving it — a chunk deferred because another
+  // run held the pipeline's lease. Deliberately NOT the pulsing blue of
+  // `running`: the whole point of splitting `pending` out of that rollup was to
+  // stop a stalled range presenting as live.
+  pending: "bg-amber-500/50",
   done: "bg-green-500",
   degraded: "bg-amber-500",
   failed: "bg-red-500",
@@ -103,6 +108,9 @@ const BackfillRangesPanel: React.FC<{ pipelineRef: string }> = ({ pipelineRef })
                   <CheckCircle2 className='h-3.5 w-3.5 text-green-600' />
                 ) : r.status === "running" ? (
                   <Loader2 className='h-3.5 w-3.5 animate-spin text-blue-500' />
+                ) : r.status === "pending" ? (
+                  // Static, not spinning: nothing is driving this range.
+                  <PauseCircle className='h-3.5 w-3.5 text-amber-600' />
                 ) : null}
                 <span className='text-muted-foreground'>
                   {r.done}/{r.total}

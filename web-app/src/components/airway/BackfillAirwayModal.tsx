@@ -57,7 +57,6 @@ const BackfillAirwayModal: React.FC<{
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [granularity, setGranularity] = useState<ChunkGranularity>("month");
-  const [concurrency, setConcurrency] = useState(4);
   const backfill = useBackfillAirway();
   const chunked = useChunkedBackfill();
 
@@ -80,7 +79,13 @@ const BackfillAirwayModal: React.FC<{
         setOpen(false);
         onStarted(run_id);
       } else {
-        const { chunk_count } = await chunked.mutateAsync({ ...range, granularity, concurrency });
+        // Chunks are serialized server-side (they share one staging buffer);
+        // sending anything else would only produce an ignored-value warning.
+        const { chunk_count } = await chunked.mutateAsync({
+          ...range,
+          granularity,
+          concurrency: 1
+        });
         toast.success(
           `Chunked backfill started — ${chunk_count} ${granularity} chunk${chunk_count === 1 ? "" : "s"}`
         );
@@ -158,7 +163,10 @@ const BackfillAirwayModal: React.FC<{
 
         {mode === "chunked" && (
           <div className='flex flex-col gap-2'>
-            <div className='grid grid-cols-2 gap-4'>
+            {/* Single column since the "Parallel chunks" field was removed —
+                a two-column grid would leave the selector at half width with an
+                empty cell beside it. */}
+            <div className='flex flex-col gap-4'>
               <div className='flex flex-col gap-2'>
                 <Label htmlFor='backfill-granularity'>Chunk size</Label>
                 <select
@@ -172,24 +180,12 @@ const BackfillAirwayModal: React.FC<{
                   <option value='day'>Day</option>
                 </select>
               </div>
-              <div className='flex flex-col gap-2'>
-                <Label htmlFor='backfill-concurrency'>Parallel chunks</Label>
-                <Input
-                  id='backfill-concurrency'
-                  type='number'
-                  min={1}
-                  max={16}
-                  value={concurrency}
-                  onChange={(e) =>
-                    setConcurrency(Math.min(16, Math.max(1, Number(e.target.value) || 1)))
-                  }
-                />
-              </div>
             </div>
             <p className='text-muted-foreground text-xs'>
               The window is split into {granularity} chunks, each checkpointed so the backfill
-              resumes where it left off; up to {concurrency} run at once. Track progress in the
-              Coverage tab.
+              resumes where it left off. Chunks run one at a time — they share a single staging
+              buffer, so running them in parallel lets one chunk's merge consume another's
+              half-loaded rows. Track progress in the Coverage tab.
             </p>
           </div>
         )}

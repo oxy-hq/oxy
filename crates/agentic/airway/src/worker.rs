@@ -134,6 +134,12 @@ impl AirwayWorker {
         // handle and synthesize a terminal `Failed` on panic/abort so
         // the run always reaches a terminal state.
         let outcome_tx_watch = outcome_tx.clone();
+        // The lease release lives at the tail of `drive`, so a panic skips it —
+        // and the pipeline would then be blocked for the full 6h TTL by the very
+        // failure this watcher exists to convert into a terminal state. Clone
+        // the handles the watcher needs to release it itself.
+        let db_watch = self.db.clone();
+        let run_id_watch = run_id.clone();
         tokio::spawn(async move {
             let handle = tokio::spawn(drive(
                 spec,
@@ -155,6 +161,20 @@ impl AirwayWorker {
                 // No-op if `drive` already sent an outcome before the
                 // failure; this only fires when it never did.
                 let _ = outcome_tx_watch.send(TaskOutcome::Failed(msg)).await;
+                // Release here too: `drive`'s own release is inside the future
+                // that just panicked. Idempotent — a DELETE scoped to this
+                // run_id, so if `drive` did get far enough to release, this is
+                // a no-op rather than a double-free of a successor's lease.
+                if let Err(e) = crate::extension::pipeline_lease::release_by_run(
+                    db_watch.as_ref(),
+                    &run_id_watch,
+                )
+                .await
+                {
+                    warn!(run_id = %run_id_watch, error = %e,
+                          "failed to release the airway lease after a worker panic; \
+                           it will lapse at expires_at");
+                }
             }
         });
 
@@ -247,6 +267,19 @@ async fn drive(
             TaskOutcome::Failed(err.to_string())
         }
     };
+
+    // Release the single-flight lease on BOTH outcomes — a failed run must not
+    // keep the pipeline blocked until the TTL lapses, or one bad load would
+    // stall ingest for hours. Best-effort: the lease's `expires_at` is the
+    // backstop if this DELETE cannot run (dead connection, killed pod), which
+    // is exactly the case the TTL exists for.
+    if let Err(e) =
+        crate::extension::pipeline_lease::release_by_run(db_for_extension.as_ref(), &run_id).await
+    {
+        warn!(run_id = %run_id, error = %e,
+              "failed to release the airway single-flight lease; it will lapse at expires_at");
+    }
+
     let _ = outcome_tx.send(outcome).await;
 }
 
