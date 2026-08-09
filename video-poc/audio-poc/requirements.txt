@@ -1,0 +1,7 @@
+# audio-poc — upsell detection feasibility harness.
+# System dep: ffmpeg (already in the edge image; brew install ffmpeg locally).
+
+anthropic==0.96.0        # upsell-intent classifier (Haiku) — matches the edge VLM path
+faster-whisper==1.1.0    # on-device STT (CTranslate2 Whisper, CPU int8)
+numpy>=1.26              # PCM buffers
+httpx>=0.27              # --emit oxy → POST /control/events (matches the edge outbox)
