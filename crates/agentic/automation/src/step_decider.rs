@@ -492,13 +492,19 @@ impl AutomationDecider {
                 // Airhouse credential provider, backfill windowing and
                 // run-scoped state. Backfill bounds stay `None`: a windowed
                 // backfill is driven by the backfill path, not by an
-                // automation step.
+                // automation step. `contract_policy`/`environment` stay
+                // `None` too — stage 2 needs to resolve these here as well,
+                // from `airway_source_config` keyed by source kind, or a
+                // step-triggered run of a pipeline diverges from a
+                // schedule-triggered run of the same pipeline.
                 let spec = TaskSpec::Airway {
                     pipeline_ref,
                     variables: None,
                     resources,
                     backfill_from: None,
                     backfill_to: None,
+                    contract_policy: None,
+                    environment: None,
                 };
                 (
                     state,

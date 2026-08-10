@@ -1140,6 +1140,8 @@ mod tests {
             resources: vec!["orders".into()],
             backfill_from: None,
             backfill_to: None,
+            contract_policy: None,
+            environment: None,
         };
         let (target, _request, context) = spec_to_delegation_parts(&spec, "ingest");
         assert!(

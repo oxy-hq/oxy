@@ -9,6 +9,7 @@
 //!
 //! [airway]: https://github.com/oxy-hq/airway-internal
 
+pub mod admission;
 pub mod boxed;
 pub mod config;
 pub mod destination_factory;
@@ -21,6 +22,7 @@ pub mod state_store;
 pub mod task_spec;
 pub mod worker;
 
+pub use admission::AirwayAdmission;
 pub use config::{
     AirwayPipelineSpec, DestinationConfig, DestinationRef, DestinationSpec, SourceConfig,
 };

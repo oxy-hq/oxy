@@ -59,28 +59,43 @@ pub struct AirwayWorker {
     /// (non-expired) ephemeral credential on every (re)connect. `None` for
     /// every other destination.
     credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
+    /// Contract-policy and environment admission this worker's runs are
+    /// checked against at source construction. Defaults to `permissive` /
+    /// `production` — today's behaviour.
+    admission: crate::AirwayAdmission,
 }
 
 impl AirwayWorker {
-    pub fn new(db: Arc<DatabaseConnection>) -> Self {
+    /// `admission` is a **required argument, not a builder step.** It decides
+    /// whether a source is admitted at all, so the failure mode of an opt-in
+    /// `with_admission` is a call site that forgets it — silently running under
+    /// `permissive` / `production` while the deployment configured otherwise.
+    /// Requiring it here makes that unrepresentable rather than merely untested;
+    /// pass `AirwayAdmission::default()` for today's behaviour.
+    pub fn new(db: Arc<DatabaseConnection>, admission: crate::AirwayAdmission) -> Self {
         Self {
             db,
             refresh_sink: None,
             credential_provider: None,
+            admission,
         }
     }
 
     /// Construct a worker that hands `sink` to the source factory so a
     /// rotated OAuth refresh token can be persisted to the host's secret
     /// store. Used by the executor for `quickbooks` pipelines.
+    ///
+    /// `admission` is required for the reason [`Self::new`] gives.
     pub fn with_refresh_sink(
         db: Arc<DatabaseConnection>,
         sink: Arc<dyn crate::RefreshTokenSink>,
+        admission: crate::AirwayAdmission,
     ) -> Self {
         Self {
             db,
             refresh_sink: Some(sink),
             credential_provider: None,
+            admission,
         }
     }
 
@@ -127,6 +142,7 @@ impl AirwayWorker {
         let db = self.db.clone();
         let refresh_sink = self.refresh_sink.clone();
         let credential_provider = self.credential_provider.clone();
+        let admission = self.admission;
         let cancel_clone = cancel.clone();
         // If `drive` panics its JoinHandle is normally dropped and the
         // panic is swallowed: no `TaskOutcome` is ever sent and the
@@ -148,6 +164,7 @@ impl AirwayWorker {
                 db,
                 refresh_sink,
                 credential_provider,
+                admission,
                 event_tx,
                 cancel_clone,
                 outcome_tx,
@@ -200,6 +217,7 @@ async fn drive(
     db: Arc<DatabaseConnection>,
     refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
     credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
+    admission: crate::AirwayAdmission,
     event_tx: mpsc::Sender<(String, Value)>,
     cancel: CancellationToken,
     outcome_tx: mpsc::Sender<TaskOutcome>,
@@ -219,6 +237,7 @@ async fn drive(
         db,
         refresh_sink,
         credential_provider,
+        admission,
         event_tx.clone(),
         cancel,
         saw_error.clone(),
@@ -292,15 +311,26 @@ async fn run_pipeline(
     db: Arc<DatabaseConnection>,
     refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
     credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
+    admission: crate::AirwayAdmission,
     event_tx: mpsc::Sender<(String, Value)>,
     cancel: CancellationToken,
     saw_error: Arc<AtomicBool>,
 ) -> Result<airway::destination::LoadInfo, AirwayError> {
     // ── Build pluggable parts ──────────────────────────────────────────────
-    let connector = build_source_connector(&spec.source, refresh_sink)?;
+    let connector = build_source_connector(&spec.source, refresh_sink, admission.environment)?;
     let destination = build_destination(spec.destination.as_inline()?, credential_provider)?;
 
-    let mut source = airway::Source::from_connector(BoxedSourceConnector(connector));
+    // Admission runs **before** the source exists: `try_from_connector_with`
+    // checks the contract policy and the environment and refuses rather than
+    // handing back a usable handle to a source the deployment declined.
+    // `from_connector` — the previous call — is `-> Self` and therefore has no
+    // channel to refuse at all, which is why both policies were dark on oxy's
+    // path regardless of what was configured.
+    let mut source = airway::Source::try_from_connector_with(
+        BoxedSourceConnector(connector),
+        admission.contract_policy,
+        admission.environment,
+    )?;
     if !spec.resources.is_empty() {
         let names: Vec<&str> = spec.resources.iter().map(String::as_str).collect();
         source = source.with_resources(&names);
@@ -485,5 +515,73 @@ mod tests {
             })
             .await
             .expect("handle_event must not error on closed channel");
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    use crate::AirwayAdmission;
+    use airway::connector::{ContractPolicy, Environment};
+
+    fn db() -> Arc<sea_orm::DatabaseConnection> {
+        Arc::new(sea_orm::DatabaseConnection::Disconnected)
+    }
+
+    /// `AirwayAdmission::default()` is what a caller passes for today's
+    /// behaviour; it must still be `permissive` / `production` after an
+    /// upstream bump.
+    #[test]
+    fn the_default_admission_is_permissive_production() {
+        let worker = AirwayWorker::new(db(), AirwayAdmission::default());
+        assert_eq!(worker.admission.contract_policy, ContractPolicy::Permissive);
+        assert_eq!(worker.admission.environment, Environment::Production);
+    }
+
+    #[test]
+    fn both_constructors_carry_the_admission_they_were_given() {
+        let admission = AirwayAdmission {
+            contract_policy: ContractPolicy::RequireDeclared,
+            environment: Environment::Sandbox,
+        };
+        assert_eq!(
+            AirwayWorker::new(db(), admission).admission,
+            admission,
+            "new must carry it"
+        );
+
+        struct NoopSink;
+        #[async_trait::async_trait]
+        impl crate::RefreshTokenSink for NoopSink {
+            async fn persist(&self, _token: &str) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        assert_eq!(
+            AirwayWorker::with_refresh_sink(db(), Arc::new(NoopSink), admission).admission,
+            admission,
+            "with_refresh_sink must carry it too — the quickbooks path"
+        );
+    }
+
+    /// The chainable builder must not reset it: `with_credential_provider`
+    /// rebuilds nothing, but a future one that did would silently drop the
+    /// deployment's policy.
+    #[test]
+    fn a_chained_builder_preserves_the_admission() {
+        let admission = AirwayAdmission {
+            contract_policy: ContractPolicy::ForbidOpaque,
+            environment: Environment::Production,
+        };
+        struct NoopProvider;
+        #[async_trait::async_trait]
+        impl crate::CredentialProvider for NoopProvider {
+            async fn connection_string(&self) -> Result<String, String> {
+                Ok(String::new())
+            }
+        }
+        let worker =
+            AirwayWorker::new(db(), admission).with_credential_provider(Arc::new(NoopProvider));
+        assert_eq!(worker.admission, admission);
     }
 }

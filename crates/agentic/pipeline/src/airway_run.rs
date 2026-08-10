@@ -342,6 +342,11 @@ async fn seed_airway_run_rows(
         resources: request.resources.clone(),
         backfill_from: request.backfill_from.clone(),
         backfill_to: request.backfill_to.clone(),
+        // Stage 2 resolves these from `airway_source_config`, keyed by the
+        // pipeline's source kind. `None` here is the airway default
+        // (`permissive` / `production`) — today's behaviour, unchanged.
+        contract_policy: None,
+        environment: None,
     };
     crud::enqueue_task(db, &run_id, &run_id, None, &task_spec, None, scope).await?;
 

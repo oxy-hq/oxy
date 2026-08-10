@@ -177,7 +177,12 @@ impl AutomationStepOrchestrator {
                     // inherits secret resolution, the Airhouse credential
                     // provider and run-scoped state. Backfill bounds stay
                     // `None` — windowed backfills are driven by the backfill
-                    // path, not by an automation step.
+                    // path, not by an automation step. `contract_policy`/
+                    // `environment` stay `None` for the same reason — stage 2
+                    // still needs to resolve them here, from
+                    // `airway_source_config` keyed by source kind, or this
+                    // path runs under a different policy than a
+                    // schedule-triggered run of the same pipeline.
                     self.suspend_for_step(
                         &outcome_tx,
                         &mut answer_rx,
@@ -188,6 +193,8 @@ impl AutomationStepOrchestrator {
                             resources,
                             backfill_from: None,
                             backfill_to: None,
+                            contract_policy: None,
+                            environment: None,
                         },
                     )
                     .await

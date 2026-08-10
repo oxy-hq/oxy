@@ -533,6 +533,8 @@ async fn seed_pending_global(db: &DatabaseConnection, source_type: &str) -> Stri
             resources: Vec::new(),
             backfill_from: None,
             backfill_to: None,
+            contract_policy: None,
+            environment: None,
         },
         "analytics" => TaskSpec::Agent {
             agent_id: "agents/dummy.agentic.yml".into(),
@@ -628,6 +630,8 @@ async fn find_pending_global_runs_excludes_scope_owned_for_all_source_types() {
                 resources: Vec::new(),
                 backfill_from: None,
                 backfill_to: None,
+                contract_policy: None,
+                environment: None,
             },
             _ => TaskSpec::Agent {
                 agent_id: "agents/dummy.agentic.yml".into(),

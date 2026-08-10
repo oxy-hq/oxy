@@ -47,6 +47,26 @@ Migrator: `AirwayMigrator`, tracking table `seaql_migrations_airway`.
 - Cross-aggregate refs (`airway_run_extensions.load_id` →
   `airway_load_audit.load_id`) are loose UUIDs — no DB FK to other
   aggregates.
+- **`BoxedSourceConnector` must forward every defaulted `SourceConnector`
+  method.** Rust does not auto-implement a trait for `Box<dyn Trait>`, so an
+  unforwarded method silently resolves to the trait default — accepted,
+  compiled, and wrong. It has shipped broken once: `9252a6f56` restored
+  `table_name_mappings`, `key_propagation`, `partition_keys`, `sort_keys`,
+  `excluded_tables` and `extract_all`. It was also caught pre-merge once, on
+  this branch: `32cb6adef` restored 0.1.23's `contracts`, `sandbox_base_url`,
+  `contract_for` and `check_contracts` before any of it shipped — that last
+  pair would have *inverted* both admission checks, since an empty contract
+  map makes `require_declared` refuse the very connectors that declare
+  correctly. That it was caught before merge, not after, is evidence the
+  check works. `BoxedDestination` carries the same masking class for
+  `Destination`'s defaulted methods. When bumping airway, diff the trait's
+  method list against `boxed.rs`.
+- **Sources are admitted, not just built.** `run_pipeline` calls
+  `Source::try_from_connector_with`, never `from_connector` — the latter is
+  `-> Self` and so cannot refuse, which is why the policies were dark before
+  0.1.23. `environment` is *checked* by admission and *applied* in the source
+  factory; both halves are required, since airway resolves sandbox hosts from
+  a process-wide global oxy does not install.
 
 ## Testing
 

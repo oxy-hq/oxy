@@ -356,6 +356,10 @@ async fn airway_dispatch_failure_releases_the_lease() {
             resources: Vec::new(),
             backfill_from: None,
             backfill_to: None,
+            // `None` = airway's defaults. This test is about the lease being
+            // released when dispatch fails, not about admission.
+            contract_policy: None,
+            environment: None,
         },
         policy: None,
     };

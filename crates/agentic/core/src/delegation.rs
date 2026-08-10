@@ -273,6 +273,18 @@ pub enum TaskSpec {
         backfill_from: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         backfill_to: Option<String>,
+        /// Contract policy this run is admitted under (`permissive` |
+        /// `require_declared` | `forbid_opaque`). Carried as a string because
+        /// `airway::connector::ContractPolicy` implements `FromStr` but not
+        /// `Serialize`; `agentic_airway::AirwayAdmission` parses it. Absent =
+        /// the airway default (`permissive`), so rows queued before this key
+        /// existed keep their behaviour.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        contract_policy: Option<String>,
+        /// Vendor environment (`production` | `sandbox`). Same carrying
+        /// rationale and same absent-means-default rule as `contract_policy`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        environment: Option<String>,
     },
     /// Walk a workspace and write a compile-boundary revision (rows in
     /// `revisions` + per-entity tables; optionally promotes

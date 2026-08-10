@@ -29,7 +29,7 @@ use airway::connector::sources::http_file::{HttpFileConfig, http_file_source};
 use airway::connector::sources::overpass::{OverpassConfig, overpass_source};
 use airway::connector::sources::overture::{OvertureConfig, overture_source};
 use airway::connector::sources::postgres_cdc::PostgresCdcSource;
-use airway::connector::sources::quickbooks::QuickBooksSource;
+use airway::connector::sources::quickbooks::{QuickBooksSource, SANDBOX_BASE_URL};
 use airway::connector::sources::rest_api::{RestApiConfig, RestApiSource};
 use airway::connector::sources::sql_database::{
     ClickHouseConn, DatabaseBackend, SqlDatabaseSource, TableConfig,
@@ -84,18 +84,97 @@ impl airway::connector::sources::quickbooks::RefreshTokenSink for AirwayRefreshS
 /// that the host supplies (only the `quickbooks` source consumes it; all
 /// other arms ignore it). It lets a rotated refresh token be persisted to
 /// the host's secret store between runs.
+///
+/// `environment` is the deployment-wide vendor-environment intent (see
+/// [`resolve_quickbooks_base_url`]); only the `quickbooks` arm consumes it
+/// today — every other arm ignores it, since QuickBooks is the only
+/// connector currently declaring a sandbox host.
 pub fn build_source_connector(
     config: &SourceConfig,
     refresh_sink: Option<Arc<dyn RefreshTokenSink>>,
+    environment: airway::connector::Environment,
 ) -> Result<Box<dyn SourceConnector>, AirwayError> {
-    match config.kind.as_str() {
+    let (connector, applied) = build_source_connector_inner(config, refresh_sink, environment)?;
+    admit_environment_is_applied(config, environment, connector.as_ref(), applied)?;
+    Ok(connector)
+}
+
+/// Whether the factory arm that built this connector resolved its base URL
+/// from the run's [`Environment`](airway::connector::Environment).
+///
+/// The marker exists so [`admit_environment_is_applied`] can ask *"did an arm
+/// apply it?"* instead of naming a connector kind. A kind named over in the
+/// guard is a claim stored apart from the code that makes it true: it keeps
+/// reading "handled" after the arm stops handling it, and it has to be
+/// remembered again for every arm added later.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum EnvironmentApplied {
+    /// The arm read `environment` and resolved this connector's base URL from
+    /// it (including honouring an explicit per-source override).
+    Yes,
+    /// The arm ignored `environment`. Correct exactly while the connector
+    /// declares no sandbox host — which is what the guard verifies.
+    No,
+}
+
+/// Refuse a `sandbox` run whose connector declares a sandbox host that this
+/// factory has no arm to apply.
+///
+/// Airway's `admit_with` checks that a connector *supports* the environment;
+/// applying it is oxy's job, because airway resolves each source's sandbox host
+/// from `Environment::installed()` — a process-wide global oxy never installs.
+/// Today only the `quickbooks` arm applies one, and that is complete, since
+/// QuickBooks is the sole connector in the pinned airway declaring
+/// `sandbox_base_url()`. But the next airway bump that adds a host to any other
+/// connector would otherwise produce the exact silent failure this module exists
+/// to prevent: admission passes, and oxy leaves the source pointed at production.
+///
+/// Both halves are derived rather than listed — the connector states whether a
+/// host exists, the arm states whether it applied one — so the guard stays true
+/// without anyone remembering to update it.
+fn admit_environment_is_applied(
+    config: &SourceConfig,
+    environment: airway::connector::Environment,
+    connector: &dyn SourceConnector,
+    applied: EnvironmentApplied,
+) -> Result<(), AirwayError> {
+    if !matches!(environment, airway::connector::Environment::Sandbox) {
+        return Ok(());
+    }
+    if applied == EnvironmentApplied::Yes || connector.sandbox_base_url().is_none() {
+        return Ok(());
+    }
+    Err(AirwayError::Other(format!(
+        "source kind `{}` declares a sandbox host but this factory has no arm applying it, \
+         so the run would pass admission and then talk to production. Add the mapping in \
+         agentic_airway::source_factory alongside the quickbooks arm.",
+        config.kind
+    )))
+}
+
+fn build_source_connector_inner(
+    config: &SourceConfig,
+    refresh_sink: Option<Arc<dyn RefreshTokenSink>>,
+    environment: airway::connector::Environment,
+) -> Result<(Box<dyn SourceConnector>, EnvironmentApplied), AirwayError> {
+    // Dispatched ahead of the table below so the `Yes` is produced by the same
+    // expression that passes `environment` in. An arm that stops taking
+    // `environment` stops compiling here, rather than leaving a stale claim
+    // behind in the guard.
+    if config.kind == "quickbooks" {
+        let connector = build_quickbooks(&config.config, refresh_sink, environment)?;
+        return Ok((connector, EnvironmentApplied::Yes));
+    }
+
+    // Every arm below ignores `environment`; `admit_environment_is_applied`
+    // checks that against what the built connector actually declares.
+    let connector = match config.kind.as_str() {
         "rest_api" => build_rest_api(&config.config),
         "filesystem" => build_filesystem(&config.config),
         "sql_database" => build_sql_database(&config.config),
         "clickhouse" => build_clickhouse(&config.config),
         "postgres_cdc" => build_postgres_cdc(&config.config),
         "toast" => build_toast(&config.config),
-        "quickbooks" => build_quickbooks(&config.config, refresh_sink),
         "weather" => build_weather(&config.config),
         "besttime" => build_besttime(&config.config),
         "overture" => build_overture(&config.config),
@@ -107,7 +186,8 @@ pub fn build_source_connector(
              — every airway source is fair game, this dispatch table \
              just enumerates the ones with a concrete arm so far."
         ))),
-    }
+    }?;
+    Ok((connector, EnvironmentApplied::No))
 }
 
 // ── rest_api ─────────────────────────────────────────────────────────────────
@@ -603,9 +683,45 @@ where
     Ok(Some(de_string_or_number(deserializer)?))
 }
 
+/// The base URL a QuickBooks source should use, or `None` to leave the
+/// connector's own default in place.
+///
+/// `environment` is the deployment-wide *intent*; the host is per-vendor.
+/// `admit_with` checks that a connector supports the environment, but
+/// **applying** it is a separate step: airway resolves each source's sandbox
+/// host from `Environment::installed()`, a process-wide global oxy never
+/// installs. Without this, a `sandbox` run passes admission and then talks to
+/// production — the one direction that must not fail silently.
+///
+/// An explicit `base_url` from the pipeline YAML is the narrower setting and
+/// wins in either environment.
+fn resolve_quickbooks_base_url(
+    explicit: Option<&str>,
+    environment: airway::connector::Environment,
+) -> Option<String> {
+    if let Some(base) = explicit {
+        // Narrower wins — but say so. This pairing passes admission (QuickBooks
+        // declares a sandbox host) and then sends production traffic, which is
+        // the one direction this module's doc says must not fail silently.
+        if matches!(environment, airway::connector::Environment::Sandbox)
+            && base != SANDBOX_BASE_URL
+        {
+            tracing::warn!(
+                base_url = %base,
+                "environment is sandbox but an explicit base_url overrides it; \
+                 requests go to that host, not the vendor sandbox"
+            );
+        }
+        return Some(base.to_string());
+    }
+    matches!(environment, airway::connector::Environment::Sandbox)
+        .then(|| SANDBOX_BASE_URL.to_string())
+}
+
 fn build_quickbooks(
     raw: &Value,
     refresh_sink: Option<Arc<dyn RefreshTokenSink>>,
+    environment: airway::connector::Environment,
 ) -> Result<Box<dyn SourceConnector>, AirwayError> {
     let params: QuickBooksParams = serde_json::from_value(raw.clone())
         .map_err(|e| AirwayError::Other(format!("invalid quickbooks config: {e}")))?;
@@ -615,8 +731,8 @@ fn build_quickbooks(
         params.refresh_token,
         params.realm_id,
     );
-    if let Some(base) = params.base_url.as_deref() {
-        source = source.with_base_url(base);
+    if let Some(base) = resolve_quickbooks_base_url(params.base_url.as_deref(), environment) {
+        source = source.with_base_url(&base);
     }
     if let Some(mv) = params.minor_version.as_deref() {
         source = source.with_minor_version(mv);
@@ -733,9 +849,10 @@ mod tests {
         }
     }
 
-    /// Build with no refresh-token sink (the common test case).
+    /// Build with no refresh-token sink (the common test case), under the
+    /// default `Environment::Production`.
     fn build(config: &SourceConfig) -> Result<Box<dyn SourceConnector>, AirwayError> {
-        build_source_connector(config, None)
+        build_source_connector(config, None, airway::connector::Environment::Production)
     }
 
     #[test]
@@ -1108,6 +1225,151 @@ mod tests {
         .err()
         .expect("expected error");
         assert!(err.to_string().contains("invalid quickbooks config"));
+    }
+
+    // ── the sandbox-reaches-production guards ───────────────────────────
+
+    /// Stands in for a future airway connector that declares a sandbox host
+    /// this factory has no arm for. None exists today, which is exactly why
+    /// the guard is checked against the connector rather than a list.
+    ///
+    /// Carries the host so the same fixture covers the other side too — a
+    /// connector that declares none is the shape all ~11 environment-blind
+    /// arms have in the pinned airway.
+    struct Declares(Option<&'static str>);
+
+    const DECLARES_SANDBOX: Declares = Declares(Some("https://sandbox.example.invalid"));
+    const DECLARES_NO_SANDBOX: Declares = Declares(None);
+
+    #[async_trait]
+    impl SourceConnector for Declares {
+        fn name(&self) -> &str {
+            "declares"
+        }
+        fn resources(&self) -> Vec<airway::connector::ResourceInfo> {
+            Vec::new()
+        }
+        fn sandbox_base_url(&self) -> Option<&str> {
+            self.0
+        }
+        async fn extract(
+            &self,
+            _resource: &str,
+            _state: Option<&Value>,
+        ) -> Result<airway::connector::ExtractionResult, airway::AirwayError> {
+            unimplemented!("not exercised by these tests")
+        }
+    }
+
+    #[test]
+    fn a_declared_sandbox_host_with_no_arm_is_refused() {
+        let err = admit_environment_is_applied(
+            &cfg("future_vendor", serde_json::json!({})),
+            airway::connector::Environment::Sandbox,
+            &DECLARES_SANDBOX,
+            EnvironmentApplied::No,
+        )
+        .expect_err("admission would pass and oxy would leave it on production");
+        assert!(err.to_string().contains("future_vendor"), "got: {err}");
+    }
+
+    #[test]
+    fn an_arm_that_applied_the_environment_is_exempt() {
+        admit_environment_is_applied(
+            &cfg("quickbooks", serde_json::json!({})),
+            airway::connector::Environment::Sandbox,
+            &DECLARES_SANDBOX,
+            EnvironmentApplied::Yes,
+        )
+        .expect("the arm resolved the host from `environment`");
+    }
+
+    /// The reason the marker replaced a hardcoded kind: the exemption follows
+    /// the arm's behaviour, not its name. A `quickbooks` arm that stopped
+    /// applying the environment must be refused exactly like any other, rather
+    /// than keep passing on the strength of its kind string.
+    #[test]
+    fn the_kind_alone_does_not_exempt_an_arm_that_skipped_the_environment() {
+        admit_environment_is_applied(
+            &cfg("quickbooks", serde_json::json!({})),
+            airway::connector::Environment::Sandbox,
+            &DECLARES_SANDBOX,
+            EnvironmentApplied::No,
+        )
+        .expect_err("a kind that no longer applies the environment must not stay exempt");
+    }
+
+    /// The guard must stay inert for the ~11 arms that legitimately ignore
+    /// `environment`, or stage 1 would stop being behaviour-preserving.
+    #[test]
+    fn an_arm_that_ignored_the_environment_passes_when_no_host_is_declared() {
+        admit_environment_is_applied(
+            &cfg("toast", serde_json::json!({})),
+            airway::connector::Environment::Sandbox,
+            &DECLARES_NO_SANDBOX,
+            EnvironmentApplied::No,
+        )
+        .expect("nothing to apply: the connector declares no sandbox host");
+    }
+
+    #[test]
+    fn production_never_triggers_the_guard() {
+        admit_environment_is_applied(
+            &cfg("future_vendor", serde_json::json!({})),
+            airway::connector::Environment::Production,
+            &DECLARES_SANDBOX,
+            EnvironmentApplied::No,
+        )
+        .expect("production needs no sandbox mapping");
+    }
+
+    #[test]
+    fn sandbox_resolves_the_intuit_sandbox_host() {
+        assert_eq!(
+            resolve_quickbooks_base_url(None, airway::connector::Environment::Sandbox),
+            Some(airway::connector::sources::quickbooks::SANDBOX_BASE_URL.to_string()),
+        );
+    }
+
+    #[test]
+    fn production_leaves_the_connector_default_alone() {
+        // `None` means "don't call `with_base_url`", so the connector keeps
+        // its own production default rather than oxy restating it.
+        assert_eq!(
+            resolve_quickbooks_base_url(None, airway::connector::Environment::Production),
+            None,
+        );
+    }
+
+    /// An explicit `base_url` in the pipeline YAML is narrower than the
+    /// deployment-wide intent and must win over it — in both environments.
+    #[test]
+    fn an_explicit_base_url_outranks_the_environment() {
+        for env in [
+            airway::connector::Environment::Sandbox,
+            airway::connector::Environment::Production,
+        ] {
+            assert_eq!(
+                resolve_quickbooks_base_url(Some("https://qb.internal.invalid"), env),
+                Some("https://qb.internal.invalid".to_string()),
+                "explicit base_url must win under {env:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn quickbooks_still_builds_under_sandbox() {
+        let config = SourceConfig {
+            kind: "quickbooks".to_string(),
+            config: serde_json::json!({
+                "client_id": "id",
+                "client_secret": "secret",
+                "refresh_token": "token",
+                "realm_id": 9341456860808037i64,
+            }),
+        };
+        build_source_connector(&config, None, airway::connector::Environment::Sandbox)
+            .expect("builds under sandbox");
     }
 
     #[test]

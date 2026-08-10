@@ -161,7 +161,32 @@ impl TaskExecutor for PipelineTaskExecutor {
                 resources,
                 backfill_from,
                 backfill_to,
+                contract_policy,
+                environment,
             } => {
+                // Parsed here, at the decode site, so an unknown spelling
+                // surfaces with this run's context rather than deep inside
+                // the worker.
+                //
+                // The explicit `match` rather than `?` is load-bearing: this
+                // runs BEFORE `execute_airway`, so an early return would skip
+                // the release below and strand the single-flight lease for its
+                // full TTL — the exact failure that release exists to prevent.
+                let admission = match agentic_airway::AirwayAdmission::from_strings(
+                    contract_policy.as_deref(),
+                    environment.as_deref(),
+                ) {
+                    Ok(admission) => admission,
+                    Err(e) => {
+                        tracing::warn!(
+                            run_id = %assignment.run_id, error = %e,
+                            "airway admission decode failed; releasing any \
+                             single-flight lease held by this run"
+                        );
+                        crate::airway_run::release_airway_lease(&self.db, &assignment.run_id).await;
+                        return Err(e.to_string());
+                    }
+                };
                 // The single-flight lease is taken at SUBMIT (`start_airway_run`),
                 // so a dispatch that fails here — unreadable `.airway.yml`, a
                 // parse error, an unresolvable destination — leaves the run
@@ -181,6 +206,7 @@ impl TaskExecutor for PipelineTaskExecutor {
                         resources,
                         backfill_from.as_deref(),
                         backfill_to.as_deref(),
+                        admission,
                     )
                     .await;
                 if let Err(e) = &started {
@@ -499,6 +525,7 @@ impl PipelineTaskExecutor {
         resources: &[String],
         backfill_from: Option<&str>,
         backfill_to: Option<&str>,
+        admission: agentic_airway::AirwayAdmission,
     ) -> Result<ExecutingTask, String> {
         // Defence-in-depth: `start_airway_run` already contained the
         // ref at submit time, but re-validate at queue-claim too (the
@@ -586,9 +613,9 @@ impl PipelineTaskExecutor {
                         platform: self.platform.clone(),
                         var_name,
                     });
-                agentic_airway::AirwayWorker::with_refresh_sink(db, sink)
+                agentic_airway::AirwayWorker::with_refresh_sink(db, sink, admission)
             }
-            None => agentic_airway::AirwayWorker::new(db),
+            None => agentic_airway::AirwayWorker::new(db, admission),
         };
         // Airhouse destinations hold/cycle one pgwire connection for the whole
         // load; attach a provider so each (re)connect re-mints a fresh

@@ -3,7 +3,7 @@
 //! Spins up a real Postgres via testcontainers, runs the runtime +
 //! airway migrators, then drives a full pipeline: a filesystem source
 //! (a temp JSONL file) → the in-process memory destination. Proves the
-//! whole chain — source factory, `Source::from_connector` bridge,
+//! whole chain — source factory, `Source::try_from_connector_with` bridge,
 //! `AirwayPgStateStore`, the engine run, and the
 //! `PipelineEvent → AirwayEvent` forwarder — works against a live DB.
 //!
@@ -127,7 +127,12 @@ destination:
     let spec = AirwayPipelineSpec::from_yaml_str(&yaml).expect("parse spec");
 
     // ── Drive the worker ──────────────────────────────────────────────────
-    let worker = AirwayWorker::new(Arc::new(db.clone()));
+    // `AirwayAdmission::default()` is `permissive` / `production`, so this
+    // drives the same admission path a normal run takes.
+    let worker = AirwayWorker::new(
+        Arc::new(db.clone()),
+        agentic_airway::AirwayAdmission::default(),
+    );
     // Normal run (no resumable-backfill run-scoped store). The third arg is
     // the owning run id used to stamp the engine load_id onto the run
     // extension; this test seeds no `agentic_runs`/extension row, so that

@@ -339,6 +339,8 @@ mod resolver_tests {
             resources: vec!["orders".to_string()],
             backfill_from: None,
             backfill_to: None,
+            contract_policy: None,
+            environment: None,
         };
         let target = DelegationTarget::Automation {
             workflow_ref: "__airway__".to_string(),

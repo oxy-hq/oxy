@@ -631,6 +631,10 @@ mod tests {
                     resources: vec![],
                     backfill_from: None,
                     backfill_to: None,
+                    // `None` = airway's own defaults; this test asserts the
+                    // queue-depth label, not admission.
+                    contract_policy: None,
+                    environment: None,
                 },
                 "other",
             ),
