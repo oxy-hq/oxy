@@ -24,7 +24,7 @@ use uuid::Uuid;
 use crate::agentic_wiring::builder_bridges::OxyBuilderAppRunner;
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::server::builder_test_runner::OxyTestRunner;
-use crate::server::serve_mode::ServeMode;
+use oxy_app_core::serve_mode::ServeMode;
 
 use super::protected::{
     apply_local_middleware, apply_middleware, build_external_api_router,
@@ -178,7 +178,7 @@ pub async fn api_router(
     // Audit retention: the log is write-heavy, so keep a rolling 30-day window.
     // Idempotent daily sweep; verification anchors on the oldest retained event so a
     // prune doesn't report a false chain break.
-    crate::server::api::audit::spawn_audit_prune_loop();
+    oxy_app_core::audit::spawn_audit_prune_loop();
 
     // Camera fleet stale-checker: flips edge_boxes.status to 'offline'
     // when last_seen_at goes silent past STALE_THRESHOLD. Bound to the

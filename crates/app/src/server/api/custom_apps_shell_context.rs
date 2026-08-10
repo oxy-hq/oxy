@@ -36,8 +36,8 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::server::api::custom_apps_gates::check_custom_app_gates;
-use crate::server::api::custom_apps_host_dispatch::{admin_base_url, parse_subdomain};
 use crate::server::api::workspace_custom_apps::published_app_summaries;
+use oxy_app_core::custom_apps_host_dispatch::{admin_base_url, parse_subdomain};
 
 #[derive(Serialize)]
 pub struct ShellContextResponse {

@@ -38,8 +38,14 @@ nearly everything (`oxy`, agentic-http/pipeline, integrations). Keep it thin:
 | `server/router/` | Route mounting: `public.rs`, `protected.rs`, `workspace.rs`, `global.rs`, `entry.rs`, `openapi.rs`. `ROUTES.md` documents the surface. |
 | `server/role_manifest.rs` (~2k) | **Routing authority** for the split fleet — classifies every route `IdeOnly` vs `FleetOk`. FS/`.git`/state-dir routes MUST be `IdeOnly`; persisted-data reads MUST stay `FleetOk`. Invoke `oxy-route-classification` before touching routes. |
 | `server/{worker_runtime,worker_health,worker_metrics}.rs`, `preagg_*`, `compile_*` | Durable-task worker fleet + pre-aggregation + compile-boundary workers. |
-| `server/{serve_mode,serve_safety,admission,ide_proxy,role_middleware}.rs` | Serve-mode gating, self-routing reverse proxy (`IdeOnly` → ide upstream), admission control. |
+| `server/{serve_safety,admission,ide_proxy,role_middleware}.rs` | Serve-mode gating, self-routing reverse proxy (`IdeOnly` → ide upstream), admission control. `ServeMode` itself now lives in `oxy-app-core` — see below. |
 | `server/service/` | Server-side services (api keys, app, eval, project, formatters). |
+
+**Five modules now live in `oxy-app-core` (`crates/app-core`), not here** — `audit`,
+`serve_mode`, `org_host_dispatch`, `custom_apps_host_dispatch`, `member_authz`. They moved
+so the per-surface crates can share them without depending on each other. Import them as
+`oxy_app_core::<module>`; no re-export was left behind, so a stale `crate::server::…` path
+is a compile error, and an in-flight branch using one will merge clean and then fail to build.
 
 ## Key entry points
 

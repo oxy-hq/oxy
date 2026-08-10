@@ -18,8 +18,8 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrde
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::org_host_dispatch;
 use crate::server::router::AppState;
+use oxy_app_core::org_host_dispatch;
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new().route(

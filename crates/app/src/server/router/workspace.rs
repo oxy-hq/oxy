@@ -655,7 +655,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use tower::ServiceExt;
 
-    use crate::server::serve_mode::ServeMode;
+    use oxy_app_core::serve_mode::ServeMode;
 
     fn test_app_state() -> AppState {
         AppState {

@@ -85,12 +85,11 @@ pub(super) fn redirect_to_login(headers: &HeaderMap, uri: &Uri) -> Redirect {
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let login_base =
-        if crate::server::api::custom_apps_host_dispatch::parse_subdomain(host).is_some() {
-            crate::server::api::custom_apps_host_dispatch::admin_base_url().unwrap_or(request_base)
-        } else {
-            request_base
-        };
+    let login_base = if oxy_app_core::custom_apps_host_dispatch::parse_subdomain(host).is_some() {
+        oxy_app_core::custom_apps_host_dispatch::admin_base_url().unwrap_or(request_base)
+    } else {
+        request_base
+    };
     let target = format!(
         "{login_base}/login?return_to={}",
         urlencoding::encode(&return_to)

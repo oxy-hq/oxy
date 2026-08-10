@@ -41,8 +41,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::router::AppState;
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()

@@ -19,7 +19,7 @@ use oxy_server_authz::org_context::OrgContext;
 use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
-use crate::server::api::audit::{self, ActorType, AuditEntry};
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 /// The two names one change can land under.
 ///

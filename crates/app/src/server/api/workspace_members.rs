@@ -74,7 +74,7 @@ pub(crate) fn validate_role_override(
     // Only Org Owners can grant the workspace Owner role. Same invariant as granting an
     // org Owner — "only an Owner mints an Owner" — so it shares member_authz's rule
     // rather than restating it against a different role enum.
-    crate::server::api::member_authz::authorize_owner_grant(
+    oxy_app_core::member_authz::authorize_owner_grant(
         &caller.role,
         *requested_role == WorkspaceRole::Owner,
     )?;

@@ -135,7 +135,7 @@ fn escape(s: &str) -> String {
 /// unset or malformed (a cluster we can't name an absolute URL for), in which
 /// case the message falls back to carrying the raw id.
 fn health_tab_url(ws: Uuid) -> Option<String> {
-    let base = crate::server::api::custom_apps_host_dispatch::admin_base_url()?;
+    let base = oxy_app_core::custom_apps_host_dispatch::admin_base_url()?;
     Some(format!("{base}/admin/workspaces/{ws}?tab=health"))
 }
 

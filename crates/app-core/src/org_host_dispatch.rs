@@ -1,7 +1,7 @@
 //! Host-based dispatch for bare **org subdomains** — e.g.
 //! `pokehouse.oxygen-hq.com`.
 //!
-//! Distinct from [`super::custom_apps_host_dispatch`], which handles the
+//! Distinct from [`crate::custom_apps_host_dispatch`], which handles the
 //! structural `<org>--<slug>.customer-apps[-env].<zone>` custom-app hosts.
 //! A bare org subdomain is structurally identical to the admin host
 //! (`app.oxygen-hq.com`), so routing here is NOT a pure structural match: it
@@ -18,7 +18,8 @@
 //!      plane stays host-agnostic.
 //!   2. `/a/<slug>/…` → rewrite to `/customer-apps/<org>/<slug>/…` so the
 //!      org's custom apps serve through the existing
-//!      [`super::custom_apps_serve`] handler with a clean, term-free URL.
+//!      `custom_apps_serve` handler (still in `oxy-app`, so no intra-doc link
+//!      from here) with a clean, term-free URL.
 //!   3. Anything else (product SPA routes) → attach an [`OrgSubdomainCtx`]
 //!      request extension so the static handler injects
 //!      `window.__OXY_ORG__` into `index.html`, and bounce an
@@ -170,7 +171,7 @@ pub fn parse_org_subdomain_in_zone(host: &str, zone: &str) -> Option<String> {
 /// After the `app→aip` rename this follows config automatically (→ `aip`),
 /// so the pass-through host tracks the rename with no code change.
 fn app_host_label() -> Option<String> {
-    let base = super::custom_apps_host_dispatch::admin_base_url()?;
+    let base = crate::custom_apps_host_dispatch::admin_base_url()?;
     let url: url::Url = base.parse().ok()?;
     let first = url.host_str()?.split('.').next()?;
     Some(first.to_ascii_lowercase())
@@ -307,7 +308,7 @@ async fn resolve_from_db(label: &str) -> Result<Option<OrgSubdomainCtx>, ()> {
 // ── Middleware ────────────────────────────────────────────────────────────
 
 /// Tower middleware mounted on the outer router, AFTER
-/// [`super::custom_apps_host_dispatch::subdomain_rewrite_middleware`]. See
+/// [`crate::custom_apps_host_dispatch::subdomain_rewrite_middleware`]. See
 /// the module docs for the per-request decision tree.
 pub async fn org_host_dispatch_middleware(request: Request, next: Next) -> Response {
     let Some(host) = request
@@ -448,7 +449,7 @@ fn request_base_url(headers: &HeaderMap) -> String {
 
 fn redirect_to_app_login(headers: &HeaderMap, uri: &Uri) -> Response {
     let return_to = format!("{}{}", request_base_url(headers), uri);
-    let login_base = super::custom_apps_host_dispatch::admin_base_url()
+    let login_base = crate::custom_apps_host_dispatch::admin_base_url()
         .unwrap_or_else(|| request_base_url(headers));
     let target = format!(
         "{login_base}/login?return_to={}",
@@ -458,7 +459,7 @@ fn redirect_to_app_login(headers: &HeaderMap, uri: &Uri) -> Response {
 }
 
 fn redirect_unknown_to_app() -> Response {
-    match super::custom_apps_host_dispatch::admin_base_url() {
+    match crate::custom_apps_host_dispatch::admin_base_url() {
         Some(base) => Redirect::to(&format!("{base}/")).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
@@ -514,7 +515,7 @@ fn splice_org_script(bytes: &[u8], ctx: &OrgSubdomainCtx) -> Vec<u8> {
         org_slug: &ctx.org_slug,
         subdomain: &ctx.org_slug,
         default_project_id: ctx.default_workspace_id,
-        app_base_url: super::custom_apps_host_dispatch::admin_base_url(),
+        app_base_url: crate::custom_apps_host_dispatch::admin_base_url(),
     };
     let json = match serde_json::to_string(&cfg) {
         Ok(j) => j,

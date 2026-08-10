@@ -37,12 +37,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::server::api::audit::events_for_partner;
 use crate::server::api::middlewares::partner_authz::{
     PartnerCapability, PartnerScope, scopes_for_user,
 };
 use crate::server::api::middlewares::partner_context::{PartnerActor, partner_middleware};
 use crate::server::router::AppState;
+use oxy_app_core::audit::events_for_partner;
 
 /// Top-level list route + the partner-scoped subtree (wrapped in
 /// `partner_middleware`, which resolves [`PartnerScope`] and 403s anyone holding

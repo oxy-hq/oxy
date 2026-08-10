@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use super::detail::{PartnerDetail, load_detail};
 use super::{db, internal};
-use crate::server::api::audit::{self, ActorType, AuditEntry};
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 /// `PUT /admin/partners/{org_id}/people/{org_member_id}` — grant partner access as
 /// staff. Idempotent.

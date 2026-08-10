@@ -31,15 +31,29 @@ const ALLOWED: [&str; 0] = [];
 
 #[test]
 fn no_source_references_a_dropped_partner_table() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    // Workspace-wide (not just oxy-app): code is being pulled out into sibling crates
+    // (`oxy-app-core`, and the per-surface crates to follow), and a query against a
+    // dropped table must be caught wherever it lands. `CARGO_MANIFEST_DIR` is
+    // `crates/app`; its parent is the `crates/` root.
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/app has a parent")
+        .to_path_buf();
     let mut offenders = Vec::new();
+    let mut scanned = 0usize;
+    let mut reached_beyond_app = false;
 
     visit(&src, &mut |path, text| {
         let rel = path
             .strip_prefix(&src)
             .unwrap_or(path)
             .display()
-            .to_string();
+            .to_string()
+            .replace('\\', "/");
+        scanned += 1;
+        if !rel.starts_with("app/") {
+            reached_beyond_app = true;
+        }
         if ALLOWED.contains(&rel.as_str()) {
             return;
         }
@@ -51,6 +65,21 @@ fn no_source_references_a_dropped_partner_table() {
             }
         }
     });
+
+    // A scan that silently walks nothing (or only oxy-app, after the walk root was
+    // widened) reports a false green — worse than no test at all. 500 is a floor,
+    // not a target: it only has to stay below the real count (~1450 today), so a
+    // future split that moves crates out of this workspace lowers it rather than
+    // chasing it upward.
+    assert!(
+        scanned > 500,
+        "expected to scan every crate's sources, found only {scanned} files — the walk \
+         is broken, and a boundary test that silently scans nothing is worse than no test"
+    );
+    assert!(
+        reached_beyond_app,
+        "walk covered only oxy-app — a sibling crate would escape this test"
+    );
 
     assert!(
         offenders.is_empty(),
@@ -163,8 +192,15 @@ fn visit(dir: &Path, f: &mut impl FnMut(&Path, &str)) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
+            if path.file_name().is_some_and(|n| n == "target") {
+                continue;
+            }
             visit(&path, f);
         } else if path.extension().is_some_and(|e| e == "rs")
+            // Production sources only. Now that the walk starts at the `crates/` root it
+            // would otherwise sweep in every crate's `tests/` tree — including this file,
+            // whose `DROPPED` const names all three tables. Mirrors `authz_boundaries`.
+            && path.components().any(|c| c.as_os_str() == "src")
             && let Ok(text) = fs::read_to_string(&path)
         {
             f(&path, &text);

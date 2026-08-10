@@ -143,8 +143,8 @@ pub async fn setup_demo(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::serve_mode::ServeMode;
     use axum::extract::State;
+    use oxy_app_core::serve_mode::ServeMode;
     use tempfile::TempDir;
 
     fn test_state(startup_cwd: std::path::PathBuf) -> AppState {

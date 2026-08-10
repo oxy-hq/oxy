@@ -22,8 +22,8 @@ use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait, TransactionTrait};
 use serde::{Deserialize, Serialize};
 
-use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::api::middlewares::role_guards::{OrgAdmin, OrgAdminStrict};
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 #[derive(Serialize)]
 pub struct ConsentStatus {

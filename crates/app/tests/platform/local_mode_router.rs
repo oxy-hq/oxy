@@ -9,7 +9,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use oxy_app::server::router::api_router;
-use oxy_app::server::serve_mode::ServeMode;
+use oxy_app_core::serve_mode::ServeMode;
 use tower::ServiceExt;
 
 fn db_unavailable() -> bool {

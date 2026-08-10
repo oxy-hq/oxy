@@ -22,13 +22,13 @@ use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
 use crate::server::api::admin::apps::handlers as admin_apps;
-use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::api::middlewares::partner_authz::{PartnerCapability, PartnerScope};
 use crate::server::api::middlewares::partner_context::PartnerActor;
 use crate::server::api::org_teams::dto::{
     AppAccessDto, AppAccessSummaryDto, OrgMemberOptionDto, SetAppAccessRequest, TeamDto,
 };
 use crate::server::api::org_teams::service as access_service;
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 #[derive(Serialize)]
 pub struct PartnerAppDto {

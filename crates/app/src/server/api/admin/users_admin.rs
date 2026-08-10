@@ -39,8 +39,8 @@ use uuid::Uuid;
 use serde_json::json;
 
 use crate::server::api::admin::scope;
-use crate::server::api::audit;
 use crate::server::router::AppState;
+use oxy_app_core::audit;
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()

@@ -112,7 +112,7 @@ const ALLOWED: &[(&str, &str)] = &[
     ),
     // ---- Deliberate non-merges. Different question, not a duplicated answer. ----
     (
-        "app/src/server/api/member_authz.rs",
+        "app-core/src/member_authz.rs",
         "the escalation guardrail, and it reads the *target's* role, not the principal's: \
          `matches!(target_role, Owner | Admin) && actor_role != Owner` says 'making someone an \
          officer requires an Owner'. That is a role-transition invariant, not the OrgAdmin ring \
@@ -174,6 +174,9 @@ fn authorization_does_not_scatter_outside_the_allowlist() {
         .expect("crates/app has a parent");
     let mut files = Vec::new();
     rust_sources(crates_root, &mut files);
+    // 500 is a floor, not a target: it only has to stay below the real count (~1450
+    // today), so a future split that moves crates out of this workspace lowers it
+    // rather than chasing it upward.
     assert!(
         files.len() > 500,
         "expected to scan every crate's src tree, found only {} files — the walk is \

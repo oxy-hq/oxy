@@ -75,8 +75,8 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::router::AppState;
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 // The pure liveness-query cluster now lives in `oxy-server-authz` so the authz fact
 // loader and the partner tier can read session liveness without depending on `oxy-app`.

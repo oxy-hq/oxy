@@ -1,0 +1,29 @@
+[package]
+name = "oxy-app-core"
+version.workspace = true
+authors.workspace = true
+description = "Shared seam for the oxy-app HTTP layer: audit trail, serve-mode detection, org and custom-app subdomain dispatch, and member-role authorization"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+oxy = { workspace = true }
+oxy-auth = { workspace = true }
+entity = { workspace = true }
+
+axum = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+urlencoding = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }

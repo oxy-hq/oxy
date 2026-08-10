@@ -18,6 +18,8 @@ binary lives in the `app` crate (the default workspace member).
 ```
 crates/
   app/                      # (oxy-app / oxy binary) CLI + HTTP server, default member
+  app-core/                 # (oxy-app-core) Shared app-layer seam: audit, serve_mode,
+                            #   org/custom-app subdomain dispatch, member authz
   core/                     # (oxy) Core platform library, published as "oxy"
   auth/                     # (oxy-auth) Authentication — who you are
   authz/                    # (oxy-authz) Authorization — what you may do. THE authority model

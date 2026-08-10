@@ -25,18 +25,18 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
-use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::api::middlewares::partner_authz::PartnerCapability;
 use crate::server::api::middlewares::partner_context::PartnerActor;
 use crate::server::api::organizations::{
     find_live_invitation, normalize_invite_email, supersede_expired_invitations,
 };
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 /// Parse a target role and reject `Owner` — the partner guardrail. Returns the
 /// role or `403`.
 fn partner_assignable_role(raw: &str) -> Result<OrgRole, StatusCode> {
     let role = OrgRole::from_str(raw).map_err(|_| StatusCode::BAD_REQUEST)?;
-    if !crate::server::api::member_authz::partner_may_assign(&role) {
+    if !oxy_app_core::member_authz::partner_may_assign(&role) {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok(role)
@@ -207,7 +207,7 @@ pub async fn update_member_role(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Guardrail: a partner cannot modify an Owner.
-    if !crate::server::api::member_authz::partner_may_modify(&target.role) {
+    if !oxy_app_core::member_authz::partner_may_modify(&target.role) {
         return Err(StatusCode::FORBIDDEN);
     }
     let before_role = target.role.clone();
@@ -261,7 +261,7 @@ pub async fn remove_member(
         .map_err(internal("load member"))?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    if !crate::server::api::member_authz::partner_may_modify(&target.role) {
+    if !oxy_app_core::member_authz::partner_may_modify(&target.role) {
         return Err(StatusCode::FORBIDDEN);
     }
 

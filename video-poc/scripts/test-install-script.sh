@@ -65,7 +65,7 @@ TS_AUTHKEY_CLI=""
 # with explicit DEVICE_ID/DEVICE_SECRET callers.
 MINT=0
 # Workspace id used by the auto-mint call. Local serve mode uses
-# the nil UUID (see `crates/app/src/server/serve_mode.rs`); cloud
+# the nil UUID (see `crates/app-core/src/serve_mode.rs`); cloud
 # operators override via the env var or the `--workspace-id` flag.
 WORKSPACE_ID="${WORKSPACE_ID:-00000000-0000-0000-0000-000000000000}"
 SITE_ID="${SITE_ID:-}"

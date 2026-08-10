@@ -33,12 +33,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{ChildOrg, db, internal, require_org_scope};
-use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::api::middlewares::partner_authz::PartnerCapability;
 use crate::server::api::middlewares::partner_context::PartnerActor;
 use crate::server::api::organizations::{
     is_reserved_slug, normalize_invite_email, send_invitation_email, slugify_name,
 };
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 #[derive(Deserialize)]
 pub struct CreateOrgBody {

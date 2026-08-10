@@ -44,8 +44,8 @@ use uuid::Uuid;
 
 use crate::server::api::world_model::{OrderEvent, publish_order};
 use crate::server::router::AppState;
-use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
 use crate::server::service::secret_manager::SecretManagerService;
+use oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID;
 
 #[derive(Debug, Deserialize)]
 pub struct ToastWebhookQuery {

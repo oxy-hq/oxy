@@ -14,8 +14,8 @@ use oxy::database::client::establish_connection;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::audit::{self, AuditFilter};
 use crate::server::router::AppState;
+use oxy_app_core::audit::{self, AuditFilter};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()

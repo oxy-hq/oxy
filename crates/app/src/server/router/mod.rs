@@ -18,12 +18,12 @@ mod secrets;
 mod workspace;
 pub(crate) mod workspace_cache;
 
-use crate::server::serve_mode::ServeMode;
 use axum::extract::FromRequestParts;
 use axum::http::header::{HeaderName, HeaderValue};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use entity::workspaces as workspace_entity;
+use oxy_app_core::serve_mode::ServeMode;
 use std::future::Future;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
@@ -363,7 +363,7 @@ mod router_split_tests {
         if db_unavailable() {
             return;
         }
-        use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
+        use oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID;
         let (router, _external_router) = api_router(
             ServeMode::Local,
             false,

@@ -20,7 +20,6 @@ use crate::server::api::middlewares::workspace_context::{
     EffectiveWorkspaceRole, PreaggCacheCtx, SemanticEngineCacheCtx, SemanticLayerCacheCtx,
 };
 use crate::server::router::AppState;
-use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
 use crate::server::service::retrieval::EnumIndexManager;
 use crate::server::service::secret_manager::SecretManagerService;
 use agentic_semantic::refresh_key_cache::RefreshKeyCache;
@@ -38,6 +37,7 @@ use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::adapters::workspace::effective_workspace_path;
 use oxy::config::resolve_local_workspace_path;
+use oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID;
 use uuid::Uuid;
 
 pub async fn local_context_middleware(
@@ -263,7 +263,7 @@ mod tests {
         let app_state = AppState {
             enterprise: false,
             internal: false,
-            mode: crate::server::serve_mode::ServeMode::Local,
+            mode: oxy_app_core::serve_mode::ServeMode::Local,
             observability: None,
             startup_cwd: std::path::PathBuf::new(),
             preagg_cache: None,

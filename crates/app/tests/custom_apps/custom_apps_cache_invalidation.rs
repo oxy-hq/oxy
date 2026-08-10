@@ -97,6 +97,11 @@ const ALLOWED: &[(&str, &str)] = &[
         "creates orgs (a miss is never cached, so a new org needs no \
          invalidation) and renames only the display `name`, never the slug",
     ),
+    (
+        "airhouse/src/local_seed.rs",
+        "creates the nil-UUID local-mode org only if it is missing — a miss is \
+         never cached, and it never updates a slug or deletes a row",
+    ),
 ];
 
 /// The seed commands, which are the only row writers outside the server. They
@@ -107,15 +112,26 @@ const ALLOWED: &[(&str, &str)] = &[
 /// Matched on the *relative path*, not the bare filename: a filename match
 /// would silently exempt any future `seed_*.rs` anywhere in the crate, which
 /// is a wider hole than this exemption is meant to be.
-const SEED_PREFIX: &str = "cli/commands/seed";
+const SEED_PREFIX: &str = "app/src/cli/commands/seed";
 
-/// `src/…`-relative, forward-slashed — the shape `ALLOWED` and [`SEED_PREFIX`]
-/// are written in.
+/// `crates/…`-relative, forward-slashed — the shape [`SEED_PREFIX`] is written in.
+///
+/// Rooted at `crates/`, not `crates/app/src`, so a row-writer that moves into a
+/// sibling crate stays in frame. `ALLOWED` is matched with `ends_with`, so its
+/// entries are unaffected by the wider prefix.
 fn relative_to_src(path: &Path) -> String {
-    path.strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).join("src"))
+    path.strip_prefix(crates_root())
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
+}
+
+/// `CARGO_MANIFEST_DIR` is `crates/app`; its parent is the `crates/` root.
+fn crates_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/app has a parent")
+        .to_path_buf()
 }
 
 /// Production sources only — see [`SEED_PREFIX`].
@@ -131,6 +147,10 @@ fn production_sources(dir: &Path, out: &mut Vec<PathBuf>) {
             }
             production_sources(&path, out);
         } else if path.extension().is_some_and(|e| e == "rs")
+            // Production sources only. Now that the walk starts at the `crates/` root it
+            // would otherwise sweep in every crate's `tests/` tree. Mirrors
+            // `authz_boundaries`.
+            && path.components().any(|c| c.as_os_str() == "src")
             && !relative_to_src(&path).starts_with(SEED_PREFIX)
         {
             out.push(path);
@@ -143,7 +163,7 @@ fn row_writers_acknowledge_the_resolution_cache() {
     // The whole crate, not just `server/api`: these rows are also reachable
     // from `server/service/` and from a CLI command, and a scan scoped to the
     // handlers would call those out of frame rather than covered.
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let src = crates_root();
     assert!(
         src.is_dir(),
         "expected {} to exist — did the crate layout move?",
@@ -152,9 +172,22 @@ fn row_writers_acknowledge_the_resolution_cache() {
 
     let mut files = Vec::new();
     production_sources(&src, &mut files);
+    // A scan that silently walks nothing (or only oxy-app, after the walk root was
+    // widened) reports a false green — worse than no test at all. 500 is a floor,
+    // not a target: it only has to stay below the real count (~1450 today), so a
+    // future split that moves crates out of this workspace lowers it rather than
+    // chasing it upward.
     assert!(
-        !files.is_empty(),
-        "walked no sources; the scan is broken, not the code"
+        files.len() > 500,
+        "expected to scan every crate's sources, found only {} files — the walk is \
+         broken, and a boundary test that silently scans nothing is worse than no test",
+        files.len()
+    );
+    assert!(
+        files
+            .iter()
+            .any(|f| !relative_to_src(f).starts_with("app/")),
+        "walk covered only oxy-app — a sibling crate would escape this test"
     );
 
     let mut offenders = Vec::new();

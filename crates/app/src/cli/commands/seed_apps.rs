@@ -276,7 +276,7 @@ async fn ensure_org_subdomain(conn: &Conn, target: &AppTarget) -> Result<(), Oxy
     // a slug would produce a host that looks configured and never works. No seeded
     // slug collides today; this keeps that true if one is ever added. Cosmetic loss,
     // so warn and carry on, like the rest of the example-app seed.
-    if crate::server::api::org_host_dispatch::is_reserved_label(&target.org_slug) {
+    if oxy_app_core::org_host_dispatch::is_reserved_label(&target.org_slug) {
         println!(
             "{} skipping org subdomain for reserved label '{}'",
             "⚠️".warning(),

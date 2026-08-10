@@ -21,7 +21,7 @@ use crate::api::middlewares::local_context::local_context_middleware;
 use crate::api::middlewares::subscription_guard::workspace_subscription_guard_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::middlewares::workspace_context::workspace_middleware;
-use crate::server::serve_mode::ServeMode;
+use oxy_app_core::serve_mode::ServeMode;
 
 use super::AppState;
 use super::global::build_global_routes;

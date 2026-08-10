@@ -42,7 +42,7 @@ impl ResolvedEnv {
 /// A deployment's org-subdomain zone and the product host that serves it.
 ///
 /// Mirrors the server's `OXY_ORG_SUBDOMAIN_ZONE` model (one zone per
-/// deployment) — see `server::api::org_host_dispatch`. The CLI can't read that
+/// deployment) — see `oxy_app_core::org_host_dispatch`. The CLI can't read that
 /// env var, so the well-known deployments are listed here; unknown zones fall
 /// through to "use the URL as its own target", which is the honest answer.
 const ORG_ZONES: &[(&str, &str)] = &[

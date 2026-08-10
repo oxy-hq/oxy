@@ -200,7 +200,7 @@ impl AppResponse {
         // convention (local dev / custom-branded host), which is the
         // only case where the row should be hidden.
         let url_subdomain =
-            crate::server::api::custom_apps_host_dispatch::subdomain_url_for(org_slug, &m.slug);
+            oxy_app_core::custom_apps_host_dispatch::subdomain_url_for(org_slug, &m.slug);
         Self {
             id: m.id,
             slug: m.slug,

@@ -2,6 +2,7 @@
 members = [
   "crates/billing",
   "crates/app",
+  "crates/app-core",
   "crates/auth",
   "crates/authz",
   "crates/server-authz",
@@ -81,6 +82,7 @@ oxy = { path = "crates/core" }
 oxy-airlayer-compat = { path = "crates/infrastructure/semantic" }
 oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }
 oxy-auth = { path = "crates/auth" }
+oxy-app-core = { path = "crates/app-core" }
 oxy-authz = { path = "crates/authz" }
 oxy-server-authz = { path = "crates/server-authz" }
 oxy-billing = { path = "crates/billing" }
@@ -426,6 +428,14 @@ exclude = []
 publish = false
 rust-version = "1.97.1"
 
+# MEASURED 2026-08-10, do not re-add: `[profile.dev.build-override] debug = false`
+# is a no-op in this workspace. A clean A/B (two `cargo clean` + `cargo build -p
+# oxy-app` runs, 8-core darwin) produced byte-identical host-built artifacts — the
+# proc-macro dylibs (291,532 KB) and build-script binaries (117,828 KB) matched to
+# the kilobyte, and total `target/` differed 0.3%, in the wrong direction. Host
+# units already carry no debug info here, so the knob buys nothing and a comment
+# claiming a win it does not deliver is worse than its absence.
+
 # NOTE: there is deliberately no `[profile.dev.package]` block here.
 # One used to sit at this spot pinning `opt-level = 0` on aws-lc-sys,
 # libduckdb-sys, lz4-sys, onig_sys, openssl-sys, ring, aws-sdk-sts,
@@ -441,6 +451,46 @@ rust-version = "1.97.1"
 # is the opposite of what was written: `[profile.dev.package."*"] opt-level = 1`
 # optimizes dependency code while leaving workspace crates unoptimized. Don't
 # add it casually — it forces a from-scratch rebuild of the entire dep graph.
+
+[profile.dev.package."*"]
+# Third-party code carries no debug info at all. `[profile.dev] debug =
+# "line-tables-only"` below still applies to workspace members, so backtraces keep
+# file + line for *our* frames — the ones anyone actually steps through. Frames
+# inside dependencies lose line numbers. `-C debuginfo=1` per-command restores it.
+#
+# MEASURED 2026-08-10 on an 8-core darwin box, clean env, replicated twice. A/B
+# against `line-tables-only` (deleting this block IS the before-state, since
+# `[profile.dev] debug = "line-tables-only"` already existed):
+#
+#   warm incremental, one-file edit (median of 5)   56s      -> 30s      (-46%)
+#   target/ after a cold build                      16.46 GB -> 10.21 GB (-38%)
+#   third-party rlibs                                6.65 GB ->  4.28 GB (-35%)
+#   cold `oxy-app` build                                              (-19%)
+#
+# Warm samples were 31/29/30/32/30 vs 56/57/56/57/55 — spread <=3s in both arms,
+# so the effect is not noise. Carry the cold-build *ratio*, not its wall clock:
+# absolute times swing with thermal state (one throttled run read 741s -> 911s for
+# the same -19%).
+#
+# THIS IS A LOCAL-DEVELOPER LEVER, NOT A CI ONE. CI already sets
+# `CARGO_PROFILE_DEV_DEBUG: "0"` (and `CARGO_PROFILE_DEV_STRIP: "symbols"`) on the
+# cargo-check-and-test job — see .github/workflows/ci.yaml — which zeroes debug info
+# for the entire graph there, so this block changes nothing on CI. Every number above
+# is a win on a developer's machine. Deleting it would not slow CI down by a second,
+# which is exactly why the justification has to live here rather than in CI's config.
+#
+# BEFORE RE-MEASURING THIS, RUN `env | grep CARGO`. Any `CARGO_PROFILE_*` variable
+# silently outranks this file for the whole graph — a stray `CARGO_PROFILE_DEV_DEBUG=0`
+# strips debug info from both arms and makes the A/B come out flat. That mistake
+# published a wrong "no local benefit" conclusion here twice; it is the single
+# easiest way to get a false null out of a Cargo profile experiment. Note this is the
+# *same* variable CI sets: there it is deliberate, here in an interactive shell it is
+# contamination. Reproducing a CI build locally will correctly show no effect.
+#
+# This is not a per-package override of anything: the `[profile.dev.package]` block
+# that used to sit above was deleted as inert (see the note above), so this glob is
+# the only per-dependency profile setting in the workspace.
+debug = false
 
 [profile.dev]
 # NOTE: `split-debuginfo` is deliberately unset — do not "restore" it.

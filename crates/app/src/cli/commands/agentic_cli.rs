@@ -318,7 +318,7 @@ async fn cmd_list(args: ListArgs) -> Result<(), OxyError> {
     // from the CLI entry points.
     let runs = crud::list_recent_runs(
         &db,
-        crate::server::serve_mode::LOCAL_WORKSPACE_ID,
+        oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID,
         args.limit,
     )
     .await
@@ -620,7 +620,7 @@ async fn cmd_status(args: StatusArgs) -> Result<(), OxyError> {
         let runs = if args.active {
             get_active_runs(&db).await?
         } else {
-            crud::list_recent_runs(&db, crate::server::serve_mode::LOCAL_WORKSPACE_ID, 20)
+            crud::list_recent_runs(&db, oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID, 20)
                 .await
                 .map_err(db_err)?
         };

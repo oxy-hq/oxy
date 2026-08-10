@@ -773,7 +773,7 @@ async fn open_compiled_revision(
     // filesystem — otherwise an on-disk edit to a promoted workspace wouldn't
     // show until the next manual compile. The compile boundary exists for the
     // stateless cloud fleet, which has no working copy.
-    if workspace_id == crate::server::serve_mode::LOCAL_WORKSPACE_ID {
+    if workspace_id == oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID {
         return Ok(None);
     }
     // Request-scoped pin: `workspace_middleware` already ran the branch /

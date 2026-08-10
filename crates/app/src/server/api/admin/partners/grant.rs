@@ -26,7 +26,7 @@ use super::{
     CapabilitiesInput, PartnerDetail, ceiling_model, db, grant_model, internal, load_detail,
     require_owner_for_sensitive_caps,
 };
-use crate::server::api::audit::{self, ActorType, AuditEntry};
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 #[derive(Deserialize)]
 pub struct GrantBody {

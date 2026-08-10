@@ -333,7 +333,7 @@ pub(crate) async fn serve_pretty(
     // build doesn't need to know about tracking. Tracking + cookie
     // injection happen in the post-dispatch wrapper at the bottom.
     let is_html_request = is_html_navigation(&rest);
-    let source_label = match super::custom_apps_host_dispatch::parse_subdomain(
+    let source_label = match oxy_app_core::custom_apps_host_dispatch::parse_subdomain(
         headers
             .get(axum::http::header::HOST)
             .and_then(|v| v.to_str().ok())

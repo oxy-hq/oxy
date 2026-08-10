@@ -18,11 +18,11 @@ use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::EntityTrait;
 use uuid::Uuid;
 
-use crate::server::api::audit::{self, ActorType, AuditEntry};
 use crate::server::api::org_teams::dto::{
     AppAccessDto, OrgMemberOptionDto, SetAppAccessRequest, TeamDto,
 };
 use crate::server::api::org_teams::service;
+use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 /// Resolve an app to the org that owns it.
 ///

@@ -1,7 +1,7 @@
 /**
  * Identity injected by the backend into `index.html` when the SPA is served
  * on a bare org subdomain (e.g. `pokehouse.oxygen-hq.com`). See
- * `crates/app/src/server/api/org_host_dispatch.rs` (`window.__OXY_ORG__`).
+ * `crates/app-core/src/org_host_dispatch.rs` (`window.__OXY_ORG__`).
  *
  * When present the app boots pre-scoped to `orgSlug` + `defaultProjectId`
  * (skipping the org/workspace picker), and the axios 401 handler bounces

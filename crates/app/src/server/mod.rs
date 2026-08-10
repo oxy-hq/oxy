@@ -22,7 +22,6 @@ pub mod role_manifest;
 pub mod role_middleware;
 pub mod router;
 pub mod runtime_artifact;
-pub mod serve_mode;
 pub mod serve_safety;
 pub mod service;
 #[cfg(test)]

@@ -768,10 +768,10 @@ pub async fn publish_app(
     // the trail recorded the delegated tier and was blind to the privileged one —
     // backwards. Publishing puts an app in front of a customer's users; who did it
     // is exactly the question an incident asks first.
-    crate::server::api::audit::record_best_effort(
+    oxy_app_core::audit::record_best_effort(
         &db,
-        crate::server::api::audit::AuditEntry::new(user.email.clone(), "app.published")
-            .actor(user.id, crate::server::api::audit::ActorType::User)
+        oxy_app_core::audit::AuditEntry::new(user.email.clone(), "app.published")
+            .actor(user.id, oxy_app_core::audit::ActorType::User)
             .org(updated.org_id)
             .target("app", updated.id.to_string(), updated.name.clone()),
     )
@@ -795,10 +795,10 @@ pub async fn unpublish_app(
     let org = load_org(&db, updated.org_id).await.map_err(|e| e.status)?;
 
     // Taking a customer's app DOWN is at least as auditable as putting it up.
-    crate::server::api::audit::record_best_effort(
+    oxy_app_core::audit::record_best_effort(
         &db,
-        crate::server::api::audit::AuditEntry::new(user.email.clone(), "app.unpublished")
-            .actor(user.id, crate::server::api::audit::ActorType::User)
+        oxy_app_core::audit::AuditEntry::new(user.email.clone(), "app.unpublished")
+            .actor(user.id, oxy_app_core::audit::ActorType::User)
             .org(updated.org_id)
             .target("app", updated.id.to_string(), updated.name.clone()),
     )

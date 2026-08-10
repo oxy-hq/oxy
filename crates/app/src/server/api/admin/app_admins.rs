@@ -47,9 +47,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::admin::delegation;
-use crate::server::api::audit;
 use crate::server::authz::globals::invalidate_admin_cache;
 use crate::server::router::AppState;
+use oxy_app_core::audit;
 
 /// A stored grant's `(role, scope)` — what the delegation bound is asked about.
 ///

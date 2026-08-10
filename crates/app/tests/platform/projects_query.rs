@@ -12,7 +12,7 @@ use serde_json::json;
 use tower::ServiceExt;
 
 use oxy_app::server::router::api_router;
-use oxy_app::server::serve_mode::ServeMode;
+use oxy_app_core::serve_mode::ServeMode;
 
 fn db_unavailable() -> bool {
     std::env::var("OXY_DATABASE_URL").is_err()

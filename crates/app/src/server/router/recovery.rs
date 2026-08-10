@@ -22,8 +22,8 @@ use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use sea_orm::{DatabaseConnection, EntityTrait};
 
 use crate::agentic_wiring::{OxyProjectContext, build_builder_bridges};
-use crate::server::serve_mode::{LOCAL_WORKSPACE_ID, ServeMode};
 use crate::server::service::secret_manager::SecretManagerService;
+use oxy_app_core::serve_mode::{LOCAL_WORKSPACE_ID, ServeMode};
 
 /// Handles for the hooks spawned by [`spawn_shutdown_hook`], so the serve
 /// command can wait for them before the process exits.

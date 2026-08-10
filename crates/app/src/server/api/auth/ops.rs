@@ -521,8 +521,8 @@ fn pin_org_subdomain_to_app_host(base: String) -> String {
     let Some(host) = url.host_str() else {
         return base;
     };
-    if crate::server::api::org_host_dispatch::parse_org_subdomain(host).is_some()
-        && let Some(app_host) = crate::server::api::custom_apps_host_dispatch::admin_base_url()
+    if oxy_app_core::org_host_dispatch::parse_org_subdomain(host).is_some()
+        && let Some(app_host) = oxy_app_core::custom_apps_host_dispatch::admin_base_url()
     {
         return app_host;
     }

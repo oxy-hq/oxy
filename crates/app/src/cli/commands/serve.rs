@@ -3,7 +3,6 @@ use crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor;
 use crate::server::api::custom_apps_serve::wants_html;
 use crate::server::api::projects::query::DataPlaneQueryExecutor;
 use crate::server::http_cache::{if_none_match, weak_etag};
-use crate::server::serve_mode::ServeMode;
 use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, AutomationMigrator};
 use agentic_runtime::migration::RuntimeMigrator;
 use axum::handler::Handler;
@@ -23,6 +22,7 @@ use oxy::{
     state_dir::get_state_dir,
     theme::StyledText,
 };
+use oxy_app_core::serve_mode::ServeMode;
 use oxy_cameras::CamerasMigrator;
 use oxy_shared::errors::OxyError;
 use std::future::IntoFuture;
@@ -209,7 +209,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         // failures are logged but don't block startup (Airhouse may not even
         // be configured).
         if let Err(e) =
-            airhouse::ensure_local_org_seeded(crate::server::serve_mode::LOCAL_WORKSPACE_ID).await
+            airhouse::ensure_local_org_seeded(oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID).await
         {
             tracing::warn!("local-mode org seeding failed: {e}");
         }
@@ -220,7 +220,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // Capture the mode process-wide so request-agnostic code (e.g. the app email
     // sender, which defaults to a browser preview locally instead of SES) can
     // read it without threading it through every call.
-    crate::server::serve_mode::set_process_mode(mode);
+    oxy_app_core::serve_mode::set_process_mode(mode);
 
     if matches!(mode, ServeMode::Cloud) {
         use crate::integrations::slack::config::SlackConfig;
@@ -704,10 +704,10 @@ async fn create_web_application(
     // neither matches, both fall through untouched.
     let main = ServiceBuilder::new()
         .layer(axum::middleware::from_fn(
-            crate::server::api::custom_apps_host_dispatch::subdomain_rewrite_middleware,
+            oxy_app_core::custom_apps_host_dispatch::subdomain_rewrite_middleware,
         ))
         .layer(axum::middleware::from_fn(
-            crate::server::api::org_host_dispatch::org_host_dispatch_middleware,
+            oxy_app_core::org_host_dispatch::org_host_dispatch_middleware,
         ))
         .service(main);
 
@@ -765,7 +765,7 @@ async fn handle_static_files(
     // project (and skips the org/workspace picker).
     let org_ctx = req
         .extensions()
-        .get::<crate::server::api::org_host_dispatch::OrgSubdomainCtx>()
+        .get::<oxy_app_core::org_host_dispatch::OrgSubdomainCtx>()
         .cloned();
     let request_headers = req.headers().clone();
     let uri = req.uri().clone();
@@ -894,7 +894,7 @@ fn is_static_file_request(path: &str) -> bool {
 /// share a validator.
 async fn finalize_html(
     response: axum::response::Response,
-    org_ctx: Option<&crate::server::api::org_host_dispatch::OrgSubdomainCtx>,
+    org_ctx: Option<&oxy_app_core::org_host_dispatch::OrgSubdomainCtx>,
     request_headers: &axum::http::HeaderMap,
 ) -> axum::response::Response {
     let is_html = response
@@ -907,9 +907,7 @@ async fn finalize_html(
     }
 
     let response = match org_ctx {
-        Some(ctx) => {
-            crate::server::api::org_host_dispatch::inject_org_into_response(response, ctx).await
-        }
+        Some(ctx) => oxy_app_core::org_host_dispatch::inject_org_into_response(response, ctx).await,
         None => response,
     };
 

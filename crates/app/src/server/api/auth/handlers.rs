@@ -514,7 +514,7 @@ pub async fn verify_magic_link(
 #[cfg(test)]
 mod mode_field_tests {
     use super::*;
-    use crate::server::serve_mode::ServeMode;
+    use oxy_app_core::serve_mode::ServeMode;
 
     #[test]
     fn local_mode_serializes() {

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole;
-use crate::server::api::org_host_dispatch;
+use oxy_app_core::org_host_dispatch;
 
 #[derive(Serialize)]
 pub struct OrgSubdomainStatus {

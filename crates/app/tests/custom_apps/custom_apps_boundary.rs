@@ -34,6 +34,21 @@
 //! modules are skipped (their `use super::*` is an intra-file idiom, not a seam). Anything
 //! naming a `custom_app*` segment is intra-cluster and ignored. A test that cries wolf gets
 //! deleted, and then it protects nothing.
+//!
+//! ## Known gap — cross-crate paths are invisible here, by construction
+//!
+//! Only `crate::`/`super::`/`self::` paths are scanned, so an `oxy_*::` import of a
+//! workspace sibling is not a seam and never will be flagged. That is deliberate and it is
+//! the same thing the two `REMOVED 2026-07-27` notes above celebrate: when a dependency
+//! moves DOWN into a crate both sides can depend on (`oxy-server-authz`, `oxy-shared`,
+//! `oxy-app-core`), the `oxy-app` back-edge really is gone and deleting the seam really is
+//! progress. The gap is that the test cannot tell that move apart from a move made purely
+//! to dodge it — extracting a module to a sibling crate deletes a seam entry with no
+//! review signal. Closing it means teaching the scanner which sibling crates are
+//! sanctioned shared seams (`oxy-app-core`) versus which are feature crates custom-apps
+//! must not reach into, which is a different model than the one this file implements.
+//! Until then it stays a reviewer's obligation: an extraction that shrinks
+//! [`ALLOWED_SEAMS`] should say where the coupling went.
 
 use std::fs;
 use std::path::{Path, PathBuf};
