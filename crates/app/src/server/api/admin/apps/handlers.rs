@@ -719,6 +719,11 @@ pub async fn update_app(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // This handler can change the **slug**, which is the serve path's cache
+    // KEY, as well as source/branch/project. Without this the old slug keeps
+    // resolving (and the new one 404s) until the TTL expires.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+
     let org = Organizations::find_by_id(org_id)
         .one(&db)
         .await
@@ -957,6 +962,7 @@ pub async fn rollback_app(
 
     crate::server::api::custom_apps_auth::invalidate_access_cache();
     crate::server::api::custom_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
 

@@ -29,16 +29,26 @@
 //! ## Per-request DB load
 //!
 //! A Next.js bundle triggers 30–100 asset requests per page load, each
-//! routed through this handler. The user lookup, the membership check and
-//! the platform-standing check are cached in process with a 60-second TTL.
+//! routed through this handler, so anything uncached here is multiplied by
+//! ~100 on every click. **The warm steady state is now zero DB round-trips
+//! per asset.** Each step of the resolution chain is cached in process with
+//! a 60-second TTL:
 //!
-//! What is **not** cached, and therefore costs one indexed query per asset:
-//! the org-by-slug lookup, the app-by-(org_id, slug) lookup, and — on the S3
-//! source path — the `app_builds` row read in `sources.rs`. So steady state
-//! is **three** DB round-trips per asset plus a bundle-cache read, not one.
-//! Read that before adding a fourth: at 100 assets/page it is already 300
-//! queries per page load. Asset *bytes* are served from the LRU in
-//! `custom_apps_bundle_cache` and do not hit S3.
+//! | Step | Cache |
+//! | ---- | ----- |
+//! | user by email | `custom_apps_cache::cached_user` |
+//! | access check `(user_id, app_id)` | `custom_apps_auth`, dropped by `invalidate_access_cache` |
+//! | platform standing | `oxy_server_authz::globals` |
+//! | org-by-slug + app-by-`(org_id, slug)` | `custom_apps_cache::cached_app_resolution` |
+//! | `app_builds` row (S3 source) | `custom_apps_cache::cached_build`, see `sources.rs` |
+//!
+//! Asset *bytes* come from the LRU in `custom_apps_bundle_cache`, which also
+//! remembers absences, so neither the SPA fallback nor the pre-compressed
+//! `.br` probe re-hits the store.
+//!
+//! **Before adding a step to this chain, cache it.** Uncached, it costs ~100
+//! queries per page load on its own — that is exactly how the previous three
+//! lookups came to cost 300.
 
 use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode, Uri, header};
@@ -54,7 +64,9 @@ use sea_orm::QueryFilter;
 use uuid::Uuid;
 
 use super::custom_apps_auth::user_can_access_app;
-use super::custom_apps_cache::{cached_user, set_cached_user};
+use super::custom_apps_cache::{
+    ResolvedApp, cached_app_resolution, cached_user, set_cached_app_resolution, set_cached_user,
+};
 use super::custom_apps_functions::runtime::FunctionQueryExecutor;
 
 mod headers;
@@ -236,32 +248,48 @@ pub(crate) async fn serve_pretty(
         }
     };
 
-    let org = match entity::prelude::Organizations::find()
-        .filter(entity::organizations::Column::Slug.eq(org_slug))
-        .one(&db)
-        .await
-    {
-        Ok(Some(o)) => o,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => {
-            tracing::error!("Failed to look up org {org_slug}: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    // Turning the URL's two slugs into rows costs two indexed queries, and
+    // every asset in the page repeats them for the same pair. Cached together
+    // for 60s and dropped wholesale by `invalidate_app_resolution_cache` on
+    // any app mutation, so a publish or a visibility change still lands
+    // immediately. A miss is not cached — a newly-created app is reachable at
+    // once.
+    let resolved = match cached_app_resolution(org_slug, app_slug) {
+        Some(r) => r,
+        None => {
+            let org = match entity::prelude::Organizations::find()
+                .filter(entity::organizations::Column::Slug.eq(org_slug))
+                .one(&db)
+                .await
+            {
+                Ok(Some(o)) => o,
+                Ok(None) => return no_store_404(),
+                Err(e) => {
+                    tracing::error!("Failed to look up org {org_slug}: {e}");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            };
 
-    let app = match Apps::find()
-        .filter(entity::apps::Column::OrgId.eq(org.id))
-        .filter(entity::apps::Column::Slug.eq(app_slug))
-        .one(&db)
-        .await
-    {
-        Ok(Some(a)) => a,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => {
-            tracing::error!("Failed to look up custom app {org_slug}/{app_slug}: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            let app = match Apps::find()
+                .filter(entity::apps::Column::OrgId.eq(org.id))
+                .filter(entity::apps::Column::Slug.eq(app_slug))
+                .one(&db)
+                .await
+            {
+                Ok(Some(a)) => a,
+                Ok(None) => return no_store_404(),
+                Err(e) => {
+                    tracing::error!("Failed to look up custom app {org_slug}/{app_slug}: {e}");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            };
+
+            let resolved = ResolvedApp { org, app };
+            set_cached_app_resolution(org_slug, app_slug, resolved.clone());
+            resolved
         }
     };
+    let ResolvedApp { org, app } = resolved;
     let id = app.id;
 
     // Combined access check (org member | workspace grant | global app
@@ -381,7 +409,7 @@ pub(crate) async fn serve_pretty(
                     tracing::warn!(
                         "app {id}: no build for {channel:?} channel — not yet published via `oxy publish`"
                     );
-                    StatusCode::NOT_FOUND.into_response()
+                    no_store_404()
                 }
             }
         }
@@ -392,7 +420,49 @@ pub(crate) async fn serve_pretty(
     // response and spawn the view-event recording. Asset / API
     // fetches are storm-volume — exclude them so the Activity tab
     // counts user-visible page loads, not request volume.
-    if is_html_request {
+    //
+    // The invariant: a non-2xx is not a view, whoever produced it. The
+    // dispatch spans three backends (build store, local dir, upstream
+    // proxy) and each has its own ladder of 404s, 500s and 403s; the gate
+    // deliberately does not care which one answered.
+    //
+    // `304` is the one exception — the browser re-rendered the page from
+    // its cache, which is a view. `html_response`'s `if_none_match` and an
+    // upstream conditional response both produce one.
+    //
+    // Two consequences worth knowing, because they cut opposite ways:
+    //
+    //   - **Gained.** An app that is registered but has nothing to serve —
+    //     no `oxy publish` yet, a `LocalFolder` path pointing nowhere, an
+    //     S3 source not yet synced — stops recording a view for every hit
+    //     on its 404. That is a state customers sit in, so it was real
+    //     inflation.
+    //   - **Lost.** A proxied app's *own* rendered error page — a Next.js
+    //     `404.tsx`, a maintenance `503` — no longer counts, though a
+    //     human did look at it. `AppSource::V0` passes the upstream status
+    //     through verbatim, so this route cannot tell "the app rendered
+    //     its own 404" from "the app is broken." Undercounting those beats
+    //     counting every hit on an app that renders nothing.
+    //   - **Lost.** A proxied app's redirect off its front door. Note this
+    //     is a loss, not a de-duplication: `is_html_navigation` is true
+    //     only for root, trailing-slash and `.html`, so a `middleware.ts`
+    //     or i18n bounce from `/` to `/en` loses the `/` view and never
+    //     gains one for `/en` — the entry point every visitor arrives
+    //     through drops to zero. It de-duplicates only when the target is
+    //     itself tracked (`/foo/` → `/bar/`), which is the narrower half
+    //     of the redirect space. Accepted because a 3xx isn't a page load;
+    //     if the count matters, the fix is to track a 3xx whose `Location`
+    //     resolves inside the same app rather than to widen this gate.
+    //
+    // This gates the `Set-Cookie` too, so a visitor whose first hit is a
+    // non-2xx starts a fresh session on their next navigation. Harmless —
+    // the tracking cookie is analytics-only and separate from
+    // `oxy_session`.
+    let rendered = {
+        let s = response.status();
+        s.is_success() || s == StatusCode::NOT_MODIFIED
+    };
+    if is_html_request && rendered {
         let host = headers
             .get(axum::http::header::HOST)
             .and_then(|v| v.to_str().ok())

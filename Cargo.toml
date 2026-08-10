@@ -268,6 +268,7 @@ backoff = "0.4.0"
 base64 = "0.22"
 bcrypt = "0.19.2"
 bollard = "0.20.2"
+brotli = "8"
 chrono-english = "0.1.8"
 clap = "4.6.4"
 clickhouse = "0.15.1"
@@ -322,6 +323,7 @@ predicates = "3.1.4"
 pulldown-cmark = "0.13"
 rand = "0.10"
 rapidfuzz = "0.5.0"
+rayon = "1"
 reqwest = { version = "0.12", features = ["rustls-tls", "multipart"] }
 # V8-isolate runtime for Oxy Functions (custom-app `functions/*.ts`).
 # See internal-docs/customer-apps-functions.md.

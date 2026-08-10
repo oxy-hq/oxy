@@ -571,6 +571,14 @@ pub async fn rename_org(
         StatusCode::CONFLICT
     })?;
 
+    // The custom-app serve path caches `(org_slug, app_slug) -> rows`, so an
+    // org slug is a cache KEY as well as a cached value. Without this the old
+    // slug keeps resolving for up to the TTL, and — worse — the cached org
+    // model carries the stale slug into `AppRuntimeConfig`, so the serve-time
+    // base-path rewrite is computed against a prefix that no longer exists.
+    // Same reason `update_app` invalidates on an app-slug change.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+
     let member_count = org_members::Entity::find()
         .filter(org_members::Column::OrgId.eq(updated.id))
         .count(&db)
@@ -624,6 +632,9 @@ pub async fn delete_org(
     if res.rows_affected == 0 {
         return Err(StatusCode::NOT_FOUND);
     }
+    // Cascaded apps outlive their rows in the resolution cache — see the same
+    // call in the tenant-facing `organizations::delete_org`.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     tracing::info!(
         admin_email = %actor.email,
         target_id = %org_id,

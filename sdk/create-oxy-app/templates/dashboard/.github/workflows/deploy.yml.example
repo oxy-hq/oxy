@@ -21,6 +21,23 @@
 # Channel policy: push to `main` publishes to the DRAFT channel (promote
 # later via /admin/apps). Push to `production` adds `--promote` to deploy
 # straight to customers.
+#
+# Build ids: deliberately NOT pinned here. `oxy publish` derives one from
+# $GITHUB_SHA + $GITHUB_RUN_ID + $GITHUB_RUN_ATTEMPT, which is unique per
+# run. A bare `--build-id "${{ github.sha }}"` is NOT: promoting a commit
+# from `main` to `production` publishes the same sha twice, as do
+# `workflow_dispatch` on an already-deployed commit and "Re-run all jobs".
+# A build id must be unique per app (its stored bytes are immutable and
+# cached by id), so the server rejects a reused one with 409. If you copied
+# this workflow out before this note existed, drop your `--build-id` line.
+#
+# This needs an `oxy` CLI from the release that introduced run-unique build
+# ids (0.5.121 or later). If you pin a version below (see the install step's
+# comment), pin at or above that — an older CLI with no `--build-id` line
+# falls back to a bare $GITHUB_SHA, which is exactly the collision this note
+# is about, and now a hard 409.
+# A build id also accepts only [A-Za-z0-9._-] (no leading dot, max 200), so
+# a hand-picked `--build-id release/v1` is rejected with 422.
 
 name: Deploy customer apps
 
@@ -82,6 +99,5 @@ jobs:
             --org "${{ vars.OXY_ORG_SLUG }}" \
             --app "${{ matrix.app.slug }}" \
             --project "${{ vars.OXY_PROJECT_ID }}" \
-            --build-id "${{ github.sha }}" \
             --dir out \
             $PROMOTE

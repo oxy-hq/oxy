@@ -86,7 +86,7 @@ async fn seeded_app_bundle_is_actually_readable_from_the_build_store() {
         .await
         .expect("read index.html from the build store")
         .expect("index.html is stored under the build prefix");
-    let html = String::from_utf8(index).expect("index.html is UTF-8");
+    let html = String::from_utf8(index.to_vec()).expect("index.html is UTF-8");
     assert!(
         html.contains("</head>"),
         "the served bundle needs a </head> for runtime identity injection"

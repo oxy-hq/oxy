@@ -175,6 +175,12 @@ lettre = { workspace = true }
 # customer-apps publish pipeline: tarball pack/unpack + bundle LRU cache
 tar = { workspace = true }
 flate2 = { workspace = true }
+# Build-time brotli for bundle assets, so the serve path never re-compresses
+# an immutable content-hashed file — see server/api/custom_apps_precompress.rs.
+# rayon fans that compression across the bundle: it is the one-shot cost that
+# `oxy publish` makes an engineer wait on.
+brotli = { workspace = true }
+rayon = { workspace = true }
 lru = { workspace = true }
 parking_lot = { workspace = true }
 governor = { workspace = true }

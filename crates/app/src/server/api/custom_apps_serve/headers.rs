@@ -13,6 +13,24 @@ use oxy_auth::user::UserService;
 use sea_orm::EntityTrait;
 use uuid::Uuid;
 
+/// A 404 on the custom-app serve route, marked explicitly uncacheable.
+///
+/// 404 is heuristically cacheable (RFC 9111 §15.1) and CDNs apply a default
+/// negative TTL — CloudFront's is 10s. Nearly every negative answer on this
+/// route is *state that flips*: "no build for this channel" becomes a 200 at
+/// the first `oxy publish`, an unknown org or app slug becomes real when it
+/// is created, and a missing hashed asset comes back when a rollback
+/// re-ships that chunk. Caching any of those holds the stale answer across
+/// the transition, and none of them is worth caching to begin with.
+///
+/// This route polices its 200s carefully — `private` on HTML so a shared
+/// cache can't store the tracking cookie, `immutable` gated on the resolved
+/// file so the SPA fallback can't be pinned. Leaving the 404s with no policy
+/// at all was the asymmetry.
+pub(super) fn no_store_404() -> Response {
+    (StatusCode::NOT_FOUND, [(header::CACHE_CONTROL, "no-store")]).into_response()
+}
+
 /// True for "user opened a page" requests: root, any trailing-slash
 /// directory, or a `.html` file. Excludes asset URLs (`/_next/...`,
 /// `/static/...`, `*.js`/`*.css`/`*.svg`/etc.) and API fetches so the
@@ -113,7 +131,9 @@ pub(super) async fn redirect_legacy_uuid(
     };
     let app = match Apps::find_by_id(uuid).one(&db).await {
         Ok(Some(a)) => a,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        // Flips both ways — a uuid is unknown until the app is created and
+        // again once it's deleted.
+        Ok(None) => return no_store_404(),
         Err(e) => {
             tracing::error!("Failed to look up custom app {uuid}: {e}");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -137,7 +157,31 @@ pub(super) async fn redirect_legacy_uuid(
             org.slug, app.slug
         )
     };
-    (StatusCode::MOVED_PERMANENTLY, [(header::LOCATION, target)]).into_response()
+    // `no-store`, despite this being the one response here a client would
+    // otherwise keep indefinitely — and *because* of it.
+    //
+    // 301 is heuristically cacheable (RFC 9111 §15.4.2) and browsers pin it
+    // far harder than any negative TTL: Chrome and Firefox hold it until the
+    // cache is cleared. The target embeds `org.slug` and `app.slug`, and both
+    // are mutable — `invalidate_app_resolution_cache` exists at the rename and
+    // delete sites for exactly that reason. Without this header, a visitor who
+    // ever hit the uuid URL keeps being redirected to a slug that no longer
+    // resolves, 404ing from their own cache with no server-side remedy.
+    //
+    // It is also auth-dependent: the gate above runs *before* the lookup so a
+    // 301-vs-404 difference can't leak the uuid namespace to unauthenticated
+    // probes. A shared cache storing this response would hand the
+    // authenticated 301 to an anonymous prober and collapse that distinction,
+    // so it must not be stored at all — `private` would leave the browser
+    // pinning a stale slug, which is the other half of the problem.
+    (
+        StatusCode::MOVED_PERMANENTLY,
+        [
+            (header::LOCATION, target),
+            (header::CACHE_CONTROL, "no-store".to_string()),
+        ],
+    )
+        .into_response()
 }
 
 /// Returns true if the client wants HTML — used to scope the SPA fallback
@@ -183,15 +227,61 @@ fn base_url(headers: &HeaderMap) -> String {
 /// `_next/static/`; Vite, Astro, Rsbuild, and SvelteKit emit them under
 /// `assets/`. HTML and unfingerprinted root files must revalidate so a new
 /// deployment is picked up immediately.
+///
+/// ## Why HTML is `private`, not just `no-cache`
+///
+/// `no-cache` means "store, but revalidate before reuse" — it does **not**
+/// stop a *shared* cache from storing the response. HTML responses from this
+/// handler carry a per-visitor tracking `Set-Cookie`
+/// (`custom_apps_tracking::session_id_for_serve`, stamped in `serve_pretty`),
+/// so a shared cache that stored one would hand **every** later visitor the
+/// same session id and silently collapse the Activity tab's numbers into a
+/// single session.
+///
+/// `private` is what forbids that, and it is *a* precondition for ever
+/// putting a CDN in front of this route — the "web-cache-deception" risk
+/// named in `internal-docs/customer-apps-performance.md`. The HTML *body* is
+/// in fact identical for every viewer of an app (`window.__OXY_APP__` holds
+/// app-level identity only, never user identity); it is the cookie on the
+/// response, not the bytes, that makes it unshareable.
+///
+/// ## What this does NOT cover: `public` on bundle bytes
+///
+/// Non-HTML responses still leave as `public`, while the route enforces
+/// **per-app** visibility — `app.is_restricted()` means org membership alone
+/// isn't enough (`custom_apps_auth`). A CDN or corporate proxy will therefore
+/// store a restricted app's JS and re-serve it to anyone holding the URL,
+/// with the member list never consulted. What stands between a restricted
+/// bundle and a stranger today is that content-hashed filenames are
+/// discoverable only from the (now `private`) HTML — obscurity, not the
+/// authz gate.
+///
+/// That is a deliberate current position, not an oversight: bundle bytes are
+/// treated as non-secret. Deriving the `public`/`private` half from the app's
+/// visibility is the fix if that ever stops being true, and it costs
+/// restricted apps their shared-cache hit. Read "precondition" above as
+/// necessary, not sufficient.
+///
+/// ## Why the resolved file decides before the requested prefix
+///
+/// The prefix rule reads the **requested** path but the HTML test reads the
+/// **resolved** one, and the SPA fallback makes those diverge: a miss on
+/// `assets/index-abc123.js` resolves to `index.html`. Applying the prefix
+/// rule first would return an HTML body under `public, immutable`, and since
+/// Vite hashes by content, a later build shipping that same chunk would find
+/// the browser (or CDN) holding a year-long HTML entry at a module-script
+/// URL — a white screen with no server-side remedy. An HTML body therefore
+/// never leaves here cacheable, whatever URL reached it.
 pub(super) fn cache_control_for(request_path: &str, file_path: &StdPath) -> &'static str {
+    let ext = file_path.extension().and_then(|e| e.to_str());
+    if matches!(ext, Some("html" | "htm")) {
+        return "private, no-cache";
+    }
     let trimmed = request_path.trim_start_matches('/');
     if trimmed.starts_with("_next/static/") || trimmed.starts_with("assets/") {
         return "public, max-age=31536000, immutable";
     }
-    match file_path.extension().and_then(|e| e.to_str()) {
-        Some("html" | "htm") => "no-cache",
-        _ => "public, max-age=300",
-    }
+    "public, max-age=300"
 }
 
 // The ETag format and `If-None-Match` comparison are shared with the admin

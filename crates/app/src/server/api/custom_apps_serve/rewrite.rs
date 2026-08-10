@@ -410,11 +410,67 @@ mod tests {
     fn cache_control_html_and_root_files_revalidate() {
         assert_eq!(
             cache_control_for("/index.html", std::path::Path::new("index.html")),
-            "no-cache"
+            "private, no-cache"
         );
         assert_eq!(
             cache_control_for("/favicon.ico", std::path::Path::new("favicon.ico")),
             "public, max-age=300"
+        );
+    }
+
+    #[test]
+    fn html_is_private_so_a_shared_cache_cannot_store_the_session_cookie() {
+        // HTML responses carry a per-visitor tracking Set-Cookie. `no-cache`
+        // alone still permits a SHARED cache to store them, which would hand
+        // every later visitor one session id. `private` is the term that
+        // forbids it — and the precondition for fronting this route with a CDN.
+        for path in ["/index.html", "/", "/some/client/route"] {
+            let policy = cache_control_for(path, std::path::Path::new("index.html"));
+            assert!(
+                policy.contains("private"),
+                "HTML for {path} must be private, got {policy:?}"
+            );
+        }
+        // Content-hashed assets carry no cookie and are identical for every
+        // viewer, so they stay shared-cacheable — that is the whole CDN win.
+        assert!(
+            cache_control_for("/assets/main-a1b2.js", std::path::Path::new("main-a1b2.js"))
+                .starts_with("public"),
+            "hashed assets must remain publicly cacheable"
+        );
+    }
+
+    #[test]
+    fn spa_fallback_html_is_never_immutable_under_a_hashed_asset_url() {
+        // The prefix rule reads the REQUESTED path, the HTML test reads the
+        // RESOLVED one, and the SPA fallback is where they diverge: a miss on
+        // a hashed chunk resolves to `index.html`. If the prefix won, a
+        // browser or CDN would pin an HTML 200 at a module-script URL for a
+        // year — and because Vite hashes by content, the next build shipping
+        // that same chunk serves the cached HTML as a script and white-screens
+        // the app, with no server-side remedy.
+        //
+        // The sibling test above loops only over paths that miss the `assets/`
+        // prefix, which is exactly how this survived.
+        for requested in [
+            "/assets/index-abc123.js",
+            "assets/index-abc123.js", // no leading slash
+            "/_next/static/chunks/abc.js",
+        ] {
+            let policy = cache_control_for(requested, std::path::Path::new("index.html"));
+            assert_eq!(
+                policy, "private, no-cache",
+                "SPA-fallback HTML served for {requested} must not be cacheable, got {policy:?}"
+            );
+        }
+        // The genuine hit at the same URL keeps the immutable policy — the
+        // resolved file is what changed, not the rule.
+        assert_eq!(
+            cache_control_for(
+                "/assets/index-abc123.js",
+                std::path::Path::new("index-abc123.js")
+            ),
+            "public, max-age=31536000, immutable"
         );
     }
 

@@ -483,6 +483,10 @@ pub(crate) async fn publish_one(
     // Per-app cache only — the global access cache is invalidated ONCE by the
     // caller (a batch would otherwise do N full global invalidations).
     crate::server::api::custom_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    // The serve path caches the `apps` row itself (channel pointers,
+    // `published_at`), so it must be dropped here too or this mutation takes
+    // up to the cache TTL to appear.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     Ok(updated)
 }
 
@@ -515,6 +519,10 @@ pub(crate) async fn unpublish_one(
     // Per-app cache only — the global access cache is invalidated ONCE by the
     // caller (a batch would otherwise do N full global invalidations).
     crate::server::api::custom_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    // The serve path caches the `apps` row itself (channel pointers,
+    // `published_at`), so it must be dropped here too or this mutation takes
+    // up to the cache TTL to appear.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     Ok(updated)
 }
 
@@ -548,6 +556,9 @@ pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), 
     }
 
     row.delete(db).await.map_err(|_| AppOpError::internal())?;
+    // A cached slug→row resolution would keep serving a deleted app until the
+    // TTL expired. Drop it before returning.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     Ok(())
 }
 
@@ -606,6 +617,10 @@ pub(super) async fn promote_latest_one(
     // Per-app cache only — the global access cache is invalidated ONCE by the
     // caller (a batch would otherwise do N full global invalidations).
     crate::server::api::custom_apps_cache::invalidate_cached_canonical_dir_all_channels(id);
+    // The serve path caches the `apps` row itself (channel pointers,
+    // `published_at`), so it must be dropped here too or this mutation takes
+    // up to the cache TTL to appear.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     Ok(updated)
 }
 

@@ -55,7 +55,10 @@ pub struct PublishArgs {
     /// Falls back to the `oxy login` cache for the target host.
     #[arg(long = "token-env", default_value = "OXY_TOKEN")]
     token_env: String,
-    /// Engineer-facing build version. Default: $GITHUB_SHA, else random.
+    /// Engineer-facing build version. Must be unique per app — the server
+    /// rejects a reused one (409). Default: $GITHUB_SHA qualified by
+    /// $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT so a CI re-run gets its own id,
+    /// else random.
     #[arg(long)]
     build_id: Option<String>,
     /// Skip the build and publish this pre-built directory as-is. When
@@ -101,6 +104,32 @@ fn infer_org_app_from_cwd() -> Option<(String, String)> {
 
 fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.trim().is_empty())
+}
+
+/// Default build id under CI: the commit, qualified by the run that built it.
+///
+/// `GITHUB_SHA` alone is **not** unique per publish — "Re-run all jobs" on the
+/// same commit publishes under the same id a second time. That id is the S3
+/// prefix a build's bytes live under and the key `custom_apps_bundle_cache`
+/// caches by, including its cached *absences*, so a second publish under a
+/// reused id merges into a build replicas have already cached: a file the
+/// rebuild adds reads as permanently missing until the process restarts.
+///
+/// `GITHUB_RUN_ID` is unique per workflow run and `GITHUB_RUN_ATTEMPT`
+/// distinguishes re-runs of that same run, so the pair is exactly the axis
+/// `GITHUB_SHA` is missing. The commit stays the prefix because it is what
+/// makes a build id readable in the admin UI. Each falls back independently —
+/// a non-GitHub CI that sets only `GITHUB_SHA` keeps today's behavior, and the
+/// server rejects the collision if it happens (`custom_apps_publish`).
+fn ci_build_id() -> Option<String> {
+    let sha = env_var("GITHUB_SHA")?;
+    Some(
+        match (env_var("GITHUB_RUN_ID"), env_var("GITHUB_RUN_ATTEMPT")) {
+            (Some(run), Some(attempt)) => format!("{sha}-{run}.{attempt}"),
+            (Some(run), None) => format!("{sha}-{run}"),
+            (None, _) => sha,
+        },
+    )
 }
 
 /// Best-effort git provenance for the working tree: `(remote_url, commit_sha,
@@ -858,7 +887,7 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
     let build_id = args
         .build_id
         .clone()
-        .or_else(|| env_var("GITHUB_SHA"))
+        .or_else(ci_build_id)
         .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
 
     // Best-effort git provenance from the app's working tree, falling back to
@@ -1369,5 +1398,31 @@ mod tests {
             describe_entries(&["only.html".to_string()]),
             "functions/only.html"
         );
+    }
+
+    /// A workflow re-run on the same commit must not reuse a build id — the
+    /// stored bytes for one are immutable and cached by that id.
+    #[test]
+    fn ci_build_id_is_unique_per_run_not_per_commit() {
+        // SAFETY: nextest runs each test in its own process, so no other test
+        // observes these vars.
+        unsafe {
+            std::env::set_var("GITHUB_SHA", "abc123");
+            std::env::remove_var("GITHUB_RUN_ID");
+            std::env::remove_var("GITHUB_RUN_ATTEMPT");
+        }
+        // Non-GitHub CI that sets only the sha keeps the old behavior.
+        assert_eq!(ci_build_id().as_deref(), Some("abc123"));
+
+        unsafe { std::env::set_var("GITHUB_RUN_ID", "42") }
+        assert_eq!(ci_build_id().as_deref(), Some("abc123-42"));
+
+        // The same run, re-run: a distinct id, which is the whole point.
+        unsafe { std::env::set_var("GITHUB_RUN_ATTEMPT", "2") }
+        assert_eq!(ci_build_id().as_deref(), Some("abc123-42.2"));
+
+        // No sha at all → the caller falls back to a random uuid.
+        unsafe { std::env::remove_var("GITHUB_SHA") }
+        assert_eq!(ci_build_id(), None);
     }
 }

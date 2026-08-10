@@ -19,7 +19,6 @@
 //! project belongs to the named org to catch fat-finger cross-org publishes.
 
 use std::io::Read;
-use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::Multipart;
@@ -37,6 +36,7 @@ use uuid::Uuid;
 
 use super::{
     custom_apps_auth, custom_apps_build_store as store, custom_apps_bundle_cache as cache,
+    custom_apps_precompress as precompress,
 };
 
 /// How many builds to retain per app. Older builds (not currently pointed
@@ -151,6 +151,19 @@ pub enum PublishError {
     OxyAccessDenied { org: String, project: Uuid },
     #[error("invalid bundle: {0}")]
     BadTarball(String),
+    /// A build with this `build_id` already exists for the app. Surfaced as 409
+    /// — see the check in [`publish`] for why this cannot be allowed to
+    /// overwrite.
+    #[error(
+        "build {build_id:?} already exists for app {app_slug:?} — a build id must be unique per publish because its stored bytes are immutable and cached by id. Pass a different --build-id."
+    )]
+    DuplicateBuild { app_slug: String, build_id: String },
+    /// The `build_id` cannot safely become a store key / path segment.
+    /// Surfaced as 422 — see `custom_apps_build_store::is_valid_build_id`.
+    #[error(
+        "invalid build id {0:?} — use only letters, digits, `.`, `_` and `-` (no leading dot, max 200 chars)"
+    )]
+    InvalidBuildId(String),
     /// A fast bundle-validation check failed (design doc §8, gate 1). Carries an
     /// actionable check/message/remediation; surfaced as 422.
     #[error("{0}")]
@@ -177,6 +190,8 @@ impl PublishError {
             PublishError::BadTarball(_) | PublishError::Invalid(_) => {
                 StatusCode::UNPROCESSABLE_ENTITY
             }
+            PublishError::DuplicateBuild { .. } => StatusCode::CONFLICT,
+            PublishError::InvalidBuildId(_) => StatusCode::UNPROCESSABLE_ENTITY,
             PublishError::Db(_) | PublishError::S3(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -433,6 +448,60 @@ async fn find_app(
         .map_err(|e| PublishError::Db(e.to_string()))
 }
 
+/// Delete the `app_builds` row a failed publish left behind, loudly.
+///
+/// Both callers are rollback paths that already know something went wrong, and
+/// the failure here is usually the same transient DB problem that triggered the
+/// rollback. That matters more than it used to: while the row survives, its
+/// `build_id` is *taken*, so the operator's natural next move — retry the same
+/// publish — now 409s where before it just worked. `gc_builds` reaps the row
+/// eventually, but only on a later *successful* publish, which is exactly what
+/// the operator can't do yet.
+///
+/// So the errors are still swallowed (a rollback must not mask the original
+/// error with its own), but never silently: the warning is what lets an
+/// operator tell "that id is taken" from "that id is taken *because cleanup
+/// failed*", which have different remedies.
+async fn discard_build_row(db: &DatabaseConnection, build_pk: Uuid, build_id: &str) {
+    match app_builds::Entity::find_by_id(build_pk).one(db).await {
+        Ok(Some(row)) => {
+            if let Err(e) = row.delete(db).await {
+                tracing::warn!(
+                    "publish rollback: could not delete build row {build_pk} ({build_id:?}): {e} \
+                     — retrying this publish with the same --build-id will now 409"
+                );
+            }
+        }
+        Ok(None) => {}
+        Err(e) => tracing::warn!(
+            "publish rollback: could not load build row {build_pk} ({build_id:?}) to delete it: \
+             {e} — retrying this publish with the same --build-id may now 409"
+        ),
+    }
+}
+
+/// True when this app already has a build under `build_id`.
+///
+/// There is no unique index on `(app_id, build_id)` to lean on, so this is the
+/// enforcement point for the uniqueness the storage layer and the bundle cache
+/// both assume. It races against a concurrent publish of the same id — two
+/// publishes could both read `false` — but that window is orders of magnitude
+/// narrower than the "CI re-run three days later" case this closes, and the
+/// honest fix for the rest is a DB constraint, not a lock here.
+async fn build_id_taken(
+    db: &DatabaseConnection,
+    app_id: Uuid,
+    build_id: &str,
+) -> Result<bool, PublishError> {
+    app_builds::Entity::find()
+        .filter(app_builds::Column::AppId.eq(app_id))
+        .filter(app_builds::Column::BuildId.eq(build_id))
+        .one(db)
+        .await
+        .map(|row| row.is_some())
+        .map_err(|e| PublishError::Db(e.to_string()))
+}
+
 /// Insert (first publish) or update the `apps` row. Returns the app id
 /// and `is_new = true` iff this call inserted a fresh row — the CLI uses
 /// that to print "Registered new app" vs "Published new version of …"
@@ -491,6 +560,35 @@ impl AppMutationRollback {
                 }
             }
         }
+        // Restoring the row is only half the undo. `upsert_app` mutates it up
+        // front and the success-path invalidation is at the very end of
+        // `publish`, so the whole of `put_build` — seconds to minutes on a
+        // real bundle — sits in between. A serve request landing in that
+        // window caches the *mutated* row, and without this the cache keeps
+        // serving the rolled-back values for up to `CACHE_TTL`: an `Updated`
+        // app hands out a `window.__OXY_APP__.projectId` pointing at another
+        // workspace while the old bytes still serve (the exact hazard this
+        // type's doc comment above says it exists to prevent), and a
+        // `Created` one keeps resolving after its row is deleted.
+        //
+        // Unconditional, and after the restore: a failed restore leaves the
+        // cache just as wrong, and invalidating first would let a concurrent
+        // request re-cache the bad row before the write lands.
+        //
+        // `crates/app/tests/custom_apps_cache_invalidation.rs` cannot catch
+        // this — its detector is file-level and this file already contains a
+        // call on the success path.
+        //
+        // This drops the whole map, not one app's entry, so every failed
+        // publish costs a re-resolution storm across every app this replica
+        // serves — the storm the cache exists to eliminate. Accepted for the
+        // same reason renames take the wholesale drop: a minute of extra
+        // queries beats a minute of a wrong `project_id`. Note the cost is
+        // now reachable from a *failing* request, and a `put_build` failure
+        // is guaranteed on a multi-replica deploy with no bucket configured
+        // — so a publisher retrying into a bad bucket flushes the map on
+        // every attempt.
+        super::custom_apps_cache::invalidate_app_resolution_cache();
     }
 }
 
@@ -888,6 +986,29 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     };
     authorize_publish(&db, &org, &input).await?;
 
+    // Reject a malformed or already-used id BEFORE the expensive work. The
+    // pipeline below inflates up to `MAX_DECOMPRESSED_BYTES`, validates, and
+    // brotli-compresses the whole bundle; making a duplicate pay all of that
+    // only to 409 is wasteful now that a reused id is an ordinary mistake
+    // rather than an exotic one (a copied-out `deploy.yml` that still pins
+    // `--build-id ${{ github.sha }}` hits it on every promote).
+    //
+    // Only possible when the app already exists — on a first publish there is
+    // no `app_id` yet, and no builds to collide with either. The check after
+    // `upsert_app` stays as the authoritative one; this is a fast path, not a
+    // replacement, and the two cannot disagree in a way that admits a bad id.
+    if !store::is_valid_build_id(&input.build_id) {
+        return Err(PublishError::InvalidBuildId(input.build_id.clone()));
+    }
+    if let Some(app) = find_app(&db, org.id, &input.app_slug).await?
+        && build_id_taken(&db, app.id, &input.build_id).await?
+    {
+        return Err(PublishError::DuplicateBuild {
+            app_slug: input.app_slug.clone(),
+            build_id: input.build_id.clone(),
+        });
+    }
+
     // Decompress off the async runtime: even bounded at 256 MiB, the inflate +
     // allocation is CPU-bound and would tie up a Tokio worker for the duration
     // (a crafted body that expands to the full budget parks a worker). `take`
@@ -906,7 +1027,7 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     let index_bytes = files
         .iter()
         .find(|(p, _)| p == "index.html")
-        .map(|(_, b)| Arc::new(b.clone()));
+        .map(|(_, b)| axum::body::Bytes::from(b.clone()));
     // Capture the bundle's oxy-app.json into the build row so the manifest
     // resolver (debug endpoint) reads it from the DB, not a local file.
     // Falls back to an explicit `manifest` multipart field if the bundle
@@ -920,7 +1041,65 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     // same way in the handler.)
     let manifest_json = parse_embedded_manifest(&files)?.or_else(|| input.manifest.clone());
 
+    // Emit `<asset>.br` siblings so the serve path never re-compresses an
+    // immutable content-hashed asset (see `custom_apps_precompress`). Runs on
+    // the blocking pool for the same reason the tar inflate does: brotli over a
+    // multi-MB bundle is CPU-bound and would park a Tokio worker. Additive —
+    // the store simply receives more files, and a build with no siblings
+    // (published before this existed) still serves correctly.
+    //
+    // NOTE ON THE SIZE CAP: `MAX_DECOMPRESSED_BYTES` bounds what
+    // `unpack_tar_gz` produces, and these variants are appended *after* that
+    // check — so peak resident bytes for a publish is the unpacked bundle plus
+    // its compressible subset in brotli form (plus rayon's per-thread output
+    // buffers). The effective ceiling is therefore ~1.3x the stated cap, not
+    // the cap. Kept out of the cap deliberately: the cap exists to bound what
+    // an *uploader* can make us hold, and these bytes are ours, derived from
+    // already-admitted input. Count them here if that ratio ever gets tighter.
+    let files = tokio::task::spawn_blocking(move || {
+        let mut files = files;
+        let mut variants = precompress::precompressed_variants(&files);
+        files.append(&mut variants);
+        files
+    })
+    .await
+    .map_err(|e| PublishError::BadTarball(format!("bundle pre-compression task failed: {e}")))?;
+
     let (app_id, is_new_app, rollback) = upsert_app(&db, &org, &input).await?;
+    // A build id must be unique per app. Everything downstream treats a build's
+    // stored bytes as immutable and addressable by id:
+    //
+    // - `put_build` writes key by key into `build_prefix(app_id, build_id)` and
+    //   never wipes the prefix first, so a re-publish under a reused id merges
+    //   into the old build rather than replacing it.
+    // - `custom_apps_bundle_cache` caches per-`build_id` *absences* on the
+    //   strength of "a build's file set is fixed once `put_build` returns". A
+    //   file the second publish adds would read as permanently missing on every
+    //   replica that already probed for it — and for a `.js` request that means
+    //   the SPA `index.html` fallback at 200, i.e. a broken app that does not
+    //   self-heal without a process restart.
+    // - `gc_builds` protects by row PK but deletes by `build_id` *prefix*, so
+    //   reaping either of two rows sharing an id deletes the bytes the other
+    //   one still points at.
+    //
+    // Rejecting is the only option that keeps those three honest; overwriting
+    // silently corrupts a build replicas have already cached. The CLI's default
+    // id is unique per run (`cli/commands/publish.rs`), so in practice this
+    // fires only on an explicitly reused `--build-id`.
+    match build_id_taken(&db, app_id, &input.build_id).await {
+        Ok(false) => {}
+        Ok(true) => {
+            rollback.apply(&db, app_id).await;
+            return Err(PublishError::DuplicateBuild {
+                app_slug: input.app_slug.clone(),
+                build_id: input.build_id.clone(),
+            });
+        }
+        Err(e) => {
+            rollback.apply(&db, app_id).await;
+            return Err(e);
+        }
+    }
     // Bytes must land before the row mutation is allowed to stand. If `put_build`
     // fails (guaranteed on a multi-replica deploy with no bucket configured — it
     // refuses outright), undo the app-row change so a live app is never left
@@ -956,9 +1135,7 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
         if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {
             tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
         }
-        if let Ok(Some(row)) = app_builds::Entity::find_by_id(build_pk).one(&db).await {
-            let _ = row.delete(&db).await;
-        }
+        discard_build_row(&db, build_pk, &input.build_id).await;
         rollback.apply(&db, app_id).await;
         return Err(e);
     }
@@ -966,9 +1143,7 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
         if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {
             tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
         }
-        if let Ok(Some(row)) = app_builds::Entity::find_by_id(build_pk).one(&db).await {
-            let _ = row.delete(&db).await;
-        }
+        discard_build_row(&db, build_pk, &input.build_id).await;
         rollback.apply(&db, app_id).await;
         return Err(e);
     }
@@ -983,6 +1158,17 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
         Vec::new()
     };
     gc_builds(&db, app_id, &[build_pk]).await;
+
+    // The serve path caches the `apps` row — including the channel pointers
+    // `set_pointers` just moved — so a publish must drop that cache or the new
+    // build stays invisible for up to the cache TTL. `oxy publish` is
+    // interactive and the engineer reloads immediately; a stale minute reads
+    // as "my publish did nothing".
+    //
+    // Per-process, like every other cache here: on a multi-replica fleet only
+    // the replica that took the publish drops it, and the others age out
+    // within `CACHE_TTL`.
+    super::custom_apps_cache::invalidate_app_resolution_cache();
 
     if let Some(bytes) = index_bytes {
         cache::seed(app_id, &input.build_id, "index.html", bytes);
@@ -1330,5 +1516,34 @@ mod tests {
         };
         assert_eq!(e.status(), StatusCode::FORBIDDEN);
         assert!(e.to_string().contains("has not granted Oxy access"));
+    }
+
+    /// A malformed id is the bundle-is-fine-but-your-input-isn't case: 422,
+    /// and the message has to say what the accepted shape is.
+    #[test]
+    fn invalid_build_id_is_unprocessable_and_states_the_rule() {
+        let e = PublishError::InvalidBuildId("../../etc".to_string());
+        assert_eq!(e.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let msg = e.to_string();
+        assert!(msg.contains("../../etc"));
+        assert!(msg.contains("letters, digits"), "{msg}");
+    }
+
+    /// A reused build id is a conflict, not a bad request — the bundle is
+    /// fine, the id is taken. The message has to name the remedy, because the
+    /// CLI surfaces the raw body (`cli/commands/publish.rs`).
+    #[test]
+    fn duplicate_build_is_a_conflict_and_names_the_remedy() {
+        let e = PublishError::DuplicateBuild {
+            app_slug: "store-pulse".to_string(),
+            build_id: "abc123".to_string(),
+        };
+        assert_eq!(e.status(), StatusCode::CONFLICT);
+        let msg = e.to_string();
+        assert!(msg.contains("store-pulse") && msg.contains("abc123"));
+        assert!(
+            msg.contains("--build-id"),
+            "the error must tell the publisher how to proceed: {msg}"
+        );
     }
 }

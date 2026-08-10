@@ -21,7 +21,14 @@ use std::path::PathBuf;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::primitives::ByteStream;
+use axum::body::Bytes;
+use futures::stream::{StreamExt, TryStreamExt};
 use uuid::Uuid;
+
+/// In-flight `put_object` calls during a publish. High enough that a
+/// few-hundred-file bundle stops being latency-bound, low enough not to
+/// exhaust the SDK's connection pool or trip S3 request-rate throttling.
+const PUT_CONCURRENCY: usize = 12;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuildStoreError {
@@ -64,6 +71,83 @@ fn fs_build_dir(app_id: Uuid, build_id: &str) -> PathBuf {
     state_root().join(build_prefix(app_id, build_id))
 }
 
+/// Longest accepted `build_id`. Comfortably fits a sha plus a run id and
+/// attempt (`ci_build_id`), while keeping the S3 key and the on-disk path
+/// well inside any path-length limit.
+const MAX_BUILD_ID_LEN: usize = 200;
+
+/// Reject a `build_id` that cannot safely become a path segment.
+///
+/// The id is caller-supplied (`--build-id`, or the publish multipart field)
+/// and flows into [`build_prefix`] → [`fs_build_dir`] → `state_root().join(..)`.
+/// [`is_safe_rel`] guards the per-file `rel` but never the id segment, so
+/// without this a `build_id` of `../../../../tmp/x` writes bundle files
+/// outside the state dir on the filesystem backend, and `delete_build`'s
+/// `remove_dir_all` targets the traversed directory. S3 keys are literal, so
+/// that backend is contained either way — but the FS backend is what local
+/// dev and single-node self-host run on.
+///
+/// The charset is deliberately narrower than "not traversal": an id is a
+/// human-readable handle in the admin UI and a greppable prefix in the store,
+/// so restricting it to `[A-Za-z0-9._-]` costs nothing real. A leading dot is
+/// refused so an id can never produce a hidden directory.
+pub fn is_valid_build_id(build_id: &str) -> bool {
+    is_containable_build_id(build_id)
+        && build_id.len() <= MAX_BUILD_ID_LEN
+        && build_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
+/// The weaker property [`is_valid_build_id`] is built on: this id cannot
+/// escape its own prefix.
+///
+/// **Read and delete sides use this, not the strict check.** `--build-id` was
+/// free text until [`is_valid_build_id`] existed, so `app_builds` rows in an
+/// existing deployment can legitimately hold `release/v1`, a colon-bearing
+/// `2026-08-07T10:00:00Z`, or `v1.0+build`. Refusing to *serve* those would
+/// break already-published apps, and refusing to *delete* them is worse than
+/// it sounds: `gc_builds` drops the row whether or not the store delete
+/// succeeded, so a rejected reap orphans the prefix with nothing left pointing
+/// at it — reclaimable only by `delete_app`'s whole-app sweep.
+///
+/// Containment is all those two paths need. The strict charset is a
+/// forward-looking policy about what we'll *accept*, which is a different
+/// question and belongs only on the write side.
+///
+/// Containment is **component-wise**, the same shape as [`is_safe_rel`] — an
+/// interior separator is not a hazard. `release/v1` joins to
+/// `<state>/customer-apps/<uuid>/builds/release/v1/`, which has no `ParentDir`
+/// component and is not absolute, so it lands inside the state dir; on S3 the
+/// key is literal and `build_prefix` already contains separators. Refusing it
+/// would take the app dark (`get_object` → `Ok(None)` → SPA fallback also
+/// missing → 404 on every request, with the absence cached) *and* strand the
+/// prefix, which is the exact failure this split exists to prevent.
+///
+/// Known legacy edge, not introduced here and not closed here: two legacy ids
+/// where one is a path prefix of the other (`x` and `x/y`) nest. Reaping `x`
+/// takes `x/y`'s bytes with it, and the overlap runs through the read path
+/// too — `rel` comes from the request URL, so on build `x` a crafted
+/// `…/y/index.html` addresses build `x/y`'s file. Same app, so the auth gate
+/// is identical and no tenant data crosses; it does let a visitor of the live
+/// build reach an unpromoted draft's assets. Only reachable on rows that
+/// predate [`is_valid_build_id`], which now makes the shape uncreatable.
+pub fn is_containable_build_id(build_id: &str) -> bool {
+    use std::path::Component;
+    let path = std::path::Path::new(build_id);
+    let mut components = path.components().peekable();
+    if components.peek().is_none() {
+        // Empty, or nothing but separators.
+        return false;
+    }
+    components.all(|c| match c {
+        // A leading dot on any component would make a hidden directory.
+        Component::Normal(s) => !s.to_string_lossy().starts_with('.'),
+        // `..`, `.`, `/`, and Windows prefixes all escape or anchor.
+        _ => false,
+    })
+}
+
 /// Reject relative paths that could escape the build dir on the filesystem
 /// backend (`..` components or absolute). The tar extractor already guards
 /// uploaded paths; this is defense-in-depth for both put and the serve-time
@@ -97,6 +181,14 @@ pub async fn put_build(
     build_id: &str,
     files: Vec<(String, Vec<u8>)>,
 ) -> Result<String, BuildStoreError> {
+    // Guard the id segment itself, not just the per-file `rel` below — see
+    // `is_valid_build_id`. Publish rejects a bad id with a 422 before reaching
+    // here; this is the backstop for every other caller of the store.
+    if !is_valid_build_id(build_id) {
+        return Err(BuildStoreError::Io(format!(
+            "unsafe build id: {build_id:?}"
+        )));
+    }
     let prefix = build_prefix(app_id, build_id);
     if let Some(bad) = files.iter().find(|(rel, _)| !is_safe_rel(rel)) {
         return Err(BuildStoreError::Io(format!("unsafe build path: {}", bad.0)));
@@ -122,17 +214,37 @@ pub async fn put_build(
     match bucket() {
         Some(bucket) => {
             let client = s3_client().await;
-            for (rel, bytes) in files {
-                let key = format!("{prefix}{}", rel.trim_start_matches('/'));
-                client
-                    .put_object()
-                    .bucket(&bucket)
-                    .key(&key)
-                    .body(ByteStream::from(bytes))
-                    .send()
-                    .await
-                    .map_err(|e| BuildStoreError::S3(format!("put_object {key}: {e}")))?;
-            }
+            // Concurrent, not serial. A Vite bundle is a few hundred small
+            // chunks and publish-time brotli adds a `.br` sibling for most of
+            // them (`custom_apps_precompress`), so a serial loop pays a few
+            // hundred round-trip latencies back to back — which dominates the
+            // compression cost the siblings were meant to save. Each PUT is
+            // independent (distinct keys under a prefix nothing reads until
+            // the `app_builds` row lands), so ordering carries no meaning.
+            //
+            // `try_collect` short-circuits on the first error exactly as `?`
+            // did, and the caller's rollback still deletes the whole prefix —
+            // a partial upload leaves no more mess than before.
+            futures::stream::iter(files.into_iter().map(|(rel, bytes)| {
+                let client = &client;
+                let bucket = &bucket;
+                let prefix = &prefix;
+                async move {
+                    let key = format!("{prefix}{}", rel.trim_start_matches('/'));
+                    client
+                        .put_object()
+                        .bucket(bucket)
+                        .key(&key)
+                        .body(ByteStream::from(bytes))
+                        .send()
+                        .await
+                        .map_err(|e| BuildStoreError::S3(format!("put_object {key}: {e}")))?;
+                    Ok::<(), BuildStoreError>(())
+                }
+            }))
+            .buffer_unordered(PUT_CONCURRENCY)
+            .try_collect::<Vec<()>>()
+            .await?;
         }
         None => {
             let root = fs_build_dir(app_id, build_id);
@@ -158,9 +270,27 @@ pub async fn get_object(
     app_id: Uuid,
     build_id: &str,
     rel_path: &str,
-) -> Result<Option<Vec<u8>>, BuildStoreError> {
+) -> Result<Option<Bytes>, BuildStoreError> {
     let rel = rel_path.trim_start_matches('/');
+    // Two segments, two guards: `rel` comes from the request URL, `build_id`
+    // comes from an `app_builds` row — which for a row written before
+    // `is_valid_build_id` existed was never checked at all, so the write-side
+    // gate cannot cover it retroactively. On the FS backend that id lands in
+    // `fs_build_dir(..).join(rel)` below, so a stored traversal id would read
+    // outside the state dir. Containment, not the strict charset: a legacy id
+    // must still serve its app.
     if !is_safe_rel(rel) {
+        return Ok(None);
+    }
+    if !is_containable_build_id(build_id) {
+        // Loudly: `Ok(None)` is indistinguishable from a genuine miss, the SPA
+        // fallback misses too, and `custom_apps_bundle_cache` caches the
+        // absence — so the app 404s uniformly for the process lifetime. An
+        // operator needs something to grep for.
+        tracing::warn!(
+            "app {app_id}: refusing unsafe build id {build_id:?} — every asset in this build \
+             will 404 until the row is corrected"
+        );
         return Ok(None);
     }
     match bucket() {
@@ -174,7 +304,12 @@ pub async fn get_object(
                         .collect()
                         .await
                         .map_err(|e| BuildStoreError::S3(format!("collect {key}: {e}")))?;
-                    Ok(Some(data.into_bytes().to_vec()))
+                    // `into_bytes()` already hands back the same `bytes::Bytes` the
+                    // serve path wants (one `bytes` in the lockfile, which is
+                    // what `axum::body::Bytes` re-exports). Round-tripping it
+                    // through `Vec` here just to rebuild a `Bytes` in the cache
+                    // was a full alloc + memcpy on every cold fetch.
+                    Ok(Some(data.into_bytes()))
                 }
                 Err(err) => {
                     let is_missing = err
@@ -192,7 +327,7 @@ pub async fn get_object(
         None => {
             let dest = fs_build_dir(app_id, build_id).join(rel);
             match tokio::fs::read(&dest).await {
-                Ok(bytes) => Ok(Some(bytes)),
+                Ok(bytes) => Ok(Some(Bytes::from(bytes))),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
                 Err(e) => Err(BuildStoreError::Io(format!("read {}: {e}", dest.display()))),
             }
@@ -202,6 +337,15 @@ pub async fn get_object(
 
 /// Delete every object/file under a build prefix (keep-last-N GC).
 pub async fn delete_build(app_id: Uuid, build_id: &str) -> Result<(), BuildStoreError> {
+    // `remove_dir_all` on the FS backend — never let a traversal id name the
+    // directory being reaped. Containment only, deliberately: a legacy row
+    // whose id predates `is_valid_build_id` must stay reapable, or `gc_builds`
+    // strands its prefix forever. See `is_containable_build_id`.
+    if !is_containable_build_id(build_id) {
+        return Err(BuildStoreError::Io(format!(
+            "unsafe build id: {build_id:?}"
+        )));
+    }
     match bucket() {
         Some(bucket) => {
             let client = s3_client().await;
@@ -344,6 +488,87 @@ pub async fn delete_app(app_id: Uuid) -> Result<(), BuildStoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The id becomes a path segment under the state dir on the FS backend,
+    /// and `delete_build` hands that path to `remove_dir_all`.
+    #[test]
+    fn build_id_traversal_is_refused() {
+        assert!(!is_valid_build_id("../../../../tmp/x"));
+        assert!(!is_valid_build_id(".."));
+        assert!(!is_valid_build_id("a/b"));
+        assert!(!is_valid_build_id("/abs"));
+        // A leading dot would make a hidden directory.
+        assert!(!is_valid_build_id(".hidden"));
+        assert!(!is_valid_build_id(""));
+        assert!(!is_valid_build_id(&"a".repeat(MAX_BUILD_ID_LEN + 1)));
+        // Anything outside the charset, including the separators and the
+        // wildcards an S3 prefix scan would be unhappy about.
+        assert!(!is_valid_build_id("a b"));
+        assert!(!is_valid_build_id("a\\b"));
+        assert!(!is_valid_build_id("a*b"));
+    }
+
+    /// The read and delete sides must keep working for ids that predate the
+    /// strict validator — `--build-id` was free text, so these are real rows
+    /// in existing deployments. Refusing them would break serving, and would
+    /// strand storage: `gc_builds` drops the row whether or not the store
+    /// delete succeeded.
+    #[test]
+    fn legacy_ids_stay_readable_and_reapable_unless_they_can_escape() {
+        for legacy in [
+            "2026-08-07T10:00:00Z", // colons
+            "v1.0+build",           // plus
+            "release~rc1",          // tilde
+            "feature branch",       // space
+            // An interior separator is NOT an escape: this joins to
+            // `<state>/…/builds/release/v1/`, still inside the state dir, and
+            // on S3 the key is literal. Refusing it would 404 the whole app.
+            "release/v1",
+            // On unix a backslash is an ordinary filename byte — one
+            // component, one real directory.
+            "a\\b",
+        ] {
+            assert!(
+                is_containable_build_id(legacy),
+                "{legacy:?} cannot escape its prefix, so it must stay serveable and reapable"
+            );
+            assert!(
+                !is_valid_build_id(legacy),
+                "{legacy:?} must not be accepted for a NEW publish"
+            );
+        }
+        // These genuinely escape or anchor outside the prefix.
+        for escaping in [
+            "..",
+            ".",
+            "../x",
+            "a/../../x",
+            "/abs",
+            "",
+            "/",
+            ".hidden",
+            "a/.hidden",
+        ] {
+            assert!(
+                !is_containable_build_id(escaping),
+                "{escaping:?} escapes or anchors outside its prefix"
+            );
+        }
+    }
+
+    /// Everything the CLI can actually produce must pass.
+    #[test]
+    fn build_id_accepts_what_the_cli_generates() {
+        // `ci_build_id`: sha, sha-run, sha-run.attempt.
+        assert!(is_valid_build_id("0a1b2c3d"));
+        assert!(is_valid_build_id("0a1b2c3d-31166280801"));
+        assert!(is_valid_build_id("0a1b2c3d-31166280801.2"));
+        // The random-uuid fallback.
+        assert!(is_valid_build_id(&Uuid::new_v4().simple().to_string()));
+        // A hand-picked id an engineer might pass.
+        assert!(is_valid_build_id("v1.2.3_rc1"));
+        assert!(is_valid_build_id(&"a".repeat(MAX_BUILD_ID_LEN)));
+    }
 
     #[test]
     fn build_prefix_has_no_leading_slash_and_trailing_slash() {

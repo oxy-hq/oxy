@@ -14,10 +14,21 @@ expensive to retrofit under load.
 
 - **Content-hashed assets → immutable Cache-Control.** URLs under `assets/`
   (Vite / Astro / Rsbuild / SvelteKit) and `_next/static/` (Next) change only when
-  their bytes change → `public, max-age=31536000, immutable`. HTML and
-  unfingerprinted root files → `no-cache` so a new deploy is picked up. This is
+  their bytes change → `public, max-age=31536000, immutable`. HTML →
+  `private, no-cache`; unfingerprinted root files → `public, max-age=300`. This is
   `cache_control_for`; a new hashed-asset dir means adding its prefix there. Without
   it, every chunk re-runs the full auth + membership walk in `serve_inner`.
+- **HTML stays `private`.** It carries a per-visitor tracking `Set-Cookie`, and
+  `no-cache` alone still lets a *shared* cache store the response — which would hand
+  every later visitor one session id. Do not "simplify" this to `no-cache`.
+- **The resolution chain must stay fully cached.** Warm steady state is **zero** DB
+  round-trips per asset. Adding an uncached lookup to `serve_pretty` /
+  `serve_from_s3_build` costs ~100 queries per page load on its own. New app-row
+  state means a new `invalidate_app_resolution_cache()` call site.
+- **Assets are pre-compressed at publish, not per request** (`custom_apps_precompress`).
+  A new compressible output type belongs in `is_precompressible_extension`; HTML must
+  stay excluded (it is rewritten at serve time). Any response that ships
+  `Content-Encoding` MUST also ship `Vary: accept-encoding`.
 - **HTML → weak ETag + `If-None-Match` 304.** Injected HTML is a transform, so use a
   weak `W/"…"` ETag over the *final* bytes (`etag_for` / `if_none_match` in
   `serve_from_s3_build`); a matching `If-None-Match` returns 304 and skips the
@@ -43,8 +54,13 @@ expensive to retrofit under load.
 
 ## Litmus test before merging
 
-A new serving route under `/customer-apps/**` with no `Cache-Control`/compression, or
-a new cached data endpoint whose key does **not** start with `project_id`, is read
-**before** the auth gate, or ignores `?refresh` — should be challenged through this
-skill. This complements `oxy-route-classification` (which decides *where* the route
-runs); this skill governs *how fast* it answers.
+A new serving route under `/customer-apps/**` with no `Cache-Control`/compression, an
+uncached per-asset DB lookup, a `Content-Encoding` without `Vary`, HTML that isn't
+`private`, or a new cached data endpoint whose key does **not** start with
+`project_id`, is read **before** the auth gate, or ignores `?refresh` — should be
+challenged through this skill. This complements `oxy-route-classification` (which
+decides *where* the route runs); this skill governs *how fast* it answers.
+
+CDN work (CloudFront in front of the customer-apps hosts) is analysed in
+`internal-docs/customer-apps-performance.md` § *CDN* — read the two-step ordering
+there before proposing edge caching; the auth gate is the whole difficulty.

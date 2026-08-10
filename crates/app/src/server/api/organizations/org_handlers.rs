@@ -271,6 +271,14 @@ pub async fn update_org(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // An org slug is half the custom-app resolution cache key, and the cached
+    // org row also feeds `AppRuntimeConfig`. Without this the old slug keeps
+    // resolving for up to the TTL and the serve-time base-path rewrite is
+    // computed against a prefix that no longer exists. This is the tenant-facing
+    // rename — an org admin renaming their own org — and is far more common than
+    // the staff path in `admin::orgs_admin::rename_org`.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+
     Ok(Json(org_response(&updated, &ctx.membership.role)))
 }
 
@@ -338,6 +346,12 @@ pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCod
     for workspace_id in &workspace_ids {
         crate::server::api::workspaces::cleanup_workspace_schedules(&db, *workspace_id).await;
     }
+
+    // The org delete cascades its apps away, but a cached `(org_slug, app_slug)`
+    // resolution outlives them — and the access check that follows is computed
+    // from the cached app model, so without this a global app admin can still be
+    // served bundle bytes from a deleted org until the TTL expires.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
 
     Ok(StatusCode::NO_CONTENT)
 }

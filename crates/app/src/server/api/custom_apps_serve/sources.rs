@@ -7,7 +7,7 @@
 
 use std::path::{Component, Path as StdPath, PathBuf};
 
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use sea_orm::EntityTrait;
@@ -16,9 +16,10 @@ use uuid::Uuid;
 
 use crate::server::api::custom_apps_bundle_cache;
 use crate::server::api::custom_apps_cache::{
-    CACHE_CHANNEL_LOCAL, cached_canonical_dir, invalidate_cached_canonical_dir,
-    set_cached_canonical_dir,
+    CACHE_CHANNEL_LOCAL, cached_build, cached_canonical_dir, invalidate_cached_canonical_dir,
+    set_cached_build, set_cached_canonical_dir,
 };
+use crate::server::api::custom_apps_precompress as precompress;
 
 use super::headers::*;
 use super::rewrite::*;
@@ -202,36 +203,61 @@ pub(crate) async fn serve_from_s3_build(
     runtime: &AppRuntimeConfig,
     headers: &HeaderMap,
 ) -> Response {
-    let build = match entity::app_builds::Entity::find_by_id(build_pk)
-        .one(db)
-        .await
-    {
-        Ok(Some(b)) => b,
-        Ok(None) => {
-            tracing::error!("app {app_id}: build pointer {build_pk} has no app_builds row");
-            return StatusCode::NOT_FOUND.into_response();
-        }
-        Err(e) => {
-            tracing::error!("app {app_id}: failed to load build {build_pk}: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
+    let build = match load_build(db, app_id, build_pk).await {
+        Ok(b) => b,
+        Err(response) => return response,
     };
 
     let Some(requested) = s3_object_key(rest, wants_html(headers)) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    // Try the requested object; on a miss, fall back to the SPA shell
-    // (`index.html`) — same behavior as the disk path's spa fallback.
+    // A `.br` sibling is an internal representation, not an addressable asset.
+    // Without this it resolves as an ordinary object and hands back raw brotli
+    // as `application/octet-stream` with no `Content-Encoding` — a body no
+    // client can read, under a URL nothing links. 404 is the honest answer:
+    // the resource here is the identity object, reached without the suffix.
+    // Build-store path only; a LocalFolder app's own `dist/` may legitimately
+    // ship `.br` files the dev put there, and those are not ours to hide.
+    if precompress::is_precompressed_path(&requested) {
+        return no_store_404();
+    }
+
+    // Pre-compressed fast path, BEFORE the identity fetch. A `.br` sibling
+    // exists only when its identity object does (both come off the same file
+    // list at publish), and everything downstream — mime, cache policy —
+    // derives from the request path rather than the fetched bytes. So on a
+    // hit the identity object is never needed: one store round-trip instead
+    // of two, and one LRU entry instead of two.
+    if let Some(response) = try_precompressed(app_id, &build.build_id, &requested, headers).await {
+        return response;
+    }
+
+    // Try the requested object; on a miss, a navigation falls back to the
+    // SPA shell (`index.html`).
     let (rel_used, bytes) =
         match custom_apps_bundle_cache::get_or_fetch(app_id, &build.build_id, &requested).await {
             Ok(Some(b)) => (requested.clone(), b),
+            // Only a navigation gets the SPA shell. An asset XHR for a
+            // missing file must get a real 404 rather than an opaque 200
+            // carrying HTML — the `wants_html` gate `serve_from_dir` applies
+            // via `allow_spa_fallback`, which this path had been missing.
+            //
+            // The *gate* now matches the disk path; the *ladder* does not.
+            // `serve_file` also tries `<path>.html` and `<path>/index.html`
+            // before the root shell, so a multi-page static export (Next.js
+            // `trailingSlash: false`, Astro) resolves `/about` to
+            // `about.html` from a local folder but to the shell here. Left
+            // as-is deliberately: this is the hot navigation path and the
+            // extra rungs would add two store round-trips per cold client
+            // route on the SPA case this PR is tuning for.
+            Ok(None) if !wants_html(headers) => return no_store_404(),
             Ok(None) => {
                 match custom_apps_bundle_cache::get_or_fetch(app_id, &build.build_id, "index.html")
                     .await
                 {
                     Ok(Some(b)) => ("index.html".to_string(), b),
-                    Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                    Ok(None) => return no_store_404(),
                     Err(e) => {
                         tracing::error!("app {app_id}: S3 read index.html failed: {e}");
                         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -247,41 +273,160 @@ pub(crate) async fn serve_from_s3_build(
     let resolved_path = StdPath::new(&rel_used);
     let mime = guess_content_type(resolved_path);
     let cache = cache_control_for(&requested, resolved_path);
-    let body_bytes = if mime.starts_with("text/html") {
-        let expected_prefix = format!("/customer-apps/{}/{}/", runtime.org_slug, runtime.slug);
-        let rewritten =
-            rewrite_bundle_base_path(bytes.as_slice(), &expected_prefix, runtime.app_id);
-        inject_app_config(&rewritten, runtime, resolved_path)
-    } else {
-        bytes.to_vec()
-    };
+
+    // HTML is transformed on the way out (base-path rewrite + identity
+    // injection), so it is never pre-compressed — the stored bytes and the
+    // sent bytes differ by construction. The `CompressionLayer` still
+    // compresses it on the fly.
     if mime.starts_with("text/html") {
-        let etag = etag_for(&body_bytes);
-        if if_none_match(headers, &etag) {
-            return (
-                StatusCode::NOT_MODIFIED,
-                [
-                    (header::ETAG, etag),
-                    (header::CACHE_CONTROL, cache.to_string()),
-                ],
-            )
-                .into_response();
+        return html_response(&bytes, mime, cache, resolved_path, runtime, headers);
+    }
+    asset_response(bytes, mime, cache, None)
+}
+
+/// Load the `app_builds` row for a channel pointer, through the TTL cache.
+///
+/// Keyed by PK: the fields the serve path reads (`build_id`) are fixed when
+/// the publish pipeline writes the row, and a promote/rollback repoints
+/// `apps` at a DIFFERENT pk rather than rewriting this one — so a cache hit
+/// can never serve a superseded build.
+///
+/// `Err` carries the response to return as-is.
+async fn load_build(
+    db: &sea_orm::DatabaseConnection,
+    app_id: Uuid,
+    build_pk: Uuid,
+) -> Result<entity::app_builds::Model, Response> {
+    if let Some(b) = cached_build(build_pk) {
+        return Ok(b);
+    }
+    match entity::app_builds::Entity::find_by_id(build_pk)
+        .one(db)
+        .await
+    {
+        Ok(Some(b)) => {
+            set_cached_build(build_pk, b.clone());
+            Ok(b)
         }
+        Ok(None) => {
+            tracing::error!("app {app_id}: build pointer {build_pk} has no app_builds row");
+            Err(no_store_404())
+        }
+        Err(e) => {
+            tracing::error!("app {app_id}: failed to load build {build_pk}: {e}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
+        }
+    }
+}
+
+/// Build the response for an HTML entry document: base-path rewrite +
+/// `window.__OXY_APP__` injection, then a weak ETag over the FINAL bytes
+/// (the transform is what makes it weak) with `If-None-Match` short-circuit.
+fn html_response(
+    bytes: &[u8],
+    mime: &str,
+    cache: &str,
+    resolved_path: &StdPath,
+    runtime: &AppRuntimeConfig,
+    headers: &HeaderMap,
+) -> Response {
+    let expected_prefix = format!("/customer-apps/{}/{}/", runtime.org_slug, runtime.slug);
+    let rewritten = rewrite_bundle_base_path(bytes, &expected_prefix, runtime.app_id);
+    let body_bytes = inject_app_config(&rewritten, runtime, resolved_path);
+    let etag = etag_for(&body_bytes);
+    if if_none_match(headers, &etag) {
         return (
+            StatusCode::NOT_MODIFIED,
             [
-                (header::CONTENT_TYPE, mime.to_string()),
-                (header::CACHE_CONTROL, cache.to_string()),
                 (header::ETAG, etag),
+                (header::CACHE_CONTROL, cache.to_string()),
             ],
-            Body::from(body_bytes),
         )
             .into_response();
     }
     (
-        [(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, cache)],
+        [
+            (header::CONTENT_TYPE, mime.to_string()),
+            (header::CACHE_CONTROL, cache.to_string()),
+            (header::ETAG, etag),
+        ],
         Body::from(body_bytes),
     )
         .into_response()
+}
+
+/// Serve the `.br` sibling written at publish time, if the client accepts
+/// brotli and the sibling exists. `None` means "fall through to the identity
+/// object" — the caller has not fetched it yet, which is the point.
+///
+/// The probe is filtered by extension, so a request that could never have a
+/// sibling (an SPA route with no extension, an image, a font) costs nothing.
+/// For the rest, a build published before pre-compression existed misses
+/// once per object per process — the absence is remembered by the bundle
+/// cache — and the response falls through to the `CompressionLayer` exactly
+/// as it did before.
+async fn try_precompressed(
+    app_id: Uuid,
+    build_id: &str,
+    requested: &str,
+    headers: &HeaderMap,
+) -> Option<Response> {
+    if !precompress::accepts_brotli(headers)
+        || !precompress::is_precompressible_extension(requested)
+    {
+        return None;
+    }
+    let br_path = format!("{requested}{}", precompress::PRECOMPRESSED_SUFFIX);
+    match custom_apps_bundle_cache::get_or_fetch(app_id, build_id, &br_path).await {
+        Ok(Some(br_bytes)) => {
+            // A `.br` hit means the identity object exists, so no SPA
+            // fallback is possible here: the resolved path IS the request.
+            let path = StdPath::new(requested);
+            Some(asset_response(
+                br_bytes,
+                guess_content_type(path),
+                cache_control_for(requested, path),
+                Some("br"),
+            ))
+        }
+        // No sibling — the caller fetches the identity object.
+        Ok(None) => None,
+        // A store failure on the OPTIONAL variant must never fail the
+        // request; fall through and let the identity fetch decide.
+        Err(e) => {
+            tracing::warn!("app {app_id}: pre-compressed probe {br_path} failed: {e}");
+            None
+        }
+    }
+}
+
+/// Build the response for a static (non-HTML) asset, pre-compressed or not.
+///
+/// `Vary: accept-encoding` goes on **both** forms: without it a shared cache
+/// could store the brotli body and hand it to a client that never asked for
+/// it. Load-bearing the moment anything caches upstream of us.
+fn asset_response(
+    bytes: Bytes,
+    mime: &str,
+    cache: &str,
+    encoding: Option<&'static str>,
+) -> Response {
+    let mut response = (
+        [
+            (header::CONTENT_TYPE, mime.to_string()),
+            (header::CACHE_CONTROL, cache.to_string()),
+            (header::VARY, "accept-encoding".to_string()),
+        ],
+        Body::from(bytes),
+    )
+        .into_response();
+    if let Some(encoding) = encoding {
+        response.headers_mut().insert(
+            header::CONTENT_ENCODING,
+            header::HeaderValue::from_static(encoding),
+        );
+    }
+    response
 }
 
 pub(super) async fn serve_from_local(
@@ -345,6 +490,9 @@ async fn serve_from_dir(
                 );
                 return (
                     StatusCode::NOT_FOUND,
+                    // Flips to 200 the moment the bundle syncs — see
+                    // `no_store_404`, which this mirrors with a body.
+                    [(header::CACHE_CONTROL, "no-store")],
                     format!(
                         "Bundle not deployed for custom app {id}.\n\
                          Server looked for files at: {}\n\n\
@@ -406,7 +554,7 @@ async fn serve_file(
     let resolved = first_existing(&candidates).await;
 
     let Some(path) = resolved else {
-        return StatusCode::NOT_FOUND.into_response();
+        return no_store_404();
     };
 
     // Symlink-escape defense: bundles come from CI output, not a hand-curated
@@ -417,7 +565,7 @@ async fn serve_file(
         Ok(p) => p,
         Err(e) => {
             tracing::error!("Failed to canonicalize {path:?}: {e}");
-            return StatusCode::NOT_FOUND.into_response();
+            return no_store_404();
         }
     };
     if !canon.starts_with(bundle_dir) {

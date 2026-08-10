@@ -421,6 +421,9 @@ pub async fn write_access(
     // of the membership caches already permit. Say so plainly rather than implying
     // the call below is a fleet-wide flush.
     crate::server::api::custom_apps_auth::invalidate_access_cache();
+    // `visibility` lives on the `apps` row, which the serve path also caches.
+    // Same per-process caveat as above.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     tracing::info!(
         app = %app.id, org = %app.org_id, actor = %actor_id,
         visibility, grants = grants.len(),
