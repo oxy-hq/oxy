@@ -67,7 +67,7 @@ pub enum AirwayCommand {
 #[derive(Parser, Debug)]
 pub struct AirwayLeasesArgs {
     /// Workspace to inspect. Defaults to the local single-tenant workspace
-    /// (`Uuid::nil()`), which every other `oxy airway` subcommand assumes.
+    /// (`Uuid::nil()`), the legacy-local default; pass `--workspace-id` for a cloud lease.
     ///
     /// Required for cloud: a lease stranded by a dead-lettered run lives under
     /// a real workspace id, and without this flag the recovery command cannot
@@ -82,7 +82,8 @@ pub struct AirwayReleaseLeaseArgs {
     /// Pipeline NAME (the `name:` in the `.airway.yml`), not the file path —
     /// leases are keyed by name, which is what `oxy airway leases` prints.
     pub pipeline_name: String,
-    /// Skip the confirmation prompt.
+    /// Skip the confirmation prompt, and release whatever holds the lease
+    /// rather than only the run that was listed.
     #[clap(long)]
     pub force: bool,
     /// Workspace holding the lease. Defaults to the local single-tenant
@@ -639,8 +640,8 @@ fn emit(as_json: bool, seq: i64, event_type: &str, payload: &Value) {
 
 /// `oxy airway leases` — what is currently holding each pipeline.
 ///
-/// The CLI runs against the local workspace (`Uuid::nil()`), matching every
-/// other airway subcommand here.
+/// Defaults to the local workspace (`Uuid::nil()`); `--workspace-id` selects a
+/// cloud one.
 async fn cmd_leases(args: AirwayLeasesArgs) -> Result<(), OxyError> {
     let db = connect_db().await?;
     let workspace_id = args.workspace_id.unwrap_or_else(Uuid::nil);
@@ -719,6 +720,20 @@ async fn cmd_release_lease(args: AirwayReleaseLeaseArgs) -> Result<(), OxyError>
              holder you know is dead (dead-lettered, or a Ctrl-C'd CLI run)."
                 .warning()
         );
+        // Decide interactivity BEFORE prompting. `read_line` returns `Ok(0)`
+        // for EOF, and EOF on a TTY is Ctrl-D — an operator who reads the
+        // warning, decides not to risk it and hits Ctrl-D would otherwise be
+        // told their stdin is not interactive and pointed at `--force`: the
+        // opposite of what they just decided, in the one message they read
+        // while a pipeline is blocked. Checking here also avoids printing a
+        // prompt and a two-line warning that nothing will ever read.
+        if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+            return Err(OxyError::RuntimeError(format!(
+                "release-lease needs a confirmation but stdin is not interactive. \
+                 Re-run with --force once you have established that run {} is dead.",
+                held.run_id
+            )));
+        }
         print!("Release it? [y/N] ");
         use std::io::Write as _;
         std::io::stdout().flush().ok();
@@ -726,19 +741,131 @@ async fn cmd_release_lease(args: AirwayReleaseLeaseArgs) -> Result<(), OxyError>
         std::io::stdin()
             .read_line(&mut answer)
             .map_err(|e| OxyError::RuntimeError(format!("read confirmation: {e}")))?;
+        // `Ok(0)` here is Ctrl-D at a real terminal — a deliberate decline,
+        // handled by the arm below. The non-interactive case already returned.
         if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-            println!("{}", "Aborted; lease left in place.".text());
-            return Ok(());
+            // A declined confirmation is a non-zero exit, as in git/apt: the
+            // lease is still held, so a caller chaining on success must not
+            // proceed.
+            return Err(OxyError::RuntimeError(
+                "aborted; lease left in place".to_string(),
+            ));
         }
     }
 
-    let removed = agentic_pipeline::airway_run::force_release_airway_lease(
-        &db,
-        Uuid::nil(),
-        &args.pipeline_name,
-    )
-    .await
+    // Two deletes, deliberately. The CONFIRMED path is scoped to the run_id the
+    // operator was just shown: the prompt waits on human latency while airway
+    // pipelines are cron-driven, so an unguarded pipeline-scoped delete lets a
+    // `y` typed after the holder finished remove whichever run the next tick
+    // started — re-admitting the exact concurrency this table prevents, via the
+    // cleanup for it. `--force` skips the prompt, so there is no window and no
+    // run to scope to.
+    //
+    // `workspace_id`, NOT `Uuid::nil()`: the nil literal here meant the flag was
+    // honoured for the listing and the prompt above and then discarded for the
+    // DELETE, so this could only ever clear a lease in the nil (legacy-local)
+    // workspace — while its own help text says the flag is required for a cloud
+    // one. It reported success either way.
+    let removed = if args.force {
+        agentic_pipeline::airway_run::force_release_airway_lease(
+            &db,
+            workspace_id,
+            &args.pipeline_name,
+        )
+        .await
+    } else {
+        agentic_pipeline::airway_run::release_airway_lease_scoped(
+            &db,
+            workspace_id,
+            &args.pipeline_name,
+            &held.run_id,
+        )
+        .await
+    }
     .map_err(|e| OxyError::RuntimeError(format!("release lease: {e}")))?;
+
+    if removed == 0 {
+        // Zero rows means two different things now that the confirmed delete is
+        // run-scoped, and an operator acts differently on each: either the
+        // holder released on its own and NOBODY took over (the pipeline is
+        // free — the same end state the early return above reports as success),
+        // or a successor claimed it (still blocked). Erroring on both would
+        // abort `release-lease … && restart-something` on the benign half — and
+        // the whole argument for run-scoping was that this window is
+        // human-scale, which makes that half exactly as reachable as the one it
+        // fixed. So ask who holds it now.
+        let holder_now = agentic_pipeline::airway_run::list_airway_leases(&db, workspace_id)
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("list leases: {e}")))?
+            .into_iter()
+            .find(|l| l.pipeline_name == args.pipeline_name);
+        match holder_now {
+            None => {
+                println!(
+                    "{}",
+                    format!(
+                        "Lease on `{}` was already released by run {}; the pipeline can run again.",
+                        args.pipeline_name, held.run_id
+                    )
+                    .success()
+                );
+                return Ok(());
+            }
+            Some(next) => {
+                // The successor can be the SAME run: `retry` re-acquires under
+                // the original run_id on purpose (see `retry.rs`), so a holder
+                // that terminalized, released, and was then retried shows up
+                // here with an unchanged id. Without this arm the operator
+                // reads "run X no longer holds it, run X does now" — the one
+                // wording that leaves them nothing to act on.
+                if next.run_id == held.run_id {
+                    // Echo the flag only if the operator actually passed one —
+                    // `workspace_id` defaults to `Uuid::nil()`, and suggesting
+                    // `--workspace-id 00000000-…` hands a legacy-local operator
+                    // a UUID they never typed, in the one message they read
+                    // while a pipeline is blocked.
+                    let ws_flag = match args.workspace_id {
+                        Some(id) => format!(" --workspace-id {id}"),
+                        None => String::new(),
+                    };
+                    return Err(OxyError::RuntimeError(format!(
+                        "lease on `{}` was not released: run {} released it and was \
+                         retried, so it holds the lease again and is live. Leave it \
+                         alone, or re-check with `oxy airway leases{ws_flag}`.",
+                        args.pipeline_name, held.run_id
+                    )));
+                }
+                // Still blocked, by a DIFFERENT run than the operator confirmed
+                // against — never silently widen to it.
+                //
+                // Both arms below describe the same end state, so they must not
+                // give opposite advice. Pointing the confirmed path at `--force`
+                // would tell the operator to run a pipeline-scoped delete against
+                // a successor they have never been shown — the exact hazard
+                // run-scoping closed, reached one command later instead of
+                // through a `y`. Re-running the plain command is strictly better:
+                // it re-lists on entry, so it shows the new holder with its
+                // acquire/expiry times, prompts fresh, and deletes scoped to that
+                // run. The operator decides against the run they would actually
+                // free. `--force` stays for when they have already established
+                // the successor is dead.
+                return Err(OxyError::RuntimeError(if args.force {
+                    format!(
+                        "lease on `{}` was not released: run {} was already gone, \
+                         and run {} acquired it since. That run is live — leave it alone.",
+                        args.pipeline_name, held.run_id, next.run_id
+                    )
+                } else {
+                    format!(
+                        "lease on `{}` was not released: run {} no longer holds it, \
+                         run {} does now. Re-run the same command to review and \
+                         confirm against that run.",
+                        args.pipeline_name, held.run_id, next.run_id
+                    )
+                }));
+            }
+        }
+    }
     println!(
         "{}",
         format!(

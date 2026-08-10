@@ -162,15 +162,39 @@ impl TaskExecutor for PipelineTaskExecutor {
                 backfill_from,
                 backfill_to,
             } => {
-                self.execute_airway(
-                    &assignment.run_id,
-                    pipeline_ref,
-                    variables.as_ref(),
-                    resources,
-                    backfill_from.as_deref(),
-                    backfill_to.as_deref(),
-                )
-                .await
+                // The single-flight lease is taken at SUBMIT (`start_airway_run`),
+                // so a dispatch that fails here — unreadable `.airway.yml`, a
+                // parse error, an unresolvable destination — leaves the run
+                // terminal with its lease still held. Nothing else releases on
+                // this path: every existing release site is in a submit, retry
+                // or backfill path. Observed in dev as a run that reached
+                // `failed` 38ms after creation and blocked its pipeline for the
+                // full 6h TTL.
+                //
+                // Release is `run_id`-scoped and idempotent, so this is safe
+                // even when a later path would have released too.
+                let started = self
+                    .execute_airway(
+                        &assignment.run_id,
+                        pipeline_ref,
+                        variables.as_ref(),
+                        resources,
+                        backfill_from.as_deref(),
+                        backfill_to.as_deref(),
+                    )
+                    .await;
+                if let Err(e) = &started {
+                    tracing::warn!(
+                        run_id = %assignment.run_id, error = %e,
+                        // "any lease HELD BY THIS RUN" — inline automation airway
+                        // steps never acquire at submit, so for those the DELETE is
+                        // a correct no-op and the old wording was a false statement
+                        // in the log.
+                        "airway dispatch failed; releasing any single-flight lease held by this run"
+                    );
+                    crate::airway_run::release_airway_lease(&self.db, &assignment.run_id).await;
+                }
+                started
             }
 
             TaskSpec::Compile {

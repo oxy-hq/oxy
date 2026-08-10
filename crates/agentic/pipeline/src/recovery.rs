@@ -286,8 +286,6 @@ async fn recover_single_run(
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
     custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
 ) -> Result<(), String> {
-    use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
-
     // Acquire the driver lease before touching the run. If a *live* driver
     // already owns it (another replica, or — once Task 6 lands — a
     // concurrent recovery tick), skip: driving it here would double-drive
@@ -323,6 +321,83 @@ async fn recover_single_run(
         }
         Err(e) => return Err(format!("driver lease acquire failed: {e}")),
     }
+
+    // The driver lease is OWNED from here, so this frame is the run's owner and
+    // may release run-scoped resources on failure. Split out so that ownership
+    // is expressed by the call boundary rather than by remembering which of the
+    // six error exits below the acquire happened to be.
+    let outcome = recover_single_run_owned(
+        root,
+        db.clone(),
+        state,
+        platform,
+        builder_bridges,
+        schema_cache,
+        builder_test_runner,
+        builder_app_runner,
+        router,
+        custom_executors,
+        driver_id,
+    )
+    .await;
+
+    // An airway run that fails recovery is force-failed by the caller
+    // (`mark_recovery_failed`), but its single-flight lease was taken at SUBMIT
+    // and nothing else frees it — so the pipeline stayed blocked for the full
+    // 6h TTL. `resume_from_state` dispatches airway into its `_` arm, which
+    // resumes only from `suspend_data`, and airway runs never suspend — so
+    // recovery CANNOT resume one and always force-fails it.
+    //
+    // SCOPE — narrower than it first appears, and measured rather than
+    // inferred. Reaching `resume_from_state` at all requires the run's queued
+    // task row to be GONE (claimed by a worker that died, or dead-lettered).
+    // `is_root_with_queued_entry` below short-circuits the common case and
+    // leaves the root for the worker, so a merely interrupted run is re-driven
+    // and leaks nothing — a diagnostic run confirmed it stays `running` with no
+    // error and never reaches the caller's `mark_recovery_failed`. An earlier
+    // revision of this comment claimed "every restart, six hours, every time";
+    // that was wrong, and it matters here because the queueing redesign will
+    // weigh this site when deciding whether claim-time acquisition makes it
+    // redundant.
+    //
+    // Safe without a liveness predicate precisely because we hold the driver
+    // lease: this frame already concluded the run is dead, and recovery would
+    // have re-driven it on the success path — a strictly stronger act than
+    // releasing a lease. The acquire-error exit above returns before this point
+    // and never releases, because there we own nothing.
+    if outcome.is_err() && root.source_type.as_deref() == Some("airway") {
+        tracing::info!(
+            target: "recovery",
+            run_id = %root.id,
+            "airway recovery failed; releasing its single-flight lease"
+        );
+        crate::airway_run::release_airway_lease(&db, &root.id).await;
+    }
+
+    outcome
+}
+
+/// The body of [`recover_single_run`] that runs once the driver lease is held.
+///
+/// Exists so ownership is a call boundary: everything here executes as the
+/// run's owner, which is what makes releasing run-scoped resources on failure
+/// sound.
+#[allow(clippy::too_many_arguments)]
+async fn recover_single_run_owned(
+    root: &agentic_runtime::entity::run::Model,
+    db: DatabaseConnection,
+    state: Arc<RuntimeState>,
+    platform: Arc<dyn PlatformContext>,
+    builder_bridges: Option<BuilderBridges>,
+    schema_cache: Option<Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>>,
+    builder_test_runner: Option<Arc<dyn agentic_builder::BuilderTestRunner>>,
+    builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
+    router: Arc<dyn agentic_runtime::router::TaskRouter>,
+    custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
+    // The lease this frame owns — the heartbeat ticker downstream renews it.
+    driver_id: String,
+) -> Result<(), String> {
+    use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
 
     // Scope to this run's task tree so recovery's worker can't poach
     // a sibling run's queued root. See `drive_with_coordinator` in

@@ -267,7 +267,7 @@ pub async fn start_airway_run(
     .await;
     if seeded.is_err() {
         // Best-effort: if this DELETE also fails the TTL still frees the lease.
-        let _ = agentic_airway::extension::pipeline_lease::release(
+        let _ = agentic_airway::extension::pipeline_lease::release_counted(
             db,
             workspace_id,
             &spec.name,
@@ -361,6 +361,26 @@ pub async fn release_airway_lease(db: &DatabaseConnection, run_id: &str) {
         tracing::warn!(%run_id, error = %e,
             "failed to release the airway single-flight lease; it will lapse at expires_at");
     }
+}
+
+/// Run-scoped release for the operator CLI, reporting rows removed.
+///
+/// Guarded on `run_id` on purpose — see
+/// `agentic_airway::extension::pipeline_lease::release_counted`. The unguarded
+/// [`force_release_airway_lease`] stays available for `--force`.
+pub async fn release_airway_lease_scoped(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    pipeline_name: &str,
+    run_id: &str,
+) -> Result<u64, sea_orm::DbErr> {
+    agentic_airway::extension::pipeline_lease::release_counted(
+        db,
+        workspace_id,
+        pipeline_name,
+        run_id,
+    )
+    .await
 }
 
 /// Release the lease for `run_id` **only if its task was never claimed**.

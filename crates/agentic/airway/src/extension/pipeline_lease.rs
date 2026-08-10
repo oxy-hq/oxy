@@ -262,25 +262,30 @@ pub async fn release_by_run<C: ConnectionTrait>(db: &C, run_id: &str) -> Result<
     Ok(())
 }
 
-/// Release the lease iff `run_id` still holds it.
+/// Release the lease iff `run_id` still holds it, reporting rows removed.
 ///
-/// The `run_id` guard matters: without it, a late release from a run whose
-/// lease already lapsed and was taken over would free the *new* holder's
-/// lease and re-admit concurrency.
-pub async fn release<C: ConnectionTrait>(
+/// The operator-facing CLI needs the count to distinguish "the holder you were
+/// shown released on its own" (0) from "released it" (1) — and it needs the
+/// `run_id` guard, because the confirmation prompt waits on human latency while
+/// airway pipelines are cron-driven. An unguarded, pipeline-scoped delete would
+/// let a `y` typed after the holder finished remove the lease of whichever run
+/// the next tick started, re-admitting exactly the concurrency this table
+/// prevents.
+pub async fn release_counted<C: ConnectionTrait>(
     db: &C,
     workspace_id: Uuid,
     pipeline_name: &str,
     run_id: &str,
-) -> Result<(), DbErr> {
-    db.execute(Statement::from_sql_and_values(
-        DbBackend::Postgres,
-        r#"DELETE FROM airway_pipeline_leases
+) -> Result<u64, DbErr> {
+    let res = db
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"DELETE FROM airway_pipeline_leases
            WHERE workspace_id = $1 AND pipeline_name = $2 AND run_id = $3"#,
-        [workspace_id.into(), pipeline_name.into(), run_id.into()],
-    ))
-    .await?;
-    Ok(())
+            [workspace_id.into(), pipeline_name.into(), run_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected())
 }
 
 /// Every lease currently held in `workspace_id`, newest first.
@@ -302,7 +307,7 @@ pub async fn list_for_workspace<C: ConnectionTrait>(
 
 /// Force-release a pipeline's lease regardless of which run holds it.
 ///
-/// Deliberately NOT guarded on `run_id`, unlike [`release`] — the whole point
+/// Deliberately NOT guarded on `run_id`, unlike [`release_counted`] — the whole point
 /// is to recover from a holder that will never release itself: a dead-lettered
 /// run (the reaper cannot free it; see the TTL note above), or a `Ctrl-C`'d
 /// `oxy airway run`, which otherwise leaves the pipeline unrunnable for the

@@ -7,6 +7,10 @@
 //! `agentic_runs` (source_type=airway), `airway_run_extensions`, and
 //! a queued `TaskSpec::Airway` in `agentic_task_queue`.
 //!
+//! Also pins one executor-side property, because it is the other half of the
+//! same lease lifecycle: a dispatch failure must RELEASE the single-flight
+//! lease the submit above acquired.
+//!
 //! Requires Docker (or `OXY_DATABASE_URL`); self-skips otherwise.
 
 use std::path::{Path, PathBuf};
@@ -291,5 +295,252 @@ async fn start_airway_run_rejects_missing_pipeline_file() {
     assert!(
         err.to_string().contains("does-not-exist.airway.yml"),
         "got: {err}"
+    );
+}
+
+/// Regression: a dispatch failure must release the single-flight lease.
+///
+/// The lease is taken at SUBMIT (`start_airway_run`), and every release site
+/// used to live in a submit, retry or backfill path — nothing covered the
+/// executor. So an unreadable/absent `.airway.yml`, a parse error or an
+/// unresolvable destination left the run terminal with its lease still held
+/// for the full 6h TTL. Observed on dev as a run reaching `failed` 38ms after
+/// creation while blocking its pipeline for 27 minutes.
+///
+/// Asserts BOTH halves: the dispatch still fails (we did not paper over the
+/// error to free the lease), and the lease row is gone.
+#[tokio::test(flavor = "multi_thread")]
+async fn airway_dispatch_failure_releases_the_lease() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let workspace_id = uuid::Uuid::new_v4();
+    let pipeline_name = format!("dispatch_fail_{}", uuid::Uuid::new_v4().simple());
+
+    // Hold the lease exactly as a submit would have.
+    let acquired = agentic_airway::extension::pipeline_lease::try_acquire(
+        &db,
+        workspace_id,
+        &pipeline_name,
+        &run_id,
+        agentic_airway::extension::pipeline_lease::LEASE_TTL_SECS,
+    )
+    .await
+    .expect("acquire lease");
+    assert!(
+        matches!(
+            acquired,
+            agentic_airway::extension::pipeline_lease::LeaseAcquisition::Acquired
+        ),
+        "precondition: lease must be held before dispatch, got {acquired:?}"
+    );
+
+    // `pipeline_ref` does not exist on disk, so `execute_airway` fails at
+    // resolution — upstream of `worker.execute`, i.e. no engine is running.
+    let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = Arc::new(TmpWorkspace {
+        root: dir.path().to_path_buf(),
+    });
+    let executor = agentic_pipeline::executor::PipelineTaskExecutor::bare(platform, db.clone());
+
+    let assignment = agentic_core::delegation::TaskAssignment {
+        task_id: uuid::Uuid::new_v4().to_string(),
+        parent_task_id: None,
+        run_id: run_id.clone(),
+        spec: TaskSpec::Airway {
+            pipeline_ref: "no-such-pipeline.airway.yml".to_string(),
+            variables: None,
+            resources: Vec::new(),
+            backfill_from: None,
+            backfill_to: None,
+        },
+        policy: None,
+    };
+
+    // `ExecutingTask` is not `Debug`, so match rather than `expect_err`.
+    let err =
+        match agentic_runtime::orchestrator::worker::TaskExecutor::execute(&executor, assignment)
+            .await
+        {
+            Ok(_) => panic!("dispatch must fail for a missing pipeline_ref"),
+            Err(e) => e,
+        };
+    assert!(
+        err.contains("no-such-pipeline.airway.yml"),
+        "error should name the unresolvable ref, got: {err}"
+    );
+
+    let still_held =
+        agentic_airway::extension::pipeline_lease::list_for_workspace(&db, workspace_id)
+            .await
+            .expect("list leases")
+            .into_iter()
+            .any(|l| l.run_id == run_id);
+    assert!(
+        !still_held,
+        "dispatch failed but the lease survived — the pipeline is blocked for the full TTL"
+    );
+}
+
+/// Regression: recovery force-failing an airway run must release its lease.
+///
+/// `resume_from_state` dispatches airway into its `_` arm, which resumes only
+/// from `suspend_data` — and airway runs never suspend (no HITL) — so recovery
+/// CANNOT resume an airway run and force-fails it via `mark_recovery_failed`.
+/// The single-flight lease was taken at submit and nothing else freed it, so
+/// the pipeline stayed blocked for the full 6h TTL.
+///
+/// Reaching that requires the run's queued task row to be GONE — claimed by a
+/// worker that died, or dead-lettered. A merely interrupted run still has its
+/// queued `TaskSpec::Airway`, and recovery re-drives it successfully, leaking
+/// nothing; the test drops the queue row for exactly this reason. Verified by
+/// diagnostic: with the row present the run stays `running` with no error and
+/// `mark_recovery_failed` never fires.
+///
+/// Releasing there is sound without a liveness predicate because recovery
+/// holds the driver lease: it has already concluded the run is dead, and on the
+/// success path it would have RE-DRIVEN it — a strictly stronger act.
+#[tokio::test(flavor = "multi_thread")]
+async fn recovery_failure_releases_the_airway_lease() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let pipeline_name = format!("recov_{}", uuid::Uuid::new_v4().simple());
+    let yaml = format!(
+        r#"
+name: {pipeline_name}
+source:
+  kind: filesystem
+  config:
+    base_path: /tmp/airway-recovery
+    pattern: "*.jsonl"
+    format: jsonl
+    table_name: users
+destination:
+  kind: memory
+  config:
+    dataset_name: scratch
+resources:
+  - users
+"#
+    );
+    std::fs::write(dir.path().join("p.airway.yml"), yaml).expect("write spec");
+
+    let ws = TmpWorkspace {
+        root: dir.path().to_path_buf(),
+    };
+    let workspace_id = uuid::Uuid::new_v4();
+    // Seed through the real submit path so the run, its extension and its
+    // lease are exactly what production would have left behind.
+    let run_id = start_airway_run(
+        &db,
+        &ws,
+        StartAirwayRequest {
+            pipeline_ref: "p.airway.yml".to_string(),
+            variables: None,
+            thread_id: None,
+            resources: Vec::new(),
+            schedule_id: None,
+            trigger: Some("test".to_string()),
+            logical_date: None,
+            retry_of: None,
+            backfill_from: None,
+            backfill_to: None,
+        },
+        agentic_pipeline::TaskScope::Scoped,
+        workspace_id,
+    )
+    .await
+    .expect("seed airway run");
+
+    // Make it look like a run stranded by a restart: root, `running`, no live
+    // driver — the exact shape `get_resumable_root_runs` selects.
+    sea_orm::ConnectionTrait::execute(
+        &db,
+        sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE agentic_runs SET task_status = 'running', driver_id = NULL, \
+             driver_heartbeat_at = NULL WHERE id = $1",
+            [run_id.clone().into()],
+        ),
+    )
+    .await
+    .expect("strand the run");
+
+    // Drop the queued task row too. With it present, recovery simply re-drives
+    // the queued `TaskSpec::Airway` and SUCCEEDS — which is the common
+    // interrupted case and correctly leaks nothing. The leak needs a run whose
+    // work is gone, so recovery must fall through to `resume_from_state`, where
+    // airway has no checkpoint and no suspension to resume from.
+    sea_orm::ConnectionTrait::execute(
+        &db,
+        sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "DELETE FROM agentic_task_queue WHERE run_id = $1",
+            [run_id.clone().into()],
+        ),
+    )
+    .await
+    .expect("drop queued task");
+
+    let held_before =
+        agentic_airway::extension::pipeline_lease::list_for_workspace(&db, workspace_id)
+            .await
+            .expect("list leases")
+            .into_iter()
+            .any(|l| l.run_id == run_id);
+    assert!(
+        held_before,
+        "precondition: submit must have taken the lease"
+    );
+
+    let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = Arc::new(TmpWorkspace {
+        root: dir.path().to_path_buf(),
+    });
+    agentic_pipeline::recovery::recover_active_runs(
+        db.clone(),
+        Arc::new(agentic_runtime::state::RuntimeState::new()),
+        platform,
+        None,
+        None,
+        None,
+        None,
+        Arc::new(agentic_runtime::orchestrator::router::NoopTaskRouter),
+        Some(workspace_id),
+        None,
+    )
+    .await;
+
+    // Pin the CHAIN, not just the outcome: without this, a future change that
+    // makes recovery skip airway roots entirely would leave the lease released
+    // for an unrelated reason and the assertion below would go green while
+    // testing nothing.
+    let after = crud::get_run(&db, &run_id)
+        .await
+        .expect("get_run")
+        .expect("run row");
+    assert_eq!(
+        after.task_status.as_deref(),
+        Some("failed"),
+        "precondition: recovery must have force-failed the run"
+    );
+
+    let still_held =
+        agentic_airway::extension::pipeline_lease::list_for_workspace(&db, workspace_id)
+            .await
+            .expect("list leases")
+            .into_iter()
+            .any(|l| l.run_id == run_id);
+    assert!(
+        !still_held,
+        "recovery force-failed the run but its lease survived — the pipeline is \
+         blocked for the full 6h TTL (reached when the run's queued task row is \
+         gone: claimed-and-orphaned, or dead-lettered)"
     );
 }

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use agentic_airway::extension::AirwayMigrator;
 use agentic_airway::extension::pipeline_lease::{
-    LEASE_TTL_SECS, LeaseAcquisition, release, release_by_run, try_acquire,
+    LEASE_TTL_SECS, LeaseAcquisition, release_by_run, release_counted, try_acquire,
 };
 use agentic_runtime::migration::RuntimeMigrator;
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
@@ -130,7 +130,9 @@ async fn release_lets_the_next_run_in() {
     try_acquire(&db, w, pipe, "run-a", LEASE_TTL_SECS)
         .await
         .unwrap();
-    release(&db, w, pipe, "run-a").await.expect("release");
+    release_counted(&db, w, pipe, "run-a")
+        .await
+        .expect("release");
 
     assert_eq!(
         try_acquire(&db, w, pipe, "run-b", LEASE_TTL_SECS)
@@ -177,7 +179,7 @@ async fn a_stale_release_cannot_free_the_successors_lease() {
     // run-a finally finishes and releases. Without the run_id guard this would
     // free run-b's live lease and re-admit exactly the concurrency the lease
     // exists to prevent.
-    release(&db, w, pipe, "run-a").await.unwrap();
+    release_counted(&db, w, pipe, "run-a").await.unwrap();
     release_by_run(&db, "run-a").await.unwrap();
 
     match try_acquire(&db, w, pipe, "run-c", LEASE_TTL_SECS)
