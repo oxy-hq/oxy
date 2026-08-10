@@ -21,9 +21,7 @@
 //! (parse → gate → call service) and the gate is already pinned by the differential
 //! suites. What is worth testing here is the behavior underneath.
 
-mod common;
-
-use common::test_db;
+use crate::common::test_db;
 use entity::{
     apps, org_members, org_members::OrgRole, org_team_members, org_teams, organizations, users,
     workspaces,

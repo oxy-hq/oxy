@@ -426,23 +426,39 @@ exclude = []
 publish = false
 rust-version = "1.97.1"
 
-[profile.dev.package]
-# Disable optimization for native build dependencies to speed up dev builds
-# These crates have build scripts that compile native code and always trigger rebuilds
-aws-lc-sys = { opt-level = 0 }
-libduckdb-sys = { opt-level = 0 }
-lz4-sys = { opt-level = 0 }
-onig_sys = { opt-level = 0 }
-openssl-sys = { opt-level = 0 }
-ring = { opt-level = 0 }
-# Large/complex crates that benefit from reduced optimization in dev
-aws-sdk-sts = { opt-level = 0 }
-datafusion-common = { opt-level = 0 }
-parquet = { opt-level = 0 }
-sqlx-postgres = { opt-level = 0 }
+# NOTE: there is deliberately no `[profile.dev.package]` block here.
+# One used to sit at this spot pinning `opt-level = 0` on aws-lc-sys,
+# libduckdb-sys, lz4-sys, onig_sys, openssl-sys, ring, aws-sdk-sts,
+# datafusion-common, parquet and sqlx-postgres, described as speeding up dev
+# builds. It could not: `[profile.dev] opt-level` is already 0 by default, so
+# every one of those entries set a value to what it already was. (It also could
+# not touch the C/C++ those `*-sys` build scripts compile — that is the `cc`
+# crate's business, not a Cargo profile's.) Removed rather than left in place,
+# because inert config reads as a tuning lever and stops anyone from looking for
+# a real one.
+#
+# The real per-package lever, if dependency *runtime* ever dominates a test run,
+# is the opposite of what was written: `[profile.dev.package."*"] opt-level = 1`
+# optimizes dependency code while leaving workspace crates unoptimized. Don't
+# add it casually — it forces a from-scratch rebuild of the entire dep graph.
 
 [profile.dev]
-split-debuginfo = "shallow"
+# NOTE: `split-debuginfo` is deliberately unset — do not "restore" it.
+# It was `"shallow"`, which is not a value rustc accepts (`off`, `packed` and
+# `unpacked` are the only three). Cargo does not reject the unknown string; it
+# silently falls back to the `packed` path, which is the *most* expensive one:
+# `dsymutil` runs over every binary and writes a full `.dSYM` bundle beside it.
+# On this workspace that meant a dsymutil pass over the ~1.2 GB `oxy` binary and
+# over each of the integration-test binaries, and ~10 GB of `.dSYM` in
+# `target/debug/deps`. Verified 2026-08-10 with a one-file scratch crate:
+# "shallow" and "packed" both emit a .dSYM; "unpacked" and *omitting the key*
+# do not.
+#
+# Omitted rather than pinned to "unpacked" so each platform keeps its own
+# default: macOS defaults to `unpacked` (no dsymutil, debug info left in the .o
+# files — backtraces are unaffected), and Linux/CI defaults to `off`, which is
+# what CI already wants since it sets `CARGO_PROFILE_DEV_DEBUG=0` anyway.
+#
 # Line tables only (not full DWARF). Measured 2026-07-21 on a free 8-core box:
 # a warm one-file `cargo build -p oxy-app` incremental drops 146s -> 73s (-50%),
 # because the bin link + dsymutil write far less debug info. Backtraces keep file

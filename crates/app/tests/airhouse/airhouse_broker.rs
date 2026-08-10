@@ -4,7 +4,7 @@
 //! sealed SA bearer, and drives the broker against a wiremock-backed
 //! Admin API.
 //!
-//! Run with: `cargo nextest run -p oxy-app --test airhouse_broker`
+//! Run with: `cargo nextest run -p oxy-app --test airhouse -E 'test(airhouse_broker)'`
 
 use airhouse::entity::tenants::{self as airhouse_tenants, TenantStatus};
 use airhouse::{
@@ -14,9 +14,8 @@ use base64::{Engine as _, engine::general_purpose};
 use chrono::Utc;
 use entity::organizations;
 use entity::workspaces::{self, WorkspaceStatus};
-use migration::{Migrator, MigratorTrait};
 use oxy::adapters::secrets::envelope;
-use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, Database, DatabaseConnection};
+use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
 use serde_json::{Value, json};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -24,10 +23,6 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
-static TEST_CONTAINER: tokio::sync::OnceCell<
-    std::sync::Arc<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
-> = tokio::sync::OnceCell::const_new();
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// Seed the AES-GCM master key. Same fixed key as the provisioner tests so
@@ -43,74 +38,19 @@ fn set_test_encryption_key() {
     }
 }
 
+/// A fresh per-test database carrying the central + airhouse schema, with the
+/// global `establish_connection()` pool pointed at it.
+///
+/// The broker resolves its own connection through `establish_connection()`, so
+/// the env write is load-bearing: without it `mint` fails with "OXY_DATABASE_URL
+/// environment variable is required" rather than seeing the seeded rows.
+///
+/// The migration chain runs once per `cargo nextest run` into a template that
+/// this clones; see `tests/common/mod.rs`.
 async fn test_db() -> DatabaseConnection {
-    let admin_url = TEST_DB_URL
-        .get_or_init(|| async {
-            if let Ok(url) = std::env::var("OXY_DATABASE_URL") {
-                return url;
-            }
-
-            use testcontainers::runners::AsyncRunner;
-            use testcontainers::{ImageExt, ReuseDirective};
-            use testcontainers_modules::postgres::Postgres;
-
-            let container = TEST_CONTAINER
-                .get_or_init(|| async {
-                    std::sync::Arc::new(
-                        Postgres::default()
-                            .with_tag("18-alpine")
-                            .with_reuse(ReuseDirective::Always)
-                            .start()
-                            .await
-                            .expect("start postgres testcontainer (is Docker running?)"),
-                    )
-                })
-                .await;
-            let port = container
-                .get_host_port_ipv4(5432_u16)
-                .await
-                .expect("get postgres port");
-            format!("postgresql://postgres:postgres@127.0.0.1:{port}/postgres")
-        })
-        .await
-        .clone();
-
-    let mut admin = None;
-    for attempt in 0..10 {
-        match Database::connect(&admin_url).await {
-            Ok(c) => {
-                admin = Some(c);
-                break;
-            }
-            Err(e) if attempt < 9 => {
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                eprintln!("connect attempt {attempt} failed: {e}");
-            }
-            Err(e) => panic!("connect: {e}"),
-        }
-    }
-    let admin = admin.unwrap();
-
-    let db_name = format!("airhouse_broker_{}", Uuid::new_v4().simple());
-    admin
-        .execute_unprepared(&format!("CREATE DATABASE \"{db_name}\""))
-        .await
-        .expect("create per-test database");
-
-    let test_url = match admin_url.rfind('/') {
-        Some(pos) => format!("{}/{db_name}", &admin_url[..pos]),
-        None => panic!("admin_url missing path"),
-    };
-    let db = Database::connect(&test_url)
-        .await
-        .expect("connect to per-test database");
-    Migrator::up(&db, None).await.expect("run migrations");
-    airhouse::migration::up(&db)
-        .await
-        .expect("run airhouse migrations");
-
-    // Point oxy_platform::db::establish_connection() at our per-test DB; the
-    // broker calls it internally to load the airhouse_tenants row.
+    let (db, test_url) = crate::common::fresh_db(crate::common::Schema::CentralAirhouse).await;
+    // SAFETY: single-threaded test setup before any other env access. nextest
+    // runs each test in its own process, so this cannot race a sibling.
     unsafe { std::env::set_var("OXY_DATABASE_URL", &test_url) };
     db
 }

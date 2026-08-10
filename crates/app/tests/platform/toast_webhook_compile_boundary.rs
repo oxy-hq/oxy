@@ -21,15 +21,10 @@
 //! Spins up a Postgres testcontainer (or reuses `OXY_DATABASE_URL` in CI) and
 //! drives the real `load_toast_config` end-to-end.
 
-use std::sync::Arc;
-
 use entity::workspaces::WorkspaceStatus;
 use entity::{organizations, revisions, workspace_compiled_configs, workspaces};
-use migration::{Migrator, MigratorTrait};
 use oxy_app::server::api::webhooks::toast::load_toast_config;
-use sea_orm::{
-    ActiveModelTrait, ActiveValue, ConnectionTrait, Database, DatabaseConnection, EntityTrait,
-};
+use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -40,86 +35,20 @@ const NONEXISTENT_WORKSPACE_PATH: &str = "/nonexistent/oxy-serve-replica/no-work
 const WEBHOOK_SECRET_VAR: &str = "OXY_TEST_TOAST_WEBHOOK_SECRET";
 const WEBHOOK_SECRET_VALUE: &str = "s3cr3t-from-the-workspace-secret-store";
 
-static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
-static TEST_CONTAINER: tokio::sync::OnceCell<
-    Arc<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
-> = tokio::sync::OnceCell::const_new();
-
-/// Per-test database on a shared Postgres testcontainer, migrated and wired so
-/// that `establish_connection()` (used by the code under test) points at it.
+/// Per-test database, migrated and wired so that `establish_connection()`
+/// (used by the code under test) points at it.
+///
+/// The migration chain runs once per `cargo nextest run` into a template that
+/// this clones; see `tests/common/mod.rs`.
 async fn setup_db() -> DatabaseConnection {
-    let admin_url = TEST_DB_URL
-        .get_or_init(|| async {
-            if let Ok(url) = std::env::var("OXY_DATABASE_URL") {
-                return url;
-            }
-            use testcontainers::runners::AsyncRunner;
-            use testcontainers::{ImageExt, ReuseDirective};
-            use testcontainers_modules::postgres::Postgres;
-
-            let container = TEST_CONTAINER
-                .get_or_init(|| async {
-                    Arc::new(
-                        Postgres::default()
-                            .with_tag("18-alpine")
-                            .with_reuse(ReuseDirective::Always)
-                            .start()
-                            .await
-                            .expect("start postgres testcontainer (is Docker running?)"),
-                    )
-                })
-                .await;
-            let port = container
-                .get_host_port_ipv4(5432_u16)
-                .await
-                .expect("get postgres port");
-            format!("postgresql://postgres:postgres@127.0.0.1:{port}/postgres")
-        })
-        .await
-        .clone();
-
-    let mut admin = None;
-    for attempt in 0..10 {
-        match Database::connect(&admin_url).await {
-            Ok(c) => {
-                admin = Some(c);
-                break;
-            }
-            Err(e) if attempt < 9 => {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                eprintln!("admin connect attempt {attempt} failed: {e}");
-            }
-            Err(e) => panic!("admin connect: {e}"),
-        }
-    }
-    let admin = admin.unwrap();
-
-    let db_name = format!("twcb_{}", Uuid::new_v4().simple());
-    admin
-        .execute_unprepared(&format!("CREATE DATABASE \"{db_name}\""))
-        .await
-        .expect("create per-test database");
-
-    // Replace only the trailing /<dbname>, not occurrences inside the userinfo.
-    let test_url = match admin_url.rfind('/') {
-        Some(pos) => format!("{}/{db_name}", &admin_url[..pos]),
-        None => panic!("admin_url missing path: {admin_url}"),
-    };
-
-    // `load_toast_config` resolves its own connection via
-    // `establish_connection()`, which reads `OXY_DATABASE_URL` once per
-    // process. nextest isolates each test in its own process, so pointing it at
-    // the per-test DB here is safe.
-    // SAFETY: single-threaded test setup before any other env access.
+    let (db, test_url) = crate::common::fresh_db(crate::common::Schema::Central).await;
+    // SAFETY: single-threaded test setup before any other env access. nextest
+    // isolates each test in its own process, so pointing the process-wide
+    // OnceCell at the per-test DB here is safe.
     unsafe {
         std::env::set_var("OXY_DATABASE_URL", &test_url);
         std::env::remove_var("OXY_DATABASE_AUTH_MODE");
     }
-
-    let db = Database::connect(&test_url)
-        .await
-        .expect("connect to per-test database");
-    Migrator::up(&db, None).await.expect("run migrations");
     db
 }
 

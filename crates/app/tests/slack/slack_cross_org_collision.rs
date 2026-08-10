@@ -7,7 +7,7 @@
 //! Skips automatically when `OXY_DATABASE_URL` is unset.
 //!
 //! To run locally:
-//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack_cross_org_collision
+//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack -E 'test(slack_cross_org_collision)'
 
 use entity::{org_members, organizations, users, workspace_members, workspaces};
 use oxy::database::client::establish_connection;

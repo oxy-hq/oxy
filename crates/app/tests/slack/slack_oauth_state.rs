@@ -4,7 +4,7 @@
 //! Skips automatically when `OXY_DATABASE_URL` is unset.
 //!
 //! To run locally:
-//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack_oauth_state
+//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack -E 'test(slack_oauth_state)'
 
 use chrono::{Duration, Utc};
 use entity::{org_members, organizations, slack_oauth_states, users};

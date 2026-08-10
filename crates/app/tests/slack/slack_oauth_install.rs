@@ -4,7 +4,7 @@
 //! database. They skip automatically when `OXY_DATABASE_URL` is unset (i.e.,
 //! in pure unit-test builds).
 //!
-//! To run locally: `OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack_oauth_install`
+//! To run locally: `OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack -E 'test(slack_oauth_install)'`
 
 use entity::{org_members, organizations, users};
 use oxy::database::client::establish_connection;

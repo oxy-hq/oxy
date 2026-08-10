@@ -57,6 +57,25 @@ Many crates carry their own `CLAUDE.md` — all `agentic/*`, `authz`, `cameras`,
   *and* `-p oxy-app`, or `--workspace`.
 - After CLI changes, exercise the binary: `cargo build && ./target/debug/oxy <command>`.
 
+**Never verify with a bare `cargo nextest run`.** That builds and links every test
+target in 84 crates. The cost of a test run here is *linking*, not asserting: each
+integration-test target is a separate binary statically linking DuckDB + DataFusion +
+Arrow + AWS SDK, so it costs a multi-hundred-MB link before the first assertion. Unit
+tests share one binary per crate. So scope down, always:
+
+| Verifying | Run |
+| --------- | --- |
+| Logic in `src/**` (the common case) | `just unit oxy-app` → `cargo nextest run -p oxy-app --lib` |
+| One crate end to end | `just test-crate oxy-app` |
+| A named area | `just test-filter 'test(authz)'` |
+| It still *compiles* | `cargo check --tests -p oxy-app`, or `just test-build` |
+| Everything | `just test` — CI's job, rarely yours |
+
+Integration tests live in **grouped** binaries (`tests/authz/`, `tests/slack/`,
+`tests/custom_apps/`, `tests/airhouse/`, `tests/platform/`), one per domain. Add a new
+case as a `mod` inside the matching group — **a new top-level `tests/*.rs` adds a whole
+new link to every full run.**
+
 ### Browser tests (UI features)
 
 UI changes under `web-app/` default to a regression flow in `web-app/tests/agentic/flows/`
@@ -107,7 +126,7 @@ Every authorization decision goes through **`oxy-authz`** (`crates/authz`) — o
 
 - **Never decide access by hand.** No `matches!(role, Owner | Admin)` in a handler, no
   reading `OXY_OWNER` / the `app_admins` table. Take a `role_guards::*` extractor (there
-  are 6), or call `server::authz::enforce_guard(..)`. `crates/app/tests/authz_boundaries.rs`
+  are 6), or call `server::authz::enforce_guard(..)`. `crates/app/tests/authz/authz_boundaries.rs`
   **fails the build** otherwise — its allowlist is a backlog, not an exemption list.
 - **Platform standing** (`is_owner` / `is_app_admin`) is read **only** by
   `server::authz::globals`: one door for a decision, one for a flag to display.

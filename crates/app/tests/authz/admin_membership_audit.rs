@@ -13,7 +13,7 @@
 //! no amount of grepping proves a commit boundary.
 //!
 //! Skips when `OXY_DATABASE_URL` is unset. To run:
-//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test admin_membership_audit
+//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test authz -E 'test(admin_membership_audit)'
 
 use axum::Json;
 use axum::extract::Path;

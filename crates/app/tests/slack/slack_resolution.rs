@@ -4,7 +4,7 @@
 //! PostgreSQL database. They skip automatically when `OXY_DATABASE_URL` is unset.
 //!
 //! To run locally:
-//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack_resolution
+//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack -E 'test(slack_resolution)'
 
 use entity::{
     org_members, organizations, slack_channel_defaults, slack_installations, slack_user_links,

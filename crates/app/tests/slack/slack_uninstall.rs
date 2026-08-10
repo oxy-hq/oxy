@@ -5,7 +5,7 @@
 //! unit-test builds).
 //!
 //! To run locally:
-//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack_uninstall
+//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test slack -E 'test(slack_uninstall)'
 
 use entity::prelude::{SlackInstallations, SlackUserLinks};
 use entity::{org_members, organizations, users};

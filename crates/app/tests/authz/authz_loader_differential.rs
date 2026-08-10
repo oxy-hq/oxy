@@ -3,7 +3,7 @@
 //! Skips automatically when `OXY_DATABASE_URL` is unset (i.e. pure unit-test builds).
 //!
 //! To run locally:
-//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test authz_loader_differential
+//!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app --test authz -E 'test(authz_loader_differential)'
 //!
 //! ## Why this exists
 //!

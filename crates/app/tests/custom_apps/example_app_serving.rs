@@ -14,14 +14,12 @@
 //! for real — the harness strips `OXY_OWNER`/`OXY_GLOBAL_ADMINS` precisely so
 //! the staff path can't short-circuit it.
 
-mod common;
-
+use crate::common::{APP_SLUG, demo_workspace_id, examples_path, test_db};
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::routing::get;
 use chrono::Utc;
-use common::{APP_SLUG, demo_workspace_id, examples_path, test_db};
 
 /// The seed's second, restricted deployment into Acme — see `seed_apps`.
 const RESTRICTED_APP_SLUG: &str = "oxy-starter-private";

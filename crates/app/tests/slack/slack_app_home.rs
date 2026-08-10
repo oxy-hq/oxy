@@ -2,7 +2,7 @@
 //!
 //! These are pure-function tests — no database or Slack API calls.
 //!
-//! Run with: cargo nextest run -p oxy-app --test slack_app_home
+//! Run with: cargo nextest run -p oxy-app --test slack -E 'test(slack_app_home)'
 
 use oxy_app::integrations::slack::home::view::{LinkedHomeInput, linked_view, unlinked_view};
 use oxy_app::integrations::slack::resolution::workspace_agent::WorkspaceSummary;

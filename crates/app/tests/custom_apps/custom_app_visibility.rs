@@ -10,9 +10,7 @@
 //! paths (a direct `app_members` row and an `org_teams` team), because a filter that
 //! only understands one of them fails silently for the other.
 
-mod common;
-
-use common::test_db;
+use crate::common::test_db;
 use entity::{
     app_members, app_team_grants, apps, org_members, org_members::OrgRole, org_team_members,
     org_teams, organizations, users, workspaces,

@@ -4,7 +4,7 @@
 //! drives `provision` / `deprovision` against a wiremock-backed Airhouse
 //! admin client.
 //!
-//! Run with: `cargo nextest run -p oxy-app --test airhouse_provisioner`
+//! Run with: `cargo nextest run -p oxy-app --test airhouse -E 'test(airhouse_provisioner)'`
 
 use airhouse::entity::Tenants as AirhouseTenants;
 use airhouse::entity::tenants::{self as airhouse_tenants, TenantStatus};
@@ -13,10 +13,8 @@ use base64::{Engine as _, engine::general_purpose};
 use chrono::Utc;
 use entity::organizations;
 use entity::workspaces::{self, WorkspaceStatus};
-use migration::{Migrator, MigratorTrait};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, Database, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use serde_json::{Value, json};
 use std::sync::Mutex;
@@ -43,86 +41,14 @@ fn set_test_encryption_key() {
     }
 }
 
-static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
-/// Keeps the Postgres container handle alive for the process lifetime without
-/// leaking. `ReuseDirective::Always` means tests across nextest processes share
-/// one Postgres container instead of each starting their own.
-static TEST_CONTAINER: tokio::sync::OnceCell<
-    std::sync::Arc<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
-> = tokio::sync::OnceCell::const_new();
-
+/// A fresh per-test database carrying the central + airhouse schema.
+///
+/// The migration chain runs once per `cargo nextest run` into a template that
+/// this clones; see `tests/common/mod.rs`.
 async fn test_db() -> DatabaseConnection {
-    // Resolve an admin Postgres URL we can `CREATE DATABASE` against. CI runs
-    // tests inside a container so Docker-in-Docker is unavailable; when
-    // `OXY_DATABASE_URL` is set we use it directly. Locally, spin up (or
-    // reuse) a Postgres testcontainer.
-    let admin_url = TEST_DB_URL
-        .get_or_init(|| async {
-            if let Ok(url) = std::env::var("OXY_DATABASE_URL") {
-                return url;
-            }
-
-            use testcontainers::runners::AsyncRunner;
-            use testcontainers::{ImageExt, ReuseDirective};
-            use testcontainers_modules::postgres::Postgres;
-
-            let container = TEST_CONTAINER
-                .get_or_init(|| async {
-                    std::sync::Arc::new(
-                        Postgres::default()
-                            .with_tag("18-alpine")
-                            .with_reuse(ReuseDirective::Always)
-                            .start()
-                            .await
-                            .expect("start postgres testcontainer (is Docker running?)"),
-                    )
-                })
-                .await;
-            let port = container
-                .get_host_port_ipv4(5432_u16)
-                .await
-                .expect("get postgres port");
-            format!("postgresql://postgres:postgres@127.0.0.1:{port}/postgres")
-        })
+    crate::common::fresh_db(crate::common::Schema::CentralAirhouse)
         .await
-        .clone();
-
-    let mut admin = None;
-    for attempt in 0..10 {
-        match Database::connect(&admin_url).await {
-            Ok(c) => {
-                admin = Some(c);
-                break;
-            }
-            Err(e) if attempt < 9 => {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                eprintln!("connect attempt {attempt} failed: {e}");
-            }
-            Err(e) => panic!("connect: {e}"),
-        }
-    }
-    let admin = admin.unwrap();
-
-    let db_name = format!("airhouse_prov_{}", Uuid::new_v4().simple());
-    use sea_orm::ConnectionTrait;
-    admin
-        .execute_unprepared(&format!("CREATE DATABASE \"{db_name}\""))
-        .await
-        .expect("create per-test database");
-
-    // Replace only the trailing /<dbname>, not occurrences inside the userinfo.
-    let test_url = match admin_url.rfind('/') {
-        Some(pos) => format!("{}/{db_name}", &admin_url[..pos]),
-        None => panic!("admin_url missing path: {admin_url}"),
-    };
-    let db = Database::connect(&test_url)
-        .await
-        .expect("connect to per-test database");
-    Migrator::up(&db, None).await.expect("run migrations");
-    airhouse::migration::up(&db)
-        .await
-        .expect("run airhouse migrations");
-    db
+        .0
 }
 
 /// Create an org + workspace row and return the workspace id.

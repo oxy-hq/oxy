@@ -32,33 +32,49 @@ retries = 0
 default-filter = "not package(=migration) and not package(=entity)"
 
 # ── Shared-resource serialization ────────────────────────────────────────────
-# The whole suite was previously serialized (via `threads-required = num-cpus`),
-# which silently masked tests that share a *global* resource. With the suite now
-# running in parallel, those tests must be serialized explicitly instead of
-# serializing all ~2,900 tests.
+# The whole suite was once serialized (via `threads-required = num-cpus`), which
+# silently masked tests that share a *global* resource. With the suite running in
+# parallel, those tests must be serialized explicitly instead.
 #
-# `serial-db` runs at most one test at a time (across every matched binary),
-# while every other test in the suite continues to run in parallel alongside it.
+# Scope these groups as tightly as the evidence supports. A group is a
+# throughput ceiling, so every test swept into one that doesn't need it is pure
+# wall-clock loss — the previous version of this file matched `kind(test)` across
+# whole *packages*, which put all ~31 `oxy-app` integration binaries under
+# `max-threads = 1` even though only a third of them ever opened a database.
 #
-# Why these tests need it:
-#   * DB-backed integration tests connect to a SINGLE shared Postgres
-#     (CI sets `OXY_DATABASE_URL` to one service container; locally they reuse
-#     one testcontainer). They each run sea-orm migrations against the same
-#     `public` schema, so two concurrent runs race on
-#     `CREATE TABLE IF NOT EXISTS seaql_migrations_*` (Postgres surfaces this as
-#     a duplicate-key error on `pg_type_typname_nsp_index`). They also share
-#     run/queue/workflow rows, so a background coordinator/sweeper in one test
-#     observes another test's rows (seen as runs ending "failed" instead of
-#     "done", or the coordinator timing out).
+# `serial-db` — one test at a time, across every matched binary. Everything else
+# in the suite continues to run in parallel alongside it.
+#
+# Why these need it:
+#   * `oxy`, `oxy-cameras` and the `agentic-*` integration tests migrate a SINGLE
+#     shared Postgres (CI sets `OXY_DATABASE_URL` to one service container;
+#     locally they reuse one testcontainer) against the same `public` schema, so
+#     two concurrent runs race on `CREATE TABLE IF NOT EXISTS
+#     seaql_migrations_*` (Postgres surfaces this as a duplicate-key error on
+#     `pg_type_typname_nsp_index`). They also share run/queue/workflow rows, so a
+#     background coordinator/sweeper in one test observes another test's rows
+#     (seen as runs ending "failed" instead of "done", or the coordinator timing
+#     out).
 #   * The `oxy` CLI sync tests mutate the same on-disk example fixture directory
 #     (`.databases/...`); one test's `--overwrite` deletes files another asserts
 #     on. They live under `kind(test)` in the `oxy` package and are covered by
 #     the same group.
+#
+# `db-per-test` — the `oxy-app` integration binaries that touch Postgres. These
+# do NOT share a schema: `tests/common/mod.rs` gives every test its own database,
+# cloned from a per-run template, and serializes the only genuinely shared step
+# (building/cloning that template) behind a Postgres advisory lock rather than
+# behind the whole test group. What's left to contend for is one Postgres
+# server, so the cap is about not stampeding it, not about correctness.
+#
+# If this group ever goes flaky, drop `max-threads` to 1 before investigating —
+# that restores the old behavior exactly.
 [test-groups]
 serial-db = { max-threads = 1 }
+db-per-test = { max-threads = 4 }
 
 [[profile.default.overrides]]
-filter = "kind(test) & (package(=oxy) | package(=oxy-app) | package(=oxy-cameras) | package(=agentic-pipeline) | package(=agentic-runtime) | package(=agentic-connector) | package(=agentic-airway))"
+filter = "kind(test) & (package(=oxy) | package(=oxy-cameras) | package(=agentic-pipeline) | package(=agentic-runtime) | package(=agentic-connector) | package(=agentic-airway))"
 test-group = "serial-db"
 # Small retry budget scoped to ONLY the DB-backed serial tests. The suite runs
 # with `--no-fail-fast`, so before this a single flaky DB/timing test (a
@@ -69,4 +85,59 @@ test-group = "serial-db"
 # exhausting its retries. Deliberately NOT set at profile scope — the fast,
 # hermetic unit tests must stay `retries = 0` so a real regression can't hide
 # behind a retry.
+retries = 2
+
+# `oxy-app`'s integration tests are grouped into one binary per domain
+# (`tests/<domain>/main.rs`). The tests matched here reach Postgres through
+# `tests/common/mod.rs`, so each owns its database and they contend for the
+# server rather than for a schema.
+#
+# The grouping is per binary, coarser than the evidence strictly supports —
+# `platform` and `custom_apps` each carry source-scanning tests that never open a
+# connection. That is a few tests' worth of parallelism, and it buys a rule that
+# stays true when someone adds a harness-backed test to one of those files.
+#
+# The two exclusions are NOT in that category: `projects_query` and
+# `local_mode_router` call `api_router(..)`, which builds `new_agentic_state`,
+# which calls `establish_connection()` on the ambient `OXY_DATABASE_URL` and then
+# `cleanup_stale_runs(&db)` — an UNSCOPED write that flips every
+# `waiting_on_child*` row in `agentic_runs` to `failed`. They belong with the
+# shared-schema tests below, not here. Test groups are independent semaphores, so
+# leaving them in `db-per-test` bounds them against each other and not at all
+# against the `agentic-runtime`/`agentic-pipeline` tests that own those rows.
+[[profile.default.overrides]]
+filter = "kind(test) & package(=oxy-app) & (binary(=custom_apps) | binary(=airhouse) | binary(=platform)) & !test(/^(projects_query|local_mode_router)::/)"
+test-group = "db-per-test"
+retries = 2
+
+# The `authz`, `slack` and `platform` binaries are mixed, and the difference is
+# not cosmetic: these eleven modules do NOT use `tests/common/mod.rs`. They reach
+# the ambient shared `OXY_DATABASE_URL` with no per-test database, so they read
+# and write the same `public` schema as the `serial-db` members above — which run
+# `Migrator::up` on it. Running them in parallel is the `CREATE TABLE` /
+# `pg_type_typname_nsp_index` race described at the top of this section, and
+# serializing `oxy` against itself doesn't help if oxy-app's slack tests are
+# querying those tables mid-DDL.
+#
+# Two routes in:
+#   * nine call `oxy::database::client::establish_connection()` directly;
+#   * `projects_query` and `local_mode_router` call `api_router(..)`, which
+#     reaches it through `new_agentic_state` and then runs `cleanup_stale_runs` —
+#     an unscoped UPDATE over `agentic_runs`. That one is a writer, and the rows
+#     it rewrites belong to the agentic-runtime/pipeline tests.
+#
+# They all skip when `OXY_DATABASE_URL` is unset, so a laptop run looks clean and
+# only CI (ci.yaml sets it at the `test` and coverage jobs) would have shown it —
+# and it would have shown up as a flake in agentic-runtime, not here.
+#
+# `tests/authz/shared_db_registry.rs` fails the build if this list drifts from
+# the set of modules that actually reach the shared database. Everything else in
+# those binaries — the source-scanning boundary tests, `slack_app_home`,
+# `thread_role_guards` — stays ungrouped and fully parallel.
+#
+# The real fix is porting these onto `common::fresh_db()`; see
+# `internal-docs/testing.md`. Until then they belong here.
+[[profile.default.overrides]]
+filter = "kind(test) & package(=oxy-app) & (binary(=authz) | binary(=slack) | binary(=platform)) & test(/^(authz_loader_differential|org_invitations|admin_membership_audit|slack_resolution|slack_oauth_state|slack_oauth_install|slack_uninstall|slack_user_links|slack_cross_org_collision|projects_query|local_mode_router)::/)"
+test-group = "serial-db"
 retries = 2

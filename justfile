@@ -78,10 +78,40 @@ fmt-check:
     pnpm --filter oxy-web run format:check
 
 # ── Test ───────────────────────────────────────────────────────────────────────
+#
+# Pick the SMALLEST recipe that covers what you changed. The cost here is
+# dominated by linking, not by running: every integration-test target is its own
+# binary that statically links the whole dep graph (DuckDB + DataFusion + Arrow +
+# AWS SDK), so each one costs a multi-hundred-MB link before a single assertion
+# runs. Unit tests all share ONE binary per crate, which is why `unit` is an
+# order of magnitude cheaper than anything that builds `tests/`.
+#
+#   just unit oxy-app     <- default inner loop; ~1.3k tests, one link
+#   just test-crate oxy-app
+#   just test             <- whole workspace; CI does this, you rarely need to
 
-# Run all tests with nextest
+# Run all tests with nextest (whole workspace — slow; prefer `unit` / `test-crate`)
 test:
     cargo nextest run
+
+# Unit tests only (`src/**` `#[cfg(test)]`) for one crate — ONE binary, one link.
+# This is the right verification loop for almost every change.
+unit crate="oxy-app":
+    cargo nextest run -p {{crate}} --lib
+
+# Every test for one crate, unit + integration binaries.
+test-crate crate="oxy-app":
+    cargo nextest run -p {{crate}}
+
+# Run tests matching a nextest filterset, e.g.
+#   just test-filter 'test(authz)'
+#   just test-filter 'binary(custom_apps)'
+test-filter expr:
+    cargo nextest run -E '{{expr}}'
+
+# Compile every test target without running any — catches breakage cheaply.
+test-build:
+    cargo nextest list --workspace >/dev/null
 
 # Remove dangling test containers (Postgres/ClickHouse/MySQL) left by test runs
 clean-test-containers:

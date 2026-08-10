@@ -4,7 +4,7 @@
 //! now requires DB connectivity at construction time. To run locally:
 //!
 //!   OXY_DATABASE_URL=postgres://... cargo nextest run -p oxy-app \
-//!     --test projects_query
+//!     --test platform -E 'test(projects_query)'
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};

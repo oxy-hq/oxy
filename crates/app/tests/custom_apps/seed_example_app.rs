@@ -12,9 +12,7 @@
 //! a laptop as well as in CI — an env-gated skip would mean a broken seed passes
 //! locally and only fails after push.
 
-mod common;
-
-use common::{APP_SLUG, demo_workspace_id, examples_path, test_db};
+use crate::common::{APP_SLUG, demo_workspace_id, examples_path, test_db};
 use entity::apps;
 use entity::prelude::{AppBuilds, Apps, Organizations, Workspaces};
 use oxy_app::cli::commands::seed;
