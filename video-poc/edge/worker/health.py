@@ -161,3 +161,36 @@ async def camera_health_loop(
         except Exception as e:
             log("warn", "health.camera_push_failed", camera_id=str(camera_id), error=str(e))
         await asyncio.sleep(interval_s)
+
+
+async def audio_health_loop(
+    camera_id: UUID,
+    name: str,
+    interval_s: int,
+    counter: Callable[[], dict[str, Any]],
+) -> None:
+    """Periodic liveness/stats for an AudioReader (upsell detection).
+
+    There is no dedicated server health endpoint for audio yet, so this
+    ships structured stats through the log channel (log_shipper -> control
+    plane -> ops log viewer): grep `upsell.health`. Cadence mirrors
+    camera_health_loop so a stuck reader (windows not advancing) or one
+    that keeps erroring is visible without source-diving. When a structured
+    audio-health endpoint lands, swap the log() for a _post_with_retry.
+    """
+    while True:
+        try:
+            s = counter()
+            log(
+                "info",
+                "upsell.health",
+                camera_id=str(camera_id),
+                name=name,
+                windows=s.get("windows"),
+                attempts=s.get("attempts"),
+                errors=s.get("errors"),
+                last_text_at=s.get("last_text_at"),
+            )
+        except Exception as e:  # noqa: BLE001 — never kill the loop
+            log("warn", "upsell.health_failed", camera_id=str(camera_id), error=str(e))
+        await asyncio.sleep(interval_s)

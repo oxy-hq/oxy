@@ -46,7 +46,7 @@ import httpx
 from . import mtx_sync, prompts, upsell
 from .camera import CameraReader
 from .config import CameraConfig, EdgeConfig
-from .health import box_health_loop, camera_health_loop
+from .health import audio_health_loop, box_health_loop, camera_health_loop
 from .identity import DeviceIdentity
 from .jwt_mint import DeviceJwtAuth, JwtMinter
 from .log import attach_shipper, log
@@ -491,6 +491,9 @@ async def run() -> None:
         # tasks (outbox, drain, preview server, box-health, poller)
         # live in the outer `tasks` list and are gathered below.
         health_tasks: dict[str, asyncio.Task] = {}
+        # Audio-reader health tasks (upsell.health liveness logs), keyed like
+        # `audio_readers` so hot-swap cancels them individually.
+        audio_health_tasks: dict[str, asyncio.Task] = {}
 
         def _start_reader(cam: CameraConfig) -> bool:
             """Spawn a CameraReader + health task for `cam`.
@@ -527,6 +530,10 @@ async def run() -> None:
                 )
                 ar.start()
                 audio_readers[cid] = ar
+                audio_health_tasks[cid] = asyncio.create_task(
+                    audio_health_loop(cam.id, cam.name, health_interval, ar.stats),
+                    name=f"audio-health-{cam.name}",
+                )
                 log("info", "edge.audio_reader.start", camera_id=cid, name=cam.name)
             return True
 
@@ -537,6 +544,9 @@ async def run() -> None:
             ar = audio_readers.pop(cid, None)
             if ar is not None:
                 ar.stop()
+            aht = audio_health_tasks.pop(cid, None)
+            if aht is not None:
+                aht.cancel()
             t = health_tasks.pop(cid, None)
             if t is not None:
                 t.cancel()
