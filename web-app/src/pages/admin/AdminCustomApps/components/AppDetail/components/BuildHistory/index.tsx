@@ -1,4 +1,4 @@
-import { GitBranch } from "lucide-react";
+import { AlertTriangle, GitBranch } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/shadcn/alert-dialog";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { useAppBuilds, useRollbackApp } from "@/hooks/api/customApps/useAppBuilds";
 import type { AppBuild } from "@/types/apps";
 
@@ -63,6 +64,48 @@ const SourceLink = ({
     >
       {content}
     </a>
+  );
+};
+
+/**
+ * Shown in `SourceLink`'s place when a build's repo + commit don't both
+ * resolve. Reaching the code needs both: a repo without a commit points at a
+ * branch, which moves; a commit without a repo has nowhere to resolve.
+ *
+ * The silence this replaces was the whole problem: a build with no provenance
+ * rendered identically to one whose link simply sat further down the row, so
+ * an app nobody could trace looked exactly like an app nobody had scrolled
+ * to. `oxy publish` warns about this at publish time; this is where you find
+ * the ones that already shipped.
+ *
+ * Names which half is missing — this row has both fields, so telling an
+ * operator "no source recorded" when the repo is right there would send them
+ * looking for the wrong thing.
+ */
+const IncompleteSource = ({ repo, sha }: { repo?: string | null; sha?: string | null }) => {
+  const hasRepo = !!repo?.trim();
+  const hasSha = !!sha?.trim();
+  const label = hasRepo ? "No commit recorded" : hasSha ? "No repo recorded" : "No source recorded";
+  const detail = hasRepo
+    ? "This build records a git repo but no commit, so the link points at a branch — which moves, and won't identify the code that is running."
+    : hasSha
+      ? "This build records a commit but no git repo, so there's nowhere to resolve that sha."
+      : "This build records no git repo and no commit, so there's no way to get from the running app back to its code.";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className='inline-flex w-fit items-center gap-1 text-amber-600 text-xs dark:text-amber-400'
+          data-testid='admin-app-build-no-source'
+        >
+          <AlertTriangle className='size-3 shrink-0' />
+          <span>{label}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className='max-w-xs'>
+        {detail} Re-publish from the app's git checkout to attach provenance.
+      </TooltipContent>
+    </Tooltip>
   );
 };
 
@@ -178,9 +221,11 @@ export const BuildHistory = ({ appId }: { appId: string }) => {
                   {timeAgo(b.created_at)}
                   {b.published_by_email ? ` · ${b.published_by_email}` : ""}
                 </span>
-                {b.source_repo && b.commit_sha ? (
+                {b.source_repo?.trim() && b.commit_sha?.trim() ? (
                   <SourceLink repo={b.source_repo} sha={b.commit_sha} branch={b.source_branch} />
-                ) : null}
+                ) : (
+                  <IncompleteSource repo={b.source_repo} sha={b.commit_sha} />
+                )}
               </div>
               {!b.is_published && (
                 <Button

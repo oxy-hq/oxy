@@ -163,6 +163,17 @@ pub struct AppResponse {
     /// Rendered with a letter-tile fallback via `AppArt`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub art_url: Option<String>,
+    /// True when the build this app is currently serving records no usable
+    /// git source (missing repo **or** missing commit — either one alone
+    /// can't get you to the code). Drives the "source not recorded" warning
+    /// in the admin list, which is how an operator spots an app nobody can
+    /// maintain *before* the person who wrote it moves on.
+    ///
+    /// Populated by `list_apps` via one batched query; left `false` on the
+    /// cheap single responses. `false` on an app with no build at all —
+    /// nothing is deployed, so nothing is orphaned yet.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub source_unrecorded: bool,
     /// Soft warnings the UI should surface to the operator. Populated
     /// by `create_app` + `update_app` after side-effect validation
     /// (e.g. "no index.html at the configured local path"). The row
@@ -218,6 +229,7 @@ impl AppResponse {
             // (`icon_art_by_app` / `resolve_manifests_batch`).
             icon_url: None,
             art_url: None,
+            source_unrecorded: false,
             warnings: Vec::new(),
         }
     }

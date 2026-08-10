@@ -262,6 +262,57 @@ pub(super) async fn emails_by_user_id(
         .collect())
 }
 
+/// Which apps on this page have a build running that records no usable git
+/// source.
+///
+/// "Running" = the published build, falling back to draft — the same pointer
+/// preference the serve path uses, because the question the operator is asking
+/// is "if this app breaks, can anyone find its code?" and the answer is about
+/// the bundle in front of users. Apps with no build at all are absent from the
+/// set: nothing is deployed, so there is nothing orphaned yet.
+///
+/// Traceability itself is [`custom_app_provenance::classify`] — the same call
+/// `oxy publish` makes, so the warning an engineer sees at publish time and
+/// the flag an operator sees in the list can't disagree about what counts.
+///
+/// One `IN` query for the whole page, like every other batched extra here,
+/// and `select_only` because `app_builds` carries the `manifest_json` blob
+/// that `icon_art_by_app` has already fetched for these same rows. A failed
+/// lookup is the caller's to swallow — a missing warning must never 500 the
+/// list.
+pub(super) async fn unsourced_active_build_apps(
+    db: &DatabaseConnection,
+    rows: &[apps::Model],
+) -> Result<std::collections::HashSet<Uuid>, sea_orm::DbErr> {
+    use entity::app_builds::Column as BuildCol;
+
+    // app_builds.id → the app whose active pointer names it.
+    let build_to_app: std::collections::HashMap<Uuid, Uuid> = rows
+        .iter()
+        .filter_map(|r| r.published_build_id.or(r.draft_build_id).map(|b| (b, r.id)))
+        .collect();
+    if build_to_app.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let builds: Vec<(Uuid, Option<String>, Option<String>)> = AppBuilds::find()
+        .select_only()
+        .column(BuildCol::Id)
+        .column(BuildCol::SourceRepo)
+        .column(BuildCol::CommitSha)
+        .filter(BuildCol::Id.is_in(build_to_app.keys().copied().collect::<Vec<_>>()))
+        .into_tuple()
+        .all(db)
+        .await?;
+    Ok(builds
+        .into_iter()
+        .filter(|(_, repo, commit)| {
+            !crate::custom_app_provenance::classify(repo.as_deref(), commit.as_deref())
+                .is_traceable()
+        })
+        .filter_map(|(id, _, _)| build_to_app.get(&id).copied())
+        .collect())
+}
+
 /// Build the per-app `(icon_url, art_url)` map for a page, resolving every
 /// manifest in ONE batched `app_builds` query (no N+1) and turning them into
 /// URLs with the same helper the homepage launcher uses — so admin + launcher

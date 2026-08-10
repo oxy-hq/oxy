@@ -535,11 +535,21 @@ pub async fn list_apps_scoped(
             tracing::warn!("promoter email lookup failed (no attribution): {e}");
             Default::default()
         });
+    // Which apps are serving a build with no traceable source. Same batched
+    // shape, same fail-soft posture: an operator losing the warning is far
+    // better than the list 500ing over it.
+    let unsourced = unsourced_active_build_apps(&db, &rows)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("unsourced_active_build_apps failed (no warnings shown): {e}");
+            Default::default()
+        });
     // Manifest-derived icon/art for the whole page in ONE batched query — same
     // N+1-avoidance as the promoter/last-active lookups above.
     let mut icon_art = icon_art_by_app(&db, &rows, &org_slugs).await;
     let mut items = rows_to_responses(rows, &org_slugs);
     for item in items.iter_mut() {
+        item.source_unrecorded = unsourced.contains(&item.id);
         if let Some(ts) = last_active.get(&item.id) {
             item.last_active_at = Some(ts.to_rfc3339());
         }

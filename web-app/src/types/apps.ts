@@ -90,6 +90,14 @@ export interface CustomApp {
   /** When that last promotion happened. Set from the model on every response. */
   last_promoted_at?: string | null;
   /**
+   * The build this app is currently serving records no usable git source —
+   * missing repo, missing commit, or both. Nobody can get from the running
+   * app to its code, so it can't be fixed or handed over. Populated on list
+   * responses (batched); absent elsewhere. False for apps with no build at
+   * all — nothing deployed, nothing orphaned.
+   */
+  source_unrecorded?: boolean;
+  /**
    * Soft warnings emitted by the server after a create / update
    * mutation. Empty / absent on list + get responses. Surfaced as
    * toasts so operators catch misconfiguration before they preview.

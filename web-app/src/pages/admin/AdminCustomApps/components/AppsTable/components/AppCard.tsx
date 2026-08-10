@@ -7,6 +7,7 @@ import { resolveBundleUrl } from "../../../resolveBundleUrl";
 import { formatRelativeTime } from "../useAppsTable";
 import { AppActionsMenu } from "./AppActionsMenu";
 import { AppHoverCard } from "./AppHoverCard";
+import { SourceWarning } from "./SourceWarning";
 import { StatusDot } from "./StatusDot";
 import { UrlLine } from "./UrlActions";
 
@@ -90,6 +91,7 @@ export const AppCard = ({
           <span className='flex items-center gap-1.5'>
             <StatusDot isLive={!!app.published_at} />
             <span className='truncate font-medium text-foreground text-xs'>{app.name}</span>
+            <SourceWarning unrecorded={app.source_unrecorded} />
           </span>
           {showOrg && (
             <span className='mt-0.5 block truncate font-mono text-muted-foreground text-xs'>

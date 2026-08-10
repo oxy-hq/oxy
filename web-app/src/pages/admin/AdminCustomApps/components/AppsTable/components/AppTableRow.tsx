@@ -6,6 +6,7 @@ import type { CustomApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../resolveBundleUrl";
 import { formatRelativeTime } from "../useAppsTable";
 import { AppActionsMenu, StatusPill } from "./AppActionsMenu";
+import { SourceWarning } from "./SourceWarning";
 import { CopyButton, OpenAppButton } from "./UrlActions";
 
 interface AppTableRowProps {
@@ -63,6 +64,7 @@ export const AppTableRow = ({
         >
           {app.name}
         </button>
+        <SourceWarning unrecorded={app.source_unrecorded} />
       </div>
     </TableCell>
 
