@@ -136,7 +136,16 @@ def _annotate_locked(
             return None
         fps = fps if fps and fps > 1 else 15.0
 
-        zone = sv.PolygonZone(polygon=_scale_polygon(poly, source_wh, (w, h)))
+        # Count by box CENTER, not supervision's default BOTTOM_CENTER (feet).
+        # In these counter scenes people stand behind the prep line with their
+        # feet occluded, so a feet-anchor lands at/below the zone edge and they
+        # read as out-of-zone (grey box, uncounted) even though they're plainly
+        # inside it. Center is robust to occluded feet. Kept in sync with
+        # camera.py's zone build so the annotation matches the real count.
+        zone = sv.PolygonZone(
+            polygon=_scale_polygon(poly, source_wh, (w, h)),
+            triggering_anchors=(sv.Position.CENTER,),
+        )
         n_written = _render(cap, zone, (w, h), fps, out_path)
         if n_written == 0:
             log("warn", "annotate.no_frames_rendered")

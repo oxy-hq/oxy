@@ -21,7 +21,7 @@ Rule, per zone — one clip per backup *episode*:
     is one clip, not a storm).
   • the episode ends when count stays < MIN_COUNT for >= CLEAR_SEC; brief
     sub-threshold dips below that don't reset the timer (a single
-    missed-detection frame shouldn't restart a 5-minute backup).
+    missed-detection frame shouldn't restart the sustain timer).
   • a genuinely distinct backup after a clear flags again right away — there's
     no global rate limit, so separate episodes each get their own evidence.
 """
@@ -34,8 +34,12 @@ from datetime import datetime
 
 # Env-driven tunables (per-store calibration, same convention as camera.py).
 CONGESTION_ENABLED = os.environ.get("CONGESTION_ENABLED", "1") != "0"
-CONGESTION_MIN_COUNT = int(os.environ.get("CONGESTION_MIN_COUNT", "4"))
-CONGESTION_SUSTAIN_SEC = float(os.environ.get("CONGESTION_SUSTAIN_SEC", "300"))
+# Defaults tuned to capture BUSY periods, not only long backups: 3+ people
+# sustained for 90s (was 4 / 300s). Paired with center-anchored zone counting
+# (camera.py) that counts people whose feet are occluded behind the counter,
+# so "3" means 3 people actually in the zone, not 3 with visible feet.
+CONGESTION_MIN_COUNT = int(os.environ.get("CONGESTION_MIN_COUNT", "3"))
+CONGESTION_SUSTAIN_SEC = float(os.environ.get("CONGESTION_SUSTAIN_SEC", "90"))
 # How long count must stay BELOW the threshold before the backup counts as
 # cleared. Debounces detection flicker so one dropped frame doesn't reset the
 # sustain timer — and gates when a fresh episode (and its next clip) can begin.

@@ -173,7 +173,16 @@ class CameraReader:
         # Zones / lines from camera config.
         self._zones: dict[str, sv.PolygonZone] = {}
         for z in cfg.zones_json:
-            self._zones[z["zone_id"]] = sv.PolygonZone(polygon=np.array(z["polygon"]))
+            # Count by box CENTER, not supervision's default BOTTOM_CENTER
+            # (feet). Behind a counter, feet are occluded so a feet-anchor
+            # lands at/below the zone edge and the person is missed even when
+            # plainly inside the zone; center is robust to that. This feed
+            # drives the congestion head count below, so annotate.py uses the
+            # same anchor to keep the evidence clip consistent with the count.
+            self._zones[z["zone_id"]] = sv.PolygonZone(
+                polygon=np.array(z["polygon"]),
+                triggering_anchors=(sv.Position.CENTER,),
+            )
         self._lines: dict[str, sv.LineZone] = {}
         for ln in cfg.lines_json:
             self._lines[ln["line_id"]] = sv.LineZone(
