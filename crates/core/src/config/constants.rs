@@ -62,7 +62,10 @@ pub const GEMINI_API_KEY_VAR: &str = "GEMINI_API_KEY";
 /// rather than re-exported.
 pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-opus-4-8";
 pub const DEFAULT_OPENAI_MODEL: &str = "gpt-4o";
-pub const DEFAULT_GOOGLE_MODEL: &str = "gemini-1.5-pro";
+// `gemini-1.5-pro` is retired/retiring on Google's side; scaffolding it into
+// every `oxy make`/`oxy init` Google model reproduced exactly the drift the
+// Anthropic pin above warns about. Track a current Gemini 2.x id instead.
+pub const DEFAULT_GOOGLE_MODEL: &str = "gemini-2.5-pro";
 
 // Auth-related header + JWT-secret constants live in `oxy-auth` so that
 // crate has no `oxy` dependency. Re-exported here for source compatibility.

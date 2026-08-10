@@ -859,11 +859,43 @@ fn is_public_ip(ip: &IpAddr) -> bool {
             !v4.is_private() && !v4.is_link_local() && !v4.is_broadcast() && !v4.is_documentation()
         }
         IpAddr::V6(v6) => {
+            // NAT64 (`64:ff9b::/96`) and IPv4-compatible (`::/96`) addresses
+            // embed a v4 address in the low 32 bits. `to_canonical()` folds
+            // v4-*mapped* (`::ffff:a.b.c.d`) but NOT these, so an id like
+            // `64:ff9b::169.254.169.254` (or `::10.0.0.5`) would otherwise pass
+            // the v6 arm below as "public" while pointing at metadata / RFC1918
+            // — reachable on any host with a NAT64 path. Re-run the v4 checks on
+            // the embedded address instead of trusting the v6 prefix.
+            if let Some(v4) = embedded_ipv4(&v6) {
+                return is_public_ip(&IpAddr::V4(v4));
+            }
             let seg = v6.segments()[0];
             let link_local = (seg & 0xffc0) == 0xfe80;
             let unique_local = (seg & 0xfe00) == 0xfc00;
             !link_local && !unique_local
         }
+    }
+}
+
+/// Extract the IPv4 address embedded in an IPv4-compatible (`::/96`) or NAT64
+/// (`64:ff9b::/96`) IPv6 address. Returns `None` for every other v6 address.
+///
+/// v4-*mapped* (`::ffff:0:0/96`) is deliberately excluded: [`is_public_ip`]
+/// calls `to_canonical()` first, which already folds it to a real `IpAddr::V4`,
+/// so it never reaches here as a v6 value. Both prefixes handled here are
+/// non-global by design (IPv4-compatible is deprecated; NAT64 is a translation
+/// prefix), so treating anything in them as an embedded v4 cannot mis-block a
+/// legitimately-routable global v6 address.
+fn embedded_ipv4(v6: &std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
+    let seg = v6.segments();
+    let is_v4_compatible = seg[0..6] == [0, 0, 0, 0, 0, 0];
+    let is_nat64 = seg[0] == 0x0064 && seg[1] == 0xff9b && seg[2..6] == [0, 0, 0, 0];
+    if is_v4_compatible || is_nat64 {
+        Some(std::net::Ipv4Addr::from(
+            ((seg[6] as u32) << 16) | seg[7] as u32,
+        ))
+    } else {
+        None
     }
 }
 
@@ -1091,6 +1123,32 @@ mod tests {
         ));
         assert!(is_public_ip(
             &"::ffff:93.184.216.34".parse::<IpAddr>().unwrap()
+        ));
+    }
+
+    #[test]
+    fn nat64_and_v4_compatible_embedded_internal_ips_are_blocked() {
+        // NAT64 (`64:ff9b::/96`) and IPv4-compatible (`::/96`) addresses embed a
+        // v4 in the low 32 bits and are NOT folded by `to_canonical()`, so the
+        // embedded v4 must be re-checked. An embedded metadata / RFC1918 / loopback
+        // address must be rejected; an embedded public one still allowed.
+        for internal in [
+            "64:ff9b::169.254.169.254", // NAT64 → cloud metadata
+            "64:ff9b::10.0.0.5",        // NAT64 → RFC1918
+            "64:ff9b::127.0.0.1",       // NAT64 → loopback
+            "::169.254.169.254",        // IPv4-compatible → cloud metadata
+            "::10.0.0.5",               // IPv4-compatible → RFC1918
+        ] {
+            let ip = internal.parse::<IpAddr>().unwrap();
+            assert!(!is_public_ip(&ip), "{internal} must be classed non-public");
+            assert!(
+                !is_safe_outbound(&url(&format!("https://[{internal}]/latest/meta-data/"))),
+                "{internal} must be blocked by is_safe_outbound"
+            );
+        }
+        // An embedded PUBLIC v4 behind NAT64 is still reachable.
+        assert!(is_public_ip(
+            &"64:ff9b::93.184.216.34".parse::<IpAddr>().unwrap()
         ));
     }
 

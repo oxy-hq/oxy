@@ -652,8 +652,8 @@ async fn cmd_leases(args: AirwayLeasesArgs) -> Result<(), OxyError> {
         return Ok(());
     }
     println!(
-        "{:<32}  {:<38}  {:<22}  {}",
-        "PIPELINE", "RUN_ID", "ACQUIRED (UTC)", "EXPIRES (UTC)"
+        "{:<32}  {:<38}  {:<22}  EXPIRES (UTC)",
+        "PIPELINE", "RUN_ID", "ACQUIRED (UTC)"
     );
     let now = chrono::Utc::now();
     for l in leases {

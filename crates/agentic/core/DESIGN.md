@@ -194,7 +194,7 @@ When Executing fails on the semantic layer path, it routes to Specifying (not So
 
 ### Circuit Breaker
 
-Max 200 orchestrator iterations per run. If exceeded, returns `OrchestratorError::MaxIterationsExceeded`. This guards against infinite back-edge cycles regardless of retry count at any single state.
+Max `DEFAULT_MAX_ITERATIONS` (1 000) orchestrator iterations per run — the default `Orchestrator::new` applies; callers may override via `with_max_iterations`. If exceeded, returns `OrchestratorError::MaxIterationsExceeded`. This guards against infinite back-edge cycles regardless of retry count at any single state.
 
 ---
 
@@ -411,7 +411,7 @@ impl<D: Domain> TransitionResult<D> {
 ### Orchestrator Loop
 
 ```
-loop (max 200 iterations):
+loop (max DEFAULT_MAX_ITERATIONS = 1 000 iterations):
   1. Look up handler for current state name
   2. Call solver.should_skip(state, data, run_ctx) → if Some(next) skip to it
   3. Emit StateEnter { state, revision, trace_id }

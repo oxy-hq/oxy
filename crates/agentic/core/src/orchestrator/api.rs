@@ -18,6 +18,14 @@ use super::{
     build_default_handlers, next_trace_id, transitions::PipelineResult,
 };
 
+/// Default runaway-loop circuit breaker: the maximum number of state
+/// transitions [`Orchestrator::new`] allows before aborting with
+/// [`OrchestratorError::MaxIterationsExceeded`]. This is the cost/runaway safety
+/// net documented in `DESIGN.md`; keep the two in sync (the doc previously drifted
+/// to `200` while the shipped default was `1_000`). Callers that need a different
+/// cap use [`Orchestrator::with_max_iterations`].
+pub const DEFAULT_MAX_ITERATIONS: usize = 1_000;
+
 /// Drives the problem-solving pipeline for a given domain.
 ///
 /// `D` is the [`Domain`] descriptor; `S` is the concrete [`DomainSolver`].
@@ -66,9 +74,10 @@ pub struct Orchestrator<D: Domain, S: DomainSolver<D>, Ev: DomainEvents = ()> {
 }
 
 impl<D: Domain, S: DomainSolver<D> + 'static, Ev: DomainEvents> Orchestrator<D, S, Ev> {
-    /// Create an orchestrator with default handlers and a cap of 1 000 iterations.
+    /// Create an orchestrator with default handlers and a cap of
+    /// [`DEFAULT_MAX_ITERATIONS`] iterations.
     pub fn new(solver: S) -> Self {
-        Self::with_max_iterations(solver, 1_000)
+        Self::with_max_iterations(solver, DEFAULT_MAX_ITERATIONS)
     }
 
     /// Create an orchestrator with an explicit iteration cap.

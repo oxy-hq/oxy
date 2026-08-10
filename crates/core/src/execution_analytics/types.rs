@@ -194,17 +194,60 @@ pub struct ExecutionCostResponse {
 /// logged (`warn!`, once per model id) to make the under-report observable.
 /// Newer families that share a family name (`claude-opus-5`, `claude-sonnet-5`,
 /// …) already resolve via the substring match; genuinely new ids (e.g.
-/// `gpt-5.x`, `claude-fable-5`) fall through until priced here — deliberately
-/// not fabricated.
+/// `claude-fable-5`) fall through until priced here — deliberately not
+/// fabricated.
+///
+/// Ordering matters. Two families defeat a naive `contains("mini")` heuristic:
+/// every Gemini id embeds the substring `mini` (`ge-mini`), and the GPT-5 /
+/// o-series ids share no substring with the GPT-4 arms. Both are matched
+/// **before** the generic `mini`/`4o` fall-throughs so Gemini spend is no longer
+/// billed at the `gpt-4o-mini` rate and GPT-5/o3 no longer under-report as `$0`.
+/// This mirrors the prefix-matched table in `agentic_llm::pricing::rates_for`;
+/// the two tables are kept in sync by hand (that crate is infrastructure and
+/// must not be imported by the platform layer).
 pub fn model_price_per_mtok(model: &str) -> (f64, f64) {
     let m = model.to_ascii_lowercase();
+
+    // Google Gemini — MUST come first: `"gemini"` contains `mini`, so without
+    // this arm every Gemini model (incl. the scaffolded default) falls into the
+    // `contains("mini")` branch below and is billed at the gpt-4o-mini rate.
+    if m.starts_with("gemini") {
+        return if m.contains("flash") {
+            (0.30, 2.50)
+        } else {
+            (1.25, 10.0)
+        };
+    }
+
+    // Anthropic — family-name substring covers every version suffix, including
+    // the Claude 5 generation (`claude-opus-5`, `claude-sonnet-5`, …).
     if m.contains("opus") {
         (15.0, 75.0)
     } else if m.contains("sonnet") {
         (3.0, 15.0)
     } else if m.contains("haiku") {
         (0.80, 4.0)
-    } else if m.contains("4o-mini") || m.contains("gpt-4.1-mini") || m.contains("mini") {
+    }
+    // OpenAI GPT-5 generation — cheaper `nano`/`mini` tiers before the bare
+    // `gpt-5` prefix so a mini variant never resolves to the pricier tier.
+    else if m.starts_with("gpt-5-nano") {
+        (0.05, 0.40)
+    } else if m.starts_with("gpt-5-mini") {
+        (0.25, 2.0)
+    } else if m.starts_with("gpt-5") {
+        (1.25, 10.0)
+    }
+    // OpenAI reasoning o-series — `*-mini` tiers before the bare family prefix.
+    else if m.starts_with("o3-mini") || m.starts_with("o1-mini") {
+        (1.10, 4.40)
+    } else if m.starts_with("o3") {
+        (2.0, 8.0)
+    } else if m.starts_with("o1") {
+        (15.0, 60.0)
+    }
+    // OpenAI GPT-4o generation + the generic `mini` fall-through (kept last so
+    // the specific families above win).
+    else if m.contains("4o-mini") || m.contains("gpt-4.1-mini") || m.contains("mini") {
         (0.15, 0.60)
     } else if m.contains("4o") || m.contains("gpt-4") {
         (2.50, 10.0)
@@ -334,8 +377,48 @@ mod pricing_tests {
     fn unknown_model_prices_zero() {
         // Documents the deliberate gap: genuinely-new ids fall through to $0
         // (logged as a warning) until priced, rather than a fabricated figure.
-        assert_eq!(model_price_per_mtok("gpt-5.4"), (0.0, 0.0));
-        assert_eq!(model_cost_usd("gpt-5.4", 1_000_000, 1_000_000), 0.0);
+        // Uses an id that matches no family so the fall-through is exercised.
+        assert_eq!(model_price_per_mtok("claude-fable-5"), (0.0, 0.0));
+        assert_eq!(model_cost_usd("claude-fable-5", 1_000_000, 1_000_000), 0.0);
+    }
+
+    #[test]
+    fn gemini_is_not_billed_as_gpt_4o_mini() {
+        // Regression: `"gemini"` contains the substring `mini`, so the generic
+        // `contains("mini")` heuristic used to bill EVERY Gemini model (incl. the
+        // scaffolded default) at the $0.15/$0.60 gpt-4o-mini rate. It must resolve
+        // to a Gemini tier instead.
+        let mini = model_price_per_mtok("gpt-4o-mini");
+        assert_ne!(
+            model_price_per_mtok("gemini-2.5-pro"),
+            mini,
+            "gemini-2.5-pro must not price as gpt-4o-mini"
+        );
+        assert_ne!(
+            model_price_per_mtok("gemini-1.5-pro"),
+            mini,
+            "legacy gemini-1.5-pro must not price as gpt-4o-mini either"
+        );
+        assert_eq!(model_price_per_mtok("gemini-2.5-pro"), (1.25, 10.0));
+        assert_eq!(model_price_per_mtok("gemini-2.5-flash"), (0.30, 2.50));
+    }
+
+    #[test]
+    fn gpt5_and_o_series_are_priced() {
+        // These used to fall through to $0 — the family shares no substring with
+        // the GPT-4 arms. Mirror `agentic_llm::pricing::rates_for`.
+        assert_eq!(model_price_per_mtok("gpt-5"), (1.25, 10.0));
+        assert_eq!(model_price_per_mtok("gpt-5-mini"), (0.25, 2.0));
+        assert_eq!(model_price_per_mtok("gpt-5-nano"), (0.05, 0.40));
+        assert_eq!(model_price_per_mtok("o3"), (2.0, 8.0));
+        assert_eq!(model_price_per_mtok("o3-mini"), (1.10, 4.40));
+        assert_eq!(model_price_per_mtok("o1"), (15.0, 60.0));
+        // A cheaper `-mini`/`-nano` tier must never resolve to the bare family.
+        assert_ne!(
+            model_price_per_mtok("gpt-5-mini"),
+            model_price_per_mtok("gpt-5")
+        );
+        assert_ne!(model_price_per_mtok("o3-mini"), model_price_per_mtok("o3"));
     }
 
     #[test]

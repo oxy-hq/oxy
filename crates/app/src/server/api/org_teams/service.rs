@@ -288,22 +288,7 @@ pub async fn write_access(
     actor_id: Uuid,
     req: &SetAppAccessRequest,
 ) -> Result<AppAccessDto, StatusCode> {
-    let visibility = match req.visibility.as_str() {
-        VISIBILITY_ORG => VISIBILITY_ORG,
-        VISIBILITY_MEMBERS => VISIBILITY_MEMBERS,
-        _ => return Err(StatusCode::BAD_REQUEST),
-    };
-    if req.grants.len() > MAX_GRANTS_PER_APP {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    for grant in &req.grants {
-        if !matches!(
-            grant.role(),
-            app_members::ROLE_ADMIN | app_members::ROLE_MEMBER
-        ) {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    }
+    let visibility = validate_grant_request(req)?;
 
     // Collapse repeats FIRST, and write from the collapsed list — not just from its
     // ids. A payload naming the same grantee twice (a script, or a retried request
@@ -321,6 +306,95 @@ pub async fn write_access(
     validate_users_are_org_members(db, app.org_id, &user_ids).await?;
     validate_teams_belong_to_org(db, app.org_id, &team_ids).await?;
 
+    replace_grants(db, app, actor_id, visibility, &grants).await?;
+
+    // The `(user_id, app_id)` access cache has a TTL, so without this a revoke keeps
+    // working for up to a minute on THIS replica.
+    //
+    // The cache is per-process: on a multi-replica serve fleet only the replica that
+    // took the write drops it, so other replicas keep honoring a revoked grant until
+    // their own entry ages out (`CACHE_TTL`, 60s — see `custom_apps_cache`). That
+    // bound is accepted, not closed: a cross-replica invalidation would need a
+    // broadcast channel, and 60s of stale ALLOW on a revoke is within what the rest
+    // of the membership caches already permit. Say so plainly rather than implying
+    // the call below is a fleet-wide flush.
+    crate::server::api::custom_apps_auth::invalidate_access_cache();
+    // `visibility` lives on the `apps` row, which the serve path also caches.
+    // Same per-process caveat as above.
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+    tracing::info!(
+        app = %app.id, org = %app.org_id, actor = %actor_id,
+        visibility, grants = grants.len(),
+        "app access updated"
+    );
+
+    // Re-READ the row rather than asserting what we asked for. Setting
+    // `updated.visibility = visibility` would report this caller's request even if a
+    // concurrent save had since changed it — pairing our visibility with the other
+    // save's grants, which is the same halfway-merge shape the `WHERE` clause above
+    // rules out for the row itself, just in the payload the client caches. The
+    // grants are still read post-commit and so are equally a snapshot; what this
+    // buys is that the two halves of the response now come from the same read
+    // instead of one being a claim.
+    //
+    // If the row vanished (deleted between commit and re-read), report the requested
+    // value directly — the write did happen, so that's truer than 404ing, and
+    // querying grants for an id whose rows have just cascaded away would be three
+    // round trips to build an empty list.
+    match Apps::find_by_id(app.id).one(db).await.map_err(db_err)? {
+        Some(row) => read_access(db, &row).await,
+        None => Ok(AppAccessDto {
+            app_id: app.id,
+            visibility: visibility.to_string(),
+            grants: vec![],
+        }),
+    }
+}
+
+/// Validate a set-access request without touching the DB: `visibility` must be
+/// one of the two accepted values, the grant list must be within the per-app cap,
+/// and every grant must name a role the app model understands. Returns the
+/// canonical visibility string on success.
+///
+/// Pure and DB-free so the edge validation is unit-testable in isolation and so
+/// [`write_access`] reads as a sequence of named steps rather than inlining the
+/// checks. The DB-backed boundary checks (org membership, team ownership) stay in
+/// `write_access` because they need a connection.
+fn validate_grant_request(req: &SetAppAccessRequest) -> Result<&'static str, StatusCode> {
+    let visibility = match req.visibility.as_str() {
+        VISIBILITY_ORG => VISIBILITY_ORG,
+        VISIBILITY_MEMBERS => VISIBILITY_MEMBERS,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+    if req.grants.len() > MAX_GRANTS_PER_APP {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    for grant in &req.grants {
+        if !matches!(
+            grant.role(),
+            app_members::ROLE_ADMIN | app_members::ROLE_MEMBER
+        ) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+    Ok(visibility)
+}
+
+/// Commit the full-replace inside one transaction: flip `visibility` when it
+/// actually changed, clear the app's grant tables, and re-insert the collapsed
+/// grants. `grants` must already be validated ([`validate_grant_request`]),
+/// deduped ([`dedupe_grantees`]), and boundary-checked by the caller.
+///
+/// Extracted from [`write_access`] so the transaction body stays under the
+/// function-size limit and the racing-writers reasoning below lives with the SQL
+/// it justifies.
+async fn replace_grants(
+    db: &DatabaseConnection,
+    app: &apps::Model,
+    actor_id: Uuid,
+    visibility: &str,
+    grants: &[GranteeRef],
+) -> Result<(), StatusCode> {
     let txn = db.begin().await.map_err(db_err)?;
     // Touch the row only when `visibility` ACTUALLY changed — but let POSTGRES make
     // that comparison, in the `WHERE`, not Rust against `app`.
@@ -335,13 +409,13 @@ pub async fn write_access(
     //
     // B asked for "everyone in the organization" and got "only people you choose":
     // grants from B, visibility from A, which is precisely the halfway merge the
-    // full-replace contract above promises can't happen. It's the one axis where
+    // full-replace contract promises can't happen. It's the one axis where
     // losing TIGHTENS access, so the symptom isn't an error — it's "my app vanished
     // from members' launchers after I opened it up".
     //
-    // Filtering on the committed value is also what makes the post-commit re-read at
-    // the end meaningful: the write lands whenever the stored value differs, so the
-    // row that read returns actually reflects this request.
+    // Filtering on the committed value is also what makes the post-commit re-read in
+    // `write_access` meaningful: the write lands whenever the stored value differs,
+    // so the row that read returns actually reflects this request.
     //
     // Still writes nothing (and takes no row lock) when the value already matches,
     // so a genuine no-op save leaves `updated_at` alone and the admin apps list
@@ -409,48 +483,7 @@ pub async fn write_access(
             .map_err(db_err)?;
     }
     txn.commit().await.map_err(db_err)?;
-
-    // The `(user_id, app_id)` access cache has a TTL, so without this a revoke keeps
-    // working for up to a minute on THIS replica.
-    //
-    // The cache is per-process: on a multi-replica serve fleet only the replica that
-    // took the write drops it, so other replicas keep honoring a revoked grant until
-    // their own entry ages out (`CACHE_TTL`, 60s — see `custom_apps_cache`). That
-    // bound is accepted, not closed: a cross-replica invalidation would need a
-    // broadcast channel, and 60s of stale ALLOW on a revoke is within what the rest
-    // of the membership caches already permit. Say so plainly rather than implying
-    // the call below is a fleet-wide flush.
-    crate::server::api::custom_apps_auth::invalidate_access_cache();
-    // `visibility` lives on the `apps` row, which the serve path also caches.
-    // Same per-process caveat as above.
-    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
-    tracing::info!(
-        app = %app.id, org = %app.org_id, actor = %actor_id,
-        visibility, grants = grants.len(),
-        "app access updated"
-    );
-
-    // Re-READ the row rather than asserting what we asked for. Setting
-    // `updated.visibility = visibility` would report this caller's request even if a
-    // concurrent save had since changed it — pairing our visibility with the other
-    // save's grants, which is the same halfway-merge shape the `WHERE` clause above
-    // rules out for the row itself, just in the payload the client caches. The
-    // grants are still read post-commit and so are equally a snapshot; what this
-    // buys is that the two halves of the response now come from the same read
-    // instead of one being a claim.
-    //
-    // If the row vanished (deleted between commit and re-read), report the requested
-    // value directly — the write did happen, so that's truer than 404ing, and
-    // querying grants for an id whose rows have just cascaded away would be three
-    // round trips to build an empty list.
-    match Apps::find_by_id(app.id).one(db).await.map_err(db_err)? {
-        Some(row) => read_access(db, &row).await,
-        None => Ok(AppAccessDto {
-            app_id: app.id,
-            visibility: visibility.to_string(),
-            grants: vec![],
-        }),
-    }
+    Ok(())
 }
 
 /// Collapse repeated grantees, **last mention wins**.
@@ -544,6 +577,61 @@ async fn validate_teams_belong_to_org(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn req(visibility: &str, grants: Vec<GranteeRef>) -> SetAppAccessRequest {
+        SetAppAccessRequest {
+            visibility: visibility.to_string(),
+            grants,
+        }
+    }
+
+    #[test]
+    fn validate_grant_request_accepts_both_visibilities() {
+        assert_eq!(
+            validate_grant_request(&req(VISIBILITY_ORG, vec![])),
+            Ok(VISIBILITY_ORG)
+        );
+        assert_eq!(
+            validate_grant_request(&req(VISIBILITY_MEMBERS, vec![])),
+            Ok(VISIBILITY_MEMBERS)
+        );
+    }
+
+    #[test]
+    fn validate_grant_request_rejects_bad_visibility() {
+        assert_eq!(
+            validate_grant_request(&req("public", vec![])),
+            Err(StatusCode::BAD_REQUEST)
+        );
+    }
+
+    #[test]
+    fn validate_grant_request_rejects_over_cap() {
+        let grants: Vec<GranteeRef> = (0..MAX_GRANTS_PER_APP + 1)
+            .map(|i| GranteeRef::User {
+                id: Uuid::from_u128(i as u128),
+                role: app_members::ROLE_MEMBER.to_string(),
+            })
+            .collect();
+        assert_eq!(
+            validate_grant_request(&req(VISIBILITY_MEMBERS, grants)),
+            Err(StatusCode::BAD_REQUEST)
+        );
+    }
+
+    #[test]
+    fn validate_grant_request_rejects_unknown_role() {
+        // Only the app model's two roles are writable — an "owner"/typo role is a
+        // 400 at the edge, never a row that grants something the model can't express.
+        let grants = vec![GranteeRef::Team {
+            id: Uuid::from_u128(1),
+            role: "owner".into(),
+        }];
+        assert_eq!(
+            validate_grant_request(&req(VISIBILITY_MEMBERS, grants)),
+            Err(StatusCode::BAD_REQUEST)
+        );
+    }
 
     /// Roles must survive the collapse with **last mention winning** — the property
     /// the 500-fix turns on, and one `split_grantees` can't see because it only

@@ -60,3 +60,13 @@ serial-db = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = "kind(test) & (package(=oxy) | package(=oxy-app) | package(=oxy-cameras) | package(=agentic-pipeline) | package(=agentic-runtime) | package(=agentic-connector) | package(=agentic-airway))"
 test-group = "serial-db"
+# Small retry budget scoped to ONLY the DB-backed serial tests. The suite runs
+# with `--no-fail-fast`, so before this a single flaky DB/timing test (a
+# migration race on the shared Postgres, a coordinator/sweeper observing another
+# test's rows, a testcontainer cold-start) hard-failed the whole `test` job and
+# forced a manual re-run of everything. A test that passes on retry is reported
+# as flaky rather than failing the job; a genuinely-broken test still fails after
+# exhausting its retries. Deliberately NOT set at profile scope — the fast,
+# hermetic unit tests must stay `retries = 0` so a real regression can't hide
+# behind a retry.
+retries = 2

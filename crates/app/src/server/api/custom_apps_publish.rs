@@ -480,6 +480,30 @@ async fn discard_build_row(db: &DatabaseConnection, build_pk: Uuid, build_id: &s
     }
 }
 
+/// Undo a publish whose bytes were already stored AND whose build row was already
+/// recorded, but that failed while wiring the build up (function registration or
+/// pointer move). Runs the full teardown in the order the invariants require —
+/// drop the stored bytes (best-effort; a leaked prefix is a GC concern, not a
+/// publish failure), delete the orphan build row so a same-id retry doesn't 409,
+/// then undo the `apps`-row mutation so a live app is never left repointed.
+///
+/// Consumes `rollback` (its `apply` is single-use). Extracted so the two
+/// post-`record_build` failure sites share one sequence and cannot drift apart —
+/// they were byte-identical copies.
+async fn rollback_stored_build(
+    db: &DatabaseConnection,
+    app_id: Uuid,
+    build_id: &str,
+    build_pk: Uuid,
+    rollback: AppMutationRollback,
+) {
+    if let Err(cleanup) = store::delete_build(app_id, build_id).await {
+        tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
+    }
+    discard_build_row(db, build_pk, build_id).await;
+    rollback.apply(db, app_id).await;
+}
+
 /// True when this app already has a build under `build_id`.
 ///
 /// There is no unique index on `(app_id, build_id)` to lean on, so this is the
@@ -1132,19 +1156,11 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     // resolves. On failure roll the orphan build back out (the app_functions
     // FK cascades when the build row is deleted).
     if let Err(e) = record_functions(&db, app_id, build_pk, &build_prefix, &fn_specs).await {
-        if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {
-            tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
-        }
-        discard_build_row(&db, build_pk, &input.build_id).await;
-        rollback.apply(&db, app_id).await;
+        rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
         return Err(e);
     }
     if let Err(e) = set_pointers(&db, app_id, build_pk, input.promote).await {
-        if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {
-            tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
-        }
-        discard_build_row(&db, build_pk, &input.build_id).await;
-        rollback.apply(&db, app_id).await;
+        rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
         return Err(e);
     }
     // Schedules track the LIVE build, so (re)register + reconcile function
