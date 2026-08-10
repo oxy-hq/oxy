@@ -26,9 +26,17 @@ numpy==2.0.2
 # (BoT-SORT, ByteTrack). Ultralytics imports `lap` specifically, not `lapx`.
 lap==0.5.13
 
-# VLM client (compliance reports). Optional at runtime: if ANTHROPIC_API_KEY
-# is unset, compliance reports are disabled and only camera_events flow.
+# VLM client (compliance reports) + upsell-intent classifier. Optional at
+# runtime: if ANTHROPIC_API_KEY is unset, compliance reports AND audio upsell
+# detection are disabled and only camera_events flow.
 anthropic==0.103.1
+
+# On-device STT for the audio upsell pipeline (worker/upsell*.py). CTranslate2
+# int8 Whisper — CPU-friendly, multi-arch wheels (amd64 + arm64); pulls
+# ctranslate2 + onnxruntime (VAD) + av. Only imported when UPSELL_CAMERAS is
+# set, but installed unconditionally so the small.en model can be baked into
+# the image at build time (see Dockerfile) — first boot needs no network.
+faster-whisper==1.2.1
 
 # Template rendering for domain-pack prompts. The backend ships an
 # active pack alongside the camera list; the worker renders each

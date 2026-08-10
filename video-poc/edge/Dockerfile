@@ -21,7 +21,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    YOLO_CONFIG_DIR=/app/.ultralytics
+    YOLO_CONFIG_DIR=/app/.ultralytics \
+    HF_HOME=/app/.hf-cache
 
 # OpenCV-headless needs a couple of shared libs for video decode + ffmpeg
 # backend. curl + ca-certificates + gnupg support both the cosign download
@@ -68,6 +69,14 @@ RUN pip install -r requirements.txt
 # network access to ultralytics-cdn. Ends up at /app/yolo11n.pt — matches the
 # default YOLO_MODEL=yolo11n.pt env var in worker/camera.py.
 RUN python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
+
+# Bake the faster-whisper small.en CT2 weights into the image so the audio
+# upsell pipeline (worker/upsell*.py) doesn't need network on first boot —
+# same rationale as the YOLO bake above. HF_HOME (set in ENV) pins the cache
+# location so the build-time download and the runtime load agree. Only used
+# when UPSELL_CAMERAS is set, but baking is cheap insurance against a box
+# with no outbound internet.
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('small.en', device='cpu', compute_type='int8')"
 
 COPY worker ./worker
 

@@ -28,6 +28,10 @@ Optional env:
   - CONFIG_POLL_INTERVAL_S  default: 30
   - IMAGE_TAG            default: 'dev' — reported in box_health
   - ANTHROPIC_API_KEY    enables on-trigger Haiku VLM compliance checks
+  - UPSELL_CAMERAS       comma-separated camera-name substrings whose
+                         (near-field-mic) audio is run through the upsell-
+                         detection pipeline. Needs ANTHROPIC_API_KEY. Unset
+                         ⇒ audio upsell detection off.
 """
 from __future__ import annotations
 
@@ -39,7 +43,7 @@ from uuid import UUID
 import anthropic
 import httpx
 
-from . import mtx_sync, prompts
+from . import mtx_sync, prompts, upsell
 from .camera import CameraReader
 from .config import CameraConfig, EdgeConfig
 from .health import box_health_loop, camera_health_loop
@@ -344,6 +348,24 @@ async def run() -> None:
         log("warn", "edge.vlm_disabled",
             reason="ANTHROPIC_API_KEY not set; compliance reports off")
 
+    # Audio upsell detection (Phase 2). Opt-in per box via UPSELL_CAMERAS
+    # (comma-separated camera-name substrings). Reuses the VLM's
+    # ANTHROPIC_API_KEY for the intent classifier; a separate *sync* client
+    # because each AudioReader classifies from its own capture thread. The
+    # STT model loads once here (a few seconds) and is shared across readers.
+    upsell_allow = upsell.upsell_cameras()
+    upsell_stt: upsell.Transcriber | None = None
+    upsell_intent_client: anthropic.Anthropic | None = None
+    if upsell_allow and os.environ.get("ANTHROPIC_API_KEY"):
+        upsell_stt = upsell.Transcriber()
+        upsell_intent_client = anthropic.Anthropic()
+        log("info", "edge.upsell_enabled", cameras=upsell_allow,
+            stt_model=os.environ.get("UPSELL_STT_MODEL", "small.en"))
+    elif upsell_allow:
+        log("warn", "edge.upsell_disabled",
+            reason="ANTHROPIC_API_KEY not set; upsell intent needs it",
+            cameras=upsell_allow)
+
     # MTX dynamic-path API. Defaults to the compose service hostname;
     # production overrides via env. Empty string disables MTX sync
     # entirely (useful for tests / dev with no MTX in the stack).
@@ -461,6 +483,9 @@ async def run() -> None:
             await mtx_sync.reconcile(mtx, cams)
 
         readers: dict[str, CameraReader] = {}
+        # Audio-upsell readers, keyed by camera id like `readers` — spawned
+        # alongside a CameraReader when the camera matches UPSELL_CAMERAS.
+        audio_readers: dict[str, upsell.AudioReader] = {}
         # Per-camera health tasks live in their own dict so we can
         # cancel them individually during hot-swap. The bg infra
         # tasks (outbox, drain, preview server, box-health, poller)
@@ -493,12 +518,25 @@ async def run() -> None:
                 camera_health_loop(client, cam.id, health_interval, r.stats),
                 name=f"camera-health-{cam.name}",
             )
+            # Audio upsell reader for allowlisted register cameras. Pulls
+            # audio directly from the camera RTSP (MTX strips it), so it's a
+            # second, audio-only session to the camera.
+            if upsell_stt is not None and upsell.camera_enabled(cam.name, upsell_allow):
+                ar = upsell.AudioReader(
+                    cam, loop, queue, upsell_stt, upsell_intent_client,
+                )
+                ar.start()
+                audio_readers[cid] = ar
+                log("info", "edge.audio_reader.start", camera_id=cid, name=cam.name)
             return True
 
         def _stop_reader(cid: str) -> None:
             r = readers.pop(cid, None)
             if r is not None:
                 r.stop()
+            ar = audio_readers.pop(cid, None)
+            if ar is not None:
+                ar.stop()
             t = health_tasks.pop(cid, None)
             if t is not None:
                 t.cancel()
@@ -635,6 +673,8 @@ async def run() -> None:
         finally:
             for r in readers.values():
                 r.stop()
+            for ar in audio_readers.values():
+                ar.stop()
 
 
 def main() -> None:
