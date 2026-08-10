@@ -37,6 +37,12 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 agentic-runtime = { workspace = true }
 sea-orm-migration = { workspace = true }
+# Test-only: `migrate_shared_test_db` runs the central migrator ahead of
+# RuntimeMigrator so this crate's fixtures don't fight other agentic test
+# binaries for migration order on the shared test database (see
+# oxy-test-utils::migration for the rationale). This is a dev-dependency
+# only — src/ still never depends on a platform crate.
+oxy-test-utils = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }

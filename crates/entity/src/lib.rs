@@ -3,6 +3,7 @@
 pub mod prelude;
 
 pub mod admin_assume_sessions;
+pub mod airway_source_config;
 pub mod apalis_jobs;
 pub mod api_keys;
 pub mod app_admin_scope_orgs;

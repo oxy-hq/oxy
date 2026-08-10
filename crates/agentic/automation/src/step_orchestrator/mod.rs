@@ -178,11 +178,16 @@ impl AutomationStepOrchestrator {
                     // provider and run-scoped state. Backfill bounds stay
                     // `None` — windowed backfills are driven by the backfill
                     // path, not by an automation step. `contract_policy`/
-                    // `environment` stay `None` for the same reason — stage 2
-                    // still needs to resolve them here, from
-                    // `airway_source_config` keyed by source kind, or this
-                    // path runs under a different policy than a
-                    // schedule-triggered run of the same pipeline.
+                    // `environment` also stay `None` — the resolver
+                    // (`agentic_pipeline::airway_config::resolve_admission`)
+                    // now exists and is wired at `start_airway_run`'s enqueue
+                    // site, but `agentic-automation` is a sibling domain that
+                    // must not import `agentic-pipeline`, so this path can't
+                    // reach it and still runs under airway's defaults
+                    // (`permissive` / `production`). This path therefore still
+                    // runs under a different policy than a schedule-triggered
+                    // run of the same pipeline; closing that gap needs the
+                    // resolver exposed behind a port this domain can call.
                     self.suspend_for_step(
                         &outcome_tx,
                         &mut answer_rx,

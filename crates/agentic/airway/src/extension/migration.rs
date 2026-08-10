@@ -20,6 +20,7 @@ impl MigratorTrait for AirwayMigrator {
             Box::new(AddPartialToLoadAudit),
             Box::new(AddRetryStateToRunExtensions),
             Box::new(CreatePipelineLeases),
+            Box::new(AddAdmissionToRunExtensions),
         ]
     }
 
@@ -67,6 +68,8 @@ enum AirwayRunExtensions {
     Resources,
     RetryCount,
     ResumeState,
+    ContractPolicy,
+    Environment,
 }
 
 #[derive(Iden)]
@@ -506,6 +509,73 @@ impl MigrationTrait for CreatePipelineLeases {
                 Table::drop()
                     .table(AirwayPipelineLeases::Table)
                     .if_exists()
+                    .to_owned(),
+            )
+            .await
+    }
+}
+
+// ── Migration 7: admission policy on airway_run_extensions ──────────────────
+
+/// Adds `contract_policy` and `environment` — the two admission strings this
+/// run was resolved with at enqueue (see `agentic_pipeline::airway_config::
+/// resolve_admission`). Stage 2 moved airway's admission policy from git into
+/// Postgres, which means a config row can change after the fact; these
+/// columns are what lets a past run still say what admitted it. `NULL` on
+/// both means "airway's own default" (`permissive` / `production`), same as
+/// an unconfigured source today. Separate migration — never edit a shipped
+/// one — so fresh and existing DBs converge.
+struct AddAdmissionToRunExtensions;
+
+impl MigrationName for AddAdmissionToRunExtensions {
+    fn name(&self) -> &str {
+        "m20260805_000007_add_admission_to_airway_run_extensions"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddAdmissionToRunExtensions {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AirwayRunExtensions::Table)
+                    .add_column(
+                        ColumnDef::new(AirwayRunExtensions::ContractPolicy)
+                            .string()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AirwayRunExtensions::Table)
+                    .add_column(
+                        ColumnDef::new(AirwayRunExtensions::Environment)
+                            .string()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AirwayRunExtensions::Table)
+                    .drop_column(AirwayRunExtensions::ContractPolicy)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AirwayRunExtensions::Table)
+                    .drop_column(AirwayRunExtensions::Environment)
                     .to_owned(),
             )
             .await

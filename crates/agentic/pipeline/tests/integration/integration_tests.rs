@@ -14,7 +14,6 @@ use agentic_pipeline::{
 use agentic_runtime::crud;
 use agentic_runtime::migration::RuntimeMigrator;
 use sea_orm::{Database, DatabaseConnection};
-use sea_orm_migration::MigratorTrait;
 use serde_json::json;
 
 /// Shared test Postgres container — started once per process, reused across tests.
@@ -73,13 +72,14 @@ async fn test_db() -> Option<DatabaseConnection> {
     }
     let db = db.unwrap();
 
-    RuntimeMigrator::up(&db, None)
+    // Central then runtime (production order — see oxy_test_utils::migration).
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
         .await
-        .expect("runtime migrations failed");
-    agentic_analytics::extension::AnalyticsMigrator::up(&db, None)
+        .expect("shared migrations failed")
+        .then::<agentic_analytics::extension::AnalyticsMigrator>()
         .await
-        .expect("analytics migrations failed");
-    agentic_automation::AutomationMigrator::up(&db, None)
+        .expect("analytics migrations failed")
+        .then::<agentic_automation::AutomationMigrator>()
         .await
         .expect("automation migrations failed");
     Some(db)

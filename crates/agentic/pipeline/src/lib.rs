@@ -5,6 +5,7 @@
 //! use this crate — no domain logic is duplicated.
 
 pub mod agent_run;
+pub mod airway_config;
 pub mod airway_run;
 pub mod automation_run;
 pub mod backfill;

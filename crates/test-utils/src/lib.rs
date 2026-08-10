@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 pub mod fixtures;
+pub mod migration;
 pub mod mocks;
 
 // Re-export commonly used test dependencies for convenience

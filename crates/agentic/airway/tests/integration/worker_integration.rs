@@ -19,7 +19,6 @@ use agentic_airway::worker::AirwayWorker;
 use agentic_core::delegation::TaskOutcome;
 use agentic_runtime::migration::RuntimeMigrator;
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
-use sea_orm_migration::MigratorTrait;
 
 static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
 static TEST_CONTAINER: tokio::sync::OnceCell<
@@ -76,13 +75,14 @@ async fn test_db() -> Option<DatabaseConnection> {
     }
     let db = db?;
 
-    // RuntimeMigrator first: `airway_run_extensions.run_id` FKs to
-    // `agentic_runs.id`, so the runtime tables must exist before
+    // Central then runtime (production order — see
+    // oxy_test_utils::migration), then AirwayMigrator: `airway_run_extensions.run_id`
+    // FKs to `agentic_runs.id`, so the runtime tables must exist before
     // AirwayMigrator's third migration runs.
-    RuntimeMigrator::up(&db, None)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
         .await
-        .expect("runtime migrations");
-    AirwayMigrator::up(&db, None)
+        .expect("shared migrations")
+        .then::<AirwayMigrator>()
         .await
         .expect("airway migrations");
     Some(db)

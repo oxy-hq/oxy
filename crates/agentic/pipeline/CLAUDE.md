@@ -78,7 +78,30 @@ dependency to this crate.
 ## Rules
 
 - This crate MAY import all agentic crates — it's the composition layer.
-- This crate MUST NOT import `oxy`, `oxy-shared`, `entity`, or any other platform crate.
+- **`src/` MUST NOT import** `oxy`, `oxy-shared`, or any other platform crate
+  besides `entity`. It **does** depend on `entity` (a real `Cargo.toml`
+  dependency) — imported with `use entity::` in exactly two files,
+  `airway_config.rs` (`entity::airway_source_config`) and `backfill.rs`
+  (`entity::backfill_checkpoints`, `entity::backfill_ranges`). The stage-2
+  airway admission resolver (`airway_config::resolve_admission`) lives here
+  specifically because this crate, unlike `agentic-airway`, is allowed to
+  depend on it.
+  `recovery.rs`, `retry.rs`, `scheduler.rs`, and `executor/mod.rs` also
+  reference something spelled `entity::`, but it's `agentic_runtime::entity`
+  — a same-named, unrelated module local to `agentic-runtime`
+  (`crates/agentic/runtime/src/lib.rs:52`), which has no `entity` crate
+  dependency at all. Don't conflate the two when auditing this crate's
+  `entity` usage — check the qualified path, not the substring.
+  This prohibition governs `src/` only. Test binaries here **do** run the
+  central migrator — `airway_source_config` is a central-migrator table, not an
+  agentic-owned one — but they reach it through
+  `oxy_test_utils::migration::migrate_shared_test_db`, which hard-codes central
+  and takes the runtime and domain migrators as type parameters. No test names
+  the `migration` crate, so it is not in `[dev-dependencies]`; it still arrives
+  transitively (with `oxy-shared` behind it) for test binaries only, and never
+  touches `src/`. The helper is generic precisely so that `oxy-test-utils`, a
+  platform crate that `oxy` and `oxy-app` also dev-depend on, needs no
+  `agentic-*` dependency of its own.
 - Consumers (`http`, `app/cli`) should import `agentic-pipeline`, NOT domain crates.
 - Re-exports domain types that consumers need: `ThinkingMode`, `SchemaCatalog`, `BuilderTestRunner`.
 

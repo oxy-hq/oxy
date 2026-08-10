@@ -10,7 +10,6 @@ use agentic_core::delegation::TaskSpec;
 use agentic_runtime::crud;
 use agentic_runtime::migration::RuntimeMigrator;
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
-use sea_orm_migration::MigratorTrait;
 
 static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
 static TEST_CONTAINER: tokio::sync::OnceCell<
@@ -51,14 +50,15 @@ async fn test_db() -> Option<DatabaseConnection> {
         .await
         .expect("failed to connect to test DB");
     // Migrate exactly once across the binary's parallel tests. Running
-    // `RuntimeMigrator::up` per-test races on the shared reused container:
+    // the migrators per-test races on the shared reused container:
     // concurrent `CREATE TABLE IF NOT EXISTS seaql_migrations_orchestrator`
     // trips Postgres' `pg_type` unique index (a known IF-NOT-EXISTS race).
+    // Central then runtime (production order — see oxy_test_utils::migration).
     MIGRATED
         .get_or_init(|| async {
-            RuntimeMigrator::up(&db, None)
+            oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
                 .await
-                .expect("runtime migrations failed");
+                .expect("shared migrations failed");
         })
         .await;
     Some(db)

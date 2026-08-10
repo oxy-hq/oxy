@@ -23,8 +23,10 @@ use agentic_pipeline::airway_run::{StartAirwayRequest, start_airway_run};
 use agentic_runtime::crud;
 use agentic_runtime::migration::RuntimeMigrator;
 use async_trait::async_trait;
-use sea_orm::{Database, DatabaseConnection};
-use sea_orm_migration::MigratorTrait;
+use entity::airway_source_config;
+use entity::workspaces::{self, WorkspaceStatus};
+use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
+use uuid::Uuid;
 
 static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
 static TEST_CONTAINER: tokio::sync::OnceCell<
@@ -73,12 +75,17 @@ async fn test_db() -> Option<DatabaseConnection> {
         }
     }
     let db = db?;
-    // RuntimeMigrator first — `airway_run_extensions.run_id` and the
-    // queue row both FK / key off `agentic_runs`.
-    RuntimeMigrator::up(&db, None)
+    // Central first — `airway_source_config` (Task 1) lives in this central
+    // migrator, and `start_airway_run` now resolves against it via
+    // `resolve_admission` (Task 3) on every call, so this binary needs the
+    // table even though no test here touches it directly. See
+    // oxy_test_utils::migration for the full ordering rationale.
+    // `airway_run_extensions.run_id` and the queue row both FK / key off
+    // `agentic_runs`.
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
         .await
-        .expect("runtime migrations");
-    AirwayMigrator::up(&db, None)
+        .expect("shared migrations")
+        .then::<AirwayMigrator>()
         .await
         .expect("airway migrations");
     Some(db)
@@ -220,6 +227,14 @@ resources:
         ext.resources,
         serde_json::json!(["users"]),
         "selected resources persisted verbatim"
+    );
+    assert_eq!(
+        ext.contract_policy, None,
+        "no airway_source_config row for this source_kind: extension records no contract_policy"
+    );
+    assert_eq!(
+        ext.environment, None,
+        "no airway_source_config row for this source_kind: extension records no environment"
     );
 
     // ── queued TaskSpec::Airway ──────────────────────────────────────────
@@ -546,5 +561,158 @@ resources:
         "recovery force-failed the run but its lease survived — the pipeline is \
          blocked for the full 6h TTL (reached when the run's queued task row is \
          gone: claimed-and-orphaned, or dead-lettered)"
+    );
+}
+
+fn unique_kind(prefix: &str) -> String {
+    format!("{prefix}-{}", Uuid::new_v4())
+}
+
+async fn seed_workspace(db: &DatabaseConnection) -> Uuid {
+    let id = Uuid::new_v4();
+    let now = chrono::Utc::now().fixed_offset();
+    workspaces::ActiveModel {
+        id: Set(id),
+        name: Set(format!("airway-run-test-{id}")),
+        git_namespace_id: Set(None),
+        git_remote_url: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        path: Set(None),
+        last_opened_at: Set(None),
+        created_by: Set(None),
+        org_id: Set(None),
+        status: Set(WorkspaceStatus::Ready),
+        error: Set(None),
+        monthly_vlm_budget_micros: Set(None),
+        current_revision_id: Set(None),
+    }
+    .insert(db)
+    .await
+    .expect("seed workspace");
+    id
+}
+
+/// Pins that `start_airway_run` threads `resolve_admission`'s two fields
+/// onto the *correct* field of the queued `TaskSpec::Airway` **and** the
+/// `airway_run_extensions` row — not just that they're populated, and not
+/// just in one of the two places. Both writes must come from the same
+/// `admission` binding (Task 4's invariant): if the extension row and the
+/// queued spec ever disagreed, that would be worse than recording nothing,
+/// since it would look authoritative while being wrong. `contract_policy`
+/// and `environment` use deliberately distinguishable values (not, say,
+/// both `"sandbox"`), so a transposition bug (`contract_policy:
+/// admission.environment` or vice versa) or a dropped field would fail one
+/// of the assertions below. The empty-table case
+/// (`start_airway_run_seeds_run_extension_and_queue`) can't catch that class
+/// of bug: `None`/`None` is symmetric under a swap.
+#[tokio::test(flavor = "multi_thread")]
+async fn start_airway_run_threads_resolved_admission_onto_queued_spec() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let ws_id = seed_workspace(&db).await;
+    let kind = unique_kind("filesystem");
+    airway_source_config::ActiveModel {
+        source_kind: Set(kind.clone()),
+        workspace_id: Set(Some(ws_id)),
+        contract_policy: Set(Some("require_declared".to_string())),
+        environment: Set(Some("sandbox".to_string())),
+        ..Default::default()
+    }
+    .insert(&db)
+    .await
+    .expect("seed admission config row");
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let pipeline_name = format!("admission_{}", Uuid::new_v4().simple());
+    let yaml = format!(
+        r#"
+name: {pipeline_name}
+source:
+  kind: {kind}
+  config:
+    base_path: /tmp/airway-facade
+    pattern: "*.jsonl"
+    format: jsonl
+    table_name: users
+destination:
+  kind: memory
+  config:
+    dataset_name: scratch
+concurrency: 1
+resources:
+  - users
+"#
+    );
+    std::fs::write(dir.path().join("p.airway.yml"), yaml).expect("write spec");
+
+    let ws = TmpWorkspace {
+        root: dir.path().to_path_buf(),
+    };
+    let request = StartAirwayRequest {
+        pipeline_ref: "p.airway.yml".to_string(),
+        variables: None,
+        thread_id: None,
+        resources: Vec::new(),
+        schedule_id: None,
+        trigger: None,
+        logical_date: None,
+        retry_of: None,
+        backfill_from: None,
+        backfill_to: None,
+    };
+
+    let run_id = start_airway_run(
+        &db,
+        &ws,
+        request,
+        agentic_pipeline::TaskScope::Global,
+        ws_id,
+    )
+    .await
+    .expect("start_airway_run");
+
+    let entry = crud::get_queue_entry(&db, &run_id)
+        .await
+        .expect("query queue")
+        .expect("queue row exists");
+    let spec: TaskSpec = serde_json::from_value(entry.spec).expect("deserialize spec");
+    match spec {
+        TaskSpec::Airway {
+            contract_policy,
+            environment,
+            ..
+        } => {
+            assert_eq!(
+                contract_policy.as_deref(),
+                Some("require_declared"),
+                "contract_policy must carry the resolved contract_policy, not environment"
+            );
+            assert_eq!(
+                environment.as_deref(),
+                Some("sandbox"),
+                "environment must carry the resolved environment, not contract_policy"
+            );
+        }
+        other => panic!("expected TaskSpec::Airway, got {other:?}"),
+    }
+
+    // ── airway_run_extensions row: same admission, same run ────────────────
+    let ext = run_extension::get_run_extension(&db, &run_id)
+        .await
+        .expect("query extension")
+        .expect("airway_run_extensions row exists");
+    assert_eq!(
+        ext.contract_policy.as_deref(),
+        Some("require_declared"),
+        "extension row must record the resolved contract_policy, not environment"
+    );
+    assert_eq!(
+        ext.environment.as_deref(),
+        Some("sandbox"),
+        "extension row must record the resolved environment, not contract_policy"
     );
 }

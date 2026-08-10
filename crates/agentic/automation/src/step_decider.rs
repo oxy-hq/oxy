@@ -492,11 +492,17 @@ impl AutomationDecider {
                 // Airhouse credential provider, backfill windowing and
                 // run-scoped state. Backfill bounds stay `None`: a windowed
                 // backfill is driven by the backfill path, not by an
-                // automation step. `contract_policy`/`environment` stay
-                // `None` too — stage 2 needs to resolve these here as well,
-                // from `airway_source_config` keyed by source kind, or a
-                // step-triggered run of a pipeline diverges from a
-                // schedule-triggered run of the same pipeline.
+                // automation step. `contract_policy`/`environment` also stay
+                // `None` — the resolver (`agentic_pipeline::airway_config::
+                // resolve_admission`) now exists and is wired at
+                // `start_airway_run`'s enqueue site, but `agentic-automation`
+                // is a sibling domain that must not import `agentic-pipeline`,
+                // so this path can't reach it and still runs under airway's
+                // defaults (`permissive` / `production`). A step-triggered run
+                // of a pipeline therefore still diverges from a
+                // schedule-triggered run of the same pipeline; closing that
+                // gap needs the resolver exposed behind a port this domain
+                // can call.
                 let spec = TaskSpec::Airway {
                     pipeline_ref,
                     variables: None,

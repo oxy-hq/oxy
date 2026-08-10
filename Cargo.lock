@@ -216,6 +216,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "minijinja",
+ "oxy-test-utils",
  "sea-orm",
  "sea-orm-migration",
  "serde",
@@ -433,8 +434,8 @@ dependencies = [
  "chrono-tz 0.8.6",
  "entity",
  "futures",
+ "oxy-test-utils",
  "sea-orm",
- "sea-orm-migration",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -461,6 +462,7 @@ dependencies = [
  "croner",
  "dashmap 5.5.3",
  "futures",
+ "oxy-test-utils",
  "rustls 0.23.43",
  "sea-orm",
  "sea-orm-migration",
@@ -9580,6 +9582,9 @@ dependencies = [
 name = "oxy-test-utils"
 version = "0.5.122"
 dependencies = [
+ "migration",
+ "sea-orm",
+ "sea-orm-migration",
  "serde",
  "serde_json",
  "serde_yaml",

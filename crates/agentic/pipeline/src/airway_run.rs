@@ -226,6 +226,17 @@ pub async fn start_airway_run(
         agentic_airway::config::DestinationSpec::Reference(r) => r.database.clone(),
         agentic_airway::config::DestinationSpec::Inline(c) => c.kind.clone(),
     };
+
+    // Resolved here, before any row exists, so a resolver failure is a true
+    // no-op — no orphaned `agentic_runs` / `airway_run_extensions` row left
+    // behind with no queue entry to ever execute it. The queued row then
+    // records which policy admitted this run, which is what makes it
+    // explainable after the config changes later — see the design doc's
+    // "Resolution happens at enqueue". The cost is that a queued backlog
+    // keeps the policy it was submitted under.
+    // `AirwayRunError::Db` is `#[from] DbErr`, so `?` converts directly.
+    let admission = crate::airway_config::resolve_admission(db, &source_kind, workspace_id).await?;
+
     let mut metadata = serde_json::json!({
         "pipeline_ref": request.pipeline_ref,
         "pipeline_name": spec.name,
@@ -263,6 +274,7 @@ pub async fn start_airway_run(
         &metadata_and_request(metadata, request),
         scope,
         workspace_id,
+        &admission,
     )
     .await;
     if seeded.is_err() {
@@ -303,6 +315,10 @@ async fn seed_airway_run_rows(
     inputs: &SeedInputs,
     scope: crud::TaskScope,
     workspace_id: Uuid,
+    // Resolved once by the caller, before any row exists, and passed in rather
+    // than re-resolved here: both writes below must record the same admission,
+    // and a second resolution could read a config row edited in between.
+    admission: &crate::airway_config::ResolvedAdmission,
 ) -> Result<(), AirwayRunError> {
     let run_id = run_id.to_string();
     let metadata = inputs.metadata.clone();
@@ -334,7 +350,17 @@ async fn seed_airway_run_rows(
         .await?;
     }
 
-    run_extension::insert_run_extension(db, &run_id, spec, Some(&request.pipeline_ref)).await?;
+    // Same `admission` binding used below for the queued spec — borrowed here
+    // (not moved) so both writes carry the one resolution, never two.
+    run_extension::insert_run_extension(
+        db,
+        &run_id,
+        &spec,
+        Some(&request.pipeline_ref),
+        admission.contract_policy.as_deref(),
+        admission.environment.as_deref(),
+    )
+    .await?;
 
     let task_spec = TaskSpec::Airway {
         pipeline_ref: request.pipeline_ref.clone(),
@@ -342,11 +368,8 @@ async fn seed_airway_run_rows(
         resources: request.resources.clone(),
         backfill_from: request.backfill_from.clone(),
         backfill_to: request.backfill_to.clone(),
-        // Stage 2 resolves these from `airway_source_config`, keyed by the
-        // pipeline's source kind. `None` here is the airway default
-        // (`permissive` / `production`) — today's behaviour, unchanged.
-        contract_policy: None,
-        environment: None,
+        contract_policy: admission.contract_policy.clone(),
+        environment: admission.environment.clone(),
     };
     crud::enqueue_task(db, &run_id, &run_id, None, &task_spec, None, scope).await?;
 

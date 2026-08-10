@@ -27,7 +27,6 @@ use agentic_automation::extension::{
 use agentic_runtime::crud;
 use agentic_runtime::migration::RuntimeMigrator;
 use sea_orm::{Database, DatabaseConnection};
-use sea_orm_migration::MigratorTrait;
 use serde_json::{Value, json};
 
 static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
@@ -64,10 +63,11 @@ async fn test_db() -> Option<DatabaseConnection> {
         })
         .await;
     let db = Database::connect(url).await.ok()?;
-    RuntimeMigrator::up(&db, None)
+    // Central then runtime (production order — see oxy_test_utils::migration).
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
         .await
-        .expect("runtime migrate");
-    AutomationMigrator::up(&db, None)
+        .expect("shared migrate")
+        .then::<AutomationMigrator>()
         .await
         .expect("automation migrate");
     Some(db)

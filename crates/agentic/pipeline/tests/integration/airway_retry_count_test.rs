@@ -10,7 +10,6 @@ use agentic_pipeline::AirwayMigrator;
 use agentic_runtime::crud;
 use agentic_runtime::migration::RuntimeMigrator;
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
-use sea_orm_migration::MigratorTrait;
 
 static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
 static TEST_CONTAINER: tokio::sync::OnceCell<
@@ -47,10 +46,11 @@ async fn test_db() -> Option<DatabaseConnection> {
     let db = Database::connect(&url)
         .await
         .expect("failed to connect to test DB");
-    RuntimeMigrator::up(&db, None)
+    // Central then runtime (production order — see oxy_test_utils::migration).
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
         .await
-        .expect("runtime migrations failed");
-    AirwayMigrator::up(&db, None)
+        .expect("shared migrations failed")
+        .then::<AirwayMigrator>()
         .await
         .expect("airway migrations failed");
     Some(db)

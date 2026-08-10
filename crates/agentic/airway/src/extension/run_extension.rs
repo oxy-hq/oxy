@@ -39,6 +39,14 @@ pub struct Model {
     /// instead of re-extracting the whole window. `None` until first persisted
     /// (and for runs that don't resume, e.g. non-backfill).
     pub resume_state: Option<Json>,
+    /// The contract policy this run was admitted under, as resolved at
+    /// enqueue. `None` = airway's default (`permissive`).
+    ///
+    /// Recorded because the config lives in Postgres rather than git, so
+    /// nothing else can say what admitted a past run once the row changes.
+    pub contract_policy: Option<String>,
+    /// The vendor environment, same rationale. `None` = `production`.
+    pub environment: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -57,6 +65,8 @@ pub async fn insert_run_extension<C>(
     run_id: &str,
     spec: &AirwayPipelineSpec,
     pipeline_ref: Option<&str>,
+    contract_policy: Option<&str>,
+    environment: Option<&str>,
 ) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
@@ -74,6 +84,10 @@ where
         // the worker (resume_state) and the reset-in-place retry (retry_count).
         retry_count: ActiveValue::NotSet,
         resume_state: ActiveValue::NotSet,
+        // Same `admission` binding the caller threads onto the queued
+        // `TaskSpec::Airway` — never re-resolved here.
+        contract_policy: ActiveValue::Set(contract_policy.map(str::to_string)),
+        environment: ActiveValue::Set(environment.map(str::to_string)),
     };
     Entity::insert(model).exec(db).await?;
     Ok(())

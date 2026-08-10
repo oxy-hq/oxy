@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use agentic_airway::AirwayMigrator;
 use agentic_pipeline::scheduler::{
     ScheduleError, ScheduleInput, create_schedule, delete_schedule, delete_workspace_schedules,
     enqueue_health_eval, get_schedule, health_interval_cron, list_schedules,
@@ -24,7 +25,6 @@ use async_trait::async_trait;
 use sea_orm::{
     ConnectionTrait, Database, DatabaseConnection, DbBackend, FromQueryResult, Statement,
 };
-use sea_orm_migration::MigratorTrait;
 
 static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
 static TEST_CONTAINER: tokio::sync::OnceCell<
@@ -73,9 +73,27 @@ async fn test_db() -> Option<DatabaseConnection> {
         }
     }
     let db = db?;
-    RuntimeMigrator::up(&db, None)
+    // Central first, then runtime — every fixture on the shared test database
+    // now follows production order (see oxy_test_utils::migration for the
+    // rationale). This file used to skip central deliberately: central's
+    // `agentic_runs` migrations weren't idempotent (`ADD COLUMN thread_id`,
+    // and the `idx_agentic_run_events_run_id_seq` index) and collided with
+    // `RuntimeMigrator`'s idempotent copies whenever runtime got there first.
+    // That's now backwards — central is supposed to lead, and it's runtime's
+    // migrator that carries the idempotency guards for the case where it
+    // runs second (see `RationalizeStatusModel`'s `column_exists` checks).
+    // Central-first also means `fire_schedule` (`scheduler.rs`), which
+    // reaches `start_airway_run` and resolves against `airway_source_config`
+    // — a central table — no longer needs a special case: it's part of the
+    // shared migration this binary now runs before anything else.
+    // `start_airway_run` also writes `airway_run_extensions`, owned by this
+    // migrator — needed for the same reason as above.
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
         .await
-        .expect("runtime migrations");
+        .expect("shared migrations")
+        .then::<AirwayMigrator>()
+        .await
+        .expect("airway migrations");
     Some(db)
 }
 
