@@ -470,15 +470,8 @@ impl AutomationStepOrchestrator {
                 .template_from_str(&expr_template)
                 .map_err(|e| format!("condition parse error: {e}"))?;
             let result = tmpl.render(ctx.clone()).unwrap_or_default();
-            let trimmed = result.trim();
 
-            // Truthy: non-empty, not "false", not "0", not "none"
-            let is_truthy = !trimmed.is_empty()
-                && trimmed != "false"
-                && trimmed != "0"
-                && trimmed.to_lowercase() != "none";
-
-            if is_truthy {
+            if crate::render::condition_is_truthy(&result) {
                 // Return branch task names as the result — the actual
                 // execution of branch tasks would require delegation.
                 let task_names: Vec<String> = branch.tasks.iter().map(|t| t.name.clone()).collect();

@@ -171,10 +171,51 @@ pub(crate) fn validate_workspace_relative_path(
     Ok(workspace.join(candidate))
 }
 
+/// Decide whether a rendered condition expression counts as true.
+///
+/// Automation conditions are evaluated by rendering `{{ <condition> }}`
+/// and inspecting the resulting text, so the falsy set has to be spelled
+/// out. Falsy is: empty, `false`, `0`, and `none`.
+///
+/// **The comparisons are deliberately case-insensitive.** minijinja
+/// renders scalars Python-style — 2.23 emits `False` / `None` where 2.20
+/// emitted `false` / `none` — and a case-sensitive check silently made
+/// *every* condition truthy across that upgrade, so `conditional` steps
+/// always took their first branch. Matching both spellings keeps this
+/// independent of which side of that change the pinned minijinja is on.
+pub(crate) fn condition_is_truthy(rendered: &str) -> bool {
+    let trimmed = rendered.trim();
+    !trimmed.is_empty()
+        && !trimmed.eq_ignore_ascii_case("false")
+        && trimmed != "0"
+        && !trimmed.eq_ignore_ascii_case("none")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn condition_truthiness_covers_both_minijinja_spellings() {
+        // Falsy — lowercase (minijinja <= 2.22) and capitalized (>= 2.23).
+        for falsy in [
+            "", "  ", "false", "False", "FALSE", "0", "none", "None", "NONE",
+        ] {
+            assert!(
+                !condition_is_truthy(falsy),
+                "expected {falsy:?} to be falsy"
+            );
+        }
+
+        // Truthy — including the surrounding whitespace a render can leave.
+        for truthy in ["true", "True", "1", "-1", "0.0", "text", " True "] {
+            assert!(
+                condition_is_truthy(truthy),
+                "expected {truthy:?} to be truthy"
+            );
+        }
+    }
 
     #[test]
     fn jinja_renders_simple_substitution() {

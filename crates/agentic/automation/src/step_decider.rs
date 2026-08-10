@@ -1106,12 +1106,7 @@ fn execute_conditional(
             .template_from_str(&expr_template)
             .map_err(|e| format!("condition parse error: {e}"))?;
         let result = tmpl.render(ctx.clone()).unwrap_or_default();
-        let trimmed = result.trim();
-        let is_truthy = !trimmed.is_empty()
-            && trimmed != "false"
-            && trimmed != "0"
-            && trimmed.to_lowercase() != "none";
-        if is_truthy {
+        if crate::render::condition_is_truthy(&result) {
             let task_names: Vec<String> = branch.tasks.iter().map(|t| t.name.clone()).collect();
             return Ok(json!({
                 "branch": "matched",
