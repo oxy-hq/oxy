@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.122] - 2026-08-10
+
+### 🚀 Features
+
+- *(airway)* Upgrade to 0.1.23 and enforce contract admission (stage 1) (#2853)
+
+### 🐛 Bug Fixes
+
+- Three single-flight lease gaps found on dev (#2887)
+
+### ⚙️ Miscellaneous Tasks
+
+- Upgrade deps
+- Update dependencies (#2899)
+
 ## [0.5.121] - 2026-08-10
 
 ### 🚀 Features
@@ -32,6 +47,8 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Record the ses:SendRawEmail deploy prerequisite (#2855)
+- Update product-context.md from recent changelogs (#2896)
+- Refresh ownership matrix + CODEOWNERS (weekly) (#2895)
 
 ### ⚡ Performance
 
@@ -43,6 +60,7 @@ All notable changes to this project will be documented in this file.
 
 - Remove the cargo-deny supply-chain job (#2874)
 - Weekly health review — 2026-08-10 (#2892)
+- Release 0.5.121 (#2856)
 
 ## [0.5.120] - 2026-08-04
 
