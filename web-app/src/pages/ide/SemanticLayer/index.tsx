@@ -1,8 +1,9 @@
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { useMetricAnomalies } from "@/hooks/api/useMetricAnomalies";
 import MetricTreeView from "../MetricTree";
-import AnomaliesInbox from "./AnomaliesInbox";
+import AnomaliesInbox, { groupIntoEvents } from "./AnomaliesInbox";
 import SemanticExplorerTab from "./SemanticExplorerTab";
 
 // World Model graduated to its own first-class IDE sidebar surface
@@ -14,7 +15,11 @@ type TabValue = (typeof TAB_VALUES)[number];
 export default function SemanticLayerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: newAnomalies } = useMetricAnomalies("new");
-  const newCount = newAnomalies?.length ?? 0;
+  // Count events, not rows, so the badge agrees with the event-grouped table
+  // the inbox renders (a multi-bucket slide is one anomaly, not N). Memoized:
+  // grouping is O(rows) and this page re-renders on every tab / searchParams
+  // change.
+  const newCount = useMemo(() => groupIntoEvents(newAnomalies ?? []).length, [newAnomalies]);
   const raw = searchParams.get("view");
   // "insights" was the old URL value — redirect existing links gracefully.
   const normalised = raw === "insights" ? "anomalies" : raw;

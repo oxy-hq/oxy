@@ -60,8 +60,17 @@ export interface Anomaly {
 
 export interface ListAnomaliesOptions {
   status?: AnomalyStatus | string;
-  /** Max rows (server caps at 500, defaults to 100). */
+  /**
+   * Max **events** (server caps at 500, defaults to 100). Every bucket of a
+   * returned event comes back, so the row count is `limit × buckets-per-event`.
+   * With `order: "recent"` it is a plain row limit instead.
+   */
   limit?: number;
+  /**
+   * `"recent"` returns latest-first (`detected_at DESC`). Omit for the default
+   * worst-first ranking by event severity (active events before dismissed).
+   */
+  order?: "recent";
 }
 
 export interface ListAnomaliesResponse {
@@ -147,7 +156,8 @@ export class AnomaliesClient {
   }
 
   /**
-   * List anomalies in the inbox, newest first.
+   * List anomalies in the inbox, ranked worst-first by event severity (active
+   * events before dismissed). Pass `order: "recent"` for latest-first.
    *
    * @example
    * ```typescript
@@ -159,6 +169,7 @@ export class AnomaliesClient {
     const extra: Record<string, string> = {};
     if (options.status) extra.status = options.status;
     if (options.limit) extra.limit = String(options.limit);
+    if (options.order) extra.order = options.order;
     // No trailing slash before the query — axum 307-redirects "/anomalies/"
     // to "/anomalies", and the redirect fails CORS preflight in browsers.
     return this.request<ListAnomaliesResponse>(this.path(this.buildQuery(extra)));

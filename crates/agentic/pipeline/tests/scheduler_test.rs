@@ -16,8 +16,8 @@ use std::sync::Arc;
 use agentic_pipeline::scheduler::{
     ScheduleError, ScheduleInput, create_schedule, delete_schedule, delete_workspace_schedules,
     enqueue_health_eval, get_schedule, health_interval_cron, list_schedules,
-    reconcile_health_schedule, run_schedule_now, tick_health_schedules, tick_schedules,
-    update_schedule,
+    reconcile_health_schedule, run_schedule_now, tick_health_schedules, tick_monitor_schedules,
+    tick_schedules, update_schedule,
 };
 use agentic_runtime::migration::RuntimeMigrator;
 use async_trait::async_trait;
@@ -1097,4 +1097,201 @@ async fn app_function_job_seeds_manual_run_with_policy() {
         Some(2),
         "the resolved retry policy rides on the enqueued task"
     );
+}
+
+// ---------------------------------------------------------------------------
+// monitor_scan schedules
+//
+// `tick_monitor_schedules` is a second, near-duplicate copy of the fire path
+// above — its own due query, its own CAS, its own misfire accounting — and
+// none of it had ever executed: `OXY_INPROC_GLOBAL_WORKER` is off by default,
+// so every scan on record arrived by POST. The cases below are the ones the
+// workflow variant already covers, re-aimed at the copy that ships unexercised.
+// ---------------------------------------------------------------------------
+
+/// A `PlatformContext` with no `MonitorScanPort`, so the spawned scan fails
+/// immediately. Everything under test here happens *before* the spawn — the
+/// CAS, the run row, the misfire accounting — and a scan that cannot run keeps
+/// the test off the warehouse.
+struct FakePlatform;
+
+#[async_trait]
+impl agentic_pipeline::platform::ProjectContext for FakePlatform {
+    async fn resolve_connector(
+        &self,
+        _db_name: &str,
+    ) -> Option<agentic_connector::ConnectorConfig> {
+        None
+    }
+    async fn resolve_model(
+        &self,
+        _model_ref: Option<&str>,
+        _has_explicit_model: bool,
+    ) -> Option<agentic_analytics::config::ResolvedModelInfo> {
+        None
+    }
+    async fn resolve_secret(&self, _var_name: &str) -> Option<String> {
+        None
+    }
+}
+
+#[async_trait]
+impl agentic_automation::WorkspaceContext for FakePlatform {
+    fn workspace_path(&self) -> &std::path::Path {
+        std::path::Path::new("")
+    }
+    fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
+        vec![]
+    }
+    async fn get_connector(
+        &self,
+        name: &str,
+    ) -> Result<Arc<dyn agentic_connector::DatabaseConnector>, String> {
+        Err(format!("fake platform: connector '{name}' unavailable"))
+    }
+    async fn get_integration(
+        &self,
+        name: &str,
+    ) -> Result<agentic_automation::workspace::IntegrationConfig, String> {
+        Err(format!("fake platform: integration '{name}' unavailable"))
+    }
+    async fn list_automation_files(&self) -> Result<Vec<std::path::PathBuf>, String> {
+        Ok(vec![])
+    }
+    async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
+        Err("unused".into())
+    }
+}
+
+fn monitor_input(name: &str, granularity: &str, cron_expr: &str) -> ScheduleInput {
+    ScheduleInput {
+        name: name.to_string(),
+        target_kind: "monitor_scan".to_string(),
+        // The monitor tick reads `variables.granularity` and never the ref.
+        target_ref: "monitor".to_string(),
+        question: None,
+        variables: Some(serde_json::json!({ "granularity": granularity })),
+        cron_expr: cron_expr.to_string(),
+        timezone: "UTC".to_string(),
+        enabled: true,
+    }
+}
+
+/// Runs seeded by the monitor tick are titled `Anomaly scan (<granularity>)`
+/// and carry the schedule id, which is what makes them countable per test on a
+/// shared container.
+async fn monitor_run_count(db: &DatabaseConnection, schedule_id: &str) -> i64 {
+    #[derive(sea_orm::FromQueryResult)]
+    struct C {
+        c: i64,
+    }
+    C::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT count(*)::int8 AS c FROM agentic_runs WHERE schedule_id = $1",
+        [schedule_id.into()],
+    ))
+    .one(db)
+    .await
+    .unwrap()
+    .map(|r| r.c)
+    .unwrap_or(0)
+}
+
+#[tokio::test]
+async fn two_replicas_racing_the_same_due_row_produce_one_claim() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+    let s = create_schedule(&db, ws, monitor_input("mon-conc", "day", "0 6 * * *"))
+        .await
+        .unwrap();
+    force_due(&db, &s.id, 3600).await;
+
+    let (db1, db2) = (db.clone(), db.clone());
+    let (p1, p2): (Arc<dyn agentic_pipeline::platform::PlatformContext>, _) =
+        (Arc::new(FakePlatform), Arc::new(FakePlatform));
+    let (a, b) = tokio::join!(
+        async move { tick_monitor_schedules(&db1, ws, p1).await },
+        async move {
+            tick_monitor_schedules(
+                &db2,
+                ws,
+                p2 as Arc<dyn agentic_pipeline::platform::PlatformContext>,
+            )
+            .await
+        },
+    );
+
+    assert_eq!(
+        a + b,
+        1,
+        "the CAS on next_run_at must let exactly one replica fire (a={a}, b={b})"
+    );
+    assert_eq!(
+        monitor_run_count(&db, &s.id).await,
+        1,
+        "and exactly one scan run is seeded"
+    );
+    let after = get_schedule(&db, ws, &s.id).await.unwrap();
+    assert!(after.next_run_at > agentic_runtime::crud::now());
+    assert!(after.last_fired_at.is_some());
+}
+
+#[tokio::test]
+async fn a_missed_window_fires_once_and_resumes() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+    let s = create_schedule(&db, ws, monitor_input("mon-misfire", "day", "0 6 * * *"))
+        .await
+        .unwrap();
+    // Three days overdue: three missed daily slots.
+    force_due(&db, &s.id, 3 * 24 * 3600).await;
+
+    let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = Arc::new(FakePlatform);
+    assert_eq!(tick_monitor_schedules(&db, ws, platform.clone()).await, 1);
+
+    assert_eq!(
+        monitor_run_count(&db, &s.id).await,
+        1,
+        "a three-day gap collapses to a single catch-up scan, not three"
+    );
+    let after = get_schedule(&db, ws, &s.id).await.unwrap();
+    assert!(
+        after.next_run_at > agentic_runtime::crud::now(),
+        "next_run_at jumps to the next future slot, not the next missed one"
+    );
+    assert!(
+        after.missed_runs >= 3,
+        "the skipped occurrences are still counted, not silently dropped: {}",
+        after.missed_runs
+    );
+
+    // An immediate second tick must not re-fire — the row is no longer due.
+    assert_eq!(tick_monitor_schedules(&db, ws, platform).await, 0);
+    assert_eq!(monitor_run_count(&db, &s.id).await, 1);
+}
+
+#[tokio::test]
+async fn a_misconfigured_row_is_not_advanced() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+    let mut bad = monitor_input("mon-nogran", "day", "0 6 * * *");
+    bad.variables = Some(serde_json::json!({}));
+    let s = create_schedule(&db, ws, bad).await.unwrap();
+    force_due(&db, &s.id, 3600).await;
+    let due_before = get_schedule(&db, ws, &s.id).await.unwrap().next_run_at;
+
+    let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = Arc::new(FakePlatform);
+    assert_eq!(tick_monitor_schedules(&db, ws, platform).await, 0);
+
+    let after = get_schedule(&db, ws, &s.id).await.unwrap();
+    assert_eq!(
+        after.next_run_at, due_before,
+        "a data error must leave the row due, so it stays visible on the next \
+         tick instead of being silently skipped forward"
+    );
+    assert!(
+        after.last_error.is_some(),
+        "and the reason is recorded rather than only logged"
+    );
+    assert_eq!(monitor_run_count(&db, &s.id).await, 0);
 }

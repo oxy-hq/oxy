@@ -18,12 +18,21 @@ function rethrow(error: unknown): never {
 
 /** Client for the `/semantic/anomalies*` endpoints. */
 export class MetricAnomaliesService {
-  /** List anomalies for the workspace, optionally filtered by status. */
-  static async list(projectId: string, status?: AnomalyStatus): Promise<MetricAnomaly[]> {
+  /**
+   * List anomalies for the workspace, optionally filtered by status.
+   *
+   * `order="recent"` asks for latest-first (`detected_at DESC`); the default
+   * ranks worst-first by event severity for the Insights Inbox.
+   */
+  static async list(
+    projectId: string,
+    status?: AnomalyStatus,
+    order?: "recent"
+  ): Promise<MetricAnomaly[]> {
     try {
       const response = await apiClient.get<ListAnomaliesResponse>(
         `/${projectId}/semantic/anomalies`,
-        { params: status ? { status } : {} }
+        { params: { ...(status ? { status } : {}), ...(order ? { order } : {}) } }
       );
       return response.data.anomalies;
     } catch (error) {

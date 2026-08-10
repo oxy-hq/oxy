@@ -116,9 +116,23 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
         workspace_id: Uuid,
         filter: AnomalyFilter,
     ) -> Result<Vec<AnomalyRecord>, AnomalyStoreError> {
+        // Rank on severity (envelope headroom — the axis these are meant to be
+        // triaged on), then |z| as a stable tiebreak within a band. This
+        // orders the `AnomalyStore` trait's consumers — the agentic-analytics
+        // chat/SDK tool path; the Insights Inbox has its own ordering in
+        // `list_anomalies`. `ABS(z_score)`, not signed z, so a chain-wide
+        // *drop* (the motivating case) isn't sorted below spikes — matching the
+        // frontend, which picks its event peak by `Math.abs(z_score)`. There is
+        // no LIMIT here, so per-row severity ordering is safe (contrast the
+        // inbox, which ranks per event to keep an event's rows on one page).
+        let severity_rank = sea_orm::sea_query::Expr::cust(crate::detect::severity_rank_case_sql());
         let mut q = AnomaliesEntity::find()
             .filter(metric_anomalies::Column::WorkspaceId.eq(workspace_id))
-            .order_by_desc(metric_anomalies::Column::ZScore);
+            .order_by(severity_rank, sea_orm::Order::Desc)
+            .order_by(
+                sea_orm::sea_query::Expr::cust("ABS(z_score)"),
+                sea_orm::Order::Desc,
+            );
 
         if let Some(m) = filter.measure {
             q = q.filter(metric_anomalies::Column::Measure.eq(m));
@@ -260,8 +274,14 @@ impl agentic_analytics::anomaly_store::AnomalyStore for OxyAnomalyStore {
             } else {
                 metric_anomalies::ActiveModel {
                     // Events are assigned by the scheduled scan, which knows
-                    // the segment; this path has no segment identity.
+                    // the segment; this path has no segment identity. Cohorts
+                    // need more than that again — a whole scan's worth of
+                    // sibling segments to take a share over — so an ad-hoc
+                    // single-series detection can never be in one.
                     event_id: Set(None),
+                    cohort_id: Set(None),
+                    cohort_deviation: Set(None),
+                    cohort_label: Set(None),
                     id: Set(Uuid::new_v4()),
                     workspace_id: Set(workspace_id),
                     measure: Set(measure.to_string()),

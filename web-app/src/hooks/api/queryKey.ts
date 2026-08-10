@@ -864,8 +864,8 @@ const worldModelKeys = {
 
 const metricAnomaliesKeys = {
   all: ["metric-anomalies"] as const,
-  list: (projectId: string, status: string | undefined) =>
-    [...metricAnomaliesKeys.all, "list", projectId, status ?? null] as const,
+  list: (projectId: string, status: string | undefined, order?: string) =>
+    [...metricAnomaliesKeys.all, "list", projectId, status ?? null, order ?? null] as const,
   monitors: (projectId: string) => [...metricAnomaliesKeys.all, "monitors", projectId] as const,
   /** Per-anomaly explain decomposition (cached server-side on the row).
    *  Distinct from `metricTree.explain` because the cache lifecycle is

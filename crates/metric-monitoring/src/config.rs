@@ -61,6 +61,19 @@ pub struct MonitorConfig {
     /// Week-bucket start day. Absent = Monday. Overridable per entry.
     #[serde(default)]
     pub week_start: Option<WeekStart>,
+    /// Named dates, surfaced as a label on a cohort that lands on one.
+    ///
+    /// A label, never a filter. There is deliberately no `exclude_dates:`:
+    /// suppressing a date makes the monitor blind on exactly the days when
+    /// unusual things happen, and a holiday with one store that *also* had an
+    /// outage is a holiday cohort with one deviant member — which is the
+    /// entire point of `cohort_deviation`.
+    ///
+    /// Tenant-supplied rather than from a holiday library: the meaningful
+    /// calendar is per country, per industry and per tenant, and a restaurant
+    /// chain's includes local events no library carries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar: Option<std::collections::HashMap<chrono::NaiveDate, String>>,
     #[serde(default)]
     pub monitors: Vec<MonitorEntry>,
 }
@@ -454,6 +467,26 @@ monitors:
         assert_eq!(m.lookback_days, 90);
         assert_eq!(m.sensitivity, Sensitivity::Medium);
         assert_eq!(m.effective_seasonality(), vec![7]);
+    }
+
+    #[test]
+    fn parses_a_calendar_of_named_dates() {
+        let yaml = r#"
+calendar:
+  2025-07-04: Independence Day
+  2025-11-27: Thanksgiving
+
+monitors:
+  - measure: orders.revenue
+    time_dimension: orders.created_at
+"#;
+        let cfg: MonitorConfig = serde_yaml::from_str(yaml).unwrap();
+        let cal = cfg.calendar.expect("calendar parsed");
+        assert_eq!(
+            cal.get(&chrono::NaiveDate::from_ymd_opt(2025, 7, 4).unwrap())
+                .map(String::as_str),
+            Some("Independence Day")
+        );
     }
 
     #[test]

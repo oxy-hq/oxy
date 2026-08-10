@@ -142,16 +142,30 @@ pub struct DetectedAnomaly {
     pub residual: f64,
     /// `residual / σ`, where σ is the std-dev of the in-sample fit residuals.
     pub z_score: f64,
-    /// `"low" | "medium" | "high"` based on how far past the z-cutoff.
+    /// `"low" | "medium" | "high"` based on how far past its seasonal phase's
+    /// empirical band the observation sat — not on z, which the fit produces
+    /// and which is therefore highest exactly where the fit is worst.
     pub severity: Severity,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+/// Ordered `Low < Medium < High`, matching the declaration order. The Insights
+/// Inbox ranks on severity via the SQL `CASE` in [`severity_rank_case_sql`]
+/// (not on this `Ord`, whose only consumer is a unit test) — the two must stay
+/// in sync, so keep the declaration order and the `CASE` mapping aligned.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Low,
     Medium,
     High,
+}
+
+/// SQL `CASE` mapping the stringified `severity` column to an orderable rank
+/// (`high` > `medium` > `low`). The single source of this encoding, shared by
+/// every query that ranks anomalies so the inbox and the agent tool can't
+/// drift; must stay in sync with [`Severity`]'s declaration order.
+pub fn severity_rank_case_sql() -> &'static str {
+    "CASE severity WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END"
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -280,7 +294,8 @@ pub fn detect(inputs: DetectInputs<'_>) -> Result<Vec<DetectedAnomaly>, DetectEr
             continue;
         }
         let index = train_end + i;
-        if !gates::breaches_empirical_band(&window, index, obs.value) {
+        let band = gates::breaches_empirical_band(&window, index, obs.value);
+        if !band.breached {
             // The band is waived for a bucket continuing an event already on
             // record — but nothing else is. This bucket still had to clear the
             // prediction interval and the z-score cutoff above, so a waived
@@ -310,11 +325,15 @@ pub fn detect(inputs: DetectInputs<'_>) -> Result<Vec<DetectedAnomaly>, DetectEr
             );
         }
         event_tail = Some((index, residual < 0.0));
-        let severity = if sigma == 0.0 {
-            Severity::High
-        } else {
-            severity_from_z(z.abs(), z_cut)
-        };
+        // A bucket kept only because it continues an open event sits *inside*
+        // its band, so there is no headroom to measure and it takes `Low`.
+        // That is not a claim the second day of a slide is minor: the inbox
+        // rolls an event's severity up as the max over its buckets (see
+        // `groupIntoEvents` in the AnomaliesInbox), so the initial breach's
+        // `High` is what the operator sees for the whole event — this row's
+        // `Low` never surfaces on its own. The `sigma == 0` special case is
+        // gone with z: headroom is defined there, so it needs no override.
+        let severity = severity_from_headroom(band.headroom);
         flagged.push(DetectedAnomaly {
             timestamp: obs.timestamp,
             observed: obs.value,
@@ -346,14 +365,42 @@ fn std_dev(values: &[f32]) -> f64 {
     var.sqrt()
 }
 
-fn severity_from_z(abs_z: f64, cutoff: f64) -> Severity {
-    let ratio = abs_z / cutoff;
-    if ratio >= 2.0 {
-        Severity::High
-    } else if ratio >= 1.5 {
-        Severity::Medium
-    } else {
-        Severity::Low
+/// Headroom past the empirical band at which a breach is `High`.
+///
+/// `gates`' own margin comment records that genuine breaches clear the
+/// envelope by 25%+ in practice; this is that figure. **Provisional** — it
+/// wants calibrating against the live inbox's headroom distribution.
+const HEADROOM_HIGH: f64 = 0.25;
+
+/// Headroom at which a breach is `Medium`. **Provisional** — a first guess,
+/// named so recalibration is a one-line change.
+const HEADROOM_MEDIUM: f64 = 0.08;
+
+/// Severity from how far past its own seasonal phase's envelope an
+/// observation sat.
+///
+/// Not from z. Both the prediction interval and the z-cutoff are read off the
+/// fitted model, so a bad fit satisfies them together and confidently —
+/// measured on a real workspace, false positives occupied a *higher* z-range
+/// than true positives. Once the empirical band is the binding constraint, the
+/// distance past that band is what separates a big anomaly from a marginal
+/// one, and the inbox sorts on severity.
+///
+/// Relative, not in robust σ: a very stable series produces a large σ-count
+/// for a business-irrelevant move, which is the same failure z had.
+///
+/// `None` is the "no opinion" headroom — a phase too thin to have an envelope
+/// (see [`gates::BandVerdict`]). It falls to `Medium`, not `High`: a young
+/// monthly series clears its history floor with ~2 samples per phase, and
+/// filing every one of its anomalies at the top severity for three years is
+/// exactly the "absence of evidence is not maximum severity" trap. `Medium` is
+/// the honest default until the phase is thick enough to measure.
+fn severity_from_headroom(headroom: Option<f64>) -> Severity {
+    match headroom {
+        None => Severity::Medium,
+        Some(h) if h >= HEADROOM_HIGH => Severity::High,
+        Some(h) if h >= HEADROOM_MEDIUM => Severity::Medium,
+        Some(_) => Severity::Low,
     }
 }
 
@@ -388,6 +435,58 @@ mod tests {
         })
         .unwrap();
         assert!(out.is_empty(), "expected zero anomalies, got {out:?}");
+    }
+
+    #[test]
+    fn severity_tracks_envelope_headroom() {
+        assert_eq!(severity_from_headroom(Some(0.40)), Severity::High);
+        assert_eq!(severity_from_headroom(Some(0.25)), Severity::High);
+        assert_eq!(severity_from_headroom(Some(0.10)), Severity::Medium);
+        assert_eq!(severity_from_headroom(Some(0.08)), Severity::Medium);
+        assert_eq!(severity_from_headroom(Some(0.009)), Severity::Low);
+        assert_eq!(severity_from_headroom(Some(0.0017)), Severity::Low);
+    }
+
+    #[test]
+    fn a_hair_past_the_band_never_outranks_a_clear_breach() {
+        // The live inbox had a +0.17% breach filed `medium` outranking a +0.9%
+        // breach filed `low`, because both were read off z. Ordering by
+        // headroom is the whole point of the change.
+        let hair = severity_from_headroom(Some(0.0017));
+        let clearer = severity_from_headroom(Some(0.009));
+        assert!(hair <= clearer);
+    }
+
+    #[test]
+    fn a_real_unbounded_headroom_is_high() {
+        // A breach past an identically-zero phase: the excess really is
+        // unbounded, so it ranks highest.
+        assert_eq!(severity_from_headroom(Some(f64::INFINITY)), Severity::High);
+    }
+
+    #[test]
+    fn severity_rank_sql_agrees_with_the_enum_order() {
+        // The SQL `CASE` and the enum's `Ord` are two encodings of one ranking;
+        // if they drift, the inbox sorts differently from the type. Pin both.
+        let sql = severity_rank_case_sql();
+        assert!(
+            sql.contains("'high' THEN 2"),
+            "high must be the top rank: {sql}"
+        );
+        assert!(
+            sql.contains("'medium' THEN 1"),
+            "medium must be the middle rank: {sql}"
+        );
+        assert!(sql.contains("ELSE 0"), "low must be the bottom rank: {sql}");
+        assert!(Severity::Low < Severity::Medium && Severity::Medium < Severity::High);
+    }
+
+    #[test]
+    fn no_opinion_headroom_is_medium_not_high() {
+        // A phase too thin to have an envelope yields `None`. It must not be
+        // read as an unbounded breach — that is the bug that filed every
+        // young-monthly anomaly `High`.
+        assert_eq!(severity_from_headroom(None), Severity::Medium);
     }
 
     #[test]
@@ -431,7 +530,12 @@ mod tests {
         })
         .unwrap();
         assert_eq!(out.len(), 1, "spike on zero-sigma series must be flagged");
-        assert_eq!(out[0].severity, Severity::High);
+        // 20 daily buckets at `seasonality: [7]` leave the spike's phase with
+        // only two training samples — below `MIN_PHASE_SAMPLES`, so the band
+        // has no opinion and severity falls to the honest `Medium` default
+        // rather than the old blanket `High`. The point of the test is that the
+        // spike is *flagged at all* on a zero-sigma series.
+        assert_eq!(out[0].severity, Severity::Medium);
     }
 
     /// A weekday-seasonal store series. Saturdays carry a wide, realistic

@@ -281,6 +281,27 @@ interface AnomalyEvent {
   buckets: MetricAnomaly[];
   /** The bucket that departed furthest from expectation — what the row shows. */
   peak: MetricAnomaly;
+  /**
+   * The event's severity: the max over its buckets, not the peak bucket's.
+   * A sustained slide files its later days as `low` (they sit inside their
+   * seasonal band, kept only because they continue the event), so reading
+   * severity off `peak` — chosen by z-score, which can be a later day — would
+   * badge a real collapse `low`. Rolling up the max keeps the initial breach's
+   * severity on the whole event.
+   */
+  severity: AnomalySeverity;
+}
+
+const SEVERITY_RANK: Record<AnomalySeverity, number> = { low: 0, medium: 1, high: 2 };
+
+const rank = (s: AnomalySeverity): number => SEVERITY_RANK[s] ?? 0;
+
+/** The most severe severity across an event's buckets. */
+function maxSeverity(buckets: MetricAnomaly[]): AnomalySeverity {
+  return buckets.reduce<AnomalySeverity>(
+    (worst, b) => (rank(b.severity) > rank(worst) ? b.severity : worst),
+    "low"
+  );
 }
 
 /**
@@ -294,7 +315,7 @@ interface AnomalyEvent {
  * Rows with no `event_id` (detected before events existed) each stand alone
  * rather than being lumped together under a shared null key.
  */
-function groupIntoEvents(anomalies: MetricAnomaly[]): AnomalyEvent[] {
+export function groupIntoEvents(anomalies: MetricAnomaly[]): AnomalyEvent[] {
   const byEvent = new Map<string, MetricAnomaly[]>();
   for (const a of anomalies) {
     const key = a.event_id ?? `ungrouped:${a.id}`;
@@ -307,7 +328,7 @@ function groupIntoEvents(anomalies: MetricAnomaly[]): AnomalyEvent[] {
     // The peak, not the latest: the worst day is what an operator triages on,
     // and it is the bucket whose explain is worth reading.
     const peak = ordered.reduce((a, b) => (Math.abs(b.z_score) > Math.abs(a.z_score) ? b : a));
-    return { buckets: ordered, peak };
+    return { buckets: ordered, peak, severity: maxSeverity(ordered) };
   });
 }
 
@@ -336,7 +357,7 @@ function AnomalyRow({
   return (
     <TableRow data-status={anomaly.status}>
       <TableCell>
-        <SeverityBadge severity={anomaly.severity} status={anomaly.status} />
+        <SeverityBadge severity={event.severity} status={anomaly.status} />
       </TableCell>
       <TableCell>
         <div className='flex flex-col gap-1'>

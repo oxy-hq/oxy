@@ -11,13 +11,17 @@ import type {
 import type { ExplainResult } from "@/types/metricTree";
 import queryKeys from "./queryKey";
 
-/** Anomalies for the current workspace, optionally filtered by status. */
-export function useMetricAnomalies(status?: AnomalyStatus) {
+/** Anomalies for the current workspace, optionally filtered by status.
+ *
+ *  Pass `order="recent"` for latest-first (`detected_at DESC`) — e.g. the
+ *  Monitors tab's "last anomaly" column, which must not be biased by the
+ *  Inbox's severity ranking. Omit it for the worst-first Inbox ordering. */
+export function useMetricAnomalies(status?: AnomalyStatus, order?: "recent") {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
   return useQuery({
-    queryKey: queryKeys.metricAnomalies.list(projectId, status),
-    queryFn: () => MetricAnomaliesService.list(projectId, status),
+    queryKey: queryKeys.metricAnomalies.list(projectId, status, order),
+    queryFn: () => MetricAnomaliesService.list(projectId, status, order),
     retry: false
   });
 }

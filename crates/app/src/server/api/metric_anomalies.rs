@@ -85,8 +85,17 @@ impl From<sea_orm::DbErr> for AnomalyError {
 pub struct ListQuery {
     /// Filter by status. `None` returns every status.
     pub status: Option<String>,
-    /// Max rows. Defaults to 100.
+    /// Max **events** (not rows) for the default severity ranking; max **rows**
+    /// for `order=recent`. Defaults to 100. Under the default ranking every
+    /// bucket of a returned event comes back, so the row count is
+    /// `limit × buckets-per-event`, bounded defensively in [`load_ranked_events`].
     pub limit: Option<u64>,
+    /// `recent` orders by `detected_at DESC` (row-limited; index-served when a
+    /// status is set — see [`list_recent`]) for consumers that want the latest
+    /// firings — e.g. the Monitors tab's "last anomaly" column. Any other value
+    /// (default) ranks worst-first by event
+    /// severity for the Insights Inbox.
+    pub order: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -174,7 +183,19 @@ pub async fn list_monitors(
     }))
 }
 
-/// `GET /workspaces/{workspace_id}/semantic/anomalies?status=new&limit=100`.
+/// `GET /workspaces/{workspace_id}/semantic/anomalies?status=new&limit=100`
+/// (`limit` counts **events**, not rows).
+///
+/// Two-phase so the inbox ranks on severity without truncating an event
+/// mid-way:
+///  1. [`rank_event_keys`] ranks *events* worst-first and takes the top `limit`.
+///  2. [`load_ranked_events`] fetches every row of exactly those events (modulo
+///     the status filter — a filtered tab still returns only its status).
+///
+/// Ranking per event (not per row) is what keeps the per-event Ack loop and the
+/// `worst of N` bucket count honest *within the selected tab*: a waived-band
+/// continuation bucket is filed `low`, so a row-limited severity sort would
+/// strand those buckets off the page.
 pub async fn list_anomalies(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Extension(state): Extension<Arc<AgenticState>>,
@@ -182,16 +203,200 @@ pub async fn list_anomalies(
 ) -> Result<Json<ListResponse>, AnomalyError> {
     let workspace_id = workspace_manager.workspace_id;
     let limit = q.limit.unwrap_or(100).min(500);
+    let status = q.status.as_deref();
+
+    // Recency path: a plain `detected_at DESC` row-limited scan for consumers
+    // that want the latest firings rather than the worst. Kept separate so the
+    // Insights Inbox's severity ranking can't regress this (a measure whose
+    // recent anomalies are all `low` would fall off a severity-ranked page).
+    if q.order.as_deref() == Some("recent") {
+        let anomalies = list_recent(&state.db, workspace_id, status, limit).await?;
+        return Ok(Json(ListResponse { anomalies }));
+    }
+
+    let keys = rank_event_keys(&state.db, workspace_id, status, limit).await?;
+    if keys.is_empty() {
+        return Ok(Json(ListResponse { anomalies: vec![] }));
+    }
+    let anomalies = load_ranked_events(&state.db, workspace_id, status, &keys).await?;
+    Ok(Json(ListResponse { anomalies }))
+}
+
+/// Latest firings first — a `detected_at DESC` scan. When a status is set the
+/// `idx_metric_anomalies_workspace_status_detected` index serves the sort
+/// directly; the Monitors-tab caller passes no status, so there Postgres scans
+/// the workspace's anomaly rows and sorts before the `LIMIT` (the same shape the
+/// endpoint had pre-PR — a `(workspace_id, detected_at)` index would bound it if
+/// that path ever gets hot).
+async fn list_recent(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+    status: Option<&str>,
+    limit: u64,
+) -> Result<Vec<metric_anomalies::Model>, AnomalyError> {
     let mut query = AnomaliesEntity::find()
         .filter(metric_anomalies::Column::WorkspaceId.eq(workspace_id))
         .order_by_desc(metric_anomalies::Column::DetectedAt)
         .limit(limit);
-    if let Some(status) = q.status {
+    if let Some(status) = status {
         query = query.filter(metric_anomalies::Column::Status.eq(status));
     }
-    let anomalies = query.all(&state.db).await?;
-    Ok(Json(ListResponse { anomalies }))
+    Ok(query.all(db).await?)
 }
+
+/// The event key for a row — its `event_id`, or its own id for pre-event rows.
+/// Mirrors the frontend's `event_id ?? "ungrouped:" + id` grouping key.
+fn event_key_of(m: &metric_anomalies::Model) -> String {
+    m.event_id
+        .map(|e| e.to_string())
+        .unwrap_or_else(|| m.id.to_string())
+}
+
+/// Rank the workspace's anomaly **events** worst-first and return the top
+/// `limit` event keys.
+///
+/// Grouped, not windowed. `GROUP BY` + `ORDER BY MAX(...)` can't push the
+/// `LIMIT` into the scan, so this still reads every row matching the `WHERE`
+/// — but at a much smaller constant than the window version it replaced (narrow
+/// projection, one sort of *groups* instead of a `WindowAgg` plus a full-row
+/// sort). The status predicate is appended only when set, so the default
+/// **New** tab keeps the `status` column of
+/// `idx_metric_anomalies_workspace_status_detected` sargable rather than folding
+/// it into a non-sargable `OR`. The `LIMIT` bounds *events*, and phase 2 fetches
+/// each returned event whole — the property the row-limited window ordering
+/// could not give. Active events sort ahead of fully-dismissed ones so the
+/// `all` tab doesn't spend its page budget on dismissed rows.
+async fn rank_event_keys(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+    status: Option<&str>,
+    limit: u64,
+) -> Result<Vec<String>, AnomalyError> {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement, Value};
+    let mut params: Vec<Value> = vec![workspace_id.into()];
+    let status_clause = match status {
+        Some(s) => {
+            params.push(s.to_string().into());
+            "AND status = $2 "
+        }
+        None => "",
+    };
+    params.push((limit as i64).into());
+    let limit_param = params.len(); // $2 when unfiltered, $3 when filtered
+    let sql = format!(
+        "SELECT COALESCE(event_id::text, id::text) AS event_key \
+         FROM metric_anomalies \
+         WHERE workspace_id = $1 {status_clause}\
+         GROUP BY 1 \
+         ORDER BY \
+           MAX(CASE WHEN status <> 'dismissed' THEN 1 ELSE 0 END) DESC, \
+           MAX({rank}) DESC, \
+           MAX(detected_at) DESC, \
+           event_key \
+         LIMIT ${limit_param}",
+        rank = monitoring::detect::severity_rank_case_sql(),
+    );
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            sql,
+            params,
+        ))
+        .await?;
+    rows.into_iter()
+        .map(|r| r.try_get::<String>("", "event_key"))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(AnomalyError::Db)
+}
+
+/// Fetch every row of the given events, ordered to match the phase-1 event rank
+/// (then `period_start` within an event). Keys are UUID strings: a key is an
+/// `event_id` for grouped rows or a row `id` for pre-event ones, so match on
+/// either — `event_id IN keys` never matches a `NULL`, and `id IN keys` picks up
+/// the ungrouped rows.
+async fn load_ranked_events(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+    status: Option<&str>,
+    keys: &[String],
+) -> Result<Vec<metric_anomalies::Model>, AnomalyError> {
+    let uuids: Vec<Uuid> = keys
+        .iter()
+        .filter_map(|k| Uuid::parse_str(k).ok())
+        .collect();
+    let mut query = AnomaliesEntity::find()
+        .filter(metric_anomalies::Column::WorkspaceId.eq(workspace_id))
+        .filter(
+            sea_orm::Condition::any()
+                .add(metric_anomalies::Column::EventId.is_in(uuids.clone()))
+                .add(metric_anomalies::Column::Id.is_in(uuids)),
+        );
+    if let Some(status) = status {
+        query = query.filter(metric_anomalies::Column::Status.eq(status));
+    }
+    let mut rows = query.all(db).await?;
+
+    // Order by phase-1 event rank, then oldest-first within an event. The rank
+    // is authoritative; anything not in it (a scan landing between phase 1 and
+    // phase 2 can add a row to a ranked event, or make one return no rows —
+    // self-correcting on the next load) sorts last rather than panicking.
+    // `sort_by_cached_key` computes the key once per row, not once per compare,
+    // so `event_key_of`'s allocation happens n times, not n·log n.
+    let rank: std::collections::HashMap<&str, usize> = keys
+        .iter()
+        .enumerate()
+        .map(|(i, k)| (k.as_str(), i))
+        .collect();
+    rows.sort_by_cached_key(|m| {
+        let r = rank
+            .get(event_key_of(m).as_str())
+            .copied()
+            .unwrap_or(usize::MAX);
+        (r, m.period_start)
+    });
+
+    // Defensive payload cap: the page bounds events, and `metric_anomalies` has
+    // no retention, so a pathological long-running regime shift is one event
+    // with an unbounded bucket count. Cut at an *event boundary* — never
+    // mid-event, or we'd hand the frontend a partial event and reopen the very
+    // Ack/undercount bug the two-phase query closed — keeping at least the first
+    // event so a single pathological chain still renders.
+    let cap = keys.len().saturating_mul(MAX_BUCKETS_PER_EVENT);
+    if rows.len() > cap {
+        let row_keys: Vec<String> = rows.iter().map(event_key_of).collect();
+        let refs: Vec<&str> = row_keys.iter().map(String::as_str).collect();
+        rows.truncate(event_boundary(&refs, cap));
+    }
+    Ok(rows)
+}
+
+/// The largest prefix length `<= cap` that ends on an event boundary, where
+/// `keys[i]` is row `i`'s event key and rows are grouped by event (contiguous,
+/// modulo unranked rows a concurrent scan may interleave — a vanishingly rare,
+/// self-correcting case). Always at least the whole first event, so a single
+/// event larger than `cap` still renders rather than returning nothing.
+fn event_boundary(keys: &[&str], cap: usize) -> usize {
+    if keys.len() <= cap {
+        return keys.len();
+    }
+    // Walk back from the cut index to where the straddled event began.
+    let straddled = keys[cap];
+    let mut end = cap;
+    while end > 0 && keys[end - 1] == straddled {
+        end -= 1;
+    }
+    if end > 0 {
+        return end;
+    }
+    // The cut fell inside the first event: keep that whole event.
+    let first = keys[0];
+    keys.iter().take_while(|k| **k == first).count()
+}
+
+/// Safety-valve ceiling on buckets returned per requested event (see
+/// [`load_ranked_events`]). Generous — real events span a handful of buckets;
+/// this only guards against an unbounded chain, not normal sizing.
+const MAX_BUCKETS_PER_EVENT: usize = 50;
 
 // ── Status updates: acknowledge / dismiss ────────────────────────────────────
 
@@ -551,4 +756,32 @@ pub async fn explain_anomaly(
     }
 
     Ok(Json(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::event_boundary;
+
+    #[test]
+    fn boundary_returns_all_when_under_cap() {
+        let keys = ["a", "a", "b"];
+        assert_eq!(event_boundary(&keys, 10), 3);
+    }
+
+    #[test]
+    fn boundary_cuts_between_events_never_mid_event() {
+        // cap 3 lands inside event "b" — drop "b" entirely and keep "a".
+        let keys = ["a", "a", "b", "b", "b", "c"];
+        // cap 3 → keys[3] == "b", walk back to index 2 → keep ["a","a"].
+        assert_eq!(event_boundary(&keys, 3), 2);
+        // cap 5 → keys[5] == "c", walk back to 5 → keep a,a,b,b,b.
+        assert_eq!(event_boundary(&keys, 5), 5);
+    }
+
+    #[test]
+    fn boundary_keeps_the_whole_first_event_when_it_alone_exceeds_cap() {
+        let keys = ["a", "a", "a", "a", "b"];
+        // cap 2 falls inside the first event; keep the whole first event.
+        assert_eq!(event_boundary(&keys, 2), 4);
+    }
 }

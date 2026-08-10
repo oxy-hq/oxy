@@ -26,7 +26,7 @@ serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 tracing = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v5"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

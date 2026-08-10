@@ -4,6 +4,7 @@
 //! [`MonitorOutcome`]s into SeaORM rows); the service itself is database-free
 //! so it tests cleanly with a fake runner.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -29,6 +30,13 @@ pub struct ScanResult {
     /// One entry per monitor that errored out — kept separate so a single
     /// broken monitor doesn't fail the whole scan.
     pub failures: Vec<MonitorFailure>,
+    /// The file-level `calendar:`, carried through so persistence can name the
+    /// day a cohort landed on.
+    ///
+    /// On the scan rather than on each [`MonitorEntry`]: a cohort spans
+    /// segments, so the label belongs to the scan that observed it, and
+    /// `apply_defaults` would otherwise clone the whole map per segment.
+    pub calendar: Option<HashMap<NaiveDate, String>>,
 }
 
 /// What one monitor produced.
@@ -134,7 +142,10 @@ pub async fn scan_workspace(
     open_events: &OpenEvents,
 ) -> Result<ScanResult, ScanError> {
     let cfg: MonitorConfig = load_from_file(config_path)?;
-    let mut result = ScanResult::default();
+    let mut result = ScanResult {
+        calendar: cfg.calendar.clone(),
+        ..Default::default()
+    };
 
     // Apply granularity filter before expanding group_by entries.
     let monitors: Vec<MonitorEntry> = if let Some(gran) = granularity_filter {

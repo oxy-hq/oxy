@@ -1216,8 +1216,15 @@ pub fn make_runner(
 /// through. The metric tree is rebuilt against the pruned layer so component
 /// / driver edges stay intact.
 ///
-/// This is a workaround until airlayer exposes per-dim cardinality /
-/// `splittable` metadata and a base-filter hook.
+/// The **key** half is declaration-driven as of 2026-08: airlayer's
+/// `entities:` says which dimensions are row keys (`EntityType::Primary`) and
+/// which are foreign keys, so a `restaurant_id` now survives as a split
+/// candidate. The suffix heuristic remains only as a fallback for views that
+/// declare no entities at all.
+///
+/// The **numeric** and **cardinality** halves are still a workaround until
+/// airlayer exposes per-dim cardinality / `splittable` metadata and a
+/// base-filter hook.
 fn prune_dims_for_explain(
     mut layer: SemanticLayer,
     exclude_members: &[String],
@@ -1226,6 +1233,15 @@ fn prune_dims_for_explain(
     use airlayer::schema::models::DimensionType;
     for view in &mut layer.views {
         let view_name = view.name.clone();
+        // Read the entity declaration out before `retain` borrows `view`
+        // mutably — the row-key rule needs it and cannot reach `view` inside
+        // the closure.
+        let row_keys: Vec<String> = view
+            .primary_key_dimensions()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let foreign_keys = foreign_key_dimensions(view);
         // Collect what we drop so a "why isn't dimension X in the
         // decomposition?" question is answerable from logs rather than by
         // re-deriving the heuristic. The pruning is otherwise silent.
@@ -1241,7 +1257,9 @@ fn prune_dims_for_explain(
                 } else if exclude_members.iter().any(|m| m == &fq) {
                     Some("segment_filter")
                 } else if is_seasonal_or_key_dim(&d.name) {
-                    Some("seasonal_or_key")
+                    Some("time_part")
+                } else if is_row_key_dim(&row_keys, &foreign_keys, d) {
+                    Some("row_key")
                 } else {
                     None
                 }
@@ -1268,9 +1286,97 @@ fn prune_dims_for_explain(
     layer
 }
 
-/// True for dimensions that are meaningless period-over-period split
-/// candidates: calendar-part dims (constant across a same-phase comparison)
-/// and per-row key dims (never match across periods).
+/// True for a dimension that identifies a *row* rather than a joinable entity.
+///
+/// The distinction the old `_id`/`_key` suffix rule could not make: a row key
+/// (`sales_day_key`) never matches across periods and is a useless split
+/// candidate; a foreign key (`restaurant_id`) is a legitimate grouping
+/// dimension, and dropping it is why explain could never decompose a
+/// chain-level anomaly by store.
+///
+/// airlayer declares this — `EntityType::Primary` owns the key,
+/// `EntityType::Foreign` references another view's, and
+/// `View::primary_key_dimensions()` returns exactly the former.
+///
+/// The fallback is **per dimension, not per view**. A view can declare only its
+/// *foreign* entities — the common shape for a join target — so its
+/// `primary_key_dimensions()` is empty while it still has row keys
+/// (`sales_day_key`) the declaration never names. An all-or-nothing "declared →
+/// trust only the declaration" rule lets those row keys survive pruning as
+/// split candidates with cardinality equal to the row count, the exact failure
+/// the pruning exists to prevent. So: prune a declared primary key, keep a
+/// declared foreign key (a legit grouping dimension — dropping `restaurant_id`
+/// is why explain could never decompose a chain-level anomaly by store), and
+/// fall back to the suffix heuristic for anything the declaration doesn't
+/// mention.
+///
+/// Takes the pre-computed key lists rather than `&View` because the only caller
+/// runs inside `view.dimensions.retain(..)`, which already holds `view`
+/// mutably.
+fn is_row_key_dim(
+    row_keys: &[String],
+    foreign_keys: &[String],
+    dim: &airlayer::schema::models::Dimension,
+) -> bool {
+    if dim.primary_key == Some(true) || row_keys.iter().any(|k| k == &dim.name) {
+        return true;
+    }
+    if foreign_keys.iter().any(|k| k == &dim.name) {
+        return false;
+    }
+    has_key_suffix(&dim.name)
+}
+
+/// Declared foreign-key dimension names — the mirror of
+/// [`airlayer::schema::models::View::primary_key_dimensions`], which airlayer
+/// does not expose for foreign entities. A foreign key references another
+/// view's row, so it is a legitimate grouping dimension, not a row key.
+fn foreign_key_dimensions(view: &airlayer::schema::models::View) -> Vec<String> {
+    use airlayer::schema::models::EntityType;
+    let mut fks: Vec<String> = Vec::new();
+    for entity in &view.entities {
+        if entity.entity_type != EntityType::Foreign {
+            continue;
+        }
+        // An entity written as just `- name: restaurant_id` / `type: foreign`
+        // declares no explicit `key:`/`keys:`, so `get_keys()` is empty; fall
+        // back to its name. Without this it would contribute no foreign key, so
+        // `is_row_key_dim` would reach `has_key_suffix("restaurant_id") == true`
+        // and *prune* a legitimate split candidate — finding 6 in the opposite
+        // direction (over-pruning rather than under-pruning).
+        let keys = if entity.get_keys().is_empty() {
+            vec![entity.name.clone()]
+        } else {
+            entity.get_keys()
+        };
+        for key in keys {
+            if view.dimensions.iter().any(|d| d.name == key) {
+                fks.push(key);
+            }
+        }
+    }
+    // Tidiness, not a correctness fix — the only consumer is an `any()`. But
+    // `Vec::dedup` collapses only *adjacent* duplicates, so sort first if the
+    // deduped list is ever exposed to a caller that cares about it.
+    fks.sort();
+    fks.dedup();
+    fks
+}
+
+/// The pre-declaration heuristic: anything that *looks* like a key.
+///
+/// Kept only for unmodelled views. It cannot tell a row key from a foreign
+/// key, which is the whole reason [`is_row_key_dim`] prefers the declaration.
+fn has_key_suffix(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n == "id" || n == "key" || n.ends_with("_id") || n.ends_with("_key")
+}
+
+/// True for calendar-part dimensions — constant across a same-phase
+/// comparison, so they always "explain" the difference trivially.
+///
+/// Key dimensions are no longer this function's business; see
+/// [`is_row_key_dim`].
 fn is_seasonal_or_key_dim(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     const TIME_PARTS: &[&str] = &[
@@ -1293,10 +1399,7 @@ fn is_seasonal_or_key_dim(name: &str) -> bool {
         "datetime",
         "timestamp",
     ];
-    if TIME_PARTS.contains(&n.as_str()) {
-        return true;
-    }
-    n == "id" || n == "key" || n.ends_with("_id") || n.ends_with("_key")
+    TIME_PARTS.contains(&n.as_str())
 }
 
 /// Convert a pre-aggregation DuckDB result to the column-keyed row maps that
@@ -1336,7 +1439,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn seasonal_and_key_dims_are_pruned() {
+    fn time_part_dims_are_pruned_regardless_of_entities() {
         // Calendar-part dims (constant across a same-phase comparison).
         for d in [
             "day_of_week",
@@ -1348,20 +1451,152 @@ mod tests {
         ] {
             assert!(is_seasonal_or_key_dim(d), "{d} should be pruned");
         }
-        // Per-row key dims (never match across periods).
-        for d in ["labor_day_key", "id", "restaurant_id", "menu_item_key"] {
-            assert!(is_seasonal_or_key_dim(d), "{d} should be pruned");
-        }
-        // Real business dims survive.
+        // Real business dims survive. Key dims are no longer this rule's
+        // business — see `is_row_key_dim`.
         for d in [
             "department",
             "cost_category",
             "shift",
             "region",
             "menu_category",
+            "restaurant_id",
         ] {
             assert!(!is_seasonal_or_key_dim(d), "{d} should be kept");
         }
+    }
+
+    // `View`, `Dimension` and `Entity` have no `Default`, and hand-listing
+    // ~20 optional fields would go stale on every airlayer bump. Deserializing
+    // is both shorter and exactly how these arrive in production.
+    fn test_dim(name: &str) -> airlayer::schema::models::Dimension {
+        serde_json::from_value(json!({ "name": name, "type": "string", "expr": name }))
+            .expect("dimension fixture")
+    }
+
+    /// A view declaring `primary` as `EntityType::Primary` keys and `foreign`
+    /// as `EntityType::Foreign` ones. Both named dimensions always exist.
+    fn view_with_entities(primary: &[&str], foreign: &[&str]) -> airlayer::schema::models::View {
+        let entity = |name: &str, kind: &str| json!({ "name": name, "type": kind, "key": name });
+        let entities: Vec<_> = primary
+            .iter()
+            .map(|n| entity(n, "primary"))
+            .chain(foreign.iter().map(|n| entity(n, "foreign")))
+            .collect();
+        serde_json::from_value(json!({
+            "name": "sales_daily",
+            "dimensions": [
+                { "name": "sales_day_key", "type": "string", "expr": "sales_day_key" },
+                { "name": "restaurant_id", "type": "string", "expr": "restaurant_id" },
+            ],
+            "entities": entities,
+        }))
+        .expect("view fixture")
+    }
+
+    /// The key lists `prune_dims_for_explain` extracts before its `retain`:
+    /// `(primary/row keys, foreign keys)`.
+    fn row_key_facts(view: &airlayer::schema::models::View) -> (Vec<String>, Vec<String>) {
+        (
+            view.primary_key_dimensions()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            foreign_key_dimensions(view),
+        )
+    }
+
+    #[test]
+    fn a_declared_foreign_key_survives_pruning() {
+        // restaurant_id is a join key and a legitimate grouping dimension.
+        // Dropping it is why explain can never decompose a chain-level
+        // anomaly by store — the most useful decomposition on offer.
+        let view = view_with_entities(&["sales_day_key"], &["restaurant_id"]);
+        let (row_keys, fks) = row_key_facts(&view);
+        assert!(!is_row_key_dim(&row_keys, &fks, &test_dim("restaurant_id")));
+        assert!(is_row_key_dim(&row_keys, &fks, &test_dim("sales_day_key")));
+    }
+
+    #[test]
+    fn a_view_declaring_only_foreign_entities_still_prunes_its_row_keys() {
+        // The regression the per-dimension fallback exists for: a fact view
+        // that declares only its foreign entities has entities_declared == true
+        // and primary_key_dimensions() == [], so an all-or-nothing rule would
+        // return sales_day_key as a split candidate with cardinality equal to
+        // the row count. The suffix fallback must still catch it, while the
+        // declared foreign key restaurant_id stays a legitimate grouping dim.
+        let view = view_with_entities(&[], &["restaurant_id"]);
+        let (row_keys, fks) = row_key_facts(&view);
+        assert!(
+            is_row_key_dim(&row_keys, &fks, &test_dim("sales_day_key")),
+            "a row key must be pruned even when the view declares only foreign entities"
+        );
+        assert!(
+            !is_row_key_dim(&row_keys, &fks, &test_dim("restaurant_id")),
+            "a declared foreign key is a split candidate, not a row key"
+        );
+    }
+
+    #[test]
+    fn a_keyless_foreign_entity_still_counts_as_a_split_candidate() {
+        // A foreign entity written as just `- name: restaurant_id` / `type:
+        // foreign`, no explicit `key:`. `get_keys()` is empty, so without the
+        // name fallback restaurant_id would fall to has_key_suffix and be
+        // pruned — over-pruning a legitimate split candidate.
+        let view: airlayer::schema::models::View = serde_json::from_value(json!({
+            "name": "sales_daily",
+            "dimensions": [
+                { "name": "sales_day_key", "type": "string", "expr": "sales_day_key" },
+                { "name": "restaurant_id", "type": "string", "expr": "restaurant_id" },
+            ],
+            "entities": [{ "name": "restaurant_id", "type": "foreign" }],
+        }))
+        .expect("view fixture");
+        let (row_keys, fks) = row_key_facts(&view);
+        assert_eq!(fks, vec!["restaurant_id".to_string()]);
+        assert!(!is_row_key_dim(&row_keys, &fks, &test_dim("restaurant_id")));
+        assert!(is_row_key_dim(&row_keys, &fks, &test_dim("sales_day_key")));
+    }
+
+    #[test]
+    fn foreign_keys_are_deduped_across_entities() {
+        // The same key named by two foreign entities must appear once.
+        let view: airlayer::schema::models::View = serde_json::from_value(json!({
+            "name": "sales_daily",
+            "dimensions": [{ "name": "restaurant_id", "type": "string", "expr": "restaurant_id" }],
+            "entities": [
+                { "name": "a", "type": "foreign", "key": "restaurant_id" },
+                { "name": "b", "type": "foreign", "key": "restaurant_id" },
+            ],
+        }))
+        .expect("view fixture");
+        assert_eq!(
+            foreign_key_dimensions(&view),
+            vec!["restaurant_id".to_string()]
+        );
+    }
+
+    #[test]
+    fn an_unmodelled_view_falls_back_to_the_suffix_rule() {
+        // A view with no `entities:` yields an empty primary_key_dimensions(),
+        // so a declaration-only rule would prune nothing and return
+        // sales_day_key as a split candidate. Today's heuristic is the right
+        // answer there.
+        let view = view_with_entities(&[], &[]);
+        let (row_keys, fks) = row_key_facts(&view);
+        assert!(is_row_key_dim(&row_keys, &fks, &test_dim("sales_day_key")));
+        assert!(is_row_key_dim(&row_keys, &fks, &test_dim("restaurant_id")));
+        assert!(!is_row_key_dim(&row_keys, &fks, &test_dim("department")));
+    }
+
+    /// `primary_key: true` on the dimension outranks the entity declaration —
+    /// a view can mark a row key without modelling an entity for it.
+    #[test]
+    fn an_explicit_primary_key_flag_is_a_row_key() {
+        let view = view_with_entities(&["sales_day_key"], &["restaurant_id"]);
+        let (row_keys, fks) = row_key_facts(&view);
+        let mut flagged = test_dim("restaurant_id");
+        flagged.primary_key = Some(true);
+        assert!(is_row_key_dim(&row_keys, &fks, &flagged));
     }
 
     #[test]

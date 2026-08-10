@@ -115,30 +115,144 @@ pub(crate) fn fit_is_sane(train: &TrainingWindow<'_>, lower: f64) -> bool {
     !measured.all(|v| v >= 0.0)
 }
 
-/// Require the observation to breach what its own seasonal phase has actually
-/// done, not merely what the model predicted.
+/// The phase's observed range, with a *minority* of contaminated samples pulled
+/// back to the robust bulk before the range is taken.
 ///
-/// `index` is the bucket's absolute position in the full series. Returns `true`
-/// when the flag should stand.
-pub(crate) fn breaches_empirical_band(
-    train: &TrainingWindow<'_>,
-    index: usize,
-    observed: f64,
-) -> bool {
-    let values = train.phase_values(index);
-    if values.len() < MIN_PHASE_SAMPLES {
-        return true; // not enough of this phase to have an opinion
-    }
+/// A raw min/max has a breakdown point of zero: one holiday, one outage, one
+/// bad backfill sets an edge forever, and because this gate is an AND on an
+/// already-flagged bucket the failure is silent — the phase simply stops
+/// firing on that side. Winsorizing at the same `WINSOR_MADS` the fit uses
+/// bounds the damage a few contaminants can do, and on a clean phase nothing
+/// clamps so the envelope is exactly the raw range.
+///
+/// The clamp is **count-aware**, and that is what keeps it a safe subtraction.
+/// A MAD is robust only to a minority, but a *proportion* threshold can't tell
+/// "two contaminants" from "two members of a mode" — same count — and a monthly
+/// promo on a weekly phase contributes ≈ N/4.33 samples, forever under any
+/// N/4-style cutoff. So a side is pulled in only when a **single** isolated
+/// extreme sits beyond it: the chain-wide-collapse-on-one-date shape this gate
+/// actually targets. Two or more samples beyond the clamp are a genuine second
+/// mode and the raw edge stands — winsorizing a real mode away would make the
+/// next legitimate reading in it breach, *fabricating* a flag, the one thing
+/// [the module invariant](self) forbids. Two costs, both accepted: two
+/// simultaneous contaminants on the same phase no longer clean up, and a mode
+/// with exactly *one* representative in the window so far (a quarterly promo on
+/// an 8–13-sample weekly phase) is still winsorized, so its second occurrence
+/// can fabricate one flag. Both are inherent to a count rule — only a
+/// gap/shape test escapes them — and are rarer than the single-date collapse
+/// this targets; erring toward the raw edge errs toward not fabricating.
+fn phase_envelope(values: &[f64]) -> (f64, f64) {
     let (min, max) = values
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
             (lo.min(v), hi.max(v))
         });
+    let spread = WINSOR_MADS * scaled_mad(values);
+    // `!(spread > 0.0)` also catches NaN. A non-positive spread gives the
+    // clamp nothing to work with and would collapse the envelope onto the
+    // median — and a zero MAD does NOT imply a constant phase, only that a
+    // majority share one value. Fall back to the raw range there.
+    if !(spread > 0.0) {
+        return (min, max);
+    }
+    let center = median(values);
+    let (lo, hi) = (center - spread, center + spread);
+    let below = values.iter().filter(|&&v| v < lo).count();
+    let above = values.iter().filter(|&&v| v > hi).count();
+    // Exactly one sample beyond a side is a contaminant to pull in; two or more
+    // are a mode to leave alone.
+    let new_min = if below == 1 { min.max(lo) } else { min };
+    let new_max = if above == 1 { max.min(hi) } else { max };
+    (new_min, new_max)
+}
+
+/// What the empirical band concluded, and by how much.
+///
+/// `headroom` is what severity is derived from — see
+/// [`crate::detect::severity_from_headroom`]. When present it is a *fraction*,
+/// not a percentage: 0.25 means the observation cleared the edge by a quarter
+/// of that edge's magnitude. `None` is the distinct "no opinion" case — a phase
+/// too thin to have an envelope at all — and must **not** be read as either a
+/// bare (near-zero) or an unbounded breach: absence of evidence is not maximum
+/// severity. `Some(f64::INFINITY)`, by contrast, is a *real* unbounded breach
+/// (a breach past an identically-zero phase) and does rank highest.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BandVerdict {
+    pub breached: bool,
+    pub headroom: Option<f64>,
+}
+
+impl BandVerdict {
+    fn stands(headroom: Option<f64>) -> Self {
+        Self {
+            breached: true,
+            headroom,
+        }
+    }
+
+    fn suppressed() -> Self {
+        Self {
+            breached: false,
+            headroom: Some(0.0),
+        }
+    }
+}
+
+/// Excess past an edge, relative to the first denominator with any magnitude.
+///
+/// The cascade exists because the natural denominator can legitimately be
+/// zero: a near-idle segment's floor sits at 0, and dividing by it reports
+/// every breach as unbounded. `|edge|` -> `|center|` -> `spread`, and if all
+/// three are zero the phase is identically zero, where any positive excess
+/// really is unbounded.
+fn relative_excess(excess: f64, edge: f64, center: f64, spread: f64) -> f64 {
+    for denom in [edge.abs(), center.abs(), spread] {
+        if denom > f64::EPSILON {
+            return excess / denom;
+        }
+    }
+    f64::INFINITY
+}
+
+/// Require the observation to breach what its own seasonal phase has actually
+/// done, not merely what the model predicted.
+///
+/// `index` is the bucket's absolute position in the full series.
+pub(crate) fn breaches_empirical_band(
+    train: &TrainingWindow<'_>,
+    index: usize,
+    observed: f64,
+) -> BandVerdict {
+    let values = train.phase_values(index);
+    if values.len() < MIN_PHASE_SAMPLES {
+        // Not enough of this phase to have an opinion. No evidence means no
+        // suppression, so the flag still stands — but there is no envelope to
+        // measure headroom against, and `None` says exactly that. Reporting
+        // `INFINITY` here would file every anomaly on a young series (a monthly
+        // monitor has ~2 samples per phase for its first three years) at the
+        // highest severity, turning absence of evidence into maximum severity.
+        return BandVerdict::stands(None);
+    }
+    let (min, max) = phase_envelope(&values);
     // A zero MAD (a phase that has never varied) leaves the margin at zero, so
     // the test degrades to the bare envelope — which is the right answer there:
     // any departure from a constant is a real departure.
-    let margin = ENVELOPE_MARGIN_MADS * scaled_mad(&values);
-    observed < min - margin || observed > max + margin
+    let spread = scaled_mad(&values);
+    let margin = ENVELOPE_MARGIN_MADS * spread;
+    let center = median(&values);
+    let (floor, ceil) = (min - margin, max + margin);
+    if observed < floor {
+        BandVerdict::stands(Some(relative_excess(
+            floor - observed,
+            floor,
+            center,
+            spread,
+        )))
+    } else if observed > ceil {
+        BandVerdict::stands(Some(relative_excess(observed - ceil, ceil, center, spread)))
+    } else {
+        BandVerdict::suppressed()
+    }
 }
 
 /// The values MSTL actually fits on: per seasonal phase, imputed buckets take
@@ -157,8 +271,14 @@ pub(crate) fn breaches_empirical_band(
 ///   store's baseline for weeks afterwards, because a weekly seasonal term has
 ///   nowhere to put an annual event.
 ///
-/// Downstream, [`breaches_empirical_band`] reads the *raw* observations, never
-/// these cleaned values, so a tighter fit cannot widen what the gate accepts.
+/// Downstream, [`breaches_empirical_band`] winsorizes the phase's own
+/// observations independently of this fit — it never reads the fitted values —
+/// so fit contamination cannot feed back into the gate that exists to check
+/// the fit. Note what that does *not* say: since 2026-08 the band gate is no
+/// longer a pure subtraction relative to its own previous behaviour, because
+/// pulling a contaminated edge back admits flags a raw envelope suppressed.
+/// That is the point of it. The module invariant is unchanged — the gate still
+/// only ever removes buckets the detector already flagged.
 pub(crate) fn robust_training_values(
     train: &[Observation],
     seasonal_periods: &[usize],
@@ -299,11 +419,11 @@ mod tests {
         // 1.2% above the highest value on record: the series re-testing its
         // own range, and the case no z-cutoff can separate.
         assert!(
-            !breaches_empirical_band(&window, next, 6815.0),
+            !breaches_empirical_band(&window, next, 6815.0).breached,
             "a bare overshoot of the envelope must not stand"
         );
         // Far below anything the phase has done.
-        assert!(breaches_empirical_band(&window, next, 2100.0));
+        assert!(breaches_empirical_band(&window, next, 2100.0).breached);
     }
 
     #[test]
@@ -317,12 +437,12 @@ mod tests {
         ]);
         let window = TrainingWindow::new(&series, &[2]);
         // Index 10 is the high phase (10 % 2 == 0): 500 is a collapse there...
-        assert!(breaches_empirical_band(&window, 10, 500.0));
+        assert!(breaches_empirical_band(&window, 10, 500.0).breached);
         // ...but on the low phase (index 11) it is an equally clear spike.
-        assert!(breaches_empirical_band(&window, 11, 500.0));
+        assert!(breaches_empirical_band(&window, 11, 500.0).breached);
         // And each phase's own normal level stands unflagged.
-        assert!(!breaches_empirical_band(&window, 10, 895.0));
-        assert!(!breaches_empirical_band(&window, 11, 108.0));
+        assert!(!breaches_empirical_band(&window, 10, 895.0).breached);
+        assert!(!breaches_empirical_band(&window, 11, 108.0).breached);
     }
 
     #[test]
@@ -330,7 +450,7 @@ mod tests {
         let series = measured(&[500.0, 520.0]);
         let window = TrainingWindow::new(&series, &[1]);
         assert!(
-            breaches_empirical_band(&window, 2, 505.0),
+            breaches_empirical_band(&window, 2, 505.0).breached,
             "two samples are not an envelope; the flag must pass through"
         );
     }
@@ -343,7 +463,7 @@ mod tests {
         series[2] = Observation::filled(series[2].timestamp);
         let window = TrainingWindow::new(&series, &[1]);
         assert!(
-            breaches_empirical_band(&window, series.len(), 489.0),
+            breaches_empirical_band(&window, series.len(), 489.0).breached,
             "a near-zero reading must still breach a phase whose real floor is ~2400"
         );
     }
@@ -418,6 +538,157 @@ mod tests {
         let series = measured(&[100.0, 100.0, 100.0, 100.0, 5000.0]);
         let values = robust_training_values(&series, &[1]);
         assert_eq!(values[4], 5000.0);
+    }
+
+    #[test]
+    fn one_contaminated_sample_cannot_disable_a_phase() {
+        // Nine ordinary Thursdays and one holiday collapse — the shape that
+        // put chain labor cost's Thursday floor at 18.30 and its effective
+        // floor (after the margin) at -445, where no drop of any size fires.
+        let values = vec![
+            17_200.0, 17_400.0, 17_100.0, 17_600.0, 17_300.0, 17_500.0, 17_250.0, 17_350.0,
+            17_450.0, 18.30,
+        ];
+        let (floor, _) = phase_envelope(&values);
+        assert!(
+            floor > 16_000.0,
+            "floor collapsed onto the holiday: {floor}"
+        );
+    }
+
+    #[test]
+    fn a_clean_phase_keeps_its_raw_envelope() {
+        // Nothing clamps, so the envelope must be byte-identical to the
+        // pre-change raw range.
+        let values = vec![100.0, 104.0, 96.0, 102.0, 98.0, 101.0, 99.0];
+        assert_eq!(phase_envelope(&values), (96.0, 104.0));
+    }
+
+    #[test]
+    fn a_zero_mad_phase_falls_back_to_the_raw_range() {
+        // A majority sharing one value gives a zero MAD while the range is
+        // wide. Clamping at a zero spread would collapse the envelope onto the
+        // median and fire on any departure at all.
+        let values = vec![50.0, 50.0, 50.0, 50.0, 10.0, 90.0];
+        assert_eq!(scaled_mad(&values), 0.0);
+        assert_eq!(phase_envelope(&values), (10.0, 90.0));
+    }
+
+    #[test]
+    fn a_legitimate_second_mode_is_not_winsorized_away() {
+        // A monthly promo Saturday: five ordinary Saturdays and a genuine high
+        // mode of three. An unconditional MAD clamp pulls the whole high mode
+        // in (ceiling ~120), and the next real promo Saturday at ~300 breaches
+        // it — a fabricated flag. The count-aware clamp leaves the raw ceiling
+        // standing because three of eight is a mode, not a contaminant.
+        let values = vec![98.0, 99.0, 100.0, 101.0, 102.0, 295.0, 300.0, 305.0];
+        let (_, ceil) = phase_envelope(&values);
+        assert!(
+            ceil >= 305.0,
+            "the high mode was clamped away: ceiling {ceil}"
+        );
+    }
+
+    #[test]
+    fn a_promo_saturday_does_not_breach_its_own_high_mode() {
+        // The failure the count-aware clamp exists to prevent, end to end: a
+        // phase with a real high mode must not fire on the next reading that
+        // lands in that mode.
+        let series = measured(&[98.0, 99.0, 100.0, 101.0, 102.0, 295.0, 300.0, 305.0]);
+        let window = TrainingWindow::new(&series, &[1]);
+        assert!(
+            !breaches_empirical_band(&window, series.len(), 300.0).breached,
+            "a legitimate promo Saturday must not read as an anomaly"
+        );
+    }
+
+    #[test]
+    fn a_two_of_eight_mode_is_not_winsorized_away() {
+        // The honest monthly density a proportion cutoff missed: two promo
+        // Saturdays in eight. `N/4 = 2` would have clamped them; requiring a
+        // lone extreme does not.
+        let values = vec![98.0, 99.0, 100.0, 101.0, 102.0, 103.0, 300.0, 305.0];
+        let (_, ceil) = phase_envelope(&values);
+        assert!(
+            ceil >= 305.0,
+            "a two-sample mode was clamped: ceiling {ceil}"
+        );
+    }
+
+    #[test]
+    fn a_three_of_twelve_mode_is_not_winsorized_away() {
+        // Three promos in twelve — `N/4 = 3` would have clamped this too.
+        let values = vec![
+            98.0, 99.0, 100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 300.0, 302.0, 305.0,
+        ];
+        let (_, ceil) = phase_envelope(&values);
+        assert!(
+            ceil >= 305.0,
+            "a three-sample mode was clamped: ceiling {ceil}"
+        );
+    }
+
+    #[test]
+    fn a_contaminated_floor_no_longer_swallows_a_real_drop() {
+        let series = measured(&[
+            17_200.0, 17_400.0, 17_100.0, 17_600.0, 17_300.0, 17_500.0, 17_250.0, 17_350.0,
+            17_450.0, 18.30,
+        ]);
+        let window = TrainingWindow::new(&series, &[1]);
+        let next = series.len();
+        // A 30% drop: inside the raw envelope (whose floor is 18.30), outside
+        // the robust one.
+        assert!(breaches_empirical_band(&window, next, 12_000.0).breached);
+        // An ordinary Thursday still stands unflagged.
+        assert!(!breaches_empirical_band(&window, next, 17_150.0).breached);
+    }
+
+    #[test]
+    fn headroom_is_the_excess_relative_to_the_breached_edge() {
+        let series = measured(&[1000.0, 1010.0, 990.0, 1005.0, 995.0]);
+        let window = TrainingWindow::new(&series, &[1]);
+        let next = series.len();
+        // Envelope is clean: (990, 1010), margin is small. A value of 1263 is
+        // ~25% past the ceiling.
+        let v = breaches_empirical_band(&window, next, 1263.0);
+        assert!(v.breached);
+        let headroom = v.headroom.expect("a measured breach has headroom");
+        assert!((headroom - 0.25).abs() < 0.02, "headroom was {headroom}");
+    }
+
+    #[test]
+    fn an_unbreached_band_reports_zero_headroom() {
+        let series = measured(&[1000.0, 1010.0, 990.0, 1005.0, 995.0]);
+        let window = TrainingWindow::new(&series, &[1]);
+        let v = breaches_empirical_band(&window, series.len(), 1002.0);
+        assert!(!v.breached);
+        assert_eq!(v.headroom, Some(0.0));
+    }
+
+    #[test]
+    fn a_thin_phase_passes_through_with_no_opinion() {
+        // Below MIN_PHASE_SAMPLES the gate has no opinion and must not
+        // suppress; with no envelope there is no headroom to measure either, so
+        // it reports `None` — distinct from a real unbounded breach — and
+        // severity must not read absence of evidence as maximum severity.
+        let series = measured(&[10.0, 12.0]);
+        let window = TrainingWindow::new(&series, &[1]);
+        let v = breaches_empirical_band(&window, series.len(), 3.0);
+        assert!(v.breached);
+        assert_eq!(v.headroom, None);
+    }
+
+    #[test]
+    fn headroom_falls_back_when_the_breached_edge_is_zero() {
+        // A near-idle phase whose floor sits at 0: dividing by the edge would
+        // report every breach as unbounded, so the cascade walks on to the
+        // next denominator that has any magnitude.
+        assert_eq!(relative_excess(10.0, 0.0, 40.0, 5.0), 0.25);
+        // Center zero too — the spread is the last thing left with a scale.
+        assert_eq!(relative_excess(10.0, 0.0, 0.0, 5.0), 2.0);
+        // An identically-zero phase: any positive excess really is unbounded,
+        // and saying so beats inventing a denominator.
+        assert!(relative_excess(10.0, 0.0, 0.0, 0.0).is_infinite());
     }
 
     #[test]

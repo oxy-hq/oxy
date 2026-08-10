@@ -32,18 +32,237 @@ use crate::service::{
     OpenEvents, ScanResult, SegmentKey, advance_period, resolve_local_midnight, retreat_period,
 };
 
+/// Share of a measure's *scored* segments that must fire in the same direction
+/// on the same bucket before the cluster is treated as one event.
+///
+/// Universality is the signal. No holiday list contains every cause of a
+/// chain-wide simultaneous drop — an outage, weather, a regional event — so
+/// detecting it from the shape of the scan generalises where a calendar does
+/// not. **Provisional**; calibrate against live scan volume.
+const COHORT_SHARE_MIN: f64 = 0.6;
+
+/// What makes two segments' anomalies the same moment: same measure, same
+/// grain, same bucket, same direction. Deliberately *not* the segment — that
+/// is what distinguishes a cohort from an `event_id` chain.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CohortKey {
+    measure: String,
+    time_dimension: String,
+    granularity: String,
+    period_start: DateTime<Utc>,
+    is_decrease: bool,
+}
+
+impl CohortKey {
+    fn of(entry: &MonitorEntry, anomaly: &DetectedAnomaly) -> Self {
+        Self {
+            measure: entry.measure.clone(),
+            time_dimension: entry.time_dimension.clone(),
+            granularity: entry.granularity.airlayer_str().to_string(),
+            period_start: anomaly.timestamp,
+            is_decrease: anomaly.residual < 0.0,
+        }
+    }
+
+    /// The (measure, time-dimension, grain) triple this cohort's share is
+    /// taken over — the bucket and direction split the numerator, never the
+    /// denominator.
+    fn scope(&self) -> (String, String, String) {
+        (
+            self.measure.clone(),
+            self.time_dimension.clone(),
+            self.granularity.clone(),
+        )
+    }
+
+    /// A stable cohort id derived from the key itself.
+    ///
+    /// Restatement windows (`lookback_period` / `freshness`) re-scan the same
+    /// trailing buckets for days, so the same cohort is re-planned on every
+    /// scan. A fresh `Uuid::new_v4()` each time would churn the id — any URL,
+    /// notification, or "3 of 21 stores" reference to it would break on the
+    /// next scan, and the workspace/cohort index would accumulate a new id per
+    /// bucket per scan. `new_v5` over the key makes a re-scan that still sees
+    /// the cohort converge on the same id, while a scan that no longer forms it
+    /// simply writes `None` (membership stays recomputed, only the *identity*
+    /// is stable). Direction is part of the key, so a drop and a spike on the
+    /// same bucket keep distinct ids.
+    fn cohort_id(&self) -> Uuid {
+        let name = format!(
+            "{}|{}|{}|{}|{}",
+            self.measure,
+            self.time_dimension,
+            self.granularity,
+            self.period_start.to_rfc3339(),
+            self.is_decrease,
+        );
+        Uuid::new_v5(&COHORT_NAMESPACE, name.as_bytes())
+    }
+}
+
+/// Namespace for deterministic cohort ids ([`CohortKey::cohort_id`]). A fixed,
+/// arbitrary UUID so `new_v5` output is stable across processes and releases.
+const COHORT_NAMESPACE: Uuid = Uuid::from_u128(0x6f78_795f_636f_686f_7274_5f6e_7331_0001);
+
+/// What one segment contributed to a candidate cohort: the shared id, this
+/// member's deviation from the cluster, and the calendar's name for the day.
+type CohortPlan = HashMap<(CohortKey, String), (Uuid, f64, Option<String>)>;
+
+/// Count the segments this scan actually *scored*, per measure triple.
+///
+/// A warming-up segment was never scored, so it cannot have failed to fire;
+/// counting it would drag the share down and hide the event.
+fn scored_segments(scan: &ScanResult) -> HashMap<(String, String, String), usize> {
+    let mut scored = HashMap::new();
+    for outcome in scan.outcomes.iter().filter(|o| !o.coverage.is_warming_up()) {
+        let e = &outcome.entry;
+        *scored
+            .entry((
+                e.measure.clone(),
+                e.time_dimension.clone(),
+                e.granularity.airlayer_str().to_string(),
+            ))
+            .or_default() += 1;
+    }
+    scored
+}
+
+/// A candidate cohort: the segments that fired on it, and the timezone its
+/// bucket has to be read in.
+#[derive(Default)]
+struct Candidate {
+    /// `(dim_key, observed/expected)` per member.
+    members: Vec<(String, f64)>,
+    /// Taken from any member — they share a measure and so a file-level
+    /// timezone. `None` only before the first member is pushed.
+    tz: Option<chrono_tz::Tz>,
+}
+
+/// Group this scan's anomalies by cohort key, carrying each member's
+/// ratio-to-expectation.
+///
+/// The ratio, not the raw residual: segments of very different sizes have to be
+/// comparable within one cluster. A zero or non-finite expectation carries no
+/// ratio and contributes `NaN`, which still counts toward the share but is
+/// skipped when the cluster's median is taken.
+fn fired_members(scan: &ScanResult) -> HashMap<CohortKey, Candidate> {
+    let mut fired: HashMap<CohortKey, Candidate> = HashMap::new();
+    for outcome in scan.outcomes.iter().filter(|o| !o.coverage.is_warming_up()) {
+        let dim_key = MonitorFilter::key_for(&outcome.entry.filters);
+        for a in &outcome.anomalies {
+            let ratio = if a.expected.abs() > f64::EPSILON {
+                a.observed / a.expected
+            } else {
+                f64::NAN
+            };
+            let candidate = fired.entry(CohortKey::of(&outcome.entry, a)).or_default();
+            candidate.members.push((dim_key.clone(), ratio));
+            candidate
+                .tz
+                .get_or_insert_with(|| outcome.entry.effective_timezone());
+        }
+    }
+    fired
+}
+
+/// The cluster's typical ratio — the median over members that have a finite
+/// one. `NaN` when none do, which suppresses every deviation in that cohort
+/// rather than inventing a centre.
+fn cluster_center(members: &[(String, f64)]) -> f64 {
+    let mut ratios: Vec<f64> = members
+        .iter()
+        .map(|(_, r)| *r)
+        .filter(|r| r.is_finite())
+        .collect();
+    if ratios.is_empty() {
+        return f64::NAN;
+    }
+    ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    ratios[ratios.len() / 2]
+}
+
+/// Assign cohort ids and per-member deviations for one scan.
+///
+/// Pure and database-free: a cohort is a property of the *whole* scan — the
+/// share of segments that fired — and `upsert_one` sees one row at a time,
+/// which is why this cannot live in `resolve_event_id`.
+fn plan_cohorts(scan: &ScanResult) -> CohortPlan {
+    let scored = scored_segments(scan);
+    let mut plan = CohortPlan::new();
+
+    for (key, candidate) in fired_members(scan) {
+        let members = candidate.members;
+        let denom = scored.get(&key.scope()).copied().unwrap_or(0);
+        // A single-segment measure has no cluster to be part of; requiring
+        // more than one member keeps a chain-only monitor out of the cohort
+        // machinery entirely.
+        if denom < 2 || members.len() < 2 {
+            continue;
+        }
+        if (members.len() as f64) / (denom as f64) < COHORT_SHARE_MIN {
+            continue;
+        }
+
+        // The bucket's *local* date, not its UTC date — a cohort on a US
+        // holiday starts at 07:00Z and would otherwise miss its own entry.
+        let tz = candidate.tz.unwrap_or(chrono_tz::UTC);
+        let local_date = key.period_start.with_timezone(&tz).date_naive();
+        let label = scan
+            .calendar
+            .as_ref()
+            .and_then(|c| c.get(&local_date))
+            .cloned();
+
+        let center = cluster_center(&members);
+        // Deterministic, not random: a restatement re-scan of this bucket must
+        // land on the same cohort id rather than mint a fresh one. See
+        // [`CohortKey::cohort_id`].
+        let cohort_id = key.cohort_id();
+        for (dim_key, ratio) in members {
+            // Deviation from the shared event: 1.0 is a typical member. It is
+            // `ratio / center`, so it is direction-relative — for a *drop*
+            // cohort the actionable outliers sit **below** 1.0 (fell further
+            // than the shared event explains), but for an *increase* cohort the
+            // outlier is the one **above** 1.0. A consumer ranking members must
+            // read `CohortKey.is_decrease` to know which tail to sort toward.
+            let deviation = if center.abs() > f64::EPSILON && ratio.is_finite() {
+                ratio / center
+            } else {
+                f64::NAN
+            };
+            plan.insert(
+                (key.clone(), dim_key),
+                (cohort_id, deviation, label.clone()),
+            );
+        }
+    }
+    plan
+}
+
 /// Upsert every flagged anomaly from a scan into the database. Returns the
 /// count of rows touched (inserted or updated). Failures are surfaced via
 /// the first `DbErr`; callers should log + retry on transient errors.
+///
+/// `cohorts` comes from [`plan_cohorts`] over the whole scan, so a row is
+/// written once already carrying its cohort rather than updated a second time.
 pub async fn upsert_anomalies(
     db: &DatabaseConnection,
     workspace_id: Uuid,
     scan: &ScanResult,
 ) -> Result<usize, DbErr> {
+    upsert_anomalies_with(db, workspace_id, scan, &plan_cohorts(scan)).await
+}
+
+async fn upsert_anomalies_with(
+    db: &DatabaseConnection,
+    workspace_id: Uuid,
+    scan: &ScanResult,
+    cohorts: &CohortPlan,
+) -> Result<usize, DbErr> {
     let mut touched = 0usize;
     for outcome in &scan.outcomes {
         for anomaly in &outcome.anomalies {
-            upsert_one(db, workspace_id, &outcome.entry, anomaly).await?;
+            upsert_one(db, workspace_id, &outcome.entry, anomaly, cohorts).await?;
             touched += 1;
         }
     }
@@ -66,7 +285,8 @@ pub async fn persist_scan(
     workspace_id: Uuid,
     scan: &ScanResult,
 ) -> Result<usize, DbErr> {
-    let touched = upsert_anomalies(db, workspace_id, scan).await?;
+    let cohorts = plan_cohorts(scan);
+    let touched = upsert_anomalies_with(db, workspace_id, scan, &cohorts).await?;
     if let Err(e) = upsert_coverage(db, workspace_id, scan).await {
         tracing::warn!(
             target: "metric_monitoring",
@@ -366,6 +586,7 @@ async fn upsert_one(
     workspace_id: Uuid,
     entry: &MonitorEntry,
     anomaly: &DetectedAnomaly,
+    cohorts: &CohortPlan,
 ) -> Result<(), DbErr> {
     let now = Utc::now();
     let period_start = anomaly.timestamp;
@@ -389,6 +610,15 @@ async fn upsert_one(
         .map(|p| p as i32);
 
     let is_decrease = anomaly.residual < 0.0;
+
+    // Recomputed from this scan rather than preserved: cohort membership is a
+    // property of the scan that observed it, not a historical fact the way
+    // `event_id` is. A re-scan that no longer sees a chain-wide drop should
+    // clear the cohort, not keep asserting one.
+    let cohort = cohorts.get(&(CohortKey::of(entry, anomaly), dim_key.clone()));
+    let cohort_id = cohort.map(|(id, _, _)| *id);
+    let cohort_deviation = cohort.and_then(|(_, d, _)| d.is_finite().then_some(*d));
+    let cohort_label = cohort.and_then(|(_, _, l)| l.clone());
 
     let existing = existing_row_query(workspace_id, entry, &dim_key, period_start)
         .one(db)
@@ -415,6 +645,9 @@ async fn upsert_one(
         active.dimension_key = Set(dim_key);
         active.filters = Set(filters_json);
         active.seasonal_period = Set(seasonal_period);
+        active.cohort_id = Set(cohort_id);
+        active.cohort_deviation = Set(cohort_deviation);
+        active.cohort_label = Set(cohort_label);
         // Keep an event already assigned: re-scoring a bucket must not split a
         // reported event in two. Only a row that never had one gets one now.
         if matches!(
@@ -469,6 +702,11 @@ async fn upsert_one(
             // Lazy: populated on first /explain call.
             explain_cache: Set(None),
             explain_cached_at: Set(None),
+            // Assigned by the scan-wide cohort pass, not per row — a cohort is
+            // a property of the whole scan and `upsert_one` sees one row.
+            cohort_id: Set(cohort_id),
+            cohort_deviation: Set(cohort_deviation),
+            cohort_label: Set(cohort_label),
             detected_at: Set(now.into()),
             updated_at: Set(now.into()),
         }
@@ -594,6 +832,241 @@ mod tests {
         }
     }
 
+    /// The bucket every cohort fixture fires on.
+    fn fired_at() -> DateTime<Utc> {
+        NaiveDate::from_ymd_opt(2026, 7, 4)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+    }
+
+    fn cohort_key() -> CohortKey {
+        CohortKey {
+            measure: "x.y".into(),
+            time_dimension: "x.t".into(),
+            granularity: "day".into(),
+            period_start: fired_at(),
+            is_decrease: true,
+        }
+    }
+
+    fn seg_key(i: usize) -> String {
+        MonitorFilter::key_for(&[MonitorFilter {
+            member: "x.store".into(),
+            values: vec![i.to_string()],
+        }])
+    }
+
+    /// One anomaly at [`fired_at`], `observed = 1000 * ratio` against an
+    /// expectation of 1000. Below 1.0 is a drop, above it a spike.
+    fn anomaly_at(ratio: f64) -> DetectedAnomaly {
+        let expected = 1000.0;
+        let observed = expected * ratio;
+        DetectedAnomaly {
+            timestamp: fired_at(),
+            observed,
+            expected,
+            lower: 900.0,
+            upper: 1100.0,
+            residual: observed - expected,
+            z_score: -4.0,
+            severity: Severity::High,
+        }
+    }
+
+    fn cohort_outcome(
+        i: usize,
+        anomalies: Vec<DetectedAnomaly>,
+        measured: usize,
+    ) -> crate::service::MonitorOutcome {
+        crate::service::MonitorOutcome {
+            entry: segment(Granularity::Day, "x.store", &i.to_string()),
+            anomalies,
+            coverage: crate::service::Coverage {
+                measured,
+                required: 56,
+            },
+        }
+    }
+
+    /// `scanned` scored segments of one measure; the first `fired` of them carry
+    /// one anomaly whose observed/expected ratio is `ratio(i)`.
+    fn scan_with_segments(
+        scanned: usize,
+        fired: usize,
+        ratio: impl Fn(usize) -> f64,
+    ) -> ScanResult {
+        ScanResult {
+            outcomes: (0..scanned)
+                .map(|i| {
+                    let anomalies = if i < fired {
+                        vec![anomaly_at(ratio(i))]
+                    } else {
+                        vec![]
+                    };
+                    cohort_outcome(i, anomalies, 100)
+                })
+                .collect(),
+            failures: vec![],
+            calendar: None,
+        }
+    }
+
+    /// As [`scan_with_segments`], plus `warming_up` segments that were never
+    /// scored — `measured` short of `required`.
+    fn scan_with_warming_up(scanned: usize, fired: usize, warming_up: usize) -> ScanResult {
+        let mut scan = scan_with_segments(scanned, fired, |_| 0.60);
+        scan.outcomes
+            .extend((scanned..scanned + warming_up).map(|i| cohort_outcome(i, vec![], 10)));
+        scan
+    }
+
+    #[test]
+    fn a_universal_simultaneous_drop_becomes_one_cohort() {
+        // 21 of 21 stores below their own expectation on the same bucket —
+        // the 07-04 shape, which filed 21 separate rows.
+        let scan = scan_with_segments(21, 21, |i| 0.60 + (i as f64) * 0.01);
+        let plan = plan_cohorts(&scan);
+        assert_eq!(plan.len(), 21, "every fired segment joins the cohort");
+        let ids: HashSet<_> = plan.values().map(|(id, _, _)| *id).collect();
+        assert_eq!(ids.len(), 1, "and they share one id");
+    }
+
+    #[test]
+    fn cohort_ids_are_stable_across_rescans() {
+        // Restatement re-scans the same buckets for days. Planning the same
+        // scan twice must yield the same cohort id per segment, or every
+        // re-scan churns the id and invalidates any reference to it.
+        let scan = scan_with_segments(21, 21, |i| 0.60 + (i as f64) * 0.01);
+        let first = plan_cohorts(&scan);
+        let second = plan_cohorts(&scan);
+        assert_eq!(first.len(), second.len());
+        for (k, (id, _, _)) in &first {
+            assert_eq!(
+                second.get(k).map(|(id, _, _)| id),
+                Some(id),
+                "cohort id changed across an identical re-scan"
+            );
+        }
+    }
+
+    #[test]
+    fn an_isolated_segment_gets_no_cohort() {
+        // One store of 21. That is a store problem, not an event.
+        let scan = scan_with_segments(21, 1, |_| 0.40);
+        assert!(plan_cohorts(&scan).is_empty());
+    }
+
+    #[test]
+    fn cohort_deviation_ranks_members_against_the_cluster() {
+        // Nineteen stores near the cluster median, two far below it — the
+        // rows worth acting on, currently buried among the identical ones.
+        let scan = scan_with_segments(21, 21, |i| match i {
+            0 => 0.18,
+            1 => 0.00,
+            _ => 0.72,
+        });
+        let plan = plan_cohorts(&scan);
+        let dev = |i: usize| plan.get(&(cohort_key(), seg_key(i))).unwrap().1;
+        assert!((dev(2) - 1.0).abs() < 1e-9, "a typical member sits at 1.0");
+        assert!(dev(0) < 0.3, "the 0.18 store ranks well below the cluster");
+        assert!(dev(1) < dev(0), "and the 0.00 store below that");
+    }
+
+    #[test]
+    fn a_warming_up_segment_is_not_counted_in_the_denominator() {
+        // A segment that was never scored cannot have failed to fire, so
+        // counting it would drag the share below the threshold and hide the
+        // event. `coverage.measured < coverage.required` marks these.
+        let scan = scan_with_warming_up(10, 10, 40);
+        assert!(!plan_cohorts(&scan).is_empty());
+    }
+
+    /// A segment that fell and one that rose are not the same event, however
+    /// simultaneous. Splitting on direction is what keeps a cohort meaning
+    /// "one thing happened to all of these".
+    #[test]
+    fn opposite_directions_are_not_one_cohort() {
+        let scan = scan_with_segments(10, 10, |i| if i < 5 { 0.60 } else { 1.40 });
+        let plan = plan_cohorts(&scan);
+        // Five of ten in each direction is below COHORT_SHARE_MIN, so neither
+        // half forms a cohort — which is the point: the shares are counted
+        // separately rather than summing to 10/10.
+        assert!(plan.is_empty(), "directions must not pool their share");
+    }
+
+    /// Ten segments in `tz`, all dropping on `bucket`, against `calendar`.
+    fn scan_on(bucket: DateTime<Utc>, tz: &str, calendar: &[(NaiveDate, &str)]) -> ScanResult {
+        let outcomes = (0..10)
+            .map(|i| {
+                let mut entry = segment(Granularity::Day, "x.store", &i.to_string());
+                entry.timezone = Some(tz.into());
+                let mut anomaly = anomaly_at(0.60);
+                anomaly.timestamp = bucket;
+                crate::service::MonitorOutcome {
+                    entry,
+                    anomalies: vec![anomaly],
+                    coverage: crate::service::Coverage {
+                        measured: 100,
+                        required: 56,
+                    },
+                }
+            })
+            .collect();
+        ScanResult {
+            outcomes,
+            failures: vec![],
+            calendar: Some(
+                calendar
+                    .iter()
+                    .map(|(d, l)| (*d, (*l).to_string()))
+                    .collect(),
+            ),
+        }
+    }
+
+    fn labels_of(scan: &ScanResult) -> HashSet<Option<String>> {
+        plan_cohorts(scan)
+            .into_values()
+            .map(|(_, _, label)| label)
+            .collect()
+    }
+
+    /// The calendar is keyed by the monitor's *local* calendar date. Looking
+    /// the bucket up by its UTC date is wrong for any timezone ahead of UTC —
+    /// Tokyo's 2025-07-04 opens at 2025-07-03T15:00Z — and the label would
+    /// silently land on the wrong day, or on no day at all.
+    #[test]
+    fn a_cohort_takes_its_label_from_the_local_calendar_date() {
+        let holiday = NaiveDate::from_ymd_opt(2025, 7, 4).unwrap();
+        let cal = [(holiday, "Independence Day")];
+
+        for (tz, on_the_day, the_day_after) in [
+            // Behind UTC: local midnight is the same UTC date.
+            (
+                "America/Los_Angeles",
+                "2025-07-04T07:00:00Z",
+                "2025-07-05T07:00:00Z",
+            ),
+            // Ahead of UTC: local midnight is the *previous* UTC date, which
+            // is what a UTC-keyed lookup gets wrong.
+            ("Asia/Tokyo", "2025-07-03T15:00:00Z", "2025-07-04T15:00:00Z"),
+        ] {
+            let parse = |s: &str| s.parse::<DateTime<Utc>>().unwrap();
+            assert_eq!(
+                labels_of(&scan_on(parse(on_the_day), tz, &cal)),
+                HashSet::from([Some("Independence Day".to_string())]),
+                "{tz} missed its own holiday"
+            );
+            assert_eq!(
+                labels_of(&scan_on(parse(the_day_after), tz, &cal)),
+                HashSet::from([None]),
+                "{tz} labelled the day after the holiday"
+            );
+        }
+    }
+
     /// A segment that errored has not vanished — the scan just can't speak to
     /// it. Deleting its coverage row on a warehouse hiccup flips a "Warming up"
     /// badge to "—" for a cycle, which reads as "this monitor is fine".
@@ -602,6 +1075,7 @@ mod tests {
         let scan = ScanResult {
             outcomes: vec![outcome(segment(Granularity::Day, "x.store", "1"))],
             failures: vec![failure(segment(Granularity::Day, "x.store", "2"))],
+            calendar: None,
         };
 
         let keep = prune_keep_lists(&scan);
@@ -623,6 +1097,7 @@ mod tests {
         let scan = ScanResult {
             outcomes: vec![],
             failures: vec![failure(entry_at(Granularity::Day, "UTC"))],
+            calendar: None,
         };
 
         assert!(

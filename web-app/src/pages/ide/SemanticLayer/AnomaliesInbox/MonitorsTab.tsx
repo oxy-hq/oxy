@@ -99,9 +99,12 @@ function relativeTime(isoDate: string): string {
 export default function MonitorsTab() {
   const { data: monitors = [], isLoading, error } = useMonitors();
   const { data: coverage = [] } = useMonitorCoverage();
-  // Fetch all anomalies (no status filter) to find the most recent
-  // detected_at per measure across all statuses.
-  const { data: anomalies = [] } = useMetricAnomalies(undefined);
+  // Fetch anomalies latest-first (no status filter), then take the max
+  // `period_start` (the anomaly's bucket date — what the column shows) per
+  // measure across all statuses. `order="recent"` is required: the Inbox's
+  // default severity ranking would let a measure whose recent anomalies are all
+  // `low` fall off the page and show a stale "last anomaly".
+  const { data: anomalies = [] } = useMetricAnomalies(undefined, "recent");
 
   const lastAnomalyByMeasure = useMemo(() => {
     const map = new Map<string, string>();
