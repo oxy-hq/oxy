@@ -25,7 +25,7 @@
 //! - Pgwire / DuckLake schema-compatibility issues
 //! - Token broker / SA mint behavior
 //!
-//! Run with `cargo nextest run -p oxy-cameras --test smoke_e2e`.
+//! Run with `cargo nextest run -p oxy-cameras --test integration -E 'test(smoke_e2e)'`.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header::AUTHORIZATION};

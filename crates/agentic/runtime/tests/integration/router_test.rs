@@ -2,7 +2,7 @@
 //!
 //! Mirrors the testcontainers setup in `integration_tests.rs` so the
 //! suite runs out of the box with `cargo nextest run -p agentic-runtime
-//! --test router_test`.
+//! --test integration -E 'test(router_test)'`.
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -485,7 +485,7 @@ impl DatabaseConnector for DuckDbConnector {
                 Err(e) => {
                     // TODO(test): the bundled DuckDB version aggregates every
                     // built-in complex type successfully, so this arm has no
-                    // realistic reproducer in `tests/duckdb_tests.rs`. If a
+                    // realistic reproducer in `tests/integration/duckdb_tests.rs`. If a
                     // future change here breaks the degraded-stats shape it
                     // won't be caught — revisit once an extension or UDT
                     // exists that genuinely bind-errors.

@@ -2,11 +2,11 @@
 //!
 //! Uses testcontainers to automatically spin up a Postgres instance — no manual
 //! setup needed. Just run:
-//!   cargo nextest run -p agentic-runtime --test integration_tests
+//!   cargo nextest run -p agentic-runtime --test integration -E 'test(integration_tests)'
 //!
 //! To use an external DB instead (e.g. oxy-postgres), set OXY_DATABASE_URL:
 //!   OXY_DATABASE_URL=postgresql://postgres:postgres@localhost:15432/oxy \
-//!     cargo nextest run -p agentic-runtime --test integration_tests
+//!     cargo nextest run -p agentic-runtime --test integration -E 'test(integration_tests)'
 
 use agentic_core::delegation::{TaskAssignment, TaskOutcome, TaskSpec};
 use agentic_core::transport::{CoordinatorTransport, WorkerMessage, WorkerTransport};

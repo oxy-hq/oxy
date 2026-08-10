@@ -7,7 +7,7 @@
 //! state (state advanced, events/queue never written).
 //!
 //! Run:
-//!   cargo nextest run -p agentic-pipeline --test commit_decision_test
+//!   cargo nextest run -p agentic-pipeline --test integration -E 'test(commit_decision_test)'
 
 use std::collections::HashMap;
 

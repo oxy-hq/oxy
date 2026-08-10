@@ -286,7 +286,7 @@ git commit -m "feat(agentic-pipeline): add MonitorScanPort trait and as_monitor_
 
 - [ ] **Step 1: Write a failing test for `validate_input` with `"monitor_scan"`**
 
-Add to the end of `crates/agentic/pipeline/tests/scheduler_test.rs` (or in a `#[cfg(test)]` block inside `scheduler.rs` if that file already contains tests):
+Add to the end of `crates/agentic/pipeline/tests/integration/scheduler_test.rs` (or in a `#[cfg(test)]` block inside `scheduler.rs` if that file already contains tests):
 
 ```rust
 #[test]

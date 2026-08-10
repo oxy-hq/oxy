@@ -87,10 +87,10 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 # Smoke tests:
-#   - tests/smoke_e2e.rs (Tier A, hermetic): testcontainers Postgres +
+#   - tests/integration/smoke_e2e.rs (Tier A, hermetic): testcontainers Postgres +
 #     tower::oneshot. Airhouse intentionally disabled — the 503 is the
 #     success signal. Runs in CI.
-#   - tests/smoke_real_airhouse.rs (Tier B, real Airhouse): provisions
+#   - tests/integration/smoke_real_airhouse.rs (Tier B, real Airhouse): provisions
 #     a fresh tenant, drives the same /control/* flow, verifies via
 #     pgwire SELECT. #[ignore] by default; run with --run-ignored only
 #     after exporting AIRHOUSE_BASE_URL / ADMIN_TOKEN / WIRE_HOST / WIRE_PORT.

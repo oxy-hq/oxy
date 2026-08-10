@@ -3,7 +3,7 @@
 //! one on each call and be a no-op for a run with no extension row.
 //!
 //! Run:
-//!   cargo nextest run -p agentic-pipeline --test airway_retry_count_test
+//!   cargo nextest run -p agentic-pipeline --test integration -E 'test(airway_retry_count_test)'
 
 use agentic_airway::extension::run_extension::increment_retry_count;
 use agentic_pipeline::AirwayMigrator;

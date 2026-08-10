@@ -9,7 +9,7 @@
 //!
 //! ```bash
 //! set -a; . internal_demo/.env; set +a   # AIRHOUSE_BASE_URL + friends
-//! cargo nextest run -p oxy-cameras --test smoke_real_airhouse \
+//! cargo nextest run -p oxy-cameras --test integration -E 'test(smoke_real_airhouse)' \
 //!     --run-ignored only --no-capture
 //! ```
 //!

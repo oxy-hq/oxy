@@ -9,7 +9,7 @@
 //! the workspace (YAML loads at drive time), so the `FakeWorkspace` stub
 //! below is never actually invoked.
 //!
-//!   cargo nextest run -p agentic-pipeline --test scheduler_test
+//!   cargo nextest run -p agentic-pipeline --test integration -E 'test(scheduler_test)'
 
 use std::sync::Arc;
 

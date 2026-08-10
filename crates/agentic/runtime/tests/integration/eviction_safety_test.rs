@@ -2,7 +2,7 @@
 //! accounting, and root eligibility for orphaned scoped work.
 //!
 //! Run:
-//!   cargo nextest run -p agentic-runtime --test eviction_safety_test
+//!   cargo nextest run -p agentic-runtime --test integration -E 'test(eviction_safety_test)'
 
 use agentic_core::delegation::TaskSpec;
 use agentic_runtime::crud;

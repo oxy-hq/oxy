@@ -114,5 +114,5 @@ pub async fn sweep_once(
     Ok(res.rows_affected)
 }
 
-// Tests live in `crates/cameras/tests/smoke_e2e.rs` so they can share
+// Tests live in `crates/cameras/tests/integration/smoke_e2e.rs` so they can share
 // the testcontainer + migration setup with the other Tier-A coverage.

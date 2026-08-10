@@ -4,7 +4,7 @@
 //! was reaped, so the caller falls back to a fresh clone-reseed.
 //!
 //! Run:
-//!   cargo nextest run -p agentic-runtime --test reset_task_to_queued_test
+//!   cargo nextest run -p agentic-runtime --test integration -E 'test(reset_task_to_queued_test)'
 
 use agentic_core::delegation::TaskSpec;
 use agentic_runtime::crud;

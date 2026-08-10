@@ -8,7 +8,7 @@
 //! Run with:
 //!
 //!   cargo nextest run -p agentic-connector --features clickhouse \
-//!     --test clickhouse_tests
+//!     --test integration -E 'test(clickhouse_tests)'
 
 #![cfg(feature = "clickhouse")]
 

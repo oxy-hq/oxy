@@ -12,7 +12,7 @@
 //!    feeds the hash.
 //!
 //! Run:
-//!   cargo nextest run -p agentic-pipeline --test automation_cache_resume_test
+//!   cargo nextest run -p agentic-pipeline --test integration -E 'test(automation_cache_resume_test)'
 
 use std::collections::HashMap;
 

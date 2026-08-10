@@ -5,7 +5,7 @@
 //!
 //! Uses testcontainers to automatically spin up Postgres. To use an external DB:
 //!   OXY_DATABASE_URL=postgresql://postgres:postgres@localhost:15432/oxy \
-//!     cargo nextest run -p agentic-pipeline --test integration_tests
+//!     cargo nextest run -p agentic-pipeline --test integration -E 'test(integration_tests)'
 
 use agentic_pipeline::{
     build_event_registry, get_analytics_extension, get_analytics_extensions, insert_run,

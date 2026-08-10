@@ -71,10 +71,13 @@ tests share one binary per crate. So scope down, always:
 | It still *compiles* | `cargo check --tests -p oxy-app`, or `just test-build` |
 | Everything | `just test` — CI's job, rarely yours |
 
-Integration tests live in **grouped** binaries (`tests/authz/`, `tests/slack/`,
-`tests/custom_apps/`, `tests/airhouse/`, `tests/platform/`), one per domain. Add a new
-case as a `mod` inside the matching group — **a new top-level `tests/*.rs` adds a whole
-new link to every full run.**
+Integration tests live in **grouped** binaries, and this is workspace-wide, not an
+`oxy-app` quirk: `oxy-app` has five by domain (`tests/authz/`, `tests/slack/`,
+`tests/custom_apps/`, `tests/airhouse/`, `tests/platform/`), and **every other crate with
+integration tests runs a single `tests/integration/` group**. Add a new case as a `mod`
+inside the matching group — **a new top-level `tests/*.rs` adds a whole new link to every
+full run.** A module is not a target, so run one with
+`--test <group> -E 'test(<module>)'`.
 
 ### Browser tests (UI features)
 

@@ -9,7 +9,7 @@
 //!    without dangling orchestrator channels.
 //!
 //! Run:
-//!   cargo nextest run -p agentic-pipeline --test automation_recovery_test
+//!   cargo nextest run -p agentic-pipeline --test integration -E 'test(automation_recovery_test)'
 
 use std::collections::HashMap;
 use std::sync::Arc;

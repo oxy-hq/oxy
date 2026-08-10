@@ -84,5 +84,5 @@ dependency to this crate.
 
 ## Testing
 
-- Integration tests: `OXY_DATABASE_URL=... cargo nextest run -p agentic-pipeline --test integration_tests` (8 tests)
+- Integration tests: `OXY_DATABASE_URL=... cargo nextest run -p agentic-pipeline --test integration -E 'test(integration_tests)'` (8 tests)
 - The workflow-recovery test provides its own `FakePlatform` impl of `PlatformContext` rather than constructing a real `WorkspaceManager` — the test deliberately exercises only the DB-driven executor arm.

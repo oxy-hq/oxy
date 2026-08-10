@@ -7,7 +7,7 @@
 //! Run with:
 //!
 //!   cargo nextest run -p agentic-connector --features postgres,airhouse \
-//!     --test postgres_tests
+//!     --test integration -E 'test(postgres_tests)'
 //!
 //! The tests require Docker (for testcontainers). They are skipped entirely
 //! when the `postgres` feature is not enabled.

@@ -7,7 +7,7 @@
 //! Run with:
 //!
 //!   cargo nextest run -p agentic-connector --features mysql \
-//!     --test mysql_tests
+//!     --test integration -E 'test(mysql_tests)'
 
 #![cfg(feature = "mysql")]
 

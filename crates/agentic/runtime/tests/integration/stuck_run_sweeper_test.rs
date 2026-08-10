@@ -14,7 +14,7 @@
 //! re-enqueue is safe.
 //!
 //! Run:
-//!   cargo nextest run -p agentic-runtime --test stuck_run_sweeper_test
+//!   cargo nextest run -p agentic-runtime --test integration -E 'test(stuck_run_sweeper_test)'
 
 use std::time::Duration;
 
