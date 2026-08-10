@@ -45,6 +45,7 @@ import { AdminLinkedList, AdminLinkedRow } from "../../components/AdminLinkedRow
 import { AdminSectionLabel } from "../../components/AdminSectionLabel";
 import { AdminStatusPill } from "../../components/AdminStatusPill";
 import { AssignToOrgDialog } from "./components/AssignToOrgDialog";
+import { PlatformAccessCard } from "./components/PlatformAccessCard";
 
 const ageDays = (iso: string) =>
   Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
@@ -373,6 +374,12 @@ export default function AdminUserDetail({
 
       <section id='user-section-settings' className='scroll-mt-4 space-y-3'>
         <AdminSectionLabel>Access</AdminSectionLabel>
+
+        {/* Above account status on purpose: staff standing is the consequential fact on
+            this page — it is reach into tenants this person is not a member of — where
+            deactivation is routine. Renders nothing without `manage_platform_grants`. */}
+        <PlatformAccessCard userEmail={detail.email} />
+
         <section className='space-y-4 rounded-lg border border-border/60 bg-card p-6'>
           <div className='space-y-1'>
             <h3 className='font-semibold text-sm'>Account status</h3>

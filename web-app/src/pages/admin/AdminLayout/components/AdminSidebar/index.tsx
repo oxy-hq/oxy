@@ -30,7 +30,7 @@ import ROUTES from "@/libs/utils/routes";
 import type { PlatformCapability } from "@/types/auth";
 import { Footer } from "./components/Footer";
 
-type AdminNavItem = {
+export type AdminNavItem = {
   to: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
@@ -47,7 +47,16 @@ type AdminNavItem = {
   group: "operations" | "tenants";
 };
 
-const ADMIN_NAV: AdminNavItem[] = [
+/**
+ * Every admin route and the standing it needs. **The one map** — `AdminLayout`'s
+ * route guard reads it too, via [`canReachAdminRoute`].
+ *
+ * It was not the one map: the layout carried its own hardcoded list of path prefixes a
+ * non-owner could reach, written before capabilities existed. Adding a capability to a
+ * nav item made it appear and then bounce, because the two lists disagreed — which is
+ * how `Staff access` shipped visible and unreachable for every Global Admin.
+ */
+export const ADMIN_NAV: AdminNavItem[] = [
   // Billing queue is strict Global Owner — "billing adjustment" per the
   // server-side route_layer in admin/mod.rs (OXY_OWNER env-var allow-list).
   {
@@ -96,9 +105,12 @@ const ADMIN_NAV: AdminNavItem[] = [
   // demotion of admin", strict Global Owner only.
   {
     to: ROUTES.ADMIN.APP_ADMINS,
-    label: "Global admins",
+    // Matches the page's own <h1>. "Global admins" predates App Operator and named
+    // one of the two roles the page administers, so the nav read as a different
+    // surface from the one it opened.
+    label: "Staff access",
     icon: ShieldCheck,
-    ownerOnly: true,
+    capability: "manage_platform_grants",
     group: "operations"
   },
   {
@@ -145,6 +157,84 @@ const ADMIN_NAV: AdminNavItem[] = [
   }
 ];
 
+/** The standing a nav rule is evaluated against. */
+type Standing = { isOwner: boolean; capabilities: PlatformCapability[] };
+
+/** The rule for ONE entry. Owner-only rooms are a boolean the capability model
+ * deliberately cannot reach; everything else names a capability; an entry with neither is
+ * open to any staff member who got through the console door. */
+function itemReachable(item: AdminNavItem, { isOwner, capabilities }: Standing): boolean {
+  if (item.ownerOnly) return isOwner;
+  // Root satisfies every capability, the same short-circuit `may_delegate` and
+  // `platform_grants` apply server-side. Reading only `capabilities` happened to work
+  // because `/user` sends the owner `Cap::ALL` — a server implementation detail this
+  // file should not be leaning on, and one that would blank the owner's own console the
+  // day that read fails and returns an empty list.
+  if (item.capability) return isOwner || capabilities.includes(item.capability);
+  return true;
+}
+
+/** An entry's path, without the query it carries for the directory's `?type=` tabs. */
+const navPath = (to: string) => to.split("?")[0];
+
+/**
+ * May this principal reach `pathname`? The route-guard half of the same map the sidebar
+ * filters on, so a visible item is always a reachable one.
+ *
+ * **Not the per-item rule.** Three entries — Organizations, Partners, Users — are all
+ * `/admin/tenants` with three *different* capabilities, so "longest match wins, then
+ * apply its rule" would bounce someone holding `manage_members` but not
+ * `manage_org_settings` off a page they can plainly use. The route is reachable if **any**
+ * entry pointing at it is. The sidebar still decides per item, which is why the two
+ * cannot share one rule verbatim: one asks "may I see this link", the other "may I be on
+ * this page".
+ *
+ * The query string has to come off before matching. With it left on, `i.to` was
+ * `/admin/tenants?type=orgs` and `location.pathname` is `/admin/tenants`, so no tenant
+ * entry could ever match, `match` was undefined, and the guard returned `true`
+ * unconditionally for the largest group in the map — a rule stated in a comment that the
+ * code did not apply, which is the defect this function was written to end.
+ *
+ * Unknown paths return `true`: this is a redirect for a stale bookmark, not an
+ * authorization control — the server decides, and guessing "deny" would bounce a route
+ * that simply is not in the nav (a detail page, say).
+ */
+export function canReachAdminRoute(pathname: string, standing: Standing): boolean {
+  const candidates = ADMIN_NAV.filter((i) => {
+    const p = navPath(i.to);
+    // Segment boundary, so `/admin/apps/<id>` inherits `/admin/apps` but a future
+    // `/admin/apps-registry` does not.
+    return pathname === p || pathname.startsWith(`${p}/`);
+  });
+  if (candidates.length === 0) return true;
+
+  // Most specific path wins; every entry AT that path gets a vote.
+  const longest = Math.max(...candidates.map((i) => navPath(i.to).length));
+  return candidates
+    .filter((i) => navPath(i.to).length === longest)
+    .some((i) => itemReachable(i, standing));
+}
+
+/**
+ * The first admin route this principal can actually use — where to send someone who
+ * landed somewhere they cannot be.
+ *
+ * `AdminLayout` bounced to Custom apps, which is itself gated on `manage_apps`. Every
+ * role shipping today holds it (Global Admin via `Cap::ALL - ManageBilling`, App Operator
+ * by definition), so the bounce lands. But the point of this branch is that a narrower
+ * preset is now cheap to add, and the first one that omits `manage_apps` — an audit-only
+ * or grants-only role — would `Navigate` to a page the guard immediately bounces it off
+ * again. A redirect cycle, not a bounce.
+ *
+ * The sidebar already needed this for its logo link, "so each role lands somewhere it can
+ * actually use". Same map, same rule, one definition.
+ */
+export function firstReachableAdminRoute(standing: Standing): string {
+  // `/` rather than a hardcoded admin route: a principal with nothing visible has no
+  // admin landing place, and the layout guard above sends them home anyway.
+  return ADMIN_NAV.find((i) => itemReachable(i, standing))?.to ?? "/";
+}
+
 export function AdminSidebar() {
   const location = useLocation();
   // The directory's active entity type, so the tenant nav shortcuts light up in
@@ -165,17 +255,12 @@ export function AdminSidebar() {
   // a boolean the capability model deliberately cannot reach (the Billing queue and the
   // grant table itself); everything else asks for a capability. An item with neither is
   // open to any staff member who got through the console door.
-  const visibleItems = ADMIN_NAV.filter((item) => {
-    if (item.ownerOnly) return isOwner;
-    if (item.capability) return capabilities.includes(item.capability);
-    return true;
-  });
+  // Per item, deliberately — `canReachAdminRoute` answers a different question (see its
+  // doc): on `/admin/tenants` any one of three capabilities admits you to the page, but
+  // each rail link still shows only to whoever holds its own.
+  const visibleItems = ADMIN_NAV.filter((item) => itemReachable(item, { isOwner, capabilities }));
 
-  // Logo link goes to the first visible admin route, so each role lands somewhere it
-  // can actually use: an App Operator on Custom apps, an owner on the billing queue.
-  // Falls back to `/` only when the user has no admin access at all — the layout-level
-  // guard should have already redirected them in that case.
-  const logoTarget = visibleItems[0]?.to ?? "/";
+  const logoTarget = firstReachableAdminRoute({ isOwner, capabilities });
 
   return (
     <ShadcnSidebar className='border-sidebar-border border-r bg-sidebar-background'>

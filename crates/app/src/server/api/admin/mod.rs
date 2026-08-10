@@ -14,6 +14,7 @@ pub mod assume;
 pub mod audit;
 pub mod billing;
 pub mod compiles;
+pub mod delegation;
 pub mod explorer;
 pub mod internal_jobs;
 pub mod metrics;
@@ -94,11 +95,18 @@ use crate::server::router::AppState;
 /// which is why an app publisher had the same authority as someone entitled to delete
 /// a tenant. `require(Action::Platform*)` generalises the pattern that was already here.
 ///
-/// Two gates remain owner-only rather than capability-gated, deliberately:
+/// One gate remains owner-only rather than capability-gated, deliberately:
 /// * `billing` — the Billing queue, `Ring::GlobalOwnerOnly`.
-/// * `app_admins` — the **grant table itself**. A capability that could edit the grant
-///   table would let its holder widen their own grant, and the ceiling would mean
-///   nothing. It stays a boolean the model cannot reach.
+///
+/// `app_admins` — the **grant table itself** — used to be the second, on the reasoning
+/// that "a capability that could edit the grant table would let its holder widen their
+/// own grant, and the ceiling would mean nothing". That objection is real and is
+/// answered by bounding the write rather than withholding the capability: `may_delegate`
+/// admits only a grant strictly weaker than the writer's own, so the one row a holder
+/// can never touch is their own, and only the owner can mint a peer. See
+/// `admin::delegation`. **The capability gate here is a door, not the control** — the
+/// handlers carry the row-level half (`actor_facts` once, then `refuse(may_delegate(..))`
+/// per row), exactly as scope works.
 ///
 /// **Scope is not enforced here** — see `platform_cap_guard`. A scoped operator passes
 /// these gates and the handler filters its rows.
@@ -140,8 +148,8 @@ pub(crate) fn router() -> Router<AppState> {
         .merge(routing::router().route_layer(cap(Action::PlatformOperate)))
         .merge(workspace_health::router().route_layer(cap(Action::PlatformOperate)))
         .merge(partners::router().route_layer(cap(Action::PlatformPartners)))
-        .merge(billing::router().route_layer(strict.clone()))
-        .merge(app_admins::router().route_layer(strict))
+        .merge(billing::router().route_layer(strict))
+        .merge(app_admins::router().route_layer(cap(Action::PlatformGrants)))
         .route_layer(middleware::from_fn(assume::block_admin_while_acting));
 
     // Assume-role itself lives at `/api/assume`, NOT here — see `assume::router`.
@@ -152,11 +160,17 @@ pub(crate) fn router() -> Router<AppState> {
 
 #[cfg(test)]
 mod tests {
-    //! Regression tests for the route-layer escalation pattern used by
-    //! `billing` and `app_admins`. These pin the property that even when
-    //! the outer permissive layer in `router::global` admits a Global
-    //! Admin (a non-Owner staff member), a route nested under
-    //! `route_layer(oxy_owner_guard_middleware)` still rejects with 403.
+    //! Regression tests for the route-layer escalation pattern used by `billing`.
+    //! These pin the property that even when the outer permissive layer in
+    //! `router::global` admits a Global Admin (a non-Owner staff member), a route
+    //! nested under `route_layer(oxy_owner_guard_middleware)` still rejects with 403.
+    //!
+    //! `app_admins` was the second such surface and is no longer: it is capability-gated
+    //! plus row-fenced (see `admin::delegation`). These tests build their own router, so
+    //! they cannot notice that change — which is exactly why the assertion that the real
+    //! mount matches lives in `crates/app/tests/app_scope_boundary.rs` as a source scan.
+    //! A fixture that mounts its own probe under `strict` proves the *middleware* works
+    //! and nothing whatsoever about what ships.
     //!
     //! The escalation does NOT touch the database — `oxy_owner_guard`
     //! consults only the `OXY_OWNER` env var — so we can pin the layering
@@ -211,15 +225,15 @@ mod tests {
         let billing = Router::new()
             .route("/billing/probe", get(|| async { StatusCode::OK }))
             .route_layer(strict.clone());
-        let app_admins = Router::new()
-            .route("/app-admins/probe", get(|| async { StatusCode::OK }))
-            .route_layer(strict);
-        // `partners` mounts WITHOUT the strict layer — a Global Admin must
-        // reach it (regression guard for the 403-on-partners bug).
+        // `partners` and `app-admins` mount WITHOUT the strict layer — a Global Admin
+        // must reach both. (Partners is the regression guard for the 403-on-partners
+        // bug; app-admins is capability-gated now, with the delegation bound doing the
+        // narrowing inside the handler rather than at the door.)
         let open = Router::new()
             .route("/feature-flags/probe", get(|| async { StatusCode::OK }))
-            .route("/partners/probe", get(|| async { StatusCode::OK }));
-        Router::new().merge(billing).merge(app_admins).merge(open)
+            .route("/partners/probe", get(|| async { StatusCode::OK }))
+            .route("/app-admins/probe", get(|| async { StatusCode::OK }));
+        Router::new().merge(billing).merge(open)
     }
 
     async fn request_as(router: Router, path: &str, user: Option<AuthenticatedUser>) -> StatusCode {
@@ -230,12 +244,10 @@ mod tests {
         router.oneshot(req).await.unwrap().status()
     }
 
-    /// A non-owner caller (the "Global Admin" case for these tests — the
-    /// app_admins DB check is bypassed because we mount only the inner
-    /// strict layer) gets 403 on billing and app-admins paths, but 200
-    /// on the non-escalated path. This pins the route_layer escalation.
+    /// A non-owner caller gets 403 on billing, but 200 on the non-escalated paths.
+    /// This pins the route_layer escalation itself.
     #[tokio::test]
-    async fn strict_layer_rejects_non_owner_on_billing_and_app_admins() {
+    async fn strict_layer_rejects_non_owner_on_billing() {
         let _g = EnvGuard::set("OXY_OWNER", "owner@example.com");
         let app = test_router();
 
@@ -248,8 +260,9 @@ mod tests {
         );
         assert_eq!(
             request_as(app.clone(), "/app-admins/probe", Some(admin.clone())).await,
-            StatusCode::FORBIDDEN,
-            "Global Admin must NOT reach app_admins through the strict route_layer"
+            StatusCode::OK,
+            "app_admins is capability-gated, not owner-strict: a Global Admin reaches \
+             the console and `may_delegate` decides which rows they may write"
         );
         assert_eq!(
             request_as(app.clone(), "/partners/probe", Some(admin.clone())).await,

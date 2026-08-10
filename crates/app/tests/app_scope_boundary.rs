@@ -711,3 +711,285 @@ fn the_capability_guard_refuses_on_unreadable_standing() {
          this test's blind spot, not a real change."
     );
 }
+
+/// The grant table is capability-gated, and every handler on it carries the row fence.
+///
+/// The capability gate alone is not the control: it answers "may you administer grants",
+/// which a bounded Global Admin passes, and says nothing about *which* rows. Losing the
+/// per-handler `may_delegate` call restores exactly the escalation the owner-only guard
+/// existed to prevent — one Global Admin re-scoping themselves to every tenant.
+///
+/// The unit tests in `admin/mod.rs` cannot see this. They build their own router and
+/// mount their own probe, so they prove the middleware works and nothing about what
+/// ships; that fixture asserted `app_admins` was owner-strict for one release after it
+/// stopped being mounted that way, and passed the whole time.
+#[test]
+fn the_grant_table_is_capability_gated_and_every_handler_is_row_fenced() {
+    let modrs = read("crates/app/src/server/api/admin/mod.rs");
+
+    let mount = modrs
+        .split("app_admins::router()")
+        .nth(1)
+        .expect("app_admins is no longer mounted in admin::router")
+        .split(')')
+        .next()
+        .unwrap_or_default();
+    assert!(
+        mount.contains("Action::PlatformGrants"),
+        "app_admins must mount under `cap(Action::PlatformGrants)`; found `{mount}`"
+    );
+
+    let src = read("crates/app/src/server/api/admin/app_admins.rs");
+    let body_of = |name: &str| -> &str {
+        src.split(&format!("pub async fn {name}("))
+            .nth(1)
+            .unwrap_or_else(|| panic!("`{name}` not found in app_admins"))
+            .split("\n}\n")
+            .next()
+            .unwrap_or_default()
+    };
+
+    // Per function, not file-wide: `app_admins.rs` has three handlers and a file-wide
+    // needle is satisfied by any one of them. That is the defect this suite has now
+    // found four times.
+    for name in ["create_app_admin", "delete_app_admin"] {
+        assert!(
+            body_of(name).contains("delegatable("),
+            "`{name}` writes the grant table without asking the delegation bound — a \
+             Global Admin can re-role or revoke a peer, or widen their own grant"
+        );
+        assert!(
+            body_of(name).contains("delegation::refuse"),
+            "`{name}` computes a verdict but never refuses on it"
+        );
+    }
+    // `delegatable` is a spelling; this is the assertion that it still routes to the
+    // model rather than having grown a local opinion about who out-ranks whom.
+    assert!(
+        src.split("fn delegatable(")
+            .nth(1)
+            .is_some_and(|b| b.contains("may_delegate(facts")),
+        "`delegatable` no longer defers to `oxy_authz::may_delegate` — the bound is now \
+         restated in the handler layer, which is the scatter this model ended"
+    );
+
+    // The upsert authorizes TWO pairs: the values being written, and the grant being
+    // overwritten. Checking only the first lets a Global Admin demote a peer by POSTing
+    // an admissible role over their row. Two call sites is the observable difference.
+    let create = body_of("create_app_admin");
+    assert!(
+        create.matches("delegation::refuse").count() >= 2,
+        "`create_app_admin` refuses only once — an upsert that replaces an existing \
+         grant must authorize the row it destroys as well as the one it writes"
+    );
+
+    // Revoke has no caller-supplied (role, scope), so reading the target row IS the
+    // check. A delete_by_id that never loads the row cannot have made one.
+    let delete = body_of("delete_app_admin");
+    assert!(
+        delete.find("find_by_id").is_some_and(|read_at| delete
+            .find("delete_by_id")
+            .is_some_and(|del_at| read_at < del_at)),
+        "`delete_app_admin` must read the target grant BEFORE deleting it — the row's \
+         own (role, scope) is the only thing there is to authorize against"
+    );
+
+    // Both writes are audited, in-transaction. A grant is the authority to reach other
+    // tenants; "who made this person staff" must not answer "check the logs".
+    for name in ["create_app_admin", "delete_app_admin"] {
+        assert!(
+            body_of(name).contains("audit::record_in_txn"),
+            "`{name}` does not record an in-transaction audit row — a best-effort or \
+             absent one means the grant can change with nothing recording it"
+        );
+    }
+}
+
+/// An unnameable stored role denies everyone EXCEPT the Global Owner.
+///
+/// `PlatformRole::from_str` returns `None` for a role this build cannot expand — the
+/// state a rollback past a role's introduction produces. The loader already drops such a
+/// grant; if the delegation path treated it as absent, or defaulted it to the weakest
+/// role, whoever out-ranks that default could revoke rows they must not touch.
+///
+/// The owner half is the one that shipped wrong.
+/// `match stored_standing(..) { Some(..) => may_delegate(..), None => Err(..) }` was the
+/// obvious spelling and it locked root out: the `None` arm returns before anything
+/// consults `is_global_owner`, so the short-circuit inside `may_delegate` is never
+/// reached. After a rollback past a role's introduction nobody — not even the owner —
+/// could revoke the affected grants, and the only remedy was hand-written SQL. The
+/// comment above `stored_standing` claimed those rows froze "for everyone but the
+/// owner", which is precisely the wrong half.
+#[test]
+fn an_unexpandable_stored_role_denies_everyone_but_the_owner() {
+    let src = read("crates/app/src/server/api/admin/app_admins.rs");
+    let body = src
+        .split("fn delegatable(")
+        .nth(1)
+        .expect("`delegatable` is gone — the owner short-circuit lived in it")
+        .split("\n}\n")
+        .next()
+        .unwrap_or_default();
+
+    let owner_arm = body
+        .find("None if facts.is_global_owner")
+        .expect("`delegatable` no longer lets the Global Owner through on an unnameable role");
+    let deny_arm = body
+        .find("None => Err(")
+        .expect("`delegatable` no longer denies a non-owner an unnameable role");
+    assert!(
+        owner_arm < deny_arm,
+        "the owner arm must precede the catch-all deny, or it is unreachable — which is \
+         the exact defect this test exists for"
+    );
+
+    // One decision function, used by every caller. Two copies is how the list came to
+    // disagree with the writes about whether a row was writable.
+    for caller in ["create_app_admin", "delete_app_admin", "list_app_admins"] {
+        let f = src
+            .split(&format!("pub async fn {caller}("))
+            .nth(1)
+            .unwrap_or_else(|| panic!("`{caller}` not found"))
+            .split("\n}\n")
+            .next()
+            .unwrap_or_default();
+        assert!(
+            f.contains("delegatable("),
+            "`{caller}` decides delegation without `delegatable`, so it does not inherit \
+             the owner short-circuit"
+        );
+    }
+}
+
+/// Both write paths authorize against a row they hold a lock on, and neither reaches for
+/// a second pool connection while holding it.
+///
+/// `create` closed this and `delete` did not, which is the worse half: a concurrent
+/// promotion between an unlocked read and the delete turns an authorized revoke of an
+/// `app_operator` into an unauthorized revoke of a `global_admin`. Reading the row IS
+/// the entire check for a revoke, so reading one the delete does not hold is not a check.
+#[test]
+fn both_grant_writes_lock_their_target_and_hold_one_connection() {
+    let src = read("crates/app/src/server/api/admin/app_admins.rs");
+    let body_of = |name: &str| -> &str {
+        src.split(&format!("pub async fn {name}("))
+            .nth(1)
+            .unwrap_or_else(|| panic!("`{name}` not found"))
+            .split("\n}\n")
+            .next()
+            .unwrap_or_default()
+    };
+
+    for name in ["create_app_admin", "delete_app_admin"] {
+        let body = body_of(name);
+        let begin = body
+            .find("db.begin()")
+            .unwrap_or_else(|| panic!("`{name}` no longer opens a transaction"));
+        let lock = body
+            .find("lock_exclusive()")
+            .unwrap_or_else(|| panic!("`{name}` reads the target grant without a row lock"));
+        assert!(
+            begin < lock,
+            "`{name}` locks before opening its transaction, so the lock is not held for \
+             the write — the read and the write must sit in one transaction"
+        );
+
+        // And the caller's OWN standing is loaded before any of it.
+        //
+        // `actor_facts` goes to `&db`, so calling it inside the transaction borrows a
+        // second pool connection while this request holds one plus a locked row. N
+        // concurrent revokes against an N-connection pool then wedge each other until
+        // the acquire timeout. `invalidate_admin_cache()` runs after every write here, so
+        // the TTL cache is cold exactly when concurrent writes are most likely — the
+        // miss is the common path, not the rare one.
+        //
+        // Pinned because nothing else can catch it: the decision is identical either
+        // way, so the regression produces no wrong answer, no failing assertion
+        // anywhere else in this suite, and no symptom at all until the pool saturates.
+        let facts = body
+            .find("actor_facts(")
+            .unwrap_or_else(|| panic!("`{name}` no longer loads the actor's standing"));
+        assert!(
+            facts < begin,
+            "`{name}` loads the actor's standing inside its transaction — that is an \
+             `&db` await holding `FOR UPDATE`, so it borrows a second pool connection \
+             while pinning a row"
+        );
+    }
+}
+
+/// A re-scope must be legible in the audit trail.
+///
+/// The `before` payload carried `{role, scope_all}` only, so `Orgs([acme])` →
+/// `Orgs([globex])` recorded an identical shape on both sides with no way to see what
+/// the grant used to reach. Re-scoping is the most likely edit this console sees — it is
+/// the one the change's own end-to-end verification performed.
+#[test]
+fn the_grant_audit_records_scope_on_both_sides() {
+    let src = read("crates/app/src/server/api/admin/app_admins.rs");
+    let body_of = |name: &str| -> &str {
+        src.split(&format!("pub async fn {name}("))
+            .nth(1)
+            .unwrap_or_else(|| panic!("`{name}` not found"))
+            .split("\n}\n")
+            .next()
+            .unwrap_or_default()
+    };
+
+    let create = body_of("create_app_admin");
+    let change = create
+        .split(".change(")
+        .nth(1)
+        .expect("`create_app_admin` no longer records a before/after");
+    // The quoted JSON key, not the bare identifier: the identifier also names the local
+    // bindings and the response field further down the function, which is how this
+    // counted five and proved nothing.
+    assert_eq!(
+        change.matches("\"scope_org_ids\":").count(),
+        2,
+        "`create_app_admin`'s audit entry must carry `scope_org_ids` on BOTH sides; a \
+         re-scope is invisible with it on only one"
+    );
+
+    let delete = body_of("delete_app_admin");
+    let deleted_change = delete
+        .split(".change(")
+        .nth(1)
+        .expect("`delete_app_admin` no longer records a before/after");
+    assert!(
+        deleted_change.contains("\"scope_org_ids\":"),
+        "`delete_app_admin`'s audit entry must record what the revoked grant reached"
+    );
+}
+
+/// A denial reaches the client with its reason.
+///
+/// `DelegationDenial::as_str` is documented as "carried out to the API so the console can
+/// say which bound was hit", contrasted against a plain forbidden that "sends the
+/// operator to ask someone why". A bare `StatusCode::FORBIDDEN` cannot keep that promise:
+/// the frontend reads `err.response.data.message` and rendered the axios default.
+#[test]
+fn a_delegation_denial_carries_its_reason_to_the_client() {
+    let src = read("crates/app/src/server/api/admin/delegation.rs");
+    assert!(
+        src.contains("impl axum::response::IntoResponse for Refusal"),
+        "`Refusal` no longer renders itself, so the denial cannot reach the client"
+    );
+    assert!(
+        src.contains("\"message\":"),
+        "the refusal body must carry `message` — the field the console's error handler \
+         already reads"
+    );
+    assert!(
+        src.contains("\"denial\":"),
+        "the refusal body must carry the stable `denial` id for clients that branch"
+    );
+    // The helper the docs used to name. Its absence is deliberate: it took a
+    // `&DatabaseConnection` and so could not run against the locked row inside a
+    // transaction, which is the check that matters.
+    assert!(
+        !src.contains("pub async fn deny_undelegatable"),
+        "`deny_undelegatable` is back — no correct handler can call it, and naming it in \
+         the docs sends the next author around the row lock"
+    );
+}

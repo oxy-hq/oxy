@@ -1,5 +1,5 @@
 import { Loader2, RefreshCw, UserPlus } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Card, CardContent } from "@/components/ui/shadcn/card";
@@ -14,6 +14,7 @@ import {
   SelectValue
 } from "@/components/ui/shadcn/select";
 import { ROLE_LABELS, useAppAdmins, useCreateAppAdmin } from "@/hooks/api/access/useAppAdmins";
+import type { DelegationBound } from "@/hooks/api/access/useDelegationBound";
 import { useDrainedAdminOrgs } from "@/hooks/api/adminTenants";
 import type { AppAdmin, PlatformRoleId } from "@/types/access";
 
@@ -48,21 +49,46 @@ const ROLE_BLURB: Record<PlatformRoleId, string> = {
  * at the row that was already saved. The type says what the prose below says: this
  * component does not reset itself.
  */
-export function GrantForm({ editing, onCancel }: { editing?: AppAdmin; onCancel: () => void }) {
+export function GrantForm({
+  editing,
+  onCancel,
+  bound
+}: {
+  editing?: AppAdmin;
+  onCancel: () => void;
+  /**
+   * What this operator may issue. Passed in rather than read here so the page and the
+   * form cannot disagree about it — the table disables rows from the same source.
+   */
+  bound: DelegationBound;
+}) {
   const create = useCreateAppAdmin();
   const { data: admins = [] } = useAppAdmins();
   const [email, setEmail] = useState(editing?.email ?? "");
   // App Operator is the default because it is the least privileged of the two. The API
   // defaults to Global Admin for compatibility with clients that send only an email;
   // a human standing in front of a picker should start at the narrow end.
-  const [role, setRole] = useState<PlatformRoleId>(editing?.role ?? "app_operator");
+  // Least privilege first, and never a role this operator cannot issue: defaulting to
+  // `app_operator` unconditionally would be right for a Global Admin and wrong for a
+  // future tier that cannot issue even that — `issuableRoles` is the authority.
+  const [role, setRole] = useState<PlatformRoleId>(
+    editing?.role ?? bound.issuableRoles[0] ?? "app_operator"
+  );
   const [bounded, setBounded] = useState(editing ? !editing.scope_all : false);
   const [orgIds, setOrgIds] = useState<string[]>(editing?.scope_org_ids ?? []);
 
   // Only fetched once the operator actually chooses to bound the grant — most grants
   // are unbounded, and this page shouldn't pull the org directory to render a form.
   // Drained: a picker capped at 50 silently cannot assign the 51st org.
-  const { orgs, isLoading, isDraining } = useDrainedAdminOrgs({ enabled: bounded });
+  const { orgs: allOrgs, isLoading, isDraining } = useDrainedAdminOrgs({ enabled: bounded });
+  // A bounded operator may only put orgs from their OWN scope inside a grant — the
+  // server refuses anything wider (`Scope::contains`). Offering the full directory here
+  // would be offering a 403, and would also leak which tenants exist to someone whose
+  // grant deliberately does not reach them.
+  const orgs = useMemo(
+    () => (bound.scopeAll ? allOrgs : allOrgs.filter((o) => bound.scopeOrgIds.includes(o.id))),
+    [allOrgs, bound.scopeAll, bound.scopeOrgIds]
+  );
   // See AssignToOrgDialog: a scope picker that reports "No organizations found" mid-drain
   // is telling an operator the org they want does not exist.
   const orgsLoading = isLoading || isDraining;
@@ -132,14 +158,31 @@ export function GrantForm({ editing, onCancel }: { editing?: AppAdmin; onCancel:
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='app_operator'>{ROLE_LABELS.app_operator}</SelectItem>
-                  <SelectItem value='global_admin'>{ROLE_LABELS.global_admin}</SelectItem>
+                  {/* Only what this operator may issue. A Global Admin offered "Global
+                      Admin" here would be offered a 403 — the delegation bound admits a
+                      grant strictly weaker than their own, never an equal one. Rendering
+                      the option disabled was the alternative; a role you can never pick,
+                      on a form whose whole job is picking one, is worse than its absence
+                      once the note below says why. */}
+                  {bound.issuableRoles.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {ROLE_LABELS[r]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <p className='text-muted-foreground text-xs'>{ROLE_BLURB[role]}</p>
+
+          {/* The absence above, explained in the place it bites. Owners see nothing —
+              they can issue every role, so there is no gap to account for. */}
+          {!bound.issuableRoles.includes("global_admin") && (
+            <p className='text-muted-foreground text-xs' data-testid='admin-app-admins-role-note'>
+              Only a Global Owner can grant Global Admin.
+            </p>
+          )}
 
           {replacing && (
             <div
@@ -177,7 +220,11 @@ export function GrantForm({ editing, onCancel }: { editing?: AppAdmin; onCancel:
                 {orgsLoading ? (
                   <p className='p-2 text-muted-foreground text-xs'>Loading organizations…</p>
                 ) : orgs.length === 0 ? (
-                  <p className='p-2 text-muted-foreground text-xs'>No organizations found.</p>
+                  <p className='p-2 text-muted-foreground text-xs'>
+                    {bound.scopeAll
+                      ? "No organizations found."
+                      : "Your own grant reaches no organizations, so there is nothing to bound this one to."}
+                  </p>
                 ) : (
                   orgs.map((org) => (
                     // `Checkbox` renders a button, not an input, so the label has to be

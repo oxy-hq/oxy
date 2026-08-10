@@ -124,7 +124,8 @@ export type PlatformCapability =
   | "manage_org_settings"
   | "view_tenants"
   | "manage_partners"
-  | "operate_platform";
+  | "operate_platform"
+  | "manage_platform_grants";
 
 export interface MessageResponse {
   message: string;

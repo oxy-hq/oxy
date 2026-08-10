@@ -33,7 +33,7 @@ the fact is missing from `PrincipalFacts`, not that the crate needs a connection
 
 ## Vocabulary
 
-- **`Action`** (33) — the closed vocabulary of things a caller can do. This is what call
+- **`Action`** (34) — the closed vocabulary of things a caller can do. This is what call
   sites name.
 - **`Ring`** — the authority level that gates an action. **Private on purpose:** a
   ring is how the model is *stated*, not a menu callers pick from. Public, it would let a
@@ -41,9 +41,10 @@ the fact is missing from `PrincipalFacts`, not that the crate needs a connection
 - **`PrincipalFacts`** — the whole input surface. Empty = denied everything (fail closed).
 - **`Resource`** — what's being acted on: `org_id`, `kind`, optional `owner`, optional
   acting `partner`.
-- **`Cap`** (11) — a capability. **One vocabulary, two tiers:** the first eight are the
+- **`Cap`** (12) — a capability. **One vocabulary, two tiers:** the first eight are the
   partner ceiling (one-to-one with `PartnerCapability`); `ViewTenants` / `ManagePartners` /
-  `OperatePlatform` are platform-only and have no partner analogue, deliberately.
+  `OperatePlatform` / `ManagePlatformGrants` are platform-only and have no partner
+  analogue, deliberately.
 - **`Scope`** — `All` or `Orgs(..)`. Where a grant reaches.
 - **`PlatformStanding`** / **`PlatformRole`** — Oxy-staff standing as `(caps × scope)`, and
   the presets (`GlobalAdmin`, `AppOperator`) that name common ones.
@@ -65,6 +66,13 @@ via `PrincipalFacts::platform_grants(cap, org)` — the deliberate mirror of
 no platform ring consults scope — a scoped operator passes the console door and the
 *handler* narrows what it returns. Getting this backwards yields either a role that 403s
 out of its own console or one that lists every tenant. Full guide:
+`internal-docs/roles-and-authorization.md`.
+
+**Delegation is the one question that is about relative standing.** `may_delegate` — not
+`allows()` — decides who may write a grant row: strictly-lower role, and a scope your own
+contains. It is the only place `PlatformRole::rank` is read; comparing ranks anywhere else
+reintroduces the "one boolean, nine rings" collapse this model replaced. The capability
+(`ManagePlatformGrants`) is the door; this is the fence. Full rationale:
 `internal-docs/roles-and-authorization.md`.
 
 The `*Strict` variants reject the global-operator override. That distinction is
@@ -114,7 +122,7 @@ legacy oracle, which is what caught every real bug.
 
 | Suite | Proves |
 | --- | --- |
-| `crates/authz` unit tests (18) | the model's own arithmetic |
+| `crates/authz` unit tests (41) | the model's own arithmetic |
 | `server::authz::differential` | the ring agrees with the shipped guard across the caller-shape space |
 | `crates/app/tests/authz_loader_differential.rs` | the **real loader** against seeded rows (needs `OXY_DATABASE_URL`; skips without) |
 | `crates/app/tests/authz_boundaries.rs` | nothing outside the allowlist decides access by hand |

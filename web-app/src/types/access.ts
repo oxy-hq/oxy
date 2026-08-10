@@ -32,6 +32,20 @@ export interface AppAdmin {
   scope_org_ids: string[];
   /** What `role` expands to, derived server-side so the UI never re-implements it. */
   capabilities: PlatformCapability[];
+  /**
+   * Whether the CALLER may write this row — the delegation bound (`may_delegate`),
+   * evaluated server-side per row.
+   *
+   * Every grant is listed to everyone who may open the surface: knowing who holds staff
+   * standing is the point of the page, and hiding rows would let a bounded operator
+   * conclude a colleague does not exist. Seeing and changing are separate questions, and
+   * this is the second one — a Global Admin sees the Owner's peers and can write none of
+   * them.
+   *
+   * UX only. The server re-decides on every write; this exists so the console can
+   * disable a control rather than offer one that 403s.
+   */
+  can_manage: boolean;
 }
 
 export type PlatformRoleId = "global_admin" | "app_operator";

@@ -15,10 +15,16 @@ export const ROLE_LABELS: Record<PlatformRoleId, string> = {
   app_operator: "App Operator"
 };
 
-export const useAppAdmins = () =>
+/**
+ * @param enabled Pass `false` where the caller may not hold `manage_platform_grants` —
+ *   the endpoint 403s for them, and a failed query behind a hidden card is noise in the
+ *   console and a red line in the network tab that looks like a bug.
+ */
+export const useAppAdmins = (enabled = true) =>
   useQuery({
     queryKey: queryKeys.appAdmins.list(),
-    queryFn: AppAdminsService.list
+    queryFn: AppAdminsService.list,
+    enabled
   });
 
 export const useCreateAppAdmin = () => {

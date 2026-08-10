@@ -23,6 +23,7 @@ import {
   TableRow
 } from "@/components/ui/shadcn/table";
 import { ROLE_LABELS, useAppAdmins, useRemoveAppAdmin } from "@/hooks/api/access/useAppAdmins";
+import { useDelegationBound } from "@/hooks/api/access/useDelegationBound";
 import type { AppAdmin } from "@/types/access";
 import { GrantForm } from "./components/GrantForm";
 
@@ -31,17 +32,19 @@ function formatGrantedAt(value: string): string {
 }
 
 /**
- * `/admin/app-admins` — Global Owner-only management of **platform grants**.
+ * `/admin/app-admins` — management of **platform grants**.
  *
  * A grant is `(role × scope)`: which capabilities, over which organizations.
- * `Global Admin` reaches the whole console except Billing queue and this page;
- * `App Operator` ships and develops custom apps and holds nothing else — no org
- * deletion, member management, billing, or infrastructure.
+ * `Global Admin` reaches the whole console except the Billing queue; `App Operator`
+ * ships and develops custom apps and holds nothing else — no org deletion, member
+ * management, billing, or infrastructure.
  *
- * Owner-only on purpose, and not merely because it is sensitive: this table is
- * the one surface no capability may reach. A capability that could edit grants
- * would let its holder widen their own ceiling. See
- * `internal-docs/roles-and-authorization.md`.
+ * Open to anyone holding `manage_platform_grants` (the Owner, and Global Admins),
+ * then bounded **per row**: a write is admissible only against a grant strictly
+ * weaker than the writer's own, so nobody can widen themselves and only the Owner
+ * can mint a peer. Rows the caller may not write arrive with `can_manage: false`
+ * and render disabled rather than hidden — knowing who holds staff standing is the
+ * point of this page. See `internal-docs/roles-and-authorization.md`.
  *
  * Replaces the env-var allow-list (now `OXY_GLOBAL_ADMINS`, formerly
  * `OXY_APP_ADMINS`), which can only ever seed an unbounded Global Admin. On
@@ -50,6 +53,7 @@ function formatGrantedAt(value: string): string {
  */
 export default function AdminAppAdmins() {
   const { data: admins = [], isPending } = useAppAdmins();
+  const bound = useDelegationBound();
   const remove = useRemoveAppAdmin();
   const [pendingDelete, setPendingDelete] = useState<AppAdmin | null>(null);
   // The row the form is editing. The table had no edit affordance at all, so changing
@@ -91,12 +95,13 @@ export default function AdminAppAdmins() {
       <div className='mb-6'>
         <h1 className='font-semibold text-xl tracking-tight'>Staff access</h1>
         <p className='mt-1 text-muted-foreground text-xs'>
-          Each grant is a role plus the organizations it reaches. Billing queue and this page stay
-          reserved for Global Owners — a grant can never widen itself.
+          Each grant is a role plus the organizations it reaches. You can issue a grant weaker than
+          your own, never one equal to it — so a grant can never widen itself, and only a Global
+          Owner can add another Global Admin.
         </p>
       </div>
 
-      <GrantForm key={editNonce} editing={editing} onCancel={closeEditor} />
+      <GrantForm key={editNonce} editing={editing} onCancel={closeEditor} bound={bound} />
 
       <Card>
         <CardContent className='p-0'>
@@ -126,7 +131,14 @@ export default function AdminAppAdmins() {
               <TableBody>
                 {admins.map((admin) => (
                   <TableRow key={admin.id} className='hover:bg-muted/40'>
-                    <TableCell className='font-mono text-xs'>{admin.email}</TableCell>
+                    <TableCell className='font-mono text-xs'>
+                      {admin.email}
+                      {/* Naming it beats leaving the operator to work out why their own
+                          row is the one they cannot touch. */}
+                      {bound.own?.id === admin.id && (
+                        <span className='ml-1.5 text-[10px] text-muted-foreground'>You</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge
                         variant={admin.role === "global_admin" ? "default" : "outline"}
@@ -165,10 +177,21 @@ export default function AdminAppAdmins() {
                         : formatGrantedAt(admin.updated_at)}
                     </TableCell>
                     <TableCell>
-                      <div className='flex items-center gap-1'>
+                      {/* Disabled, not hidden. An operator who cannot find the Edit
+                          button assumes the console is broken; one that is present and
+                          explains itself teaches the rule in the place it applies. */}
+                      <div
+                        className='flex items-center gap-1'
+                        title={
+                          admin.can_manage
+                            ? undefined
+                            : `${admin.email} holds a grant at or above your own. Only a Global Owner can change it.`
+                        }
+                      >
                         <Button
                           variant='ghost'
                           size='icon'
+                          disabled={!admin.can_manage}
                           onClick={() => openEditor(admin)}
                           aria-label={`Edit ${admin.email}`}
                           data-testid='admin-app-admins-edit'
@@ -178,8 +201,10 @@ export default function AdminAppAdmins() {
                         <Button
                           variant='ghost'
                           size='icon'
+                          disabled={!admin.can_manage}
                           onClick={() => setPendingDelete(admin)}
                           aria-label={`Remove ${admin.email}`}
+                          data-testid='admin-app-admins-remove'
                         >
                           <Trash2 className='size-4 text-muted-foreground' />
                         </Button>

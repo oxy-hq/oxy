@@ -4,7 +4,11 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useActingSession } from "@/hooks/api/adminAssume/useActingSession";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import ROUTES from "@/libs/utils/routes";
-import { AdminSidebar } from "./components/AdminSidebar";
+import {
+  AdminSidebar,
+  canReachAdminRoute,
+  firstReachableAdminRoute
+} from "./components/AdminSidebar";
 import { AdminTopbar } from "./components/AdminTopbar";
 
 const PAGE_TITLES: Record<string, string> = {
@@ -14,7 +18,7 @@ const PAGE_TITLES: Record<string, string> = {
   [ROUTES.ADMIN.COMPILES]: "Compile revisions",
   [ROUTES.ADMIN.EXPLORER]: "Explorer",
   [ROUTES.ADMIN.AUDIT]: "Audit log",
-  [ROUTES.ADMIN.APP_ADMINS]: "Global admins",
+  [ROUTES.ADMIN.APP_ADMINS]: "Staff access",
   [ROUTES.ADMIN.PUBLISH_TOKENS]: "Publish tokens",
   [ROUTES.ADMIN.CUSTOMER_APPS]: "Custom apps",
   [ROUTES.ADMIN.WORKSPACE_HEALTH]: "Workspace health",
@@ -23,36 +27,6 @@ const PAGE_TITLES: Record<string, string> = {
   [ROUTES.ADMIN.USERS]: "Users",
   [ROUTES.ADMIN.WORKSPACES]: "Workspaces"
 };
-
-// Routes that Global Admins (members of the `app_admins` table) are
-// allowed to reach. Keep in sync with the per-route guards in
-// `crates/app/src/server/api/admin/mod.rs` — anything NOT in this list is
-// reserved for Global Owner (today: Billing queue + Global admins).
-// Global admins who land on an owner-only route get bounced to Customer
-// apps so they don't hit a 403 page and assume the whole admin surface is
-// broken.
-// Backend identifiers (OXY_OWNER env var, `app_admins` table, the
-// `is_owner` / `is_app_admin` API fields) keep their on-the-wire names.
-const APP_ADMIN_ROUTE_PREFIXES = [
-  ROUTES.ADMIN.CUSTOMER_APPS,
-  ROUTES.ADMIN.PUBLISH_TOKENS,
-  ROUTES.ADMIN.INTERNAL_JOBS,
-  ROUTES.ADMIN.COMPILES,
-  ROUTES.ADMIN.EXPLORER,
-  ROUTES.ADMIN.AUDIT,
-  ROUTES.ADMIN.FEATURE_FLAGS,
-  ROUTES.ADMIN.WORKSPACE_HEALTH,
-  ROUTES.ADMIN.TENANTS,
-  ROUTES.ADMIN.ORGS,
-  ROUTES.ADMIN.USERS,
-  ROUTES.ADMIN.WORKSPACES
-];
-
-function isAppAdminRoute(pathname: string): boolean {
-  return APP_ADMIN_ROUTE_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
-}
 
 export default function AdminLayout() {
   const location = useLocation();
@@ -78,6 +52,7 @@ export default function AdminLayout() {
 
   const isOwner = user?.is_owner ?? false;
   const isAppAdmin = user?.is_app_admin ?? false;
+  const capabilities = user?.platform_capabilities ?? [];
 
   // No admin role at all — go home. Avoids a "Failed to load" stuck state
   // for users who land on `/admin/apps` via a stale bookmark.
@@ -85,10 +60,18 @@ export default function AdminLayout() {
     return <Navigate to='/' replace />;
   }
 
-  // App-admin-only user trying to reach an owner-only page — redirect them
-  // to the customer-apps page they actually have access to.
-  if (!isOwner && !isAppAdminRoute(location.pathname)) {
-    return <Navigate to={ROUTES.ADMIN.CUSTOMER_APPS} replace />;
+  // Staff member on a route their standing does not reach — bounce to the first surface
+  // their standing DOES reach, rather than paint a page of 403s.
+  //
+  // Asks the SAME map the sidebar filters on. This used to be a separate hardcoded list
+  // of path prefixes, written when "not owner" meant "app admin" and there were no
+  // capabilities; every capability added to a nav item afterwards made that item appear
+  // and then bounce. `Staff access` is the one that caught it — visible in the rail,
+  // redirecting on click, for every Global Admin.
+  if (!canReachAdminRoute(location.pathname, { isOwner, capabilities })) {
+    // Not a fixed route: Custom apps is itself gated on `manage_apps`, so a future
+    // preset without it would be redirected to a page the guard bounces it off again.
+    return <Navigate to={firstReachableAdminRoute({ isOwner, capabilities })} replace />;
   }
 
   // You cannot be in here while acting as a tenant. The server already refuses

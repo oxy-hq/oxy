@@ -1,10 +1,22 @@
-//! `/api/admin/app-admins` — the **platform-grant control plane**, OXY_OWNER-managed.
+//! `/api/admin/app-admins` — the **platform-grant control plane**.
 //!
-//! Sits behind the `oxy_owner_guard` middleware so only Oxy staff (members of the
-//! `OXY_OWNER` email allow-list) can issue or revoke a grant. That is not merely
-//! "sensitive": the grant table is the one surface no capability may reach, because a
-//! capability that could edit it would let its holder widen their own ceiling and the
-//! ceiling would mean nothing. It is a boolean the model cannot touch, on purpose.
+//! Reachable by anyone holding `Cap::ManagePlatformGrants` (the Global Owner, and
+//! `global_admin` via its preset), then fenced **per row** by `admin::delegation`.
+//!
+//! This was owner-only for one release, and the reason it no longer is matters: the
+//! original rationale — "a capability that could edit the grant table would let its
+//! holder widen their own ceiling" — argues against an unbounded capability, which is
+//! not the only kind available. `oxy_authz::may_delegate` bounds every write to a grant
+//! strictly weaker than the writer's own, so a holder's own row is structurally
+//! unreachable and the ceiling holds. What the owner keeps is the top tier: only they
+//! can create, re-role or revoke a `global_admin`.
+//!
+//! **The capability gate alone is not the control.** It answers "may you administer
+//! grants at all"; every handler below must additionally decide per row:
+//! `delegation::actor_facts` once, then `delegation::refuse(may_delegate(..))` for each
+//! grant the request reads or writes. A route added here without that fence re-opens the
+//! escalation the owner-only guard existed to prevent — which is why
+//! `app_scope_boundary` asserts it structurally rather than trusting review.
 //!
 //! A grant is `(role × scope)`:
 //! * **role** — a `PlatformRole` preset, expanded to capabilities in `oxy-authz`.
@@ -27,13 +39,64 @@ use entity::prelude::AppAdmins;
 use entity::{app_admin_scope_orgs, app_admins};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
-use oxy_authz::PlatformRole;
-use sea_orm::{ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use oxy_authz::{DelegationDenial, PlatformRole, PrincipalFacts, Scope, may_delegate};
+use sea_orm::{
+    ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::server::api::admin::delegation;
+use crate::server::api::audit;
 use crate::server::authz::globals::invalidate_admin_cache;
 use crate::server::router::AppState;
+
+/// A stored grant's `(role, scope)` — what the delegation bound is asked about.
+///
+/// `PlatformRole::from_str` returning `None` means this build cannot expand the stored
+/// role. The loader already drops such a grant rather than guessing, and the same
+/// reading applies here: an unnameable role is not something to compare ranks against.
+/// See [`delegatable`] for who can still act on those rows.
+fn stored_standing(
+    role: &str,
+    scope_all: bool,
+    scope_org_ids: &[Uuid],
+) -> Option<(PlatformRole, Scope)> {
+    let role = PlatformRole::from_str(role)?;
+    let scope = if scope_all {
+        Scope::All
+    } else {
+        Scope::Orgs(scope_org_ids.to_vec())
+    };
+    Some((role, scope))
+}
+
+/// May `facts` write this stored row? The delegation bound, applied to a grant as it
+/// exists in the table.
+///
+/// **The Global Owner is checked first, before the role is expanded.** The obvious
+/// spelling — `match stored_standing(..) { Some(..) => may_delegate(..), None => Err(..) }`
+/// — returns on the `None` arm without ever reaching the owner short-circuit inside
+/// `may_delegate`, which locked root out of exactly the rows a rollback creates. The
+/// comment above `stored_standing` claimed those rows froze "for everyone but the owner";
+/// they froze for the owner too, and the only remedy was hand-written SQL against
+/// `app_admins`. Root has no rank to compare, which is the whole reason that
+/// short-circuit exists — so it has to come first here as well.
+///
+/// For everyone else an unnameable role is undelegatable: it cannot be ranked, and
+/// guessing a rank for it is how a rollback turns into an escalation.
+fn delegatable(
+    facts: &PrincipalFacts,
+    role: &str,
+    scope_all: bool,
+    scope_org_ids: &[Uuid],
+) -> Result<(), DelegationDenial> {
+    match stored_standing(role, scope_all, scope_org_ids) {
+        Some((r, sc)) => may_delegate(facts, r, &sc),
+        None if facts.is_global_owner => Ok(()),
+        None => Err(DelegationDenial::RoleNotBelow),
+    }
+}
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -53,13 +116,24 @@ pub struct AppAdminResponse {
     pub role: String,
     /// `true` = every org. `false` = the orgs in `scope_org_ids`.
     pub scope_all: bool,
-    /// Empty when `scope_all` is true. Populated only by the detail read, which is why
-    /// the list endpoint leaves it empty rather than issuing a query per row.
+    /// Empty when `scope_all` is true. The list endpoint fills this for every row from
+    /// one grouped query — not a query per row, and not left empty.
     pub scope_org_ids: Vec<Uuid>,
     /// The capabilities `role` expands to, so the console can render what a grant
     /// actually buys without duplicating the expansion in TypeScript. Derived, never
     /// stored — the model stays the only definition.
     pub capabilities: Vec<String>,
+    /// **May the caller write this row?** Server-computed per row, so the console can
+    /// disable what it cannot change instead of offering a control that 403s.
+    ///
+    /// Every grant is listed to every operator who may open this surface — knowing who
+    /// holds staff standing is the point of the page, and a filtered list would let a
+    /// bounded operator conclude a colleague does not exist. Authority to *see* and
+    /// authority to *change* are different questions, and this is the second one.
+    ///
+    /// UX only. `create`/`delete` re-decide server-side; a client that ignores this
+    /// gets a 403, not a write.
+    pub can_manage: bool,
 }
 
 impl From<app_admins::Model> for AppAdminResponse {
@@ -77,11 +151,17 @@ impl From<app_admins::Model> for AppAdminResponse {
             scope_all: m.scope_all,
             scope_org_ids: Vec::new(),
             capabilities,
+            // Fail-closed default. `From<Model>` has no caller to decide against, so
+            // every construction site must set this deliberately — a forgotten one
+            // renders a disabled control, never a permitted one.
+            can_manage: false,
         }
     }
 }
 
-pub async fn list_app_admins() -> Result<Json<Vec<AppAdminResponse>>, StatusCode> {
+pub async fn list_app_admins(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+) -> Result<Json<Vec<AppAdminResponse>>, delegation::Refusal> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("list_app_admins DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -114,12 +194,23 @@ pub async fn list_app_admins() -> Result<Json<Vec<AppAdminResponse>>, StatusCode
         }
     }
 
+    // One grant read for the caller, then a pure decision per row. `may_delegate` does
+    // no IO precisely so this cannot become a query per staff member.
+    let facts = delegation::actor_facts(&db, &actor).await?;
+
     Ok(Json(
         rows.into_iter()
             .map(|m| {
                 let id = m.id;
+                let role = m.role.clone();
+                let scope_all = m.scope_all;
+                let scope_org_ids = scopes.remove(&id).unwrap_or_default();
+                // Same helper the writes use, so a row can never render writable and
+                // then 403 — or render locked to the owner, who can in fact write it.
+                let can_manage = delegatable(&facts, &role, scope_all, &scope_org_ids).is_ok();
                 let mut r: AppAdminResponse = m.into();
-                r.scope_org_ids = scopes.remove(&id).unwrap_or_default();
+                r.scope_org_ids = scope_org_ids;
+                r.can_manage = can_manage;
                 r
             })
             .collect(),
@@ -146,10 +237,10 @@ pub async fn create_app_admin(
     State(_): State<AppState>,
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Json(body): Json<CreateAppAdminBody>,
-) -> Result<Json<AppAdminResponse>, StatusCode> {
+) -> Result<Json<AppAdminResponse>, delegation::Refusal> {
     let email = body.email.trim().to_ascii_lowercase();
     if email.is_empty() || !email.contains('@') {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(StatusCode::BAD_REQUEST.into());
     }
 
     let db = establish_connection().await.map_err(|e| {
@@ -166,6 +257,24 @@ pub async fn create_app_admin(
     };
     let scope_all = body.scope_org_ids.is_none();
     let scope_org_ids = body.scope_org_ids.unwrap_or_default();
+    let scope = if scope_all {
+        Scope::All
+    } else {
+        Scope::Orgs(scope_org_ids.clone())
+    };
+
+    // ── The delegation bound, both halves ────────────────────────────────────────
+    //
+    // This endpoint is an upsert, so it is two operations wearing one name: it issues a
+    // grant, and — when the email already holds one — it destroys the grant that was
+    // there. Each needs its own authorization, against a different pair of values.
+    //
+    // Checking only the incoming values is the mistake worth naming: a Global Admin
+    // POSTing `{email: <a peer global_admin>, role: "app_operator"}` writes something
+    // admissible (app_operator is below them) on top of something that is not (a peer's
+    // global_admin row). One check, and demoting every peer is a single request.
+    let facts = delegation::actor_facts(&db, &actor).await?;
+    delegation::refuse(may_delegate(&facts, role, &scope), &actor.email)?;
 
     // **Upsert, not create-or-ignore.** This used to return the existing row untouched,
     // which made a grant permanently unchangeable: with no PATCH on the router, there
@@ -195,6 +304,61 @@ pub async fn create_app_admin(
     // env bootstrap leaves both NotSet so they share one transaction timestamp. Only
     // this path — the one the column was added for — got it wrong, which is why
     // verifying the migration against a real database said nothing about it.
+    let txn = db.begin().await.map_err(|e| {
+        tracing::error!("create_app_admin begin failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // What is there now — the row this upsert would destroy, read INSIDE the transaction
+    // and locked (`SELECT … FOR UPDATE`), so the authorization decision below and the
+    // write that acts on it see the same row.
+    //
+    // Read on `&db` before the transaction opened, this was a decision made against a
+    // snapshot the write did not hold: a concurrent promotion between the two turned an
+    // authorized overwrite of an `app_operator` row into an unauthorized overwrite of a
+    // `global_admin` one. Narrow — it requires racing another grant write on the same
+    // address — but it is the whole check, so a narrow window is still the wrong shape.
+    //
+    // What this does NOT close, stated rather than implied: an email with no row yet has
+    // nothing to lock, so two concurrent creates still resolve by `ON CONFLICT` with only
+    // the first one's authorization considered. And the actor's own standing comes from
+    // the TTL-cached `platform_grant_checked`, so a demotion elsewhere lags by up to that
+    // TTL — a wider window than this one, shared with every capability decision in the
+    // console, and not this endpoint's to fix.
+    let existing = AppAdmins::find()
+        .filter(app_admins::Column::Email.eq(email.clone()))
+        .lock_exclusive()
+        .one(&txn)
+        .await
+        .map_err(|e| {
+            tracing::error!("create_app_admin existing-grant read failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    // Bound outside the `if let` because the audit row below needs it too: recording a
+    // `before` of `{role, scope_all}` alone makes a re-scope illegible — Orgs([acme]) →
+    // Orgs([globex]) writes an identical before/after shape, and re-scoping is the most
+    // likely edit this console sees.
+    let mut prev_scope_orgs: Vec<Uuid> = Vec::new();
+    if let Some(prev) = &existing {
+        if !prev.scope_all {
+            prev_scope_orgs = app_admin_scope_orgs::Entity::find()
+                .filter(app_admin_scope_orgs::Column::AppAdminId.eq(prev.id))
+                .all(&txn)
+                .await
+                .map_err(|e| {
+                    tracing::error!("create_app_admin existing-scope read failed: {e}");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .into_iter()
+                .map(|r| r.org_id)
+                .collect();
+        }
+        delegation::refuse(
+            delegatable(&facts, &prev.role, prev.scope_all, &prev_scope_orgs),
+            &actor.email,
+        )?;
+    }
+
     let now = chrono::Utc::now().fixed_offset();
     app_admins::Entity::insert(app_admins::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
@@ -215,7 +379,7 @@ pub async fn create_app_admin(
             ])
             .to_owned(),
     )
-    .exec(&db)
+    .exec(&txn)
     .await
     .map_err(|e| {
         tracing::error!("create_app_admin upsert failed: {e}");
@@ -225,8 +389,8 @@ pub async fn create_app_admin(
     // Re-read rather than trust the insert's returned id: on the conflict path the row
     // keeps its ORIGINAL id, and the scope rows below are keyed by it.
     let model = AppAdmins::find()
-        .filter(app_admins::Column::Email.eq(email))
-        .one(&db)
+        .filter(app_admins::Column::Email.eq(email.clone()))
+        .one(&txn)
         .await
         .map_err(|e| {
             tracing::error!("create_app_admin read-back failed: {e}");
@@ -241,17 +405,21 @@ pub async fn create_app_admin(
     // fewer orgs, never more.
     app_admin_scope_orgs::Entity::delete_many()
         .filter(app_admin_scope_orgs::Column::AppAdminId.eq(admin_id))
-        .exec(&db)
+        .exec(&txn)
         .await
         .map_err(|e| {
             tracing::error!("create_app_admin scope clear failed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Scope rows go in AFTER the grant row (FK) and only when bounded. A failure here
-    // leaves a grant with `scope_all = false` and no rows — which reaches NOTHING. The
-    // partial state is the safe one, which is why this isn't wrapped in a transaction
-    // to "protect" it.
+    // Scope rows go in AFTER the grant row (FK) and only when bounded.
+    //
+    // This used to run outside a transaction, arguing that the partial state (bounded
+    // grant, no scope rows) reaches NOTHING and is therefore the safe one. True, but it
+    // stopped being the whole story once the audit row below joined the write: "the
+    // grant changed and nothing recorded it" is not a safe partial state, and this is
+    // now a write more than one person can make. All-or-nothing is both safe AND
+    // leaves no half-state to explain.
     if !scope_all && !scope_org_ids.is_empty() {
         let rows: Vec<_> = scope_org_ids
             .iter()
@@ -264,7 +432,7 @@ pub async fn create_app_admin(
             })
             .collect();
         app_admin_scope_orgs::Entity::insert_many(rows)
-            .exec(&db)
+            .exec(&txn)
             .await
             .map_err(|e| {
                 tracing::error!("create_app_admin scope insert failed: {e}");
@@ -272,6 +440,55 @@ pub async fn create_app_admin(
             })?;
     }
 
+    // In the SAME transaction as the grant. A platform grant is the most consequential
+    // write on this console — it is the authority to reach other tenants — and until
+    // now it recorded nothing at all. That was survivable while only the Global Owner
+    // could make it; with Global Admins delegating, "who made this person staff" needs
+    // an answer that is not "check the logs".
+    //
+    // `before`/`after` carry the full (role, scope) pair on both sides, so a re-scope
+    // is legible as a change and not merely as "touched".
+    audit::record_in_txn(
+        &txn,
+        audit::AuditEntry::new(
+            actor.email.clone(),
+            if existing.is_some() {
+                "platform.grant.updated"
+            } else {
+                "platform.grant.created"
+            },
+        )
+        .actor(actor.id, audit::ActorType::User)
+        .target("platform_grant", admin_id.to_string(), email.clone())
+        .change(
+            match &existing {
+                Some(prev) => serde_json::json!({
+                    "role": prev.role,
+                    "scope_all": prev.scope_all,
+                    "scope_org_ids": prev_scope_orgs,
+                }),
+                None => serde_json::Value::Null,
+            },
+            serde_json::json!({
+                "role": role.as_str(),
+                "scope_all": scope_all,
+                "scope_org_ids": scope_org_ids,
+            }),
+        ),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("create_app_admin audit write failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    txn.commit().await.map_err(|e| {
+        tracing::error!("create_app_admin commit failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // AFTER commit: invalidating earlier lets a concurrent read repopulate the cache
+    // from the pre-commit snapshot and pin the stale grant for a full TTL.
     invalidate_admin_cache();
     let mut response: AppAdminResponse = model.into();
     // The response must describe what was just WRITTEN — `From<Model>` defaults
@@ -279,21 +496,123 @@ pub async fn create_app_admin(
     // grant that is in fact bounded. No branch on `scope_all` needed: it is exactly
     // `body.scope_org_ids.is_none()`, so this vector is already empty when it's true.
     response.scope_org_ids = scope_org_ids;
+    // The write just cleared the bound, so this row is writable by definition. Leaving
+    // the fail-closed default here would ship a payload contradicting the list the
+    // mutation is about to invalidate.
+    response.can_manage = true;
     Ok(Json(response))
 }
 
-pub async fn delete_app_admin(Path(id): Path<Uuid>) -> Result<StatusCode, StatusCode> {
+/// Revoke a grant.
+///
+/// **The bound is checked against the row being deleted, not against anything the
+/// caller supplies.** A revoke has no incoming `(role, scope)` to authorize — the only
+/// values in play are the target's — so reading the row first is not an optimization,
+/// it is the entire check. Without it `Cap::ManagePlatformGrants` would let one Global
+/// Admin strip every peer, and the delegation bound would hold on create while leaking
+/// on delete.
+pub async fn delete_app_admin(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, delegation::Refusal> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("delete_app_admin DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let res = AppAdmins::delete_by_id(id).exec(&db).await.map_err(|e| {
+
+    // The caller's own standing, read BEFORE the transaction opens.
+    //
+    // `actor_facts` goes to `&db`, so calling it while this request already holds a
+    // connection and a locked row borrows a second one from the pool — and it is a
+    // guaranteed cache miss, because `invalidate_admin_cache()` runs after every write to
+    // this table. N concurrent revokes against an N-connection pool wedge each other
+    // until the acquire timeout, each holding a lock nobody can clear.
+    //
+    // Nothing about the decision moves with it: this is the caller's standing, not the
+    // target's, and it already tolerates TTL staleness by design. `create_app_admin`
+    // loads it here for the same reason.
+    let facts = delegation::actor_facts(&db, &actor).await?;
+
+    // Transaction first, then read the target under `SELECT … FOR UPDATE`.
+    //
+    // Create closes this window and delete did not, which is the asymmetry that matters:
+    // a concurrent promotion between an unlocked read and the delete turns an authorized
+    // revoke of an `app_operator` into an unauthorized revoke of a `global_admin`. The
+    // doc on this function calls reading the row "the entire check" — a check performed
+    // against a row the delete does not hold is not the entire check.
+    //
+    // It also makes the audit `before` describe the row actually removed.
+    let txn = db.begin().await.map_err(|e| {
+        tracing::error!("delete_app_admin begin failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let target = AppAdmins::find_by_id(id)
+        .lock_exclusive()
+        .one(&txn)
+        .await
+        .map_err(|e| {
+            tracing::error!("delete_app_admin target read failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let scope_org_ids: Vec<Uuid> = if target.scope_all {
+        Vec::new()
+    } else {
+        app_admin_scope_orgs::Entity::find()
+            .filter(app_admin_scope_orgs::Column::AppAdminId.eq(id))
+            .all(&txn)
+            .await
+            .map_err(|e| {
+                tracing::error!("delete_app_admin scope read failed: {e}");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .into_iter()
+            .map(|r| r.org_id)
+            .collect()
+    };
+
+    delegation::refuse(
+        delegatable(&facts, &target.role, target.scope_all, &scope_org_ids),
+        &actor.email,
+    )?;
+
+    let res = AppAdmins::delete_by_id(id).exec(&txn).await.map_err(|e| {
         tracing::error!("delete_app_admin failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     if res.rows_affected == 0 {
-        return Err(StatusCode::NOT_FOUND);
+        // Unreachable now that the read above holds `FOR UPDATE` on this row for the
+        // life of the transaction — kept as the defensive default. If it ever fires,
+        // the lock was dropped and that is the thing to look at, not this branch.
+        return Err(StatusCode::NOT_FOUND.into());
     }
+
+    audit::record_in_txn(
+        &txn,
+        audit::AuditEntry::new(actor.email.clone(), "platform.grant.revoked")
+            .actor(actor.id, audit::ActorType::User)
+            .target("platform_grant", id.to_string(), target.email.clone())
+            .change(
+                serde_json::json!({
+                    "role": target.role,
+                    "scope_all": target.scope_all,
+                    "scope_org_ids": scope_org_ids,
+                }),
+                serde_json::Value::Null,
+            ),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("delete_app_admin audit write failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    txn.commit().await.map_err(|e| {
+        tracing::error!("delete_app_admin commit failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     invalidate_admin_cache();
     Ok(StatusCode::NO_CONTENT)
 }

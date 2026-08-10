@@ -183,6 +183,18 @@ pub enum Action {
     /// Oxy's own machinery: internal jobs, compiles, serve routing, platform metrics,
     /// workspace health — [`Cap::OperatePlatform`].
     PlatformOperate,
+    /// The grant table (`/admin/app-admins`) — [`Cap::ManagePlatformGrants`].
+    ///
+    /// **This action is a door, not a decision.** It answers "may this principal
+    /// administer grants at all", which is necessary and nowhere near sufficient: the
+    /// question that actually matters is whether they may administer *this* grant, and
+    /// that compares two standings, so no `Action` can express it. The handler must
+    /// also pass the target row through [`may_delegate`]. Gating the route and stopping
+    /// there re-opens exactly the escalation the owner-only guard existed to prevent.
+    ///
+    /// The same two-step as scope: the capability gates the verb, the row-level fence
+    /// filters the rows.
+    PlatformGrants,
     /// The owner-exclusive surfaces — and the ONLY place the two operator tiers differ:
     /// destructive or irreversible operations (deleting the master org, demoting other
     /// admins), plus the Billing queue. A global **owner** only.
@@ -190,7 +202,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 33] = [
+    pub const ALL: [Action; 34] = [
         Action::OrgRead,
         Action::MemberInvite,
         Action::MemberSetRole,
@@ -223,6 +235,7 @@ impl Action {
         Action::PlatformUsers,
         Action::PlatformPartners,
         Action::PlatformOperate,
+        Action::PlatformGrants,
         Action::PlatformOwnerOnly,
     ];
 
@@ -265,6 +278,7 @@ impl Action {
             Action::PlatformUsers => "platform_users",
             Action::PlatformPartners => "platform_partners",
             Action::PlatformOperate => "platform_operate",
+            Action::PlatformGrants => "platform_grants",
             Action::PlatformOwnerOnly => "platform_owner_only",
         }
     }
@@ -301,6 +315,7 @@ impl Action {
             Action::PlatformUsers => Ring::PlatformCap(Cap::ManageMembers),
             Action::PlatformPartners => Ring::PlatformCap(Cap::ManagePartners),
             Action::PlatformOperate => Ring::PlatformCap(Cap::OperatePlatform),
+            Action::PlatformGrants => Ring::PlatformCap(Cap::ManagePlatformGrants),
             Action::PlatformOwnerOnly => Ring::GlobalOwnerOnly,
         }
     }
@@ -344,12 +359,26 @@ pub enum Cap {
     /// Operate Oxy's own machinery: the worker fleet console, compile history, serve
     /// routing, platform metrics, workspace health. Infrastructure, not tenant data.
     OperatePlatform,
+    /// Administer the **platform-grant table itself** — issue, re-role, re-scope and
+    /// revoke other people's staff standing.
+    ///
+    /// This capability was owner-only for one release, on the reasoning that "a
+    /// capability that could edit the grant table would let its holder widen their own
+    /// grant, and the ceiling would mean nothing". That objection is real, and it is
+    /// answered by [`may_delegate`] rather than by withholding the capability: a write
+    /// is admissible only against a grant **strictly weaker** than the writer's own, so
+    /// the one row a holder can never touch is their own. Holding this is therefore the
+    /// authority to delegate *downward*, which is not the authority to escalate.
+    ///
+    /// Gating the door on it and nothing else would still be a hole — the guard sees a
+    /// verb, not the target row. Both halves are required; see [`Action::PlatformGrants`].
+    ManagePlatformGrants,
 }
 
 impl Cap {
     /// Every capability — the full platform ceiling. The partner ceiling is the first
     /// eight; see `PartnerCapability::ALL`, which stays at eight on purpose.
-    pub const ALL: [Cap; 11] = [
+    pub const ALL: [Cap; 12] = [
         Cap::ManageMembers,
         Cap::ManageApps,
         Cap::DevelopApps,
@@ -361,6 +390,7 @@ impl Cap {
         Cap::ViewTenants,
         Cap::ManagePartners,
         Cap::OperatePlatform,
+        Cap::ManagePlatformGrants,
     ];
 
     /// Stable id, and a wire contract: it lands in the `authz` tracing output and is
@@ -384,6 +414,7 @@ impl Cap {
             Cap::ViewTenants => "view_tenants",
             Cap::ManagePartners => "manage_partners",
             Cap::OperatePlatform => "operate_platform",
+            Cap::ManagePlatformGrants => "manage_platform_grants",
         }
     }
 
@@ -426,6 +457,21 @@ impl Scope {
     pub fn is_all(&self) -> bool {
         matches!(self, Scope::All)
     }
+
+    /// Does this scope wholly contain `other`? The subset test [`may_delegate`] uses to
+    /// stop a bounded operator issuing a grant that reaches further than their own.
+    ///
+    /// `All ⊇ everything`, including `All`. A bounded scope can never contain `All` —
+    /// that asymmetry is the entire point, and writing it as `covers` over a list would
+    /// silently return `true` for `Orgs([]) ⊇ Orgs([])`, which is harmless, versus
+    /// `Orgs([a]) ⊇ All`, which is the escalation.
+    pub fn contains(&self, other: &Scope) -> bool {
+        match (self, other) {
+            (Scope::All, _) => true,
+            (Scope::Orgs(_), Scope::All) => false,
+            (Scope::Orgs(mine), Scope::Orgs(theirs)) => theirs.iter().all(|o| mine.contains(o)),
+        }
+    }
 }
 
 /// A named preset over (capabilities × scope) — what a human calls "a role".
@@ -463,6 +509,24 @@ impl PlatformRole {
                 .collect(),
             // The whole role, and the whole point: two capabilities.
             PlatformRole::AppOperator => vec![Cap::ManageApps, Cap::DevelopApps],
+        }
+    }
+
+    /// Where the role sits in the staff hierarchy. Higher out-ranks lower.
+    ///
+    /// Exists **only** for [`may_delegate`] — no decision in `allows()` reads it, because
+    /// authority comes from capabilities, not from a rank. Comparing ranks to decide
+    /// access would reintroduce exactly the "one boolean, nine rings" collapse this model
+    /// replaced. Delegation is the one question that is genuinely about relative
+    /// standing: may *I* create *you*.
+    ///
+    /// The Global Owner is deliberately absent. Owner is not a row in this table and not
+    /// a preset — it is the env allow-list, so it out-ranks every value here by
+    /// construction and [`may_delegate`] short-circuits on it before any rank is read.
+    pub fn rank(self) -> u8 {
+        match self {
+            PlatformRole::AppOperator => 1,
+            PlatformRole::GlobalAdmin => 2,
         }
     }
 
@@ -524,6 +588,82 @@ impl PlatformStanding {
     pub fn grants(&self, cap: Cap, org_id: Uuid) -> bool {
         self.holds(cap) && self.scope.covers(org_id)
     }
+}
+
+/// Why a delegation was refused. Carried out to the API so the console can say which
+/// bound was hit — "you cannot issue a grant wider than your own" is actionable,
+/// "forbidden" sends the operator to ask someone why.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DelegationDenial {
+    /// No platform standing at all — not staff.
+    NotStaff,
+    /// Staff, but this standing does not include [`Cap::ManagePlatformGrants`].
+    NoCapability,
+    /// The target's role is at or above the actor's own. **This is the arm that refuses
+    /// self-edits**, and it does so structurally rather than by comparing identities:
+    /// your own row necessarily carries your own role, which is never strictly below it.
+    RoleNotBelow,
+    /// The target reaches an org the actor's own grant does not.
+    ScopeNotContained,
+}
+
+impl DelegationDenial {
+    /// A stable id for the wire, and the string the console maps to its copy.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DelegationDenial::NotStaff => "not_staff",
+            DelegationDenial::NoCapability => "no_capability",
+            DelegationDenial::RoleNotBelow => "role_not_below",
+            DelegationDenial::ScopeNotContained => "scope_not_contained",
+        }
+    }
+}
+
+/// **May this principal write a grant of `(target_role × target_scope)`?**
+///
+/// The delegation bound, and the reason [`Cap::ManagePlatformGrants`] is safe to hand to
+/// a Global Admin at all. One rule, stated once:
+///
+/// > A writable grant must be **strictly weaker** than the writer's own — lower role,
+/// > and a scope the writer's own scope wholly contains.
+///
+/// Three properties fall out of that single sentence rather than needing their own
+/// checks, which is why it is written as one:
+///
+/// * **No self-edit.** Your row carries your role, and a role is not strictly below
+///   itself. You cannot re-scope or re-role yourself, so the ceiling holds.
+/// * **No peer minting.** A Global Admin cannot create or delete another Global Admin.
+///   Who is staff *at the top tier* stays the Global Owner's decision, and a Global
+///   Admin cannot manufacture a colleague — or a sockpuppet — to act through.
+/// * **No lateral widening.** An operator bounded to Acme can issue App Operators over
+///   Acme and nothing else, so a bounded grant cannot launder itself into an unbounded
+///   one via a second account.
+///
+/// Applies identically to create, re-role, re-scope and revoke. **Revoke reads the row
+/// being deleted, not the caller's intent** — otherwise a Global Admin deletes a peer's
+/// grant, which is both a privilege play and a denial of service on an equal.
+///
+/// The Global Owner short-circuits: root holds no row, so there is no rank to compare,
+/// and a rank lookup for them would find nothing and refuse.
+pub fn may_delegate(
+    actor: &PrincipalFacts,
+    target_role: PlatformRole,
+    target_scope: &Scope,
+) -> Result<(), DelegationDenial> {
+    if actor.is_global_owner {
+        return Ok(());
+    }
+    let standing = actor.platform.as_ref().ok_or(DelegationDenial::NotStaff)?;
+    if !standing.holds(Cap::ManagePlatformGrants) {
+        return Err(DelegationDenial::NoCapability);
+    }
+    if target_role.rank() >= standing.role.rank() {
+        return Err(DelegationDenial::RoleNotBelow);
+    }
+    if !standing.scope.contains(target_scope) {
+        return Err(DelegationDenial::ScopeNotContained);
+    }
+    Ok(())
 }
 
 impl PrincipalFacts {
@@ -1970,7 +2110,10 @@ mod policy_tests {
                 Cap::ManageSecrets => Action::PartnerManageSecrets,
                 Cap::CreateOrgs => Action::PartnerCreateOrgs,
                 Cap::ManageOrgSettings => Action::PartnerManageOrgSettings,
-                Cap::ViewTenants | Cap::ManagePartners | Cap::OperatePlatform => continue,
+                Cap::ViewTenants
+                | Cap::ManagePartners
+                | Cap::OperatePlatform
+                | Cap::ManagePlatformGrants => continue,
             };
             assert!(
                 !allows(&no_ceiling, action, &as_a),
@@ -2325,5 +2468,190 @@ mod policy_tests {
                 .contains(&Cap::ManageBilling)
         );
         assert_eq!(PlatformRole::GlobalAdmin.caps().len(), Cap::ALL.len() - 1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // The delegation bound. Every assertion below is written so that deleting ONE
+    // guard in `may_delegate` reddens at least one of them — the file-wide
+    // `contains("may_delegate")` style of check is what let three earlier defects
+    // through on this branch.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    fn admin_over(scope: Scope) -> PrincipalFacts {
+        PrincipalFacts {
+            platform: Some(PlatformStanding::from_role(
+                PlatformRole::GlobalAdmin,
+                scope,
+            )),
+            ..facts()
+        }
+    }
+
+    #[test]
+    fn owner_may_delegate_anything_including_a_peer_tier_grant() {
+        let go = PrincipalFacts {
+            is_global_owner: true,
+            ..facts()
+        };
+        // Root, and holding no row: the short-circuit is load-bearing, because a rank
+        // lookup for the owner finds nothing.
+        assert_eq!(
+            may_delegate(&go, PlatformRole::GlobalAdmin, &Scope::All),
+            Ok(())
+        );
+        assert_eq!(
+            may_delegate(&go, PlatformRole::AppOperator, &Scope::All),
+            Ok(())
+        );
+        assert_eq!(
+            may_delegate(&go, PlatformRole::AppOperator, &Scope::Orgs(vec![org()])),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn unbounded_admin_may_issue_app_operators_at_any_scope() {
+        let ga = admin_over(Scope::All);
+        assert_eq!(
+            may_delegate(&ga, PlatformRole::AppOperator, &Scope::All),
+            Ok(())
+        );
+        assert_eq!(
+            may_delegate(&ga, PlatformRole::AppOperator, &Scope::Orgs(vec![org()])),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn admin_may_not_mint_or_touch_a_peer() {
+        let ga = admin_over(Scope::All);
+        // Pins the `>=` in the rank comparison. A `>` would let a Global Admin create
+        // another Global Admin, and — since delete reads the target row — delete one.
+        // That is peer minting and peer removal, and it is the Owner's call.
+        assert_eq!(
+            may_delegate(&ga, PlatformRole::GlobalAdmin, &Scope::All),
+            Err(DelegationDenial::RoleNotBelow)
+        );
+        assert_eq!(
+            may_delegate(&ga, PlatformRole::GlobalAdmin, &Scope::Orgs(vec![org()])),
+            Err(DelegationDenial::RoleNotBelow),
+            "narrowing the scope must not buy a peer-tier grant"
+        );
+    }
+
+    #[test]
+    fn self_edit_is_refused_structurally() {
+        // The actor IS a `global_admin`, so their own row's role is `global_admin`,
+        // which is never strictly below itself. No identity comparison is involved
+        // and none is needed — this is why the rule is one sentence and not three.
+        let bounded = admin_over(Scope::Orgs(vec![org()]));
+        assert_eq!(
+            may_delegate(&bounded, PlatformRole::GlobalAdmin, &Scope::All),
+            Err(DelegationDenial::RoleNotBelow),
+            "a bounded admin widening their own row to scope_all is THE escalation \
+             this bound exists to stop"
+        );
+    }
+
+    #[test]
+    fn bounded_admin_may_not_issue_beyond_its_own_orgs() {
+        let a = org();
+        let b = Uuid::from_u128(0xBEEF);
+        let ga = admin_over(Scope::Orgs(vec![a]));
+
+        assert_eq!(
+            may_delegate(&ga, PlatformRole::AppOperator, &Scope::Orgs(vec![a])),
+            Ok(())
+        );
+        // Pins `Scope::contains`'s (Orgs, All) => false arm. Without it a bounded
+        // operator launders itself unbounded through a second account.
+        assert_eq!(
+            may_delegate(&ga, PlatformRole::AppOperator, &Scope::All),
+            Err(DelegationDenial::ScopeNotContained)
+        );
+        // Pins the subset test rather than mere non-emptiness.
+        assert_eq!(
+            may_delegate(&ga, PlatformRole::AppOperator, &Scope::Orgs(vec![b])),
+            Err(DelegationDenial::ScopeNotContained)
+        );
+        assert_eq!(
+            may_delegate(&ga, PlatformRole::AppOperator, &Scope::Orgs(vec![a, b])),
+            Err(DelegationDenial::ScopeNotContained),
+            "a superset containing one permitted org is still a superset"
+        );
+    }
+
+    #[test]
+    fn app_operator_and_non_staff_may_not_delegate_at_all() {
+        let op = PrincipalFacts {
+            platform: Some(PlatformStanding::from_role(
+                PlatformRole::AppOperator,
+                Scope::All,
+            )),
+            ..facts()
+        };
+        // Capability, not rank, is what stops this — an App Operator has no
+        // `ManagePlatformGrants`, so it fails before any comparison.
+        assert_eq!(
+            may_delegate(&op, PlatformRole::AppOperator, &Scope::All),
+            Err(DelegationDenial::NoCapability)
+        );
+        assert_eq!(
+            may_delegate(&facts(), PlatformRole::AppOperator, &Scope::All),
+            Err(DelegationDenial::NotStaff)
+        );
+    }
+
+    #[test]
+    fn scope_contains_is_a_subset_test_not_an_overlap_test() {
+        let a = org();
+        let b = Uuid::from_u128(0xBEEF);
+        assert!(Scope::All.contains(&Scope::All));
+        assert!(Scope::All.contains(&Scope::Orgs(vec![a])));
+        assert!(!Scope::Orgs(vec![a]).contains(&Scope::All));
+        assert!(Scope::Orgs(vec![a, b]).contains(&Scope::Orgs(vec![a])));
+        assert!(!Scope::Orgs(vec![a]).contains(&Scope::Orgs(vec![a, b])));
+        // An empty target reaches nothing, so every scope contains it. Harmless, and
+        // stated so a reader does not mistake it for a hole.
+        assert!(Scope::Orgs(vec![]).contains(&Scope::Orgs(vec![])));
+    }
+
+    #[test]
+    fn manage_platform_grants_is_an_admin_capability_only() {
+        assert!(
+            PlatformRole::GlobalAdmin
+                .caps()
+                .contains(&Cap::ManagePlatformGrants)
+        );
+        assert!(
+            !PlatformRole::AppOperator
+                .caps()
+                .contains(&Cap::ManagePlatformGrants)
+        );
+        // The door and the fence are different questions; both must exist. Asserted
+        // through `allows` rather than by comparing rings: `Ring` is private on purpose
+        // (a public ring lets a call site pick its own authority level), and asserting
+        // the decision is the stronger claim anyway.
+        let p = Resource::platform();
+        let ga = PrincipalFacts {
+            platform: global_admin_standing(),
+            ..facts()
+        };
+        let op = PrincipalFacts {
+            platform: Some(PlatformStanding::from_role(
+                PlatformRole::AppOperator,
+                Scope::All,
+            )),
+            ..facts()
+        };
+        assert!(allows(&ga, Action::PlatformGrants, &p));
+        assert!(
+            !allows(&op, Action::PlatformGrants, &p),
+            "an App Operator must not reach the grant console at all"
+        );
+        assert!(
+            !allows(&facts(), Action::PlatformGrants, &p),
+            "a non-staff principal must not reach the grant console"
+        );
     }
 }
