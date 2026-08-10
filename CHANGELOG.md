@@ -2,12 +2,58 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.121] - 2026-08-10
+
+### 🚀 Features
+
+- Platform standing becomes a capability grant, not a boolean (#2873)
+- *(cameras)* Add nullable label column to oxy_cam_events (#2849)
+- *(video-poc)* Upsell-detection feasibility POC + design spec (#2847)
+- Airway single-flight lease — one run per pipeline per workspace (#2861)
+- Global admins can delegate app operators, bounded by may_delegate (#2884)
+- *(video-poc)* Wire upsell audio detection into the edge worker (Phase 2) (#2886)
+- *(video-poc)* Report upsell AudioReader liveness via a health loop (#2889)
+
+### 🐛 Bug Fixes
+
+- *(edge)* Stop phantom annotation boxes — .predict() not .track() (#2860)
+- Blank page on back-navigation from a custom app (#2863)
+- Worker /metrics queue-depth query selected a nonexistent column (#2877)
+- Don't serve Oxy Functions as assets; warn on untraceable app builds (#2879)
+- *(video-poc)* Center-anchor zone counting + relax congestion capture (#2888)
+- *(monitors)* Band gate survives contamination, severity ranks on headroom, cohorts group a chain-wide drop (#2859)
+
+### 💼 Other
+
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 10 updates (#2869)
+- *(deps)* Bump taiki-e/install-action from 2.83.1 to 2.85.7 (#2867)
+- *(deps)* Bump astral-sh/setup-uv from 7.6.0 to 9.0.0 (#2866)
+
+### 📚 Documentation
+
+- Record the ses:SendRawEmail deploy prerequisite (#2855)
+
+### ⚡ Performance
+
+- Publish-time brotli and zero per-asset DB queries on the customer-apps serve plane (#2878)
+- Cut oxy-app test-suite cost — 31 test binaries to 5, per-run schema template (#2891)
+- Group the remaining crates' integration tests into one binary each (#2893)
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove the cargo-deny supply-chain job (#2874)
+- Weekly health review — 2026-08-10 (#2892)
+
 ## [0.5.120] - 2026-08-04
 
 ### 🐛 Bug Fixes
 
 - Settings sections a Member can't use no longer appear (#2848)
 - Custom-app email attachments arrive corrupt because SES emitted 7bit (#2852)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.120 (#2850)
 
 ## [0.5.119] - 2026-08-03
 
