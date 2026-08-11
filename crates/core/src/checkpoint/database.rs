@@ -7,6 +7,7 @@ use crate::{database::client::establish_connection, execute::types::Event};
 use oxy_shared::errors::OxyError;
 
 use super::{CheckpointData, CheckpointStorage, RunInfo};
+use sea_orm::ExprTrait;
 
 #[derive(Debug, Clone)]
 pub(super) struct DatabaseStorage {

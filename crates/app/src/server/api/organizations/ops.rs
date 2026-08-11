@@ -21,6 +21,7 @@ use uuid::Uuid;
 use oxy_shared::errors::OxyError;
 
 use super::dto::OrgResponse;
+use sea_orm::ExprTrait;
 
 pub(super) fn org_response(org: &organizations::Model, role: &OrgRole) -> OrgResponse {
     OrgResponse {

@@ -37,7 +37,7 @@ async fn lock() -> AdvisoryLock {
 }
 
 async fn exec(db: &DatabaseConnection, sql: &str) {
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         db.get_database_backend(),
         sql.to_string(),
     ))

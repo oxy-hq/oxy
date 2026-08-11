@@ -150,7 +150,7 @@ pub(super) async fn promote_one(
         )));
     }
 
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE workspaces SET current_revision_id = $1 WHERE id = $2",
         [revision_id.into(), rev.workspace_id.into()],

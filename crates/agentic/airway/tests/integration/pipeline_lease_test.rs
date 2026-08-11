@@ -264,7 +264,7 @@ async fn lease_row_is_gone_after_release() {
     // Released means deleted, not tombstoned — a lingering row with a past
     // expiry would still work, but it would grow unboundedly.
     let remaining = db
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT run_id FROM airway_pipeline_leases WHERE workspace_id = $1",
             [w.into()],

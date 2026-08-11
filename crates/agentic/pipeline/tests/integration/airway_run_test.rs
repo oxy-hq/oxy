@@ -659,7 +659,7 @@ resources:
 
     // Make it look like a run stranded by a restart: root, `running`, no live
     // driver — the exact shape `get_resumable_root_runs` selects.
-    sea_orm::ConnectionTrait::execute(
+    sea_orm::ConnectionTrait::execute_raw(
         &db,
         sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
@@ -676,7 +676,7 @@ resources:
     // interrupted case and correctly leaks nothing. The leak needs a run whose
     // work is gone, so recovery must fall through to `resume_from_state`, where
     // airway has no checkpoint and no suspension to resume from.
-    sea_orm::ConnectionTrait::execute(
+    sea_orm::ConnectionTrait::execute_raw(
         &db,
         sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
@@ -1076,7 +1076,7 @@ async fn a_terminal_holder_does_not_block_the_pipeline() {
     );
 
     // Terminalize it; the lease is now reclaimable without waiting out the TTL.
-    sea_orm::ConnectionTrait::execute(
+    sea_orm::ConnectionTrait::execute_raw(
         &db,
         sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,

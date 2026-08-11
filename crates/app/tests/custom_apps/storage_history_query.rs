@@ -252,7 +252,7 @@ async fn bucketing_is_utc_regardless_of_the_session_timezone() {
         .await
         .expect("connect a single-connection pool");
     tz_conn
-        .execute(Statement::from_string(
+        .execute_raw(Statement::from_string(
             tz_conn.get_database_backend(),
             "SET TIME ZONE 'Asia/Bangkok'".to_string(),
         ))
@@ -262,7 +262,7 @@ async fn bucketing_is_utc_regardless_of_the_session_timezone() {
     // Sanity-check the premise: if this connection were UTC after all, the
     // assertion below would pass no matter what the query did.
     let tz: String = tz_conn
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             tz_conn.get_database_backend(),
             "SHOW TimeZone".to_string(),
         ))

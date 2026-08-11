@@ -442,7 +442,7 @@ pub async fn record(db: &DatabaseConnection, entry: AuditEntry) -> Result<Uuid, 
     match entry.org_id {
         Some(org_id) if db.get_database_backend() == DatabaseBackend::Postgres => {
             let txn = db.begin().await?;
-            txn.execute(Statement::from_sql_and_values(
+            txn.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT pg_advisory_xact_lock($1)",
                 [chain_key(org_id).into()],
@@ -477,7 +477,7 @@ pub async fn record_in_txn<C: ConnectionTrait>(txn: &C, entry: AuditEntry) -> Re
 
     match entry.org_id {
         Some(org_id) if txn.get_database_backend() == DatabaseBackend::Postgres => {
-            txn.execute(Statement::from_sql_and_values(
+            txn.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT pg_advisory_xact_lock($1)",
                 [chain_key(org_id).into()],

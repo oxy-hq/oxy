@@ -15,6 +15,7 @@ use oxy::{
     execute::types::{ReferenceKind, event::SandboxInfo},
 };
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use sea_orm::ExprTrait;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, EntityTrait, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect,
@@ -101,7 +102,9 @@ pub async fn get_threads(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let page = pagination.page.unwrap_or(1).max(1);
+    // `Ord::max` is spelled out: `ExprTrait` (in scope for the query builders
+    // below) blanket-implements a `max` of its own on every `Into<Expr>` type.
+    let page = Ord::max(pagination.page.unwrap_or(1), 1);
     let limit = pagination.limit.unwrap_or(100).clamp(1, 100);
 
     // Shared filter: the user's own non-onboarding threads in this project,
@@ -791,6 +794,11 @@ mod tests {
     const USER_FILTER: &str = "user_id\" = $";
     const PROJECT_FILTER: &str = "project_id\" = $";
 
+    // The `.as_str()` on every `contains` below is load-bearing: `use super::*`
+    // pulls in `PgExpr`, which SeaQuery 1.0 blanket-implements for everything
+    // convertible into an `Expr` — `String` included. Its `contains` (the
+    // Postgres JSON operator) wins method resolution on a `String` receiver;
+    // through `&str` the inherent `str::contains` wins.
     fn thread_query_sql(is_operator: bool) -> String {
         scoped_thread_query(Uuid::nil(), Uuid::nil(), Uuid::nil(), is_operator)
             .build(DatabaseBackend::Postgres)
@@ -803,10 +811,13 @@ mod tests {
         // threads within the workspace.
         let sql = thread_query_sql(false);
         assert!(
-            sql.contains(PROJECT_FILTER),
+            sql.as_str().contains(PROJECT_FILTER),
             "must filter by project_id: {sql}"
         );
-        assert!(sql.contains(USER_FILTER), "must filter by user_id: {sql}");
+        assert!(
+            sql.as_str().contains(USER_FILTER),
+            "must filter by user_id: {sql}"
+        );
     }
 
     #[test]
@@ -817,11 +828,11 @@ mod tests {
         // workspace tenant boundary.
         let sql = thread_query_sql(true);
         assert!(
-            sql.contains(PROJECT_FILTER),
+            sql.as_str().contains(PROJECT_FILTER),
             "operator query must still filter by project_id: {sql}"
         );
         assert!(
-            !sql.contains(USER_FILTER),
+            !sql.as_str().contains(USER_FILTER),
             "operator query must NOT filter by user_id: {sql}"
         );
     }

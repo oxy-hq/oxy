@@ -1,0 +1,241 @@
+{
+    "slug": "repeat-customer-rate",
+    "title": "How many distinct customers ordered last month, an...",
+    "input": "How many distinct customers ordered last month, and what was their average order value?",
+    "output": "",
+    "source": "_analytics.agentic.yml",
+    "source_type": "analytics",
+    "references": "[]",
+    "run": {
+        "question": "How many distinct customers ordered last month, and what was their average order value?",
+        "answer": "**1,284 distinct customers** placed orders last month, at an **average order value of $147.32**.\n\nThat is 2,106 orders in total, so the average customer placed about 1.6 orders in the month. Average order value is the mean across orders, not across customers — a customer who ordered three times counts three times in that figure.",
+        "agent_id": "_analytics.agentic.yml",
+        "thinking_mode": "auto",
+        "task_status": "done"
+    },
+    "events": [
+        {
+            "seq": 0,
+            "event_type": "state_enter",
+            "payload": { "state": "clarifying", "revision": 0, "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 1,
+            "event_type": "llm_start",
+            "payload": { "state": "clarifying", "prompt_tokens": 2903 },
+            "attempt": 0
+        },
+        {
+            "seq": 2,
+            "event_type": "llm_end",
+            "payload": {
+                "model": "claude-sonnet-4-6",
+                "state": "clarifying",
+                "duration_ms": 5044,
+                "output_tokens": 162,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 5231
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 3,
+            "event_type": "tool_call",
+            "payload": {
+                "name": "search_catalog",
+                "input": "{\"queries\":[\"distinct customers\",\"average order value\",\"order date\"]}",
+                "llm_duration_ms": 5044
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 4,
+            "event_type": "tool_call",
+            "payload": {
+                "name": "propose_semantic_query",
+                "input": "{\"measures\":[\"orders.distinct_customers_with_orders\",\"orders.avg_order_value\",\"orders.total_orders\"],\"dimensions\":[],\"filters\":[],\"time_dimensions\":[{\"dimension\":\"orders.order_date\",\"granularity\":\"month\",\"date_range\":[\"2026-07-01\",\"2026-07-31\"]}],\"order\":[],\"limit\":null,\"confidence\":0.91}",
+                "llm_duration_ms": 4602
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 5,
+            "event_type": "triage_completed",
+            "payload": {
+                "summary": "Count distinct ordering customers and average order value for the previous calendar month.",
+                "confidence": 0.9100000262260437,
+                "ambiguities": [],
+                "question_type": "Aggregation"
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 6,
+            "event_type": "semantic_shortcut_attempted",
+            "payload": {
+                "filters": [],
+                "measures": [
+                    "orders.distinct_customers_with_orders",
+                    "orders.avg_order_value",
+                    "orders.total_orders"
+                ],
+                "confidence": 0.9100000262260437,
+                "dimensions": [],
+                "time_dimensions": [
+                    {
+                        "dimension": "orders.order_date",
+                        "date_range": ["2026-07-01", "2026-07-31"],
+                        "granularity": "month"
+                    }
+                ]
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 7,
+            "event_type": "semantic_shortcut_resolved",
+            "payload": {
+                "sql": "SELECT\n  date_trunc('month', \"orders\".\"order_date\") AS \"orders__order_date__month\",\n  COUNT(DISTINCT \"orders\".\"customer_id\") AS \"orders__distinct_customers_with_orders\",\n  AVG(\"orders\".\"total_amount\") AS \"orders__avg_order_value\",\n  COUNT(*) AS \"orders__total_orders\"\nFROM\n  orders.csv AS \"orders\"\nWHERE\n  \"orders\".\"order_date\" >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month')\n  AND \"orders\".\"order_date\" < date_trunc('month', CURRENT_DATE)\nGROUP BY\n  1\nLIMIT 10000"
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 8,
+            "event_type": "validation_pass",
+            "payload": { "state": "clarifying" },
+            "attempt": 0
+        },
+        {
+            "seq": 9,
+            "event_type": "state_exit",
+            "payload": { "state": "clarifying", "outcome": "advanced", "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 10,
+            "event_type": "state_enter",
+            "payload": { "state": "executing", "revision": 0, "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 11,
+            "event_type": "query_executed",
+            "payload": {
+                "error": null,
+                "query": "SELECT\n  date_trunc('month', \"orders\".\"order_date\") AS \"orders__order_date__month\",\n  COUNT(DISTINCT \"orders\".\"customer_id\") AS \"orders__distinct_customers_with_orders\",\n  AVG(\"orders\".\"total_amount\") AS \"orders__avg_order_value\",\n  COUNT(*) AS \"orders__total_orders\"\nFROM\n  orders.csv AS \"orders\"\nWHERE\n  \"orders\".\"order_date\" >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month')\n  AND \"orders\".\"order_date\" < date_trunc('month', CURRENT_DATE)\nGROUP BY\n  1\nLIMIT 10000",
+                "source": "semantic",
+                "columns": [
+                    "orders__order_date__month",
+                    "orders__distinct_customers_with_orders",
+                    "orders__avg_order_value",
+                    "orders__total_orders"
+                ],
+                "success": true,
+                "is_preagg": false,
+                "row_count": 1,
+                "duration_ms": 189,
+                "rows": [["2026-07-01", 1284, 147.32000000000005, 2106]],
+                "semantic_query": {
+                    "limit": null,
+                    "order": [],
+                    "filters": [],
+                    "measures": [
+                        "orders.distinct_customers_with_orders",
+                        "orders.avg_order_value",
+                        "orders.total_orders"
+                    ],
+                    "dimensions": [],
+                    "assumptions": [
+                        "\"Last month\" resolved to the previous complete calendar month."
+                    ],
+                    "time_dimensions": [
+                        {
+                            "dimension": "orders.order_date",
+                            "date_range": ["2026-07-01", "2026-07-31"],
+                            "granularity": "month"
+                        }
+                    ]
+                }
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 12,
+            "event_type": "validation_pass",
+            "payload": { "state": "executing" },
+            "attempt": 0
+        },
+        {
+            "seq": 13,
+            "event_type": "state_exit",
+            "payload": { "state": "executing", "outcome": "advanced", "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 14,
+            "event_type": "state_enter",
+            "payload": { "state": "interpreting", "revision": 0, "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 15,
+            "event_type": "llm_start",
+            "payload": { "state": "interpreting", "prompt_tokens": 986 },
+            "attempt": 0
+        },
+        {
+            "seq": 16,
+            "event_type": "llm_token",
+            "payload": { "token": "**1,284 distinct customers**" },
+            "attempt": 0
+        },
+        {
+            "seq": 17,
+            "event_type": "llm_token",
+            "payload": {
+                "token": " placed orders last month, at an **average order value of $147.32**.\n\n"
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 18,
+            "event_type": "llm_token",
+            "payload": {
+                "token": "That is 2,106 orders in total, so the average customer placed about 1.6 orders in the month. Average order value is the mean across orders, not across customers — a customer who ordered three times counts three times in that figure."
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 19,
+            "event_type": "llm_end",
+            "payload": {
+                "model": "claude-sonnet-4-6",
+                "state": "interpreting",
+                "duration_ms": 4318,
+                "output_tokens": 208,
+                "cache_read_input_tokens": 5231,
+                "cache_creation_input_tokens": 964
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 20,
+            "event_type": "validation_pass",
+            "payload": { "state": "interpreting" },
+            "attempt": 0
+        },
+        {
+            "seq": 21,
+            "event_type": "state_exit",
+            "payload": { "state": "interpreting", "outcome": "advanced", "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 22,
+            "event_type": "done",
+            "payload": { "trace_id": "trace-1" },
+            "attempt": 0
+        }
+    ]
+}

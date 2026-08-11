@@ -493,7 +493,7 @@ pub async fn get_max_child_counter(
         "SELECT id FROM agentic_runs WHERE id LIKE $1 AND id != $2",
         [format!("{root_run_id}.%").into(), root_run_id.into()],
     );
-    let rows = db.query_all(stmt).await?;
+    let rows = db.query_all_raw(stmt).await?;
 
     let mut max_counter: u64 = 0;
     for row in rows {

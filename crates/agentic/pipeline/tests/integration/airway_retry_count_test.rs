@@ -64,7 +64,7 @@ async fn seed_run_with_extension(db: &DatabaseConnection) -> String {
     crud::insert_run(db, &run_id, "Q", None, "airway", None, uuid::Uuid::nil())
         .await
         .unwrap();
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO airway_run_extensions \
              (run_id, pipeline_name, concurrency, resources, retry_count) \
@@ -77,7 +77,7 @@ async fn seed_run_with_extension(db: &DatabaseConnection) -> String {
 }
 
 async fn retry_count(db: &DatabaseConnection, run_id: &str) -> Option<i64> {
-    db.query_one(Statement::from_sql_and_values(
+    db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT retry_count::bigint AS v FROM airway_run_extensions WHERE run_id = $1",
         [run_id.into()],

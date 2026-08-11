@@ -213,7 +213,7 @@ urlencoding = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs"] }
 tracing-appender = { workspace = true }
 tracing-log = { workspace = true }
-sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
+sqlx = { workspace = true, features = ["runtime-tokio", "tls-rustls", "postgres"] }
 semver = { workspace = true }
 backoff = { workspace = true, features = ["tokio"] }
 rustc_version_runtime = { workspace = true }

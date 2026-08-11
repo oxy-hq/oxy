@@ -31,7 +31,7 @@ pub async fn try_acquire_driver(
     driver_id: &str,
 ) -> Result<bool, DbErr> {
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             // Deliberately does NOT touch `updated_at`: the lease is
             // bookkeeping, not run progress. Conflating them would push a
@@ -62,7 +62,7 @@ pub async fn heartbeat_driver(
     driver_id: &str,
 ) -> Result<bool, DbErr> {
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             // No `updated_at` bump — see `try_acquire_driver`.
             "UPDATE agentic_runs \
@@ -82,7 +82,7 @@ pub async fn release_driver(
     run_id: &str,
     driver_id: &str,
 ) -> Result<(), DbErr> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         // No `updated_at` bump — see `try_acquire_driver`. (Terminal
         // `transition_run` legitimately bumps it; that is a real state
@@ -103,7 +103,7 @@ pub async fn release_driver(
 /// the in-memory watch channel only reaches a same-process coordinator.
 /// Idempotent; does not overwrite an earlier request timestamp.
 pub async fn request_cancel(db: &DatabaseConnection, run_id: &str) -> Result<(), DbErr> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_runs \
          SET cancel_requested_at = COALESCE(cancel_requested_at, now()) \

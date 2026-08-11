@@ -151,7 +151,7 @@ fn uniq_ref() -> String {
 }
 
 async fn force_due(db: &DatabaseConnection, id: &str, secs_ago: i64) {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         "UPDATE agentic_schedules SET next_run_at = now() - make_interval(secs => $1) WHERE id = $2",
         [secs_ago.into(), id.into()],

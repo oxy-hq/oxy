@@ -341,7 +341,7 @@ async fn append_events_in_txn(
     );
 
     let stmt = Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres, sql, values);
-    txn.execute(stmt).await?;
+    txn.execute_raw(stmt).await?;
     Ok(())
 }
 
@@ -386,7 +386,7 @@ async fn set_run_terminal_in_txn(
             run_id.into(),
         ],
     );
-    txn.execute(stmt).await?;
+    txn.execute_raw(stmt).await?;
     Ok(())
 }
 
@@ -412,6 +412,6 @@ async fn set_queue_status_in_txn(
             task_id.into(),
         ],
     );
-    txn.execute(stmt).await?;
+    txn.execute_raw(stmt).await?;
     Ok(())
 }

@@ -502,7 +502,7 @@ pub async fn tick_schedules(
         // are stamped in the same UPDATE so a single replica owns the
         // catch-up accounting too.
         let won = match db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE agentic_schedules \
                  SET next_run_at = $1, \
@@ -656,7 +656,7 @@ pub async fn tick_monitor_schedules(
 
         // CAS-advance: exactly-once fire across replicas.
         let won = match db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE agentic_schedules \
                  SET next_run_at = $1, \
@@ -854,7 +854,7 @@ async fn cas_advance_next_run(
     observed: chrono::DateTime<chrono::FixedOffset>,
     next: chrono::DateTime<chrono::FixedOffset>,
 ) -> bool {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_schedules SET next_run_at = $1, last_fired_at = now(), \
          updated_at = now() WHERE id = $2 AND next_run_at = $3",
@@ -1242,7 +1242,7 @@ async fn fire_schedule(
 /// doesn't lose work.
 pub async fn record_fire_success(db: &DatabaseConnection, schedule_id: &str, run_id: &str) {
     if let Err(e) = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE agentic_schedules SET last_run_id = $1, last_error = NULL WHERE id = $2",
             [run_id.into(), schedule_id.into()],
@@ -1508,7 +1508,7 @@ pub async fn set_schedule_last_error(
 ) {
     let msg: Option<String> = msg.map(str::to_string);
     if let Err(e) = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE agentic_schedules SET last_error = $1 WHERE id = $2",
             [msg.into(), schedule_id.into()],

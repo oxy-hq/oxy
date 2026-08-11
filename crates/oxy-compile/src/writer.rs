@@ -380,7 +380,7 @@ async fn promote_revision(
         sql,
         [workspace_id.into(), revision_id.into()],
     );
-    let result = txn.execute(stmt).await?;
+    let result = txn.execute_raw(stmt).await?;
     if result.rows_affected() == 0 {
         // A newer revision is already current — we lost the race.
         // Not an error: the per-entity rows we just wrote are still

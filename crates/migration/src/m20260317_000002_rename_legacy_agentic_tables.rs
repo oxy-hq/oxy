@@ -26,7 +26,7 @@ impl MigrationTrait for Migration {
 async fn table_exists(manager: &SchemaManager<'_>, name: &str) -> Result<bool, DbErr> {
     let db = manager.get_connection();
     let result = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)",
             [name.into()],

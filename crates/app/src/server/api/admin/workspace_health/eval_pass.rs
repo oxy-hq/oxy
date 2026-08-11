@@ -448,7 +448,7 @@ async fn upsert_state(db: &DatabaseConnection, w: &StateWrite<'_>) {
     // clobbering the transition time.
     if *prev != Some(status)
         && let Err(e) = db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE workspace_health_state SET changed_at = $1 WHERE workspace_id = $2",
                 [now.into(), ws.into()],

@@ -44,6 +44,7 @@ use uuid::Uuid;
 
 use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
 use crate::server::router::AppState;
+use sea_orm::ExprTrait;
 
 #[derive(Serialize)]
 struct ApiErr {

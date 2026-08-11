@@ -666,7 +666,7 @@ async fn complete_automation_with_pending_steps_is_rejected() {
 /// without needing a second live transport.
 async fn claim_as(db: &DatabaseConnection, task_id: &str, worker_id: &str) {
     use sea_orm::{ConnectionTrait, Statement};
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue \
          SET queue_status = 'claimed', worker_id = $2, claimed_at = now(), \

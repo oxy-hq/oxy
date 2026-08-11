@@ -153,7 +153,7 @@ pub async fn update_state_in_txn(
         ],
     );
 
-    let result = txn.execute(stmt).await?;
+    let result = txn.execute_raw(stmt).await?;
     Ok(result.rows_affected() == 1)
 }
 
@@ -230,7 +230,7 @@ pub async fn apply_result_delta_in_txn(
         ],
     );
 
-    let result = txn.execute(stmt).await?;
+    let result = txn.execute_raw(stmt).await?;
     Ok(result.rows_affected() == 1)
 }
 

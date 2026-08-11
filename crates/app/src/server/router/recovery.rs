@@ -1248,7 +1248,7 @@ async fn reconcile_all_health_schedules(db: &DatabaseConnection, prune_orphans: 
 
     // Drop the legacy global singleton row — superseded by per-workspace rows.
     if let Err(e) = db
-        .execute(Statement::from_string(
+        .execute_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "DELETE FROM agentic_schedules \
              WHERE target_kind = 'health_eval' AND target_ref = 'global'",

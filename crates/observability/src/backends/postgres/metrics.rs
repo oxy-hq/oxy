@@ -84,7 +84,7 @@ pub(super) async fn store_metric_usages(
              (metric_name, source_type, source_ref, context, context_types, trace_id)
              VALUES ($1, $2, $3, $4, $5::JSONB, $6)";
 
-        db.execute(Statement::from_sql_and_values(
+        db.execute_raw(Statement::from_sql_and_values(
             pg(),
             sql,
             vec![

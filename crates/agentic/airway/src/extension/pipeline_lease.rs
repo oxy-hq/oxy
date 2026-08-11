@@ -284,7 +284,7 @@ pub async fn try_acquire<C: ConnectionTrait>(
 /// a stale run cannot free a successor's lease, because a taken-over lease no
 /// longer carries the old run's id.
 pub async fn release_by_run<C: ConnectionTrait>(db: &C, run_id: &str) -> Result<(), DbErr> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         "DELETE FROM airway_pipeline_leases WHERE run_id = $1",
         [run_id.into()],
@@ -309,7 +309,7 @@ pub async fn release_counted<C: ConnectionTrait>(
     run_id: &str,
 ) -> Result<u64, DbErr> {
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             r#"DELETE FROM airway_pipeline_leases
            WHERE workspace_id = $1 AND pipeline_name = $2 AND run_id = $3"#,
@@ -357,7 +357,7 @@ pub async fn force_release<C: ConnectionTrait>(
     pipeline_name: &str,
 ) -> Result<u64, DbErr> {
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             "DELETE FROM airway_pipeline_leases \
                WHERE workspace_id = $1 AND pipeline_name = $2",

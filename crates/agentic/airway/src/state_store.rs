@@ -346,7 +346,7 @@ impl StateStore for AirwayRunScopedStateStore {
         let res = self
             .db
             .as_ref()
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE airway_run_extensions SET resume_state = $1 WHERE run_id = $2",
                 [state_json.into(), self.run_id.clone().into()],

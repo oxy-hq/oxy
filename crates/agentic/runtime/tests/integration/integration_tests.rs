@@ -4786,7 +4786,7 @@ async fn cleanup_queued_entries(db: &DatabaseConnection) {
         "DELETE FROM agentic_task_queue",
         "DELETE FROM agentic_task_outcomes",
     ] {
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             sql.to_string(),
         ))
@@ -5393,7 +5393,7 @@ async fn test_driver_lease() {
 
     // Age A's heartbeat past the TTL → B can steal it, and the run becomes
     // resumable again.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_runs SET driver_heartbeat_at = now() - make_interval(secs => $1) \
          WHERE id = $2",
@@ -5620,7 +5620,7 @@ async fn test_rung4_kill_and_recover() {
 
     // Age everything past the relevant windows: queue heartbeat past the
     // visibility timeout, driver lease past its TTL, run past the grace.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue \
          SET last_heartbeat = now() - make_interval(secs => 3600) \
@@ -5629,7 +5629,7 @@ async fn test_rung4_kill_and_recover() {
     ))
     .await
     .unwrap();
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_runs \
          SET driver_heartbeat_at = now() - make_interval(secs => 3600), \

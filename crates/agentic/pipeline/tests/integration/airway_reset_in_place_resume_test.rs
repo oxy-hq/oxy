@@ -145,7 +145,7 @@ impl agentic_automation::WorkspaceContext for TmpWorkspace {
 
 /// One scalar column off a single-row query, as text (`NULL` → `None`).
 async fn scalar(db: &DatabaseConnection, sql: &str, id: &str) -> Option<String> {
-    db.query_one(Statement::from_sql_and_values(
+    db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         sql,
         [id.into()],
@@ -165,7 +165,7 @@ async fn seed_crashed_backfill(db: &Arc<DatabaseConnection>) -> String {
     crud::insert_run(conn, &run_id, "Q", None, "airway", None, uuid::Uuid::nil())
         .await
         .unwrap();
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO airway_run_extensions \
              (run_id, pipeline_name, concurrency, resources, retry_count) \
@@ -206,7 +206,7 @@ async fn seed_crashed_backfill(db: &Arc<DatabaseConnection>) -> String {
     )
     .await
     .unwrap();
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue SET queue_status='failed' WHERE task_id=$1",
         [run_id.clone().into()],

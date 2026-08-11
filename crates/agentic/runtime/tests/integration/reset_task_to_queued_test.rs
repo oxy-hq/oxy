@@ -69,7 +69,7 @@ async fn test_db() -> Option<DatabaseConnection> {
 /// Read a single scalar column off the task's queue row.
 async fn queue_col(db: &DatabaseConnection, task_id: &str, col: &str) -> Option<String> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             &format!("SELECT {col}::text AS v FROM agentic_task_queue WHERE task_id = $1"),
             [task_id.into()],
@@ -116,7 +116,7 @@ async fn reset_task_to_queued_revives_an_existing_task() {
 
     // Simulate a failed, previously-claimed task in place (no claim_task race on
     // the shared test DB).
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue SET queue_status='failed', worker_id='w', \
              last_heartbeat=now(), claimed_at=now(), claim_count=2 WHERE task_id=$1",
@@ -171,7 +171,7 @@ async fn reset_task_to_queued_skips_a_live_claimed_task() {
     };
     let task_id = seed_airway_task(&db).await;
 
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue SET queue_status='claimed', worker_id='w', \
              last_heartbeat=now(), claimed_at=now(), claim_count=1 WHERE task_id=$1",
@@ -240,7 +240,7 @@ async fn reset_clears_the_wait_streak_and_visibility() {
 
     // Put the row in the shape a long wait then a failure leaves behind:
     // a streak that began well beyond any ceiling, and a future visibility.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue \
          SET queue_status = 'failed', \
@@ -282,7 +282,7 @@ async fn reset_clears_the_wait_streak_and_visibility() {
 
     // Retire the row: it is globally claimable until something takes it, and a
     // stray one perturbs the peers that claim or count globally.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "DELETE FROM agentic_task_queue WHERE task_id = $1",
         [task_id.clone().into()],

@@ -21,6 +21,7 @@ use tokio::time::Instant;
 
 use agentic_automation::WorkspaceContext;
 use entity::airway_source_config;
+use sea_orm::ExprTrait;
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use uuid::Uuid;
 

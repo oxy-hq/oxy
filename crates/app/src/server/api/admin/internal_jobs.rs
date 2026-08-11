@@ -493,7 +493,7 @@ async fn reenqueue_dead(Path(task_id): Path<String>) -> Result<Json<QueueRowDto>
             // but we must inspect rows_affected to detect the race and
             // surface a 409 rather than a misleading 200.
             let result = db
-                .execute(Statement::from_sql_and_values(
+                .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "UPDATE agentic_task_queue \
                      SET queue_status = 'queued', \
@@ -551,7 +551,7 @@ async fn delete_dead(Path(task_id): Path<String>) -> Result<StatusCode, Response
         Some("dead") => {
             // Same TOCTOU guard as reenqueue_dead.
             let result = db
-                .execute(Statement::from_sql_and_values(
+                .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "DELETE FROM agentic_task_queue WHERE task_id = $1 AND queue_status = 'dead'",
                     [task_id.clone().into()],

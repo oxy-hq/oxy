@@ -92,10 +92,10 @@ mod tests {
             sea_orm::ConnAcquireErr::ConnectionClosed
         )));
         assert!(is_transient_db_error(&DbErr::Conn(RuntimeErr::SqlxError(
-            sqlx::Error::PoolTimedOut
+            sqlx::Error::PoolTimedOut.into()
         ))));
         assert!(is_transient_db_error(&DbErr::Conn(RuntimeErr::SqlxError(
-            sqlx::Error::Io(std::io::Error::from(std::io::ErrorKind::ConnectionReset))
+            sqlx::Error::Io(std::io::Error::from(std::io::ErrorKind::ConnectionReset)).into()
         ))));
     }
 
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn a_connection_dropped_mid_statement_is_transient() {
         assert!(is_transient_db_error(&DbErr::Query(RuntimeErr::SqlxError(
-            sqlx::Error::Io(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+            sqlx::Error::Io(std::io::Error::from(std::io::ErrorKind::BrokenPipe)).into()
         ))));
         assert!(is_transient_db_error(&DbErr::Exec(RuntimeErr::Internal(
             "connection reset by peer".into()

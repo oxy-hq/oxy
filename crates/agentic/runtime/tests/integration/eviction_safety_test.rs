@@ -96,7 +96,7 @@ async fn seed_task(
 
 /// Age a claimed task's heartbeat so the reaper's visibility timeout has expired.
 async fn expire_heartbeat(db: &DatabaseConnection, task_id: &str) {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue \
          SET last_heartbeat = now() - (visibility_timeout_secs + 10 || ' seconds')::interval \
@@ -152,7 +152,7 @@ async fn reap_reports_requeue_and_dead_letter_separately() {
 
     // One task at the cap -> dead-lettered.
     let (_, doomed) = seed_task(&db, "workflow", TaskScope::Global).await;
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue SET queue_status = 'claimed', claim_count = max_claims \
          WHERE task_id = $1",
@@ -212,7 +212,7 @@ async fn reap_counters_increment_via_a_call_site_other_than_run_reaper_cycle() {
 
     // One task at the cap -> dead-lettered.
     let (_, doomed) = seed_task(&db, "workflow", TaskScope::Global).await;
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue SET queue_status = 'claimed', claim_count = max_claims \
          WHERE task_id = $1",
@@ -394,7 +394,7 @@ async fn release_floors_claim_count_at_zero() {
         .unwrap();
 
     // Force the pathological case: claimed with a zero budget already spent.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue SET claim_count = 0 WHERE task_id = $1",
         [task_id.clone().into()],
@@ -1074,7 +1074,7 @@ async fn reap_reports_which_tasks_were_dead_lettered() {
     // A worker id unique to this run: the suite shares a database, so a bare
     // 'ghost' could be matched against some other test's row.
     let dying_worker = format!("ghost-{}", uuid::Uuid::new_v4());
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue \
          SET queue_status = 'claimed', claim_count = max_claims, worker_id = $2 \
@@ -1156,7 +1156,7 @@ async fn deferred_task_is_invisible_until_its_window_opens() {
     );
 
     // Open the window; it becomes claimable again with no other change.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue SET available_at = now() - interval '1 second' \
          WHERE task_id = $1",
@@ -1297,7 +1297,7 @@ async fn a_task_that_waits_past_its_ceiling_is_dead_lettered() {
     // Age the streak past the ceiling. `first_deferred_at` must survive the
     // intervening defers — if a later defer overwrote it, the streak would
     // reset every hop and never reach any ceiling.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue \
          SET first_deferred_at = now() - interval '2 hours', available_at = now() \
@@ -1359,7 +1359,7 @@ async fn the_wait_streak_is_not_reset_by_later_deferrals() {
     // gets picked up by another test that assumed it would claim its own task.
     // Deferring with delay 0 (needed above, to re-claim) ends with exactly such
     // a row, so retire it explicitly.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "DELETE FROM agentic_task_queue WHERE task_id = $1",
         [task_id.clone().into()],

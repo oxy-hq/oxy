@@ -313,7 +313,7 @@ mod tests {
         // `agentic_runs.id` is a String PK (not UUID); `question`, `attempt`,
         // `created_at`, and `updated_at` are NOT NULL.
         for _ in 0..3 {
-            db.execute(Statement::from_sql_and_values(
+            db.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO agentic_runs \
                     (id, workspace_id, question, task_status, attempt, created_at, updated_at) \
@@ -418,7 +418,7 @@ mod tests {
         task_status: &str,
         source_type: Option<&str>,
     ) {
-        db.execute(Statement::from_sql_and_values(
+        db.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO agentic_runs \
                 (id, workspace_id, question, task_status, source_type, attempt, created_at, updated_at) \
@@ -457,7 +457,7 @@ mod tests {
         let target = Uuid::new_v4();
         let other = Uuid::new_v4();
         for ws in [target, other] {
-            db.execute(Statement::from_sql_and_values(
+            db.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO agentic_runs \
                     (id, workspace_id, question, task_status, attempt, created_at, updated_at) \

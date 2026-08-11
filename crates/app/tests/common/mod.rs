@@ -413,7 +413,7 @@ async fn drop_stale_databases(admin: &DatabaseConnection, keep: &str) {
     );
 
     let Ok(rows) = admin
-        .query_all(sea_orm::Statement::from_string(
+        .query_all_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             sql,
         ))
@@ -432,7 +432,7 @@ async fn drop_stale_databases(admin: &DatabaseConnection, keep: &str) {
 
 async fn database_exists(admin: &DatabaseConnection, name: &str) -> bool {
     admin
-        .query_one(sea_orm::Statement::from_sql_and_values(
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT 1 FROM pg_database WHERE datname = $1",
             [name.into()],

@@ -799,7 +799,7 @@ pub(crate) async fn enqueue_compile_deduped(
     // serialisation; it can't cause incorrectness.
     let lock_key = (workspace_id.as_u128() as u64 & 0x7fff_ffff_ffff_ffff) as i64;
     let got_lock = txn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT pg_try_advisory_xact_lock($1) AS locked",
             [lock_key.into()],
@@ -844,7 +844,7 @@ pub(crate) async fn enqueue_compile_deduped(
 
     // Re-check for an in-flight compile INSIDE the lock.
     let already = txn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT 1 FROM agentic_task_queue \
              WHERE queue_status IN ('queued', 'claimed') \

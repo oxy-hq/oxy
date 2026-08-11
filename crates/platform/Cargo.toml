@@ -15,7 +15,7 @@ entity = { workspace = true }
 
 # Database
 sea-orm = { workspace = true }
-sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
+sqlx = { workspace = true, features = ["runtime-tokio", "tls-rustls", "postgres"] }
 # agentic-runtime contributes the ListenerConfigFactory type used by the
 # task-router's dedicated LISTEN connection. The platform crate owns the
 # factory implementations (password + IAM) because it already owns the

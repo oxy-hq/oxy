@@ -50,7 +50,11 @@ async fn table_exists(manager: &SchemaManager<'_>, table: &str) -> Result<bool, 
         "SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1",
         [table.into()],
     );
-    Ok(manager.get_connection().query_one(stmt).await?.is_some())
+    Ok(manager
+        .get_connection()
+        .query_one_raw(stmt)
+        .await?
+        .is_some())
 }
 
 async fn column_exists(
@@ -63,7 +67,11 @@ async fn column_exists(
         "SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2 LIMIT 1",
         [table.into(), column.into()],
     );
-    Ok(manager.get_connection().query_one(stmt).await?.is_some())
+    Ok(manager
+        .get_connection()
+        .query_one_raw(stmt)
+        .await?
+        .is_some())
 }
 
 async fn rename_table_if_needed(

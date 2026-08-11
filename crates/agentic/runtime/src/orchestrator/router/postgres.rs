@@ -329,7 +329,7 @@ impl TaskRouter for PostgresTaskRouter {
             "SELECT pg_notify($1, $2)",
             [TASK_ENQUEUED_CHANNEL.into(), payload.into()],
         );
-        if let Err(e) = self.db.execute(stmt).await {
+        if let Err(e) = self.db.execute_raw(stmt).await {
             // Best-effort: a failed NOTIFY is a latency regression, not
             // a correctness bug — workers fall through to backstop poll
             // and pick up the task within the poll interval. Log and
@@ -349,7 +349,7 @@ impl TaskRouter for PostgresTaskRouter {
             "SELECT pg_notify($1, $2)",
             [HEALTH_PROBE_CHANNEL.into(), self.instance_id.clone().into()],
         );
-        if let Err(e) = self.db.execute(stmt).await {
+        if let Err(e) = self.db.execute_raw(stmt).await {
             // Probe failures are operational signal, not correctness
             // issues. Log + carry on — the next tick will retry. Don't
             // bump tracing to error level; flapping AWS / DB issues

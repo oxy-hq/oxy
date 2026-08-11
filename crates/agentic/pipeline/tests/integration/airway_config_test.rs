@@ -393,7 +393,7 @@ async fn updated_at_advances_on_every_update() {
 
     // 2. The admin API's shape: upsert onto the global partial unique index,
     //    with `updated_at` absent from the DO UPDATE SET list.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         "INSERT INTO airway_source_config (source_kind, workspace_id, contract_policy, \
          environment, updated_at) VALUES ($1, NULL, $2, NULL, $3) \

@@ -103,7 +103,7 @@ async fn reap_stuck_compiles(db: &DatabaseConnection, timeout_secs: u64) {
                WHERE status = 'compiling' \
                  AND started_at < now() - ($1::bigint * interval '1 second')";
     match db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             [(timeout_secs as i64).into()],
@@ -138,7 +138,7 @@ async fn prune_old_revisions(db: &DatabaseConnection, retention_days: u64) {
                    LIMIT $2 \
                )";
     match db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             [secs.into(), DELETE_BATCH.into()],

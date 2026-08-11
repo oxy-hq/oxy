@@ -12,6 +12,13 @@
 //!    with the right Rust type per column.
 //! 3. `introspect_schema`: `information_schema.columns`, cached at
 //!    construction time.
+//!
+//! Every query here goes through sqlx 0.9's `AssertSqlSafe`. That is an
+//! assertion, not a check — sqlx validates nothing. It is sound here because
+//! running caller-supplied SQL *is* this connector's contract, and the only
+//! values interpolated around that SQL are internal constants (`tmp` is the
+//! fixed `_agentic_tmp`) or identifiers quoted out of `information_schema`.
+//! Do not read a wrapped call as "sqlx checked this".
 
 #![cfg(feature = "mysql")]
 
@@ -19,7 +26,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use async_trait::async_trait;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions, MySqlRow};
-use sqlx::{Column, Executor, Row, TypeInfo};
+use sqlx::{AssertSqlSafe, Column, Executor, Row, SqlSafeStr, TypeInfo};
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -349,7 +356,7 @@ impl DatabaseConnector for MysqlConnector {
             .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
 
         for stmt in &script.prefix {
-            sqlx::query(stmt)
+            sqlx::query(AssertSqlSafe(stmt.clone()))
                 .execute(&mut *conn)
                 .await
                 .map_err(|e| ConnectorError::query_failed(stmt.clone(), e.to_string()))?;
@@ -359,7 +366,7 @@ impl DatabaseConnector for MysqlConnector {
 
         if !is_returning_statement(sql) {
             if !sql.is_empty() {
-                sqlx::query(sql)
+                sqlx::query(AssertSqlSafe(sql))
                     .execute(&mut *conn)
                     .await
                     .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
@@ -368,16 +375,20 @@ impl DatabaseConnector for MysqlConnector {
         }
 
         // 1. Drop any leftover temp table from a previous (failed) execution.
-        sqlx::query(&format!("DROP TEMPORARY TABLE IF EXISTS {tmp}"))
-            .execute(&mut *conn)
-            .await
-            .ok();
+        sqlx::query(AssertSqlSafe(format!(
+            "DROP TEMPORARY TABLE IF EXISTS {tmp}"
+        )))
+        .execute(&mut *conn)
+        .await
+        .ok();
 
         // 2. Materialise.
-        sqlx::query(&format!("CREATE TEMPORARY TABLE {tmp} AS ({sql})"))
-            .execute(&mut *conn)
-            .await
-            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
+        sqlx::query(AssertSqlSafe(format!(
+            "CREATE TEMPORARY TABLE {tmp} AS ({sql})"
+        )))
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         // 3. Column names / types from information_schema — scoped to
         //    `_agentic_tmp` in the current DB.
@@ -397,7 +408,7 @@ impl DatabaseConnector for MysqlConnector {
 
         // 4. Total row count.
         let count_sql = format!("SELECT COUNT(*) AS n FROM {tmp}");
-        let total_row_count: u64 = sqlx::query_scalar::<_, i64>(&count_sql)
+        let total_row_count: u64 = sqlx::query_scalar::<_, i64>(AssertSqlSafe(count_sql.clone()))
             .fetch_one(&mut *conn)
             .await
             .map(|n| n as u64)
@@ -414,7 +425,7 @@ impl DatabaseConnector for MysqlConnector {
                 .collect::<Vec<_>>()
                 .join(", ");
             let sample_sql = format!("SELECT {cast_cols} FROM {tmp} LIMIT {sample_limit}");
-            let rows = sqlx::query(&sample_sql)
+            let rows = sqlx::query(AssertSqlSafe(sample_sql.clone()))
                 .fetch_all(&mut *conn)
                 .await
                 .map_err(|e| ConnectorError::query_failed(sample_sql.clone(), e.to_string()))?;
@@ -456,7 +467,7 @@ impl DatabaseConnector for MysqlConnector {
                 .collect::<Vec<_>>()
                 .join(", ");
             let stats_sql = format!("SELECT {exprs} FROM {tmp}");
-            let stats_row = sqlx::query(&stats_sql)
+            let stats_row = sqlx::query(AssertSqlSafe(stats_sql.clone()))
                 .fetch_one(&mut *conn)
                 .await
                 .map_err(|e| ConnectorError::query_failed(stats_sql.clone(), e.to_string()))?;
@@ -508,9 +519,11 @@ impl DatabaseConnector for MysqlConnector {
         };
 
         // 7. Cleanup (fire-and-forget).
-        let _ = sqlx::query(&format!("DROP TEMPORARY TABLE IF EXISTS {tmp}"))
-            .execute(&mut *conn)
-            .await;
+        let _ = sqlx::query(AssertSqlSafe(format!(
+            "DROP TEMPORARY TABLE IF EXISTS {tmp}"
+        )))
+        .execute(&mut *conn)
+        .await;
 
         let truncated = (sample_rows.len() as u64) < total_row_count;
         Ok(ExecutionResult {
@@ -545,10 +558,13 @@ impl DatabaseConnector for MysqlConnector {
         // Use the prepared-statement protocol to get column type info without
         // creating a temp table. Falls back to execute() for DDL / DML that
         // MySQL can't prepare (CREATE TABLE, INSERT without RETURNING, etc.).
-        let stmt = match (&self.pool).prepare(sql).await {
+        let stmt = match (&self.pool)
+            .prepare(AssertSqlSafe(sql).into_sql_str())
+            .await
+        {
             Ok(s) => s,
             Err(_) => {
-                return match sqlx::query(sql).execute(&self.pool).await {
+                return match sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await {
                     Ok(_) => Ok(TypedRowStream::from_rows(vec![], vec![])),
                     Err(e) => Err(ConnectorError::query_failed(sql.to_string(), e.to_string())),
                 };
@@ -558,7 +574,7 @@ impl DatabaseConnector for MysqlConnector {
         let mysql_cols = stmt.columns();
         if mysql_cols.is_empty() {
             // Statement prepared but returns no result set (e.g. DML).
-            sqlx::query(sql)
+            sqlx::query(AssertSqlSafe(sql))
                 .execute(&self.pool)
                 .await
                 .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
@@ -613,7 +629,7 @@ impl DatabaseConnector for MysqlConnector {
         let pool = self.pool.clone();
         let stream_columns = columns.clone();
         let row_stream = async_stream::stream! {
-            let mut fetch = sqlx::query(&exec_sql).fetch(&pool);
+            let mut fetch = sqlx::query(AssertSqlSafe(exec_sql)).fetch(&pool);
             while let Some(result) = fetch.next().await {
                 yield match result {
                     Ok(row) => decode_row(&row, &stream_columns),

@@ -82,7 +82,7 @@ async fn sync_legacy_tracking(db: &DatabaseConnection) -> Result<(), DbErr> {
     // deployment that never ran the central migrator yet — unlikely, but
     // protects test setups).
     let central_exists = db
-        .query_one(sea_orm::Statement::from_sql_and_values(
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1",
             ["seaql_migrations".into()],

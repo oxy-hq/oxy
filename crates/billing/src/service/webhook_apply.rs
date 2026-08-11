@@ -29,6 +29,7 @@ use crate::service::helpers::extract::{invoice_subscription_id, pick_seat_item, 
 use crate::service::helpers::mappers::map_stripe_status_str;
 use crate::service::stripe_shapes::StripeSubscription;
 use crate::state;
+use sea_orm::ExprTrait;
 
 /// Final state for a webhook event row. `mark_terminal` writes the row in
 /// either `Success` or `Failed` so the same UPDATE handles both cases.

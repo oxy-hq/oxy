@@ -76,7 +76,7 @@ async fn the_singleton_constraint_is_enforced_by_the_schema() {
     let insert = |sql: &'static str| {
         let db = db.clone();
         async move {
-            db.execute(Statement::from_string(db.get_database_backend(), sql))
+            db.execute_raw(Statement::from_string(db.get_database_backend(), sql))
                 .await
         }
     };
@@ -355,7 +355,7 @@ async fn an_older_writer_cannot_clear_the_cursor_lag_floor() {
     // The previous image saves the ten columns it has. Column-for-column what
     // SeaORM emits for an `ActiveModel` without `cursor_lag_floor_secs` and an
     // `update_columns` list that does not mention it.
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         db.get_database_backend(),
         r#"
         INSERT INTO airway_deployment_config

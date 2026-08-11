@@ -443,10 +443,10 @@ mod tests {
         );
 
         // db wired (the fix): the dispatcher resolves so compiles can run.
-        // `Disconnected` is fine — the dispatcher only stores the handle here,
-        // it never opens a connection.
+        // The default (disconnected) handle is fine — the dispatcher only
+        // stores it here, it never opens a connection.
         let ctx_db = super::OxyProjectContext::new(wm)
-            .with_db(Arc::new(sea_orm::DatabaseConnection::Disconnected));
+            .with_db(Arc::new(sea_orm::DatabaseConnection::default()));
         assert!(
             ctx_db.compile_dispatcher().is_some(),
             "a db-wired context (HTTP middleware or global driver) must resolve a compile dispatcher"

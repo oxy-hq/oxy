@@ -118,7 +118,7 @@ pub(super) async fn store_clusters(
 ) -> Result<(), OxyError> {
     let db = storage.db();
 
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         pg(),
         "DELETE FROM observability_intent_clusters".to_string(),
     ))
@@ -137,7 +137,7 @@ pub(super) async fn store_clusters(
              VALUES ($1, $2, $3, {centroid}, $4::JSONB, $5)"
         );
 
-        db.execute(Statement::from_sql_and_values(
+        db.execute_raw(Statement::from_sql_and_values(
             pg(),
             &sql,
             vec![
@@ -217,7 +217,7 @@ pub(super) async fn store_classification(
 
     storage
         .db()
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             pg(),
             &sql,
             vec![
@@ -350,7 +350,7 @@ pub(super) async fn update_cluster_record(
 
     storage
         .db()
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             pg(),
             &sql,
             vec![

@@ -29,7 +29,8 @@ mysql = [
     "sqlx/mysql",
     "sqlx/chrono",
     "sqlx/json",
-    "sqlx/runtime-tokio-rustls",
+    "sqlx/runtime-tokio",
+    "sqlx/tls-rustls",
     "dep:chrono",
     "dep:serde_json",
 ]

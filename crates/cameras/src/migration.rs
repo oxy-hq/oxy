@@ -1319,7 +1319,7 @@ impl MigrationTrait for SealDeviceSecrets {
         // device_registry is bounded by "all devices we've ever
         // manufactured," so an in-memory pass is fine.
         let rows = db
-            .query_all(Statement::from_string(
+            .query_all_raw(Statement::from_string(
                 backend,
                 "SELECT device_id, device_secret FROM device_registry".to_string(),
             ))
@@ -1333,7 +1333,7 @@ impl MigrationTrait for SealDeviceSecrets {
             }
             let sealed = crate::secrets::seal(&secret)
                 .map_err(|e| DbErr::Custom(format!("seal device_secret for {device_id}: {e}")))?;
-            db.execute(Statement::from_sql_and_values(
+            db.execute_raw(Statement::from_sql_and_values(
                 backend,
                 "UPDATE device_registry SET device_secret = $1 WHERE device_id = $2",
                 vec![sealed.into(), device_id.into()],
@@ -1348,7 +1348,7 @@ impl MigrationTrait for SealDeviceSecrets {
         let db = manager.get_connection();
         let backend = db.get_database_backend();
         let rows = db
-            .query_all(Statement::from_string(
+            .query_all_raw(Statement::from_string(
                 backend,
                 "SELECT device_id, device_secret FROM device_registry".to_string(),
             ))
@@ -1362,7 +1362,7 @@ impl MigrationTrait for SealDeviceSecrets {
             }
             let opened = crate::secrets::open(&secret)
                 .map_err(|e| DbErr::Custom(format!("open device_secret for {device_id}: {e}")))?;
-            db.execute(Statement::from_sql_and_values(
+            db.execute_raw(Statement::from_sql_and_values(
                 backend,
                 "UPDATE device_registry SET device_secret = $1 WHERE device_id = $2",
                 vec![opened.into(), device_id.into()],

@@ -41,6 +41,7 @@ use serde_json::json;
 use crate::server::api::admin::scope;
 use crate::server::router::AppState;
 use oxy_app_core::audit;
+use sea_orm::ExprTrait;
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -189,7 +190,9 @@ pub async fn list_users(
 ) -> Result<Json<Vec<AdminUserRow>>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
     let page = q.page.unwrap_or(0);
-    let page_size = q.page_size.unwrap_or(50).min(200);
+    // `Ord::min` is spelled out: `ExprTrait` (in scope for the query builders
+    // below) blanket-implements a `min` of its own on every `Into<Expr>` type.
+    let page_size = Ord::min(q.page_size.unwrap_or(50), 200);
 
     let mut query = users::Entity::find().order_by_desc(users::Column::LastLoginAt);
 

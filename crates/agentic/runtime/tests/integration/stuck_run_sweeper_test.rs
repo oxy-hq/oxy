@@ -84,7 +84,7 @@ async fn test_db() -> Option<DatabaseConnection> {
 /// sweeper's grace check treats the run as old enough to act on.
 async fn age_run(db: &DatabaseConnection, run_id: &str, secs: i64) {
     use sea_orm::{ConnectionTrait, Statement};
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_runs SET updated_at = updated_at - ($1 || ' seconds')::interval WHERE id = $2",
         [secs.into(), run_id.into()],
@@ -345,7 +345,7 @@ async fn find_stuck_runs_respects_driver_lease() {
         "a run with a fresh driver lease must be excluded"
     );
 
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_runs SET driver_heartbeat_at = now() - make_interval(secs => $1) \
          WHERE id = $2",

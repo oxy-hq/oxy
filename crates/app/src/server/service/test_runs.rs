@@ -2,6 +2,7 @@ use chrono::Utc;
 use entity::{test_case_human_verdicts, test_project_runs, test_run_cases, test_runs};
 use oxy::database::client::establish_connection;
 use oxy_shared::errors::OxyError;
+use sea_orm::ExprTrait;
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult,

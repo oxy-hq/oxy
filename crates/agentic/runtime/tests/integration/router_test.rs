@@ -223,7 +223,7 @@ async fn listener_recovers_from_terminated_backend() {
     // record LISTEN differently — but `pg_listening_channels` is
     // session-scoped, so we have to match on what the activity view
     // exposes. Most pragmatic match: query text starts with 'LISTEN '.
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
          WHERE query LIKE 'LISTEN %' AND pid <> pg_backend_pid()"

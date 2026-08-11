@@ -396,7 +396,7 @@ pub async fn load(db: &DatabaseConnection) -> Result<Option<DeploymentValues>, A
     );
     let backend = db.get_database_backend();
     let row = db
-        .query_one(Statement::from_string(backend, sql))
+        .query_one_raw(Statement::from_string(backend, sql))
         .await
         .map_err(|e| AirwayError::Other(format!("reading {TABLE}: {e}")))?;
     let Some(row) = row else {

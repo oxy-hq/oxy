@@ -153,7 +153,7 @@ fehler = { workspace = true }
 sqlparser = { workspace = true }
 sqlparser_connectorx = { package = "sqlparser", version = "0.37" }
 backoff = { workspace = true, features = ["tokio"] }
-sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
+sqlx = { workspace = true, features = ["runtime-tokio", "tls-rustls", "postgres"] }
 semver = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs"] }
 parquet = { workspace = true } # needs to be the same with arrow version

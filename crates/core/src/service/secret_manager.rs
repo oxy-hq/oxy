@@ -581,7 +581,7 @@ impl SecretManagerService {
             .begin()
             .await
             .map_err(|e| OxyError::Database(e.to_string()))?;
-        txn.execute(Statement::from_sql_and_values(
+        txn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT pg_advisory_xact_lock($1)",
             [Self::advisory_lock_key(self.project_id, &name).into()],

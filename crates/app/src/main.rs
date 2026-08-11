@@ -1,3 +1,8 @@
+// A binary is its own crate root, so the `recursion_limit` in lib.rs does not
+// apply here. Laying out the futures reached from `cli()` exceeds rustc's
+// default query depth since SeaORM 2.0 deepened its query types.
+#![recursion_limit = "256"]
+
 use std::io::IsTerminal;
 use std::process::exit;
 

@@ -341,7 +341,7 @@ impl ObservabilityStore for PostgresObservabilityStorage {
                     timestamp = EXCLUDED.timestamp";
 
             self.db
-                .execute(Statement::from_sql_and_values(
+                .execute_raw(Statement::from_sql_and_values(
                     pg(),
                     sql,
                     vec![
@@ -385,7 +385,7 @@ impl ObservabilityStore for PostgresObservabilityStorage {
             );
             let res = self
                 .db
-                .execute(Statement::from_string(pg(), sql))
+                .execute_raw(Statement::from_string(pg(), sql))
                 .await
                 .map_err(|e| OxyError::RuntimeError(format!("Purge {table} failed: {e}")))?;
             total = total.saturating_add(res.rows_affected());

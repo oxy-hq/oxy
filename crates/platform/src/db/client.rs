@@ -388,7 +388,8 @@ mod tests {
     fn transient_sea_orm_error_classifies_structural_sqlx_wrap() {
         use sea_orm::{DbErr, RuntimeErr};
         let inner = sqlx::Error::Io(io::Error::new(io::ErrorKind::ConnectionReset, "x"));
-        let err = DbErr::Conn(RuntimeErr::SqlxError(inner));
+        // SeaORM 2.0 holds the sqlx error in an `Arc` so `DbErr` can be cloned.
+        let err = DbErr::Conn(RuntimeErr::SqlxError(std::sync::Arc::new(inner)));
         assert!(is_transient_sea_orm_error(&err));
     }
 

@@ -1,5 +1,10 @@
 //! Project and workspace management for Oxy
 
+// SeaORM 2.0's query types nest deeper generically than 1.1's, and rustc's
+// default query depth is not enough to lay out the async fns that build
+// queries here. Raising the limit is the fix rustc itself suggests.
+#![recursion_limit = "256"]
+
 pub mod config_builder;
 pub mod data_repo_service;
 pub mod database_config;

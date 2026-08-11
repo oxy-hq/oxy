@@ -3,6 +3,12 @@
 //! A single-state LLM tool loop that lets an LLM read and propose changes to
 //! project files, using the same streaming/HITL infrastructure as `agentic-http`.
 
+// SeaORM 2.0's query types nest deeper generically than 1.1's. This crate
+// has no sea-orm dependency of its own, but its async fns transitively await
+// futures that hold them, and laying those out now exceeds rustc's default
+// query depth. Raising the limit is the fix rustc itself suggests.
+#![recursion_limit = "256"]
+
 pub mod app_runner;
 pub mod database;
 pub mod events;

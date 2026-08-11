@@ -1,0 +1,256 @@
+{
+    "slug": "orders-by-channel",
+    "title": "Which sales channel drives the most revenue?",
+    "input": "Which sales channel drives the most revenue?",
+    "output": "",
+    "source": "_analytics.agentic.yml",
+    "source_type": "analytics",
+    "references": "[]",
+    "run": {
+        "question": "Which sales channel drives the most revenue?",
+        "answer": "Online is the largest revenue channel at **$412,880.51**, or 38% of the $1.09M total.\n\n| Channel | Gross revenue | Share |\n| --- | --- | --- |\n| online | $412,880.51 | 38.0% |\n| in_store | $388,214.76 | 35.7% |\n| mobile_app | $201,540.22 | 18.5% |\n| phone | $84,120.03 | 7.7% |\n\nOnline and in_store together account for nearly three quarters of revenue, and the gap between them is only $24.7K — close enough that month-to-month ordering between the two is not stable. `phone` is the clear tail at under 8%.",
+        "agent_id": "_analytics.agentic.yml",
+        "thinking_mode": "auto",
+        "task_status": "done"
+    },
+    "events": [
+        {
+            "seq": 0,
+            "event_type": "state_enter",
+            "payload": { "state": "clarifying", "revision": 0, "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 1,
+            "event_type": "llm_start",
+            "payload": { "state": "clarifying", "prompt_tokens": 2871 },
+            "attempt": 0
+        },
+        {
+            "seq": 2,
+            "event_type": "llm_end",
+            "payload": {
+                "model": "claude-sonnet-4-6",
+                "state": "clarifying",
+                "duration_ms": 4180,
+                "output_tokens": 118,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 5192
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 3,
+            "event_type": "tool_call",
+            "payload": {
+                "name": "propose_semantic_query",
+                "input": "{\"measures\":[\"orders.gross_revenue\"],\"dimensions\":[\"orders.channel\"],\"filters\":[],\"time_dimensions\":[],\"order\":[{\"id\":\"orders.gross_revenue\",\"desc\":true}],\"limit\":null,\"confidence\":0.93}",
+                "llm_duration_ms": 4180
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 4,
+            "event_type": "triage_completed",
+            "payload": {
+                "summary": "Rank gross order revenue by sales channel to identify the largest channel.",
+                "confidence": 0.9300000071525574,
+                "ambiguities": [],
+                "question_type": "Ranking"
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 5,
+            "event_type": "semantic_shortcut_attempted",
+            "payload": {
+                "filters": [],
+                "measures": ["orders.gross_revenue"],
+                "confidence": 0.9300000071525574,
+                "dimensions": ["orders.channel"],
+                "time_dimensions": []
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 6,
+            "event_type": "semantic_shortcut_resolved",
+            "payload": {
+                "sql": "SELECT\n  \"orders\".\"channel\" AS \"orders__channel\",\n  SUM(\"orders\".\"total_amount\") AS \"orders__gross_revenue\"\nFROM\n  orders.csv AS \"orders\"\nGROUP BY\n  1\nORDER BY\n  2 DESC\nLIMIT 10000"
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 7,
+            "event_type": "validation_pass",
+            "payload": { "state": "clarifying" },
+            "attempt": 0
+        },
+        {
+            "seq": 8,
+            "event_type": "state_exit",
+            "payload": { "state": "clarifying", "outcome": "advanced", "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 9,
+            "event_type": "state_enter",
+            "payload": { "state": "executing", "revision": 0, "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 10,
+            "event_type": "query_executed",
+            "payload": {
+                "error": null,
+                "query": "SELECT\n  \"orders\".\"channel\" AS \"orders__channel\",\n  SUM(\"orders\".\"total_amount\") AS \"orders__gross_revenue\"\nFROM\n  orders.csv AS \"orders\"\nGROUP BY\n  1\nORDER BY\n  2 DESC\nLIMIT 10000",
+                "source": "semantic",
+                "columns": ["orders__channel", "orders__gross_revenue"],
+                "success": true,
+                "is_preagg": false,
+                "row_count": 4,
+                "duration_ms": 233,
+                "rows": [
+                    ["online", 412880.5100000002],
+                    ["in_store", 388214.7599999998],
+                    ["mobile_app", 201540.22000000006],
+                    ["phone", 84120.03000000001]
+                ],
+                "semantic_query": {
+                    "limit": null,
+                    "order": [{ "id": "orders.gross_revenue", "desc": true }],
+                    "filters": [],
+                    "measures": ["orders.gross_revenue"],
+                    "dimensions": ["orders.channel"],
+                    "assumptions": [],
+                    "time_dimensions": []
+                }
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 11,
+            "event_type": "validation_pass",
+            "payload": { "state": "executing" },
+            "attempt": 0
+        },
+        {
+            "seq": 12,
+            "event_type": "state_exit",
+            "payload": { "state": "executing", "outcome": "advanced", "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 13,
+            "event_type": "state_enter",
+            "payload": { "state": "interpreting", "revision": 0, "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 14,
+            "event_type": "llm_start",
+            "payload": { "state": "interpreting", "prompt_tokens": 1204 },
+            "attempt": 0
+        },
+        {
+            "seq": 15,
+            "event_type": "llm_token",
+            "payload": { "token": "Online" },
+            "attempt": 0
+        },
+        {
+            "seq": 16,
+            "event_type": "llm_token",
+            "payload": { "token": " is the largest revenue channel at **$412,880.51**," },
+            "attempt": 0
+        },
+        {
+            "seq": 17,
+            "event_type": "llm_token",
+            "payload": { "token": " or 38% of the $1.09M total.\n\n" },
+            "attempt": 0
+        },
+        {
+            "seq": 18,
+            "event_type": "tool_call",
+            "payload": {
+                "name": "render_chart",
+                "input": "{\"chart_type\":\"bar_chart\",\"x\":\"orders__channel\",\"y\":\"orders__gross_revenue\",\"title\":\"Gross Revenue by Sales Channel\",\"x_axis_label\":\"Channel\",\"y_axis_label\":\"Gross Revenue ($)\"}",
+                "llm_duration_ms": 3410
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 19,
+            "event_type": "chart_rendered",
+            "payload": {
+                "config": {
+                    "x": "orders__channel",
+                    "y": "orders__gross_revenue",
+                    "name": null,
+                    "title": "Gross Revenue by Sales Channel",
+                    "value": null,
+                    "series": null,
+                    "chart_type": "bar_chart",
+                    "x_axis_label": "Channel",
+                    "y_axis_label": "Gross Revenue ($)"
+                },
+                "columns": ["orders__channel", "orders__gross_revenue"],
+                "rows": [
+                    ["online", 412880.5100000002],
+                    ["in_store", 388214.7599999998],
+                    ["mobile_app", 201540.22000000006],
+                    ["phone", 84120.03000000001]
+                ]
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 20,
+            "event_type": "llm_token",
+            "payload": {
+                "token": "| Channel | Gross revenue | Share |\n| --- | --- | --- |\n| online | $412,880.51 | 38.0% |\n| in_store | $388,214.76 | 35.7% |\n| mobile_app | $201,540.22 | 18.5% |\n| phone | $84,120.03 | 7.7% |\n\n"
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 21,
+            "event_type": "llm_token",
+            "payload": {
+                "token": "Online and in_store together account for nearly three quarters of revenue, and the gap between them is only $24.7K — close enough that month-to-month ordering between the two is not stable. `phone` is the clear tail at under 8%."
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 22,
+            "event_type": "llm_end",
+            "payload": {
+                "model": "claude-sonnet-4-6",
+                "state": "interpreting",
+                "duration_ms": 6902,
+                "output_tokens": 341,
+                "cache_read_input_tokens": 5192,
+                "cache_creation_input_tokens": 1180
+            },
+            "attempt": 0
+        },
+        {
+            "seq": 23,
+            "event_type": "validation_pass",
+            "payload": { "state": "interpreting" },
+            "attempt": 0
+        },
+        {
+            "seq": 24,
+            "event_type": "state_exit",
+            "payload": { "state": "interpreting", "outcome": "advanced", "trace_id": "trace-1" },
+            "attempt": 0
+        },
+        {
+            "seq": 25,
+            "event_type": "done",
+            "payload": { "trace_id": "trace-1" },
+            "attempt": 0
+        }
+    ]
+}

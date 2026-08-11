@@ -611,7 +611,9 @@ mod admission_tests {
     use airway::connector::{ContractPolicy, Environment};
 
     fn db() -> Arc<sea_orm::DatabaseConnection> {
-        Arc::new(sea_orm::DatabaseConnection::Disconnected)
+        // SeaORM 2.0 made `DatabaseConnection` a struct; the default is the
+        // disconnected handle these admission tests want — they never query it.
+        Arc::new(sea_orm::DatabaseConnection::default())
     }
 
     /// `AirwayAdmission::default()` is what a caller passes for today's

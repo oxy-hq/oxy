@@ -232,7 +232,7 @@ pub async fn update_queue_heartbeat(
 ) -> Result<bool, DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue \
              SET last_heartbeat = now(), updated_at = now() \
@@ -311,7 +311,7 @@ pub async fn set_terminal_status_owned<C: ConnectionTrait>(
 ) -> Result<TerminalWrite, DbErr> {
     use sea_orm::{DatabaseBackend, Statement};
     let res = conn
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue SET queue_status = $3, updated_at = now() \
              WHERE task_id = $1 AND worker_id = $2 \
@@ -334,7 +334,7 @@ async fn classify_terminal_miss<C: ConnectionTrait>(
 ) -> Result<TerminalWrite, DbErr> {
     use sea_orm::{DatabaseBackend, Statement};
     let row = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT worker_id FROM agentic_task_queue WHERE task_id = $1",
             [task_id.into()],
@@ -385,7 +385,7 @@ pub async fn requeue_task(
 ) -> Result<(), DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     // Use upsert: INSERT if no row exists, UPDATE if it does.
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO agentic_task_queue \
              (task_id, run_id, queue_status, spec, worker_id, last_heartbeat, \
@@ -438,7 +438,7 @@ pub async fn requeue_task(
 pub async fn reset_task_to_queued(db: &DatabaseConnection, task_id: &str) -> Result<u64, DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue SET \
                  queue_status = 'queued', worker_id = NULL, last_heartbeat = NULL, \
@@ -463,7 +463,7 @@ pub async fn reset_task_to_queued(db: &DatabaseConnection, task_id: &str) -> Res
 pub async fn mark_task_global(db: &DatabaseConnection, task_id: &str) -> Result<u64, DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue SET scope_owned = false, updated_at = now() \
              WHERE task_id = $1",
@@ -502,7 +502,7 @@ pub async fn mark_released_roots_global(
 ) -> Result<u64, DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue q \
              SET scope_owned = false, updated_at = now() \
@@ -529,7 +529,7 @@ pub async fn mark_released_roots_global(
 /// ownership-scoped — see [`cancel_queued_task_owned`].
 pub async fn cancel_queued_task(db: &DatabaseConnection, task_id: &str) -> Result<(), DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue SET queue_status = 'cancelled', updated_at = now() \
          WHERE task_id = $1 AND queue_status IN ('queued', 'claimed')",
@@ -686,7 +686,7 @@ pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<ReapOutcome, Db
     // dead owner's expired heartbeat and "how long has this been queued"
     // is unanswerable from the row.
     let requeued = txn
-        .execute(Statement::from_string(
+        .execute_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue \
              SET queue_status = 'queued', worker_id = NULL, claimed_at = NULL, \
@@ -763,7 +763,7 @@ pub async fn release_claims_for_worker(
 ) -> Result<u64, DbErr> {
     use sea_orm::{DatabaseBackend, Statement};
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "UPDATE agentic_task_queue {RELEASE_SET_CLAUSE} \
@@ -919,7 +919,7 @@ pub async fn release_claim(
 ) -> Result<bool, DbErr> {
     use sea_orm::{DatabaseBackend, Statement};
     let res = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "UPDATE agentic_task_queue {RELEASE_SET_CLAUSE} \
@@ -1010,7 +1010,7 @@ pub async fn purge_old_terminal_tasks(
     if let Some(ttl) = completed_ttl {
         let secs = ttl.as_secs() as i64;
         let res = db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "DELETE FROM agentic_task_queue \
                  WHERE queue_status IN ('completed', 'cancelled') \
@@ -1024,7 +1024,7 @@ pub async fn purge_old_terminal_tasks(
     if let Some(ttl) = dead_ttl {
         let secs = ttl.as_secs() as i64;
         let res = db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "DELETE FROM agentic_task_queue \
                  WHERE queue_status IN ('failed', 'dead') \

@@ -84,6 +84,16 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
 
     deploy_example_apps(&conn, workspace_id, &resolved_str).await;
 
+    // After `bind_org_admin_emails`: threads are user-scoped, and this
+    // materializes one copy per Local-org member — the memberships that call
+    // creates. Run before it and there is nobody to own a thread.
+    //
+    // Warns instead of failing, like the example apps: demo chat history is a
+    // convenience on top of a workspace that is already usable without it.
+    if let Err(e) = super::seed_threads::seed_demo_threads(&conn, workspace_id).await {
+        println!("{} demo threads not seeded: {e}", "⚠️".warning());
+    }
+
     println!();
     println!("Next:");
     println!("  cargo run -p oxy-app -- compile --workspace-path {resolved_str}");
@@ -293,6 +303,21 @@ pub async fn clear_demo() -> Result<(), OxyError> {
     // where apps survive, and orphaned usage keeps counting against an org's quota.
     if let Err(e) = super::seed_storage::clear_storage_usage(&conn).await {
         println!("{} storage usage not cleared: {e}", "⚠️".warning());
+    }
+
+    // Before the workspace delete: `threads.project_id` cascades from
+    // `workspaces`, so dropping the demo workspace would take these with it —
+    // but `--clear` also runs on boxes where the workspace row is already gone
+    // or was re-pointed, and a seeded thread nobody can reach still shows up in
+    // its owner's history.
+    match super::seed_threads::clear_demo_threads(&conn).await {
+        Ok(n) if n > 0 => println!(
+            "{} cleared {n} seeded thread{}",
+            "🧹".info(),
+            if n == 1 { "" } else { "s" }
+        ),
+        Ok(_) => {}
+        Err(e) => println!("{} seeded threads not cleared: {e}", "⚠️".warning()),
     }
 
     let apps = super::seed_apps::clear_example_apps(&conn).await?;
