@@ -217,6 +217,27 @@ services:
       DWELL_EVENT_EVERY_SEC: ${DWELL_EVENT_EVERY_SEC:-30}
       REQUIRED_ATTIRE: ${REQUIRED_ATTIRE:-hat,apron}
       REQUIRED_HYGIENE: ${REQUIRED_HYGIENE:-glove}
+      # --- Audio upsell detection (worker/upsell*.py) ---
+      # Off by default. Set UPSELL_CAMERAS in .env to a comma-separated list of
+      # camera-name substrings (e.g. "PH - Santa Clara - Register") to run the
+      # register-mic upsell pipeline on matching cameras. Reuses ANTHROPIC_API_KEY
+      # (above) for the intent classifier; unset ⇒ audio upsell detection off.
+      UPSELL_CAMERAS: ${UPSELL_CAMERAS:-}
+      UPSELL_STT_MODEL: ${UPSELL_STT_MODEL:-small.en}
+      UPSELL_CONF_THRESHOLD: ${UPSELL_CONF_THRESHOLD:-0.5}
+      UPSELL_ITEM_COOLDOWN_SEC: ${UPSELL_ITEM_COOLDOWN_SEC:-30}
+      # --- Congestion evidence clips (worker/congestion.py + annotate.py) ---
+      # A clip fires when >= MIN_COUNT people hold the zone for SUSTAIN_SEC, and
+      # captures the CLIP_SEC leading up to it (pulled from MTX's 24h buffer).
+      # Set CONGESTION_CLIP_SEC=900 in .env for 15-min evidence clips — but note
+      # a 15-min clip is ~100MB+ and annotating it is minutes of edge CPU; if the
+      # box can't keep up, set CLIP_ANNOTATE_ENABLED=0 to ship long clips raw.
+      CONGESTION_MIN_COUNT: ${CONGESTION_MIN_COUNT:-3}
+      CONGESTION_SUSTAIN_SEC: ${CONGESTION_SUSTAIN_SEC:-90}
+      CONGESTION_CLEAR_SEC: ${CONGESTION_CLEAR_SEC:-15}
+      CONGESTION_CLIP_SEC: ${CONGESTION_CLIP_SEC:-30}
+      CLIP_ANNOTATE_ENABLED: ${CLIP_ANNOTATE_ENABLED:-1}
+      CLIP_ANNOTATE_DETECT_FPS: ${CLIP_ANNOTATE_DETECT_FPS:-6}
       # --- P3 (Option C) — PPE-YOLO bbox overlay ---
       # Off by default. Populate by either:
       #   (a) running `scripts/download-ppe-model.sh` to drop a known-

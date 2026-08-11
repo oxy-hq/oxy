@@ -58,9 +58,14 @@ _ENABLED = os.environ.get("CLIP_ANNOTATE_ENABLED", "1") != "0"
 # subsampled cadence and carry the last boxes forward on the frames in
 # between (the output stays full-fps and smooth; boxes refresh ~6x/s).
 _DETECT_FPS = float(os.environ.get("CLIP_ANNOTATE_DETECT_FPS", "6"))
-# Hard ceiling on frames processed — a runaway/garbled fMP4 can report
-# a bogus length; this bounds the worst-case CPU spend regardless.
-_MAX_FRAMES = int(os.environ.get("CLIP_ANNOTATE_MAX_FRAMES", "2400"))
+# Hard ceiling on frames processed — a runaway/garbled fMP4 can report a
+# bogus length; this bounds the worst-case CPU spend regardless. Sized to
+# cover a 15-min evidence clip (CONGESTION_CLIP_SEC=900) at ~30fps: it MUST
+# exceed CONGESTION_CLIP_SEC × fps or the annotated clip is silently
+# truncated to this many frames. NB: annotating a 15-min clip is minutes of
+# CPU on the t4g — if the box falls behind, ship long clips raw
+# (CLIP_ANNOTATE_ENABLED=0) or drop the detect cadence (CLIP_ANNOTATE_DETECT_FPS).
+_MAX_FRAMES = int(os.environ.get("CLIP_ANNOTATE_MAX_FRAMES", "28000"))
 # libx264 speed/size trade-off; veryfast keeps a 30s clip to seconds on
 # the t4g.medium edge box.
 _X264_PRESET = os.environ.get("CLIP_ANNOTATE_X264_PRESET", "veryfast")

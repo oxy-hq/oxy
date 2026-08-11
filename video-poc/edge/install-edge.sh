@@ -116,6 +116,17 @@ NO_WEBRTC_PLACEHOLDER="disabled-no-webrtc"
 # `/opt/oxy-edge/.env` so docker-compose picks it up at runtime.
 ANTHROPIC_API_KEY=""
 
+# Comma-separated camera-name substrings whose (near-field-mic) audio is run
+# through the upsell-detection pipeline (worker/upsell*.py). Optional + opt-in:
+# unset ⇒ audio upsell detection off. Needs ANTHROPIC_API_KEY (above). Passed
+# through to `/opt/oxy-edge/.env` so docker-compose picks it up at runtime.
+UPSELL_CAMERAS=""
+
+# Length (seconds) of the congestion evidence clip. Optional; unset ⇒ the
+# worker default (30s). Set to 900 for 15-min clips. Passed through to
+# `/opt/oxy-edge/.env` so docker-compose picks it up at runtime.
+CONGESTION_CLIP_SEC=""
+
 # ── Output helpers ───────────────────────────────────────────
 
 log() { printf '\033[1;34m[oxy-edge]\033[0m %s\n' "$*"; }
@@ -155,6 +166,15 @@ Optional:
                                     compliance checks. Optional: omit to install
                                     with compliance reports disabled (events
                                     still flow).
+  --upsell-cameras <list>          Comma-separated camera-name substrings whose
+                                    audio runs through the upsell-detection
+                                    pipeline (e.g. "PH - Santa Clara - Register").
+                                    Optional; needs --anthropic-api-key. Omit to
+                                    leave audio upsell detection off.
+  --congestion-clip-sec <seconds>  Length of the congestion evidence clip.
+                                    Optional; omit for the worker default (30).
+                                    Set 900 for 15-min clips (see the compose
+                                    note on clip size + annotation CPU).
   --allow-remote-support           Opt this box in to Oxy operator SSH-via-tailnet.
                                     Default OFF. When set, requires --ts-host-authkey.
                                     Can be enabled later with
@@ -181,6 +201,8 @@ while [[ $# -gt 0 ]]; do
         --turn-auth-secret) TURN_AUTH_SECRET="$2"; shift 2 ;;
         --no-webrtc) NO_WEBRTC=1; shift ;;
         --anthropic-api-key) ANTHROPIC_API_KEY="$2"; shift 2 ;;
+        --upsell-cameras) UPSELL_CAMERAS="$2"; shift 2 ;;
+        --congestion-clip-sec) CONGESTION_CLIP_SEC="$2"; shift 2 ;;
         --allow-remote-support) ALLOW_REMOTE_SUPPORT=1; shift ;;
         --ts-host-authkey) TS_HOST_AUTHKEY="$2"; shift 2 ;;
         --compose-url) COMPOSE_URL="$2"; shift 2 ;;
@@ -321,6 +343,15 @@ MTX_AUTH_URL="${OXY_URL%/}/control/mtx-auth"
         if [[ -n "$ANTHROPIC_API_KEY" ]]; then
             strip_re="${strip_re}|^ANTHROPIC_API_KEY="
         fi
+        # Same posture as ANTHROPIC_API_KEY: only rewrite UPSELL_CAMERAS when a
+        # value is passed, so a re-install that omits the flag doesn't wipe an
+        # operator's hand-set value.
+        if [[ -n "$UPSELL_CAMERAS" ]]; then
+            strip_re="${strip_re}|^UPSELL_CAMERAS="
+        fi
+        if [[ -n "$CONGESTION_CLIP_SEC" ]]; then
+            strip_re="${strip_re}|^CONGESTION_CLIP_SEC="
+        fi
         grep -vE "$strip_re" "${INSTALL_ROOT}/.env" || true
     fi
     printf 'OXY_URL=%s\n' "$OXY_URL"
@@ -337,6 +368,12 @@ MTX_AUTH_URL="${OXY_URL%/}/control/mtx-auth"
     fi
     if [[ -n "$ANTHROPIC_API_KEY" ]]; then
         printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY"
+    fi
+    if [[ -n "$UPSELL_CAMERAS" ]]; then
+        printf 'UPSELL_CAMERAS=%s\n' "$UPSELL_CAMERAS"
+    fi
+    if [[ -n "$CONGESTION_CLIP_SEC" ]]; then
+        printf 'CONGESTION_CLIP_SEC=%s\n' "$CONGESTION_CLIP_SEC"
     fi
 } > "${INSTALL_ROOT}/.env.new"
 mv "${INSTALL_ROOT}/.env.new" "${INSTALL_ROOT}/.env"
