@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.123] - 2026-08-11
+
+### 🚀 Features
+
+- Resolve airway admission from per-source-kind config (#2864)
+- Add the /admin/airway admission policy surface (#2875)
+- *(queue)* Delayed visibility + airway single-flight redesign — serialize instead of reject (#2902)
+- Custom-app asset lifecycle — retention, quotas, metering, seed + admin Storage tab (#2870)
+- Airway contract consumer + deployment tier (#2881)
+
+### 🐛 Bug Fixes
+
+- *(video-poc)* Plumb UPSELL_CAMERAS through the edge install + compose (#2903)
+- Read airway pipeline YAML from the compile boundary (#2876)
+- Apply airway admission to automation-dispatched runs (#2880)
+
 ## [0.5.122] - 2026-08-10
 
 ### 🚀 Features
@@ -16,6 +32,7 @@ All notable changes to this project will be documented in this file.
 
 - Upgrade deps
 - Update dependencies (#2899)
+- Release 0.5.122 (#2897)
 
 ## [0.5.121] - 2026-08-10
 
